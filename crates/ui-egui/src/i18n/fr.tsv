@@ -1617,3 +1617,5 @@ folder	Outbox	Boîte d’envoi
 	Up to date	À jour
 	Folders up to date	Dossiers à jour
 	Stopped; carries on from here next time	Arrêtée ; reprendra là où elle s’est arrêtée la prochaine fois
+	Receiving {folder}: {done} of {total} · folder {number} of {folders}	Réception de {folder} : {done} sur {total} · dossier {number} sur {folders}
+	Receiving {folder} · folder {number} of {folders}	Réception de {folder} · dossier {number} sur {folders}

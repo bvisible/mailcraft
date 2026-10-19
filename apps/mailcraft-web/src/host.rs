@@ -25,17 +25,18 @@
 //! that names the mailbox without a secret, is asked again a few seconds later, three times (renewal.rs,
 //! jmap_services.rs). A page without the function has no renewal to give: the mailbox asks for a reload at once.
 //!
-//! A page whose window may not reach other sites itself (Neodesk) offers `window.mailcraftFetchUrl(url)`, a promise of
-//! `{ status, contentType, bytes }` (`bytes` a `Uint8Array`): the pictures a message links to, once the person asked to
-//! see them, are then fetched through it.
+//! A page that can fetch what a browser tab may not read itself (another site's bytes: `/neomail` asks its server,
+//! Neodesk its own process) offers `window.mailcraftFetchUrl(url)`, a promise of `{ status, contentType, bytes }`
+//! (`bytes` a `Uint8Array`), or one that fails with the reason in its message: the pictures a message links to, once
+//! the person asked to see them, are then fetched through it. A page without it has no pictures from the web.
 //!
 //! The person signed in to the page may be named in the address, as for the document editors (`?author=Jeanne%20Muster`).
 //!
 //! It is read on this page, or on the page that frames it when that one is of the same origin (reading another
 //! origin's window throws, which reads as nothing). Nothing secret travels in the address. With host accounts,
 //! MailCraft keeps no mail, account or secret between visits: only the interface settings.
-// Read by the start of the browser shell (web.rs); the pictures through the page (`fetch_url`) and the name of the
-// person signed in (`author`) wait for the steps that use them.
+// Read by the start of the browser shell (web.rs), the pictures through the page too (`fetch_url`); the name of the
+// person signed in (`author`) waits for the step that uses it.
 #![allow(dead_code)]
 
 use std::cell::RefCell;
@@ -163,14 +164,25 @@ pub async fn renew() -> Option<Renewed> {
     Some(Renewed { accounts: parse(&answer, false), named })
 }
 
-/// A picture a message links to, fetched by the hosting page's `window.mailcraftFetchUrl(url)` for a window that may
-/// not reach other sites itself: its bytes when the page got it (status 2xx, at most `max` bytes), else why not.
-/// `None` when the page offers no such function: MailCraft fetches it itself.
-pub async fn fetch_url(url: &str, max: usize) -> Option<Result<Vec<u8>, String>> {
-    let (window, fetch) = windows().into_iter().find_map(|w| {
+/// The page's `window.mailcraftFetchUrl`, and the window it belongs to.
+fn url_fetcher() -> Option<(JsValue, js_sys::Function)> {
+    windows().into_iter().find_map(|w| {
         let f = get(&w, "mailcraftFetchUrl").filter(JsValue::is_function)?;
         Some((w, js_sys::Function::from(f)))
-    })?;
+    })
+}
+
+/// Whether the hosting page fetches pictures on the web for MailCraft (`window.mailcraftFetchUrl`): a browser tab
+/// can't read another site's bytes by itself.
+pub fn fetches_urls() -> bool {
+    url_fetcher().is_some()
+}
+
+/// A picture a message links to, fetched by the hosting page's `window.mailcraftFetchUrl(url)` for a window that may
+/// not reach other sites itself: its bytes when the page got it (status 2xx, at most `max` bytes), else why not (a
+/// promise that fails says why in its message). `None` when the page offers no such function.
+pub async fn fetch_url(url: &str, max: usize) -> Option<Result<Vec<u8>, String>> {
+    let (window, fetch) = url_fetcher()?;
     Some(fetched(&window, &fetch, url, max).await)
 }
 

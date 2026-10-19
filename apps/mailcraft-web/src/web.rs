@@ -166,6 +166,8 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
     // //// Neoffice — an account kept in step with a JMAP server is read through `fetch` (jmap_services.rs), with the credential its owner types; a hosting page's credentials replace these (hosted_app).
     let (jmap_ctx, gate) = (ctx.clone(), crate::jmap_services::Gate::default());
     let no_credentials = std::rc::Rc::new(crate::credentials::NoCredentials);
+    // //// Neoffice — the pictures on the web a message links to, through the hosting page when it fetches them (host.rs): a browser tab can't read another site's bytes itself.
+    let pictures = crate::host::fetches_urls().then(|| pictures(ctx.clone()));
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
@@ -191,8 +193,31 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         // //// Neoffice — as above.
         jmap: Some(crate::jmap_services::jmap_service(jmap_ctx.clone(), no_credentials.clone(), gate.clone())),
         jmap_fetch: Some(crate::jmap_services::jmap_fetch_service(jmap_ctx, no_credentials, gate)),
+        // //// Neoffice — as above.
+        pictures,
         ..Default::default()
     }
+}
+
+// //// Neoffice — the largest picture taken from the hosting page, the reading pane's own limit.
+const MAX_PICTURE_BYTES: usize = 8 * 1024 * 1024;
+
+// //// Neoffice — the pictures service of a page that fetches them (host.rs `fetch_url`).
+/// One picture through the hosting page: its bytes, or why there are none, on the channel the reading pane looks at,
+/// and the window woken when they come. The reading pane decides what is asked for and when (only on the owner's
+/// say-so, a few at a time), and looks at what comes as warily as at an attachment.
+fn pictures(ctx: egui::Context) -> Box<dyn Fn(String) -> std::sync::mpsc::Receiver<Result<Vec<u8>, String>>> {
+    Box::new(move |url: String| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let answer = crate::host::fetch_url(&url, MAX_PICTURE_BYTES).await.unwrap_or_else(|| Err("the page fetches no pictures".into()));
+            // The reading pane may have stopped waiting (the message left the screen): nothing to tell then.
+            let _ = tx.send(answer);
+            ctx.request_repaint();
+        });
+        rx
+    })
 }
 
 // //// Neoffice — the mail program of a hosting page: the mailboxes it handed over, kept in step with their JMAP servers with its credentials, and nothing kept between visits.

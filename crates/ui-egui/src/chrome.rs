@@ -266,13 +266,17 @@ pub(crate) fn sync_shown(app: &MailApp) -> SyncShown {
     }
     let sync = &app.session.sync_status;
     // //// Neoffice — the engine's words in the interface's language (status_in_language).
-    if sync.is_empty() { SyncShown::Nothing } else { SyncShown::Text(status_in_language(sync)) }
+    if sync.is_empty() { SyncShown::Nothing } else { SyncShown::Text(status_in_language(sync, &app.session.mailbox)) }
 }
 
-// //// Neoffice — the engine says how a Send/Receive ended in English: its usual words are shown in the interface's language.
-/// The status of the last Send/Receive as the status bar shows it: the engine's usual words for the end of a run in
-/// the interface's language, the time after them as it is; anything else (what a server said) as it came.
-pub(crate) fn status_in_language(status: &str) -> String {
+// //// Neoffice — the engine says how a Send/Receive ended, and how far it has got, in English: its usual words are shown in the interface's language.
+/// The status of Send/Receive as the status bar shows it: the engine's usual words for how far a run has got (a
+/// standard folder by the name the folder pane gives it) and for the end of a run, in the interface's language, the
+/// time after them as it is; anything else (what a server said) as it came.
+pub(crate) fn status_in_language(status: &str, mb: &mailcraft_model::Mailbox) -> String {
+    if let Some(words) = progress_in_language(status, mb) {
+        return words;
+    }
     let (said, at) = match status.rsplit_once(" — ") {
         Some((said, at)) => (said, Some(at)),
         None => (status, None),
@@ -287,6 +291,41 @@ pub(crate) fn status_in_language(status: &str) -> String {
         Some(at) => format!("{words} — {at}"),
         None => words.to_string(),
     }
+}
+
+// //// Neoffice — added: the words of the engine's `graph_down::progress_words`, read back in the interface's language.
+/// How far a run has got, as the engine words it (`Receiving Inbox: 12 of 50 · folder 1 of 6`, or without the count
+/// of messages), in the interface's language; `None` for anything else.
+fn progress_in_language(status: &str, mb: &mailcraft_model::Mailbox) -> Option<String> {
+    let rest = status.strip_prefix("Receiving ")?;
+    let (head, folders) = rest.rsplit_once(" · folder ")?;
+    let (number, count) = counted(folders)?;
+    let (name, read) = match head.rsplit_once(": ").and_then(|(name, read)| Some((name, counted(read)?))) {
+        Some((name, read)) => (name, Some(read)),
+        None => (head, None),
+    };
+    // The engine names a folder by its own name: a standard one is shown by the folder pane's.
+    let name = mb
+        .folders
+        .iter()
+        .find(|f| f.kind != mailcraft_model::FolderKind::Custom && f.name == name)
+        .map_or_else(|| name.to_string(), crate::nav::folder_name);
+    let (number, count) = (number.to_string(), count.to_string());
+    Some(match read {
+        Some((done, total)) => crate::i18n::fmt(
+            tl!("Receiving {folder}: {done} of {total} · folder {number} of {folders}"),
+            &[("folder", &name), ("done", &done.to_string()), ("total", &total.to_string()), ("number", &number), ("folders", &count)],
+        ),
+        None => {
+            crate::i18n::fmt(tl!("Receiving {folder} · folder {number} of {folders}"), &[("folder", &name), ("number", &number), ("folders", &count)])
+        }
+    })
+}
+
+// //// Neoffice — added: `12 of 50`, as the engine writes a count, read as numbers.
+fn counted(text: &str) -> Option<(u64, u64)> {
+    let (done, total) = text.split_once(" of ")?;
+    Some((done.parse().ok()?, total.parse().ok()?))
 }
 
 /// The status bar, across the foot of the window.
@@ -415,7 +454,11 @@ pub fn status_bar(app: &mut MailApp, ui: &mut Ui) {
                         let tip = match &shown_sync {
                             SyncShown::Bar { .. } if !app.session.sync_status.is_empty() => {
                                 // //// Neoffice — as above.
-                                format!("{}\n{}", status_in_language(&app.session.sync_status), tl!("Show Send/Receive Progress"))
+                                format!(
+                                    "{}\n{}",
+                                    status_in_language(&app.session.sync_status, &app.session.mailbox),
+                                    tl!("Show Send/Receive Progress")
+                                )
                             }
                             _ => tl!("Show Send/Receive Progress").to_string(),
                         };
@@ -543,5 +586,32 @@ mod tests {
         assert_eq!(MAC_CONTENT_LEFT - lights_end, margin);
         // `egui::Margin` is in `i8`.
         assert!(MAC_CONTENT_LEFT <= f32::from(i8::MAX));
+    }
+
+    // //// Neoffice — added: the engine's words for how far a run has got, in the interface's language.
+    #[test]
+    fn how_far_a_run_has_got_reads_in_the_interface_s_language() {
+        use crate::i18n::{Lang, set_current};
+        use mailcraft_model::{FolderKind, Mailbox};
+
+        let mut mb = Mailbox::with_local_account("Ada", "ada@example.org");
+        let account = mb.accounts[0].id;
+        let inbox = mb.folder_of_kind(account, FolderKind::Inbox).unwrap();
+        mb.folders.iter_mut().find(|f| f.id == inbox).unwrap().name = "INBOX".into();
+        set_current(Lang::from_tag("fr").unwrap());
+        let read = status_in_language("Receiving INBOX: 12 of 50 · folder 1 of 6", &mb);
+        let listed = status_in_language("Receiving Projects · folder 3 of 6", &mb);
+        let ended = status_in_language("Up to date — 15:05", &mb);
+        // A folder's name may hold a colon and words: it is a name all the same.
+        let named = status_in_language("Receiving the news: twelve of fifty · folder 1 of 6", &mb);
+        // What isn't the engine's (a server's own words) is shown as it came.
+        let said = status_in_language("Receiving mail failed: the server closed the connection", &mb);
+        set_current(Lang::English);
+        assert_eq!(read, "Réception de Boîte de réception : 12 sur 50 · dossier 1 sur 6");
+        assert_eq!(listed, "Réception de Projects · dossier 3 sur 6");
+        assert_eq!(ended, "À jour — 15:05");
+        assert_eq!(named, "Réception de the news: twelve of fifty · dossier 1 sur 6");
+        assert_eq!(said, "Receiving mail failed: the server closed the connection");
+        assert_eq!(status_in_language("Receiving INBOX: 12 of 50 · folder 1 of 6", &mb), "Receiving Inbox: 12 of 50 · folder 1 of 6");
     }
 }
