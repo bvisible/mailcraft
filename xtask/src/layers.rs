@@ -42,6 +42,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("ical", Class::Layer(2)),
     ("vcard", Class::Layer(2)),
     ("proto", Class::Layer(3)),
+    // //// Neoffice — the JMAP client sits beside `proto` and `net`: no sockets, no browser APIs, builds for wasm.
+    ("jmap", Class::Layer(3)),
     ("net", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("mcp", Class::Layer(5)),
@@ -73,7 +75,10 @@ pub const UI_CRATES: &[&str] = &["egui", "eframe", "winit", "egui_kittest", "rfd
 /// External crates only the apps (the `Exempt` binaries) may use: craft-quit ends the process the
 /// platform's way (`-[NSApplication terminate:]` on macOS), which is the desktop app's decision,
 /// never a library's.
-pub const APP_ONLY_CRATES: &[&str] = &["craft-quit"];
+// //// Neoffice — and the browser's own APIs (`js-sys` stays allowed: the clock reads it): a library that
+// calls `web-sys` or `wasm-bindgen` is one that the desktop app and the CLI can't build, and a
+// `cargo check` for wasm32 can't tell, so the portable crates (the JMAP client among them) are held to it here.
+pub const APP_ONLY_CRATES: &[&str] = &["craft-quit", "web-sys", "wasm-bindgen", "wasm-bindgen-futures"];
 
 /// First layer allowed to use UI crates.
 pub const UI_MIN_LAYER: u8 = 6;
@@ -331,6 +336,40 @@ mod tests {
             let v = check(&[c(krate, &[("craft-quit", Normal, false)])]);
             assert!(matches!(&v[..], [Violation::AppOnly { dep, .. }] if dep == "craft-quit"), "{krate}: {v:?}");
         }
+    }
+
+    // //// Neoffice — the browser's APIs are for the apps alone, as craft-quit is.
+    #[test]
+    fn the_browsers_apis_are_for_the_apps_alone() {
+        for dep in ["web-sys", "wasm-bindgen", "wasm-bindgen-futures"] {
+            assert!(check(&[c("mailcraft-web", &[(dep, Normal, false)])]).is_empty(), "{dep}");
+            for krate in ["mailcraft-jmap", "mailcraft-engine", "mailcraft-ui-egui", "mailcraft-time"] {
+                let v = check(&[c(krate, &[(dep, Normal, false)])]);
+                assert!(matches!(&v[..], [Violation::AppOnly { dep: d, .. }] if d == dep), "{krate} {dep}: {v:?}");
+            }
+        }
+        // `js-sys` reads the browser's clock for `mailcraft-time` and stays allowed.
+        assert!(check(&[c("mailcraft-time", &[("js-sys", Normal, false)])]).is_empty());
+    }
+
+    // //// Neoffice — the JMAP client is registered at layer 3, beside `proto` and `net`.
+    #[test]
+    fn the_jmap_client_sits_at_layer_3() {
+        assert_eq!(classify("mailcraft-jmap"), Some(Class::Layer(3)));
+        // It may use what is below it...
+        let below =
+            [("mailcraft-time", Normal, true), ("mailcraft-model", Normal, true), ("mailcraft-mime", Normal, true), ("serde_json", Normal, false)];
+        assert!(check(&[c("mailcraft-jmap", &below)]).is_empty());
+        // ... and nothing at its own layer or above it, in the code or in the tests.
+        for (dep, kind, to) in
+            [("mailcraft-net", Normal, 3), ("mailcraft-proto", Normal, 3), ("mailcraft-engine", Dev, 4), ("mailcraft-ui-egui", Normal, 6)]
+        {
+            let v = check(&[c("mailcraft-jmap", &[(dep, kind, true)])]);
+            assert!(matches!(v[..], [Violation::Upward { from: 3, to: t, .. }] if t == to), "{dep}: {v:?}");
+        }
+        // The engine and the front end may use it.
+        assert!(check(&[c("mailcraft-engine", &[("mailcraft-jmap", Normal, true)])]).is_empty());
+        assert!(check(&[c("mailcraft-ui-egui", &[("mailcraft-jmap", Normal, true)])]).is_empty());
     }
 
     #[test]

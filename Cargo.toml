@@ -20,6 +20,8 @@ mailcraft-mime = { path = "crates/mime" }
 mailcraft-ical = { path = "crates/ical" }
 mailcraft-vcard = { path = "crates/vcard" }
 mailcraft-proto = { path = "crates/proto" }
+# //// Neoffice — the JMAP client (L3, no sockets): JMAP mail in the browser, where IMAP and SMTP can't go.
+mailcraft-jmap = { path = "crates/jmap" }
 mailcraft-net = { path = "crates/net" }
 mailcraft-engine = { path = "crates/engine" }
 mailcraft-mcp = { path = "crates/mcp" }
