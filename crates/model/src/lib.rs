@@ -9,6 +9,8 @@
 mod address;
 mod calendar;
 mod contact;
+// //// Neoffice — where a JMAP account's server is (`Account::jmap`), and what its address must be.
+mod jmap_server;
 mod mailbox;
 mod message;
 mod offline;
@@ -32,6 +34,8 @@ pub use calendar::{
     ShowAs,
 };
 pub use contact::{Contact, Labeled, PostalAddress};
+// //// Neoffice — see `jmap_server`.
+pub use jmap_server::JmapServer;
 pub use mailbox::{
     Account, AccountKind, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderKind, GraphSwitch, IMPORTED, INTO_GRAPH, MAX_SHARED,
     Mailbox, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server, ServerFavorites, ServerFolder,
