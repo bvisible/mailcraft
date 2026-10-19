@@ -1605,3 +1605,5 @@
 	The server refused the sign-in. Sign in again, then use Send/Receive.	Le serveur a refusé la connexion. Reconnectez-vous, puis utilisez Envoyer/Recevoir.
 	The server refused the sign-in. Use Send/Receive to enter it again.	Le serveur a refusé la connexion. Utilisez Envoyer/Recevoir pour saisir à nouveau vos identifiants.
 	Sending isn't available for this account yet	L’envoi n’est pas encore disponible pour ce compte
+	Download Messages in Full with JMAP	Télécharger les messages en entier avec JMAP
+	Apply Downloaded Messages with JMAP	Appliquer les messages téléchargés avec JMAP
