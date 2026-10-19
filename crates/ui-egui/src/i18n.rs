@@ -52,6 +52,7 @@ mod state {
     }
 }
 
+// //// Neoffice — in tests, one language per thread: tests that run side by side and change it can't change one another's.
 #[cfg(test)]
 mod state {
     use std::cell::Cell;
@@ -171,12 +172,13 @@ pub fn current() -> Lang {
 
 /// `s` in the interface language.
 pub fn t(s: &str) -> &str {
-    match current() {
+    // //// Neoffice — under the product's name a host gives, when it gives one (`set_product_name`).
+    renamed(match current() {
         Lang::English => s,
         Lang::Pseudo => pseudo(s),
         // //// Neoffice — the catalog's translation; the English without one.
         Lang::Catalog(id) => catalog::translate(id, "", s).unwrap_or(s),
-    }
+    })
 }
 
 // //// Neoffice — `s` under a context, for English words that need two translations (the Archive folder, the Archive command).
@@ -185,9 +187,82 @@ pub fn tc<'a>(context: &str, s: &'a str) -> &'a str {
     if let Lang::Catalog(id) = current()
         && let Some(translation) = catalog::translate(id, context, s)
     {
-        return translation;
+        return renamed(translation);
     }
     t(s)
+}
+
+// //// Neoffice — the name a host gives the program (a page that frames the browser build names it its own way).
+/// The name the program is written with in its interface text.
+pub const PRODUCT: &str = "MailCraft";
+
+// //// Neoffice — as above.
+/// Show the program under `name` wherever its interface text names it ([`PRODUCT`]): a host that frames the program and
+/// gives it its own name calls this once, before the first frame. An empty name, or one longer than 40 characters, puts
+/// the program's own back.
+pub fn set_product_name(name: &str) {
+    let name = name.trim();
+    let name = (!name.is_empty() && name.chars().count() <= 40 && !name.chars().any(char::is_control)).then(|| name.to_string());
+    product::set(name);
+}
+
+// //// Neoffice — as above.
+/// `s` with the program's name a host gave, interned so that it can be handed out like a catalog's entry.
+fn renamed(s: &str) -> &str {
+    if !s.contains(PRODUCT) {
+        return s;
+    }
+    product::renamed(s).unwrap_or(s)
+}
+
+// //// Neoffice — the product's name and the strings written with it, one per process (one per thread in tests, as `state`).
+mod product {
+    use std::collections::HashMap;
+
+    #[cfg(not(test))]
+    use std::sync::{Mutex, OnceLock};
+
+    #[cfg(not(test))]
+    static NAME: OnceLock<Mutex<(Option<String>, HashMap<String, &'static str>)>> = OnceLock::new();
+
+    #[cfg(not(test))]
+    fn with<R>(f: impl FnOnce(&mut (Option<String>, HashMap<String, &'static str>)) -> R) -> R {
+        let mut guard = NAME.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+        f(&mut guard)
+    }
+
+    #[cfg(test)]
+    thread_local! {
+        static NAME: std::cell::RefCell<(Option<String>, HashMap<String, &'static str>)> = Default::default();
+    }
+
+    #[cfg(test)]
+    fn with<R>(f: impl FnOnce(&mut (Option<String>, HashMap<String, &'static str>)) -> R) -> R {
+        NAME.with_borrow_mut(f)
+    }
+
+    pub fn set(name: Option<String>) {
+        with(|(current, done)| {
+            if *current != name {
+                *current = name;
+                done.clear();
+            }
+        });
+    }
+
+    /// `s` written with the host's name, when it gave one. The interface's strings are few and fixed, so each form is
+    /// made once (as the pseudo-language's are).
+    pub fn renamed(s: &str) -> Option<&'static str> {
+        with(|(current, done)| {
+            let name = current.as_deref()?;
+            if let Some(form) = done.get(s) {
+                return Some(*form);
+            }
+            let form: &'static str = Box::leak(s.replace(super::PRODUCT, name).into_boxed_str());
+            done.insert(s.to_string(), form);
+            Some(form)
+        })
+    }
 }
 
 /// The pseudo-language form of `s`, interned so it can be handed out as `&'static str`.
@@ -266,6 +341,25 @@ mod tests {
     // //// Neoffice — the setting that picks the language, and the system's language it can follow.
     fn french() -> Lang {
         Lang::from_tag("fr").unwrap()
+    }
+
+    // //// Neoffice — the name a host gives the program.
+    #[test]
+    fn a_hosts_name_for_the_program_is_the_one_its_text_shows_in_every_language() {
+        assert_eq!(t("About MailCraft"), "About MailCraft", "its own name until a host gives one");
+        set_product_name("NeoMail");
+        assert_eq!(t("About MailCraft"), "About NeoMail");
+        assert_eq!(t("Reply"), "Reply", "a string that doesn't name it is as it was");
+        set_current(french());
+        assert_eq!(t("About MailCraft"), "À propos de NeoMail");
+        assert_eq!(tc("", "About MailCraft"), "À propos de NeoMail");
+        set_current(Lang::English);
+        // A name that is empty, too long or not one line puts the program's own back.
+        for refused in ["", "   ", &"x".repeat(41), "Neo\nMail"] {
+            set_product_name("NeoMail");
+            set_product_name(refused);
+            assert_eq!(t("About MailCraft"), "About MailCraft", "{refused:?}");
+        }
     }
 
     #[test]
