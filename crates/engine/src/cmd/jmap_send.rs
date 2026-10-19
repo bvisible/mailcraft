@@ -44,12 +44,25 @@ fn plain(text: &str, most: usize) -> String {
     text.chars().map(|c| if c.is_control() { ' ' } else { c }).take(most).collect::<String>().trim().to_string()
 }
 
+/// A reason a server gave, as the end of a sentence of ours: one line, cut, and without the full stop it may end
+/// with (the sentence puts its own).
+fn reason(text: &str) -> String {
+    plain(text, 300).trim_end_matches(['.', ' ']).to_string()
+}
+
 /// `text` with every word that has an `@` in it replaced by "(address)". The lines a run says go to the log as
 /// well as to the owner, and an address is not for the log: it stays in what the message says of itself
 /// ([`Message::held`]), which only the owner reads.
 fn no_address(text: &str) -> String {
     fn flush(word: &mut String, out: &mut String) {
-        out.push_str(if word.contains('@') { "(address)" } else { word.as_str() });
+        // (The full stop or colon that ends a sentence is not part of an address.)
+        let address = word.trim_end_matches(['.', ':', '!', '?']);
+        if address.contains('@') {
+            out.push_str("(address)");
+            out.push_str(&word[address.len()..]);
+        } else {
+            out.push_str(word);
+        }
         word.clear();
     }
     let (mut out, mut word) = (String::with_capacity(text.len()), String::new());
@@ -65,8 +78,8 @@ fn no_address(text: &str) -> String {
     out
 }
 
-/// The most changes that wait in the mailbox's queue: what is past it is not queued (a server that never lets a
-/// copy be destroyed must not grow the file without end).
+/// The most destructions that wait in the queue for one account because a run could not make them: what is past
+/// it is not queued.
 const MAX_QUEUED: usize = 10_000;
 /// The most unwanted copies a piece of a run is read for.
 const MAX_UNWANTED: usize = 100;
@@ -143,12 +156,12 @@ pub fn send_done(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<
     let outbox = mb.folder_of_kind(account, FolderKind::Outbox);
     let Some(m) = mb.message(done.message).filter(|m| m.account == account) else {
         // Deleted from here while the run was under way: all that is left to say is that it went, if it did.
-        return left_the_outbox(mb, done, None, said);
+        return left_the_outbox(mb, account, done, None, said);
     };
     let subject = plain(&m.subject, 60);
     let subject = if subject.is_empty() { "(no subject)".to_string() } else { subject };
     if Some(m.folder) != outbox {
-        return left_the_outbox(mb, done, Some(&subject), said);
+        return left_the_outbox(mb, account, done, Some(&subject), said);
     }
     match &done.outcome {
         SendOutcome::Waits => false,
@@ -158,7 +171,7 @@ pub fn send_done(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<
             mb.forget_message(done.message).is_ok()
         }
         SendOutcome::Held { lost, why } => {
-            let why = plain(why, 300);
+            let why = reason(why);
             let (held, line) = if *lost {
                 // (What the host could say of why it isn't known; the answer was lost when it says nothing.)
                 let doubt = if why.is_empty() { "the server's answer was lost".to_string() } else { why };
@@ -166,16 +179,16 @@ pub fn send_done(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<
                     format!(
                         "It may have been sent: {doubt}. Before you send it again, ask a recipient whether it arrived; the copy in Sent was filed first, so it doesn't tell."
                     ),
-                    format!("'{subject}' may have been sent: {}. It is held in the Outbox.", no_address(&doubt)),
+                    format!("'{subject}' may have been sent: {doubt}. It is held in the Outbox."),
                 )
             } else {
                 let why = if why.is_empty() { "the server wouldn't take it".to_string() } else { why };
                 (
                     format!("It wasn't sent: {why}. Change it, or send it again."),
-                    format!("Couldn't send '{subject}': {}. It is held in the Outbox.", no_address(&why)),
+                    format!("Couldn't send '{subject}': {why}. It is held in the Outbox."),
                 )
             };
-            said.push(line);
+            said.push(no_address(&line));
             if let Ok(m) = mb.message_mut(done.message) {
                 m.held = held;
             }
@@ -185,18 +198,32 @@ pub fn send_done(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<
 }
 
 /// What became of a message that is no longer in the account's Outbox, because the owner took it out (to change
-/// it, or for good) while the run was under way. Nothing is done to it, but a message that went, or may have, is
-/// said so: the owner is told, and the original it answers is marked.
-fn left_the_outbox(mb: &mut Mailbox, done: &SendDone, subject: Option<&str>, said: &mut Vec<String>) -> bool {
-    let what = match &done.outcome {
-        SendOutcome::Sent => "was sent",
-        SendOutcome::Held { lost: true, .. } => "may have been sent",
+/// it, or for good) while the run was under way. It is not moved or removed, but a message that went, or may
+/// have, is said so, and holds wherever it is now (the owner could put it back in the Outbox, from where it would
+/// go again); the original it answers is marked.
+fn left_the_outbox(mb: &mut Mailbox, account: Id, done: &SendDone, subject: Option<&str>, said: &mut Vec<String>) -> bool {
+    let (what, held) = match &done.outcome {
+        SendOutcome::Sent => (
+            "was sent",
+            "It was sent before you took it out of the Outbox. If you put it back there it goes again: send it only if you mean to send it twice.",
+        ),
+        SendOutcome::Held { lost: true, .. } => (
+            "may have been sent",
+            "It may have been sent before you took it out of the Outbox. Before you send it again, ask a recipient whether it arrived.",
+        ),
         SendOutcome::Held { .. } | SendOutcome::Waits => return false,
     };
     let name = subject.map_or_else(|| "A message".to_string(), |subject| format!("'{subject}'"));
-    said.push(format!("{name} {what}, although it was taken out of the Outbox meanwhile. Look in Sent."));
-    if subject.is_some() && matches!(done.outcome, SendOutcome::Sent) {
-        mb.mark_answered(done.message);
+    said.push(no_address(&format!("{name} {what}, although it was taken out of the Outbox meanwhile. Look in Sent.")));
+    // Only a message of this account that the server does not have is one that was written here: mail it has, or
+    // another account's, is not for an answer to mark or hold.
+    if mb.message(done.message).is_some_and(|m| m.account == account && m.server.is_none()) {
+        if matches!(done.outcome, SendOutcome::Sent) {
+            mb.mark_answered(done.message);
+        }
+        if let Ok(m) = mb.message_mut(done.message) {
+            m.held = held.to_string();
+        }
     }
     true
 }
@@ -206,26 +233,29 @@ fn left_the_outbox(mb: &mut Mailbox, done: &SendDone, subject: Option<&str>, sai
 ///
 /// - **Filed**: the draft is the server's copy from now on (`id`, in the mailbox the host said), and waits no
 ///   more unless it was saved again while the run was under way (then the next run replaces the copy just made).
-/// - **Refused**: the draft waits until it is saved again, and that is said once (a draft saved again while the
-///   run was under way still waits: that version was not the one refused).
+/// - **Refused**: the draft waits until it is saved again, and that is said once. A refusal of an earlier save
+///   than the one that now waits says nothing and changes nothing: that version goes up with the next run, which
+///   will say if the server refuses it too.
 /// - **Gone meanwhile** (discarded while the run was under way): the copy the run filed is not wanted, and its
 ///   destruction is queued.
 pub fn draft_done(mb: &mut Mailbox, account: Id, done: &JmapDraftDone, said: &mut Vec<String>) -> bool {
     let Some(m) = mb.message(done.message).filter(|m| m.account == account && m.draft && m.server_draft.is_some()) else {
         // Not a draft here any more (or never of this account): a copy filed for it is nobody's.
         if mb.message(done.message).is_none() && plausible_id(&done.id) {
-            return queue_destroy(mb, account, &done.id);
+            return queue_unwanted(mb, account, &done.id);
         }
         return false;
     };
     let subject = plain(&m.subject, 60);
     let subject = if subject.is_empty() { "(no subject)".to_string() } else { subject };
+    let saved_since = m.server_draft.as_ref().is_some_and(|sd| sd.saves != done.saves);
     if let Some(why) = &done.refused {
-        let why = plain(why, 300);
-        said.push(format!("Couldn't save the draft '{subject}' on the server: {}.", no_address(&why)));
+        if saved_since {
+            return false;
+        }
+        said.push(no_address(&format!("Couldn't save the draft '{subject}' on the server: {}.", reason(why))));
         if let Ok(m) = mb.message_mut(done.message)
             && let Some(sd) = m.server_draft.as_mut()
-            && sd.saves == done.saves
         {
             sd.pending = false;
         }
@@ -259,7 +289,7 @@ pub fn draft_done(mb: &mut Mailbox, account: Id, done: &JmapDraftDone, said: &mu
 pub fn unwanted(mb: &mut Mailbox, account: Id, ids: &[String]) -> bool {
     let mut queued = false;
     for id in ids.iter().take(MAX_UNWANTED).filter(|id| plausible_id(id)) {
-        queued |= queue_destroy(mb, account, id);
+        queued |= queue_unwanted(mb, account, id);
     }
     queued
 }
@@ -277,15 +307,21 @@ pub fn doomed(mb: &Mailbox, account: Id) -> HashSet<String> {
 }
 
 /// A copy the server has of a message that is gone here: its destruction waits in the queue until a run has told
-/// the server. Whether it was queued (not when it already is, nor when the queue is full).
+/// the server. Whether it was queued (not when it already is).
 fn queue_destroy(mb: &mut Mailbox, account: Id, id: &str) -> bool {
-    if mb.queued.len() >= MAX_QUEUED
-        || mb.queued.iter().any(|q| matches!(q, Queued::DeleteMessage { account: a, id: i, .. } if *a == account && i == id))
-    {
+    if mb.queued.iter().any(|q| matches!(q, Queued::DeleteMessage { account: a, id: i, .. } if *a == account && i == id)) {
         return false;
     }
     mb.queued.push(Queued::DeleteMessage { account, id: id.to_string(), kept: None });
     true
+}
+
+/// [`queue_destroy`] for a copy that came from a run's answer and not from the owner: not past [`MAX_QUEUED`]
+/// destructions waiting for this account, so that a server that never lets a copy be destroyed does not make the
+/// file grow without end.
+fn queue_unwanted(mb: &mut Mailbox, account: Id, id: &str) -> bool {
+    let waiting = mb.queued.iter().filter(|q| matches!(q, Queued::DeleteMessage { account: a, .. } if *a == account)).count();
+    waiting < MAX_QUEUED && queue_destroy(mb, account, id)
 }
 
 /// The draft `id` is being discarded: when the server has a copy of it, that copy is destroyed too. (Called before

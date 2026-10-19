@@ -206,7 +206,10 @@ fn a_message_that_waits_changes_nothing_and_goes_with_the_next_run() {
 fn what_a_run_says_about_other_mail_than_the_outbox_changes_no_message() {
     let (mut s, account) = session();
     let inbox = s.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap();
-    let received = s.mailbox.add_message(Message { account, folder: inbox, subject: "Received".into(), ..Default::default() }).unwrap();
+    // Mail the server has, as received mail is.
+    let on_the_server = Some(ServerMessage { id: "E1".into(), folder: "Min".into(), ..Default::default() });
+    let received =
+        s.mailbox.add_message(Message { account, folder: inbox, subject: "Received".into(), server: on_the_server, ..Default::default() }).unwrap();
     let draft = s
         .mailbox
         .add_message(Message { account, folder: s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap(), draft: true, ..Default::default() })
@@ -276,6 +279,16 @@ fn undo_cannot_let_a_held_message_go_again_nor_bring_back_one_that_may_have_gone
         assert!(!s.can_undo() && !s.undo(), "{what}: nothing is left to go back to");
         assert!(request(&s, account).sends.is_empty(), "{what}: the message does not go again");
     }
+    // A copy that waits to be destroyed is no more to be undone than that: an older state has no such queue, and the
+    // copy would come down as mail.
+    let (mut s, account) = session();
+    let one = send(&mut s, account, "bob@example.org", "One");
+    s.run("mail.flag", &json!({"id": one})).unwrap();
+    assert!(s.can_undo());
+    apply_jmap_mail(&mut s, JmapMailResult { account, email: ME.into(), unwanted: vec!["not an id!".into()], ..Default::default() }).unwrap();
+    assert!(s.can_undo(), "nothing was queued: nothing to protect");
+    apply_jmap_mail(&mut s, JmapMailResult { account, email: ME.into(), unwanted: vec!["E5".into()], ..Default::default() }).unwrap();
+    assert!(!s.can_undo() && !s.undo());
     // An answer that says nothing happened leaves what can be undone alone.
     let (mut s, account) = session();
     let one = send(&mut s, account, "bob@example.org", "One");
@@ -317,14 +330,21 @@ fn a_message_the_owner_took_out_of_the_outbox_meanwhile_is_left_alone_and_said_t
             "'Three' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent.",
         ])
     );
-    // Nothing is done to a message the owner has put elsewhere.
+    // A message the owner has put elsewhere is not moved or removed, but it is held: put back in the Outbox, it does not go
+    // again by itself.
     assert_eq!(s.mailbox.message(one).unwrap().folder, drafts);
     assert_eq!(s.mailbox.message(three).unwrap().folder, trash);
-    assert!(s.mailbox.message(one).unwrap().held.is_empty() && s.mailbox.message(three).unwrap().held.is_empty());
+    assert!(s.mailbox.message(one).unwrap().held.starts_with("It was sent before you took it out of the Outbox."));
+    assert!(s.mailbox.message(three).unwrap().held.starts_with("It may have been sent before you took it out of the Outbox."));
     // A refusal, or a wait, of a message that is not in the Outbox is nothing to say.
     let said =
         answer(&mut s, account, vec![outcome(one, held(false, "no")), outcome(three, SendOutcome::Waits), outcome(two, held(false, "no"))], vec![]);
     assert_eq!(said["errors"], json!([]));
+    // Put back in the Outbox, they do not go.
+    let outbox = outbox(&s, account);
+    s.mailbox.move_message(one, outbox).unwrap();
+    s.mailbox.move_message(three, outbox).unwrap();
+    assert!(request(&s, account).sends.is_empty(), "held, wherever it was when the answer came");
 }
 
 #[test]
@@ -352,6 +372,32 @@ fn the_lines_a_run_says_leave_the_addresses_out_and_the_message_keeps_them() {
     let two = send(&mut s, account, "bob@example.org", "Two");
     let said = answer(&mut s, account, vec![outcome(two, held(true, "the server said: mail ada@example.org"))], vec![]);
     assert!(!said["errors"][0].as_str().unwrap().contains('@'), "{said}");
+    // The subject is the owner's, and may have an address in it: the line leaves that out too.
+    let three = send(&mut s, account, "bob@example.org", "Fwd: access request from carol@example.org");
+    let said = answer(&mut s, account, vec![outcome(three, held(false, "no"))], vec![]);
+    assert_eq!(said["errors"][0], "Couldn't send 'Fwd: access request from (address)': no. It is held in the Outbox.");
+    assert!(s.mailbox.message(three).unwrap().subject.contains("carol@example.org"), "the message is what it was");
+    // A message that went although it was taken out of the Outbox: the same.
+    let four = send(&mut s, account, "bob@example.org", "Re: bob@example.org");
+    let drafts = s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap();
+    s.mailbox.move_message(four, drafts).unwrap();
+    let said = answer(&mut s, account, vec![outcome(four, SendOutcome::Sent)], vec![]);
+    assert_eq!(said["errors"][0], "'Re: (address)' was sent, although it was taken out of the Outbox meanwhile. Look in Sent.");
+}
+
+#[test]
+fn a_reason_that_ends_with_a_full_stop_does_not_double_it() {
+    let (mut s, account) = session();
+    let (one, two) = (send(&mut s, account, "bob@example.org", "One"), send(&mut s, account, "bob@example.org", "Two"));
+    let said =
+        answer(&mut s, account, vec![outcome(one, held(false, "No. Not today.")), outcome(two, held(true, "the server failed. Really.  "))], vec![]);
+    assert_eq!(said["errors"][0], "Couldn't send 'One': No. Not today. It is held in the Outbox.");
+    assert_eq!(said["errors"][1], "'Two' may have been sent: the server failed. Really. It is held in the Outbox.");
+    assert!(s.mailbox.message(one).unwrap().held.starts_with("It wasn't sent: No. Not today. Change it"));
+    let draft = save_draft(&mut s, account, "Plans");
+    let refused = JmapDraftDone { message: draft, saves: 1, refused: Some("It is too big.".into()), ..Default::default() };
+    let said = answer(&mut s, account, vec![], vec![refused]);
+    assert_eq!(said["errors"][0], "Couldn't save the draft 'Plans' on the server: It is too big.");
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -457,13 +503,19 @@ fn a_draft_saved_again_while_the_server_refused_the_first_save_still_goes_up() {
     s.run("mail.editDraft", &json!({"id": draft})).unwrap();
     s.run("compose.set", &json!({"subject": "Less"})).unwrap();
     s.run("compose.saveDraft", &json!({})).unwrap();
-    // The refusal is of the version that was asked for, not of this one.
+    // The refusal is of the version that was asked for, not of this one: nothing is said of it (the draft that goes up
+    // next is another, and the next run will say if the server refuses that too), and the draft still waits.
     let refused =
         JmapDraftDone { message: draft, saves: asked[0].saves, refused: Some("it is too large for the server".into()), ..Default::default() };
     let said = answer(&mut s, account, vec![], vec![refused]);
-    assert_eq!(said["errors"][0], "Couldn't save the draft 'Less' on the server: it is too large for the server.");
+    assert_eq!((said["errors"].clone(), said["updated"].clone()), (json!([]), json!(0)));
     let next = request(&s, account).drafts;
     assert_eq!((next.len(), next[0].saves, next[0].mime.subject.as_str()), (1, 2, "Less"));
+    // The one that was refused is the one now waiting: it is said, and it waits no more.
+    let refused = JmapDraftDone { message: draft, saves: 2, refused: Some("it is too large for the server".into()), ..Default::default() };
+    let said = answer(&mut s, account, vec![], vec![refused]);
+    assert_eq!(said["errors"][0], "Couldn't save the draft 'Less' on the server: it is too large for the server.");
+    assert!(request(&s, account).drafts.is_empty());
 }
 
 #[test]
@@ -597,13 +649,21 @@ fn copies_nobody_wants_wait_in_the_queue_and_do_not_come_down_as_mail() {
     apply_jmap_mail(&mut s, JmapMailResult { account, email: ME.into(), pages: vec![page], ..Default::default() }).unwrap();
     let here: Vec<&str> = s.mailbox.messages_in(drafts).filter_map(|m| m.server.as_ref()).map(|server| server.id.as_str()).collect();
     assert_eq!(here, ["E7"]);
-    // The queue does not grow without end: the last place goes to one more, and no more after it.
-    let room = MAX_QUEUED - s.mailbox.queued.len() - 1;
+    // What a run could not destroy does not grow the queue without end: the last place goes to one more, and no more
+    // after it. What another account has waiting there takes no place of this one's.
+    let others = |n: usize| (0..n).map(|n| Queued::DeleteMessage { account: account + 1, id: format!("O{n}"), kept: None });
+    s.mailbox.queued.extend(others(MAX_QUEUED));
+    let room = MAX_QUEUED - 2 - 1;
     s.mailbox.queued.extend((0..room).map(|n| Queued::DeleteMessage { account, id: format!("X{n}"), kept: None }));
-    assert!(queue_destroy(&mut s.mailbox, account, "Y1"));
-    assert!(!queue_destroy(&mut s.mailbox, account, "Y2"));
-    assert_eq!(s.mailbox.queued.len(), MAX_QUEUED);
+    assert!(queue_unwanted(&mut s.mailbox, account, "Y1"));
+    assert!(!queue_unwanted(&mut s.mailbox, account, "Y2"));
     assert!(!unwanted(&mut s.mailbox, account, &["Y3".to_string()]));
+    // The owner discarding a draft is not held to it.
+    let draft = save_draft(&mut s, account, "Plans");
+    answer(&mut s, account, vec![], vec![filed(draft, 1, "E9")]);
+    s.run("mail.editDraft", &json!({"id": draft})).unwrap();
+    s.run("compose.discard", &json!({})).unwrap();
+    assert!(s.mailbox.queued.iter().any(|q| matches!(q, Queued::DeleteMessage { id, .. } if id == "E9")));
 }
 
 #[test]

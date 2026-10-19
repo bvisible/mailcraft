@@ -367,7 +367,7 @@ fn a_server_that_limits_sending_leaves_the_rest_in_the_outbox_and_says_so() {
     assert!(went.done.is_none() && went.stop && went.line.as_deref() == Some(RATE_LIMITED));
     assert!(emails_in(&server, &ids.sent).is_empty());
     // And one that is unavailable for a moment leaves it waiting too.
-    fault(&server, "EmailSubmission/set", Effect::SetError("serverUnavailable", "later"));
+    fault(&server, "EmailSubmission/set", Effect::MethodError("serverUnavailable"));
     let went = block_on(outgoing.send(&to_send(message("Plans", &["bob@example.org"]))));
     assert!(went.done.is_none() && went.stop && went.line.as_deref() == Some(UNAVAILABLE));
     assert!(emails_in(&server, &ids.sent).is_empty() && delivered(&server).is_empty());
@@ -380,7 +380,7 @@ fn a_server_that_limits_sending_leaves_the_rest_in_the_outbox_and_says_so() {
 fn an_answer_that_does_not_say_whether_it_went_holds_the_message_and_keeps_its_copy() {
     // Each of these may have come after the server sent the message.
     let failed = "the server failed while it was sending it";
-    let lost: [(&str, Effect, usize, String); 11] = [
+    let lost: [(&str, Effect, usize, String); 13] = [
         ("the connection was lost", Effect::LoseAnswer, 1, String::new()),
         ("a gateway gave up (502)", Effect::Status(502), 1, "the server failed after it was asked to send it (HTTP 502)".into()),
         ("a gateway gave up (504)", Effect::Status(504), 1, "the server failed after it was asked to send it (HTTP 504)".into()),
@@ -412,6 +412,19 @@ fn an_answer_that_does_not_say_whether_it_went_holds_the_message_and_keeps_its_c
             Effect::MethodError("somethingNewToo"),
             0,
             "the server answered with something this program doesn't know (somethingNewToo): the server can't do this just now".into(),
+        ),
+        (
+            // Not a type of the standard for one object: a submission that went on its way could say it as well.
+            "a submission said to be unavailable",
+            Effect::SetError("serverUnavailable", "Later."),
+            0,
+            "the server answered with something this program doesn't know (serverUnavailable): Later.".into(),
+        ),
+        (
+            "a refusal with no type",
+            Effect::SetError("", "Nothing more."),
+            0,
+            "the server answered with something this program doesn't know: Nothing more.".into(),
         ),
     ];
     for (kind, profile) in both() {
@@ -481,8 +494,8 @@ fn trouble_before_the_submission_never_costs_a_message_it_can_be_tried_again() {
         ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
         ("signed out (401)", Effect::RefuseWith(401), Becomes::Waits(None)),
         ("a failure (500)", Effect::RefuseWith(500), Becomes::Held("the server wouldn't take it (HTTP 500")),
-        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Waits(Some(UNAVAILABLE))),
-        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Waits(Some(UNAVAILABLE))),
+        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Held("the server wouldn't take it (HTTP 502")),
+        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Held("the server wouldn't take it (HTTP 504")),
         ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
         ("an answer that is not JMAP", Effect::Garbage, Becomes::Held("the server's answer wasn't understood")),
     ];
@@ -493,7 +506,7 @@ fn trouble_before_the_submission_never_costs_a_message_it_can_be_tried_again() {
         ("a failure", Effect::MethodError("serverFail"), Becomes::Held("the server refused it (serverFail)")),
         ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
         ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
-        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Waits(Some(UNAVAILABLE))),
+        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Held("the server wouldn't take it (HTTP 504")),
     ];
     for (kind, profile) in both() {
         for (step, on, cases) in [("upload", "upload", upload_cases.as_slice()), ("filing", "Email/import", import_cases.as_slice())] {
@@ -581,16 +594,13 @@ fn a_draft_is_filed_in_drafts_with_its_bcc_and_the_copy_before_it_is_destroyed()
 fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
     for (kind, profile) in both() {
         // Trouble that may pass: the draft waits for the next run, with the copy it has.
-        let waits: [(&str, &str, Effect, Option<&str>); 9] = [
+        let waits: [(&str, &str, Effect, Option<&str>); 6] = [
             ("the network", "upload", Effect::LoseAnswer, Some(UNREACHABLE)),
             ("busy", "upload", Effect::RefuseWith(503), Some(BUSY)),
             ("signed out", "upload", Effect::RefuseWith(401), None),
             ("unavailable", "Email/import", Effect::MethodError("serverUnavailable"), Some(UNAVAILABLE)),
-            ("a failure", "Email/import", Effect::MethodError("serverFail"), Some(UNAVAILABLE)),
-            ("a failure of the server's (500)", "upload", Effect::RefuseWith(500), Some(UNAVAILABLE)),
+            ("a gateway that is down (502)", "upload", Effect::RefuseWith(502), Some(UNAVAILABLE)),
             ("a gateway that gave up (504)", "Email/import", Effect::RefuseWith(504), Some(UNAVAILABLE)),
-            ("an upload answered with something that is not JMAP", "upload", Effect::Garbage, Some(UNAVAILABLE)),
-            ("a filing answered with something that is not JMAP", "Email/import", Effect::Garbage, Some(UNAVAILABLE)),
         ];
         for (what, on, effect, line) in waits {
             let (server, ids) = world(profile);
@@ -603,18 +613,33 @@ fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
             assert_eq!(went.line.as_deref(), line, "{kind}, {what}");
             assert!(emails_in(&server, &ids.drafts).iter().any(|e| e.id == before), "{kind}, {what}: the copy it has stays");
         }
-        // A server that says it will not have it settles it: said once, not tried again by itself.
-        let refused: [(&str, Effect, &str); 3] = [
-            ("over its quota", Effect::SetError("overQuota", ""), "the mailbox on the server is full"),
-            ("too large", Effect::SetError("tooLarge", ""), "the message is too large for the server"),
-            ("not allowed", Effect::SetError("forbidden", ""), "the server doesn't let this account keep drafts there"),
+        // A server that says it will not have it, or that fails on this draft, settles it: said once, not tried
+        // again by itself (and the drafts behind it are not kept waiting).
+        let refused: [(&str, &str, Effect, &str); 7] = [
+            ("over its quota", "Email/import", Effect::SetError("overQuota", ""), "the mailbox on the server is full"),
+            ("too large", "Email/import", Effect::SetError("tooLarge", ""), "the message is too large for the server"),
+            ("not allowed", "Email/import", Effect::SetError("forbidden", ""), "the server doesn't let this account keep drafts there"),
+            (
+                "a failure of the server's",
+                "Email/import",
+                Effect::MethodError("serverFail"),
+                "the server refused it (serverFail): the server can't do this just now",
+            ),
+            (
+                "an upload the server failed on (500)",
+                "upload",
+                Effect::RefuseWith(500),
+                "the server wouldn't take it (HTTP 500 the server can't take this upload just now)",
+            ),
+            ("an upload answered with something that is not JMAP", "upload", Effect::Garbage, "the server's answer wasn't understood"),
+            ("a filing answered with something that is not JMAP", "Email/import", Effect::Garbage, "the server's answer wasn't understood"),
         ];
-        for (what, effect, why) in refused {
+        for (what, on, effect, why) in refused {
             let (server, ids) = world(profile);
             let before = server.with(|d| d.deliver(&ids.drafts, b"Subject: first\r\n\r\nx\r\n", &["$draft"], "2026-10-14T09:00:00Z"));
             let client = client(&server);
             let mut outgoing = outgoing(&client, &ids);
-            fault(&server, "Email/import", effect);
+            fault(&server, on, effect);
             let went = block_on(outgoing.draft(&to_file(message("Plans", &["bob@example.org"]), &before)));
             let done = went.done.unwrap_or_else(|| panic!("{kind}, {what}"));
             assert_eq!((done.id.as_str(), done.refused.as_deref()), ("", Some(why)), "{kind}, {what}");
@@ -861,10 +886,18 @@ fn an_answer_says_a_message_went_only_when_the_server_says_it_made_the_submissio
         ),
         ("a refusal of a type no one knows", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "somethingNew"}}}))]), "unknown"),
         ("a refusal that says serverFail", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "serverFail"}}}))]), "unknown"),
+        // (Unavailable is the standard's word for a whole call; said of one submission, it could as well come from one on
+        // its way.)
         (
-            "a refusal that says the server is unavailable",
+            "a submission said to be unavailable",
             Some(200),
             answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "serverUnavailable"}}}))]),
+            "unknown",
+        ),
+        (
+            "a call said to be unavailable",
+            Some(200),
+            answers_of(vec![Err(Error::Refused { kind: "serverUnavailable".into(), description: String::new() })]),
             "refused",
         ),
         ("a refusal with no type", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {}}}))]), "unknown"),
@@ -1041,6 +1074,13 @@ fn a_doubt_is_said_in_plain_words_with_what_the_server_said_of_it_cleaned() {
     assert_eq!(
         say(Doubt::Said { kind: "odd\u{7}/type".into(), description: "x".into() }),
         "the server answered with something this program doesn't know (oddtype): x"
+    );
+    assert_eq!(say(Doubt::Said { kind: String::new(), description: String::new() }), "the server answered with something this program doesn't know");
+    // A secret the server echoes as its type is hidden like any other word of its: the type goes through the cleaner.
+    let hide = |t: &str| t.replace("tk3f9a7c", "***");
+    assert_eq!(
+        doubt_words(&Doubt::Said { kind: "tk3f9a7c".into(), description: String::new() }, &hide),
+        "the server answered with something this program doesn't know"
     );
 }
 

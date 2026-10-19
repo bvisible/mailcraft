@@ -30,12 +30,17 @@
 //! see to.
 //!
 //! **Drafts** are filed in the Drafts mailbox with `$draft` and `$seen`, with their Bcc (a draft is for its
-//! owner), and the copy an earlier save made is destroyed once the new one is in, never before. A draft
-//! can be tried again as often as it likes: nothing of it goes anywhere.
+//! owner), and the copy an earlier save made is destroyed once the new one is in, never before. Nothing of a
+//! draft goes anywhere. Trouble that is not the draft's (the network, the sign-in, a busy or unavailable server,
+//! a gateway that is down) leaves it for the next run; a server that fails on this draft, or says it will not
+//! have it, settles it: the owner is told once, and it is tried again when it is saved again. A draft that the
+//! server always fails on would otherwise be uploaded again at every run, and a server may keep what was
+//! uploaded for a while and limit how much, which would shut out the messages that wait to be sent.
 //!
 //! **Everything a server says is hostile.** Ids are held to [`valid_id`], answers are capped, the details a
 //! server gives of a refusal are read by name and type, and what reaches the owner is words of ours (a
-//! server's own text is shown only for a refusal this code has no word for, and cleaned first). The
+//! server's own text is shown only for a refusal this code has no word for, and for why it is not known whether
+//! a message went, cleaned first). The
 //! credentials, the addresses and the mail stay out of every line this writes, as in the rest of the crate.
 
 use std::borrow::Cow;
@@ -268,8 +273,10 @@ pub(crate) enum Doubt {
 }
 
 /// The SetError types that say a submission was refused before anything was sent (RFC 8621 §7.5, and the
-/// standard ones of RFC 8620 §5.3). Any other type is a doubt.
-const REFUSALS: [&str; 14] = [
+/// standard ones of RFC 8620 §5.3). Any other type is a doubt: so is `serverUnavailable`, which the standard gives
+/// for the error of a whole call and not for one object, and which a submission that has gone on its way could
+/// as well say.
+const REFUSALS: [&str; 13] = [
     "invalidEmail",
     "tooManyRecipients",
     "noRecipients",
@@ -283,11 +290,11 @@ const REFUSALS: [&str; 14] = [
     "rateLimit",
     "notFound",
     "invalidProperties",
-    "serverUnavailable",
 ];
 
-/// The errors of a whole call that the standard says made no changes (RFC 8620 §3.6.2). `serverFail`,
-/// `serverPartialFail` and a type no one knows are doubts.
+/// The errors of a whole call that a server raises before it has run the call (RFC 8620 §3.6.2: it could not
+/// be understood, is not allowed, or the server could not serve it just now). `serverFail`, `serverPartialFail`
+/// and a type no one knows are doubts.
 const NO_CHANGES: [&str; 10] = [
     "serverUnavailable",
     "unknownMethod",
@@ -395,6 +402,12 @@ fn classify(status: Option<u16>, outcome: Result<Answers>) -> Submitted {
     }
 }
 
+/// The `type` of an error, as a word to put in a line for the owner: what a server said, taken through `said`
+/// (the credentials hidden, the addresses too), and then only its letters and digits, as many as a type has.
+fn type_words(kind: &str, said: &dyn Fn(&str) -> String) -> String {
+    said(kind).chars().filter(char::is_ascii_alphanumeric).take(40).collect()
+}
+
 /// What the owner is told of a doubt, in plain words: why it is not known whether the message went. Empty when
 /// the answer was lost, which is what the owner is told when nothing else is said.
 fn doubt_words(doubt: &Doubt, said: &dyn Fn(&str) -> String) -> String {
@@ -406,8 +419,10 @@ fn doubt_words(doubt: &Doubt, said: &dyn Fn(&str) -> String) -> String {
             let what = if matches!(kind.as_str(), "serverFail" | "serverPartialFail") {
                 "the server failed while it was sending it".to_string()
             } else {
-                let kind: String = kind.chars().filter(char::is_ascii_alphanumeric).take(40).collect();
-                format!("the server answered with something this program doesn't know ({kind})")
+                match type_words(kind, said) {
+                    kind if kind.is_empty() => "the server answered with something this program doesn't know".to_string(),
+                    kind => format!("the server answered with something this program doesn't know ({kind})"),
+                }
             };
             match said(description) {
                 text if text.is_empty() => what,
@@ -454,7 +469,7 @@ fn words(refusal: &Refusal, envelope: Option<&Envelope>, said: &dyn Fn(&str) -> 
         "unknownMethod" | "accountNotSupportedByMethod" | "accountReadOnly" => NO_SUBMISSION.to_string(),
         "invalidProperties" | "blobNotFound" => "the server lost the message it was sent".to_string(),
         _ => {
-            let kind: String = refusal.kind.chars().filter(char::is_ascii_alphanumeric).take(40).collect();
+            let kind = type_words(&refusal.kind, said);
             let description = said(&refusal.description);
             match (kind.is_empty(), description.is_empty()) {
                 (true, true) => "the server refused it".to_string(),
@@ -559,9 +574,10 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// Why a step before the submission failed: not a word on whether the message is any good for the
-    /// network, the sign-in, a busy or unavailable server or a gateway that gave up (it waits for the next run,
-    /// and nothing more is tried now), a refusal in plain words for the server saying it won't have it (the
-    /// message is held).
+    /// network, the sign-in or a busy or unavailable server (it waits for the next run, and nothing more is
+    /// tried now), a refusal in plain words for the server saying it won't have it, or failing on it (the message
+    /// is held: a message the server always fails on would otherwise be tried again at every run, and shut out
+    /// those behind it).
     /// `Err` is a refusal to hold the message with; `Ok` is the trouble that makes it wait.
     fn trouble(&self, e: &Error) -> std::result::Result<Option<&'static str>, String> {
         match e {
@@ -573,8 +589,6 @@ impl<'a, H: Http> Outgoing<'a, H> {
             Error::Refused { kind, description } => {
                 Err(words(&Refusal { kind: kind.clone(), description: description.clone(), ..Default::default() }, None, &|t| self.said(t)))
             }
-            // A gateway that is down or gave up is the gateway's trouble and not the message's.
-            Error::Bad(text) if matches!(status_of(text), Some(502 | 504)) => Ok(Some(UNAVAILABLE)),
             Error::Bad(text) => Err(format!("the server wouldn't take it ({})", self.said(text))),
             Error::Protocol(_) => Err("the server's answer wasn't understood".to_string()),
         }
@@ -694,20 +708,19 @@ impl<'a, H: Http> Outgoing<'a, H> {
         }
     }
 
-    /// A draft that could not be filed. A draft can be tried again as often as it likes, and it is the owner's
-    /// work, so only a server that says it will not have it settles it; trouble of any other kind (the network,
-    /// the sign-in, a busy server, a server that fails or answers with something that is not JMAP) leaves it for
-    /// the next run.
+    /// A draft that could not be filed. It is the owner's work and costs nothing to try again, so trouble that is
+    /// not the draft's (the network, the sign-in, a busy or unavailable server, a gateway that is down) leaves it
+    /// for the next run. A server that fails on this draft (`serverFail`, any other failure of its own), says it
+    /// will not have it, or answers with what is no JMAP settles it: said once, and tried again when the draft is
+    /// saved again (what the owner is writing is saved every few minutes). Trying it at every run instead would
+    /// upload it again each time, which a server may limit, and would keep the drafts behind it waiting.
     fn draft_failed(&self, e: &Error, refused: &dyn Fn(String) -> Went<JmapDraftDone>) -> Went<JmapDraftDone> {
         match e {
             Error::Io(_) | Error::Tls(_) => Went::waits(Some(UNREACHABLE)),
             Error::Auth(_) => Went::waits(None),
             Error::Busy { .. } => Went::waits(Some(BUSY)),
-            Error::Refused { kind, .. } if matches!(kind.as_str(), "serverUnavailable" | "serverFail" | "serverPartialFail" | "blobNotFound") => {
-                Went::waits(Some(UNAVAILABLE))
-            }
-            Error::Bad(text) if status_of(text).is_some_and(|status| status >= 500) => Went::waits(Some(UNAVAILABLE)),
-            Error::Protocol(_) => Went::waits(Some(UNAVAILABLE)),
+            Error::Refused { kind, .. } if matches!(kind.as_str(), "serverUnavailable" | "blobNotFound") => Went::waits(Some(UNAVAILABLE)),
+            Error::Bad(text) if matches!(status_of(text), Some(502 | 504)) => Went::waits(Some(UNAVAILABLE)),
             Error::TooLarge(_) => refused("it is too large for the server".to_string()),
             // (Not a word about sending: a draft is only kept.)
             Error::Refused { kind, .. } if kind.starts_with("forbidden") => {
@@ -717,6 +730,7 @@ impl<'a, H: Http> Outgoing<'a, H> {
                 refused(words(&Refusal { kind: kind.clone(), description: description.clone(), ..Default::default() }, None, &|t| self.said(t)))
             }
             Error::Bad(text) => refused(format!("the server wouldn't take it ({})", self.said(text))),
+            Error::Protocol(_) => refused("the server's answer wasn't understood".to_string()),
         }
     }
 }

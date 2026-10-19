@@ -265,8 +265,9 @@ fn a_copy_the_server_will_not_take_out_of_sent_waits_to_be_destroyed_and_is_not_
         // waits in the queue, and is not shown as a message that was sent.
         assert!(rig.delivered().is_empty() && rig.held_in("sent").len() == 1, "{kind}");
         assert_eq!(rig.s.mailbox.queued.len(), 1, "{kind}");
-        for full in [false, true] {
-            rig.run(full);
+        // (Full runs: they read Sent, where the copy is.)
+        for _ in 0..2 {
+            rig.run(true);
             assert!(rig.mail(FolderKind::Sent).is_empty(), "{kind}: not mail");
         }
     }
@@ -408,8 +409,9 @@ fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_does_not_come_back_
     assert!(matches!(&rig.s.mailbox.queued[0], mailcraft_model::Queued::DeleteMessage { id, .. } if *id == copy));
     // Run after run, the copy is not brought down as a draft the owner has not got. (What destroys the copies that wait
     // in the queue is the part of a run that sends the owner's changes up.)
-    for full in [false, true, false] {
-        rig.run(full);
+    // (Full runs: they read Drafts, where the copy is.)
+    for _ in 0..3 {
+        rig.run(true);
         assert!(rig.mail(FolderKind::Drafts).is_empty(), "the discarded draft stays discarded");
     }
     assert_eq!(rig.s.mailbox.queued.len(), 1);
