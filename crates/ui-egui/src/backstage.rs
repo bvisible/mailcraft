@@ -378,6 +378,22 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             }
         });
     });
+    // //// Neoffice — the interface language (`ui.language`): the system's, or one of those that have a catalog, each by its own name.
+    row(ui, tl!("Language"), |ui| {
+        let following = app.ui.language.trim().eq_ignore_ascii_case(crate::i18n::AUTO);
+        let cur = crate::i18n::Lang::from_pref(&app.ui.language);
+        let shown = if following { tl!("System default") } else { cur.name() };
+        egui::ComboBox::from_id_salt("opt_language").selected_text(shown).show_ui(ui, |ui| {
+            if ui.selectable_label(following, tl!("System default")).clicked() {
+                let _ = app.run("ui.language", json!({"value": crate::i18n::AUTO}));
+            }
+            for lang in crate::i18n::Lang::choices() {
+                if ui.selectable_label(!following && lang == cur, lang.name()).clicked() {
+                    let _ = app.run("ui.language", json!({"value": lang.code()}));
+                }
+            }
+        });
+    });
     if app.services.update_check.is_some() {
         section(ui, tl!("Updates"), t);
         crate::updates::options(app, ui, t);

@@ -16,6 +16,10 @@ const UI_KEY: &str = "mailcraft.ui.v1";
 
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
+    // //// Neoffice — the interface language "System default" follows is the browser's, said before the first frame.
+    if let Some(language) = web_sys::window().and_then(|w| w.navigator().language()) {
+        mailcraft_ui_egui::i18n::set_system_language(&language);
+    }
     wasm_bindgen_futures::spawn_local(async {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
             log::error!("no document");

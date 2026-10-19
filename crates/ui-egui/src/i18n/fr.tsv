@@ -1,0 +1,3 @@
+# //// Neoffice — added file (no upstream equivalent)
+# Interface strings: French (français).
+# context<TAB>English<TAB>translation; escapes \n \t \\. Placeholders like {name} stay as they are.

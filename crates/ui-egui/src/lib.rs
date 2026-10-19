@@ -603,6 +603,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
     ("ui.closeDialog", "Close Dialog", "Window", "{}"),
     ("ui.theme", "Interface Theme", "File › Options", r#"{"value": "light"|"dark"|"system"}"#),
     ("ui.interfaceSize", "Interface Size", "File › Options", r#"{"value": 80-200}"#),
+    // //// Neoffice — the interface language (File › Options › General), a command like the rest of the window's settings.
+    (
+        "ui.language",
+        "Interface Language",
+        "File › Options",
+        r#"{"value": "auto" (the system's)|"en"|"pseudo"|the code of a language with a catalog, as "fr"}"#,
+    ),
     ("ui.focusSearch", "Search", "Search", "{}"),
     (
         "ui.sync",
@@ -1425,6 +1432,17 @@ impl MailApp {
                     Ok(json!({"value": size.percent()}))
                 }
                 None => Err("`value` is a percentage from 80 to 200".into()),
+            },
+            // //// Neoffice — the interface language: `auto` follows the system's; else a language code, in the one form it is kept in.
+            "ui.language" => match s("value").and_then(i18n::canonical_pref) {
+                Some(code) => {
+                    self.ui.language = code.to_string();
+                    Ok(json!({"value": code}))
+                }
+                None => {
+                    let codes: Vec<&str> = i18n::Lang::choices().map(i18n::Lang::code).collect();
+                    Err(format!("`value` is auto, pseudo or the code of a language: {}", codes.join(", ")))
+                }
             },
             "ui.focusSearch" => {
                 self.search_focus = true;

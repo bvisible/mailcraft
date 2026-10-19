@@ -22,4 +22,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## What cannot carry a comment
 
-Nothing yet. A `Cargo.lock` change or a binary asset that differs from upstream gets a line here.
+A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
+the marker check does not know as one that takes comments:
+
+- `crates/ui-egui/src/i18n/fr.tsv`: the French interface catalog. Its first line is a `#` comment that says it is ours
+  (the format has comments), but the check reads a `.tsv` as text without comment syntax. Each catalog added next to
+  it (`crates/ui-egui/src/i18n/<code>.tsv`) is named here the same way.

@@ -281,6 +281,8 @@ const SAFE: &[&str] = &[
     "ui.closeDialog",
     "ui.theme",
     "ui.interfaceSize",
+    // //// Neoffice — the interface language only changes how the window looks, like the theme and the size.
+    "ui.language",
     "ui.focusSearch",
     "ui.sync",
     "ui.cancelSignIn",
