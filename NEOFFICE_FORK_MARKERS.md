@@ -24,14 +24,15 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   as a release (`web-<version>-<short sha>`).
 - `crates/jmap/` (`mailcraft-jmap`, layer 3): JMAP (RFC 8620 and 8621) without sockets or browser APIs, so that mail can be
   read over HTTPS in the browser, where IMAP and SMTP can't go. An async client over an `Http` trait, the address helpers,
-  `sync_mail` (an account's mailboxes and the newest messages of each, for the engine), the raw octets of a
-  message, fetched by its email id (`fetch`), the sending of what waits in an account's Outbox and the filing of its
-  drafts on the server (`send`, with a run's part of it in `mail/outgoing`), and an in-process server for the tests
-  of the crates that sit on it (the `stand-in` feature). A crate with no upstream equivalent, written so that it can be
-  offered upstream: nothing in it names this fork's products.
-- `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs` and `jmap_send.rs`: the engine, `sync_mail` and `fetch`
-  against that in-process server, end to end; the last holds the sending of a message and the filing of a draft to
-  both kinds of server the stand-in can be.
+  `sync_mail` (an account's mailboxes and the newest messages of each, for the engine, after the changes made
+  here have been told to the server with `Email/set`), the raw octets of a message, fetched by its email id
+  (`fetch`), the sending of what waits in an account's Outbox and the filing of its drafts on the server (`send`,
+  with a run's part of it in `mail/outgoing`), and an in-process server for the tests of the crates that sit on it
+  (the `stand-in` feature). A crate with no upstream equivalent, written so that it can be offered upstream: nothing
+  in it names this fork's products.
+- `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`
+  and `fetch` against that in-process server, end to end; the last holds the sending of a message and the filing of a
+  draft to both kinds of server the stand-in can be.
 - This file.
 
 ## What cannot carry a comment

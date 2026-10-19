@@ -24,6 +24,16 @@
 //! **A server that turns the secret down** ends the run with a plain line, and no run starts by
 //! itself for that account until the owner asks for one: asking again would only be refused again.
 //!
+//! **What the owner changes here** (a read mark, a flag, a move, a delete, Deleted Items emptied) is what the
+//! engine counts as waiting to go ([`MailApp::waiting_to_go`]); the window notices it within a couple of seconds
+//! and starts a run for it (`auto_sync`), which carries the changes first and reads the Inbox and the folder on
+//! screen, and the mailboxes the changes moved messages into, no more: its status says "Sending your changes…".
+//! What a run could not tell the server (it was busy, it did not answer) stays counted and is tried again by the
+//! next round; what it refused is put back and said once, and is not counted any more, so that nothing loops. A
+//! change made while a run is under way is not one it was told to send: the run's end does not make it wait, and the
+//! next run starts for it at once. A server that said it was busy is left alone for as long as it asked (a quarter
+//! of an hour at most) before a run starts by itself for what waits.
+//!
 //! **Messages fetched whole** are asked for by [`crate::graph_fetch`], which dispatches by the kind
 //! of account: the message the owner opens and the Inbox's newest in the background come as a
 //! [`JmapFetchJob`] to [`crate::Services::jmap_fetch`], with the secret of the run (or none, when the
@@ -53,6 +63,12 @@ const PIECES_A_FRAME: usize = 4;
 
 /// Most problem lines kept for a run: what is past them is of the same kind and is left out.
 const MOST_PROBLEMS: usize = 200;
+
+/// Most changes looked at, at the end of a run, for any that were not in it (the most a request holds).
+const MAX_CHANGES_COMPARED: usize = mailcraft_model::sync::MAX_MESSAGE_CHANGES;
+
+/// The longest, in seconds, that a server's wish to be left alone keeps the window from starting runs for what waits.
+const MAX_CALM_SECONDS: u64 = 900;
 
 /// What the host is asked to do for one run of a JMAP account ([`crate::Services::jmap`]).
 pub struct JmapJob {
@@ -151,6 +167,9 @@ impl MailApp {
             .filter(|a| a.kind == AccountKind::Jmap)
             .cloned()
             .ok_or_else(|| tl!("This account isn't kept in step with a JMAP server").to_string())?;
+        // A run started for what was changed here alone (`auto_sync` noticed it waiting): the same quiet run, which carries
+        // the changes first, and says what it is for.
+        let pushing = self.push_only_next.remove(&account) && quiet;
         if self.services.jmap.is_none() {
             return Err(tl!("This build can't connect to JMAP servers").to_string());
         }
@@ -177,6 +196,7 @@ impl MailApp {
             .map(|server| server.id.clone());
         let also: Vec<String> = on_screen.into_iter().collect();
         let request = jmap_mail_request(&self.session, account, !quiet, &also, quiet).map_err(|e| e.to_string())?;
+        self.jmap_sent = request.changes.iter().filter_map(|change| serde_json::to_string(change).ok()).collect();
         let Some(start) = &self.services.jmap else { return Err(tl!("This build can't connect to JMAP servers").to_string()) };
         self.services.sync_cancel.store(false, Ordering::Relaxed);
         let job = JmapJob { request, secret, cancel: self.services.sync_cancel.clone() };
@@ -184,7 +204,7 @@ impl MailApp {
         // A run is a fresh try: what the server said of the secret before is not held against it.
         self.jmap_refused.remove(&account);
         self.jmap_rx = Some((account, quiet, start(job)));
-        self.session.sync_status = tl!("Sending and receiving…").to_string();
+        self.session.sync_status = if pushing { tl!("Sending your changes…") } else { tl!("Sending and receiving…") }.to_string();
         Ok(json!({"started": true, "account": account, "jmap": true}))
     }
 
@@ -257,6 +277,20 @@ impl MailApp {
                 let errors = said["errors"].as_array().map(|all| all.iter().filter_map(Value::as_str).map(str::to_string));
                 let room = MOST_PROBLEMS.saturating_sub(self.jmap_problems.len());
                 self.jmap_problems.extend(errors.into_iter().flatten().take(room));
+                // A server that is busy for so long is not asked for what waits to go before then (a run of the owner's is).
+                if last {
+                    match said["busyFor"].as_u64().filter(|seconds| *seconds > 0) {
+                        Some(seconds) => {
+                            let wait = seconds.min(MAX_CALM_SECONDS) as f64 * 1_000.0;
+                            self.jmap_calm.insert(account, crate::now_ms() + wait);
+                        }
+                        // (A run that reached the server and found it well: one that did not tells nothing of it.)
+                        None if !stopped && said["errors"].as_array().is_some_and(Vec::is_empty) => {
+                            self.jmap_calm.remove(&account);
+                        }
+                        None => {}
+                    }
+                }
             }
             Err(e) if self.jmap_problems.len() < MOST_PROBLEMS => self.jmap_problems.push(e.to_string()),
             Err(_) => {}
@@ -299,7 +333,7 @@ impl MailApp {
         } else {
             if let Some(first) = errors.first() {
                 self.session.sync_status = first.clone();
-            } else if self.session.sync_status == tl!("Sending and receiving…") {
+            } else if [tl!("Sending and receiving…"), tl!("Sending your changes…")].contains(&self.session.sync_status.as_str()) {
                 // The run is over: it never says it is still going.
                 self.session.sync_status.clear();
             }
@@ -312,7 +346,7 @@ impl MailApp {
             }
         }
         self.note_sync_problems(account, &errors, true);
-        self.note_pushed(account);
+        self.note_jmap_pushed(account);
     }
 
     /// The host's sender was dropped before the last piece of the run of `account`: whatever came
@@ -326,7 +360,19 @@ impl MailApp {
         errors.push(said.clone());
         self.session.sync_status = said;
         self.note_sync_problems(account, &errors, false);
+        self.note_jmap_pushed(account);
+    }
+
+    /// [`MailApp::note_pushed`] for the end of a JMAP run. What the server did not take is noted, so that it is not tried
+    /// again at once; but a change made while the run was under way, which it was not told to send, is not: it starts
+    /// the next run now (a count alone cannot tell a change that waited from one that is new).
+    fn note_jmap_pushed(&mut self, account: Id) {
+        let sent = std::mem::take(&mut self.jmap_sent);
         self.note_pushed(account);
+        let waiting = mailcraft_engine::cmd::jmap_up::message_changes(&self.session, account, MAX_CHANGES_COMPARED).0;
+        if waiting.iter().filter_map(|change| serde_json::to_string(change).ok()).any(|change| !sent.contains(&change)) {
+            self.push_seen.insert(account, (0, crate::now_ms()));
+        }
     }
 }
 

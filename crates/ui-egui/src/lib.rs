@@ -989,6 +989,12 @@ pub struct MailApp {
     /// JMAP accounts whose server turned the secret down: a run that starts by itself leaves them
     /// alone until the owner asks for one.
     jmap_refused: std::collections::HashSet<Id>,
+    // //// Neoffice — the changes a JMAP run was told to send, so that one made while it was under way is told apart from one the server did not take.
+    /// The changes of messages the run in flight was asked to make (each as the text it is written in).
+    jmap_sent: std::collections::HashSet<String>,
+    // //// Neoffice — JMAP servers that asked to be left alone.
+    /// For a JMAP account whose server said it was busy: when (in ms) a run may start by itself for what waits to go.
+    jmap_calm: std::collections::HashMap<Id, f64>,
     control_rx: Option<Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -1157,6 +1163,9 @@ impl MailApp {
             jmap_rx: None,
             jmap_problems: Vec::new(),
             jmap_refused: Default::default(),
+            // //// Neoffice — see the fields.
+            jmap_sent: Default::default(),
+            jmap_calm: Default::default(),
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),
@@ -2139,7 +2148,9 @@ impl MailApp {
             for account in self.server_accounts() {
                 let waiting = self.waiting_to_go(account);
                 let (seen, at) = self.push_seen.get(&account).copied().unwrap_or((0, 0.0));
-                if waiting > 0 && (waiting != seen || now - at > 300_000.0) && self.can_sync_quietly(account) {
+                // //// Neoffice — a JMAP server that asked to be left alone is not asked again before it said.
+                let calm = now >= self.jmap_calm.get(&account).copied().unwrap_or(0.0);
+                if waiting > 0 && (waiting != seen || now - at > 300_000.0) && calm && self.can_sync_quietly(account) {
                     self.sync_queue.push_back((account, true));
                     self.push_only_next.insert(account);
                 }
@@ -2154,7 +2165,9 @@ impl MailApp {
             return;
         }
         self.last_auto_sync = now;
-        self.sync_queue = self.server_accounts().into_iter().map(|a| (a, true)).collect();
+        // //// Neoffice — a JMAP server that asked to be left alone is left out of the round.
+        self.sync_queue =
+            self.server_accounts().into_iter().filter(|a| now >= self.jmap_calm.get(a).copied().unwrap_or(0.0)).map(|a| (a, true)).collect();
         let round: Vec<Id> = self.sync_queue.iter().map(|(a, _)| *a).collect();
         if !round.is_empty() {
             self.session.sync_progress.begin(&round);

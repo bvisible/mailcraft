@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use mailcraft_engine::Session;
 use mailcraft_engine::cmd::sync_progress::RunState;
 use mailcraft_model::sync::{
-    FolderListing, GraphFolder, GraphMessage, GraphProgress, JmapKnown, JmapMailRequest, JmapMailResult, JmapScope, MessagePage, ServerMessage,
+    FolderListing, GraphFolder, GraphMessage, GraphProgress, JmapChange, JmapChangeDone, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome,
+    JmapScope, MessagePage, ServerMessage,
 };
 use mailcraft_model::{AccountKind, Address, FolderKind, Id, Mailbox};
 use serde_json::json;
@@ -662,4 +663,304 @@ fn a_jmap_account_with_no_usable_server_address_says_so_and_asks_nobody() {
     assert_eq!(app.session.mailbox.account(local).map(|a| a.kind), Some(AccountKind::Local));
     assert!(app.start_jmap_mail(local, false).is_err());
     assert!(app.start_jmap_mail(9_999, false).is_err());
+}
+
+/// A window whose account has had its first run: the server's mailboxes are here, with mail in the Inbox and in
+/// Projects, and the rounds that start by themselves are off, so that only what waits to go up starts a run.
+fn settled() -> (MailApp, Id, Asked) {
+    let (mut app, id, asked) = window(true, true);
+    app.auto_sync = true;
+    app.session.prefs.sync_minutes = 0;
+    app.execute("ui.sync", json!({"account": id})).unwrap();
+    answer(&asked, 0, listing());
+    answer(&asked, 0, window_of("Min", vec![mail("E1", "One", 100), mail("E2", "Two", 200)], true));
+    answer(&asked, 0, window_of("Mpr", vec![mail("E3", "Three", 300)], true));
+    answer(&asked, 0, the_end());
+    app.poll_jmap();
+    assert!(!app.syncing() && count(&app, id, "Min") == 2);
+    (app, id, asked)
+}
+
+/// The message of `account` the server calls `server`.
+fn local(app: &MailApp, account: Id, server: &str) -> Id {
+    app.session.mailbox.messages.values().find(|m| m.account == account && m.server.as_ref().is_some_and(|s| s.id == server)).unwrap().id
+}
+
+/// What the window does every moment: look at what waits to go up (at once, not once in a second and a half), and
+/// start a run for it.
+fn notice(app: &mut MailApp) {
+    app.push_checked = 0.0;
+    app.auto_sync();
+    app.auto_sync();
+}
+
+fn marks_read(id: &str, message: Id) -> JmapChange {
+    JmapChange::Keywords { message, id: id.into(), read: Some(true), flagged: None, answered: None, forwarded: None }
+}
+
+#[test]
+fn a_change_made_here_starts_a_quick_run_that_carries_it_and_says_what_it_is_for() {
+    let (mut app, id, asked) = settled();
+    assert_eq!((jobs(&asked), app.waiting_to_go(id)), (1, 0));
+    // Nothing waits: nothing starts.
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 1);
+
+    let one = local(&app, id, "E1");
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    assert_eq!(app.waiting_to_go(id), 1);
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    assert!(app.syncing() && app.push_only_next.is_empty());
+    assert_eq!(app.session.sync_status, "Sending your changes…");
+    {
+        let asked = asked.lock().unwrap();
+        let request = &asked[1].request;
+        // Nobody waits for it: the Inbox and the folder on screen, with what the owner changed.
+        assert_eq!((request.background, request.list_folders, request.scope.clone()), (true, false, JmapScope::Light { also: vec![] }));
+        assert_eq!(request.changes, [marks_read("E1", one)]);
+        assert_eq!(asked[1].secret, None);
+        assert!(!asked[1].shown.contains("E1") && !asked[1].shown.contains('@'), "{}", asked[1].shown);
+    }
+    // The host says what became of it first, and then what it read.
+    answer(
+        &asked,
+        1,
+        JmapMailResult {
+            changes: vec![JmapChangeDone { change: marks_read("E1", one), outcome: JmapOutcome::Done { id: String::new() } }],
+            ..piece(true)
+        },
+    );
+    app.poll_jmap();
+    assert!(app.syncing() && app.session.mailbox.message(one).is_some_and(|m| m.server.as_ref().is_some_and(|s| s.read)));
+    assert_eq!(app.waiting_to_go(id), 0);
+    answer(&asked, 1, the_end());
+    app.poll_jmap();
+    assert!(!app.syncing() && app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
+    assert_eq!(app.push_seen.get(&id).map(|(waiting, _)| *waiting), Some(0));
+    assert!(!app.has_sync_problems());
+    // Nothing waits any more: nothing starts again.
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+}
+
+#[test]
+fn a_run_for_the_changes_reads_the_folders_they_move_messages_into() {
+    let (mut app, id, asked) = settled();
+    let two = local(&app, id, "E2");
+    // Delete is a move into Deleted Items, which the server has.
+    app.execute("mail.delete", json!({"ids": [two]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    let request = asked.lock().unwrap()[1].request.clone();
+    assert!(request.changes.iter().any(|c| matches!(c, JmapChange::Move { to, .. } if to == "Mtr")));
+    // The message is found again there, in the same run; the Inbox is the host's own.
+    assert_eq!(request.scope, JmapScope::Light { also: vec!["Mtr".into()] });
+    // The host got nowhere with it (the server did not answer): the move still waits, and another change brings the next
+    // run, which reads the folder on screen first and the folder the message goes to after.
+    answer(&asked, 1, JmapMailResult { errors: vec!["The server did not answer".into()], ..piece(false) });
+    app.poll_jmap();
+    let projects = app.session.mailbox.folder_by_server(id, "Mpr").unwrap();
+    app.session.view.folder = projects;
+    app.execute("mail.markRead", json!({"ids": [local(&app, id, "E3")]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3);
+    let request = asked.lock().unwrap()[2].request.clone();
+    assert_eq!(request.scope, JmapScope::Light { also: vec!["Mpr".into(), "Mtr".into()] });
+    assert_eq!(request.changes.len(), 2);
+}
+
+#[test]
+fn a_change_the_server_refused_is_put_back_said_once_and_does_not_start_another_run() {
+    let (mut app, id, asked) = settled();
+    let one = local(&app, id, "E1");
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    let change = marks_read("E1", one);
+    answer(
+        &asked,
+        1,
+        JmapMailResult { changes: vec![JmapChangeDone { change, outcome: JmapOutcome::Refused { why: "forbidden".into() } }], ..piece(true) },
+    );
+    answer(&asked, 1, the_end());
+    app.poll_jmap();
+    let line = "Couldn't mark 'One' as read: the server says this account may not change it.";
+    assert!(!app.syncing() && app.session.sync_status.starts_with(line), "{}", app.session.sync_status);
+    assert!(app.has_sync_problems() && app.sync_problem_lines().iter().any(|l| l.contains(line)), "{:?}", app.sync_problem_lines());
+    // Put back, and no longer waiting: no run starts for it, now or later.
+    assert!(!app.session.mailbox.message(one).unwrap().read);
+    assert_eq!(app.waiting_to_go(id), 0);
+    notice(&mut app);
+    app.push_seen.insert(id, (0, 0.0));
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // The next run does not say it again.
+    app.execute("ui.sync", json!({"account": id})).unwrap();
+    answer(&asked, 2, the_end());
+    app.poll_jmap();
+    assert!(app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
+}
+
+#[test]
+fn a_change_the_server_did_not_take_waits_and_is_tried_again_when_there_is_more_or_in_a_while() {
+    let (mut app, id, asked) = settled();
+    let (one, two) = (local(&app, id, "E1"), local(&app, id, "E2"));
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // The server did not answer: nothing was answered, the run ended and says why.
+    answer(&asked, 1, JmapMailResult { errors: vec!["Couldn't send 1 change to the server: the server did not answer".into()], ..piece(false) });
+    app.poll_jmap();
+    assert!(!app.syncing());
+    assert!(app.session.sync_status.starts_with("Couldn't send 1 change to the server"), "{}", app.session.sync_status);
+    assert_eq!(app.waiting_to_go(id), 1, "it is still to go");
+    // Not at once again: it would fail again.
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // One more change: a run, with both.
+    app.execute("mail.markRead", json!({"ids": [two]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3);
+    assert_eq!(asked.lock().unwrap()[2].request.changes.len(), 2);
+    answer(&asked, 2, JmapMailResult { errors: vec!["Couldn't send 2 changes to the server: the server did not answer".into()], ..piece(false) });
+    app.poll_jmap();
+    // A few minutes later it is tried again for the same two.
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3);
+    let (waiting, _) = app.push_seen.get(&id).copied().unwrap();
+    app.push_seen.insert(id, (waiting, crate::now_ms() - 301_000.0));
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 4);
+    assert_eq!(asked.lock().unwrap()[3].request.changes.len(), 2);
+    answer(
+        &asked,
+        3,
+        JmapMailResult {
+            changes: [(&"E1", one), (&"E2", two)]
+                .iter()
+                .map(|(server, message)| JmapChangeDone { change: marks_read(server, *message), outcome: JmapOutcome::Done { id: String::new() } })
+                .collect(),
+            ..piece(true)
+        },
+    );
+    answer(&asked, 3, the_end());
+    app.poll_jmap();
+    assert!(app.session.sync_status.starts_with("Up to date — ") && app.waiting_to_go(id) == 0, "{}", app.session.sync_status);
+}
+
+#[test]
+fn the_owners_own_send_receive_carries_the_changes_too_and_says_it_is_sending_and_receiving() {
+    let (mut app, id, asked) = settled();
+    let one = local(&app, id, "E1");
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    app.execute("ui.sync", json!({"account": id})).unwrap();
+    assert_eq!(app.session.sync_status, "Sending and receiving…");
+    {
+        let asked = asked.lock().unwrap();
+        let request = &asked[1].request;
+        assert_eq!((request.scope.clone(), request.list_folders, request.background), (JmapScope::All, true, false));
+        assert_eq!(request.changes, [marks_read("E1", one)]);
+    }
+    answer(&asked, 1, the_end());
+    app.poll_jmap();
+    assert!(app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
+}
+
+#[test]
+fn a_run_by_itself_that_is_not_for_changes_does_not_say_it_is_sending_them() {
+    let (mut app, id, asked) = settled();
+    app.session.prefs.sync_minutes = 5;
+    app.last_auto_sync = 0.0;
+    app.auto_sync();
+    app.auto_sync();
+    assert_eq!(jobs(&asked), 2);
+    assert_eq!(app.session.sync_status, "Sending and receiving…");
+    assert!(asked.lock().unwrap()[1].request.changes.is_empty());
+    answer(&asked, 1, the_end());
+    app.poll_jmap();
+    assert!(app.session.sync_status.starts_with("Up to date — ") && app.waiting_to_go(id) == 0);
+}
+
+#[test]
+fn a_change_made_while_a_run_is_under_way_is_sent_as_soon_as_it_ends() {
+    let (mut app, id, asked) = settled();
+    let (one, two) = (local(&app, id, "E1"), local(&app, id, "E2"));
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // While it is under way the owner reads another message, which the run was not told of.
+    app.execute("mail.markRead", json!({"ids": [two]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2, "one run at a time");
+    // The server did not take the first change. The second starts the next run, which carries both.
+    answer(&asked, 1, JmapMailResult { errors: vec!["Couldn't send 1 change to the server: the server did not take them".into()], ..piece(false) });
+    app.poll_jmap();
+    assert!(!app.syncing() && app.waiting_to_go(id) == 2);
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3, "not five minutes later");
+    {
+        let asked = asked.lock().unwrap();
+        assert_eq!(asked[2].request.changes, [marks_read("E1", one), marks_read("E2", two)]);
+    }
+    // Told of both and failed again: nothing new, so it waits as a change the server did not take does.
+    answer(&asked, 2, JmapMailResult { errors: vec!["Couldn't send 2 changes to the server: the server did not answer".into()], ..piece(false) });
+    app.poll_jmap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3);
+}
+
+#[test]
+fn a_server_that_asked_to_be_left_alone_is_not_asked_for_what_is_made_meanwhile_until_it_said() {
+    let (mut app, id, asked) = settled();
+    let (one, two) = (local(&app, id, "E1"), local(&app, id, "E2"));
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    answer(
+        &asked,
+        1,
+        JmapMailResult { errors: vec!["Couldn't send 1 change to the server: the server is busy".into()], busy_for: Some(30), ..piece(false) },
+    );
+    app.poll_jmap();
+    assert!(!app.syncing());
+    // More is made, and the server asked for half a minute: nothing starts.
+    app.execute("mail.markRead", json!({"ids": [two]})).unwrap();
+    assert_eq!(app.waiting_to_go(id), 2);
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // Half a minute later it does, and carries both.
+    app.jmap_calm.insert(id, 0.0);
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3);
+    assert_eq!(asked.lock().unwrap()[2].request.changes, [marks_read("E1", one), marks_read("E2", two)]);
+    // A run that failed in another way says nothing of the server being well again; one that went through does, and
+    // a server's wish is never kept longer than a quarter of an hour.
+    app.jmap_calm.insert(id, crate::now_ms() + 20_000.0);
+    answer(&asked, 2, JmapMailResult { errors: vec!["The server did not answer".into()], ..piece(false) });
+    app.poll_jmap();
+    assert!(app.jmap_calm.contains_key(&id));
+    app.jmap_calm.insert(id, 0.0);
+    app.execute("ui.sync", json!({"account": id})).unwrap();
+    assert_eq!(jobs(&asked), 4);
+    answer(&asked, 3, the_end());
+    app.poll_jmap();
+    assert!(!app.jmap_calm.contains_key(&id));
+    app.execute("mail.markUnread", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 5);
+    answer(&asked, 4, JmapMailResult { errors: vec!["The server is busy".into()], busy_for: Some(4_000_000), ..piece(false) });
+    app.poll_jmap();
+    let waits = app.jmap_calm.get(&id).copied().unwrap_or(0.0) - crate::now_ms();
+    assert!(waits > 800_000.0 && waits <= 900_000.0, "{waits}");
+    // The round every few minutes leaves such a server out too, until it is over.
+    app.session.prefs.sync_minutes = 5;
+    app.last_auto_sync = 0.0;
+    app.auto_sync();
+    app.auto_sync();
+    assert_eq!(jobs(&asked), 5, "{:?}", app.sync_queue);
+    app.jmap_calm.insert(id, 0.0);
+    app.last_auto_sync = 0.0;
+    app.auto_sync();
+    app.auto_sync();
+    assert_eq!(jobs(&asked), 6);
 }
