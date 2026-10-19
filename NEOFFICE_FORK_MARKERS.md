@@ -15,7 +15,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 - `.github/workflows/neoffice-markers.yml`: the marker check above.
 - `.github/workflows/neoffice-ci.yml`: upstream's gate (`cargo xtask ci`, then `cargo xtask deny`) in one job on a GitHub
-  runner; upstream's own workflows are disabled on this fork.
+  runner, and a `cargo check` of the web app for wasm32, which `cargo xtask wasm` leaves out; upstream's own workflows are
+  disabled on this fork.
 - `.github/workflows/neoffice-web.yml`: the browser build by upstream's packaging script, kept as an artifact or published
   as a release (`web-<version>-<short sha>`).
 - `crates/jmap/` (`mailcraft-jmap`, layer 3): JMAP (RFC 8620 and 8621) without sockets or browser APIs, so that mail can be

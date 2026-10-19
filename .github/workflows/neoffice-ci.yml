@@ -4,7 +4,8 @@
 # upstream's setup (CLA check, change detection). This runs `cargo xtask ci` (format, clippy without
 # warnings, tests, asset attribution, layering, wasm) and `cargo xtask deny` in one job on a GitHub
 # runner, by hand or on a push to version-15 that touches code; the maintainer's Mac has too little
-# disk to do it for every change. The Linux packages are upstream's list; cargo-deny is installed
+# disk to do it for every change. It also checks that the web app builds for wasm32 (xtask's wasm
+# gate leaves the apps out). The Linux packages are upstream's list; cargo-deny is installed
 # from its release binary, checked against a pinned SHA-256. Upstream's workflows are disabled on
 # this fork.
 name: Neoffice CI
@@ -47,6 +48,11 @@ jobs:
         run: cargo xtask ci
         env:
           XTASK_CI_SKIP: deny
+      # `cargo xtask wasm`, a part of the gate above, checks the library crates and the egui shell for
+      # wasm32, not the web app: the code that only the browser build compiles (the page's `fetch`, its
+      # globals) would otherwise be compiled only by the manual browser build (neoffice-web.yml).
+      - name: The web app builds for wasm32
+        run: cargo check --target wasm32-unknown-unknown -p mailcraft-web --locked
       - name: Install cargo-deny 0.20.2 (SHA-256 pinned)
         run: |
           set -euo pipefail
