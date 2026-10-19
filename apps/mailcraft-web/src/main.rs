@@ -12,6 +12,11 @@
 //! empty one. Without a flag the mailbox kept in this browser opens, or the sample the first time.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+// //// Neoffice — the mailboxes a hosting page hands over (host.rs), and what its answer to a renewal of their tokens
+// means for each (renewal.rs, built everywhere so that it is tested natively).
+#[cfg(target_arch = "wasm32")]
+mod host;
+mod renewal;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
