@@ -17,8 +17,9 @@
 //!   Bcc field** ("the server MUST remove any Bcc header field present on the message during delivery",
 //!   §7.5); the email is not copied anywhere.
 //! - **Trouble on demand.** [`Data::faults`] holds one-off failures for a test to line up: a call that is
-//!   refused, a creation refused with a SetError of the type a test names, an answer that is lost after the
-//!   call ran, a gateway that gives up with a status after it ran, an answer that is not JMAP.
+//!   refused, a creation refused with a SetError of the type a test names, a submission that goes and is
+//!   then said to have failed, an answer that is lost after the call ran, a gateway that gives up with a
+//!   status after it ran, an answer that is not JMAP.
 //!
 //! A server that is a layer in front of an IMAP and an SMTP server holds all this to more, see [`super::facade`].
 
@@ -88,6 +89,10 @@ pub enum Effect {
     /// For a call that creates (`Email/import`, `EmailSubmission/set`): the creation is refused with this
     /// SetError `type` and `description`; nothing is made.
     SetError(&'static str, &'static str),
+    /// For `EmailSubmission/set`: the server sends the message, and then says the creation failed with this
+    /// SetError `type` and `description` (a server whose goodbye to the mail server it handed the message to
+    /// failed, say). The message has left; the answer says it has not.
+    SentThenSetError(&'static str, &'static str),
     /// The request is not run at all: the server answers with this HTTP status (a server that is busy, or a
     /// gateway that is down).
     RefuseWith(u16),
@@ -407,9 +412,11 @@ impl Data {
         }
         let (mut created, mut not_created) = (Map::new(), Map::new());
         for (key, spec) in create {
-            let fault = self.take_fault("EmailSubmission/set", |effect| matches!(effect, Effect::SetError(..)));
+            let fault = self.take_fault("EmailSubmission/set", |effect| matches!(effect, Effect::SetError(..) | Effect::SentThenSetError(..)));
             let made = match fault {
                 Some(Effect::SetError(kind, description)) => Err(SetError::new(kind, description)),
+                // The message goes (if the server would send it at all), and the answer is a failure all the same.
+                Some(Effect::SentThenSetError(kind, description)) => self.submit_one(&spec).and(Err(SetError::new(kind, description))),
                 _ => self.submit_one(&spec),
             };
             match made {

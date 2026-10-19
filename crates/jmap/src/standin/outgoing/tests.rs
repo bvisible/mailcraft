@@ -485,6 +485,33 @@ fn a_fault_happens_once_to_the_call_it_was_lined_up_for() {
 }
 
 #[test]
+fn a_submission_can_go_and_be_said_to_have_failed() {
+    for profile in [Profile::standard(), Profile::by_place()] {
+        let (server, sent, _) = world(profile);
+        let id = identity_of(&server);
+        let email = file(&server, &sent, &letter("plans", "bob@example.org", ""));
+        server.with(|d| d.faults.push_back(Fault::on("EmailSubmission/set", Effect::SentThenSetError("serverFail", "The goodbye failed."))));
+        let answer = sending(&server, "EmailSubmission/set", submission(&id, &email, ME, &["bob@example.org"])).unwrap();
+        // The answer is a failure, and the message has left all the same.
+        assert_eq!(
+            (
+                answer["notCreated"]["s"]["type"].as_str(),
+                answer["notCreated"]["s"]["description"].as_str(),
+                answer["created"].as_object().map(|c| c.len())
+            ),
+            (Some("serverFail"), Some("The goodbye failed."), Some(0))
+        );
+        assert_eq!(server.with(|d| d.delivered.len()), 1);
+        // A submission the server would have refused is refused, whatever the fault says: nothing left.
+        let other = file(&server, &sent, &letter("other", "bob@example.org", ""));
+        server.with(|d| d.faults.push_back(Fault::on("EmailSubmission/set", Effect::SentThenSetError("serverFail", "The goodbye failed."))));
+        let answer = sending(&server, "EmailSubmission/set", submission(&id, &other, ME, &[])).unwrap();
+        assert_eq!(answer["notCreated"]["s"]["type"].as_str(), Some("noRecipients"));
+        assert_eq!(server.with(|d| d.delivered.len()), 1);
+    }
+}
+
+#[test]
 fn a_fault_can_refuse_the_request_lose_its_answer_or_change_it_after_the_work_is_done() {
     let (server, sent, _) = world(Profile::standard());
     let id = identity_of(&server);

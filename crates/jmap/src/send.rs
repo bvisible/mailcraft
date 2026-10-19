@@ -20,9 +20,14 @@
 //! or the server's patience leaves it waiting for the next run (a server that refuses it, and says so, holds
 //! it). From the moment the submission is asked for, an answer that does not say whether it went (the
 //! connection lost, a status that is a server's failure, an answer that is no JMAP) is **lost**: the message
-//! is held, "it may have been sent", and is never sent again by itself. The copy in Sent stays then, since it
-//! may be the only record of a message that went. A submission the server says it did not make takes the
-//! copy out of Sent again (`Email/set`, destroy), so that Sent never shows a message that was not sent.
+//! is held, "it may have been sent", and is never sent again by itself. So is a submission the server says
+//! it failed to make (`serverFail`) or refused with a type that the standard does not give for a refusal made
+//! before anything was sent: a server that fails after it handed the message on says just that. The copy in
+//! Sent stays then, since it may be the only record of a message that went. A submission the server says it did
+//! not make, with one of the types the standard gives for that, takes the copy out of Sent again (`Email/set`,
+//! destroy), so that Sent never shows a message that was not sent. A copy that cannot be taken out, and the
+//! copy of a draft that cannot be destroyed, are handed back ([`Outgoing::take_unwanted`]) for the engine to
+//! see to.
 //!
 //! **Drafts** are filed in the Drafts mailbox with `$draft` and `$seen`, with their Bcc (a draft is for its
 //! owner), and the copy an earlier save made is destroyed once the new one is in, never before. A draft
@@ -58,6 +63,8 @@ const MAX_ADDRESS: usize = 254;
 const MAX_SAID: usize = 160;
 /// The most recipients an envelope has: past it, a server would refuse the message in any case.
 const MAX_RECIPIENTS: usize = 1_000;
+/// The most copies a run hands back to be destroyed.
+const MAX_UNWANTED: usize = 100;
 
 const NO_SUBMISSION: &str = "the server doesn't send mail";
 const NO_SENT_FOLDER: &str = "the server has no Sent folder to keep a copy of it in";
@@ -129,6 +136,11 @@ impl Envelope {
 /// An address, or any text of the owner's, for a line: short, on one line.
 fn shown(text: &str) -> String {
     tidy(text, 80)
+}
+
+/// The HTTP status an [`Error::Bad`] was made of (it reads "HTTP 502 …"), when it says one.
+fn status_of(text: &str) -> Option<u16> {
+    text.strip_prefix("HTTP ")?.split(' ').next()?.parse().ok()
 }
 
 /// A message as it is uploaded, ready to go: dated now if it never was, in the zone of the machine it is
@@ -236,9 +248,58 @@ pub(crate) enum Submitted {
     /// The request did not get as far as sending (the server refused it as a whole, was busy, or turned the
     /// sign-in down): nothing was sent.
     NotTaken(Error),
-    /// The server may have sent it: no answer came, or one that doesn't say.
-    Unknown,
+    /// The server may have sent it, and why that is so.
+    Unknown(Doubt),
 }
+
+/// Why it is not known whether a message went.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Doubt {
+    /// No answer came: the connection was lost.
+    NoAnswer,
+    /// The server's answer to the request as a whole was a failure of the server's (this HTTP status), which may
+    /// have come after the work was done.
+    Failed(u16),
+    /// The answer was no JMAP answer, or did not say what became of the submission.
+    Unclear,
+    /// The server said it failed, or said a type of refusal that the standard does not define (and that no
+    /// one can take to be a refusal before anything was sent).
+    Said { kind: String, description: String },
+}
+
+/// The SetError types that say a submission was refused before anything was sent (RFC 8621 §7.5, and the
+/// standard ones of RFC 8620 §5.3). Any other type is a doubt.
+const REFUSALS: [&str; 14] = [
+    "invalidEmail",
+    "tooManyRecipients",
+    "noRecipients",
+    "invalidRecipients",
+    "forbiddenMailFrom",
+    "forbiddenFrom",
+    "forbiddenToSend",
+    "forbidden",
+    "overQuota",
+    "tooLarge",
+    "rateLimit",
+    "notFound",
+    "invalidProperties",
+    "serverUnavailable",
+];
+
+/// The errors of a whole call that the standard says made no changes (RFC 8620 §3.6.2). `serverFail`,
+/// `serverPartialFail` and a type no one knows are doubts.
+const NO_CHANGES: [&str; 10] = [
+    "serverUnavailable",
+    "unknownMethod",
+    "invalidArguments",
+    "invalidResultReference",
+    "forbidden",
+    "accountNotFound",
+    "accountNotSupportedByMethod",
+    "accountReadOnly",
+    "requestTooLarge",
+    "stateMismatch",
+];
 
 /// A submission the server did not make (RFC 8621 §7.5): the `type` of its SetError, or of the error of the
 /// whole call, and what else it says.
@@ -266,57 +327,93 @@ async fn submit<H: Http>(client: &Client<H>, email: &str, identity: &str, from: 
 
 /// What the answer to a submission says of it, with the care a message that may have gone asks for.
 ///
-/// - **Not sent**: the server said so (a SetError for the submission, or an error of the whole call that is
-///   not a failure of the server's: RFC 8620 §3.6.2 says such a call "made no changes"), or it did not get as far as
-///   running the call (its answer is a refusal of the whole request: 4xx, or 503 and 429 for a server that is
-///   busy; or the connection could not be made secure).
+/// - **Not sent**: the server said so with one of the types the standard gives for that (a SetError for the
+///   submission, [`REFUSALS`]; or an error of the whole call that "made no changes", RFC 8620 §3.6.2,
+///   [`NO_CHANGES`]), or it did not get as far as running the call (its answer is a refusal of the whole request:
+///   4xx, or 503 and 429 for a server that is busy; or the connection could not be made secure).
 /// - **Sent**: the server created the submission.
-/// - **Unknown**: everything else. The network lost the answer; the server's answer is a failure that may have
-///   come after the sending (5xx but 503), or says `serverFail` (the call "made no changes", the standard says, but
-///   a server that fails after sending is a server that fails); the answer is not JMAP; it says neither that it
-///   made the submission nor that it did not (or says both).
+/// - **Unknown**: everything else, and the reason ([`Doubt`]). The network lost the answer; the server's answer
+///   is a failure that may have come after the sending (5xx but 503); it says `serverFail`, or a type that is
+///   none of the standard's for a refusal (a server that fails after it handed the message on says just that,
+///   and the standard's "made no changes" is not a promise such a server keeps); the answer is not JMAP; it says
+///   neither that it made the submission nor that it did not (or says both).
 fn classify(status: Option<u16>, outcome: Result<Answers>) -> Submitted {
     let answers = match outcome {
         Ok(answers) => answers,
         Err(e @ (Error::Auth(_) | Error::Busy { .. } | Error::Tls(_))) => return Submitted::NotTaken(e),
         Err(e) => {
-            // The server answered the request as a whole with a refusal that is its client's fault: the call
-            // did not run.
-            return if matches!(status, Some(400..=499)) { Submitted::NotTaken(e) } else { Submitted::Unknown };
+            // A refusal of the request as a whole that is its client's fault (4xx): the call did not run. Anything
+            // else (no answer, a failure of the server's, an answer that is none) may have come after it did.
+            return match (status, &e) {
+                (Some(400..=499), _) => Submitted::NotTaken(e),
+                (None, Error::Io(_)) => Submitted::Unknown(Doubt::NoAnswer),
+                (Some(status), Error::Bad(_)) if status >= 500 => Submitted::Unknown(Doubt::Failed(status)),
+                _ => Submitted::Unknown(Doubt::Unclear),
+            };
         }
     };
     let answer = match answers.get(0) {
         Ok(answer) => answer,
         Err(Error::Refused { kind, description }) => {
-            // `serverFail` and `serverPartialFail` are the failures that may have come after the sending.
-            return if matches!(kind.as_str(), "serverFail" | "serverPartialFail") {
-                Submitted::Unknown
-            } else {
+            // The standard says these made no changes. `serverFail` and `serverPartialFail` are the failures that may
+            // have come after the sending, and so is a type no one knows.
+            return if NO_CHANGES.contains(&kind.as_str()) {
                 Submitted::Refused(Refusal { kind, description, ..Default::default() })
+            } else {
+                Submitted::Unknown(Doubt::Said { kind, description })
             };
         }
-        Err(_) => return Submitted::Unknown,
+        Err(_) => return Submitted::Unknown(Doubt::Unclear),
     };
     let (made, refused) = (answer.get("created").and_then(|c| c.get("s")), answer.get("notCreated").and_then(|c| c.get("s")));
     match (made.is_some_and(Value::is_object), refused.and_then(Value::as_object)) {
         (true, None) => Submitted::Made,
-        (false, Some(error)) => Submitted::Refused(Refusal {
-            kind: error.get("type").and_then(Value::as_str).map(|t| tidy(t, 64)).unwrap_or_default(),
-            description: error.get("description").and_then(Value::as_str).map(|t| tidy(t, 300)).unwrap_or_default(),
-            invalid: error
-                .get("invalidRecipients")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .take(MAX_NAMED)
-                .filter_map(Value::as_str)
-                .map(str::trim)
-                .filter(|a| a.len() <= MAX_ADDRESS)
-                .map(str::to_string)
-                .collect(),
-            most: error.get("maxRecipients").and_then(Value::as_u64),
-        }),
-        _ => Submitted::Unknown,
+        (false, Some(error)) => {
+            let kind = error.get("type").and_then(Value::as_str).map(|t| tidy(t, 64)).unwrap_or_default();
+            let description = error.get("description").and_then(Value::as_str).map(|t| tidy(t, 300)).unwrap_or_default();
+            if !REFUSALS.contains(&kind.as_str()) {
+                return Submitted::Unknown(Doubt::Said { kind, description });
+            }
+            Submitted::Refused(Refusal {
+                kind,
+                description,
+                invalid: error
+                    .get("invalidRecipients")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .take(MAX_NAMED)
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|a| a.len() <= MAX_ADDRESS)
+                    .map(str::to_string)
+                    .collect(),
+                most: error.get("maxRecipients").and_then(Value::as_u64),
+            })
+        }
+        _ => Submitted::Unknown(Doubt::Unclear),
+    }
+}
+
+/// What the owner is told of a doubt, in plain words: why it is not known whether the message went. Empty when
+/// the answer was lost, which is what the owner is told when nothing else is said.
+fn doubt_words(doubt: &Doubt, said: &dyn Fn(&str) -> String) -> String {
+    match doubt {
+        Doubt::NoAnswer => String::new(),
+        Doubt::Failed(status) => format!("the server failed after it was asked to send it (HTTP {status})"),
+        Doubt::Unclear => "the server's answer didn't say whether it was sent".to_string(),
+        Doubt::Said { kind, description } => {
+            let what = if matches!(kind.as_str(), "serverFail" | "serverPartialFail") {
+                "the server failed while it was sending it".to_string()
+            } else {
+                let kind: String = kind.chars().filter(char::is_ascii_alphanumeric).take(40).collect();
+                format!("the server answered with something this program doesn't know ({kind})")
+            };
+            match said(description) {
+                text if text.is_empty() => what,
+                text => format!("{what}: {text}"),
+            }
+        }
     }
 }
 
@@ -408,11 +505,42 @@ pub(crate) struct Outgoing<'a, H> {
     /// What the server said of who the account may send as; not asked for until a message needs it.
     identities: Option<Vec<Identity>>,
     secrets: Secrets,
+    /// The server ids of copies it has that nobody wants and that could not be destroyed (see
+    /// [`Outgoing::take_unwanted`]).
+    unwanted: Vec<String>,
 }
 
 impl<'a, H: Http> Outgoing<'a, H> {
     pub(crate) fn new(client: &'a Client<H>, sent: Option<&'a str>, drafts: Option<&'a str>, secrets: Secrets) -> Outgoing<'a, H> {
-        Outgoing { client, sent, drafts, identities: None, secrets }
+        Outgoing { client, sent, drafts, identities: None, secrets, unwanted: Vec::new() }
+    }
+
+    /// The copies the server has that nobody wants and that this could not destroy, since the last call: a copy
+    /// filed in Sent for a message that was not sent, the copy of a draft whose message has gone, the copy an
+    /// earlier save of a draft made. They are handed to the engine, which sees that they are destroyed (and that
+    /// they do not come back as mail in the meantime).
+    pub(crate) fn take_unwanted(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.unwanted)
+    }
+
+    /// Destroy a copy nobody wants (`what` says which, for the log). When the server does not say it is gone,
+    /// the copy is handed back. Whether the server can't be had for more just now (no answer, a sign-in it
+    /// turned down, a busy server).
+    async fn destroy_unwanted(&mut self, id: &str, what: &str) -> bool {
+        if !valid_id(id) {
+            return false;
+        }
+        match destroy(self.client, id).await {
+            Ok(true) => false,
+            outcome => {
+                // (Nothing of the copy is logged.)
+                log::warn!("jmap sending: {what} couldn't be destroyed on the server; the engine is told");
+                if self.unwanted.len() < MAX_UNWANTED {
+                    self.unwanted.push(id.to_string());
+                }
+                matches!(outcome, Err(Error::Io(_) | Error::Auth(_) | Error::Busy { .. } | Error::Tls(_)))
+            }
+        }
     }
 
     /// What a server said, as one line of ours: the credentials and the addresses of the session hidden, any
@@ -431,8 +559,9 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// Why a step before the submission failed: not a word on whether the message is any good for the
-    /// network, the sign-in or a busy or unavailable server (it waits for the next run, and nothing more is
-    /// tried now), a refusal in plain words for the server saying it won't have it (the message is held).
+    /// network, the sign-in, a busy or unavailable server or a gateway that gave up (it waits for the next run,
+    /// and nothing more is tried now), a refusal in plain words for the server saying it won't have it (the
+    /// message is held).
     /// `Err` is a refusal to hold the message with; `Ok` is the trouble that makes it wait.
     fn trouble(&self, e: &Error) -> std::result::Result<Option<&'static str>, String> {
         match e {
@@ -444,18 +573,18 @@ impl<'a, H: Http> Outgoing<'a, H> {
             Error::Refused { kind, description } => {
                 Err(words(&Refusal { kind: kind.clone(), description: description.clone(), ..Default::default() }, None, &|t| self.said(t)))
             }
+            // A gateway that is down or gave up is the gateway's trouble and not the message's.
+            Error::Bad(text) if matches!(status_of(text), Some(502 | 504)) => Ok(Some(UNAVAILABLE)),
             Error::Bad(text) => Err(format!("the server wouldn't take it ({})", self.said(text))),
             Error::Protocol(_) => Err("the server's answer wasn't understood".to_string()),
         }
     }
 
     /// Take a copy filed in Sent out again, for a message that was not sent. The server may fail to; the copy
-    /// then stays, which is a record of a message that did not go and no more. (Nothing of it is logged.)
-    async fn take_out(&self, copy: &str) {
-        match destroy(self.client, copy).await {
-            Ok(true) => {}
-            Ok(false) | Err(_) => log::warn!("jmap sending: a copy filed in Sent for a message that was not sent couldn't be taken out again"),
-        }
+    /// then stays, which is a record of a message that did not go and no more, and is handed back to be
+    /// destroyed later.
+    async fn take_out(&mut self, copy: &str) {
+        self.destroy_unwanted(copy, "a copy filed in Sent for a message that was not sent").await;
     }
 
     /// Send the message `send`: see the module documentation for the steps and what may be retried.
@@ -516,10 +645,11 @@ impl<'a, H: Http> Outgoing<'a, H> {
                 self.take_out(&copy).await;
                 self.before_submission(&e, &done)
             }
-            Submitted::Unknown => {
+            Submitted::Unknown(doubt) => {
                 // The copy stays: if the message went, it is the owner's record of it.
-                log::warn!("jmap sending: the answer to a submission was lost; the message is held, not sent again by itself");
-                Went { done: Some(done(SendOutcome::Held { lost: true, why: String::new() })), line: None, stop: true }
+                log::warn!("jmap sending: it is not known whether a message went; it is held, not sent again by itself");
+                let why = doubt_words(&doubt, &|t| self.said(t));
+                Went { done: Some(done(SendOutcome::Held { lost: true, why })), line: None, stop: true }
             }
         }
     }
@@ -533,14 +663,9 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// The message went: the copy of the draft it was written as is destroyed. If that fails, the draft stays
-    /// on the server, which is where the owner left it.
-    async fn destroy_draft(&self, id: &str) {
-        if id.is_empty() {
-            return;
-        }
-        if !valid_id(id) || !matches!(destroy(self.client, id).await, Ok(true)) {
-            log::warn!("jmap sending: the draft a message was written as couldn't be destroyed on the server");
-        }
+    /// on the server until the engine has it destroyed (it is handed back).
+    async fn destroy_draft(&mut self, id: &str) {
+        self.destroy_unwanted(id, "the draft a message was written as").await;
     }
 
     /// File the draft `draft` in Drafts, and destroy the copy an earlier save made.
@@ -559,18 +684,9 @@ impl<'a, H: Http> Outgoing<'a, H> {
             Ok(id) => id,
             Err(e) => return self.draft_failed(&e, &refused),
         };
-        // The new copy is in: the earlier one goes. If it can't, it stays, and so does a second draft.
-        let mut stop = false;
-        if valid_id(&draft.replaces) && draft.replaces != id {
-            match destroy(self.client, &draft.replaces).await {
-                Ok(true) => {}
-                Ok(false) => log::warn!("jmap drafts: the earlier copy of a draft couldn't be destroyed on the server"),
-                Err(e) => {
-                    log::warn!("jmap drafts: the earlier copy of a draft couldn't be destroyed on the server");
-                    stop = matches!(e, Error::Io(_) | Error::Auth(_) | Error::Busy { .. } | Error::Tls(_));
-                }
-            }
-        }
+        // The new copy is in: the earlier one goes. If it can't, it is handed back to be destroyed, and a second
+        // draft shows until then.
+        let stop = draft.replaces != id && self.destroy_unwanted(&draft.replaces, "the earlier copy of a draft").await;
         Went {
             done: Some(JmapDraftDone { message: draft.message, saves: draft.saves, id, folder: mailbox.to_string(), refused: None }),
             line: None,
@@ -578,8 +694,10 @@ impl<'a, H: Http> Outgoing<'a, H> {
         }
     }
 
-    /// A draft that could not be filed. A draft can be tried again as often as it likes, so only a server
-    /// that says it will not have it settles it; trouble of any other kind leaves it for the next run.
+    /// A draft that could not be filed. A draft can be tried again as often as it likes, and it is the owner's
+    /// work, so only a server that says it will not have it settles it; trouble of any other kind (the network,
+    /// the sign-in, a busy server, a server that fails or answers with something that is not JMAP) leaves it for
+    /// the next run.
     fn draft_failed(&self, e: &Error, refused: &dyn Fn(String) -> Went<JmapDraftDone>) -> Went<JmapDraftDone> {
         match e {
             Error::Io(_) | Error::Tls(_) => Went::waits(Some(UNREACHABLE)),
@@ -588,12 +706,17 @@ impl<'a, H: Http> Outgoing<'a, H> {
             Error::Refused { kind, .. } if matches!(kind.as_str(), "serverUnavailable" | "serverFail" | "serverPartialFail" | "blobNotFound") => {
                 Went::waits(Some(UNAVAILABLE))
             }
+            Error::Bad(text) if status_of(text).is_some_and(|status| status >= 500) => Went::waits(Some(UNAVAILABLE)),
+            Error::Protocol(_) => Went::waits(Some(UNAVAILABLE)),
             Error::TooLarge(_) => refused("it is too large for the server".to_string()),
+            // (Not a word about sending: a draft is only kept.)
+            Error::Refused { kind, .. } if kind.starts_with("forbidden") => {
+                refused("the server doesn't let this account keep drafts there".to_string())
+            }
             Error::Refused { kind, description } => {
                 refused(words(&Refusal { kind: kind.clone(), description: description.clone(), ..Default::default() }, None, &|t| self.said(t)))
             }
             Error::Bad(text) => refused(format!("the server wouldn't take it ({})", self.said(text))),
-            Error::Protocol(_) => refused("the server's answer wasn't understood".to_string()),
         }
     }
 }

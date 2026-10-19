@@ -10,7 +10,9 @@
 //!   has them. Without that list (the server could not give it) nothing is tried, and what waits waits.
 //! - **A piece for each message** and each draft, as soon as it is done: the engine takes in what became of it
 //!   before the next one is started, so that a run cut short after a message went does not leave the engine
-//!   believing it did not.
+//!   believing it did not. The copies the server has that nobody wants and that could not be destroyed (the
+//!   draft of a message that went, the copy a new save of a draft replaced, the copy in Sent of a message that was
+//!   not sent) go in the piece of the item that left them behind.
 //! - **A message is looked at once** whatever the request says, and at most [`MAX_JMAP_SENDS`] messages and
 //!   [`MAX_JMAP_DRAFTS`] drafts are tried in a run: the rest wait for the next. A server may limit how many
 //!   messages are sent in a few minutes, and says so when it does (the Outbox waits, and the owner is told).
@@ -48,10 +50,12 @@ impl<H: Http> Run<'_, H> {
         for send in sends.iter().filter(|send| seen.insert(send.message)).take(MAX_JMAP_SENDS) {
             self.check()?;
             let went = outgoing.send(send).await;
-            if went.done.is_some() || went.line.is_some() {
+            let unwanted = outgoing.take_unwanted();
+            if went.done.is_some() || went.line.is_some() || !unwanted.is_empty() {
                 emit(self.piece(JmapMailResult {
                     sent: went.done.into_iter().collect(),
                     errors: went.line.into_iter().collect(),
+                    unwanted,
                     partial: true,
                     ..Default::default()
                 }));
@@ -69,10 +73,12 @@ impl<H: Http> Run<'_, H> {
             }
             self.check()?;
             let went = outgoing.draft(draft).await;
-            if went.done.is_some() || went.line.is_some() {
+            let unwanted = outgoing.take_unwanted();
+            if went.done.is_some() || went.line.is_some() || !unwanted.is_empty() {
                 emit(self.piece(JmapMailResult {
                     drafts: went.done.into_iter().collect(),
                     errors: went.line.into_iter().collect(),
+                    unwanted,
                     partial: true,
                     ..Default::default()
                 }));

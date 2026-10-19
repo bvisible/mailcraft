@@ -312,7 +312,6 @@ fn a_submission_the_server_refuses_takes_its_copy_out_of_sent_and_says_why_in_pl
         ("tooManyRecipients", "the message has more recipients than the server allows"),
         ("tooLarge", "the message is too large for the server"),
         ("invalidEmail", "the server found the message invalid"),
-        ("somethingNew", "the server refused it (somethingNew): It said so."),
     ];
     for (kind, profile) in both() {
         for (type_, said) in refusals {
@@ -380,23 +379,49 @@ fn a_server_that_limits_sending_leaves_the_rest_in_the_outbox_and_says_so() {
 #[test]
 fn an_answer_that_does_not_say_whether_it_went_holds_the_message_and_keeps_its_copy() {
     // Each of these may have come after the server sent the message.
-    let lost: [(&str, Effect, usize); 7] = [
-        ("the connection was lost", Effect::LoseAnswer, 1),
-        ("a gateway gave up (502)", Effect::Status(502), 1),
-        ("a gateway gave up (504)", Effect::Status(504), 1),
-        ("the server failed (500)", Effect::Status(500), 1),
-        ("an answer that is not JMAP", Effect::Garbage, 1),
-        ("the call failed with serverFail", Effect::MethodError("serverFail"), 0),
-        ("the call failed in part", Effect::MethodError("serverPartialFail"), 0),
+    let failed = "the server failed while it was sending it";
+    let lost: [(&str, Effect, usize, String); 11] = [
+        ("the connection was lost", Effect::LoseAnswer, 1, String::new()),
+        ("a gateway gave up (502)", Effect::Status(502), 1, "the server failed after it was asked to send it (HTTP 502)".into()),
+        ("a gateway gave up (504)", Effect::Status(504), 1, "the server failed after it was asked to send it (HTTP 504)".into()),
+        ("the server failed (500)", Effect::Status(500), 1, "the server failed after it was asked to send it (HTTP 500)".into()),
+        ("an answer that is not JMAP", Effect::Garbage, 1, "the server's answer didn't say whether it was sent".into()),
+        ("the call failed with serverFail", Effect::MethodError("serverFail"), 0, format!("{failed}: the server can't do this just now")),
+        ("the call failed in part", Effect::MethodError("serverPartialFail"), 0, format!("{failed}: the server can't do this just now")),
+        (
+            "the submission failed with serverFail",
+            Effect::SetError("serverFail", "The mail server did not take the message: boom."),
+            0,
+            format!("{failed}: The mail server did not take the message: boom."),
+        ),
+        (
+            // The real server's case: it handed the message on, and its goodbye to the mail server failed.
+            "the message went and the submission is said to have failed",
+            Effect::SentThenSetError("serverFail", "The mail server did not take the message: goodbye failed."),
+            1,
+            format!("{failed}: The mail server did not take the message: goodbye failed."),
+        ),
+        (
+            "a refusal of a type no one knows",
+            Effect::SetError("somethingNew", "It said so."),
+            0,
+            "the server answered with something this program doesn't know (somethingNew): It said so.".into(),
+        ),
+        (
+            "an error of a call of a type no one knows",
+            Effect::MethodError("somethingNewToo"),
+            0,
+            "the server answered with something this program doesn't know (somethingNewToo): the server can't do this just now".into(),
+        ),
     ];
     for (kind, profile) in both() {
-        for (what, effect, went_out) in lost {
+        for (what, effect, went_out, why) in lost.clone() {
             let (server, ids) = world(profile);
             let client = client(&server);
             let mut outgoing = outgoing(&client, &ids);
             fault(&server, "EmailSubmission/set", effect);
             let went = block_on(outgoing.send(&to_send(message("Plans", &["bob@example.org"]))));
-            assert_eq!(held(&went), Some((true, "")), "{kind}, {what}");
+            assert_eq!(held(&went), Some((true, why.as_str())), "{kind}, {what}");
             // Nothing more this run, and the copy stays: if the message went, it is the owner's record of it.
             assert!(went.stop, "{kind}, {what}");
             assert_eq!(emails_in(&server, &ids.sent).len(), 1, "{kind}, {what}");
@@ -450,22 +475,25 @@ fn trouble_before_the_submission_never_costs_a_message_it_can_be_tried_again() {
         Waits(Option<&'static str>),
         Held(&'static str),
     }
-    let upload_cases: [(&str, Effect, Becomes); 7] = [
+    let upload_cases: [(&str, Effect, Becomes); 9] = [
         ("too large (413)", Effect::RefuseWith(413), Becomes::Held("the message is too large for the server")),
         ("too many kept (429)", Effect::RefuseWith(429), Becomes::Waits(Some(BUSY))),
         ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
         ("signed out (401)", Effect::RefuseWith(401), Becomes::Waits(None)),
         ("a failure (500)", Effect::RefuseWith(500), Becomes::Held("the server wouldn't take it (HTTP 500")),
+        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Waits(Some(UNAVAILABLE))),
+        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Waits(Some(UNAVAILABLE))),
         ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
         ("an answer that is not JMAP", Effect::Garbage, Becomes::Held("the server's answer wasn't understood")),
     ];
-    let import_cases: [(&str, Effect, Becomes); 6] = [
+    let import_cases: [(&str, Effect, Becomes); 7] = [
         ("over its quota", Effect::SetError("overQuota", ""), Becomes::Held("the mailbox on the server is full")),
         ("the upload lost", Effect::SetError("blobNotFound", ""), Becomes::Held("the server lost the message it was sent")),
         ("unavailable", Effect::MethodError("serverUnavailable"), Becomes::Waits(Some(UNAVAILABLE))),
         ("a failure", Effect::MethodError("serverFail"), Becomes::Held("the server refused it (serverFail)")),
         ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
         ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
+        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Waits(Some(UNAVAILABLE))),
     ];
     for (kind, profile) in both() {
         for (step, on, cases) in [("upload", "upload", upload_cases.as_slice()), ("filing", "Email/import", import_cases.as_slice())] {
@@ -553,12 +581,16 @@ fn a_draft_is_filed_in_drafts_with_its_bcc_and_the_copy_before_it_is_destroyed()
 fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
     for (kind, profile) in both() {
         // Trouble that may pass: the draft waits for the next run, with the copy it has.
-        let waits: [(&str, &str, Effect, Option<&str>); 5] = [
+        let waits: [(&str, &str, Effect, Option<&str>); 9] = [
             ("the network", "upload", Effect::LoseAnswer, Some(UNREACHABLE)),
             ("busy", "upload", Effect::RefuseWith(503), Some(BUSY)),
             ("signed out", "upload", Effect::RefuseWith(401), None),
             ("unavailable", "Email/import", Effect::MethodError("serverUnavailable"), Some(UNAVAILABLE)),
             ("a failure", "Email/import", Effect::MethodError("serverFail"), Some(UNAVAILABLE)),
+            ("a failure of the server's (500)", "upload", Effect::RefuseWith(500), Some(UNAVAILABLE)),
+            ("a gateway that gave up (504)", "Email/import", Effect::RefuseWith(504), Some(UNAVAILABLE)),
+            ("an upload answered with something that is not JMAP", "upload", Effect::Garbage, Some(UNAVAILABLE)),
+            ("a filing answered with something that is not JMAP", "Email/import", Effect::Garbage, Some(UNAVAILABLE)),
         ];
         for (what, on, effect, line) in waits {
             let (server, ids) = world(profile);
@@ -575,7 +607,7 @@ fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
         let refused: [(&str, Effect, &str); 3] = [
             ("over its quota", Effect::SetError("overQuota", ""), "the mailbox on the server is full"),
             ("too large", Effect::SetError("tooLarge", ""), "the message is too large for the server"),
-            ("not allowed", Effect::SetError("forbidden", ""), "the server doesn't let this account send mail just now"),
+            ("not allowed", Effect::SetError("forbidden", ""), "the server doesn't let this account keep drafts there"),
         ];
         for (what, effect, why) in refused {
             let (server, ids) = world(profile);
@@ -623,6 +655,46 @@ fn a_copy_that_cannot_be_destroyed_is_no_loss_of_the_draft() {
     // An earlier copy that is not there any more is as good as destroyed.
     let went = block_on(outgoing.draft(&to_file(message("Plans", &["bob@example.org"]), "Egone")));
     assert!(went.done.is_some_and(|done| !done.id.is_empty()) && !went.stop);
+}
+
+#[test]
+fn a_copy_nobody_wants_that_cannot_be_destroyed_is_handed_back_once() {
+    for (kind, profile) in both() {
+        // The copy filed in Sent for a message the server refused, that the server will not take out again.
+        let (server, ids) = world(profile);
+        let client = client(&server);
+        let mut outgoing = outgoing(&client, &ids);
+        fault(&server, "EmailSubmission/set", Effect::SetError("forbiddenToSend", "no"));
+        fault(&server, "Email/set", Effect::MethodError("serverFail"));
+        let went = block_on(outgoing.send(&to_send(message("Plans", &["bob@example.org"]))));
+        assert!(held(&went).is_some_and(|(lost, _)| !lost), "{kind}");
+        let copy = emails_in(&server, &ids.sent);
+        assert_eq!(copy.len(), 1, "{kind}: the copy stays");
+        assert_eq!(outgoing.take_unwanted(), [copy[0].id.clone()], "{kind}");
+        assert!(outgoing.take_unwanted().is_empty(), "{kind}: handed back once");
+
+        // The draft of a message that went, that the server will not destroy.
+        let draft = server.with(|d| d.deliver(&ids.drafts, b"Subject: draft\r\n\r\nx\r\n", &["$draft"], "2026-10-14T09:00:00Z"));
+        fault(&server, "Email/set", Effect::LoseAnswer);
+        let went = block_on(outgoing.send(&JmapSend { draft_copy: draft.clone(), ..to_send(message("Two", &["bob@example.org"])) }));
+        assert_eq!(outcome(&went), Some(&SendOutcome::Sent), "{kind}");
+        assert_eq!(outgoing.take_unwanted(), std::slice::from_ref(&draft), "{kind}");
+
+        // The copy an earlier save of a draft made, that the server will not destroy.
+        fault(&server, "Email/set", Effect::MethodError("serverFail"));
+        let went = block_on(outgoing.draft(&to_file(message("Three", &["bob@example.org"]), &draft)));
+        assert!(went.done.is_some_and(|done| !done.id.is_empty()), "{kind}");
+        assert_eq!(outgoing.take_unwanted(), std::slice::from_ref(&draft), "{kind}");
+
+        // A copy the server destroys, or no longer has, is nothing to hand back.
+        let went = block_on(outgoing.draft(&to_file(message("Four", &["bob@example.org"]), &draft)));
+        assert!(went.done.is_some(), "{kind}");
+        assert!(outgoing.take_unwanted().is_empty(), "{kind}: the server no longer has it");
+        // Nor is an id that is none (the server is not asked for it, and nothing hostile is passed on).
+        let went = block_on(outgoing.send(&JmapSend { draft_copy: "not an id\r\n".into(), ..to_send(message("Five", &["bob@example.org"])) }));
+        assert_eq!(outcome(&went), Some(&SendOutcome::Sent), "{kind}");
+        assert!(outgoing.take_unwanted().is_empty(), "{kind}");
+    }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -769,7 +841,7 @@ fn classified(status: Option<u16>, outcome: Result<Answers>) -> &'static str {
         Submitted::Made => "made",
         Submitted::Refused(_) => "refused",
         Submitted::NotTaken(_) => "not taken",
-        Submitted::Unknown => "unknown",
+        Submitted::Unknown(_) => "unknown",
     }
 }
 
@@ -781,6 +853,27 @@ fn an_answer_says_a_message_went_only_when_the_server_says_it_made_the_submissio
         ("it made it", Some(200), answers_of(vec![Ok(made.clone())]), "made"),
         ("it refused", Some(200), answers_of(vec![Ok(refused.clone())]), "refused"),
         ("both at once", Some(200), answers_of(vec![Ok(json!({"created": {"s": {}}, "notCreated": {"s": {"type": "x"}}}))]), "unknown"),
+        (
+            "a refusal of a type the standard has for it",
+            Some(200),
+            answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "forbiddenFrom"}}}))]),
+            "refused",
+        ),
+        ("a refusal of a type no one knows", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "somethingNew"}}}))]), "unknown"),
+        ("a refusal that says serverFail", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "serverFail"}}}))]), "unknown"),
+        (
+            "a refusal that says the server is unavailable",
+            Some(200),
+            answers_of(vec![Ok(json!({"notCreated": {"s": {"type": "serverUnavailable"}}}))]),
+            "refused",
+        ),
+        ("a refusal with no type", Some(200), answers_of(vec![Ok(json!({"notCreated": {"s": {}}}))]), "unknown"),
+        (
+            "an error of a call of a type no one knows",
+            Some(200),
+            answers_of(vec![Err(Error::Refused { kind: "somethingNew".into(), description: String::new() })]),
+            "unknown",
+        ),
         ("neither", Some(200), answers_of(vec![Ok(json!({"created": {}, "notCreated": {}}))]), "unknown"),
         ("another object's", Some(200), answers_of(vec![Ok(json!({"created": {"other": {}}}))]), "unknown"),
         ("a created that is no object", Some(200), answers_of(vec![Ok(json!({"created": {"s": true}}))]), "unknown"),
@@ -932,6 +1025,23 @@ fn a_filing_or_an_upload_is_only_believed_when_it_names_what_it_made() {
         let (client, _) = scripted(vec![answer("Email/import", result)]);
         assert!(block_on(import(&client, "U1", "Msent", &["$seen"])).is_err(), "{what}");
     }
+}
+
+#[test]
+fn a_doubt_is_said_in_plain_words_with_what_the_server_said_of_it_cleaned() {
+    let say = |doubt: Doubt| doubt_words(&doubt, &|t| t.to_string());
+    assert_eq!(say(Doubt::NoAnswer), "");
+    assert_eq!(say(Doubt::Failed(502)), "the server failed after it was asked to send it (HTTP 502)");
+    assert_eq!(say(Doubt::Unclear), "the server's answer didn't say whether it was sent");
+    assert_eq!(say(Doubt::Said { kind: "serverFail".into(), description: String::new() }), "the server failed while it was sending it");
+    assert_eq!(
+        say(Doubt::Said { kind: "serverPartialFail".into(), description: "It broke.".into() }),
+        "the server failed while it was sending it: It broke."
+    );
+    assert_eq!(
+        say(Doubt::Said { kind: "odd\u{7}/type".into(), description: "x".into() }),
+        "the server answered with something this program doesn't know (oddtype): x"
+    );
 }
 
 #[test]

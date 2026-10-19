@@ -171,7 +171,8 @@ fn a_message_the_server_refused_stays_held_in_the_outbox_until_the_owner_sends_i
     let m = app.session.mailbox.message(message).unwrap();
     assert_eq!(m.held, "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.");
     assert_eq!(count(&app, id, FolderKind::Outbox), 1);
-    assert!(app.session.sync_status.starts_with("Couldn't send 'Hello': the server doesn't accept bob@example.org."), "{}", app.session.sync_status);
+    // (What the status line and the problems report say leaves the address out: they go to the log as well.)
+    assert!(app.session.sync_status.starts_with("Couldn't send 'Hello': the server doesn't accept (address)."), "{}", app.session.sync_status);
     assert!(app.sync_problem_lines().iter().any(|line| line.contains("Couldn't send 'Hello'")), "{:?}", app.sync_problem_lines());
     // Nothing waits for a run, and no round takes it along.
     assert_eq!(app.waiting_to_go(id), 0);

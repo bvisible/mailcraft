@@ -14,6 +14,9 @@
 //!   was moved here since.
 //! - **A message that is its marks alone and that this mailbox does not have** (the request said it did, and
 //!   it was deleted here since) is passed over, not added blank.
+//! - **A copy that waits to be destroyed** (a draft discarded here, a copy a run could not destroy: the queue of
+//!   [`super::jmap_send`]) is passed over: it is not mail to bring down again. Nor is the copy of the draft that a
+//!   message waiting in the Outbox was written as.
 //! - **A message the server knows by a new id** (some servers name a message by where it is, so a
 //!   move gives it a new id): one listed under an id this account doesn't know is first matched to
 //!   a message of the same folder that lost its id (moved here, or marked gone by this very
@@ -68,6 +71,9 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
             down.gone += 1;
         }
     }
+    // Copies the server has that must not come back as mail: those that wait to be destroyed (a draft discarded here,
+    // a copy that could not be destroyed), and the draft of a message that waits to be sent.
+    let doomed = super::jmap_send::doomed(mb, account);
     // The messages of this folder that lost their server id, by `Message-ID`: those a listed id
     // nobody knows may be.
     let mut lost: HashMap<String, Vec<Id>> = HashMap::new();
@@ -79,7 +85,7 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
     }
     for there in &page.messages {
         let id = there.server.id.as_str();
-        if !plausible_id(id) {
+        if !plausible_id(id) || doomed.contains(id) {
             continue;
         }
         let here = index.find(mb, account, id).or_else(|| match lost.get_mut(message_id(&there.message_id)) {

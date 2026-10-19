@@ -29,8 +29,9 @@
 //! whole, and what became of each comes back as a [`SendDone`] (sent, held with a reason, or not
 //! tried). **Drafts** (RFC 8621 §4.8): a draft saved here goes up as a [`JmapDraftUp`], to be filed in
 //! the server's Drafts in place of the copy an earlier save made; [`JmapDraftDone`] says what the
-//! server filed. Both read a missing field as empty, so the files and answers written before them
-//! stay good.
+//! server filed. A copy the server has that nobody wants and that the run could not destroy comes back in
+//! [`JmapMailResult::unwanted`]. All of these read a missing field as empty, so the files and answers
+//! written before them stay good.
 
 use serde::{Deserialize, Serialize};
 
@@ -293,6 +294,11 @@ pub struct JmapMailResult {
     /// What became of the drafts filed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<JmapDraftDone>,
+    /// The server ids of copies the server has that nobody wants and that the run could not destroy (the
+    /// draft of a message that went, the copy a new save of a draft replaced, the copy filed in Sent for a
+    /// message that was not sent): the engine has them destroyed, and keeps them out of the windows until then.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unwanted: Vec<String>,
     /// Every mailbox of the server, when it could be listed at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub listing: Option<FolderListing>,
@@ -338,6 +344,7 @@ impl JmapMailResult {
         self.changes.extend(piece.changes);
         self.sent.extend(piece.sent);
         self.drafts.extend(piece.drafts);
+        self.unwanted.extend(piece.unwanted);
         if piece.listing.is_some() {
             self.listing = piece.listing;
         }
@@ -418,6 +425,7 @@ impl std::fmt::Debug for JmapMailResult {
             .field("changes", &self.changes.len())
             .field("sent", &self.sent.len())
             .field("drafts", &self.drafts.len())
+            .field("unwanted", &self.unwanted.len())
             .field("listed", &self.listing.as_ref().map(|listing| listing.folders.len()))
             .field("pages", &self.pages.len())
             .field("messages", &messages)
@@ -506,6 +514,7 @@ mod tests {
                 folder: "M3".into(),
                 refused: Some(format!("{ME} may not file it")),
             }],
+            unwanted: vec!["E11".into()],
             listing: Some(FolderListing {
                 folders: vec![GraphFolder { id: "M1".into(), name: ME.into(), kind: FolderKind::Inbox, total: 4, unread: 1, ..Default::default() }],
                 complete: true,
@@ -541,6 +550,7 @@ mod tests {
             r#""afresh":true"#,
             r#""stopped":true"#,
             r#""drafts":[{"message":8,"saves":2,"id":"E10","folder":"M3","refused":"#,
+            r#""unwanted":["E11"]"#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
@@ -662,6 +672,7 @@ mod tests {
                 account: 3,
                 pages: vec![page("M2", &["E3"])],
                 drafts: vec![JmapDraftDone { message: 8, saves: 1, id: "E10".into(), ..Default::default() }],
+                unwanted: vec!["E12".into()],
                 errors: vec!["Two".into()],
                 whole: true,
                 stopped: true,
@@ -676,6 +687,7 @@ mod tests {
         assert_eq!((whole.changes.len(), whole.errors.join(", ").as_str(), whole.listing.map(|l| l.folders.len())), (1, "One, Two", Some(1)));
         // What became of the messages sent and of the drafts filed is kept in the order it came.
         assert_eq!((whole.sent.len(), whole.drafts.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()), (1, vec!["E10"]));
+        assert_eq!(whole.unwanted, ["E12"]);
         // The progress of the piece that had one stays until another says more.
         assert_eq!(whole.progress.map(|p| p.total), Some(2));
     }
@@ -697,7 +709,7 @@ mod tests {
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapMailResult { account: 3, changes: 4, sent: 1, drafts: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
+            "JmapMailResult { account: 3, changes: 4, sent: 1, drafts: 1, unwanted: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
         );
     }
 

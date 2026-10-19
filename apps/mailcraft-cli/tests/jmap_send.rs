@@ -226,6 +226,53 @@ fn an_answer_lost_after_the_message_went_holds_it_and_it_is_never_sent_again_by_
 }
 
 #[test]
+fn a_server_that_sends_and_then_says_it_failed_holds_the_message_as_one_that_may_have_gone() {
+    // The real server hands the message on and then fails (its goodbye to the mail server), and says `serverFail`.
+    for (kind, profile) in both() {
+        let mut rig = Rig::new(profile);
+        let message = rig.send("bob@example.org", "", "Plans");
+        rig.fault("EmailSubmission/set", Effect::SentThenSetError("serverFail", "The mail server did not take the message: goodbye failed."));
+        let answers = rig.run(false);
+        let held = rig.s.mailbox.message(message).unwrap().held.clone();
+        assert!(
+            held.starts_with(
+                "It may have been sent: the server failed while it was sending it: The mail server did not take the message: goodbye failed."
+            ),
+            "{kind}: {held}"
+        );
+        // It did go, and its copy stays in Sent: the owner's record of it, which is not taken out for a message that went.
+        assert_eq!(rig.delivered().len(), 1, "{kind}");
+        assert_eq!(subjects(&rig.mail(FolderKind::Sent)), ["Plans"], "{kind}");
+        assert!(answers.iter().any(|a| a["errors"][0].as_str().is_some_and(|l| l.starts_with("'Plans' may have been sent"))), "{kind}: {answers:?}");
+        // Run after run, light or full: it goes no more.
+        for full in [false, true, false] {
+            rig.run(full);
+        }
+        assert_eq!((rig.delivered().len(), rig.held_in("sent").len(), rig.mail(FolderKind::Outbox).len()), (1, 1, 1), "{kind}: never twice");
+    }
+}
+
+#[test]
+fn a_copy_the_server_will_not_take_out_of_sent_waits_to_be_destroyed_and_is_not_shown_as_mail() {
+    for (kind, profile) in both() {
+        let mut rig = Rig::new(profile);
+        let message = rig.send("bob@example.org", "", "Plans");
+        rig.fault("EmailSubmission/set", Effect::SetError("forbiddenToSend", "Not today."));
+        rig.fault("Email/set", Effect::MethodError("serverFail"));
+        rig.run(false);
+        assert!(!rig.s.mailbox.message(message).unwrap().held.is_empty(), "{kind}");
+        // The message did not go. The copy filed for it is still on the server, since it could not be taken out; it
+        // waits in the queue, and is not shown as a message that was sent.
+        assert!(rig.delivered().is_empty() && rig.held_in("sent").len() == 1, "{kind}");
+        assert_eq!(rig.s.mailbox.queued.len(), 1, "{kind}");
+        for full in [false, true] {
+            rig.run(full);
+            assert!(rig.mail(FolderKind::Sent).is_empty(), "{kind}: not mail");
+        }
+    }
+}
+
+#[test]
 fn trouble_before_the_message_goes_costs_it_nothing_it_waits_and_goes_with_the_next_run() {
     let cases: [(&str, &str, Effect); 4] = [
         ("the network lost on the upload", "upload", Effect::LoseAnswer),
@@ -348,7 +395,7 @@ fn a_draft_whose_message_is_held_stays_on_the_server_for_the_owner() {
 }
 
 #[test]
-fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_one_that_never_went_up_is_not() {
+fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_does_not_come_back_meanwhile() {
     let mut rig = Rig::new(Profile::standard());
     rig.s.run("mail.new", &json!({"to": "bob@example.org", "subject": "Plans", "body": "Words.", "account": rig.account})).unwrap();
     let draft = rig.s.run("compose.saveDraft", &json!({})).unwrap()["draft"].as_u64().unwrap();
@@ -359,6 +406,13 @@ fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_one_that_never_went
     assert!(rig.s.mailbox.message(draft).is_none());
     assert_eq!(rig.s.mailbox.queued.len(), 1);
     assert!(matches!(&rig.s.mailbox.queued[0], mailcraft_model::Queued::DeleteMessage { id, .. } if *id == copy));
+    // Run after run, the copy is not brought down as a draft the owner has not got. (What destroys the copies that wait
+    // in the queue is the part of a run that sends the owner's changes up.)
+    for full in [false, true, false] {
+        rig.run(full);
+        assert!(rig.mail(FolderKind::Drafts).is_empty(), "the discarded draft stays discarded");
+    }
+    assert_eq!(rig.s.mailbox.queued.len(), 1);
 }
 
 #[test]

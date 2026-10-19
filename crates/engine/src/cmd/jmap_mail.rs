@@ -216,8 +216,14 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
             s.graph_index = Default::default();
         }
     }
-    // (Mail that reached the server can't be taken back by Undo.)
-    if sent > 0 {
+    // The copies the server has that nobody wants and that the host could not destroy wait to be destroyed.
+    if jmap_send::unwanted(&mut s.mailbox, account, &result.unwanted) {
+        taken.updated += 1;
+    }
+    // Mail that reached the server, or may have, can't be taken back by Undo; and neither can a message held for
+    // that doubt be let go by it (an older state of the mailbox has the message in the Outbox, not held, and the
+    // next run would send it again). Whether the message is still in the Outbox or not.
+    if result.sent.iter().any(|done| !matches!(done.outcome, SendOutcome::Waits)) {
         s.forget_history();
     }
     errors.splice(0..0, refused.into_iter().map(|line| said(&line)).filter(|line| !line.is_empty()).take(MAX_ERRORS));
