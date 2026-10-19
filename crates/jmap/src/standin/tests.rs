@@ -837,6 +837,69 @@ fn a_server_that_names_by_place_keeps_an_email_in_one_mailbox_and_refuses_to_cha
 }
 
 #[test]
+fn an_email_is_moved_to_another_mailbox_as_another_client_does() {
+    let (stand_in, ids) = filled();
+    assert_eq!(stand_in.with(|d| d.move_to(&ids.second, &ids.sent)), Some(ids.second.clone()), "the same id");
+    assert!(stand_in.with(|d| d.move_to("E999", &ids.sent)).is_none() && stand_in.with(|d| d.move_to(&ids.second, "M999")).is_none());
+    let moved = call(&stand_in, "Email/get", json!({"ids": [ids.second], "properties": ["mailboxIds"]})).unwrap();
+    assert_eq!(moved["list"][0]["mailboxIds"], json!({ids.sent.clone(): true}));
+    let listed = |mailbox: &str| call(&stand_in, "Email/query", json!({"filter": {"inMailbox": mailbox}})).unwrap()["ids"].clone();
+    assert!(listed(&ids.sent).as_array().unwrap().contains(&json!(ids.second)));
+    assert!(!listed(&ids.inbox).as_array().unwrap().contains(&json!(ids.second)));
+    assert_eq!(listed(&ids.inbox).as_array().unwrap().len(), 2);
+    // A server that names mail by where it lies gives a moved email another id, and the old one is gone.
+    stand_in.with(|d| d.profile = Profile::by_place());
+    let renamed = stand_in.with(|d| d.move_to(&ids.third, &ids.sent)).unwrap();
+    assert_ne!(renamed, ids.third);
+    // Moved to the mailbox it lies in alone, it has not moved, and keeps its id.
+    assert_eq!(stand_in.with(|d| d.move_to(&renamed, &ids.sent)), Some(renamed.clone()));
+    let old = call(&stand_in, "Email/get", json!({"ids": [ids.third, renamed], "properties": ["mailboxIds"]})).unwrap();
+    assert_eq!((old["list"].as_array().unwrap().len(), old["notFound"].clone()), (1, json!([ids.third])));
+    assert_eq!(old["list"][0]["id"], json!(renamed));
+}
+
+#[test]
+fn a_mailbox_it_can_not_open_answers_as_if_it_held_nothing() {
+    let (stand_in, ids) = filled();
+    stand_in.with(|d| d.hollow.insert(ids.inbox.clone()));
+    // Nothing listed, a total of nothing, and the emails of it not found; the counts of the mailbox are what they were.
+    let found = call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}, "calculateTotal": true})).unwrap();
+    assert_eq!((found["ids"].clone(), found["total"].clone()), (json!([]), json!(0)));
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.first, ids.second], "properties": ["id"]})).unwrap();
+    assert_eq!((got["list"].clone(), got["notFound"].clone()), (json!([]), json!([ids.first, ids.second])));
+    let boxes = call(&stand_in, "Mailbox/get", json!({"ids": [ids.inbox], "properties": ["totalEmails"]})).unwrap();
+    assert_eq!(boxes["list"][0]["totalEmails"], 3);
+    // The others are as they were.
+    assert_eq!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.sent}, "calculateTotal": true})).unwrap()["total"], 0);
+    stand_in.with(|d| d.hollow.clear());
+    assert_eq!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}, "calculateTotal": true})).unwrap()["total"], 3);
+    // One that lists its emails but can not find them when they are asked for by id.
+    stand_in.with(|d| d.forgetful.insert(ids.inbox.clone()));
+    assert_eq!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}, "calculateTotal": true})).unwrap()["total"], 3);
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.first, ids.second], "properties": ["id"]})).unwrap();
+    assert_eq!((got["list"].clone(), got["notFound"].clone()), (json!([]), json!([ids.first, ids.second])));
+    // An email that is also elsewhere is found there.
+    assert!(stand_in.with(|d| d.add_to_mailbox(&ids.first, &ids.sent)));
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.first, ids.second], "properties": ["id"]})).unwrap();
+    assert_eq!((got["list"].clone(), got["notFound"].clone()), (json!([{"id": ids.first}]), json!([ids.second])));
+    stand_in.with(|d| d.forgetful.clear());
+    // One that finds them for their keywords and loses them for their headers.
+    stand_in.with(|d| d.forgetful_headers.insert(ids.inbox.clone()));
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.second], "properties": ["keywords"]})).unwrap();
+    assert_eq!((got["list"].as_array().unwrap().len(), got["notFound"].clone()), (1, json!([])));
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.second], "properties": ["headers"]})).unwrap();
+    assert_eq!((got["list"].clone(), got["notFound"].clone()), (json!([]), json!([ids.second])));
+    stand_in.with(|d| d.forgetful_headers.clear());
+    // One whose counts it leaves out.
+    stand_in.with(|d| d.uncounted.insert(ids.inbox.clone()));
+    let boxes = call(&stand_in, "Mailbox/get", json!({"properties": ["name", "totalEmails", "unreadEmails"]})).unwrap();
+    let inbox = boxes["list"].as_array().unwrap().iter().find(|m| m["id"] == json!(ids.inbox)).unwrap().clone();
+    let sent = boxes["list"].as_array().unwrap().iter().find(|m| m["id"] == json!(ids.sent)).unwrap().clone();
+    assert_eq!(inbox, json!({"id": ids.inbox, "name": "Inbox"}));
+    assert_eq!(sent["totalEmails"], 1);
+}
+
+#[test]
 fn trouble_is_made_on_demand() {
     let (stand_in, ids) = filled();
     let api = |stand_in: &StandIn| {

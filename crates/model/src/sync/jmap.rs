@@ -242,8 +242,10 @@ pub struct JmapMailResult {
     /// More of this run comes after this piece.
     #[serde(skip_serializing_if = "is_false")]
     pub partial: bool,
-    /// Every mailbox the run meant to read was read to the end, and none failed: a message that
-    /// the pages of a whole read of its mailbox left out is gone from the server.
+    /// Nothing went wrong in the run and it was not stopped: every mailbox it meant to read was read,
+    /// if in part. A window that does not hold all of its mailbox marks nothing gone (only a page with
+    /// [`MessagePage::afresh`] does), so what the pages left out of the windows that do is gone from
+    /// those mailboxes (deleted, or moved to a mailbox this run did not read), and the engine removes it now.
     #[serde(skip_serializing_if = "is_false")]
     pub whole: bool,
     /// The owner stopped the run (Cancel) after the piece in hand: the next one goes on from there.

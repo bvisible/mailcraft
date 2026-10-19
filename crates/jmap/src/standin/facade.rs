@@ -8,8 +8,8 @@
 //! that must work against such a server as well as against a store of the standard kind is tried
 //! against both by setting [`Data::profile`](super::Data::profile).
 //!
-//! What is not here yet: ids that change when a message moves (the stand-in with this profile is for
-//! reading), and the rules of sending.
+//! A move gives a message a new id and blob here ([`Data::move_to`](super::Data::move_to)). What is not here
+//! yet: the rules of sending.
 
 use serde_json::{Value, json};
 
@@ -29,7 +29,8 @@ pub struct Profile {
     /// the method does not exist, as in every stand-in so far.
     pub fixed_mailboxes: bool,
     /// An email lies in one mailbox only (`maxMailboxesPerEmail` is 1), so [`Data::add_to_mailbox`](super::Data::add_to_mailbox)
-    /// has nothing to do.
+    /// has nothing to do, and its id says where it lies, so that [`Data::move_to`](super::Data::move_to) gives
+    /// it (and its blob) a new one.
     pub one_mailbox: bool,
 }
 

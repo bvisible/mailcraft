@@ -1,6 +1,6 @@
 # MailCraft architecture
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-18 · **Change:** minor (`charset`, L0: one decoder of character sets for mail and vCard files, #180; R6: the mailbox file is a log of records, format 3, `store_index.rs`; a damaged later save stops the reading there, a damaged item of the first save costs only itself, and `file.open` says so; files kept aside are never removed and keep their content from the sweep; no citations of private decision records; R3.7: the switch from IMAP to Graph, no switch for testing; quitting on macOS through craft-quit, the first crate from craft-libs, for the apps alone; cargo-deny, pinned actions, zizmor, Scorecard, the threat model; R3.1: a Microsoft account kept in step through Graph behind a switch for testing, server ids, `graph::pace`; the Secret Service on Linux and FreeBSD behind `Services::secrets`; `StoreTrouble`; Exchange Web Services removed: the Favorites of Outlook are read through Microsoft Graph alone, and there is no choice of a way) · **Target:** Microsoft Outlook (Microsoft 365)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-19 · **Change:** minor (`jmap`, L3: JMAP without sockets, and what reads a JMAP account's mailboxes and newest messages for the engine; `charset`, L0: one decoder of character sets for mail and vCard files, #180; R6: the mailbox file is a log of records, format 3, `store_index.rs`; a damaged later save stops the reading there, a damaged item of the first save costs only itself, and `file.open` says so; files kept aside are never removed and keep their content from the sweep; no citations of private decision records; R3.7: the switch from IMAP to Graph, no switch for testing; quitting on macOS through craft-quit, the first crate from craft-libs, for the apps alone; cargo-deny, pinned actions, zizmor, Scorecard, the threat model; R3.1: a Microsoft account kept in step through Graph behind a switch for testing, server ids, `graph::pace`; the Secret Service on Linux and FreeBSD behind `Services::secrets`; `StoreTrouble`; Exchange Web Services removed: the Favorites of Outlook are read through Microsoft Graph alone, and there is no choice of a way) · **Target:** Microsoft Outlook (Microsoft 365) <!-- //// Neoffice — the status line of the page names `jmap`, a crate this fork adds. -->
 
 How MailCraft is built today. Rules for working in the code are in [`AGENTS.md`](../AGENTS.md). The
 shape — layers, "everything is a command", the swappable egui front end, the control channel, MCP,
@@ -8,7 +8,7 @@ shape — layers, "everything is a command", the swappable egui front end, the c
 
 ## Layers
 
-14 crates, 3 apps and `xtask` (`cargo xtask stats` prints lines and tests per crate). Layering is
+14 crates, 3 apps and `xtask` <!-- //// Neoffice — this fork adds `jmap` to upstream's 13 crates, so the sentence that already said 14 now counts right. --> (`cargo xtask stats` prints lines and tests per crate). Layering is
 enforced by `cargo xtask layers`: a crate may only depend on crates in lower layers (one exception
 inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, winit or rfd.
 `craft-quit` (from [craft-libs](https://github.com/storytold/craft-libs), the Craft apps' shared
@@ -25,6 +25,7 @@ code, taken from git pinned to one commit) is for the apps alone.
 | L2 | `ical` | iCalendar reader and writer: events, to-dos, recurrence rules, alarms, attendees |
 | L2 | `vcard` | vCard 2.1/3.0/4.0 reader, 3.0 writer |
 | L3 | `proto` | IMAP4rev1 and SMTP clients over any `Read + Write` stream (no sockets, so they test against scripted transcripts and build for wasm) |
+| L3 | `jmap` | JMAP (RFC 8620 and 8621) over any HTTP client, with no sockets and no browser API: signing in and the session, batched method calls, and `sync_mail`, which reads an account's mailboxes and the newest messages of each as pieces for the engine; an in-process server for the tests (the `stand-in` feature) <!-- //// Neoffice — added row (no upstream equivalent) --> |
 | L3 | `net` | TCP + TLS (rustls), sending through SMTP, two-way IMAP synchronisation, OAuth sign-in, MX lookup, Microsoft Graph (`graph`); empty on wasm |
 | L4 | `engine` | `Session` (mailbox, selection, view, the message being written, undo), the **command registry** (`cmd/*.rs`), the message list (`list.rs`), the Outlook feature catalog (`catalog.rs`), the sample mailbox, file dispatch (`io.rs`) |
 | L5 | `mcp` | MCP server: tools over the command registry; headless or bridged to the running app |
@@ -161,6 +162,32 @@ code, taken from git pinned to one commit) is for the apps alone.
   told. A waiting change that can't be sent any more is given up with a word, never silently
   (`cmd/remote.rs`: `check_sent`, `tidy_changes`). The tests hold all of it against
   `mailcraft_net::graph::standin`, which takes only what the documented service takes.
+- **A JMAP account is kept in step by windows.** <!-- //// Neoffice — added bullet (no upstream equivalent) --> A JMAP server (RFC 8620 and 8621) is
+  reached by a host that has a way to speak HTTP, through `mailcraft_jmap`, an async client over an `Http` trait that the host
+  implements. Its folders and messages are known by server ids, as a Microsoft account's are, but the request and the answer
+  are its own (`JmapMailRequest` and `JmapMailResult` in `crates/model/src/sync/jmap.rs`): `sync.jmapRequest` /
+  `jmap_mail_request` and `sync.applyJmap` / `apply_jmap_mail` (`crates/engine/src/cmd/jmap_mail.rs`) are pure, and
+  `mailcraft_jmap::sync_mail` (`crates/jmap/src/mail.rs`) does the talking. A server need not say what changed since the last
+  run, so a run reads a **window** of each mailbox it reads: the mailbox list in one `Mailbox/get`, then the Inbox first and each
+  other mailbox, its newest messages (500 at most) in one request of two calls (`Email/query`, and `Email/get` of the ids it
+  found by a back-reference, for their keywords), then the header fields of the emails the engine has not got, 200 to a
+  request. The pieces come in that order and each is taken in as it arrives. A window that is shown to hold the whole
+  mailbox (the server gave a total that is the number of emails it listed, every email it named is in the page or said to
+  be gone, none was left out for another mailbox or could not be read, and an empty one only when the list of mailboxes says
+  the mailbox holds none) makes it the same as the server's (`MessagePage::afresh`); anything less is read in part, and
+  nothing is removed for being missing from the part. An email in several mailboxes is listed by the window of the smallest
+  id among the mailboxes the server lists, so that two folders do not take it from one another. An email moved on the
+  server is the same message here when the run reads both mailboxes, on a server whose ids survive a move (one that names
+  an email by where it lies gives it a new id, and then it is a removal and an arrival); when the run reads only the
+  mailbox it left, it is taken out of that one, and comes back as a new message when the other is read and its window
+  reaches it (only a server that says what changed can tell a move from a removal). The header fields are read from the
+  raw `headers` (the MIME reader decodes them), whether the server also parses them or not. Whatever a server sends is
+  hostile: every count, id, name and text is capped, an answer is held to the size its request can need, and nothing is
+  indexed or unwrapped; an email that breaks a call is found by halving the call and left out, and the rest are read, and a
+  run that lost an email is not "whole" (the engine sweeps what the server no longer has only after a run that is).
+  `mailcraft_jmap::standin` is a strict in-process server (it can also be a server that names an email by where it is,
+  refuses `Mailbox/set` and keeps an email in one mailbox, or be busy, or lose its token), and
+  `apps/mailcraft-cli/tests/jmap_list.rs` runs the engine against it end to end.
 - **Two-way sync without a journal of everything.** Flags are compared with what the server last
   said (`Message::synced`): a flag changed here since then goes up, one changed there comes down,
   and here wins when both did. Moves and permanent deletes can't be seen by comparing, so the
@@ -215,3 +242,4 @@ code, taken from git pinned to one commit) is for the apps alone.
 | 2026-10-16 | patch | The Graph-only account described without citing private decision records |
 | 2026-10-16 | minor | R3.7: the switch from IMAP to Graph (`cmd/graph_switch.rs`, `Account::graph_switch`, `Folder::awaiting_listing`); the switch for testing is gone |
 | 2026-10-18 | minor | `charset` (L0): the decoder of character sets moved out of `mime` so that `vcard` reads `CHARSET=` by the same rules, #180 |
+| 2026-10-19 | minor | `jmap` (L3): JMAP without sockets or browser APIs, `sync_mail` for an account's mailboxes and newest messages, and an in-process server for the tests <!-- //// Neoffice — added row (no upstream equivalent) --> |

@@ -39,8 +39,11 @@
 //!   ([`Profile`], `standin/facade.rs`).
 //! - **Trouble on demand.** A test makes the next requests to the API answer `429` or `503` with a
 //!   `Retry-After` ([`Data::refuse_next`]), makes a token expire in the middle of a run
-//!   ([`Data::drop_token_after`]), and makes a mailbox, or the details of some emails, fail with a
-//!   method error ([`Data::broken_mailboxes`], [`Data::broken_emails`]).
+//!   ([`Data::drop_token_after`]), makes a mailbox, or the details of some emails, fail with a
+//!   method error ([`Data::broken_mailboxes`], [`Data::broken_emails`]), and makes a mailbox that it
+//!   can not open answer as if it held nothing, which is how a store that swallows the failure of its
+//!   `SELECT` answers ([`Data::hollow`], [`Data::forgetful`], [`Data::forgetful_headers`]), or leave out what it holds
+//!   ([`Data::uncounted`]).
 //! - **What it was asked.** [`Seen::asked`] has, for every call it ran, the mailbox it listed, the number
 //!   of ids and the properties it was asked for, and the limit: what a test needs to count the work.
 //!
@@ -198,6 +201,20 @@ pub struct Data {
     /// Emails (ids) that an `Email/get` fails for as a whole, with the method error `serverFail`, when it asks
     /// for their `headers` (what a server has to fetch the message for; the keywords come without).
     pub broken_emails: BTreeSet<String>,
+    /// Mailboxes (ids) the server can not open and says nothing of: an `Email/query` for one lists no email
+    /// and a total of 0, and an `Email/get` of an email that lies in such mailboxes alone says it is not found.
+    /// `Mailbox/get` still counts what the mailbox holds, as a store does that reads the counts another way.
+    pub hollow: BTreeSet<String>,
+    /// Mailboxes (ids) whose emails an `Email/get` can not find, though an `Email/query` lists them: a `SELECT`
+    /// that works for one call and fails for the next. As [`Data::hollow`], for an email that lies in such
+    /// mailboxes alone.
+    pub forgetful: BTreeSet<String>,
+    /// As [`Data::forgetful`], but only for an `Email/get` that asks for the `headers` (what a server has to
+    /// fetch the message for): the keywords come, and then the headers are not found.
+    pub forgetful_headers: BTreeSet<String>,
+    /// Mailboxes (ids) whose counts `Mailbox/get` leaves out (`totalEmails`, `unreadEmails`): a store that could
+    /// not read them.
+    pub uncounted: BTreeSet<String>,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -219,6 +236,10 @@ impl Data {
             drop_token_after: None,
             broken_mailboxes: BTreeMap::new(),
             broken_emails: BTreeSet::new(),
+            hollow: BTreeSet::new(),
+            forgetful: BTreeSet::new(),
+            forgetful_headers: BTreeSet::new(),
+            uncounted: BTreeSet::new(),
             next: 0,
             version: 0,
             retry_after: None,
@@ -280,6 +301,27 @@ impl Data {
         email.mailboxes.insert(mailbox.to_string());
         self.changed();
         true
+    }
+
+    /// Move an email to another mailbox, as another client does (it lies in that one alone afterwards): its id
+    /// afterwards, which is the same one unless this server names mail by where it lies, when a move gives the
+    /// email (and its blob) a new one; `None` when either is unknown. Moving it to the one it lies in alone is
+    /// no move.
+    pub fn move_to(&mut self, email: &str, mailbox: &str) -> Option<String> {
+        if !self.mailboxes.iter().any(|m| m.id == mailbox) || !self.emails.iter().any(|e| e.id == email) {
+            return None;
+        }
+        let to = BTreeSet::from([mailbox.to_string()]);
+        let moves = self.emails.iter().any(|e| e.id == email && e.mailboxes != to);
+        let renamed = (moves && self.profile.one_mailbox).then(|| (self.id("B"), self.id("E")));
+        let moved = self.emails.iter_mut().find(|e| e.id == email)?;
+        moved.mailboxes = to;
+        if let Some((blob, id)) = renamed {
+            (moved.blob, moved.id) = (blob, id);
+        }
+        let now = moved.id.clone();
+        self.changed();
+        Some(now)
     }
 
     /// Remove an email, as the server does when another client deletes it (or moves it, for a server that
@@ -525,6 +567,7 @@ impl Data {
                 "parentId" => json!(mailbox.parent),
                 "role" => json!(mailbox.role),
                 "sortOrder" => json!(0),
+                "totalEmails" | "unreadEmails" if self.uncounted.contains(&mailbox.id) => continue,
                 "totalEmails" => json!(inside().count()),
                 // Neither $seen nor $draft (RFC 8621 §2).
                 "unreadEmails" => json!(inside().filter(|e| !e.keywords.contains("$seen") && !e.keywords.contains("$draft")).count()),
@@ -571,6 +614,9 @@ impl Data {
         if !ascending {
             found.reverse();
         }
+        if self.hollow.contains(mailbox) {
+            found.clear();
+        }
         let count = found.len();
         // A negative position counts from the end (RFC 8620 §5.5), and not beyond the start.
         let position = match integer(args, "position")?.unwrap_or(0) {
@@ -604,10 +650,13 @@ impl Data {
             return Err(refuse("serverFail", "an email can't be read just now"));
         }
         let (mut list, mut not_found) = (Vec::new(), Vec::new());
+        let with_headers = properties.iter().any(|p| p == "headers");
+        let shut = |m: &String| self.hollow.contains(m) || self.forgetful.contains(m) || (with_headers && self.forgetful_headers.contains(m));
         for id in wanted {
             match self.email(&id) {
-                Some(email) => list.push(email_json(email, &properties)),
-                None => not_found.push(id),
+                // (One that lies nowhere is none that a server has.)
+                Some(email) if email.mailboxes.is_empty() || !email.mailboxes.iter().all(shut) => list.push(email_json(email, &properties)),
+                _ => not_found.push(id),
             }
         }
         Ok(json!({"accountId": ACCOUNT, "state": self.state(), "list": list, "notFound": not_found}))
