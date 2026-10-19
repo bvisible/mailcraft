@@ -33,13 +33,19 @@
 //! It is read on this page, or on the page that frames it when that one is of the same origin (reading another
 //! origin's window throws, which reads as nothing). Nothing secret travels in the address. With host accounts,
 //! MailCraft keeps no mail, account or secret between visits: only the interface settings.
-// Read by the start of the browser shell once it runs a JMAP account (web.rs, with the runner of the next step).
+// Read by the start of the browser shell (web.rs); the pictures through the page (`fetch_url`) and the name of the
+// person signed in (`author`) wait for the steps that use them.
 #![allow(dead_code)]
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
+use mailcraft_jmap::Auth;
 use wasm_bindgen::{JsCast as _, JsValue};
 use wasm_bindgen_futures::JsFuture;
+
+use crate::credentials::{Credentials, Renewal};
+use crate::renewal;
 
 /// The most mailboxes taken from the page.
 const MAX_ACCOUNTS: u32 = 20;
@@ -230,4 +236,50 @@ pub fn language() -> Option<String> {
 /// What each mailbox signs in with: its address (lower case) → (secret, Bearer rather than Basic).
 pub fn secrets(accounts: &[HostAccount]) -> HashMap<String, (String, bool)> {
     accounts.iter().map(|a| (a.email.to_lowercase(), (a.secret.clone(), a.bearer))).collect()
+}
+
+/// The credentials of the mailboxes the page handed over, in this tab's memory only, renewed by the page when a
+/// server refuses one (`mailcraftJmapRenew`).
+pub struct HostCredentials {
+    /// Address (lower case) → (secret, Bearer rather than Basic).
+    secrets: RefCell<HashMap<String, (String, bool)>>,
+    /// Address (lower case) → the login name a password goes with.
+    usernames: HashMap<String, String>,
+}
+
+impl HostCredentials {
+    pub fn new(accounts: &[HostAccount]) -> HostCredentials {
+        HostCredentials {
+            secrets: RefCell::new(secrets(accounts)),
+            usernames: accounts.iter().map(|a| (a.email.to_lowercase(), a.username.clone())).collect(),
+        }
+    }
+}
+
+impl Credentials for HostCredentials {
+    fn auth(&self, email: &str) -> Option<Auth> {
+        let email = email.to_lowercase();
+        let (secret, bearer) = self.secrets.borrow().get(&email).cloned()?;
+        if bearer {
+            return Some(Auth::bearer(secret));
+        }
+        // A login name the page left empty: the address, as JMAP servers sign their users in.
+        let user = self.usernames.get(&email).filter(|u| !u.is_empty()).cloned().unwrap_or_else(|| email.clone());
+        Some(Auth::basic(user, secret))
+    }
+
+    async fn renew(&self, email: &str) -> Renewal {
+        let email = email.to_lowercase();
+        // Nothing is borrowed while the page answers.
+        let answer = renew().await.map(|renewed| renewal::Answer { given: secrets(&renewed.accounts), named: renewed.named });
+        if let Some(answer) = &answer {
+            renewal::merge(&mut self.secrets.borrow_mut(), answer);
+        }
+        // One run at a time asks: it is the one that asked, whatever the answer.
+        match renewal::next(answer.as_ref(), &email, 0, Some(0), 0, 1) {
+            renewal::Next::SignIn(_) => self.auth(&email).map_or(Renewal::Reload, Renewal::Given),
+            renewal::Next::AskLater => Renewal::Later,
+            renewal::Next::Reload | renewal::Next::Skip => Renewal::Reload,
+        }
+    }
 }

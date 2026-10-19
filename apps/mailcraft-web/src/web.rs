@@ -16,9 +16,13 @@ const UI_KEY: &str = "mailcraft.ui.v1";
 
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
-    // //// Neoffice — the interface language "System default" follows is the browser's, said before the first frame.
-    if let Some(language) = web_sys::window().and_then(|w| w.navigator().language()) {
+    // //// Neoffice — the interface language "System default" follows is the hosting page's (the person's, host.rs), else the browser's, said before the first frame.
+    if let Some(language) = crate::host::language().or_else(|| web_sys::window().and_then(|w| w.navigator().language())) {
         mailcraft_ui_egui::i18n::set_system_language(&language);
+    }
+    // //// Neoffice — the name the hosting page gives the program (host.rs) is the one every interface string shows.
+    if let Some(name) = crate::host::product() {
+        mailcraft_ui_egui::i18n::set_product_name(&name);
     }
     wasm_bindgen_futures::spawn_local(async {
         let Some(document) = web_sys::window().and_then(|w| w.document()) else {
@@ -44,7 +48,13 @@ pub fn start() {
                         log::info!("mailcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
                     }
                     let inbox: Inbox = Inbox::default();
-                    let mut app = MailApp::new(Session::new(first_mailbox()), services(inbox.clone(), cc.egui_ctx.clone()));
+                    // //// Neoffice — the mailboxes a hosting page hands over open by themselves (hosted_app), in place of the mailbox kept in this browser.
+                    let hosted = crate::host::accounts();
+                    let mut app = if hosted.is_empty() {
+                        MailApp::new(Session::new(first_mailbox()), services(inbox.clone(), cc.egui_ctx.clone()))
+                    } else {
+                        hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone())
+                    };
                     if let Some(ui) = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
                         app.apply_prefs(ui);
                     }
@@ -153,6 +163,9 @@ impl eframe::App for WebShell {
 
 fn services(inbox: Inbox, ctx: egui::Context) -> Services {
     let open_inbox = inbox.clone();
+    // //// Neoffice — an account kept in step with a JMAP server is read through `fetch` (jmap_services.rs), with the credential its owner types; a hosting page's credentials replace these (hosted_app).
+    let (jmap_ctx, gate) = (ctx.clone(), crate::jmap_services::Gate::default());
+    let no_credentials = std::rc::Rc::new(crate::credentials::NoCredentials);
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
@@ -175,8 +188,58 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         download: Some(Box::new(download)),
         inbox: Some(inbox),
         persist: Some(Box::new(persist)),
+        // //// Neoffice — as above.
+        jmap: Some(crate::jmap_services::jmap_service(jmap_ctx.clone(), no_credentials.clone(), gate.clone())),
+        jmap_fetch: Some(crate::jmap_services::jmap_fetch_service(jmap_ctx, no_credentials, gate)),
         ..Default::default()
     }
+}
+
+// //// Neoffice — the mail program of a hosting page: the mailboxes it handed over, kept in step with their JMAP servers with its credentials, and nothing kept between visits.
+/// The mail program of a hosting page (host.rs): the mailboxes it handed over and nothing else, no sample. Their
+/// mail is their servers', read again at each visit; their credentials are the page's, in this tab's memory
+/// only, and renewed by it. Nothing of them is kept in this browser: only the interface settings are.
+fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Context) -> MailApp {
+    let mut session = Session::new(Mailbox::with_local_account("", ""));
+    for a in accounts {
+        let added = session.run(
+            "account.add",
+            &serde_json::json!({
+                "kind": "jmap",
+                "email": a.email,
+                "displayName": a.name,
+                "username": a.username,
+                "jmap": {"session": a.session, "bearer": a.bearer},
+            }),
+        );
+        // Neither the address nor the server's goes into the console.
+        let Some(id) = added.ok().and_then(|v| v["id"].as_u64()) else {
+            log::error!("a mailbox the page handed over couldn't be set up");
+            continue;
+        };
+        // Its signature, as the page gives it: new messages, replies and forwards start with it.
+        let mut signature = serde_json::json!({"name": a.email, "default": true, "account": id});
+        if !a.signature_html.trim().is_empty() {
+            signature["html"] = a.signature_html.clone().into();
+        } else if !a.signature_text.trim().is_empty() {
+            signature["text"] = a.signature_text.clone().into();
+        } else {
+            continue;
+        }
+        if session.run("signature.set", &signature).is_err() {
+            log::warn!("the signature of a mailbox the page handed over couldn't be set");
+        }
+    }
+    let mut services = services(inbox, ctx.clone());
+    services.persist = None;
+    let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
+    let gate = crate::jmap_services::Gate::default();
+    services.jmap = Some(crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()));
+    services.jmap_fetch = Some(crate::jmap_services::jmap_fetch_service(ctx, credentials, gate));
+    services.jmap_host_credentials = true;
+    let mut app = MailApp::new(session, services);
+    app.autosave = false;
+    app
 }
 
 /// Keep the mailbox in the browser's storage. A full store is the usual failure: say so plainly.

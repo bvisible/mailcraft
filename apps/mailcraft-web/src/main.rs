@@ -8,6 +8,9 @@
 //! no TCP control channel; the mailbox lives in the browser's storage; Open, Import and Attach use
 //! the browser's file picker (bytes arrive through `Services::inbox`); Save and the exports
 //! download.
+// //// Neoffice — but a JMAP account (RFC 8620, 8621) is read over HTTPS, through `fetch`.
+//! An account kept in step with a JMAP server is read over HTTPS, through the browser's `fetch`
+//! (`jmap_services.rs`).
 //! URL flags: `?webgl` forces WebGL2; `?sample` starts from the sample mailbox; `?empty` from an
 //! empty one. Without a flag the mailbox kept in this browser opens, or the sample the first time.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
@@ -17,9 +20,12 @@
 #[cfg(target_arch = "wasm32")]
 mod host;
 mod renewal;
-// //// Neoffice — HTTP through the browser's `fetch`, for JMAP.
+// //// Neoffice — HTTP through the browser's `fetch`, for JMAP; the runner of a JMAP account's Send/Receive and the
+// credentials it is given (built everywhere, so that its tests run natively).
+mod credentials;
 #[cfg(target_arch = "wasm32")]
 mod fetch;
+mod jmap_services;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

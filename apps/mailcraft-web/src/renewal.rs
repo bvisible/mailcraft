@@ -5,7 +5,8 @@
 //! answer gives some mailboxes in full (with a secret), may name others without one yet, and leaves the rest out. Each
 //! mailbox waiting for it then signs in again, asks again a little later, or asks for a reload; one started again since
 //! it asked sees to itself.
-// Used by the browser's JMAP runner (next step); built on every target so that its tests run natively.
+// Used by the page's credentials (host.rs), which only the browser builds; built on every target so that its tests
+// run natively.
 #![allow(dead_code)]
 
 use std::collections::HashMap;

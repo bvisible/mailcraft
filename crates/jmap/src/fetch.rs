@@ -268,6 +268,14 @@ fn stops(e: &Error) -> bool {
     matches!(e, Error::Io(_) | Error::Busy { .. } | Error::Auth(_) | Error::Tls(_))
 }
 
+/// The answer of a batch that could not begin: signing in to the server (`Client::connect`) failed with
+/// `error`. What [`fetch_messages`] would have said of the same trouble: nothing fetched, and why.
+pub fn failed_fetch(request: &JmapFetchRequest, error: &Error) -> GraphFetchResult {
+    let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    stop(&mut out, error);
+    out
+}
+
 /// Say that the batch stopped, and why: for the owner's reading (no address, no secret: the errors are
 /// hidden where they are made).
 fn stop(out: &mut GraphFetchResult, e: &Error) {
