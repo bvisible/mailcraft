@@ -158,6 +158,9 @@ pub(crate) fn new_message(folder: Id, server_folder: &str, there: &GraphMessage)
         received: there.received,
         body: Body { text: there.preview.clone(), html: None },
         read: server.read,
+        // //// Neoffice — a JMAP server's answered and forwarded marks (a Graph server says neither: both are false there). The message must show what `server` records, or the next change worked out from the difference would clear them there.
+        answered: server.answered,
+        forwarded: server.forwarded,
         flag: server.flag,
         flag_due: server.flag_due,
         importance: server.importance,

@@ -139,6 +139,26 @@ fn a_complete_window_makes_the_mailbox_the_same_as_the_servers() {
 }
 
 #[test]
+fn a_new_message_shows_the_marks_the_server_gave_it() {
+    let (mut s, account) = session();
+    take(&mut s, account, Some(server()), vec![], true);
+    let mut answered = mail("E1", "<1@x>", "One", 100);
+    (answered.server.read, answered.server.answered, answered.server.forwarded, answered.server.flag) = (true, true, true, FlagStatus::Flagged);
+    let mut plain = mail("E2", "<2@x>", "Two", 200);
+    plain.draft = true;
+    take(&mut s, account, None, vec![window("Min", vec![answered, plain], true)], true);
+    let inbox = in_folder(&s, account, "Min");
+    let marks: Vec<(&str, bool, bool, bool, FlagStatus, bool)> =
+        inbox.iter().map(|m| (m.subject.as_str(), m.read, m.answered, m.forwarded, m.flag, m.draft)).collect();
+    assert_eq!(marks, [("Two", false, false, false, FlagStatus::None, true), ("One", true, true, true, FlagStatus::Flagged, false)]);
+    // What the message shows is what the server last said of it: nothing is waiting to go up.
+    for m in inbox {
+        let there = m.server.as_ref().unwrap();
+        assert_eq!((m.read, m.answered, m.forwarded, m.flag), (there.read, there.answered, there.forwarded, there.flag));
+    }
+}
+
+#[test]
 fn a_window_cut_short_adds_and_updates_but_removes_nothing() {
     let (mut s, account) = session();
     take(&mut s, account, Some(server()), vec![], true);
