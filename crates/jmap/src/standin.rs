@@ -6,9 +6,9 @@
 //!
 //! Where the other stand-ins of the tests answer whatever they are told and take whatever they are
 //! sent, this one holds a client to the standard (RFC 8620, 8621) as a real server does, for the part
-//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get` and the download of a blob; and, so
-//! that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Email/set` (to destroy),
-//! `Identity/get` and `EmailSubmission/set` (`outgoing.rs`).
+//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get`, `Email/set` and the download of a blob;
+//! and, so that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Identity/get`
+//! and `EmailSubmission/set` (`outgoing.rs`).
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -37,7 +37,14 @@
 //!   `EmailSubmission/set` sends an email it has to the recipients of an envelope, as an identity the account
 //!   may send as, and records what left ([`Data::delivered`]) without any Bcc field. A test turns sending off
 //!   with [`Data::submission`] (the session then offers none) and lines up one-off failures in [`Data::faults`].
-//! - **Not there.** Changes to mail but filing and destroying it, `*/changes`, threads, push. The session
+//! - **Changes.** `Email/set` updates and destroys emails (`standin/set.rs`): a patch is held to the grammar of
+//!   RFC 8620 §5.3 (a path of the object, `~0` and `~1` for `~` and `/`, no path inside another, `null` to
+//!   take away), what it makes of the email to RFC 8621 §4.1 (keywords of 1 to 255 allowed characters, an
+//!   email in at least one mailbox that exists, and in as many as the account allows), an email that is
+//!   no more is `notFound`, one that is both updated and destroyed is `willDestroy`, and `ifInState` is
+//!   held against the state. No more objects than `maxObjectsInSet` are in one call (`requestTooLarge`).
+//!   Each object has its own answer, `updated` or `notUpdated` with a SetError, `destroyed` or `notDestroyed`.
+//! - **Not there.** `Mailbox/set` (but where [`Profile`] refuses it), `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
 //! - **Kinds of server.** [`Data::profile`] makes it a store of the standard kind, which parses the header
 //!   fields of an email for a client (`subject`, `from`…), or a server that names a message by where it
@@ -49,9 +56,12 @@
 //!   method error ([`Data::broken_mailboxes`], [`Data::broken_emails`]), and makes a mailbox that it
 //!   can not open answer as if it held nothing, which is how a store that swallows the failure of its
 //!   `SELECT` answers ([`Data::hollow`], [`Data::forgetful`], [`Data::forgetful_headers`]), or leave out what it holds
-//!   ([`Data::uncounted`]).
+//!   ([`Data::uncounted`]). It makes an `Email/set` refuse to change some emails with a SetError of a
+//!   type the test names ([`Data::refused_sets`], and [`Data::refused_moves`] for the moves alone), and loses the answer to requests that it ran all the same,
+//!   as a connection does that drops after the server did its work ([`Data::lost_answers`]).
 //! - **What it was asked.** [`Seen::asked`] has, for every call it ran, the mailbox it listed, the number
-//!   of ids and the properties it was asked for, and the limit: what a test needs to count the work.
+//!   of ids and the properties it was asked for, and the limit, and for an `Email/set` how many emails
+//!   it was to update and to destroy: what a test needs to count the work.
 //!
 //! It never panics, whatever it is sent: there is no `unwrap` here, in a test build or in another
 //! crate's, which turns the `stand-in` feature on.
@@ -67,6 +77,7 @@ use crate::{CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url,
 
 mod facade;
 mod outgoing;
+mod set;
 
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
@@ -165,6 +176,9 @@ pub struct Asked {
     pub properties: Vec<String>,
     /// The `limit` of a query.
     pub limit: Option<usize>,
+    /// How many emails a `set` was to update, and how many to destroy.
+    pub updates: Option<usize>,
+    pub destroys: Option<usize>,
 }
 
 impl Asked {
@@ -180,6 +194,8 @@ impl Asked {
                 .map(|names| names.iter().filter_map(Value::as_str).map(str::to_string).collect())
                 .unwrap_or_default(),
             limit: args.get("limit").and_then(Value::as_u64).map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+            updates: args.get("update").and_then(Value::as_object).map(Map::len),
+            destroys: args.get("destroy").and_then(Value::as_array).map(Vec::len),
         }
     }
 }
@@ -190,9 +206,10 @@ pub struct Data {
     pub emails: Vec<Email>,
     /// The requests it was sent, oldest first (the first 10,000).
     pub seen: Vec<Seen>,
-    /// What the session says it takes: method calls in a request, ids in a `get`.
+    /// What the session says it takes: method calls in a request, ids in a `get`, objects in a `set`.
     pub max_calls: usize,
     pub max_get: usize,
+    pub max_set: usize,
     /// The one bearer token it lets in; `None`: no bearer token.
     pub token: Option<String>,
     /// What kind of server it is.
@@ -243,6 +260,15 @@ pub struct Data {
     /// What changes the answer being made, once the request is run.
     after: Option<Effect>,
     arrivals: u32,
+    /// Emails (ids) that an `Email/set` will not update or destroy, with the `type` of the SetError it answers
+    /// them with (`forbidden`, `rateLimit`, `serverFail`…).
+    pub refused_sets: BTreeMap<String, &'static str>,
+    /// As [`Data::refused_sets`], but only for an update that moves the email (a patch of `mailboxIds`): the marks of
+    /// the same email are made.
+    pub refused_moves: BTreeMap<String, &'static str>,
+    /// The next this many requests to the API are run, and then their answer is lost: the client gets a
+    /// network error, as when a connection drops after the server did its work.
+    pub lost_answers: usize,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -258,6 +284,7 @@ impl Data {
             seen: Vec::new(),
             max_calls: 16,
             max_get: 500,
+            max_set: 500,
             token: Some(TOKEN.into()),
             profile: Profile::standard(),
             refuse_next: VecDeque::new(),
@@ -278,6 +305,9 @@ impl Data {
             sent_lately: 0,
             after: None,
             arrivals: 0,
+            refused_sets: BTreeMap::new(),
+            refused_moves: BTreeMap::new(),
+            lost_answers: 0,
             next: 0,
             version: 0,
             retry_after: None,
@@ -369,6 +399,8 @@ impl Data {
         self.emails.retain(|e| e.id != email);
         let removed = self.emails.len() < before;
         if removed {
+            // (An email that is no more can't be sent: a by-place server sends only what it has filed.)
+            self.filed.remove(email);
             self.changed();
         }
         removed
@@ -428,10 +460,16 @@ impl Data {
         // that is none, one that never comes (the status the request is seen with is then 0).
         let answered = outgoing::answer_after(self.after.take(), status, body);
         let (asked, retry_after) = (std::mem::take(&mut self.asked), self.retry_after.take());
+        // A request to the API that ran (it called methods) and whose answer the connection loses.
+        let lost = path == API_PATH && !calls.is_empty() && self.lost_answers > 0;
         if self.seen.len() < MAX_SEEN {
             self.seen.push(Seen { method: req.method.clone(), path, status: answered.as_ref().map_or(0, |(status, _)| *status), calls, asked });
         }
         let (status, body) = answered?;
+        if lost {
+            self.lost_answers = self.lost_answers.saturating_sub(1);
+            return Err(Error::Io("the connection was lost before the answer came".into()));
+        }
         Ok(Response { status, body, retry_after })
     }
 
@@ -492,7 +530,7 @@ impl Data {
                     "maxConcurrentRequests": 2,
                     "maxCallsInRequest": self.max_calls,
                     "maxObjectsInGet": self.max_get,
-                    "maxObjectsInSet": self.max_get,
+                    "maxObjectsInSet": self.max_set,
                     "collationAlgorithms": ["i;ascii-casemap"],
                 },
                 MAIL: {},

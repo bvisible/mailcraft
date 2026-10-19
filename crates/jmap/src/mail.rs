@@ -7,6 +7,8 @@
 //!
 //! **What is asked of the server**, in order, each in one request:
 //!
+//! 0. When the request holds changes of messages, `Email/set` for them, before anything is read, so that what
+//!    is read is the server after them ([`up`]). The answer to each change is a piece of its own.
 //! 1. `Mailbox/get`, always: the mailboxes (their roles say which is the Inbox, which a run that reads
 //!    only the Inbox and the mailboxes on screen needs as much as one that reads them all). It is the
 //!    folder list of the run when the request asks for one ([`JmapMailRequest::list_folders`]).
@@ -36,10 +38,11 @@
 //! name the place, it is a removal and an arrival.) The header fields are read from the raw `headers`,
 //! whatever else the server serves.
 //!
-//! **Pieces**, in this order: the folder list (when asked for), then one piece for each window read, then
-//! the last, which says how the run ended: `partial` is false only there, `whole` is true when nothing
-//! went wrong and the run was not stopped, and the problems are in `errors`. [`JmapMailResult::stopped`]:
-//! the `cancel` flag was set, which is looked at before every request.
+//! **Pieces**, in this order: what became of the changes of messages (when the request held any and some
+//! were answered), the folder list (when asked for), then one piece for each window read, then the last,
+//! which says how the run ended: `partial` is false only there, `whole` is true when nothing went wrong and
+//! the run was not stopped, and the problems are in `errors`. [`JmapMailResult::stopped`]: the `cancel` flag
+//! was set, which is looked at before every request.
 //!
 //! **When something goes wrong.** The server refusing the credentials (401, 403) ends the run with
 //! `auth_refused`; one that is busy (429, 503) ends it with `busy_for`, as many seconds as it asked, or 30.
@@ -55,8 +58,9 @@
 //! with no mailbox in it is a line as well: an account always has an Inbox. The lines written here name no
 //! mailbox, and what a server says in one is scrubbed of the session's address, the account's, the
 //! credentials and any word that holds an `@`. A window that a stop (cancel, a busy server, a refused
-//! sign-in) cuts between its requests is not handed on. What the request asks that is not done here yet
-//! (`changes`) gets no answer, so the engine asks again.
+//! sign-in) cuts between its requests is not handed on. Changes of messages that the server did not take are
+//! a line, and wait for the next run; they do not stop a run from being whole, but for a move that was not
+//! answered, which may have been made, and then a window of the mailbox it left would not list the message.
 //!
 //! **Sending** (`outgoing.rs`, `send.rs`): after the list of mailboxes and before any window, the messages
 //! the request names are sent and its drafts filed, a piece for each ([`JmapMailResult::sent`],
@@ -71,6 +75,7 @@ mod message;
 mod outgoing;
 #[cfg(test)]
 mod tests;
+mod up;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -192,6 +197,13 @@ struct Outcome {
     windows: (usize, Option<String>),
     /// How many emails could not be read whole, and why the first could not.
     details: (usize, Option<String>),
+    /// How many changes of messages the server did not take (they wait for the next run), and why the first
+    /// was not.
+    up: (usize, Option<String>),
+    /// The mailboxes that moves were made to, perhaps, without a word coming back (a call that failed, an answer that
+    /// leaves it out): a window of the mailbox such a move left would not list the message. (A mailbox that the listing
+    /// of the run does not have was moved to by none.)
+    unsure_to: Vec<String>,
     /// Mailboxes that were left for the next run: three failed in a row, or there were too many.
     gave_up: bool,
     left_out: usize,
@@ -209,6 +221,7 @@ impl Outcome {
             && self.halted.is_none()
             && self.windows.0 == 0
             && self.details.0 == 0
+            && self.unsure_to.is_empty()
             && !self.gave_up
             && self.left_out == 0
             && self.busy_for.is_none()
@@ -230,6 +243,9 @@ impl Outcome {
         }
         if let (n @ 1.., Some(why)) = (self.details.0, &self.details.1) {
             lines.push(format!("Couldn't read {} in full: {why}", plural(n, "message", "messages")));
+        }
+        if let (n @ 1.., Some(why)) = (self.up.0, &self.up.1) {
+            lines.push(format!("Couldn't send {} to the server: {why}", plural(n, "change", "changes")));
         }
         if self.gave_up {
             lines.push(format!("The server failed {MAX_FAILURES} mailboxes in a row; the rest wait for the next run."));
@@ -355,9 +371,16 @@ impl<'a, H: Http> Run<'a, H> {
         if self.cancel.load(Ordering::Relaxed) { Err(Stop::Cancelled) } else { Ok(()) }
     }
 
-    /// The whole run: the mailboxes, then the windows.
+    /// The whole run: the changes made here, the mailboxes, then the windows.
     async fn all(&self, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
+        // What was changed here goes up first: what is read then is the server after it.
+        self.make_changes(out, emit).await?;
         let places = self.list(out).await?;
+        // A move into a mailbox that the server does not have can not have been made.
+        if let Some(places) = places.as_ref().filter(|places| places.listing.complete) {
+            let known: HashSet<&str> = places.listing.folders.iter().map(|folder| folder.id.as_str()).collect();
+            out.unsure_to.retain(|to| known.contains(to.as_str()));
+        }
         if self.request.list_folders
             && let Some(places) = &places
         {

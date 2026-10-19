@@ -8,7 +8,12 @@
 //! that must work against such a server as well as against a store of the standard kind is tried
 //! against both by setting [`Data::profile`](super::Data::profile).
 //!
-//! A move gives a message a new id and blob here ([`Data::move_to`](super::Data::move_to)).
+//! A move gives a message a new id and blob here, whether another client makes it
+//! ([`Data::move_to`](super::Data::move_to)) or the client under test does, by `Email/set`; what that
+//! answers of the new id is [`Profile::says_moved_id`]. Such a server takes the patches of `Email/set` of the
+//! two forms a layer over a mailbox can follow (`keywords/<name>` and `mailboxIds/<id>`, each `true` or `null`),
+//! and answers `{}` and `[]` for what it did nothing with. It does not look whether the message it is asked to change
+//! is still there: the mailbox does not mind, and the answer is that it was made ([`Profile::unchecked_ids`]).
 //!
 //! **Sending** is held to what such a server does ([`Profile::strict_submission`]): the one identity of the
 //! mailbox, named after its address; a message filed from an upload and sent once, within the hour it was
@@ -57,18 +62,48 @@ pub struct Profile {
     /// the module): one identity named after the address, an email sent once and only within an hour of being
     /// filed, a message read back and checked before it is sent, a limit on how many are sent, a few at a time.
     pub strict_submission: bool,
+    /// What `Email/set` makes of a patch. A server that follows the standard takes any path of the
+    /// patch grammar (RFC 8620 §5.3), the whole of `keywords` or `mailboxIds` among them, and leaves an
+    /// empty `updated`, `destroyed`, `notUpdated` or `notDestroyed` as `null`. A layer over a mailbox takes
+    /// `keywords/<name>` and `mailboxIds/<id>` with `true` or `null` and nothing else (anything more is
+    /// `invalidPatch`), and always answers `{}` and `[]`.
+    pub plain_patches: bool,
+    /// With [`Profile::one_mailbox`]: a move names the email's new id in the answer (`updated: {old: {"id": new}}`).
+    /// Without it the answer says `null`, as a server does that does not know the id its own move gave.
+    pub says_moved_id: bool,
+    /// An update or a destroy of an id that names no email (a message that was moved or deleted since) is answered
+    /// as if it was made, not as `notFound`: a layer over a mailbox asks the mailbox to change a message it may
+    /// not have any more, and the mailbox does not mind.
+    pub unchecked_ids: bool,
 }
 
 impl Profile {
     /// A store of the standard kind: parsed fields, an email in as many mailboxes as it is put in.
     pub fn standard() -> Profile {
-        Profile { parsed_fields: true, fixed_mailboxes: false, one_mailbox: false, strict_submission: false }
+        Profile {
+            parsed_fields: true,
+            fixed_mailboxes: false,
+            one_mailbox: false,
+            strict_submission: false,
+            plain_patches: false,
+            says_moved_id: false,
+            unchecked_ids: false,
+        }
     }
 
     /// A server that names a message by where it is: raw headers only, one mailbox for an email, and
-    /// mailboxes that are not to be made, renamed or removed.
+    /// mailboxes that are not to be made, renamed or removed. It takes only the plain patches, does not
+    /// say the new id of a message it moved, and answers a change of a message that is no more as made.
     pub fn by_place() -> Profile {
-        Profile { parsed_fields: false, fixed_mailboxes: true, one_mailbox: true, strict_submission: true }
+        Profile {
+            parsed_fields: false,
+            fixed_mailboxes: true,
+            one_mailbox: true,
+            strict_submission: true,
+            plain_patches: true,
+            says_moved_id: false,
+            unchecked_ids: true,
+        }
     }
 }
 

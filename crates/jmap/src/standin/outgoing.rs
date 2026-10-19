@@ -1,7 +1,7 @@
 // //// Neoffice — added file (no upstream equivalent)
 //! What the stand-in does for sending mail and filing drafts: the upload of a message (RFC 8620 §6.1),
-//! `Email/import` and `Email/set` (destroy only: RFC 8621 §4.8 and §4.6), `Identity/get` (§6.1) and
-//! `EmailSubmission/set` (§7.5), held to the standard as the rest of the stand-in is.
+//! `Email/import` (RFC 8621 §4.8), `Identity/get` (§6.1) and `EmailSubmission/set` (§7.5), held to the
+//! standard as the rest of the stand-in is; what it files is destroyed by `Email/set` (`set.rs`).
 //!
 //! - **Upload.** `POST /jmap/upload/{accountId}/` with the credentials and a `Content-Type`; a body over
 //!   `maxSizeUpload` is a 413. The answer is a 201 with the blob, its type and its size. What is uploaded
@@ -333,43 +333,6 @@ impl Data {
         }
         self.changed();
         Ok(json!({"id": id, "blobId": blob, "threadId": id, "size": size}))
-    }
-
-    /// `Email/set` (RFC 8621 §4.6), so far to destroy emails: an email the stand-in does not have is not found.
-    pub(super) fn email_set(&mut self, args: &Map<String, Value>) -> Outcome<Value> {
-        allow_only(args, &["accountId", "ifInState", "create", "update", "destroy"])?;
-        account(args)?;
-        for key in ["create", "update"] {
-            if matches!(args.get(key), Some(Value::Object(changes)) if !changes.is_empty()) {
-                return Err(invalid(format!("this stand-in does not {key} emails")));
-            }
-        }
-        let wanted: Vec<String> = match args.get("destroy") {
-            None | Some(Value::Null) => Vec::new(),
-            Some(Value::Array(items)) if items.len() > self.max_get => {
-                return Err(refuse("requestTooLarge", format!("{} emails, and {} are taken at a time", items.len(), self.max_get)));
-            }
-            Some(Value::Array(items)) => items
-                .iter()
-                .map(|item| item.as_str().filter(|id| valid_id(id)).map(str::to_string))
-                .collect::<Option<Vec<String>>>()
-                .ok_or_else(|| invalid("an id is 1 to 512 characters of A-Z a-z 0-9 - _"))?,
-            Some(_) => return Err(invalid("destroy is a list")),
-        };
-        // (An id named twice is destroyed once.)
-        let mut named: BTreeSet<String> = BTreeSet::new();
-        let wanted: Vec<String> = wanted.into_iter().filter(|id| named.insert(id.clone())).collect();
-        let (mut destroyed, mut not_destroyed) = (Vec::new(), Map::new());
-        for id in wanted {
-            if self.remove(&id) {
-                self.filed.remove(&id);
-                destroyed.push(id);
-            } else {
-                not_destroyed.insert(id, json!({"type": "notFound"}));
-            }
-        }
-        let state = self.state();
-        Ok(json!({"accountId": ACCOUNT, "oldState": state, "newState": state, "destroyed": destroyed, "notDestroyed": not_destroyed}))
     }
 
     /// `Identity/get` (RFC 8621 §6.1).

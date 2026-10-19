@@ -80,6 +80,10 @@ pub const MAX_ID: usize = 512;
 /// 500), and the most any session is believed: it may state anything.
 const DEFAULT_OBJECTS_IN_GET: usize = 500;
 const MAX_OBJECTS_IN_GET: usize = 1000;
+/// Likewise for `maxObjectsInSet`: the most objects, created, updated and destroyed together, that one
+/// `set` call may hold.
+const DEFAULT_OBJECTS_IN_SET: usize = 500;
+const MAX_OBJECTS_IN_SET: usize = 1000;
 /// Likewise for `maxCallsInRequest` (every server takes 16 calls in a request).
 const DEFAULT_CALLS_IN_REQUEST: usize = 16;
 const MAX_CALLS_IN_REQUEST: usize = 64;
@@ -592,6 +596,7 @@ pub struct Client<H> {
     upload: String,
     capabilities: Vec<String>,
     max_get: usize,
+    max_set: usize,
     max_calls: usize,
     max_upload: usize,
 }
@@ -602,6 +607,7 @@ impl<H> fmt::Debug for Client<H> {
         f.debug_struct("Client")
             .field("capabilities", &self.capabilities.len())
             .field("max_objects_in_get", &self.max_get)
+            .field("max_objects_in_set", &self.max_set)
             .field("max_calls_in_request", &self.max_calls)
             .finish_non_exhaustive()
     }
@@ -663,6 +669,7 @@ impl<H: Http> Client<H> {
             // (As many as the session document holds, which is bounded by its size.)
             capabilities: capabilities.keys().cloned().collect(),
             max_get: limit(core, "maxObjectsInGet", DEFAULT_OBJECTS_IN_GET, MAX_OBJECTS_IN_GET),
+            max_set: limit(core, "maxObjectsInSet", DEFAULT_OBJECTS_IN_SET, MAX_OBJECTS_IN_SET),
             max_calls: limit(core, "maxCallsInRequest", DEFAULT_CALLS_IN_REQUEST, MAX_CALLS_IN_REQUEST),
             max_upload: limit(core, "maxSizeUpload", DEFAULT_SIZE_UPLOAD, MAX_SIZE_UPLOAD),
             auth,
@@ -679,6 +686,12 @@ impl<H: Http> Client<H> {
     /// The most ids one `get` may be given: what the server takes, never more than 1000.
     pub fn max_objects_in_get(&self) -> usize {
         self.max_get
+    }
+
+    /// The most objects one `set` call may hold, created, updated and destroyed together: what the server takes,
+    /// never more than 1000.
+    pub fn max_objects_in_set(&self) -> usize {
+        self.max_set
     }
 
     /// The most method calls one request may hold: what the server takes, never more than 64.
