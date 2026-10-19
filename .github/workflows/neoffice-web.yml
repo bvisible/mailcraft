@@ -48,7 +48,8 @@ jobs:
           tar -xz -C "$HOME/.cargo/bin" -f "$RUNNER_TEMP/trunk.tar.gz" trunk
           trunk --version
       - name: Build and zip
-        run: packaging/web/package.sh
+        # Upstream keeps the script without its executable bit and calls it through bash (package.yml).
+        run: bash packaging/web/package.sh
       - name: Checksums
         run: |
           set -euo pipefail
