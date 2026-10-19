@@ -12,6 +12,8 @@
 //!   take the server's value, but for one changed here since the server last said (that goes up
 //!   with the run's changes). It follows the server into the mailbox the window is of, unless it
 //!   was moved here since.
+//! - **A message that is its marks alone and that this mailbox does not have** (the request said it did, and
+//!   it was deleted here since) is passed over, not added blank.
 //! - **A message the server knows by a new id** (some servers name a message by where it is, so a
 //!   move gives it a new id): one listed under an id this account doesn't know is first matched to
 //!   a message of the same folder that lost its id (moved here, or marked gone by this very
@@ -22,7 +24,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use mailcraft_model::sync::{GraphMessage, MessagePage, ServerMessage};
-use mailcraft_model::{Id, Mailbox};
+use mailcraft_model::{Address, Id, Mailbox};
 
 use super::graph_down::{self, Down, ServerIndex};
 
@@ -92,6 +94,10 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
                 }
                 index.note(mb, account, id, m);
             }
+            // A message the host sent as its marks alone, because the request said this mailbox has it, and that
+            // it no longer does (it was deleted here since): no message to add. It would stay blank, as every
+            // later run would send it as one the mailbox has. The next run asks for it whole.
+            None if marks_only(there) => {}
             None => {
                 if let Ok(m) = mb.add_message(graph_down::new_message(folder, &page.folder, there)) {
                     index.note(mb, account, id, m);
@@ -100,6 +106,19 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
             }
         }
     }
+}
+
+/// Whether a message of a window is its marks and nothing else: no `Message-ID`, subject, date, sender,
+/// recipients or preview. That is how a host sends a message the request said this mailbox has.
+fn marks_only(m: &GraphMessage) -> bool {
+    m.message_id.is_empty()
+        && m.subject.is_empty()
+        && m.preview.is_empty()
+        && m.sent == 0
+        && m.received == 0
+        && m.from == Address::default()
+        && m.to.is_empty()
+        && m.cc.is_empty()
 }
 
 /// Bring a message this mailbox has in step with what the server says of it now: its keywords,

@@ -159,6 +159,26 @@ fn a_new_message_shows_the_marks_the_server_gave_it() {
 }
 
 #[test]
+fn a_message_that_is_its_marks_alone_and_that_the_mailbox_no_longer_has_is_not_added_blank() {
+    let (mut s, account) = session();
+    take(&mut s, account, Some(server()), vec![], true);
+    take(&mut s, account, None, vec![window("Min", vec![mail("E1", "<1@x>", "One", 100), mail("E2", "<2@x>", "Two", 200)], true)], true);
+    let one = in_folder(&s, account, "Min").iter().find(|m| m.subject == "One").map(|m| m.id).unwrap();
+    // The host was told the mailbox has both and sends the marks of both; the owner deletes One for good before they are taken in.
+    s.mailbox.remove_message(one).unwrap();
+    let marks = |id: &str, read: bool| GraphMessage { server: ServerMessage { id: id.into(), read, ..Default::default() }, ..Default::default() };
+    let answer = take(&mut s, account, None, vec![window("Min", vec![marks("E2", true), marks("E1", true)], true)], true);
+    assert_eq!((answer["new"].as_u64(), answer["changed"].as_u64()), (Some(0), Some(1)), "{answer}");
+    assert_eq!(in_folder(&s, account, "Min").iter().map(|m| (m.subject.as_str(), m.read)).collect::<Vec<_>>(), [("Two", true)]);
+    // The next run does not name it as one the mailbox has; the server lists it, and it is added whole.
+    let known = jmap_mail_request(&s, account, false, &[], false).unwrap().known;
+    assert_eq!(known, vec![JmapKnown { mailbox: "Min".into(), ids: vec!["E2".into()] }]);
+    let answer = take(&mut s, account, None, vec![window("Min", vec![mail("E2", "<2@x>", "Two", 200), mail("E1", "<1@x>", "One", 100)], true)], true);
+    assert_eq!(answer["new"], 1, "{answer}");
+    assert_eq!(in_folder(&s, account, "Min").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Two", "One"]);
+}
+
+#[test]
 fn a_window_cut_short_adds_and_updates_but_removes_nothing() {
     let (mut s, account) = session();
     take(&mut s, account, Some(server()), vec![], true);
