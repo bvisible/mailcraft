@@ -18,6 +18,8 @@ mailcraft-engine = { workspace = true }
 mailcraft-ui-egui = { workspace = true }
 mailcraft-model = { workspace = true }
 mailcraft-time = { workspace = true }
+# //// Neoffice — JMAP over the browser's `fetch`: mail from a server in the browser build (fetch.rs).
+mailcraft-jmap = { workspace = true }
 egui = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
@@ -30,5 +32,6 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 # //// Neoffice — `Navigator`: the browser's language (`navigator.language`) is the language that "System default" follows;
-# `UrlSearchParams`: the name of the person signed in to a hosting page, from the address (host.rs).
-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Navigator", "UrlSearchParams"] }
+# `UrlSearchParams`: the name of the person signed in to a hosting page, from the address (host.rs); `Headers` to
+# `ReadableStreamDefaultReader`: JMAP over `fetch` (fetch.rs).
+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Navigator", "UrlSearchParams", "Headers", "Request", "RequestInit", "RequestMode", "RequestCredentials", "RequestCache", "Response", "ReadableStream", "ReadableStreamDefaultReader"] }

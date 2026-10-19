@@ -17,6 +17,9 @@
 #[cfg(target_arch = "wasm32")]
 mod host;
 mod renewal;
+// //// Neoffice — HTTP through the browser's `fetch`, for JMAP.
+#[cfg(target_arch = "wasm32")]
+mod fetch;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
