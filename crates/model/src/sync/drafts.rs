@@ -116,6 +116,12 @@ pub struct ServerDraft {
     /// again meanwhile.
     #[serde(skip_serializing_if = "is_zero")]
     pub saves: u32,
+    // //// Neoffice — a JMAP account's message written as a draft its server has: Graph sends the draft itself, JMAP files a copy in Sent, so the draft's copy is named here and destroyed once the message has gone. Empty for every other message.
+    /// For a message of a JMAP account's Outbox that was written as a draft the server has: the
+    /// server id of that draft's copy, which the server destroys once the message has gone (and not
+    /// before: a message that never goes leaves its draft where it was).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub sent_from: String,
 }
 
 fn is_false(b: &bool) -> bool {

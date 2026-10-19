@@ -95,6 +95,7 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         // What was changed here goes up from a later step on; nothing is sent from here yet.
         changes: Vec::new(),
         sends: Vec::new(),
+        drafts: Vec::new(),
         background,
     })
 }

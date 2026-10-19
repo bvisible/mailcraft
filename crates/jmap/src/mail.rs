@@ -56,7 +56,11 @@
 //! mailbox, and what a server says in one is scrubbed of the session's address, the account's, the
 //! credentials and any word that holds an `@`. A window that a stop (cancel, a busy server, a refused
 //! sign-in) cuts between its requests is not handed on. What the request asks that is not done here yet
-//! (`changes`, `sends`) gets no answer, so the engine asks again.
+//! (`changes`) gets no answer, so the engine asks again.
+//!
+//! **Sending** (`outgoing.rs`, `send.rs`): after the list of mailboxes and before any window, the messages
+//! the request names are sent and its drafts filed, a piece for each ([`JmapMailResult::sent`],
+//! [`JmapMailResult::drafts`]). A run with none makes no request for them.
 //!
 //! **What comes back is hostile.** Counts, ids, names, previews, addresses and header fields are cut to
 //! sizes; an answer is held to the size its request can need; an entry that cannot be read is passed over;
@@ -64,6 +68,7 @@
 
 mod folders;
 mod message;
+mod outgoing;
 #[cfg(test)]
 mod tests;
 
@@ -358,6 +363,9 @@ impl<'a, H: Http> Run<'a, H> {
         {
             emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
         }
+        // What waits to be sent, and the drafts that wait to go up, go before a window is read: the copy of a
+        // message that went is in the window of Sent, and a draft filed is in the window of Drafts (`outgoing.rs`).
+        self.outgoing(places.as_ref(), emit).await?;
         let targets = self.targets(places.as_ref().map(|places| &places.listing), out);
         let of = u32::try_from(targets.len()).unwrap_or(u32::MAX);
         log::debug!("jmap mail: {} mailboxes to read, a window of {}", targets.len(), self.window);

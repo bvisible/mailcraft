@@ -12,7 +12,7 @@
 //! A JMAP account's folders and messages are known to its server by the ids the server hands out
 //! ([`crate::AccountKind::server_ids`]), as a Microsoft account's are. What carries no Graph
 //! meaning is used again here instead of being copied: [`FolderListing`], [`MessagePage`],
-//! [`SendUp`], [`SendDone`], [`GraphProgress`] and, for a message fetched whole, what that brings
+//! [`SendDone`], [`GraphProgress`] and, for a message fetched whole, what that brings
 //! ([`GraphFetchResult`](super::GraphFetchResult)). What is asked for it is a [`JmapFetchRequest`]
 //! of its own, since a host needs to know where the server is.
 //!
@@ -25,18 +25,27 @@
 //! counts only. The secret that opens the server (a password, or a bearer token) is handed to the
 //! host beside the request and is in neither.
 //!
-//! Saving drafts on the server and the Drafts that go up with a run are not here yet: a `drafts`
-//! list joins the request and the result when that is built. Both read a missing field as empty,
-//! so the files and answers written until then stay good.
+//! **Sending** (RFC 8621 §7): what waits in the Outbox goes with the run as [`JmapSend`], each message
+//! whole, and what became of each comes back as a [`SendDone`] (sent, held with a reason, or not
+//! tried). **Drafts** (RFC 8621 §4.8): a draft saved here goes up as a [`JmapDraftUp`], to be filed in
+//! the server's Drafts in place of the copy an earlier save made; [`JmapDraftDone`] says what the
+//! server filed. Both read a missing field as empty, so the files and answers written before them
+//! stay good.
 
 use serde::{Deserialize, Serialize};
 
-use super::{FolderListing, GraphProgress, MessagePage, SendDone, SendUp, is_false};
-use crate::Id;
+use super::{FolderListing, GraphProgress, MessagePage, SendDone, is_false};
+use crate::{Id, Message};
 
 /// Most messages of one mailbox that a run reads (the newest ones): what [`JmapMailRequest::window`]
 /// is held to, here and by the host.
 pub const MAX_JMAP_WINDOW: u32 = 500;
+
+/// Most messages one run sends, and most drafts it files: more go with the next run. A server may
+/// limit how many messages a person sends in a few minutes, and a run that sends a few at a time
+/// stays well under it.
+pub const MAX_JMAP_SENDS: usize = 10;
+pub const MAX_JMAP_DRAFTS: usize = 10;
 
 /// What a run for a [`crate::AccountKind::Jmap`] account is asked to do: the changes made here go
 /// up, what waits in the Outbox is sent, the server's mailboxes are listed if they should be, and
@@ -70,10 +79,13 @@ pub struct JmapMailRequest {
     /// The changes of messages made here, after which the mailboxes are read.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<JmapChange>,
-    /// What waits in the Outbox, sent after the changes (RFC 8621 §7). Each message goes whole,
-    /// as its `mime`.
+    /// What waits in the Outbox, sent after the changes (RFC 8621 §7). Each message goes whole.
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub sends: Vec<SendUp>,
+    pub sends: Vec<JmapSend>,
+    /// The drafts saved here that the server doesn't have yet in their latest form: filed in its
+    /// Drafts after the messages are sent (RFC 8621 §4.8).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub drafts: Vec<JmapDraftUp>,
     /// Nobody is waiting for this run: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
@@ -104,6 +116,58 @@ pub struct JmapFetchRequest {
     /// Nobody is waiting: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
+}
+
+/// A message of a JMAP account's Outbox to send, whole (RFC 8621 §7): the host files it in the
+/// server's Sent and has the server send it to everyone it names.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JmapSend {
+    /// The message in the Outbox.
+    pub message: Id,
+    /// The server id of the copy of the draft this message was written as, when the server has one:
+    /// destroyed once the message has gone, and not before. Empty: there is none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub draft_copy: String,
+    /// The message as it goes out, with its attachments. Its Bcc is for the envelope alone: the host
+    /// writes the message without that header.
+    pub mime: Box<Message>,
+}
+
+/// A draft saved here, to be filed in the server's Drafts (RFC 8621 §4.8): the whole message, with its
+/// Bcc. The copy an earlier save made is destroyed once the new one is in, never before.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JmapDraftUp {
+    /// The draft here.
+    pub message: Id,
+    /// How many times it was saved here ([`ServerDraft::saves`](super::ServerDraft)) when this was
+    /// worked out: an answer settles the draft only when it wasn't saved again meanwhile.
+    pub saves: u32,
+    /// The server id of the copy an earlier save made, when the server has one.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub replaces: String,
+    /// The draft as it is saved, with its attachments and its Bcc.
+    pub mime: Box<Message>,
+}
+
+/// What became of a [`JmapDraftUp`]. A draft that got no answer at all isn't here: it goes up again
+/// with the next run.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JmapDraftDone {
+    pub message: Id,
+    /// Its [`JmapDraftUp::saves`].
+    pub saves: u32,
+    /// The server id of the copy just filed; empty when the server filed none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    /// The server id of the mailbox it is in (the server's Drafts).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub folder: String,
+    /// The server won't have it, and it isn't a matter of trying again: why, in plain words.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
 }
 
 /// Which mailboxes a run reads.
@@ -226,6 +290,9 @@ pub struct JmapMailResult {
     /// What became of the messages sent.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sent: Vec<SendDone>,
+    /// What became of the drafts filed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub drafts: Vec<JmapDraftDone>,
     /// Every mailbox of the server, when it could be listed at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub listing: Option<FolderListing>,
@@ -270,6 +337,7 @@ impl JmapMailResult {
         }
         self.changes.extend(piece.changes);
         self.sent.extend(piece.sent);
+        self.drafts.extend(piece.drafts);
         if piece.listing.is_some() {
             self.listing = piece.listing;
         }
@@ -299,7 +367,32 @@ impl std::fmt::Debug for JmapMailRequest {
             .field("known", &known)
             .field("changes", &self.changes.len())
             .field("sends", &self.sends.len())
+            .field("drafts", &self.drafts.len())
             .field("background", &self.background)
+            .finish()
+    }
+}
+
+/// Counts only: a message is private, even in a debug line.
+impl std::fmt::Debug for JmapSend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JmapSend")
+            .field("message", &self.message)
+            .field("draft_copy", &!self.draft_copy.is_empty())
+            .field("recipients", &self.mime.recipients().count())
+            .field("attachments", &self.mime.attachments.len())
+            .finish()
+    }
+}
+
+/// Counts only, as a message to send's.
+impl std::fmt::Debug for JmapDraftUp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JmapDraftUp")
+            .field("message", &self.message)
+            .field("saves", &self.saves)
+            .field("replaces", &!self.replaces.is_empty())
+            .field("attachments", &self.mime.attachments.len())
             .finish()
     }
 }
@@ -324,6 +417,7 @@ impl std::fmt::Debug for JmapMailResult {
             .field("account", &self.account)
             .field("changes", &self.changes.len())
             .field("sent", &self.sent.len())
+            .field("drafts", &self.drafts.len())
             .field("listed", &self.listing.as_ref().map(|listing| listing.folders.len()))
             .field("pages", &self.pages.len())
             .field("messages", &messages)
@@ -373,7 +467,8 @@ mod tests {
                 JmapChange::Move { message: 5, id: "E3".into(), from: "M1".into(), to: "M2".into() },
                 JmapChange::Destroy { id: "E9".into() },
             ],
-            sends: vec![SendUp { message: 7, draft: None, mime: Some(Box::new(to_bob)) }],
+            sends: vec![JmapSend { message: 7, draft_copy: format!("E-draft-{ME}"), mime: Box::new(to_bob.clone()) }],
+            drafts: vec![JmapDraftUp { message: 8, saves: 2, replaces: "E9".into(), mime: Box::new(to_bob) }],
             background: true,
         }
     }
@@ -404,6 +499,13 @@ mod tests {
                 },
             ],
             sent: vec![SendDone { message: 7, outcome: SendOutcome::Held { lost: false, why: format!("{ME} was refused") }, draft: None }],
+            drafts: vec![JmapDraftDone {
+                message: 8,
+                saves: 2,
+                id: "E10".into(),
+                folder: "M3".into(),
+                refused: Some(format!("{ME} may not file it")),
+            }],
             listing: Some(FolderListing {
                 folders: vec![GraphFolder { id: "M1".into(), name: ME.into(), kind: FolderKind::Inbox, total: 4, unread: 1, ..Default::default() }],
                 complete: true,
@@ -422,11 +524,24 @@ mod tests {
     #[test]
     fn a_request_and_a_result_read_and_write_as_json() {
         let json = round_trip(&request());
-        for part in [r#""scope":{"light":{"also":["#, r#""known":[{"mailbox":"M1","ids":["#, r#""sends":[{"message":7,"mime":"#, r#""bearer":true"#] {
+        for part in [
+            r#""scope":{"light":{"also":["#,
+            r#""known":[{"mailbox":"M1","ids":["#,
+            r#""sends":[{"message":7,"draftCopy":"#,
+            r#""drafts":[{"message":8,"saves":2,"replaces":"E9","mime":"#,
+            r#""bearer":true"#,
+        ] {
             assert!(json.contains(part), "{part} in {json}");
         }
         let json = round_trip(&result());
-        for part in [r#""authRefused":true"#, r#""busyFor":30"#, r#""whole":true"#, r#""afresh":true"#, r#""stopped":true"#] {
+        for part in [
+            r#""authRefused":true"#,
+            r#""busyFor":30"#,
+            r#""whole":true"#,
+            r#""afresh":true"#,
+            r#""stopped":true"#,
+            r#""drafts":[{"message":8,"saves":2,"id":"E10","folder":"M3","refused":"#,
+        ] {
             assert!(json.contains(part), "{part} in {json}");
         }
         assert!(!json.contains("auth_refused") && !json.contains("busy_for"), "{json}");
@@ -436,7 +551,10 @@ mod tests {
     fn what_is_not_said_is_empty() {
         let none: JmapMailRequest = serde_json::from_str("{}").unwrap();
         assert_eq!(none, JmapMailRequest::default());
-        assert_eq!((none.window, none.scope.clone(), none.known.len(), none.changes.len(), none.sends.len()), (0, JmapScope::All, 0, 0, 0));
+        assert_eq!(
+            (none.window, none.scope.clone(), none.known.len(), none.changes.len(), none.sends.len(), none.drafts.len()),
+            (0, JmapScope::All, 0, 0, 0, 0)
+        );
         let none: JmapMailResult = serde_json::from_str("{}").unwrap();
         assert_eq!(none, JmapMailResult::default());
         // An empty run writes next to nothing, and reads back as it was.
@@ -527,6 +645,7 @@ mod tests {
                 listing: Some(FolderListing { folders: vec![GraphFolder { id: "M1".into(), ..Default::default() }], complete: true }),
                 changes: vec![JmapChangeDone { change: JmapChange::Destroy { id: "E9".into() }, outcome: JmapOutcome::Gone }],
                 errors: vec!["One".into()],
+                sent: vec![SendDone { message: 7, outcome: SendOutcome::Sent, draft: None }],
                 progress: Some(GraphProgress { folder: "M1".into(), read: 0, total: 2, number: 1, folders: 2 }),
                 ..Default::default()
             },
@@ -542,6 +661,7 @@ mod tests {
             JmapMailResult {
                 account: 3,
                 pages: vec![page("M2", &["E3"])],
+                drafts: vec![JmapDraftDone { message: 8, saves: 1, id: "E10".into(), ..Default::default() }],
                 errors: vec!["Two".into()],
                 whole: true,
                 stopped: true,
@@ -554,6 +674,8 @@ mod tests {
         assert_eq!((whole.partial, whole.whole, whole.stopped, whole.auth_refused, whole.busy_for), (false, true, true, true, Some(30)));
         assert_eq!(whole.pages.iter().map(|p| (p.folder.as_str(), p.messages.len())).collect::<Vec<_>>(), [("M1", 2), ("M2", 1)]);
         assert_eq!((whole.changes.len(), whole.errors.join(", ").as_str(), whole.listing.map(|l| l.folders.len())), (1, "One, Two", Some(1)));
+        // What became of the messages sent and of the drafts filed is kept in the order it came.
+        assert_eq!((whole.sent.len(), whole.drafts.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()), (1, vec!["E10"]));
         // The progress of the piece that had one stays until another says more.
         assert_eq!(whole.progress.map(|p| p.total), Some(2));
     }
@@ -571,12 +693,52 @@ mod tests {
         }
         assert_eq!(
             format!("{request:?}"),
-            "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, background: true }"
+            "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, drafts: 1, background: true }"
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapMailResult { account: 3, changes: 4, sent: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
+            "JmapMailResult { account: 3, changes: 4, sent: 1, drafts: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
         );
+    }
+
+    /// A message to send and a draft to file carry the whole message, and print none of it.
+    #[test]
+    fn a_message_to_send_and_a_draft_to_file_read_and_write_as_json_and_show_counts_only() {
+        let message = Message {
+            id: 7,
+            from: Address::new("Ada", ME),
+            to: vec![Address::new("Bob", "bob@example.org")],
+            bcc: vec![Address::new("Eve", "eve@example.org")],
+            subject: format!("Private plans of {ME}"),
+            ..Default::default()
+        };
+        let send = JmapSend { message: 7, draft_copy: "E5".into(), mime: Box::new(message.clone()) };
+        let json = round_trip(&send);
+        assert!(json.starts_with(r#"{"message":7,"draftCopy":"E5","mime":{"#), "{json}");
+        // No copy of a draft: nothing is written for it, and a sender that never heard of it reads as none.
+        let plain = JmapSend { draft_copy: String::new(), ..send.clone() };
+        assert!(!round_trip(&plain).contains("draftCopy"));
+        let old: JmapSend = serde_json::from_str(r#"{"message":7,"mime":{"id":7}}"#).unwrap();
+        assert_eq!((old.message, old.draft_copy.as_str(), old.mime.id), (7, "", 7));
+        assert_eq!(serde_json::from_str::<JmapSend>("{}").unwrap(), JmapSend::default());
+
+        let draft = JmapDraftUp { message: 8, saves: 3, replaces: "E9".into(), mime: Box::new(message) };
+        assert!(round_trip(&draft).starts_with(r#"{"message":8,"saves":3,"replaces":"E9","mime":{"#));
+        assert!(!round_trip(&JmapDraftUp { replaces: String::new(), ..draft.clone() }).contains("replaces"));
+        assert_eq!(serde_json::from_str::<JmapDraftUp>("{}").unwrap(), JmapDraftUp::default());
+
+        // The messages are private, even in a debug line: counts, and whether there is a copy.
+        for shown in [format!("{send:?}"), format!("{send:#?}"), format!("{draft:?}"), format!("{draft:#?}")] {
+            for hidden in ["@", "example.org", "Ada", "Bob", "Eve", "Private", "E5", "E9"] {
+                assert!(!shown.contains(hidden), "{hidden} in {shown}");
+            }
+        }
+        assert_eq!(format!("{send:?}"), "JmapSend { message: 7, draft_copy: true, recipients: 2, attachments: 0 }");
+        assert_eq!(format!("{draft:?}"), "JmapDraftUp { message: 8, saves: 3, replaces: true, attachments: 0 }");
+
+        let done = JmapDraftDone { message: 8, saves: 3, id: "E10".into(), folder: "M3".into(), refused: None };
+        assert_eq!(round_trip(&done), r#"{"message":8,"saves":3,"id":"E10","folder":"M3"}"#);
+        assert_eq!(serde_json::from_str::<JmapDraftDone>(r#"{"message":8}"#).unwrap(), JmapDraftDone { message: 8, ..Default::default() });
     }
 
     #[test]

@@ -3,8 +3,9 @@
 //!
 //! A [`Client`] speaks JMAP over any [`Http`]: the browser's `fetch`, a blocking client on the
 //! desktop, or the in-process server of the tests (`standin`, behind the `stand-in` feature). Nothing
-//! here reads the clock, starts a thread or opens a socket, so the crate builds for the browser as it
-//! is, and its futures need not be `Send`.
+//! here starts a thread or opens a socket, and the clock is read for one thing only (the date and
+//! the zone of a message that is sent or saved, through the time crate, which asks the browser as well
+//! as the system), so the crate builds for the browser as it is, and its futures need not be `Send`.
 //!
 //! - [`Client::connect`] fetches the session and checks it: mail must be on offer, and the addresses it
 //!   names are resolved against its own. The credentials go to the server the session is served from and
@@ -16,6 +17,9 @@
 //!   request it worked out says, and hands them over in pieces ([`mail`]).
 //! - [`fetch`] brings a message whole: the raw octets an email's blob holds, downloaded from the
 //!   session's `downloadUrl`.
+//! - Sending and drafts (RFC 8621 §7 and §4.8) are part of a run ([`mail`]): a message of the Outbox is
+//!   uploaded, filed in the Sent mailbox and submitted, and a draft is filed in Drafts in place of the
+//!   copy an earlier save made (`send`).
 //!
 //! Everything a server sends is hostile: answers are capped ([`MAX_JSON`]), ids are held to
 //! [`valid_id`], numbers are clamped, and nothing here indexes into what came over the wire. The
@@ -35,6 +39,7 @@ use serde_json::Value;
 
 pub mod fetch;
 pub mod mail;
+mod send;
 #[cfg(any(test, feature = "stand-in"))]
 pub mod standin;
 pub mod url;
@@ -46,6 +51,8 @@ pub use url::{Url, pct, pct_decode};
 pub const CORE: &str = "urn:ietf:params:jmap:core";
 /// The capability of mail (RFC 8621 §1.3).
 pub const MAIL: &str = "urn:ietf:params:jmap:mail";
+/// The capability of sending mail (RFC 8621 §1.3.2): identities and submissions.
+pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 /// The kind of a problem that names a limit of the request that was exceeded (RFC 8620 §3.6.1).
 const LIMIT_PROBLEM: &str = "urn:ietf:params:jmap:error:limit";
 
@@ -76,6 +83,10 @@ const MAX_OBJECTS_IN_GET: usize = 1000;
 /// Likewise for `maxCallsInRequest` (every server takes 16 calls in a request).
 const DEFAULT_CALLS_IN_REQUEST: usize = 16;
 const MAX_CALLS_IN_REQUEST: usize = 64;
+/// Likewise for `maxSizeUpload`, in octets: the largest message that is sent or saved (a message is
+/// held in memory several times over while it goes).
+const DEFAULT_SIZE_UPLOAD: usize = 50 << 20;
+const MAX_SIZE_UPLOAD: usize = 64 << 20;
 /// Longest user name and password, or access token, that one sign-in may carry.
 const MAX_CREDENTIALS: usize = 32 * 1024;
 /// Longest text kept of what a server says in an error, and largest body read for it.
@@ -582,6 +593,7 @@ pub struct Client<H> {
     capabilities: Vec<String>,
     max_get: usize,
     max_calls: usize,
+    max_upload: usize,
 }
 
 /// What may be shown of a client: sizes, never an address or a credential.
@@ -652,6 +664,7 @@ impl<H: Http> Client<H> {
             capabilities: capabilities.keys().cloned().collect(),
             max_get: limit(core, "maxObjectsInGet", DEFAULT_OBJECTS_IN_GET, MAX_OBJECTS_IN_GET),
             max_calls: limit(core, "maxCallsInRequest", DEFAULT_CALLS_IN_REQUEST, MAX_CALLS_IN_REQUEST),
+            max_upload: limit(core, "maxSizeUpload", DEFAULT_SIZE_UPLOAD, MAX_SIZE_UPLOAD),
             auth,
             secrets,
             http,
@@ -671,6 +684,12 @@ impl<H: Http> Client<H> {
     /// The most method calls one request may hold: what the server takes, never more than 64.
     pub fn max_calls_in_request(&self) -> usize {
         self.max_calls
+    }
+
+    /// The most octets a message may have when it is uploaded: what the server takes, never more than
+    /// 64 MB.
+    pub fn max_size_upload(&self) -> usize {
+        self.max_upload
     }
 
     /// Whether the session names a capability (`urn:ietf:params:jmap:submission`…).
@@ -706,23 +725,46 @@ impl<H: Http> Client<H> {
     /// [`Request::max`]. A caller that knows how big an answer can be asks for no more than that, so that a
     /// server can not make it hold a great deal of memory.
     pub async fn call_within(&self, using: &[&str], calls: Vec<(&str, Value)>, max: usize) -> Result<Answers> {
+        self.call_with_status(using, calls, max).await.1
+    }
+
+    /// [`Client::call_within`], with the HTTP status the server answered with when it answered at all
+    /// (`None`: no answer came, or the request was never sent). A caller that must know whether the server can
+    /// have run the calls (a message sent) reads it: a status of 400 to 499 or 503 is a server that refused
+    /// the request as a whole, any other error status one that may have run it first.
+    pub(crate) async fn call_with_status(&self, using: &[&str], calls: Vec<(&str, Value)>, max: usize) -> (Option<u16>, Result<Answers>) {
         if calls.is_empty() {
-            return Ok(Answers(Vec::new()));
+            return (None, Ok(Answers(Vec::new())));
         }
         if calls.len() > self.max_calls {
-            return Err(Error::TooLarge(format!("{} method calls in one request, and the server takes {}", calls.len(), self.max_calls)));
+            return (None, Err(Error::TooLarge(format!("{} method calls in one request, and the server takes {}", calls.len(), self.max_calls))));
         }
         let names: Vec<&str> = calls.iter().map(|(name, _)| *name).collect();
         let method_calls: Vec<Value> =
             calls.into_iter().enumerate().map(|(i, (name, args))| Value::Array(vec![Value::from(name), args, Value::from(call_id(i))])).collect();
         let body = serde_json::json!({ "using": using, "methodCalls": method_calls });
-        let bytes = serde_json::to_vec(&body).map_err(|e| Error::Protocol(e.to_string()))?;
-        let request = Request::post(&self.api, "application/json", bytes, max.min(MAX_JSON))
-            .header("Authorization", &self.auth)
-            .header("Accept", "application/json");
-        let resp = send(&self.http, request).await.map_err(|e| e.hidden(&self.secrets))?;
-        check_hiding(&resp, &self.secrets)?;
-        let responses = match json_body(&resp)? {
+        let bytes = match serde_json::to_vec(&body) {
+            Ok(bytes) => bytes,
+            Err(e) => return (None, Err(Error::Protocol(e.to_string()))),
+        };
+        let limit = max.min(MAX_JSON);
+        let request =
+            Request::post(&self.api, "application/json", bytes, limit).header("Authorization", &self.auth).header("Accept", "application/json");
+        let resp = match self.http.send(request).await {
+            Ok(resp) => resp,
+            Err(e) => return (None, Err(e.hidden(&self.secrets))),
+        };
+        let status = Some(resp.status);
+        if resp.body.len() > limit {
+            return (status, Err(Error::TooLarge(format!("the answer is larger than {limit} bytes"))));
+        }
+        (status, self.answers_in(&resp, &names))
+    }
+
+    /// The answers a response holds to the calls named in `names`, in order.
+    fn answers_in(&self, resp: &Response, names: &[&str]) -> Result<Answers> {
+        check_hiding(resp, &self.secrets)?;
+        let responses = match json_body(resp)? {
             Value::Object(mut top) => match top.remove("methodResponses") {
                 Some(Value::Array(responses)) => responses,
                 _ => return Err(Error::Protocol("JMAP: no methodResponses".into())),
@@ -730,7 +772,7 @@ impl<H: Http> Client<H> {
             _ => return Err(Error::Protocol("JMAP: the answer isn't an object".into())),
         };
         log::debug!("jmap: {} method call(s) in one request", names.len());
-        Ok(Answers(answers_to(responses, &names, &self.secrets)))
+        Ok(Answers(answers_to(responses, names, &self.secrets)))
     }
 
     /// [`Client::call`] with the capabilities of mail named in `using`.

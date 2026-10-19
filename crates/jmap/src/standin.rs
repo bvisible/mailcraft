@@ -6,7 +6,9 @@
 //!
 //! Where the other stand-ins of the tests answer whatever they are told and take whatever they are
 //! sent, this one holds a client to the standard (RFC 8620, 8621) as a real server does, for the part
-//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get` and the download of a blob.
+//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get` and the download of a blob; and, so
+//! that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Email/set` (to destroy),
+//! `Identity/get` and `EmailSubmission/set` (`outgoing.rs`).
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -31,7 +33,11 @@
 //!   the octets of an email's blob (`blobId`), as they were delivered, to the credentials it lets in
 //!   (RFC 8620 §6.2). An account or a blob it doesn't have, and a path that isn't that of a download, is a
 //!   404. Like any answer, one over the size the request asked for is no answer.
-//! - **Not there.** Anything that changes mail, uploads, sending, `*/changes`, threads, push. The session
+//! - **Sending** (`outgoing.rs`). `POST /jmap/upload/{accountId}/` keeps a message until `Email/import` files it;
+//!   `EmailSubmission/set` sends an email it has to the recipients of an envelope, as an identity the account
+//!   may send as, and records what left ([`Data::delivered`]) without any Bcc field. A test turns sending off
+//!   with [`Data::submission`] (the session then offers none) and lines up one-off failures in [`Data::faults`].
+//! - **Not there.** Changes to mail but filing and destroying it, `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
 //! - **Kinds of server.** [`Data::profile`] makes it a store of the standard kind, which parses the header
 //!   fields of an email for a client (`subject`, `from`…), or a server that names a message by where it
@@ -57,11 +63,13 @@ use base64::Engine as _;
 use mailcraft_model::{Address, Message};
 use serde_json::{Map, Value, json};
 
-use crate::{CORE, Error, Http, MAIL, Request, Response, Result, Url, valid_id};
+use crate::{CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
 
 mod facade;
+mod outgoing;
 
 pub use facade::Profile;
+pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";
@@ -76,6 +84,7 @@ const ORIGIN: &str = "https://jmap.standin.example";
 const SESSION_PATH: &str = "/jmap/session";
 const API_PATH: &str = "/jmap/api";
 const DOWNLOAD_PATH: &str = "/jmap/download/";
+const UPLOAD_PATH: &str = "/jmap/upload/";
 /// Largest request it reads (`maxSizeRequest`), and most ids one `Email/query` answers however many are asked.
 const MAX_REQUEST: usize = 10_000_000;
 const MAX_QUERY: usize = 500;
@@ -215,6 +224,25 @@ pub struct Data {
     /// Mailboxes (ids) whose counts `Mailbox/get` leaves out (`totalEmails`, `unreadEmails`): a store that could
     /// not read them.
     pub uncounted: BTreeSet<String>,
+    /// The session offers sending (`urn:ietf:params:jmap:submission`): `Identity/get` and `EmailSubmission/set`.
+    pub submission: bool,
+    /// Who the account may send as ([`Data::identity`]).
+    pub identities: Vec<Identity>,
+    /// The messages uploaded that no `Email/import` has taken yet, by blob.
+    pub uploads: BTreeMap<String, Upload>,
+    /// What the server sent, in order.
+    pub delivered: Vec<Delivery>,
+    /// The largest upload it takes (`maxSizeUpload`).
+    pub max_upload: usize,
+    /// One-off failures to come, oldest first ([`Fault`]).
+    pub faults: VecDeque<Fault>,
+    /// A server of the by-place kind sends only an email that was just filed, once: the emails filed and not sent.
+    pub filed: BTreeSet<String>,
+    /// How many messages that kind of server has sent in the time it counts, which limits them.
+    pub sent_lately: u32,
+    /// What changes the answer being made, once the request is run.
+    after: Option<Effect>,
+    arrivals: u32,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -240,6 +268,16 @@ impl Data {
             forgetful: BTreeSet::new(),
             forgetful_headers: BTreeSet::new(),
             uncounted: BTreeSet::new(),
+            submission: true,
+            identities: Vec::new(),
+            uploads: BTreeMap::new(),
+            delivered: Vec::new(),
+            max_upload: 25_000_000,
+            faults: VecDeque::new(),
+            filed: BTreeSet::new(),
+            sent_lately: 0,
+            after: None,
+            arrivals: 0,
             next: 0,
             version: 0,
             retry_after: None,
@@ -379,14 +417,21 @@ impl Data {
         let (status, body, calls) = if req.method == "GET" && path.starts_with(DOWNLOAD_PATH) {
             let (status, body) = self.download(req, &path);
             (status, body, Vec::new())
+        } else if path.starts_with(UPLOAD_PATH) {
+            let (status, body) = self.upload(req, &path);
+            (status, body, Vec::new())
         } else {
             let (status, body, calls) = self.route(req, &path);
             (status, serde_json::to_vec(&body).unwrap_or_default(), calls)
         };
+        // A fault may change the answer after the work is done: the status of a gateway that gave up, an answer
+        // that is none, one that never comes (the status the request is seen with is then 0).
+        let answered = outgoing::answer_after(self.after.take(), status, body);
         let (asked, retry_after) = (std::mem::take(&mut self.asked), self.retry_after.take());
         if self.seen.len() < MAX_SEEN {
-            self.seen.push(Seen { method: req.method.clone(), path, status, calls, asked });
+            self.seen.push(Seen { method: req.method.clone(), path, status: answered.as_ref().map_or(0, |(status, _)| *status), calls, asked });
         }
+        let (status, body) = answered?;
         Ok(Response { status, body, retry_after })
     }
 
@@ -438,10 +483,10 @@ impl Data {
     }
 
     fn session(&self) -> Value {
-        json!({
+        let mut session = json!({
             "capabilities": {
                 CORE: {
-                    "maxSizeUpload": 25_000_000,
+                    "maxSizeUpload": self.max_upload,
                     "maxConcurrentUpload": 2,
                     "maxSizeRequest": MAX_REQUEST,
                     "maxConcurrentRequests": 2,
@@ -469,7 +514,14 @@ impl Data {
             "downloadUrl": "/jmap/download/{accountId}/{blobId}/{name}?type={type}",
             "uploadUrl": "/jmap/upload/{accountId}/",
             "state": self.state(),
-        })
+        });
+        // Sending, when the server has it (RFC 8621 §1.3.2).
+        if self.submission {
+            session["capabilities"][SUBMISSION] = json!({});
+            session["accounts"][ACCOUNT]["accountCapabilities"][SUBMISSION] = json!({"maxDelayedSend": 0, "submissionExtensions": {}});
+            session["primaryAccounts"][SUBMISSION] = json!(ACCOUNT);
+        }
+        session
     }
 
     /// A request of method calls: the status, the body, and the names of the methods it called.
@@ -484,7 +536,7 @@ impl Data {
         let (Some(using), Some(calls)) = (using, request.get("methodCalls").and_then(Value::as_array)) else {
             return rejected("notRequest", "a request has `using` (a list of names) and `methodCalls`");
         };
-        if using.iter().any(|capability| !matches!(*capability, CORE | MAIL)) {
+        if using.iter().any(|capability| !(matches!(*capability, CORE | MAIL) || (*capability == SUBMISSION && self.submission))) {
             return rejected("unknownCapability", "a capability this server doesn't have is in `using`");
         }
         if calls.len() > self.max_calls {
@@ -500,6 +552,11 @@ impl Data {
             };
             parsed.push((name, args, id));
         }
+        // A request a server is down for, or too busy to take, is not run at all.
+        let wanted: Vec<&str> = parsed.iter().map(|(name, ..)| *name).collect();
+        if let Some(Effect::RefuseWith(status)) = self.request_fault(&wanted, |effect| matches!(effect, Effect::RefuseWith(_))) {
+            return (status, problem(status, "about:blank", "the server can't take this request just now"), Vec::new());
+        }
         let (mut done, mut responses, mut names) = (Vec::new(), Vec::new(), Vec::new());
         for (name, args, id) in parsed {
             names.push(name.to_string());
@@ -514,24 +571,43 @@ impl Data {
             responses.push(response);
             done.push(Done { id: id.to_string(), name: name.to_string(), result });
         }
+        // The work is done; what the answer is may be a fault's to say.
+        if let Some(effect) = self.request_fault(&wanted, |effect| matches!(effect, Effect::LoseAnswer | Effect::Status(_) | Effect::Garbage)) {
+            self.after = Some(effect);
+        }
         (200, json!({"methodResponses": responses, "sessionState": self.state()}), names)
     }
 
-    fn method(&self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
+    /// The first fault lined up for one of `methods` that `fits`, taken.
+    fn request_fault(&mut self, methods: &[&str], fits: impl Fn(&Effect) -> bool) -> Option<Effect> {
+        let at = self.faults.iter().position(|fault| methods.contains(&fault.on) && fits(&fault.effect))?;
+        self.faults.remove(at).map(|fault| fault.effect)
+    }
+
+    fn method(&mut self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
         // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2).
         let served = match name {
-            "Mailbox/get" | "Email/query" | "Email/get" => true,
+            "Mailbox/get" | "Email/query" | "Email/get" | "Email/import" | "Email/set" => true,
             "Mailbox/set" => self.profile.fixed_mailboxes,
+            // Sending is a capability of its own, in the session and in the request.
+            "Identity/get" | "EmailSubmission/set" => self.submission && using.contains(&SUBMISSION),
             _ => false,
         };
         if !served || !using.contains(&MAIL) {
             return Err(refuse("unknownMethod", format!("no method {}", name.chars().take(40).collect::<String>())));
+        }
+        if let Some(Effect::MethodError(kind)) = self.take_fault(name, |effect| matches!(effect, Effect::MethodError(_))) {
+            return Err(refuse(kind, "the server can't do this just now"));
         }
         let args = arguments(args, done)?;
         match name {
             "Mailbox/get" => self.mailbox_get(&args),
             "Mailbox/set" => facade::mailbox_set(&args, &self.state()),
             "Email/query" => self.email_query(&args),
+            "Email/import" => self.email_import(&args),
+            "Email/set" => self.email_set(&args),
+            "Identity/get" => self.identity_get(&args),
+            "EmailSubmission/set" => self.submission_set(&args),
             _ => self.email_get(&args),
         }
     }
