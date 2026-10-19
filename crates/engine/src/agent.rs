@@ -381,6 +381,9 @@ const NEVER: &[&str] = &[
     "sync.applyGraph",
     "sync.graphFetchRequest",
     "sync.applyGraphFetch",
+    // //// Neoffice — a JMAP account's run: the host's side, as Graph's is.
+    "sync.jmapRequest",
+    "sync.applyJmap",
     // A search of the server goes only on the owner's own click (R6.2).
     "sync.graphSearchRequest",
     "sync.applyGraphSearch",

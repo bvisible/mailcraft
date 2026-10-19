@@ -260,11 +260,12 @@ fn apply(s: &mut Session, v: &Value) -> CmdResult {
 
 /// What taking in a Graph run changed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct Taken {
-    pushed: usize,
-    added: usize,
-    updated: usize,
-    removed: usize,
+// //// Neoffice — seen by the JMAP intake (jmap_mail.rs), which takes in a folder listing the same way.
+pub(super) struct Taken {
+    pub(super) pushed: usize,
+    pub(super) added: usize,
+    pub(super) updated: usize,
+    pub(super) removed: usize,
 }
 
 /// Take in what a Graph run brought back: what became of the changes sent, then the listing.
@@ -482,7 +483,8 @@ fn change_done(mb: &mut Mailbox, account: Id, change: &FolderChange, outcome: &C
 }
 
 /// Take in every folder the server listed, by server id.
-fn take_listing(mb: &mut Mailbox, account: Id, listing: &FolderListing, taken: &mut Taken) {
+// //// Neoffice — also takes in a JMAP server's folder list (jmap_mail.rs): folders by server id there too.
+pub(super) fn take_listing(mb: &mut Mailbox, account: Id, listing: &FolderListing, taken: &mut Taken) {
     let mut listed: HashSet<&str> = HashSet::new();
     // The server's folders as this mailbox has them, by server id, as they are found or made.
     let mut here: HashMap<String, Id> =

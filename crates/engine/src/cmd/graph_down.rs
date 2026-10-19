@@ -43,7 +43,8 @@ impl ServerIndex {
     }
 
     /// The message of `account` the server calls `id`.
-    fn find(&mut self, mb: &Mailbox, account: Id, id: &str) -> Option<Id> {
+    // //// Neoffice — also used by the JMAP intake (jmap_down.rs): messages there are known by server id too.
+    pub(crate) fn find(&mut self, mb: &Mailbox, account: Id, id: &str) -> Option<Id> {
         let is = |m: Id| mb.message(m).is_some_and(|m| m.account == account && m.server.as_ref().is_some_and(|s| s.id == id));
         if self.count != mb.messages.len() {
             self.rebuild(mb);
@@ -60,7 +61,8 @@ impl ServerIndex {
         }
     }
 
-    fn note(&mut self, mb: &Mailbox, account: Id, id: &str, m: Id) {
+    // //// Neoffice — also used by the JMAP intake (jmap_down.rs).
+    pub(crate) fn note(&mut self, mb: &Mailbox, account: Id, id: &str, m: Id) {
         self.ids.insert((account, id.to_string()), m);
         self.count = mb.messages.len();
     }

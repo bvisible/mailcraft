@@ -375,6 +375,10 @@ pub fn unpushed(s: &Session, account: Id) -> usize {
     if s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Microsoft) {
         return super::graph_mail::unpushed(s, account);
     }
+    // //// Neoffice — an account kept in step with a JMAP server counts its own (jmap_mail.rs).
+    if s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap) {
+        return super::jmap_mail::unpushed(s, account);
+    }
     remote_ops(&s.mailbox, account, 0).1
 }
 
@@ -465,6 +469,12 @@ fn request(s: &mut Session, v: &Value) -> CmdResult {
     if s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Microsoft) {
         let mut req = serde_json::to_value(super::graph_mail::graph_mail_request(s, account)?).map_err(|e| fail(e.to_string()))?;
         req["graph"] = json!(true);
+        return Ok(req);
+    }
+    // //// Neoffice — and one kept in step with a JMAP server too (`sync.jmapRequest`).
+    if s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap) {
+        let mut req = serde_json::to_value(super::jmap_mail::jmap_mail_request(s, account, false, &[], false)?).map_err(|e| fail(e.to_string()))?;
+        req["jmap"] = json!(true);
         return Ok(req);
     }
     let req = sync_request(s, account)?;
