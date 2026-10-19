@@ -33,17 +33,32 @@
 //!   404. Like any answer, one over the size the request asked for is no answer.
 //! - **Not there.** Anything that changes mail, uploads, sending, `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
+//! - **Kinds of server.** [`Data::profile`] makes it a store of the standard kind, which parses the header
+//!   fields of an email for a client (`subject`, `from`…), or a server that names a message by where it
+//!   is, which serves the raw fields only, keeps an email in one mailbox and refuses `Mailbox/set`
+//!   ([`Profile`], `standin/facade.rs`).
+//! - **Trouble on demand.** A test makes the next requests to the API answer `429` or `503` with a
+//!   `Retry-After` ([`Data::refuse_next`]), makes a token expire in the middle of a run
+//!   ([`Data::drop_token_after`]), and makes a mailbox, or the details of some emails, fail with a
+//!   method error ([`Data::broken_mailboxes`], [`Data::broken_emails`]).
+//! - **What it was asked.** [`Seen::asked`] has, for every call it ran, the mailbox it listed, the number
+//!   of ids and the properties it was asked for, and the limit: what a test needs to count the work.
 //!
 //! It never panics, whatever it is sent: there is no `unwrap` here, in a test build or in another
 //! crate's, which turns the `stand-in` feature on.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use base64::Engine as _;
+use mailcraft_model::{Address, Message};
 use serde_json::{Map, Value, json};
 
 use crate::{CORE, Error, Http, MAIL, Request, Response, Result, Url, valid_id};
+
+mod facade;
+
+pub use facade::Profile;
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";
@@ -71,6 +86,8 @@ const MAX_POINTER: usize = 16;
 
 const MAILBOX_PROPERTIES: &[&str] = &["id", "name", "parentId", "role", "sortOrder", "totalEmails", "unreadEmails"];
 const EMAIL_PROPERTIES: &[&str] = &["id", "blobId", "mailboxIds", "keywords", "size", "receivedAt", "hasAttachment", "preview", "headers"];
+/// What a store of the standard kind parses out of the header for a client (RFC 8621 §4.1).
+const EMAIL_PARSED: &[&str] = &["threadId", "subject", "from", "to", "cc", "messageId", "sentAt"];
 /// What `Email/get` answers when no properties are named: all but the raw headers.
 const EMAIL_DEFAULT: &[&str] = &["id", "blobId", "mailboxIds", "keywords", "size", "receivedAt", "hasAttachment", "preview"];
 
@@ -119,6 +136,40 @@ pub struct Seen {
     pub status: u16,
     /// The methods it called, in order (none for a request that was refused before they were read).
     pub calls: Vec<String>,
+    /// What each of those calls was asked, once its references were resolved (a call whose arguments could
+    /// not be read is not here).
+    pub asked: Vec<Asked>,
+}
+
+/// What one method call asked for: the part of it a test counts the work by.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Asked {
+    pub method: String,
+    /// The mailbox an `Email/query` listed.
+    pub mailbox: Option<String>,
+    /// How many ids a `get` was given.
+    pub ids: Option<usize>,
+    /// The properties asked for (none named: empty).
+    pub properties: Vec<String>,
+    /// The `limit` of a query.
+    pub limit: Option<usize>,
+}
+
+impl Asked {
+    fn of(method: &str, args: &Map<String, Value>) -> Asked {
+        let text = |value: Option<&Value>| value.and_then(Value::as_str).map(str::to_string);
+        Asked {
+            method: method.to_string(),
+            mailbox: text(args.get("filter").and_then(|filter| filter.get("inMailbox"))),
+            ids: args.get("ids").and_then(Value::as_array).map(Vec::len),
+            properties: args
+                .get("properties")
+                .and_then(Value::as_array)
+                .map(|names| names.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default(),
+            limit: args.get("limit").and_then(Value::as_u64).map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+        }
+    }
 }
 
 /// What the stand-in holds, for a test to set up and to look at.
@@ -132,8 +183,26 @@ pub struct Data {
     pub max_get: usize,
     /// The one bearer token it lets in; `None`: no bearer token.
     pub token: Option<String>,
+    /// What kind of server it is.
+    pub profile: Profile,
+    /// What the next requests to the API are answered with instead of being run, oldest first: `Some`
+    /// refuses one with an HTTP status (429 and 503 are the ones a client waits out) and a `Retry-After`
+    /// of that many seconds; `None` lets that one through.
+    pub refuse_next: VecDeque<Option<(u16, Option<u32>)>>,
+    /// Lets this many more requests to the API through, then forgets the bearer token (as a server does
+    /// that ends a session): the next request is refused with 401.
+    pub drop_token_after: Option<usize>,
+    /// Mailboxes (ids) that an `Email/query` fails for, with the method error of that `type`
+    /// (`serverFail`, `serverUnavailable`…).
+    pub broken_mailboxes: BTreeMap<String, &'static str>,
+    /// Emails (ids) that an `Email/get` fails for as a whole, with the method error `serverFail`, when it asks
+    /// for their `headers` (what a server has to fetch the message for; the keywords come without).
+    pub broken_emails: BTreeSet<String>,
     next: u32,
     version: u32,
+    /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
+    retry_after: Option<u32>,
+    asked: Vec<Asked>,
 }
 
 impl Data {
@@ -145,8 +214,15 @@ impl Data {
             max_calls: 16,
             max_get: 500,
             token: Some(TOKEN.into()),
+            profile: Profile::standard(),
+            refuse_next: VecDeque::new(),
+            drop_token_after: None,
+            broken_mailboxes: BTreeMap::new(),
+            broken_emails: BTreeSet::new(),
             next: 0,
             version: 0,
+            retry_after: None,
+            asked: Vec::new(),
         }
     }
 
@@ -192,6 +268,32 @@ impl Data {
         self.emails.iter().find(|e| e.id == id)
     }
 
+    /// Put an email in one more mailbox, as a server that lets an email lie in several does: whether it
+    /// was done (not when either is unknown, or when the profile keeps an email in one mailbox).
+    pub fn add_to_mailbox(&mut self, email: &str, mailbox: &str) -> bool {
+        if self.profile.one_mailbox || !self.mailboxes.iter().any(|m| m.id == mailbox) {
+            return false;
+        }
+        let Some(email) = self.emails.iter_mut().find(|e| e.id == email) else {
+            return false;
+        };
+        email.mailboxes.insert(mailbox.to_string());
+        self.changed();
+        true
+    }
+
+    /// Remove an email, as the server does when another client deletes it (or moves it, for a server that
+    /// names an email by where it is): whether there was one. Its blob goes with it.
+    pub fn remove(&mut self, email: &str) -> bool {
+        let before = self.emails.len();
+        self.emails.retain(|e| e.id != email);
+        let removed = self.emails.len() < before;
+        if removed {
+            self.changed();
+        }
+        removed
+    }
+
     /// The id of the mailbox called `name`.
     pub fn mailbox_named(&self, name: &str) -> Option<&str> {
         self.mailboxes.iter().find(|m| m.name == name).map(|m| m.id.as_str())
@@ -209,18 +311,6 @@ impl Data {
         }
         self.changed();
         true
-    }
-
-    /// Take an email away, as another client deleting it would (or moving it, for a server that names an
-    /// email by where it is): whether there was such an email. Its blob goes with it.
-    pub fn remove_email(&mut self, id: &str) -> bool {
-        let before = self.emails.len();
-        self.emails.retain(|e| e.id != id);
-        let removed = self.emails.len() != before;
-        if removed {
-            self.changed();
-        }
-        removed
     }
 
     fn authorized(&self, headers: &[(String, String)]) -> bool {
@@ -251,10 +341,11 @@ impl Data {
             let (status, body, calls) = self.route(req, &path);
             (status, serde_json::to_vec(&body).unwrap_or_default(), calls)
         };
+        let (asked, retry_after) = (std::mem::take(&mut self.asked), self.retry_after.take());
         if self.seen.len() < MAX_SEEN {
-            self.seen.push(Seen { method: req.method.clone(), path, status, calls });
+            self.seen.push(Seen { method: req.method.clone(), path, status, calls, asked });
         }
-        Ok(Response { status, body, retry_after: None })
+        Ok(Response { status, body, retry_after })
     }
 
     /// `GET /jmap/download/{accountId}/{blobId}/{name}` (RFC 8620 §6.2): the octets of a blob, as they
@@ -278,12 +369,23 @@ impl Data {
     }
 
     fn route(&mut self, req: &Request, path: &str) -> (u16, Value, Vec<String>) {
+        if self.drop_token_after == Some(0) {
+            (self.token, self.drop_token_after) = (None, None);
+        }
         if !self.authorized(&req.headers) {
             return (401, problem(401, "about:blank", "the credentials were refused"), Vec::new());
         }
         match (req.method.as_str(), path) {
             ("GET", SESSION_PATH) => (200, self.session(), Vec::new()),
             ("POST", API_PATH) => {
+                // A server that can't take this one just now (the queue holds `None` for one it can).
+                if let Some(Some((status, retry_after))) = self.refuse_next.pop_front() {
+                    self.retry_after = retry_after;
+                    return (status, problem(status, "about:blank", "the server can't take this request just now"), Vec::new());
+                }
+                if let Some(left) = self.drop_token_after.as_mut() {
+                    *left = left.saturating_sub(1);
+                }
                 let json = header(&req.headers, "content-type")
                     .is_some_and(|v| v.split(';').next().is_some_and(|m| m.trim().eq_ignore_ascii_case("application/json")));
                 if json { self.api(&req.body) } else { rejected("notJSON", "the request isn't application/json") }
@@ -313,7 +415,10 @@ impl Data {
                     "name": USER,
                     "isPersonal": true,
                     "isReadOnly": false,
-                    "accountCapabilities": {MAIL: {"maxMailboxesPerEmail": null, "emailQuerySortOptions": ["receivedAt"]}},
+                    "accountCapabilities": {MAIL: {
+                        "maxMailboxesPerEmail": if self.profile.one_mailbox { json!(1) } else { Value::Null },
+                        "emailQuerySortOptions": ["receivedAt"],
+                    }},
                 },
             },
             "primaryAccounts": {MAIL: ACCOUNT},
@@ -356,6 +461,9 @@ impl Data {
         let (mut done, mut responses, mut names) = (Vec::new(), Vec::new(), Vec::new());
         for (name, args, id) in parsed {
             names.push(name.to_string());
+            if let Ok(resolved) = arguments(args, &done) {
+                self.asked.push(Asked::of(name, &resolved));
+            }
             let outcome = self.method(&using, name, args, &done);
             let (response, result) = match outcome {
                 Ok(result) => (json!([name, result, id]), Some(result)),
@@ -369,12 +477,18 @@ impl Data {
 
     fn method(&self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
         // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2).
-        if !matches!(name, "Mailbox/get" | "Email/query" | "Email/get") || !using.contains(&MAIL) {
+        let served = match name {
+            "Mailbox/get" | "Email/query" | "Email/get" => true,
+            "Mailbox/set" => self.profile.fixed_mailboxes,
+            _ => false,
+        };
+        if !served || !using.contains(&MAIL) {
             return Err(refuse("unknownMethod", format!("no method {}", name.chars().take(40).collect::<String>())));
         }
         let args = arguments(args, done)?;
         match name {
             "Mailbox/get" => self.mailbox_get(&args),
+            "Mailbox/set" => facade::mailbox_set(&args, &self.state()),
             "Email/query" => self.email_query(&args),
             _ => self.email_get(&args),
         }
@@ -435,6 +549,9 @@ impl Data {
         if !self.mailboxes.iter().any(|m| m.id == mailbox) {
             return Err(invalid("no such mailbox"));
         }
+        if let Some(kind) = self.broken_mailboxes.get(mailbox) {
+            return Err(refuse(kind, "this mailbox can't be read just now"));
+        }
         let ascending = sort_direction(args)?;
         let asked = number(args, "limit")?;
         let limit = asked.map_or(MAX_QUERY, |limit| limit.min(MAX_QUERY));
@@ -481,7 +598,11 @@ impl Data {
         let Some(wanted) = ids(args, self.max_get)? else {
             return Err(refuse("requestTooLarge", "name the emails to read"));
         };
-        let properties = properties(args, EMAIL_PROPERTIES, EMAIL_DEFAULT)?;
+        let allowed: Vec<&str> = if self.profile.parsed_fields { [EMAIL_PROPERTIES, EMAIL_PARSED].concat() } else { EMAIL_PROPERTIES.to_vec() };
+        let properties = properties(args, &allowed, EMAIL_DEFAULT)?;
+        if properties.iter().any(|p| p == "headers") && wanted.iter().any(|id| self.broken_emails.contains(id)) {
+            return Err(refuse("serverFail", "an email can't be read just now"));
+        }
         let (mut list, mut not_found) = (Vec::new(), Vec::new());
         for id in wanted {
             match self.email(&id) {
@@ -688,6 +809,8 @@ fn sort_direction(args: &Map<String, Value>) -> Outcome<bool> {
 fn email_json(email: &Email, properties: &[String]) -> Value {
     let text = String::from_utf8_lossy(&email.raw);
     let (fields, body) = split_message(&text);
+    // What a store of the standard kind parses out of the header, read by the program's own reader.
+    let parsed = properties.iter().any(|p| EMAIL_PARSED.contains(&p.as_str())).then(|| mailcraft_mime::parse(&email.raw));
     let truths = |set: &BTreeSet<String>| Value::Object(set.iter().map(|k| (k.clone(), Value::Bool(true))).collect());
     let mut out = Map::new();
     out.insert("id".into(), json!(email.id));
@@ -701,11 +824,34 @@ fn email_json(email: &Email, properties: &[String]) -> Value {
             "hasAttachment" => json!(text.to_ascii_lowercase().contains("content-disposition: attachment")),
             "preview" => json!(body.split_whitespace().collect::<Vec<&str>>().join(" ").chars().take(MAX_PREVIEW).collect::<String>()),
             "headers" => Value::Array(fields.iter().map(|(name, value)| json!({"name": name, "value": value})).collect()),
+            "threadId" => json!(email.id),
+            parsed_property if EMAIL_PARSED.contains(&parsed_property) => parsed.as_ref().map_or(Value::Null, |m| parsed_field(parsed_property, m)),
             _ => continue,
         };
         out.insert(property.clone(), value);
     }
     Value::Object(out)
+}
+
+/// A field of the header as RFC 8621 §4.1.2 shows it: `null` when the message has none.
+fn parsed_field(property: &str, message: &Message) -> Value {
+    let people = |list: &[Address]| -> Value {
+        if list.is_empty() {
+            return Value::Null;
+        }
+        Value::Array(list.iter().map(|a| json!({"name": if a.name.is_empty() { Value::Null } else { json!(a.name) }, "email": a.email})).collect())
+    };
+    match property {
+        "subject" => json!(message.subject),
+        "from" => people(if message.from == Address::default() { &[] } else { std::slice::from_ref(&message.from) }),
+        "to" => people(&message.to),
+        "cc" => people(&message.cc),
+        "messageId" if message.message_id.is_empty() => Value::Null,
+        "messageId" => json!([message.message_id]),
+        "sentAt" if message.date == 0 => Value::Null,
+        "sentAt" => json!(mailcraft_time::format_iso_utc(message.date)),
+        _ => Value::Null,
+    }
 }
 
 /// A message as its header fields (each with its name and the raw value: all that follows the
@@ -770,6 +916,16 @@ impl StandIn {
     /// The methods it was asked to call so far, in order.
     pub fn calls(&self) -> Vec<String> {
         self.with(|d| d.seen.iter().flat_map(|s| s.calls.iter().cloned()).collect())
+    }
+
+    /// What those calls asked for, in order (see [`Asked`]).
+    pub fn asked(&self) -> Vec<Asked> {
+        self.with(|d| d.seen.iter().flat_map(|s| s.asked.iter().cloned()).collect())
+    }
+
+    /// How many requests to the API it was sent so far (the session is no request to the API).
+    pub fn api_requests(&self) -> usize {
+        self.with(|d| d.seen.iter().filter(|s| s.path == API_PATH).count())
     }
 }
 

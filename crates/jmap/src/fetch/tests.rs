@@ -398,7 +398,7 @@ fn a_message_makes_the_round_trip_through_the_server() {
     assert_eq!(stand_in.calls(), ["Email/get"; 3]);
     // The server deletes one: its id is not found, and its blob is a 404.
     let blob = stand_in.with(|d| d.email(&ids[1]).map(|e| e.blob.clone())).unwrap();
-    assert!(stand_in.with(|d| d.remove_email(&ids[1])));
+    assert!(stand_in.with(|d| d.remove(&ids[1])));
     assert_eq!(block_on(fetch_message(&client, &ids[1], None, CAP)), Ok(Fetched::Missing));
     assert_eq!(block_on(fetch_message(&client, &ids[1], Some(&blob), CAP)), Ok(Fetched::Missing));
     // The one beyond the cap is refused without a download, and an email it never had is missing.
@@ -421,7 +421,7 @@ fn a_message_makes_the_round_trip_through_the_server() {
 fn a_batch_comes_in_the_order_asked_and_names_what_the_server_no_longer_has() {
     let (stand_in, ids) = filled(4);
     let client = connect(stand_in.clone());
-    stand_in.with(|d| d.remove_email(&ids[1]));
+    stand_in.with(|d| d.remove(&ids[1]));
     // Newest first, one the server lost, one it never had, one that is no id, and one twice.
     let asked = vec![ids[3].clone(), ids[1].clone(), ids[0].clone(), "E999".into(), "not an id".into(), ids[3].clone(), ids[2].clone()];
     let got = batch(&client, &asked);
@@ -553,7 +553,7 @@ fn three_refused_one_after_another_stop_the_batch_and_a_good_one_in_between_does
     assert!(got.errors.is_empty(), "{:?}", got.errors);
     // A message the server no longer has is no refusal: it breaks the run of them, too.
     let (stand_in, ids) = filled(5);
-    stand_in.with(|d| d.remove_email(&ids[2]));
+    stand_in.with(|d| d.remove(&ids[2]));
     let troubled = Troubled::new(&stand_in, |_, _| Some(octets(500, b"")));
     let client = connect(troubled);
     let got = batch(&client, &ids);

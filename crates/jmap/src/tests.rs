@@ -716,6 +716,28 @@ fn debug_output_shows_no_credential_address_or_mail() {
 }
 
 #[test]
+fn an_answer_can_be_asked_to_be_smaller_than_the_most_and_a_result_can_be_taken_out() {
+    let responses = json!([["Email/get", {"list": [{"id": "E1"}]}, "c0"], ["Mailbox/get", {"list": []}, "c1"]]);
+    let (client, script) = client(vec![answers_to(responses.clone()), answers_to(responses)]);
+    let calls = || vec![("Email/get", json!({})), ("Mailbox/get", json!({}))];
+    // The request says how large an answer it takes, never more than the most there is.
+    let mut answers = block_on(client.mail_within(calls(), 1 << 20)).unwrap();
+    assert_eq!(script.sent().get(1).map(|r| r.max), Some(1 << 20));
+    // A result is taken out, once; it is not there afterwards, and a call that was not made has none.
+    assert_eq!(answers.take(0).unwrap(), json!({"list": [{"id": "E1"}]}));
+    assert_eq!(answers.take(0).unwrap_err(), Error::Protocol("JMAP: that answer was taken".into()));
+    assert!(answers.get(0).is_err() && answers.get(1).is_ok());
+    assert_eq!(answers.take(1).unwrap(), json!({"list": []}));
+    assert!(matches!(answers.take(2), Err(Error::Protocol(_))));
+    let mut more = block_on(client.mail_within(calls(), usize::MAX)).unwrap();
+    assert_eq!(script.sent().get(2).map(|r| r.max), Some(MAX_JSON));
+    assert!(more.take(0).is_ok());
+    // An answer over what was asked is refused, though it is under the most.
+    let (client, _) = self::client(vec![Ok(Response { status: 200, body: vec![b' '; 1001], retry_after: None })]);
+    assert!(matches!(block_on(client.mail_within(calls(), 1000)), Err(Error::TooLarge(_))));
+}
+
+#[test]
 fn a_reference_names_the_call_the_path_and_the_method() {
     assert_eq!(result_of(3, "Email/query", "/ids"), json!({"resultOf": "c3", "name": "Email/query", "path": "/ids"}));
 }

@@ -298,7 +298,7 @@ fn a_call_that_is_wrong_is_refused_for_the_reason_a_server_gives() {
         ("too many ids", json!(["Email/get", {"accountId": account, "ids": many}, "c0"]), "requestTooLarge"),
         ("every email", json!(["Email/get", {"accountId": account, "ids": null}, "c0"]), "requestTooLarge"),
         ("no ids at all", json!(["Email/get", {"accountId": account}, "c0"]), "requestTooLarge"),
-        ("a property it has not", json!(["Email/get", {"accountId": account, "ids": [], "properties": ["subject"]}, "c0"]), "invalidArguments"),
+        ("a property it has not", json!(["Email/get", {"accountId": account, "ids": [], "properties": ["bodyStructure"]}, "c0"]), "invalidArguments"),
         ("properties that are no list", json!(["Email/get", {"accountId": account, "ids": [], "properties": "id"}, "c0"]), "invalidArguments"),
         ("a body to fetch", json!(["Email/get", {"accountId": account, "ids": [], "fetchTextBodyValues": true}, "c0"]), "invalidArguments"),
         ("no filter", json!(["Email/query", {"accountId": account}, "c0"]), "unsupportedFilter"),
@@ -717,8 +717,8 @@ fn a_download_is_refused_or_not_found_as_the_standard_has_it() {
     post.headers.push(("Authorization".into(), bearer()));
     assert_eq!(block_on(stand_in.send(post)).unwrap().status, 404);
     // A blob goes with its email.
-    assert!(stand_in.with(|d| d.remove_email(&ids.first)));
-    assert!(!stand_in.with(|d| d.remove_email(&ids.first)), "it was there once");
+    assert!(stand_in.with(|d| d.remove(&ids.first)));
+    assert!(!stand_in.with(|d| d.remove(&ids.first)), "it was there once");
     assert_eq!(status(&good, Some(&bearer())), 404);
     let gone = one(&stand_in, json!(["Email/get", {"accountId": ACCOUNT, "ids": [ids.first, ids.second]}, "c0"])).unwrap();
     assert_eq!((gone["notFound"].clone(), gone["list"].as_array().map(Vec::len)), (json!([ids.first]), Some(1)));
@@ -746,13 +746,168 @@ fn a_blob_over_the_size_asked_for_is_no_answer() {
 fn an_email_taken_away_is_not_found_and_the_state_follows() {
     let (stand_in, ids) = filled();
     let before = one(&stand_in, json!(["Mailbox/get", {"accountId": ACCOUNT, "ids": [ids.inbox], "properties": ["totalEmails"]}, "c0"])).unwrap();
-    assert!(stand_in.with(|d| d.remove_email(&ids.second)));
+    assert!(stand_in.with(|d| d.remove(&ids.second)));
     let after = one(&stand_in, json!(["Mailbox/get", {"accountId": ACCOUNT, "ids": [ids.inbox], "properties": ["totalEmails"]}, "c0"])).unwrap();
     assert_eq!((before["list"][0]["totalEmails"].clone(), after["list"][0]["totalEmails"].clone()), (json!(3), json!(2)));
     assert_ne!(before["state"], after["state"]);
     let found = one(&stand_in, json!(["Email/query", {"accountId": ACCOUNT, "filter": {"inMailbox": ids.inbox}}, "c0"])).unwrap();
     assert_eq!(found["ids"], json!([ids.first, ids.third]));
-    assert!(!stand_in.with(|d| d.remove_email("E999")));
+    assert!(!stand_in.with(|d| d.remove("E999")));
+}
+
+/// The answer to a call that has an account and the arguments `extra`, or the `type` of its error.
+fn call(stand_in: &StandIn, method: &str, extra: Value) -> Outcome {
+    let mut args = json!({"accountId": ACCOUNT});
+    args.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    one(stand_in, json!([method, args, "c0"]))
+}
+
+#[test]
+fn a_standard_server_parses_the_header_for_a_client_and_one_that_names_by_place_does_not() {
+    let (stand_in, ids) = filled();
+    let coded = stand_in.with(|d| {
+        d.deliver(
+            &ids.inbox,
+            "From: =?UTF-8?Q?Zo=C3=AB_Park?= <zoe@example.org>\r\nTo: Ada <ada@example.org>, bob@example.org\r\nCc: Cy <cy@example.org>\r\nSubject: =?UTF-8?B?Q2Fmw6k=?=\r\nMessage-ID: <coded@example.org>\r\nDate: Thu, 15 Oct 2026 07:30:00 +0200\r\n\r\nBody\r\n"
+                .as_bytes(),
+            &[],
+            "2026-10-16T00:00:00Z",
+        )
+    });
+    let parsed = ["threadId", "subject", "from", "to", "cc", "messageId", "sentAt"];
+    let email = call(&stand_in, "Email/get", json!({"ids": [coded, ids.first], "properties": parsed})).unwrap()["list"].clone();
+    assert_eq!(email[0]["threadId"], json!(coded));
+    assert_eq!(email[0]["subject"], "Café");
+    assert_eq!(email[0]["from"], json!([{"name": "Zoë Park", "email": "zoe@example.org"}]));
+    assert_eq!(email[0]["to"], json!([{"name": "Ada", "email": "ada@example.org"}, {"name": null, "email": "bob@example.org"}]));
+    assert_eq!(
+        (&email[0]["cc"], &email[0]["messageId"], &email[0]["sentAt"]),
+        (&json!([{"name": "Cy", "email": "cy@example.org"}]), &json!(["coded@example.org"]), &json!("2026-10-15T05:30:00Z"))
+    );
+    // What the message has not, it has as null (no Cc, no Date).
+    assert_eq!((&email[1]["cc"], &email[1]["sentAt"], &email[1]["subject"]), (&Value::Null, &Value::Null, &json!("first")));
+    // A server that names a message by where it is leaves the reading of the header to the client.
+    stand_in.with(|d| d.profile = Profile::by_place());
+    for property in parsed {
+        assert_eq!(
+            call(&stand_in, "Email/get", json!({"ids": [coded], "properties": [property]})),
+            Err("invalidArguments".to_string()),
+            "{property}"
+        );
+    }
+    let raw = call(&stand_in, "Email/get", json!({"ids": [coded], "properties": ["headers"]})).unwrap()["list"][0]["headers"].clone();
+    assert_eq!(raw[3], json!({"name": "Subject", "value": " =?UTF-8?B?Q2Fmw6k=?="}));
+    assert_eq!(Profile::default(), Profile::standard());
+}
+
+#[test]
+fn a_server_that_names_by_place_keeps_an_email_in_one_mailbox_and_refuses_to_change_mailboxes() {
+    let (stand_in, ids) = filled();
+    let session = || -> Value {
+        let resp =
+            block_on(stand_in.send(Request::get("https://jmap.standin.example/jmap/session", 1 << 20).header("Authorization", &bearer()))).unwrap();
+        serde_json::from_slice::<Value>(&resp.body).unwrap()["accounts"][ACCOUNT]["accountCapabilities"][MAIL]["maxMailboxesPerEmail"].clone()
+    };
+    // A store of the standard kind lets an email lie in several, and has no `Mailbox/set` here.
+    assert_eq!(session(), Value::Null);
+    assert!(stand_in.with(|d| d.add_to_mailbox(&ids.second, &ids.sent)));
+    assert!(!stand_in.with(|d| d.add_to_mailbox("E999", &ids.sent)) && !stand_in.with(|d| d.add_to_mailbox(&ids.second, "M999")));
+    let both = call(&stand_in, "Email/get", json!({"ids": [ids.second], "properties": ["mailboxIds"]})).unwrap();
+    assert_eq!(both["list"][0]["mailboxIds"], json!({ids.inbox.clone(): true, ids.sent.clone(): true}));
+    assert_eq!(call(&stand_in, "Mailbox/get", json!({"ids": [ids.sent], "properties": ["totalEmails"]})).unwrap()["list"][0]["totalEmails"], 1);
+    assert_eq!(call(&stand_in, "Mailbox/set", json!({"create": {}})), Err("unknownMethod".to_string()));
+    // One that names by place keeps an email in the one, and refuses to make, rename or remove a mailbox.
+    stand_in.with(|d| d.profile = Profile::by_place());
+    assert_eq!(session(), 1);
+    assert!(!stand_in.with(|d| d.add_to_mailbox(&ids.first, &ids.sent)));
+    let change = json!({"create": {"k1": {"name": "New"}}, "update": {(ids.sent.clone()): {"name": "Renamed"}}, "destroy": [ids.inbox, "M999"]});
+    let refused = call(&stand_in, "Mailbox/set", change).unwrap();
+    let forbidden = |what: &str| refused[what].as_object().unwrap().iter().map(|(k, v)| (k.clone(), v["type"].clone())).collect::<Vec<_>>();
+    assert_eq!(forbidden("notCreated"), [("k1".to_string(), json!("forbidden"))]);
+    assert_eq!(forbidden("notUpdated"), [(ids.sent.clone(), json!("forbidden"))]);
+    assert_eq!(forbidden("notDestroyed"), [(ids.inbox.clone(), json!("forbidden")), ("M999".to_string(), json!("forbidden"))]);
+    assert_eq!(refused["oldState"], refused["newState"]);
+    // Nothing changed, and it holds the arguments to the standard as the other methods do.
+    assert_eq!(stand_in.with(|d| d.mailboxes.len()), 2);
+    assert_eq!(call(&stand_in, "Mailbox/set", json!({"create": "x"})), Err("invalidArguments".to_string()));
+    assert_eq!(call(&stand_in, "Mailbox/set", json!({"destroy": {}})), Err("invalidArguments".to_string()));
+    assert_eq!(call(&stand_in, "Mailbox/set", json!({"frob": 1})), Err("invalidArguments".to_string()));
+    assert_eq!(one(&stand_in, json!(["Mailbox/set", {"accountId": "A2"}, "c0"])), Err("accountNotFound".to_string()));
+    assert!(call(&stand_in, "Mailbox/set", json!({})).is_ok());
+}
+
+#[test]
+fn trouble_is_made_on_demand() {
+    let (stand_in, ids) = filled();
+    let api = |stand_in: &StandIn| {
+        let body = serde_json::to_vec(
+            &json!({"using": [CORE, MAIL], "methodCalls": [["Mailbox/get", {"accountId": ACCOUNT, "properties": ["name"]}, "c0"]]}),
+        )
+        .unwrap();
+        let resp = post(stand_in, &[("Authorization", &bearer())], &body);
+        (resp.status, resp.retry_after)
+    };
+    // The next requests to the API are refused, or let through, in turn; the session is not one of them.
+    stand_in.with(|d| d.refuse_next = [Some((429, Some(5))), None, Some((503, None))].into());
+    let _ = connect(&stand_in);
+    assert_eq!([api(&stand_in), api(&stand_in), api(&stand_in), api(&stand_in)], [(429, Some(5)), (200, None), (503, None), (200, None)]);
+    // A token that lives for so many requests to the API, then is gone (Basic still gets in).
+    stand_in.with(|d| (d.drop_token_after, d.token) = (Some(2), Some(TOKEN.into())));
+    let served = stand_in.api_requests();
+    assert_eq!([api(&stand_in).0, api(&stand_in).0, api(&stand_in).0, api(&stand_in).0], [200, 200, 401, 401]);
+    assert_eq!(stand_in.with(|d| (d.token.clone(), d.drop_token_after)), (None, None));
+    assert_eq!(stand_in.api_requests(), served + 4);
+    // A mailbox that can't be listed, and emails that can't be read, fail their own call only.
+    stand_in.with(|d| {
+        (d.token, d.broken_mailboxes, d.broken_emails) = (Some(TOKEN.into()), [(ids.sent.clone(), "serverFail")].into(), [ids.third.clone()].into())
+    });
+    assert_eq!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.sent}})), Err("serverFail".to_string()));
+    stand_in.with(|d| d.broken_mailboxes.insert(ids.inbox.clone(), "serverUnavailable"));
+    assert_eq!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}})), Err("serverUnavailable".to_string()));
+    stand_in.with(|d| d.broken_mailboxes.remove(&ids.inbox));
+    assert!(call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}})).is_ok());
+    let with_headers = |wanted: [&String; 2]| call(&stand_in, "Email/get", json!({"ids": wanted, "properties": ["id", "headers"]}));
+    assert_eq!(with_headers([&ids.first, &ids.third]), Err("serverFail".to_string()));
+    assert!(with_headers([&ids.first, &ids.second]).is_ok());
+    // (The keywords of the same emails come all the same.)
+    assert!(call(&stand_in, "Email/get", json!({"ids": [ids.first, ids.third], "properties": ["id", "keywords"]})).is_ok());
+}
+
+#[test]
+fn what_each_call_asked_is_kept_with_its_references_resolved() {
+    let (stand_in, ids) = filled();
+    let client = connect(&stand_in);
+    let query = json!({"accountId": ACCOUNT, "filter": {"inMailbox": ids.inbox}, "sort": [{"property": "receivedAt", "isAscending": false}], "limit": 2, "calculateTotal": true});
+    let get = json!({"accountId": ACCOUNT, "#ids": result_of(0, "Email/query", "/ids"), "properties": ["id", "keywords"]});
+    block_on(client.mail(vec![("Email/query", query), ("Email/get", get), ("Mailbox/get", json!({"accountId": ACCOUNT}))])).unwrap();
+    // A call that refers to what isn't there has nothing resolved to keep.
+    block_on(client.mail(vec![("Email/get", json!({"accountId": ACCOUNT, "#ids": result_of(7, "Email/query", "/ids")}))])).unwrap();
+    let asked = stand_in.asked();
+    assert_eq!(asked.len(), 3);
+    assert_eq!(
+        (asked[0].method.as_str(), asked[0].mailbox.as_deref(), asked[0].limit, asked[0].ids),
+        ("Email/query", Some(ids.inbox.as_str()), Some(2), None)
+    );
+    assert_eq!(
+        (asked[1].method.as_str(), asked[1].ids, asked[1].properties.clone()),
+        ("Email/get", Some(2), vec!["id".to_string(), "keywords".to_string()])
+    );
+    assert_eq!((asked[2].method.as_str(), asked[2].mailbox.clone(), asked[2].ids, asked[2].properties.is_empty()), ("Mailbox/get", None, None, true));
+    // Two requests to the API (and the session before them).
+    assert_eq!(stand_in.api_requests(), 2);
+}
+
+#[test]
+fn an_email_removed_is_gone_for_every_client() {
+    let (stand_in, ids) = filled();
+    let before = call(&stand_in, "Mailbox/get", json!({"ids": [ids.inbox]})).unwrap()["state"].clone();
+    assert!(stand_in.with(|d| d.remove(&ids.second)));
+    assert!(!stand_in.with(|d| d.remove(&ids.second)));
+    let listed = call(&stand_in, "Email/query", json!({"filter": {"inMailbox": ids.inbox}})).unwrap();
+    assert_eq!(listed["ids"], json!([ids.first, ids.third]));
+    let got = call(&stand_in, "Email/get", json!({"ids": [ids.second, ids.third], "properties": ["id"]})).unwrap();
+    assert_eq!((got["list"].as_array().map(Vec::len), got["notFound"].clone()), (Some(1), json!([ids.second])));
+    assert_ne!(got["state"], before);
 }
 
 /// Requests with what it takes to run in some places, and anything at all in the others.

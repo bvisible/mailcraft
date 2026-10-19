@@ -47,9 +47,10 @@ const LIMIT_PROBLEM: &str = "urn:ietf:params:jmap:error:limit";
 
 /// What a bare host is given after it (RFC 8620 §2.2).
 const WELL_KNOWN: &str = "/.well-known/jmap";
-/// Largest JSON answer accepted to a request of method calls. What is parsed out of it takes up to
-/// sixteen times as much memory (a list of small numbers is the worst case), so a host that counts
-/// its memory should count that.
+/// Largest JSON answer accepted to a request of method calls. What is parsed out of it takes up much
+/// more memory: a list of small numbers about sixteen times as much, a list of small objects about eighty
+/// times (each object is a tree node), so a host that counts its memory should count that, and a caller
+/// that knows how much it can be given asks for less ([`Client::call_within`]).
 pub const MAX_JSON: usize = 32 << 20;
 /// Largest session document accepted.
 const MAX_SESSION: usize = 1 << 20;
@@ -416,6 +417,15 @@ impl Answers {
         }
     }
 
+    /// The answer to call number `call`, taken out: the same as [`Answers::get`], without a copy. The
+    /// answer is not there afterwards.
+    pub fn take(&mut self, call: usize) -> Result<Value> {
+        match self.0.get_mut(call) {
+            Some(slot) => std::mem::replace(slot, Err(Error::Protocol("JMAP: that answer was taken".into()))),
+            None => Err(Error::Protocol("JMAP: there is no such call".into())),
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -684,6 +694,14 @@ impl<H: Http> Client<H> {
     /// only. A request that fails as a whole, or holds more calls than the server takes (which is
     /// not sent), is an error.
     pub async fn call(&self, using: &[&str], calls: Vec<(&str, Value)>) -> Result<Answers> {
+        self.call_within(using, calls, MAX_JSON).await
+    }
+
+    /// [`Client::call`] with an answer of at most `max` bytes (never more than [`MAX_JSON`]): one that is
+    /// larger is [`Error::TooLarge`], and is not read to its end by an [`Http`] that keeps to
+    /// [`Request::max`]. A caller that knows how big an answer can be asks for no more than that, so that a
+    /// server can not make it hold a great deal of memory.
+    pub async fn call_within(&self, using: &[&str], calls: Vec<(&str, Value)>, max: usize) -> Result<Answers> {
         if calls.is_empty() {
             return Ok(Answers(Vec::new()));
         }
@@ -695,8 +713,9 @@ impl<H: Http> Client<H> {
             calls.into_iter().enumerate().map(|(i, (name, args))| Value::Array(vec![Value::from(name), args, Value::from(call_id(i))])).collect();
         let body = serde_json::json!({ "using": using, "methodCalls": method_calls });
         let bytes = serde_json::to_vec(&body).map_err(|e| Error::Protocol(e.to_string()))?;
-        let request =
-            Request::post(&self.api, "application/json", bytes, MAX_JSON).header("Authorization", &self.auth).header("Accept", "application/json");
+        let request = Request::post(&self.api, "application/json", bytes, max.min(MAX_JSON))
+            .header("Authorization", &self.auth)
+            .header("Accept", "application/json");
         let resp = send(&self.http, request).await.map_err(|e| e.hidden(&self.secrets))?;
         check_hiding(&resp, &self.secrets)?;
         let responses = match json_body(&resp)? {
@@ -713,6 +732,11 @@ impl<H: Http> Client<H> {
     /// [`Client::call`] with the capabilities of mail named in `using`.
     pub async fn mail(&self, calls: Vec<(&str, Value)>) -> Result<Answers> {
         self.call(&[CORE, MAIL], calls).await
+    }
+
+    /// [`Client::call_within`] with the capabilities of mail named in `using`.
+    pub async fn mail_within(&self, calls: Vec<(&str, Value)>, max: usize) -> Result<Answers> {
+        self.call_within(&[CORE, MAIL], calls, max).await
     }
 }
 

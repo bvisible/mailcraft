@@ -160,7 +160,7 @@ fn the_background_fetches_the_inboxs_newest_forty_and_no_more() {
 fn a_message_the_server_lost_stays_as_it_is_and_the_background_stops_asking_for_it() {
     let mut rig = Rig::new(4);
     let (lost, kept) = (rig.id_of(4), rig.id_of(3));
-    assert!(rig.server.with(|d| d.remove_email(&lost)));
+    assert!(rig.server.with(|d| d.remove(&lost)));
     let (said, brought) = rig.fetch(None);
     assert_eq!(brought.missing, std::slice::from_ref(&lost));
     assert_eq!(brought.fetched.iter().map(|f| f.id.as_str()).collect::<Vec<_>>(), [kept.as_str(), rig.id_of(2).as_str(), rig.id_of(1).as_str()]);
