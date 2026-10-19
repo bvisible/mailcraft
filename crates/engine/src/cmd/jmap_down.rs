@@ -109,9 +109,11 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
 }
 
 /// Whether a message of a window is its marks and nothing else: no `Message-ID`, subject, date, sender,
-/// recipients or preview. That is how a host sends a message the request said this mailbox has.
+/// recipients, preview or size. That is how a host sends a message the request said this mailbox has (a
+/// message the server has whole always has a size, if nothing else).
 fn marks_only(m: &GraphMessage) -> bool {
-    m.message_id.is_empty()
+    m.server.size == 0
+        && m.message_id.is_empty()
         && m.subject.is_empty()
         && m.preview.is_empty()
         && m.sent == 0

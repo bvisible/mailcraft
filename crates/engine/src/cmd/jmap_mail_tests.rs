@@ -176,6 +176,11 @@ fn a_message_that_is_its_marks_alone_and_that_the_mailbox_no_longer_has_is_not_a
     let answer = take(&mut s, account, None, vec![window("Min", vec![mail("E2", "<2@x>", "Two", 200), mail("E1", "<1@x>", "One", 100)], true)], true);
     assert_eq!(answer["new"], 1, "{answer}");
     assert_eq!(in_folder(&s, account, "Min").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Two", "One"]);
+    // A message the server has whole is never taken for marks alone, however little else it says of itself: it has a size.
+    let bare = GraphMessage { server: ServerMessage { id: "E7".into(), size: 120, ..Default::default() }, ..Default::default() };
+    let answer = take(&mut s, account, None, vec![window("Min", vec![bare], false)], true);
+    assert_eq!(answer["new"], 1, "{answer}");
+    assert!(in_folder(&s, account, "Min").iter().any(|m| server_id(m) == "E7"));
 }
 
 #[test]
