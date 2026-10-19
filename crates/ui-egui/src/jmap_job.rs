@@ -23,13 +23,25 @@
 //!
 //! **A server that turns the secret down** ends the run with a plain line, and no run starts by
 //! itself for that account until the owner asks for one: asking again would only be refused again.
+//!
+//! **Messages fetched whole** are asked for by [`crate::graph_fetch`], which dispatches by the kind
+//! of account: the message the owner opens and the Inbox's newest in the background come as a
+//! [`JmapFetchJob`] to [`crate::Services::jmap_fetch`], with the secret of the run (or none, when the
+//! host holds the credential), and what comes back is the same
+//! [`GraphFetchResult`](mailcraft_model::sync::GraphFetchResult) a Microsoft account's fetch gives.
+//! A fetch never asks for a password and never reads the system's credential store: without a
+//! secret at hand (nobody has signed in this session) it is not started, and the reading pane says
+//! the message is not on this computer yet.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 
+use mailcraft_engine::CmdResult;
+use mailcraft_engine::cmd::graph_mail::apply_graph_fetch;
+use mailcraft_engine::cmd::jmap_fetch::apply_jmap_fetch;
 use mailcraft_engine::cmd::jmap_mail::{apply_jmap_mail, jmap_mail_request};
-use mailcraft_model::sync::{JmapMailRequest, JmapMailResult};
+use mailcraft_model::sync::{GraphFetchResult, JmapFetchRequest, JmapMailRequest, JmapMailResult};
 use mailcraft_model::{AccountKind, FolderKind, Id};
 use serde_json::{Value, json};
 
@@ -68,7 +80,60 @@ impl std::fmt::Debug for JmapJob {
     }
 }
 
+/// What the host is asked to fetch ([`crate::Services::jmap_fetch`]): messages of a JMAP account, whole.
+pub struct JmapFetchJob {
+    /// Which messages, and from where: the engine's `sync.jmapFetchRequest`, with the address of the
+    /// server's session resource.
+    pub request: JmapFetchRequest,
+    /// The secret that opens the server: the account's password, or a bearer token when
+    /// `request.bearer` is set. `None` when the host holds the credential itself
+    /// ([`crate::Services::jmap_host_credentials`]).
+    pub secret: Option<String>,
+    /// Set when the owner stops the downloads (Stop): the host's task stops before the next message
+    /// and answers with what it has. It is the one the window keeps for the background's batch
+    /// (`graph_fetch`); a message the owner opened is not stopped by it.
+    pub cancel: Arc<AtomicBool>,
+}
+
+/// Counts and flags only: never the secret, nor the server's address, nor the account's, nor a message's id.
+impl std::fmt::Debug for JmapFetchJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JmapFetchJob")
+            .field("request", &self.request)
+            .field("secret", &self.secret.is_some())
+            .field("cancel", &self.cancel.load(Ordering::Relaxed))
+            .finish()
+    }
+}
+
 impl MailApp {
+    /// Whether `account` is kept in step with a JMAP server.
+    pub(crate) fn is_jmap(&self, account: Id) -> bool {
+        self.session.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap)
+    }
+
+    /// Take in what a fetch of messages brought: a JMAP account's through its own intake
+    /// ([`apply_jmap_fetch`]: it also passes over what the server no longer has), any other account's as a
+    /// Microsoft account's is ([`apply_graph_fetch`]).
+    pub(crate) fn apply_fetched(&mut self, result: GraphFetchResult) -> CmdResult {
+        if self.is_jmap(result.account) { apply_jmap_fetch(&mut self.session, result) } else { apply_graph_fetch(&mut self.session, result) }
+    }
+
+    /// What a fetch of messages of the JMAP account `account` is opened with, when it can be opened now:
+    /// `Some(None)` when the host holds the credential (the job carries no secret), `Some(Some(secret))`
+    /// with the one of this session otherwise, and `None` when there is none at hand (nobody has signed in
+    /// since the program started: a fetch asks for no password and doesn't read the system's store) or the
+    /// server turned it down since the last run. A lookup in memory, nothing more.
+    pub(crate) fn jmap_fetch_secret(&self, account: Id) -> Option<Option<String>> {
+        if self.jmap_refused.contains(&account) {
+            return None;
+        }
+        if self.services.jmap_host_credentials {
+            return Some(None);
+        }
+        self.passwords.get(&account).cloned().map(Some)
+    }
+
     /// A Send/Receive of an account kept in step with a JMAP server: hands the host a job with
     /// what the engine says the run should do, and takes its pieces in from then on
     /// ([`MailApp::poll_jmap`]).
@@ -183,6 +248,10 @@ impl MailApp {
         if piece.auth_refused {
             self.jmap_refused.insert(account);
         }
+        // New mail may be waiting to be fetched whole: the background looks again at once.
+        if !piece.pages.is_empty() {
+            self.fetching.wake();
+        }
         match apply_jmap_mail(&mut self.session, piece) {
             Ok(said) => {
                 let errors = said["errors"].as_array().map(|all| all.iter().filter_map(Value::as_str).map(str::to_string));
@@ -264,3 +333,7 @@ impl MailApp {
 #[cfg(test)]
 #[path = "jmap_job_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "jmap_fetch_tests.rs"]
+mod fetch_tests;

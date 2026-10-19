@@ -12,7 +12,9 @@
 //! A JMAP account's folders and messages are known to its server by the ids the server hands out
 //! ([`crate::AccountKind::server_ids`]), as a Microsoft account's are. What carries no Graph
 //! meaning is used again here instead of being copied: [`FolderListing`], [`MessagePage`],
-//! [`SendUp`], [`SendDone`] and [`GraphProgress`].
+//! [`SendUp`], [`SendDone`], [`GraphProgress`] and, for a message fetched whole, what that brings
+//! ([`GraphFetchResult`](super::GraphFetchResult)). What is asked for it is a [`JmapFetchRequest`]
+//! of its own, since a host needs to know where the server is.
 //!
 //! A run reads a **window** of each mailbox it reads: the newest messages, [`JmapMailRequest::window`]
 //! of them. A mailbox with no more messages than that is read whole, and its page says so
@@ -73,6 +75,33 @@ pub struct JmapMailRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sends: Vec<SendUp>,
     /// Nobody is waiting for this run: it gets the share of requests background work has.
+    #[serde(skip_serializing_if = "is_false")]
+    pub background: bool,
+}
+
+/// Messages of a JMAP account to fetch whole (their raw octets, which an email's blob holds), by
+/// server id, in this order: the counterpart of [`GraphFetchRequest`](super::GraphFetchRequest).
+///
+/// It says where the server is, as a [`JmapMailRequest`] does, because a host that has to connect
+/// for it has no other way to know. What it brings back is the same [`GraphFetchResult`](super::GraphFetchResult)
+/// a Microsoft account's fetch brings, so that taking it in is the same for both. The secret that
+/// opens the server goes beside the request, as for a run, and is not in it.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JmapFetchRequest {
+    pub account: Id,
+    /// The account's address: what the answer is checked against.
+    pub email: String,
+    /// The address of the server's session resource ([`crate::JmapServer::session`]). It may carry
+    /// the account's address, so it is never logged.
+    pub session: String,
+    /// The secret that goes beside this request is a bearer token. Otherwise it is the account's
+    /// password, sent with its login name ([`crate::JmapServer::bearer`]).
+    #[serde(skip_serializing_if = "is_false")]
+    pub bearer: bool,
+    /// The server ids of the emails to fetch, in the order they are wanted.
+    pub ids: Vec<String>,
+    /// Nobody is waiting: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
 }
@@ -273,6 +302,18 @@ impl std::fmt::Debug for JmapMailRequest {
     }
 }
 
+/// Counts only, as a run's request: no address, and no id of a message.
+impl std::fmt::Debug for JmapFetchRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JmapFetchRequest")
+            .field("account", &self.account)
+            .field("bearer", &self.bearer)
+            .field("ids", &self.ids.len())
+            .field("background", &self.background)
+            .finish()
+    }
+}
+
 /// Counts only, as the request's.
 impl std::fmt::Debug for JmapMailResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -402,6 +443,31 @@ mod tests {
         // A result with only the parts that came: the others are empty.
         let some: JmapMailResult = serde_json::from_str(r#"{"account": 3, "pages": [{"folder": "M1"}], "whole": true}"#).unwrap();
         assert_eq!((some.account, some.pages.len(), some.whole, some.partial, some.listing.is_none()), (3, 1, true, false, true));
+    }
+
+    #[test]
+    fn a_fetch_request_reads_and_writes_as_json_and_shows_counts_only() {
+        let request = JmapFetchRequest {
+            account: 3,
+            email: ME.into(),
+            session: SESSION.into(),
+            bearer: true,
+            ids: vec![format!("E-{ME}"), "E2".into()],
+            background: true,
+        };
+        let json = round_trip(&request);
+        for part in [r#""session":"https://mail.example.org/"#, r#""bearer":true"#, r#""ids":["E-ada@example.org","E2"]"#, r#""background":true"#] {
+            assert!(json.contains(part), "{part} in {json}");
+        }
+        // What is false is not written, and what is not said reads as empty.
+        let plain = JmapFetchRequest { account: 3, ids: vec!["E1".into()], ..Default::default() };
+        assert_eq!(round_trip(&plain), r#"{"account":3,"email":"","session":"","ids":["E1"]}"#);
+        assert_eq!(serde_json::from_str::<JmapFetchRequest>("{}").unwrap(), JmapFetchRequest::default());
+        // Neither the account's address, nor the server's, nor a message's id is printed.
+        for shown in [format!("{request:?}"), format!("{request:#?}")] {
+            assert!(!shown.contains('@') && !shown.contains("example.org") && !shown.contains("E2") && !shown.contains("session"), "{shown}");
+        }
+        assert_eq!(format!("{request:?}"), "JmapFetchRequest { account: 3, bearer: true, ids: 2, background: true }");
     }
 
     #[test]

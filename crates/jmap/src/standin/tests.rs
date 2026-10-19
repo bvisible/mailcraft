@@ -639,6 +639,122 @@ fn what_it_remembers_of_the_requests_is_bounded() {
     assert_eq!(stand_in.seen().len(), MAX_SEEN);
 }
 
+/// What a download of `path` came to, signed in as `authorization` says, for a request that takes at most `max` octets.
+fn download(stand_in: &StandIn, path: &str, authorization: Option<&str>, max: usize) -> Result<Response> {
+    let mut req = Request::get(&format!("https://jmap.standin.example{path}"), max);
+    if let Some(value) = authorization {
+        req = req.header("Authorization", value);
+    }
+    block_on(stand_in.send(req))
+}
+
+/// The blob of an email, as `Email/get` names it.
+fn blob_of(stand_in: &StandIn, email: &str) -> String {
+    let call = json!(["Email/get", {"accountId": ACCOUNT, "ids": [email], "properties": ["blobId", "size"]}, "c0"]);
+    one(stand_in, call).unwrap()["list"][0]["blobId"].as_str().unwrap().to_string()
+}
+
+#[test]
+fn a_blob_is_the_octets_of_its_email_at_the_address_the_session_names() {
+    let (stand_in, ids) = filled();
+    let client = connect(&stand_in);
+    for (id, subject) in [(&ids.first, "first"), (&ids.second, "second"), (&ids.third, "third")] {
+        let blob = blob_of(&stand_in, id);
+        let address = client.download_url(&blob, "message/rfc822", "message.eml").unwrap();
+        let resp = block_on(stand_in.send(Request::get(&address, 1 << 20).header("Authorization", &bearer()))).unwrap();
+        assert_eq!((resp.status, resp.body), (200, mail(subject)), "{subject}");
+    }
+    // Either way of signing in is let in; the size `Email/get` states is the number of octets.
+    let blob = blob_of(&stand_in, &ids.first);
+    let path = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
+    let basic = format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}")));
+    assert_eq!(download(&stand_in, &path, Some(&basic), 1 << 20).unwrap().body.len(), mail("first").len());
+    let sized = one(&stand_in, json!(["Email/get", {"accountId": ACCOUNT, "ids": [ids.first], "properties": ["size"]}, "c0"])).unwrap();
+    assert_eq!(sized["list"][0]["size"], mail("first").len());
+    // The octets are the ones that were delivered, whatever they are.
+    let raw = stand_in.with(|d| {
+        let inbox = d.mailbox_named("Inbox").map(str::to_string).unwrap();
+        d.deliver(&inbox, &[0xff, 0x00, b'\r', b'\n', 0xfe, b'\n', b'\n'], &[], "2026-10-16T00:00:00Z")
+    });
+    let odd = download(&stand_in, &format!("/jmap/download/{ACCOUNT}/{}/m.eml?type=x", blob_of(&stand_in, &raw)), Some(&bearer()), 1 << 20).unwrap();
+    assert_eq!(odd.body, [0xff, 0x00, b'\r', b'\n', 0xfe, b'\n', b'\n']);
+    // The requests it was sent are listed with the address and its status, and no method called.
+    let seen = stand_in.seen();
+    let last = seen.last().unwrap();
+    assert_eq!((last.method.as_str(), last.status, last.calls.len()), ("GET", 200, 0));
+    assert!(last.path.starts_with("/jmap/download/A1/") && last.path.ends_with("/m.eml"), "the query is not part of the path: {}", last.path);
+}
+
+#[test]
+fn a_download_is_refused_or_not_found_as_the_standard_has_it() {
+    let (stand_in, ids) = filled();
+    let blob = blob_of(&stand_in, &ids.first);
+    let status = |path: &str, authorization: Option<&str>| download(&stand_in, path, authorization, 1 << 20).unwrap().status;
+    let good = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
+    assert_eq!(status(&good, Some(&bearer())), 200);
+    // The credentials are asked for, as for any address: a request that has none learns nothing of the blob.
+    assert_eq!(status(&good, None), 401);
+    assert_eq!(status(&good, Some("Bearer wrong")), 401);
+    let refused = download(&stand_in, &good, None, 1 << 20).unwrap();
+    assert!(!String::from_utf8_lossy(&refused.body).contains("Hello"), "no octets of the message");
+    // Not an account it has, not a blob it has, the email's id for the blob's, no name, or an address of another shape.
+    for (what, path) in [
+        ("another account", format!("/jmap/download/A2/{blob}/message.eml")),
+        ("no blob", format!("/jmap/download/{ACCOUNT}/B999/message.eml")),
+        ("the email's id", format!("/jmap/download/{ACCOUNT}/{}/message.eml", ids.first)),
+        ("a blob that is no id", format!("/jmap/download/{ACCOUNT}/a%20b/message.eml")),
+        ("no name", format!("/jmap/download/{ACCOUNT}/{blob}/")),
+        ("no name or slash", format!("/jmap/download/{ACCOUNT}/{blob}")),
+        ("a name and more", format!("/jmap/download/{ACCOUNT}/{blob}/a/b")),
+        ("no blob or name", format!("/jmap/download/{ACCOUNT}")),
+        ("nothing", "/jmap/download/".to_string()),
+        ("a longer prefix", format!("/jmap/downloads/{ACCOUNT}/{blob}/m.eml")),
+    ] {
+        assert_eq!(status(&path, Some(&bearer())), 404, "{what}");
+    }
+    // Only a GET fetches a blob.
+    let mut post = Request::post(&format!("https://jmap.standin.example{good}"), "application/json", b"{}".to_vec(), 1 << 20);
+    post.headers.push(("Authorization".into(), bearer()));
+    assert_eq!(block_on(stand_in.send(post)).unwrap().status, 404);
+    // A blob goes with its email.
+    assert!(stand_in.with(|d| d.remove_email(&ids.first)));
+    assert!(!stand_in.with(|d| d.remove_email(&ids.first)), "it was there once");
+    assert_eq!(status(&good, Some(&bearer())), 404);
+    let gone = one(&stand_in, json!(["Email/get", {"accountId": ACCOUNT, "ids": [ids.first, ids.second]}, "c0"])).unwrap();
+    assert_eq!((gone["notFound"].clone(), gone["list"].as_array().map(Vec::len)), (json!([ids.first]), Some(1)));
+}
+
+#[test]
+fn a_blob_over_the_size_asked_for_is_no_answer() {
+    let (stand_in, ids) = filled();
+    let blob = blob_of(&stand_in, &ids.first);
+    let path = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
+    let size = mail("first").len();
+    assert!(matches!(download(&stand_in, &path, Some(&bearer()), size - 1), Err(Error::TooLarge(_))));
+    assert_eq!(download(&stand_in, &path, Some(&bearer()), size).unwrap().body.len(), size);
+    // An oversized blob, a real one: 3 MB come to a client that takes 2 MB at most only as an error.
+    let big = stand_in.with(|d| {
+        let inbox = d.mailbox_named("Inbox").map(str::to_string).unwrap();
+        d.deliver(&inbox, &vec![b'x'; 3 << 20], &[], "2026-10-16T00:00:00Z")
+    });
+    let path = format!("/jmap/download/{ACCOUNT}/{}/message.eml", blob_of(&stand_in, &big));
+    assert!(matches!(download(&stand_in, &path, Some(&bearer()), 2 << 20), Err(Error::TooLarge(_))));
+    assert_eq!(download(&stand_in, &path, Some(&bearer()), 3 << 20).unwrap().body.len(), 3 << 20);
+}
+
+#[test]
+fn an_email_taken_away_is_not_found_and_the_state_follows() {
+    let (stand_in, ids) = filled();
+    let before = one(&stand_in, json!(["Mailbox/get", {"accountId": ACCOUNT, "ids": [ids.inbox], "properties": ["totalEmails"]}, "c0"])).unwrap();
+    assert!(stand_in.with(|d| d.remove_email(&ids.second)));
+    let after = one(&stand_in, json!(["Mailbox/get", {"accountId": ACCOUNT, "ids": [ids.inbox], "properties": ["totalEmails"]}, "c0"])).unwrap();
+    assert_eq!((before["list"][0]["totalEmails"].clone(), after["list"][0]["totalEmails"].clone()), (json!(3), json!(2)));
+    assert_ne!(before["state"], after["state"]);
+    let found = one(&stand_in, json!(["Email/query", {"accountId": ACCOUNT, "filter": {"inMailbox": ids.inbox}}, "c0"])).unwrap();
+    assert_eq!(found["ids"], json!([ids.first, ids.third]));
+    assert!(!stand_in.with(|d| d.remove_email("E999")));
+}
+
 /// Requests with what it takes to run in some places, and anything at all in the others.
 fn request_like() -> impl Strategy<Value = Value> {
     let call = (

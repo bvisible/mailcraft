@@ -12,6 +12,8 @@
 //!   `http` is for this computer alone). The limits the session states are clamped.
 //! - [`Client::call`] sends one batch of method calls in one request. A method that fails fails its own
 //!   answer ([`Answers::get`]), never the others; a request that fails as a whole is an [`Error`].
+//! - [`fetch`] brings a message whole: the raw octets an email's blob holds, downloaded from the
+//!   session's `downloadUrl`.
 //!
 //! Everything a server sends is hostile: answers are capped ([`MAX_JSON`]), ids are held to
 //! [`valid_id`], numbers are clamped, and nothing here indexes into what came over the wire. The
@@ -29,6 +31,7 @@ use std::fmt;
 use base64::Engine as _;
 use serde_json::Value;
 
+pub mod fetch;
 #[cfg(any(test, feature = "stand-in"))]
 pub mod standin;
 pub mod url;

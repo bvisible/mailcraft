@@ -2322,6 +2322,7 @@ version = "0.5.0"
 dependencies = [
  "base64",
  "mailcraft-engine",
+ "mailcraft-jmap",
  "mailcraft-mcp",
  "mailcraft-model",
  "mailcraft-net",
@@ -2375,6 +2376,7 @@ version = "0.5.0"
 dependencies = [
  "base64",
  "log",
+ "mailcraft-model",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",

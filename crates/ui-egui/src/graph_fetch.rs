@@ -5,16 +5,26 @@
 //! each Send/Receive renews it. Cancel (Stop) stops it all until the next Send/Receive starts,
 //! the owner's or one by itself; Send/Receive Progress says how far it has got, account by account
 //! (the engine counts them as they come in, [`mailcraft_engine::cmd::sync_progress::FullMessages`]).
+// //// Neoffice — a JMAP account's messages are fetched the same way, by the host's JMAP task (jmap_job.rs).
+//!
+//! An account kept in step with a JMAP server is fetched for as well: the job goes to
+//! [`crate::Services::jmap_fetch`] rather than [`crate::Services::graph_fetch`], with the account's
+//! secret rather than a Graph token, and the answer is the same [`GraphFetchResult`]. In the background
+//! it is the Inbox's newest messages only ([`mailcraft_engine::cmd::jmap_fetch::PREFETCH_NEWEST`]).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 
 use mailcraft_engine::cmd::graph_mail;
+// //// Neoffice — the request of a JMAP account's fetch.
+use mailcraft_engine::cmd::jmap_fetch;
 use mailcraft_model::sync::{GraphFetchRequest, GraphFetchResult};
 use mailcraft_model::{AccountKind, Id};
 use serde_json::{Value, json};
 
+// //// Neoffice — the job a JMAP account's host is handed.
+use crate::jmap_job::JmapFetchJob;
 use crate::{MailApp, now_ms};
 
 /// Messages asked for at a time in the background.
@@ -112,6 +122,20 @@ impl MailApp {
         if self.fetching.fetching(message) {
             return true;
         }
+        // //// Neoffice — a JMAP account's message is fetched by the host's JMAP task, with the account's own secret.
+        if self.is_jmap(account) {
+            let (Some(fetch), Some(secret)) = (&self.services.jmap_fetch, self.jmap_fetch_secret(account)) else {
+                self.fetching.offline = true;
+                return false;
+            };
+            let Ok(request) = jmap_fetch::jmap_fetch_request(&self.session, account, Some(message), 1) else { return false };
+            if request.ids.is_empty() {
+                return false;
+            }
+            let job = JmapFetchJob { request, secret, cancel: Arc::new(AtomicBool::new(false)) };
+            self.fetching.now = Some((message, fetch(job)));
+            return true;
+        }
         let (Some(fetch), Some(access)) = (&self.services.graph_fetch, access(self, account)) else {
             self.fetching.offline = true;
             return false;
@@ -130,8 +154,11 @@ impl MailApp {
     pub fn drive_fetch(&mut self) {
         self.poll_fetch_now();
         self.poll_fetch_background();
-        let graph = self.session.mailbox.accounts.iter().any(|a| a.kind == mailcraft_model::AccountKind::Microsoft);
-        if !graph || self.services.graph_fetch.is_none() {
+        // //// Neoffice — an account kept in step with a JMAP server is fetched for too, when the host has a JMAP task for it.
+        let graph =
+            self.services.graph_fetch.is_some() && self.session.mailbox.accounts.iter().any(|a| a.kind == mailcraft_model::AccountKind::Microsoft);
+        let jmap = self.services.jmap_fetch.is_some() && self.session.mailbox.accounts.iter().any(|a| a.kind == AccountKind::Jmap);
+        if !graph && !jmap {
             return;
         }
         // The message the reading pane shows, at once.
@@ -152,11 +179,35 @@ impl MailApp {
         if self.fetching.background.is_some() || self.session.sync_progress.full_paused || now_ms() < self.fetching.idle_until {
             return;
         }
-        let accounts: Vec<Id> = self.session.mailbox.accounts.iter().filter(|a| a.kind == AccountKind::Microsoft).map(|a| a.id).collect();
+        // //// Neoffice — the accounts of the kinds that can be fetched for.
+        let accounts: Vec<Id> = self
+            .session
+            .mailbox
+            .accounts
+            .iter()
+            .filter(|a| match a.kind {
+                AccountKind::Microsoft => graph,
+                AccountKind::Jmap => jmap,
+                _ => false,
+            })
+            .map(|a| a.id)
+            .collect();
         let now = now_ms();
         for account in accounts {
             if self.fetching.stuck.get(&account).is_some_and(|(_, until)| now < *until) {
                 continue;
+            }
+            // //// Neoffice — a JMAP account: the Inbox's newest, by the host's JMAP task.
+            if self.is_jmap(account) {
+                let (Some(fetch), Some(secret)) = (&self.services.jmap_fetch, self.jmap_fetch_secret(account)) else { continue };
+                let Ok(request) = jmap_fetch::jmap_fetch_request(&self.session, account, None, BATCH) else { continue };
+                if request.ids.is_empty() {
+                    continue;
+                }
+                self.fetching.cancel = Arc::new(AtomicBool::new(false));
+                let job = JmapFetchJob { request, secret, cancel: self.fetching.cancel.clone() };
+                self.fetching.background = Some((account, fetch(job)));
+                return;
             }
             let Some(token) = access(self, account) else { continue };
             let Ok(request) = graph_mail::graph_fetch_request(&self.session, account, None, BATCH) else { continue };
@@ -184,8 +235,9 @@ impl MailApp {
         self.fetching.now = None;
         self.fetching.offline = result.offline;
         let account = result.account;
+        // //// Neoffice — taken in by the intake of the account's kind (jmap_job.rs).
         if account != 0
-            && let Err(e) = graph_mail::apply_graph_fetch(&mut self.session, result)
+            && let Err(e) = self.apply_fetched(result)
         {
             self.status(e.to_string());
         }
@@ -227,7 +279,8 @@ impl MailApp {
         } else if !result.fetched.is_empty() || !result.missing.is_empty() || !result.failed.is_empty() {
             self.fetching.stuck.remove(&account);
         }
-        match graph_mail::apply_graph_fetch(&mut self.session, result) {
+        // //// Neoffice — as above.
+        match self.apply_fetched(result) {
             Ok(said) => {
                 let (waiting, large) = (said["waiting"].as_u64().unwrap_or(0), said["large"].as_u64().unwrap_or(0));
                 let all = said["all"].as_u64().unwrap_or(0);

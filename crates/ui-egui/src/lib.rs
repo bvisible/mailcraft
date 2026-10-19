@@ -121,6 +121,14 @@ pub struct Services {
     /// window's thread must never wait for the window to take a piece. A sender dropped before the
     /// last piece reads as "stopped unexpectedly". Absent where no JMAP server can be reached.
     pub jmap: Option<Box<dyn Fn(jmap_job::JmapJob) -> Receiver<mailcraft_model::sync::JmapMailResult>>>,
+    // //// Neoffice — a JMAP account's messages are fetched whole by a task of the host's too, with the answer a Microsoft account's fetch gives.
+    /// Fetch messages of a JMAP account whole, as a task of the host's, when the owner opens one and in
+    /// the background ([`graph_fetch`]): the answer is the one [`Services::graph_fetch`]'s is
+    /// ([`mailcraft_model::sync::GraphFetchResult`]), so that the window takes both in alike. One answer
+    /// comes, and the host wakes the window for it; a sender dropped before it reads as a server out of
+    /// reach. Absent where no JMAP server can be reached: nothing is fetched, and the reading pane says
+    /// the rest of a message is on the server.
+    pub jmap_fetch: Option<Box<dyn Fn(jmap_job::JmapFetchJob) -> Receiver<mailcraft_model::sync::GraphFetchResult>>>,
     /// The host holds the credential that opens a JMAP server (it hands it over and renews it
     /// itself): the owner is never asked for a password for a JMAP account, no job carries a secret
     /// ([`jmap_job::JmapJob::secret`]), and a Send/Receive that starts by itself can always go ahead.

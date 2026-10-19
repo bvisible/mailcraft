@@ -6,7 +6,7 @@
 //!
 //! Where the other stand-ins of the tests answer whatever they are told and take whatever they are
 //! sent, this one holds a client to the standard (RFC 8620, 8621) as a real server does, for the part
-//! it serves: the session, `Mailbox/get`, `Email/query` and `Email/get`.
+//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get` and the download of a blob.
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -27,7 +27,11 @@
 //!   from a `position` that may be negative, and says the total when asked. `#`-arguments resolve a
 //!   back-reference to an earlier call of the same request, with RFC 6901 pointers and `*` over lists
 //!   (`invalidResultReference`).
-//! - **Not there.** Anything that changes mail, blobs, sending, `*/changes`, threads, push. The session
+//! - **Blobs.** The session's `downloadUrl` (`/jmap/download/{accountId}/{blobId}/{name}?type={type}`) gives
+//!   the octets of an email's blob (`blobId`), as they were delivered, to the credentials it lets in
+//!   (RFC 8620 §6.2). An account or a blob it doesn't have, and a path that isn't that of a download, is a
+//!   404. Like any answer, one over the size the request asked for is no answer.
+//! - **Not there.** Anything that changes mail, uploads, sending, `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
 //!
 //! It never panics, whatever it is sent: there is no `unwrap` here, in a test build or in another
@@ -53,6 +57,7 @@ pub const TOKEN: &str = "standin-token";
 const ORIGIN: &str = "https://jmap.standin.example";
 const SESSION_PATH: &str = "/jmap/session";
 const API_PATH: &str = "/jmap/api";
+const DOWNLOAD_PATH: &str = "/jmap/download/";
 /// Largest request it reads (`maxSizeRequest`), and most ids one `Email/query` answers however many are asked.
 const MAX_REQUEST: usize = 10_000_000;
 const MAX_QUERY: usize = 500;
@@ -206,6 +211,18 @@ impl Data {
         true
     }
 
+    /// Take an email away, as another client deleting it would (or moving it, for a server that names an
+    /// email by where it is): whether there was such an email. Its blob goes with it.
+    pub fn remove_email(&mut self, id: &str) -> bool {
+        let before = self.emails.len();
+        self.emails.retain(|e| e.id != id);
+        let removed = self.emails.len() != before;
+        if removed {
+            self.changed();
+        }
+        removed
+    }
+
     fn authorized(&self, headers: &[(String, String)]) -> bool {
         let Some((scheme, credentials)) = header(headers, "authorization").and_then(|v| v.split_once(' ')) else {
             return false;
@@ -226,11 +243,38 @@ impl Data {
             return Err(Error::Io("no route to that host".into()));
         }
         let path = url.path.split('?').next().unwrap_or_default().to_string();
-        let (status, body, calls) = self.route(req, &path);
+        // A blob is the one answer that isn't JSON.
+        let (status, body, calls) = if req.method == "GET" && path.starts_with(DOWNLOAD_PATH) {
+            let (status, body) = self.download(req, &path);
+            (status, body, Vec::new())
+        } else {
+            let (status, body, calls) = self.route(req, &path);
+            (status, serde_json::to_vec(&body).unwrap_or_default(), calls)
+        };
         if self.seen.len() < MAX_SEEN {
             self.seen.push(Seen { method: req.method.clone(), path, status, calls });
         }
-        Ok(Response { status, body: serde_json::to_vec(&body).unwrap_or_default(), retry_after: None })
+        Ok(Response { status, body, retry_after: None })
+    }
+
+    /// `GET /jmap/download/{accountId}/{blobId}/{name}` (RFC 8620 §6.2): the octets of a blob, as they
+    /// were delivered. The credentials are asked for as for any other address.
+    fn download(&self, req: &Request, path: &str) -> (u16, Vec<u8>) {
+        let refused = |status: u16, detail: &str| (status, serde_json::to_vec(&problem(status, "about:blank", detail)).unwrap_or_default());
+        if !self.authorized(&req.headers) {
+            return refused(401, "the credentials were refused");
+        }
+        let mut parts = path.strip_prefix(DOWNLOAD_PATH).unwrap_or_default().split('/');
+        let (Some(account), Some(blob), Some(name), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+            return refused(404, "no such address");
+        };
+        if account != ACCOUNT || name.is_empty() {
+            return refused(404, "no such blob");
+        }
+        match self.emails.iter().find(|e| e.blob == blob) {
+            Some(email) => (200, email.raw.clone()),
+            None => refused(404, "no such blob"),
+        }
     }
 
     fn route(&mut self, req: &Request, path: &str) -> (u16, Value, Vec<String>) {

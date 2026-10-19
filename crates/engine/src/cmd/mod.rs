@@ -22,8 +22,9 @@ pub mod graph_mail;
 pub mod graph_send;
 pub mod graph_switch;
 pub mod graph_up;
-// //// Neoffice — an account kept in step with a JMAP server (its request, and what comes down).
+// //// Neoffice — an account kept in step with a JMAP server (its request, what comes down, and its messages fetched whole).
 pub mod jmap_down;
+pub mod jmap_fetch;
 pub mod jmap_mail;
 pub mod mail;
 pub mod offline;
@@ -76,6 +77,7 @@ pub fn registry() -> Registry {
     v.extend(graph_mail::specs());
     // //// Neoffice — the commands of an account kept in step with a JMAP server.
     v.extend(jmap_mail::specs());
+    v.extend(jmap_fetch::specs());
     v.extend(shared::specs());
     v.extend(graph_switch::specs());
     v.extend(graph_send::specs());
