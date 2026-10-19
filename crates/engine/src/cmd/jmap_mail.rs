@@ -201,6 +201,7 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     // The drafts filed and the messages sent (RFC 8621 §4.8, §7): what became of each. A message that went
     // leaves the Outbox, one that was refused or whose answer was lost is held there, with why.
     let mut refused: Vec<String> = Vec::new();
+    let waiting_before = jmap_send::destroys_waiting(&s.mailbox, account);
     for done in result.drafts.iter().take(MAX_PAGES) {
         if jmap_send::draft_done(&mut s.mailbox, account, done, &mut refused) {
             taken.updated += 1;
@@ -217,10 +218,11 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
         }
     }
     // The copies the server has that nobody wants and that the host could not destroy wait to be destroyed.
-    let queued = jmap_send::unwanted(&mut s.mailbox, account, &result.unwanted);
-    if queued {
+    if jmap_send::unwanted(&mut s.mailbox, account, &result.unwanted) {
         taken.updated += 1;
     }
+    // (A copy filed for a draft that is gone here waits to be destroyed too.)
+    let queued = jmap_send::destroys_waiting(&s.mailbox, account) > waiting_before;
     // Mail that reached the server, or may have, can't be taken back by Undo; and neither can a message held for
     // that doubt be let go by it (an older state of the mailbox has the message in the Outbox, not held, and the
     // next run would send it again). Whether the message is still in the Outbox or not. The same for a copy that

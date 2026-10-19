@@ -494,10 +494,19 @@ fn trouble_before_the_submission_never_costs_a_message_it_can_be_tried_again() {
         ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
         ("signed out (401)", Effect::RefuseWith(401), Becomes::Waits(None)),
         ("a failure (500)", Effect::RefuseWith(500), Becomes::Held("the server wouldn't take it (HTTP 500")),
-        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Held("the server wouldn't take it (HTTP 502")),
-        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Held("the server wouldn't take it (HTTP 504")),
+        // A gateway that fails before anything is filed is the gateway's trouble and not the message's.
+        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Waits(Some(UNAVAILABLE))),
+        ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Waits(Some(UNAVAILABLE))),
         ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
         ("an answer that is not JMAP", Effect::Garbage, Becomes::Held("the server's answer wasn't understood")),
+    ];
+    // Who the account may send as: a server that fails to say is not the message's trouble either.
+    let identity_cases: [(&str, Effect, Becomes); 5] = [
+        ("a failure (500)", Effect::RefuseWith(500), Becomes::Waits(Some(UNAVAILABLE))),
+        ("a gateway that is down (502)", Effect::RefuseWith(502), Becomes::Waits(Some(UNAVAILABLE))),
+        ("busy (503)", Effect::RefuseWith(503), Becomes::Waits(Some(BUSY))),
+        ("the answer lost", Effect::LoseAnswer, Becomes::Waits(Some(UNREACHABLE))),
+        ("a request it will not take (400)", Effect::RefuseWith(400), Becomes::Held("the server wouldn't take it (HTTP 400")),
     ];
     let import_cases: [(&str, Effect, Becomes); 7] = [
         ("over its quota", Effect::SetError("overQuota", ""), Becomes::Held("the mailbox on the server is full")),
@@ -509,7 +518,11 @@ fn trouble_before_the_submission_never_costs_a_message_it_can_be_tried_again() {
         ("a gateway that gave up (504)", Effect::RefuseWith(504), Becomes::Held("the server wouldn't take it (HTTP 504")),
     ];
     for (kind, profile) in both() {
-        for (step, on, cases) in [("upload", "upload", upload_cases.as_slice()), ("filing", "Email/import", import_cases.as_slice())] {
+        for (step, on, cases) in [
+            ("who", "Identity/get", identity_cases.as_slice()),
+            ("upload", "upload", upload_cases.as_slice()),
+            ("filing", "Email/import", import_cases.as_slice()),
+        ] {
             for (what, effect, becomes) in cases {
                 let (server, ids) = world(profile);
                 let client = client(&server);
@@ -594,13 +607,12 @@ fn a_draft_is_filed_in_drafts_with_its_bcc_and_the_copy_before_it_is_destroyed()
 fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
     for (kind, profile) in both() {
         // Trouble that may pass: the draft waits for the next run, with the copy it has.
-        let waits: [(&str, &str, Effect, Option<&str>); 6] = [
+        let waits: [(&str, &str, Effect, Option<&str>); 5] = [
             ("the network", "upload", Effect::LoseAnswer, Some(UNREACHABLE)),
             ("busy", "upload", Effect::RefuseWith(503), Some(BUSY)),
             ("signed out", "upload", Effect::RefuseWith(401), None),
             ("unavailable", "Email/import", Effect::MethodError("serverUnavailable"), Some(UNAVAILABLE)),
             ("a gateway that is down (502)", "upload", Effect::RefuseWith(502), Some(UNAVAILABLE)),
-            ("a gateway that gave up (504)", "Email/import", Effect::RefuseWith(504), Some(UNAVAILABLE)),
         ];
         for (what, on, effect, line) in waits {
             let (server, ids) = world(profile);
@@ -646,6 +658,17 @@ fn a_draft_that_cannot_be_filed_keeps_the_copy_it_has() {
             assert!(!went.stop, "{kind}, {what}");
             assert!(emails_in(&server, &ids.drafts).iter().any(|e| e.id == before), "{kind}, {what}: the copy it has stays");
         }
+        // A gateway that fails at the filing: the call may have run and left a copy, so the draft is settled and not tried
+        // again at every run.
+        let (server, ids) = world(profile);
+        let before = server.with(|d| d.deliver(&ids.drafts, b"Subject: first\r\n\r\nx\r\n", &["$draft"], "2026-10-14T09:00:00Z"));
+        let client = self::client(&server);
+        let mut outgoing = self::outgoing(&client, &ids);
+        fault(&server, "Email/import", Effect::RefuseWith(504));
+        let went = block_on(outgoing.draft(&to_file(message("Plans", &["bob@example.org"]), &before)));
+        let done = went.done.unwrap_or_else(|| panic!("{kind}: settled"));
+        assert!(done.refused.as_deref().is_some_and(|why| why.starts_with("the server wouldn't take it (HTTP 504")), "{kind}: {:?}", done.refused);
+        assert!(!went.stop && emails_in(&server, &ids.drafts).iter().any(|e| e.id == before), "{kind}");
         // Too large for the server, or nowhere to file it: refused, with nothing asked of the server.
         let (server, ids) = world(profile);
         server.with(|d| d.max_upload = 200);

@@ -17,8 +17,10 @@
 //!
 //! **What may be retried, and what may not.** Until the submission is asked for, nothing has gone, whatever
 //! happens: a message whose upload or filing fails is *not sent*, and a failure of the network, the sign-in,
-//! or the server's patience leaves it waiting for the next run (a server that refuses it, and says so, holds
-//! it). From the moment the submission is asked for, an answer that does not say whether it went (the
+//! or the server's patience (and, before anything is filed, a gateway that is down) leaves it waiting for the
+//! next run; a server that refuses it, says so, or fails on it at the filing holds it, so that a message the
+//! server always fails on is not tried again at every run, shutting out those behind it. From the moment the
+//! submission is asked for, an answer that does not say whether it went (the
 //! connection lost, a status that is a server's failure, an answer that is no JMAP) is **lost**: the message
 //! is held, "it may have been sent", and is never sent again by itself. So is a submission the server says
 //! it failed to make (`serverFail`) or refused with a type that the standard does not give for a refusal made
@@ -70,6 +72,10 @@ const MAX_SAID: usize = 160;
 const MAX_RECIPIENTS: usize = 1_000;
 /// The most copies a run hands back to be destroyed.
 const MAX_UNWANTED: usize = 100;
+/// The longest `type` and `description` of a refusal that are kept whole: far more than a line of ours says of them,
+/// so that a credential in what a server says is found and hidden (`Outgoing::said`) before it is cut.
+const MAX_KIND: usize = 512;
+const MAX_DETAIL: usize = 2_048;
 
 const NO_SUBMISSION: &str = "the server doesn't send mail";
 const NO_SENT_FOLDER: &str = "the server has no Sent folder to keep a copy of it in";
@@ -195,8 +201,8 @@ fn created<'a>(answer: &'a Value, key: &str) -> Result<&'a Value> {
     }
     match answer.get("notCreated").and_then(|c| c.get(key)).and_then(Value::as_object) {
         Some(error) => Err(Error::Refused {
-            kind: error.get("type").and_then(Value::as_str).map(|t| tidy(t, 64)).unwrap_or_default(),
-            description: error.get("description").and_then(Value::as_str).map(|t| tidy(t, 300)).unwrap_or_default(),
+            kind: error.get("type").and_then(Value::as_str).map(|t| tidy(t, MAX_KIND)).unwrap_or_default(),
+            description: error.get("description").and_then(Value::as_str).map(|t| tidy(t, MAX_DETAIL)).unwrap_or_default(),
         }),
         None => Err(Error::Protocol("the server's answer doesn't say what it made of the message".into())),
     }
@@ -376,8 +382,8 @@ fn classify(status: Option<u16>, outcome: Result<Answers>) -> Submitted {
     match (made.is_some_and(Value::is_object), refused.and_then(Value::as_object)) {
         (true, None) => Submitted::Made,
         (false, Some(error)) => {
-            let kind = error.get("type").and_then(Value::as_str).map(|t| tidy(t, 64)).unwrap_or_default();
-            let description = error.get("description").and_then(Value::as_str).map(|t| tidy(t, 300)).unwrap_or_default();
+            let kind = error.get("type").and_then(Value::as_str).map(|t| tidy(t, MAX_KIND)).unwrap_or_default();
+            let description = error.get("description").and_then(Value::as_str).map(|t| tidy(t, MAX_DETAIL)).unwrap_or_default();
             if !REFUSALS.contains(&kind.as_str()) {
                 return Submitted::Unknown(Doubt::Said { kind, description });
             }
@@ -489,6 +495,17 @@ fn size_words(octets: usize) -> String {
 // ---------------------------------------------------------------------------------------------
 // A run's sending
 
+/// The step before a submission that failed. A gateway that fails (502, 504) is the gateway's trouble and not the
+/// message's while nothing has been filed: asking who the account is changes nothing, and an upload changes nothing
+/// that matters. At the filing the call may have run and left a copy, so a message that the gateway keeps failing
+/// at is settled and not tried again at every run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    Identity,
+    Upload,
+    Import,
+}
+
 /// What became of one item of a run's sending.
 pub(crate) struct Went<T> {
     /// What became of the item, when that is known: not when it waits for the next run.
@@ -574,12 +591,13 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// Why a step before the submission failed: not a word on whether the message is any good for the
-    /// network, the sign-in or a busy or unavailable server (it waits for the next run, and nothing more is
-    /// tried now), a refusal in plain words for the server saying it won't have it, or failing on it (the message
-    /// is held: a message the server always fails on would otherwise be tried again at every run, and shut out
-    /// those behind it).
+    /// network, the sign-in, a busy or unavailable server, a server that fails to say who the account is, or a
+    /// gateway that is down while nothing is filed (it waits for the next run, and nothing more is tried now), a
+    /// refusal in plain words for the server saying it won't have it, or failing on it (the message is held: a
+    /// message the server always fails on would otherwise be tried again at every run, and shut out those behind
+    /// it).
     /// `Err` is a refusal to hold the message with; `Ok` is the trouble that makes it wait.
-    fn trouble(&self, e: &Error) -> std::result::Result<Option<&'static str>, String> {
+    fn trouble(&self, e: &Error, step: Step) -> std::result::Result<Option<&'static str>, String> {
         match e {
             Error::Io(_) | Error::Tls(_) => Ok(Some(UNREACHABLE)),
             Error::Auth(_) => Ok(None),
@@ -589,7 +607,10 @@ impl<'a, H: Http> Outgoing<'a, H> {
             Error::Refused { kind, description } => {
                 Err(words(&Refusal { kind: kind.clone(), description: description.clone(), ..Default::default() }, None, &|t| self.said(t)))
             }
-            Error::Bad(text) => Err(format!("the server wouldn't take it ({})", self.said(text))),
+            Error::Bad(text) => match (step, status_of(text)) {
+                (Step::Identity, Some(500..=599)) | (Step::Upload, Some(502 | 504)) => Ok(Some(UNAVAILABLE)),
+                _ => Err(format!("the server wouldn't take it ({})", self.said(text))),
+            },
             Error::Protocol(_) => Err("the server's answer wasn't understood".to_string()),
         }
     }
@@ -623,16 +644,16 @@ impl<'a, H: Http> Outgoing<'a, H> {
         let identity = match self.identity_for(&envelope.from).await {
             Ok(Some(identity)) => identity,
             Ok(None) => return held(format!("the server lists no identity to send as {}", shown(&envelope.from))),
-            Err(e) => return self.before_submission(&e, &done),
+            Err(e) => return self.before_submission(&e, Step::Identity, &done),
         };
         // Up, and into Sent. Nothing has gone yet, whatever goes wrong here.
         let blob = match upload(self.client, octets).await {
             Ok(blob) => blob,
-            Err(e) => return self.before_submission(&e, &done),
+            Err(e) => return self.before_submission(&e, Step::Upload, &done),
         };
         let copy = match import(self.client, &blob, sent, &["$seen"]).await {
             Ok(copy) => copy,
-            Err(e) => return self.before_submission(&e, &done),
+            Err(e) => return self.before_submission(&e, Step::Import, &done),
         };
         // Sent from here, if the server says so.
         match submit(self.client, &copy, &identity.id, &identity.email, &envelope.recipients).await {
@@ -657,7 +678,7 @@ impl<'a, H: Http> Outgoing<'a, H> {
             }
             Submitted::NotTaken(e) => {
                 self.take_out(&copy).await;
-                self.before_submission(&e, &done)
+                self.before_submission(&e, Step::Import, &done)
             }
             Submitted::Unknown(doubt) => {
                 // The copy stays: if the message went, it is the owner's record of it.
@@ -669,8 +690,8 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// What an error before the message was sent makes of it: it waits, or it is held.
-    fn before_submission(&self, e: &Error, done: &dyn Fn(SendOutcome) -> SendDone) -> Went<SendDone> {
-        match self.trouble(e) {
+    fn before_submission(&self, e: &Error, step: Step, done: &dyn Fn(SendOutcome) -> SendDone) -> Went<SendDone> {
+        match self.trouble(e, step) {
             Ok(line) => Went::waits(line),
             Err(why) => Went::of(done(SendOutcome::Held { lost: false, why })),
         }
@@ -690,13 +711,13 @@ impl<'a, H: Http> Outgoing<'a, H> {
         if octets.len() > self.client.max_size_upload() {
             return refused(format!("it is larger than the server takes ({})", size_words(self.client.max_size_upload())));
         }
-        let outcome = match upload(self.client, octets).await {
-            Ok(blob) => import(self.client, &blob, mailbox, &["$draft", "$seen"]).await,
-            Err(e) => Err(e),
+        let blob = match upload(self.client, octets).await {
+            Ok(blob) => blob,
+            Err(e) => return self.draft_failed(&e, Step::Upload, &refused),
         };
-        let id = match outcome {
+        let id = match import(self.client, &blob, mailbox, &["$draft", "$seen"]).await {
             Ok(id) => id,
-            Err(e) => return self.draft_failed(&e, &refused),
+            Err(e) => return self.draft_failed(&e, Step::Import, &refused),
         };
         // The new copy is in: the earlier one goes. If it can't, it is handed back to be destroyed, and a second
         // draft shows until then.
@@ -709,18 +730,19 @@ impl<'a, H: Http> Outgoing<'a, H> {
     }
 
     /// A draft that could not be filed. It is the owner's work and costs nothing to try again, so trouble that is
-    /// not the draft's (the network, the sign-in, a busy or unavailable server, a gateway that is down) leaves it
-    /// for the next run. A server that fails on this draft (`serverFail`, any other failure of its own), says it
-    /// will not have it, or answers with what is no JMAP settles it: said once, and tried again when the draft is
-    /// saved again (what the owner is writing is saved every few minutes). Trying it at every run instead would
-    /// upload it again each time, which a server may limit, and would keep the drafts behind it waiting.
-    fn draft_failed(&self, e: &Error, refused: &dyn Fn(String) -> Went<JmapDraftDone>) -> Went<JmapDraftDone> {
+    /// not the draft's (the network, the sign-in, a busy or unavailable server, a gateway that is down while
+    /// nothing is filed) leaves it for the next run. A server that fails on this draft (`serverFail`, any other
+    /// failure of its own, a gateway that fails at the filing), says it will not have it, or answers with what is
+    /// no JMAP settles it: said once, and tried again when the draft is saved again (what the owner is writing is
+    /// saved every few minutes). Trying it at every run instead would upload it again each time, which a server
+    /// may limit, and would keep the drafts behind it waiting.
+    fn draft_failed(&self, e: &Error, step: Step, refused: &dyn Fn(String) -> Went<JmapDraftDone>) -> Went<JmapDraftDone> {
         match e {
             Error::Io(_) | Error::Tls(_) => Went::waits(Some(UNREACHABLE)),
             Error::Auth(_) => Went::waits(None),
             Error::Busy { .. } => Went::waits(Some(BUSY)),
             Error::Refused { kind, .. } if matches!(kind.as_str(), "serverUnavailable" | "blobNotFound") => Went::waits(Some(UNAVAILABLE)),
-            Error::Bad(text) if matches!(status_of(text), Some(502 | 504)) => Went::waits(Some(UNAVAILABLE)),
+            Error::Bad(text) if step == Step::Upload && matches!(status_of(text), Some(502 | 504)) => Went::waits(Some(UNAVAILABLE)),
             Error::TooLarge(_) => refused("it is too large for the server".to_string()),
             // (Not a word about sending: a draft is only kept.)
             Error::Refused { kind, .. } if kind.starts_with("forbidden") => {
