@@ -2128,6 +2128,32 @@ fn hostile_params_never_panic() {
         json!({"account": jmap, "message": 18446744073709551615u64, "most": 1e300}),
         json!({"account": jmap, "most": 18446744073709551615u64, "result": {"account": jmap, "email": "reader@example.org", "fetched": [{"id": "E1", "mime": [255, 0, 13, 10]}, {"id": ""}, {"id": "a/b", "mime": "x"}, null], "missing": ["E2", "\u{0}", 5], "failed": ["E3"], "errors": ["\u{0}"], "offline": "yes", "busyFor": -1}}),
         json!({"result": {"account": jmap, "email": "reader@example.org", "fetched": [{"id": "E1", "mime": [255, 0, 13, 10, 254, 58]}, {"id": "E2", "mime": []}, {"id": "nobody", "mime": [1]}], "missing": ["E1", "x".repeat(100_000)], "failed": ["\r\n"], "busyFor": 4294967295u32}}),
+        // //// Neoffice — junk for the answers to the changes made to a JMAP account's messages: the messages they name are here, or are not, or are other ones.
+        json!({"result": {"account": jmap, "email": "reader@example.org", "whole": true, "changes": [
+            {"change": {"keywords": {"message": 1, "id": "E1", "read": true, "flagged": false}}, "outcome": {"done": {"id": "E1b"}}},
+            {"change": {"keywords": {"message": 18446744073709551615u64, "id": "E2", "answered": true}}, "outcome": {"refused": {"why": ""}}},
+            {"change": {"move": {"message": 2, "id": "E2", "from": "Min", "to": "\u{0}"}}, "outcome": "gone"},
+            {"change": {"move": {"message": 3, "id": "E1", "from": "x", "to": "Mtr"}}, "outcome": {"done": {"id": "not an id/../"}}},
+            {"change": {"move": {"message": 4, "id": "E2", "from": "Min", "to": "Mpr"}}, "outcome": {"refused": {"why": "x".repeat(100_000)}}},
+            {"change": {"destroy": {"id": "E1"}}, "outcome": {"refused": {"why": "forbidden"}}},
+            {"change": {"destroy": {"id": "a/b"}}, "outcome": "gone"},
+            {"change": {"destroy": {"id": "E".repeat(100_000)}}, "outcome": {"done": {}}},
+            null, {}, {"change": 5}, {"outcome": "gone"},
+        ]}}),
+        json!({"result": {"account": jmap, "changes": [{"change": {"keywords": {"message": 5, "id": "E1"}}, "outcome": {"done": {"id": "E1"}}}], "pages": [{"folder": "Min", "messages": [{"server": {"id": "E1b", "folder": "Min"}, "messageId": "<1@x>"}]}]}}),
+        // //// Neoffice — junk for the deletes that wait for an id and the messages a window lists under ids nobody has.
+        json!({"result": {"account": jmap, "changes": [
+            {"change": {"destroy": {"id": ""}}, "outcome": {"refused": {"why": "forbidden"}}},
+            {"change": {"move": {"message": 1, "id": "", "from": "", "to": ""}}, "outcome": {"done": {"id": ""}}},
+            {"change": {"move": {"message": 1, "id": "E1", "from": "Min", "to": "Mar"}}, "outcome": {"done": {"id": ""}}},
+        ]}}),
+        json!({"result": {"account": jmap, "whole": true, "pages": [{"folder": "Min", "afresh": true, "messages": [
+            {"server": {"id": "", "folder": "Min", "size": 18446744073709551615u64}, "messageId": "<>", "received": -9223372036854775808i64},
+            {"server": {"id": "E1", "folder": "Min", "size": 7}, "messageId": "<1@x>", "received": 9223372036854775807i64},
+            {"server": {"id": "E1", "folder": "Mar", "size": 7}, "messageId": "<1@x>"},
+            {"server": {"id": "E2", "folder": "Min"}, "messageId": "<1@x>", "received": 5},
+            {"server": {"id": "E3", "folder": "Min"}, "messageId": " <1@x> "},
+        ]}, {"folder": "Mar", "messages": [{"server": {"id": "E9", "folder": "Mar"}, "messageId": "<1@x>"}]}]}}),
     ]);
     let ids: Vec<&'static str> = s.registry.all().iter().map(|c| c.id).collect();
     for round in 0..2 {

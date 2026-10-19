@@ -396,7 +396,7 @@ fn a_draft_whose_message_is_held_stays_on_the_server_for_the_owner() {
 }
 
 #[test]
-fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_does_not_come_back_meanwhile() {
+fn a_draft_discarded_is_destroyed_on_the_server_by_the_next_run_and_never_comes_back() {
     let mut rig = Rig::new(Profile::standard());
     rig.s.run("mail.new", &json!({"to": "bob@example.org", "subject": "Plans", "body": "Words.", "account": rig.account})).unwrap();
     let draft = rig.s.run("compose.saveDraft", &json!({})).unwrap()["draft"].as_u64().unwrap();
@@ -407,14 +407,15 @@ fn a_draft_discarded_is_queued_for_the_server_to_destroy_and_does_not_come_back_
     assert!(rig.s.mailbox.message(draft).is_none());
     assert_eq!(rig.s.mailbox.queued.len(), 1);
     assert!(matches!(&rig.s.mailbox.queued[0], mailcraft_model::Queued::DeleteMessage { id, .. } if *id == copy));
-    // Run after run, the copy is not brought down as a draft the owner has not got. (What destroys the copies that wait
-    // in the queue is the part of a run that sends the owner's changes up.)
-    // (Full runs: they read Drafts, where the copy is.)
+    // The next run sends the owner's changes up first, the copies that wait in the queue among them: the server's copy
+    // is destroyed, and run after run nothing brings it down as a draft the owner has not got.
+    // (Full runs: they read Drafts, where the copy was.)
     for _ in 0..3 {
         rig.run(true);
         assert!(rig.mail(FolderKind::Drafts).is_empty(), "the discarded draft stays discarded");
     }
-    assert_eq!(rig.s.mailbox.queued.len(), 1);
+    assert!(rig.s.mailbox.queued.is_empty(), "the destroy went up: {:?}", rig.s.mailbox.queued);
+    assert!(rig.held_in("drafts").is_empty(), "the server's copy is gone");
 }
 
 #[test]

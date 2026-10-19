@@ -164,8 +164,9 @@ fn a_message_that_is_its_marks_alone_and_that_the_mailbox_no_longer_has_is_not_a
     take(&mut s, account, Some(server()), vec![], true);
     take(&mut s, account, None, vec![window("Min", vec![mail("E1", "<1@x>", "One", 100), mail("E2", "<2@x>", "Two", 200)], true)], true);
     let one = in_folder(&s, account, "Min").iter().find(|m| m.subject == "One").map(|m| m.id).unwrap();
-    // The host was told the mailbox has both and sends the marks of both; the owner deletes One for good before they are taken in.
-    s.mailbox.remove_message(one).unwrap();
+    // The host was told the mailbox has both and sends the marks of both; One is gone from here before they are taken in,
+    // and nothing waits to delete it on the server (a delete for good would: see `deletes_for_good_are_not_brought_down`).
+    s.mailbox.forget_message(one).unwrap();
     let marks = |id: &str, read: bool| GraphMessage { server: ServerMessage { id: id.into(), read, ..Default::default() }, ..Default::default() };
     let answer = take(&mut s, account, None, vec![window("Min", vec![marks("E2", true), marks("E1", true)], true)], true);
     assert_eq!((answer["new"].as_u64(), answer["changed"].as_u64()), (Some(0), Some(1)), "{answer}");

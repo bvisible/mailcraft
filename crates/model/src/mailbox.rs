@@ -699,6 +699,22 @@ pub const STAYS_LOCAL: &str = "Microsoft doesn't let a mail program put received
 /// The local folder that mail imported for a Microsoft account goes to (R3 spec S30).
 pub const IMPORTED: &str = "Imported";
 
+// //// Neoffice — why mail doesn't move between a JMAP account and another account, and isn't copied to or from one.
+/// Why mail doesn't move between a JMAP account and another account or a local folder: this version can't put a
+/// message on a JMAP server, and a move out of one would leave the server's copy where it is.
+pub const ACROSS_JMAP: &str = "Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is";
+
+// //// Neoffice — the most deletes for good of a JMAP account's messages that wait for a window to name them.
+/// The most deletes for good of one JMAP account's messages that wait without an id (the message had none, as it was
+/// moved and not found again) for a window to name the message: the oldest is let go of beyond that.
+pub const MAX_UNNAMED_DELETES: usize = 500;
+
+// //// Neoffice — see `ACROSS_JMAP`.
+/// Why mail isn't copied to or from a JMAP account: a JMAP server keeps a message in one mailbox, so a copy would be a
+/// message that only this computer has.
+pub const COPY_JMAP: &str =
+    "Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file";
+
 fn not_found(what: &'static str, id: Id) -> ModelError {
     ModelError::NotFound(what, id)
 }
@@ -1322,6 +1338,12 @@ impl Mailbox {
         self.account(account).is_some_and(|a| a.kind == AccountKind::Microsoft)
     }
 
+    // //// Neoffice — whether an account is kept in step with a JMAP server.
+    /// Whether `account` is kept in step with a JMAP server.
+    pub fn is_jmap(&self, account: Id) -> bool {
+        self.account(account).is_some_and(|a| a.kind == AccountKind::Jmap)
+    }
+
     /// A move between accounts where one of them is kept in step through Microsoft Graph (R3
     /// spec S19). Whether it was one (and is done).
     ///
@@ -1336,6 +1358,10 @@ impl Mailbox {
         let from_account = m.account;
         if from_account == to_account {
             return Ok(false);
+        }
+        // //// Neoffice — a JMAP account's mail neither leaves it nor comes into it by a move: the server's copy would stay, and nothing can put a message on a JMAP server yet.
+        if self.is_jmap(from_account) || self.is_jmap(to_account) {
+            return Err(invalid(ACROSS_JMAP));
         }
         if self.is_graph(to_account) {
             let Some(out) = m.moving_out.clone().filter(|out| out.account == to_account) else {
@@ -1423,6 +1449,10 @@ impl Mailbox {
         let to_account = self.folder(folder).ok_or(not_found("folder", folder))?.account;
         let m = self.message(id).ok_or(not_found("message", id))?;
         let from_account = m.account;
+        // //// Neoffice — no copy of a JMAP account's mail, into the account or out of it (see `COPY_JMAP`).
+        if self.is_jmap(from_account) || self.is_jmap(to_account) {
+            return Err(invalid(COPY_JMAP));
+        }
         if from_account != to_account && self.is_graph(to_account) {
             return Err(invalid(self.refusal_into_graph(m, to_account)));
         }
@@ -1455,8 +1485,25 @@ impl Mailbox {
     fn queue_graph_delete(&mut self, id: Id) {
         let Some(m) = self.message(id) else { return };
         let mut deletes = Vec::new();
-        if let Some(server) = m.server.as_ref().filter(|s| !s.gone && self.is_graph(m.account)) {
+        // //// Neoffice — the same for an account kept in step with a JMAP server, whose server destroys the message. One that has no id there (it was moved, and no window has shown it since) can't be named: its delete waits, without an id, for the window that names it, and is kept to `MAX_UNNAMED_DELETES`.
+        let by_id = self.account(m.account).is_some_and(|a| a.kind.server_ids());
+        if let Some(server) = m.server.as_ref().filter(|s| !s.gone && !s.id.is_empty() && by_id) {
             deletes.push(Queued::DeleteMessage { account: m.account, id: server.id.clone(), kept: Some(Box::new(m.clone())) });
+        } else if self.is_jmap(m.account)
+            && !m.message_id.trim().trim_start_matches('<').trim_end_matches('>').is_empty()
+            && m.server.as_ref().is_some_and(|s| !s.gone && s.id.is_empty() && !s.folder.is_empty())
+        {
+            // //// Neoffice — what is kept of it is what names it and what shows it again if the server refuses: its headers and a
+            // preview, as a window brings it, not a body or attachments that may stay in the queue for good.
+            let mut slim = m.clone();
+            slim.body.text = slim.body.text.chars().take(300).collect();
+            slim.body.html = None;
+            slim.attachments_on_server |= !slim.attachments.is_empty();
+            slim.attachments.clear();
+            slim.headers.clear();
+            slim.unfetched = true;
+            slim.kept = None;
+            deletes.push(Queued::DeleteMessage { account: m.account, id: String::new(), kept: Some(Box::new(slim)) });
         }
         if let Some(out) = &m.moving_out {
             deletes.push(Queued::DeleteMessage { account: out.account, id: out.id.clone(), kept: Some(Box::new(m.clone())) });
@@ -1465,9 +1512,26 @@ impl Mailbox {
             self.queued.retain(|q| !matches!(q, Queued::CopyMessage { copy, .. } if *copy == id));
         }
         for delete in deletes {
-            let Queued::DeleteMessage { account, id, .. } = &delete else { continue };
-            if !self.queued.iter().any(|q| matches!(q, Queued::DeleteMessage { account: a, id: i, .. } if a == account && i == id)) {
+            let Queued::DeleteMessage { account, id, kept } = &delete else { continue };
+            // //// Neoffice — a delete without an id is one message's, not one for every message of an account.
+            let message = kept.as_ref().map(|kept| kept.id);
+            let same = |q: &Queued| {
+                matches!(q, Queued::DeleteMessage { account: a, id: i, kept: k }
+                    if a == account && i == id && (!id.is_empty() || k.as_ref().map(|k| k.id) == message))
+            };
+            if !self.queued.iter().any(same) {
+                let unnamed = id.is_empty();
+                let account = *account;
                 self.queued.push(delete);
+                if unnamed {
+                    // //// Neoffice — the oldest delete that waits for an id is let go of beyond `MAX_UNNAMED_DELETES`.
+                    let waiting = |q: &Queued| matches!(q, Queued::DeleteMessage { account: a, id, .. } if *a == account && id.is_empty());
+                    if self.queued.iter().filter(|q| waiting(q)).count() > MAX_UNNAMED_DELETES
+                        && let Some(oldest) = self.queued.iter().position(waiting)
+                    {
+                        self.queued.remove(oldest);
+                    }
+                }
             }
         }
     }

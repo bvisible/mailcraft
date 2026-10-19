@@ -19,13 +19,24 @@
 //! account's standard folders are tied to the server's by role, the others are made here, and a
 //! complete listing removes what the server no longer has.
 //!
-//! **Sending and drafts** go up with the run ([`super::jmap_send`]): what waits in the Outbox is sent and
-//! the drafts saved here are filed in the server's Drafts before any mailbox is read, and the mailboxes
-//! those copies go to (Sent, Drafts) are read besides, so that what was sent shows in Sent at once.
+//! **Changes up.** What the owner changed here since the server last said (read marks, flags, a move to
+//! another folder, a delete, Deleted Items emptied) goes up first in a run, as the difference between each
+//! message and the server's last word on it ([`super::jmap_up`]); the host says what became of each change,
+//! in a piece of its own before the mailboxes are read, and the pieces after it show the server after them. A
+//! run that only reads the Inbox and the folders on screen also reads the folders where a message waits to
+//! be found again: some servers name a message by where it lies, so a moved message has no id until a window
+//! of the mailbox it went to shows it ([`super::jmap_down`]).
+
+//!
+//! **Sending and drafts** go up with the run ([`super::jmap_send`]): after the changes, what waits in the Outbox
+//! is sent and the drafts saved here are filed in the server's Drafts before any window is read, and the
+//! mailboxes those copies go to (Sent, Drafts) are read besides, so that what was sent shows in Sent at once.
 
 use std::collections::HashMap;
 
-use mailcraft_model::sync::{JmapKnown, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_WINDOW, SendOutcome, SyncPhase};
+use mailcraft_model::sync::{
+    JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, SendOutcome, SyncPhase,
+};
 use mailcraft_model::time::Timestamp;
 use mailcraft_model::{AccountKind, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
@@ -34,6 +45,7 @@ use super::graph_down::{self, Down};
 use super::graph_mail::{Taken, take_listing};
 use super::jmap_down::{self, plausible_id};
 use super::jmap_send;
+use super::jmap_up::{self, Refusals};
 use super::sync_progress::{self, Piece};
 use super::{bad, fail};
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
@@ -43,6 +55,8 @@ const MAX_KNOWN_MAILBOXES: usize = 500;
 const MAX_KNOWN_IDS: usize = 50_000;
 /// The most mailboxes a light run reads besides the Inbox (the folder on screen, mostly).
 const MAX_ALSO: usize = 8;
+/// The most mailboxes it reads besides those, to find again messages that were moved.
+const MAX_FOLLOWED: usize = 8;
 /// The most windows and error lines an answer is read for: what is past them waits for the next run.
 const MAX_PAGES: usize = 1_000;
 const MAX_ERRORS: usize = 50;
@@ -81,6 +95,8 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         n => n.min(MAX_JMAP_WINDOW),
     };
     let tied = s.mailbox.folders.iter().any(|f| f.account == account && f.server.is_some());
+    // What was changed here and the server hasn't heard of.
+    let changes = jmap_up::message_changes(s, account, MAX_MESSAGE_CHANGES).0;
     // What waits to go: the Outbox, and the drafts saved here.
     let (sends, drafts) = (jmap_send::sends(s, account), jmap_send::drafts(s, account));
     // Where the copies go is read too, so that a message that was sent is in Sent when the run is over, and a
@@ -102,6 +118,12 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
                 named.push(id.clone());
             }
         }
+        // The mailboxes the moved messages go to, and those where a message waits to be found again, are read in
+        // this run too, so that a message the server gave a new id is the same message here when the run ends.
+        // (Enough of them that the ones already named leave `MAX_FOLLOWED`.)
+        let followed = jmap_up::to_find_again(s, account, &changes, MAX_ALSO + MAX_FOLLOWED);
+        let followed: Vec<String> = followed.into_iter().filter(|id| !named.contains(id)).take(MAX_FOLLOWED).collect();
+        named.extend(followed);
         JmapScope::Light { also: named }
     };
     Ok(JmapMailRequest {
@@ -113,8 +135,7 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         list_folders: full || !tied,
         scope,
         known: known(&s.mailbox, account, window),
-        // What was changed here goes up from a later step on.
-        changes: Vec::new(),
+        changes,
         sends,
         drafts,
         background,
@@ -147,10 +168,12 @@ fn known(mb: &Mailbox, account: Id, window: u32) -> Vec<JmapKnown> {
     out
 }
 
-/// How many changes made in `account` its server hasn't heard of yet: the drafts saved here that it hasn't got
-/// in their latest form. (The Outbox is counted by the window, as for any account that sends.)
+/// How many changes made in `account` its server hasn't heard of yet ([`super::account::unpushed`] for an
+/// account kept in step with a JMAP server): the marks and moves that differ from what the server last said, the
+/// messages deleted for good, and the drafts saved here that it hasn't got in their latest form. (The Outbox is
+/// counted by the window, as for any account that sends.)
 pub fn unpushed(s: &Session, account: Id) -> usize {
-    jmap_send::pending_drafts(&s.mailbox, account)
+    jmap_up::message_changes(s, account, 0).1.saturating_add(jmap_send::pending_drafts(&s.mailbox, account))
 }
 
 fn request(s: &mut Session, v: &Value) -> CmdResult {
@@ -170,6 +193,18 @@ fn apply(s: &mut Session, v: &Value) -> CmdResult {
     let result: JmapMailResult =
         serde_json::from_value(v.get("result").cloned().ok_or_else(|| bad("`result` is required"))?).map_err(|e| bad(format!("`result`: {e}")))?;
     apply_jmap_mail(s, result)
+}
+
+/// How many messages of `account` the server has but nothing says under what id: they were moved, and no window of the
+/// mailbox they went to has shown them since (some servers name a message by where it lies, and a mailbox bigger than
+/// the window shows only its newest). Nothing can be sent for them.
+fn unplaced(mb: &Mailbox, account: Id) -> usize {
+    mb.messages.values().filter(|m| m.account == account && m.server.as_ref().is_some_and(|server| server.id.is_empty() && !server.gone)).count()
+}
+
+/// `said` and a sentence more, each ending in a full stop.
+fn then(said: String, more: &str) -> String {
+    if said.is_empty() || said.ends_with('.') { format!("{said} {more}").trim().to_string() } else { format!("{said}. {more}") }
 }
 
 /// A line a server sent, as it is shown: one line, no control characters, not too long.
@@ -198,6 +233,42 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     if result.auth_refused && !result.partial {
         errors.push("The server refused the sign-in".to_string());
     }
+    // What became of the changes made here (RFC 8621 §4.6): first, so that what the windows say is merged with the
+    // server's last word as it is now. A refusal is said once per kind of change and reason, and the status says it
+    // at the end of the run.
+    let mut refusals = Refusals::default();
+    let (mut moved, mut told) = (false, false);
+    // (The deletes for good are taken in together, after the others: there may be thousands.)
+    let mut destroys = Vec::new();
+    for done in result.changes.iter().take(MAX_MESSAGE_CHANGES) {
+        let took = if matches!(done.change, JmapChange::Destroy { .. }) {
+            destroys.push(done);
+            true
+        } else {
+            jmap_up::message_done(&mut s.mailbox, account, done, &mut refusals)
+        };
+        if took {
+            match done.outcome {
+                JmapOutcome::Done { .. } => taken.pushed += 1,
+                _ => taken.updated += 1,
+            }
+            // The server was told to move or delete: what was there before can't be brought back by an undo.
+            let reached = matches!(done.outcome, JmapOutcome::Done { .. } | JmapOutcome::Gone);
+            moved |= reached && matches!(done.change, JmapChange::Move { .. });
+            told |= reached && matches!(done.change, JmapChange::Move { .. } | JmapChange::Destroy { .. });
+        }
+    }
+    jmap_up::destroys_done(&mut s.mailbox, account, &destroys, &mut refusals);
+    if told {
+        s.forget_history();
+    }
+    // A moved message may have another id now: where each message is, is looked at afresh.
+    if moved {
+        s.graph_index = Default::default();
+    }
+    let changes_refused = refusals.lines();
+    errors.extend(changes_refused.iter().cloned());
+    s.graph_said.extend(changes_refused);
     // The drafts filed and the messages sent (RFC 8621 §4.8, §7): what became of each. A message that went
     // leaves the Outbox, one that was refused or whose answer was lost is held there, with why.
     let mut refused: Vec<String> = Vec::new();
@@ -276,7 +347,21 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
         (_, true) => {}
         (_, false) => {
             let t = s.local_now();
-            let said = if result.stopped && errors.is_empty() { "Stopped; carries on from here next time".to_string() } else { summary.clone() };
+            // What the server refused in this run, said once, ahead of anything else.
+            let refused = std::mem::take(&mut s.graph_said);
+            let said = if !refused.is_empty() {
+                refused.join(" ")
+            } else if result.stopped && errors.is_empty() {
+                "Stopped; carries on from here next time".to_string()
+            } else {
+                summary.clone()
+            };
+            // Messages that were moved and are not found again can't be written to: said, as they are not changes that wait.
+            let said = match unplaced(&s.mailbox, account) {
+                0 => said,
+                1 => then(said, "1 moved message can't be found on the server yet, so changes to it wait."),
+                n => then(said, &format!("{n} moved messages can't be found on the server yet, so changes to them wait.")),
+            };
             s.sync_status = format!("{said} — {}", t.time_short(s.prefs.twelve_hour));
         }
     }

@@ -232,7 +232,8 @@ pub enum JmapChange {
         forwarded: Option<bool>,
     },
     /// The message lies in another mailbox here: `to` instead of `from`. Some servers give a
-    /// message a new id when it moves ([`JmapOutcome::Done`] says it).
+    /// message a new id when it moves ([`JmapOutcome::Done`] says it), and may not say which: then
+    /// the message has none until a window of the mailbox it was moved to shows it.
     Move { message: Id, id: String, from: String, to: String },
     /// The message was deleted for good here: the server destroys it.
     Destroy { id: String },
@@ -251,8 +252,10 @@ impl JmapChange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum JmapOutcome {
-    /// Done. `id`: the message's new server id, when the server said one (a move can give it a
-    /// new id); empty when it didn't, or when the id stays.
+    /// Done. For a move, `id` is the message's server id now: the new one when the server said it, or the one it
+    /// had when the host found that the id stays (a server that does not name a message by where it lies); empty
+    /// when the id has changed and nobody said to what, and the engine finds the message again in the mailbox it
+    /// went to. For a change of marks and a delete there is no id to say, and it is empty.
     Done {
         #[serde(default, skip_serializing_if = "String::is_empty")]
         id: String,
@@ -316,7 +319,9 @@ pub struct JmapMailResult {
     #[serde(skip_serializing_if = "is_false")]
     pub partial: bool,
     /// Nothing went wrong in the run and it was not stopped: every mailbox it meant to read was read,
-    /// if in part. A window that does not hold all of its mailbox marks nothing gone (only a page with
+    /// if in part (a change of marks, or a delete, that the server did not take does not count against it: it waits
+    /// for the next run and no window says otherwise; a move that was not answered does, for it may have been
+    /// made). A window that does not hold all of its mailbox marks nothing gone (only a page with
     /// [`MessagePage::afresh`] does), so what the pages left out of the windows that do is gone from
     /// those mailboxes (deleted, or moved to a mailbox this run did not read), and the engine removes it now.
     #[serde(skip_serializing_if = "is_false")]

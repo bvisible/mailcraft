@@ -21,6 +21,12 @@
 //! What the change made that the server has already (a copy, a draft, a folder) goes into Deleted
 //! Items, here and there, rather than being deleted for good; what the server hasn't got yet is
 //! taken away here and never made there.
+//!
+// //// Neoffice — the accounts kept in step with a JMAP server are treated in the same way.
+//! An account kept in step with a JMAP server is treated in the same way: a read mark or a flag undone after it
+//! went up is sent again as its reverse, and nothing else the server or a window changed since goes with it. What a
+//! move or a delete for good told the server ends the history instead ([`Session::forget_history`]), and a message
+//! deleted for good stays deleted.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -38,7 +44,10 @@ pub(crate) struct Touched {
 
 /// The accounts of `mb` kept in step through Graph.
 fn graph_accounts(mb: &Mailbox) -> BTreeSet<Id> {
-    mb.accounts.iter().filter(|a| a.kind == AccountKind::Microsoft).map(|a| a.id).collect()
+    // //// Neoffice — and those kept in step with a JMAP server, whose mail is the server's in the same way: an undo brings back
+    // only what the step changed of a message, and what the server last said of it stays as it is now, so that the next run
+    // sends the difference (the reverse of the step) and nothing else.
+    mb.accounts.iter().filter(|a| matches!(a.kind, AccountKind::Microsoft | AccountKind::Jmap)).map(|a| a.id).collect()
 }
 
 /// Whether `m` is one of those accounts' (or is being moved out of one).

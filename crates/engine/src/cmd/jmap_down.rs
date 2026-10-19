@@ -11,23 +11,40 @@
 //! - **A message this mailbox has** comes as its keywords: read, flagged, answered and forwarded
 //!   take the server's value, but for one changed here since the server last said (that goes up
 //!   with the run's changes). It follows the server into the mailbox the window is of, unless it
-//!   was moved here since.
+//!   was moved here since: a move that has not reached the server stays, whether the window is
+//!   complete or not, and goes up.
 //! - **A message that is its marks alone and that this mailbox does not have** (the request said it did, and
 //!   it was deleted here since) is passed over, not added blank.
 //! - **A copy that waits to be destroyed** (a draft discarded here, a copy a run could not destroy: the queue of
 //!   [`super::jmap_send`]) is passed over: it is not mail to bring down again. Nor is the copy of the draft that a
 //!   message waiting in the Outbox was written as.
 //! - **A message the server knows by a new id** (some servers name a message by where it is, so a
-//!   move gives it a new id): one listed under an id this account doesn't know is first matched to
-//!   a message of the same folder that lost its id (moved here, or marked gone by this very
-//!   window), by its `Message-ID`. Exactly one such message is that one; two or more, or none,
-//!   and it is a new message.
+//!   move gives it a new id): one listed under an id this account doesn't know is first matched,
+//!   by its `Message-ID`, to a message that waits for an id in this mailbox:
+//!   - one with no id that the server was last known to have in it, wherever it lies here now (it
+//!     was moved on since);
+//!   - one lying in it here that this window or an earlier one marked gone from the mailbox the
+//!     server had it in;
+//!   - one lying in it here that the server last had in another mailbox: a move the owner made
+//!     that the server may have made without a word coming back (the answer was lost).
+//!
+//!   A message this window lists under the id it has is not waiting for one. The match is made
+//!   only when exactly one message waits and exactly one listed message of that `Message-ID` is new
+//!   here, and when they were received at the same time and are as big (a move keeps both), where both say;
+//!   otherwise the listed message is a new one.
+//! - **A message that a complete window does not list, and that was moved here since** (it lies in another
+//!   mailbox than the one the window is of, and the server may have made the move without a word coming
+//!   back) is not gone: it is taken to be where it lies, under an id nobody has said, and is looked for there.
+//! - **A message whose delete for good the server has not made** is not mail to bring down again; and a
+//!   delete that waits without an id (the message had none) is given the id of the message it is for,
+//!   which is the one this mailbox lists with its `Message-ID` (under the same rules as above), and it is
+//!   not brought down either.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
 
 use mailcraft_model::sync::{GraphMessage, MessagePage, ServerMessage};
-use mailcraft_model::{Address, Id, Mailbox};
+use mailcraft_model::time::Timestamp;
+use mailcraft_model::{Address, FlagStatus, Id, Mailbox, Queued};
 
 use super::graph_down::{self, Down, ServerIndex};
 
@@ -52,13 +69,38 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
         return;
     }
     let Some(folder) = mb.folder_by_server(account, &page.folder) else { return };
+    // The ids this window lists.
+    let listed: HashSet<&str> = page.messages.iter().map(|m| m.server.id.as_str()).collect();
     if page.afresh {
-        for m in mb.messages.values_mut() {
-            if m.account == account
-                && m.server.as_ref().is_some_and(|s| s.folder == page.folder && !s.gone)
-                && let Some(s) = Arc::make_mut(m).server.as_mut()
+        // Where each folder of the account is on the server, for a message that was moved here since.
+        let server_of: HashMap<Id, &str> =
+            mb.folders.iter().filter(|f| f.account == account).filter_map(|f| f.server.as_ref().map(|server| (f.id, server.id.as_str()))).collect();
+        let mut moved_to: Vec<(Id, String)> = Vec::new();
+        let mut gone: Vec<Id> = Vec::new();
+        for m in mb.messages.values().filter(|m| m.account == account) {
+            let Some(s) = m.server.as_ref().filter(|s| s.folder == page.folder && !s.gone) else { continue };
+            // One this window does not list that lies in another mailbox here was moved here since, and the server may have
+            // made the move without a word coming back: it is not gone, it is where it lies, and nobody has said its id.
+            let there = (m.folder != folder && !s.id.is_empty() && !listed.contains(s.id.as_str()))
+                .then(|| server_of.get(&m.folder).copied().filter(|to| plausible_id(to) && *to != page.folder))
+                .flatten();
+            match there {
+                Some(to) => moved_to.push((m.id, to.to_string())),
+                None => gone.push(m.id),
+            }
+        }
+        for id in gone {
+            if let Ok(m) = mb.message_mut(id)
+                && let Some(s) = m.server.as_mut()
             {
                 s.gone = true;
+            }
+        }
+        for (id, to) in moved_to {
+            if let Ok(m) = mb.message_mut(id)
+                && let Some(s) = m.server.as_mut()
+            {
+                (s.id, s.folder) = (String::new(), to);
             }
         }
     }
@@ -72,15 +114,30 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
         }
     }
     // Copies the server has that must not come back as mail: those that wait to be destroyed (a draft discarded here,
-    // a copy that could not be destroyed), and the draft of a message that waits to be sent.
+    // a copy that could not be destroyed, a message deleted for good here whose delete the server has not made
+    // yet), and the draft of a message that waits to be sent.
     let doomed = super::jmap_send::doomed(mb, account);
-    // The messages of this folder that lost their server id, by `Message-ID`: those a listed id
-    // nobody knows may be.
+    // The messages that wait for an id in this mailbox, by `Message-ID`: those a listed id nobody knows may be.
     let mut lost: HashMap<String, Vec<Id>> = HashMap::new();
-    for m in mb.messages.values() {
-        let lost_here = m.account == account && m.folder == folder && m.server.as_ref().is_some_and(|s| s.gone || s.id.is_empty());
-        if lost_here && !message_id(&m.message_id).is_empty() {
+    for m in mb.messages.values().filter(|m| m.account == account && !message_id(&m.message_id).is_empty()) {
+        let Some(s) = m.server.as_ref() else { continue };
+        let waits = if s.id.is_empty() {
+            s.folder == page.folder
+        } else {
+            // (One this window lists under its id waits for nothing.)
+            m.folder == folder && (s.gone || s.folder != page.folder) && !listed.contains(s.id.as_str())
+        };
+        if waits {
             lost.entry(message_id(&m.message_id).to_string()).or_default().push(m.id);
+        }
+    }
+    // The messages this window lists under an id nobody has here, by `Message-ID`: one is taken for a message that waits
+    // only when no other of them can be that message.
+    let mut new_here: HashMap<&str, Vec<&GraphMessage>> = HashMap::new();
+    for there in &page.messages {
+        let id = there.server.id.as_str();
+        if plausible_id(id) && !doomed.contains(id) && index.find(mb, account, id).is_none() {
+            new_here.entry(message_id(&there.message_id)).or_default().push(there);
         }
     }
     for there in &page.messages {
@@ -88,11 +145,7 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
         if !plausible_id(id) || doomed.contains(id) {
             continue;
         }
-        let here = index.find(mb, account, id).or_else(|| match lost.get_mut(message_id(&there.message_id)) {
-            // One message it can be: that one, once.
-            Some(candidates) if candidates.len() == 1 => candidates.pop(),
-            _ => None,
-        });
+        let here = index.find(mb, account, id).or_else(|| adopt(&mut lost, mb, there, &new_here));
         match here {
             Some(m) => {
                 if update(mb, account, m, folder, &page.folder, there) {
@@ -104,6 +157,9 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
             // it no longer does (it was deleted here since): no message to add. It would stay blank, as every
             // later run would send it as one the mailbox has. The next run asks for it whole.
             None if marks_only(there) => {}
+            // A message that was deleted for good here while nothing had named it: now it is named, and the delete
+            // can be made. It is not mail to bring down.
+            None if named_by_a_delete(mb, account, &page.folder, there, &new_here) => {}
             None => {
                 if let Ok(m) = mb.add_message(graph_down::new_message(folder, &page.folder, there)) {
                     index.note(mb, account, id, m);
@@ -111,6 +167,68 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
                 }
             }
         }
+    }
+}
+
+/// The message that waits for an id which `there` is: the only one of the candidates (`lost`, by `Message-ID`) it can be
+/// ([`alike`]), when no other message that is new here (`new_here`) can be that one. One that is taken is taken once.
+fn adopt(lost: &mut HashMap<String, Vec<Id>>, mb: &Mailbox, there: &GraphMessage, new_here: &HashMap<&str, Vec<&GraphMessage>>) -> Option<Id> {
+    let wanted = message_id(&there.message_id);
+    let candidates = lost.get_mut(wanted)?;
+    let size_of = |m: &mailcraft_model::Message| m.server.as_ref().map_or(0, |server| server.size);
+    let mut fit = candidates.iter().copied().filter(|c| mb.message(*c).is_some_and(|m| alike(m.received, size_of(m), there)));
+    let (Some(candidate), None) = (fit.next(), fit.next()) else { return None };
+    let m = mb.message(candidate)?;
+    let rivals = new_here.get(wanted).map_or(0, |all| all.iter().filter(|other| alike(m.received, size_of(m), other)).count());
+    if rivals != 1 {
+        return None;
+    }
+    candidates.retain(|c| *c != candidate);
+    Some(candidate)
+}
+
+/// Whether a message here (received at `received`, `size` bytes on the server) and a listed one can be one message: a move
+/// keeps the date a message was received and its size, where both say.
+fn alike(received: Timestamp, size: u64, there: &GraphMessage) -> bool {
+    (received == 0 || there.received == 0 || received == there.received) && (size == 0 || there.server.size == 0 || size == there.server.size)
+}
+
+/// Whether `there`, listed in the mailbox `folder`, is the message that a delete for good in the queue waits to name:
+/// that delete (the only one, by `Message-ID`, of a message the server last had in this mailbox, [`alike`]) takes its id,
+/// and so does the message kept with it, when no other message that is new here (`new_here`) can be that one.
+fn named_by_a_delete(mb: &mut Mailbox, account: Id, folder: &str, there: &GraphMessage, new_here: &HashMap<&str, Vec<&GraphMessage>>) -> bool {
+    let wanted = message_id(&there.message_id);
+    if wanted.is_empty() {
+        return false;
+    }
+    // (A delete that waits, as the message it is for was when it was kept: where the server had it, how long, how big.)
+    let waiting = |q: &Queued| match q {
+        Queued::DeleteMessage { account: a, id, kept: Some(kept) } => {
+            *a == account
+                && id.is_empty()
+                && message_id(&kept.message_id) == wanted
+                && kept.server.as_ref().is_some_and(|server| server.folder == folder && alike(kept.received, server.size, there))
+        }
+        _ => false,
+    };
+    let mut found = mb.queued.iter().enumerate().filter(|(_, q)| waiting(q)).map(|(n, _)| n);
+    let (Some(n), None) = (found.next(), found.next()) else { return false };
+    let Some(Queued::DeleteMessage { kept: Some(kept), .. }) = mb.queued.get(n) else { return false };
+    let size = kept.server.as_ref().map_or(0, |server| server.size);
+    let rivals = new_here.get(wanted).map_or(0, |all| all.iter().filter(|other| alike(kept.received, size, other)).count());
+    if rivals != 1 {
+        return false;
+    }
+    match mb.queued.get_mut(n) {
+        Some(Queued::DeleteMessage { id, kept, .. }) => {
+            *id = there.server.id.clone();
+            // (If the server refuses to destroy it, the message is put back from what was kept, under its id.)
+            if let Some(server) = kept.as_mut().and_then(|kept| kept.server.as_mut()) {
+                server.id = there.server.id.clone();
+            }
+            true
+        }
+        _ => false,
     }
 }
 
@@ -140,17 +258,20 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     }
     let last = m.server.clone().unwrap_or_default();
     // Where the server last had it, as this mailbox has that folder: a message still there here
-    // follows the server; one moved here since stays where it was put (that move goes up).
+    // follows the server; one moved here since stays where it was put (that move goes up). A gone mark
+    // says nothing of that: a complete window marks all it lists before it takes them in.
     let was_here = mb.folder_by_server(account, &last.folder);
-    let follows = last.gone || last.id.is_empty() || was_here.is_none_or(|was| m.folder == was);
+    let follows = was_here.is_none_or(|was| m.folder == was);
     let Ok(m) = mb.message_mut(id) else { return false };
     let now = &there.server;
     if m.read == last.read {
         m.read = now.read;
     }
-    // JMAP has `$flagged` and nothing more: a follow-up flag marked complete here stays so until
-    // the server's changes, and a due date is kept while the message stays flagged.
-    if m.flag == last.flag {
+    // JMAP has `$flagged` and nothing more: a follow-up flag marked complete here is no flag there, and
+    // stays so until the server says the message is flagged again; a due date is kept while the message
+    // stays flagged. Changed here is a different reading of "flagged", not a different status.
+    let (flagged_here, flagged_there) = (m.flag == FlagStatus::Flagged, last.flag == FlagStatus::Flagged);
+    if flagged_here == flagged_there && !(m.flag == FlagStatus::Complete && now.flag != FlagStatus::Flagged) {
         m.flag = now.flag;
     }
     if m.answered == last.answered {
