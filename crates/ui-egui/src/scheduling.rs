@@ -806,7 +806,8 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, view: &mut View, meeting: &Me
             top.rect_filled(corner, 0.0, t.panel);
             top.line_segment([corner.left_bottom(), corner.right_bottom()], Stroke::new(1.0, t.border_strong));
             top.line_segment([corner.right_top(), corner.right_bottom()], Stroke::new(1.0, t.border_strong));
-            let day = format!("{}, {}", tl!(meeting.day.weekday().short()), meeting.day.medium());
+            // //// Neoffice — the date in the interface's words (Date::medium_shown).
+            let day = format!("{}, {}", tl!(meeting.day.weekday().short()), meeting.day.medium_shown());
             paint_clipped(&top, pos2(corner.min.x + 10.0, corner.center().y), NAME_W - 16.0, &day, semibold(12.0), t.text);
         });
     });

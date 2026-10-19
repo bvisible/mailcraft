@@ -2762,10 +2762,12 @@ impl MailApp {
             self.session.mailbox.folder(self.session.view.folder).and_then(|f| self.session.mailbox.account(f.account)).map(|a| a.name.clone());
         match self.session.view.module {
             Module::Mail => {
-                let folder = self.session.mailbox.folder(self.session.view.folder).map_or(tl!("Mail"), |f| f.name.as_str());
+                // //// Neoffice — as in the folder pane: a standard folder under its name in the interface's language.
+                let folder = self.session.mailbox.folder(self.session.view.folder).map_or_else(|| tl!("Mail").to_string(), crate::nav::folder_name);
                 match account.filter(|a| !a.is_empty()) {
                     Some(a) => format!("{folder} - {a}"),
-                    None => folder.to_string(),
+                    // //// Neoffice — the name above is already the window's own text.
+                    None => folder,
                 }
             }
             m => tl!(m.label()).to_string(),

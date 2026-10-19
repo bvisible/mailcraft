@@ -784,7 +784,8 @@ pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, mut pick: impl FnMut(&mut Mai
             return;
         }
         for f in app.session.mailbox.children(account, parent) {
-            out.push((f.id, f.name.clone(), depth));
+            // //// Neoffice — a standard folder under its name in the interface's language, as the folder pane shows it.
+            out.push((f.id, crate::nav::folder_name(f), depth));
             walk(app, account, Some(f.id), depth + 1, out);
         }
     }

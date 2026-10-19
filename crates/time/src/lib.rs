@@ -263,6 +263,13 @@ impl Date {
         format!("{} {}, {}", month_short(self.month), self.day, self.year)
     }
 
+    // //// Neoffice — the medium date people read in the interface's words (set_date_words); `medium` stays English for the text it goes into.
+    /// [`Date::medium`] as people read it in the interface's language: `20 oct. 2026` where the day comes first,
+    /// `Oct 20, 2026` in English.
+    pub fn medium_shown(self) -> String {
+        medium_in(date_words().as_ref(), self)
+    }
+
     /// `10/11/2026`.
     pub fn numeric(self) -> String {
         format!("{}/{}/{}", self.month, self.day, self.year)
@@ -544,6 +551,14 @@ fn shown_month(words: Option<&DateWords>, month: u8) -> String {
         .unwrap_or_else(|| month_short(month).to_string())
 }
 
+// //// Neoffice — as above (Date::medium_shown).
+fn medium_in(words: Option<&DateWords>, date: Date) -> String {
+    match words {
+        Some(w) if w.day_first.is_some() => format!("{} {} {}", date.day, shown_month(Some(w), date.month), date.year),
+        _ => format!("{} {}, {}", shown_month(words, date.month), date.day, date.year),
+    }
+}
+
 fn shown_numeric(words: Option<&DateWords>, date: Date) -> String {
     match words.and_then(|w| w.day_first) {
         Some(separator) => format!("{:02}{separator}{:02}{separator}{}", date.day, date.month, date.year),
@@ -712,6 +727,9 @@ mod tests {
         assert_eq!(list_label_in(fr, at(d(2026, 3, 3), 15), now, 0, false), "3 mars");
         assert_eq!(list_label_in(fr, at(d(2025, 3, 3), 15), now, 0, false), "03.03.2025");
         assert_eq!(header_label_in(fr, at(today, 9), 0, false), "mer. 14.10.2026 09:05");
+        // //// Neoffice — the medium date too (Date::medium_shown).
+        assert_eq!(medium_in(fr, d(2026, 10, 20)), "20 oct. 2026");
+        assert_eq!(medium_in(None, d(2026, 10, 20)), "Oct 20, 2026");
         // A word left empty is the English one; no words at all is English throughout.
         let empty = DateWords::default();
         assert_eq!(list_label_in(Some(&empty), at(d(2026, 10, 10), 15), now, 0, true), "Sat 3:05 PM");

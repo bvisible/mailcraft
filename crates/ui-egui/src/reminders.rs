@@ -181,7 +181,12 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
                         semibold(12.5),
                         t.text,
                     );
-                    let time = if r.all_day { r.start.date.medium() } else { format!("{} {}", r.start.date.medium(), r.start.time_short(twelve)) };
+                    // //// Neoffice — the date in the interface's words (Date::medium_shown).
+                    let time = if r.all_day {
+                        r.start.date.medium_shown()
+                    } else {
+                        format!("{} {}", r.start.date.medium_shown(), r.start.time_short(twelve))
+                    };
                     let detail = if r.location.trim().is_empty() { time } else { format!("{time} · {}", r.location) };
                     crate::theme::paint_clipped(
                         ui.painter(),

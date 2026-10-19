@@ -356,7 +356,8 @@ fn notes(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, t: &Tokens, pictures:
     let mut lines: Vec<(&str, String)> = Vec::new();
     match m.flag {
         FlagStatus::Flagged => {
-            let due = m.flag_due.map(|d| format!(" {} {}", tl!("Due"), app.session.local(d).date.medium())).unwrap_or_default();
+            // //// Neoffice — the date in the interface's words (Date::medium_shown).
+            let due = m.flag_due.map(|d| format!(" {} {}", tl!("Due"), app.session.local(d).date.medium_shown())).unwrap_or_default();
             lines.push(("flag", format!("{}{due}", tl!("Follow up."))));
         }
         FlagStatus::Complete => lines.push(("complete", tl!("Completed.").to_string())),
