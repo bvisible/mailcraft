@@ -834,7 +834,7 @@ fn a_jmap_account_keeps_its_setting_and_a_damaged_one_costs_only_itself() {
 fn only_a_jmap_or_microsoft_account_has_server_ids() {
     use AccountKind::*;
     assert_eq!([Local, Imap, Microsoft, Jmap].map(AccountKind::server_ids), [false, false, true, true]);
-    // //// Neoffice — a JMAP account is among those with a server now that the window can synchronise it; sending its mail comes later.
+    // //// Neoffice — a JMAP account is among those with a server now that the window can synchronise it, and its Send/Receive sends the Outbox.
     assert_eq!([Local, Imap, Microsoft, Jmap].map(AccountKind::has_server), [false, true, true, true]);
-    assert_eq!([Local, Imap, Microsoft, Jmap].map(AccountKind::sends_mail), [false, true, true, false]);
+    assert_eq!([Local, Imap, Microsoft, Jmap].map(AccountKind::sends_mail), [false, true, true, true]);
 }

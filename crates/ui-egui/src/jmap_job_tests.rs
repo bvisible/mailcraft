@@ -583,27 +583,24 @@ fn what_the_job_prints_is_counts_only() {
 }
 
 #[test]
-fn compose_send_is_refused_for_a_jmap_account_and_the_message_stays_open() {
+fn compose_send_queues_the_message_of_a_jmap_account_like_any_other_and_nothing_says_it_cannot() {
     let (mut app, id, _) = window(true, true);
     app.execute("mail.new", json!({"to": "bob@example.org", "subject": "Hello", "body": "Hi", "account": id})).unwrap();
     let outbox = app.session.mailbox.folder_of_kind(id, FolderKind::Outbox).unwrap();
     let sent = app.session.mailbox.folder_of_kind(id, FolderKind::Sent).unwrap();
-    let refused = app.run("compose.send", json!({})).unwrap_err();
-    assert_eq!(refused, "Sending isn't available for this account yet");
-    assert_eq!(app.status_msg.as_ref().map(|(text, _)| text.as_str()), Some("Sending isn't available for this account yet"));
-    assert!(app.session.compose.is_some(), "the message is still there to be kept as a draft");
-    assert_eq!((app.session.mailbox.messages_in(outbox).count(), app.session.mailbox.messages_in(sent).count()), (0, 0));
-    // Said in the interface's language like the other refusals.
-    crate::i18n::set_current(crate::i18n::Lang::Pseudo);
-    let _ = app.run("compose.send", json!({}));
-    crate::i18n::set_current(crate::i18n::Lang::English);
+    let said = app.run("compose.send", json!({})).unwrap();
+    assert_eq!(said["queued"], true);
+    // The message waits in the Outbox for the next Send/Receive; the interim refusal is gone.
+    assert!(app.session.compose.is_none());
+    assert_eq!((app.session.mailbox.messages_in(outbox).count(), app.session.mailbox.messages_in(sent).count()), (1, 0));
     let shown = app.status_msg.as_ref().map(|(text, _)| text.clone()).unwrap_or_default();
     assert_ne!(shown, "Sending isn't available for this account yet");
-    assert_eq!(shown, "Séndíng ísn't áváíláblé fór thís áccóúnt yét");
-    // Save Draft works: the draft is kept here.
+    // The account has something to send, so a run starts for it.
+    assert_eq!(app.waiting_to_go(id), 1);
+    // Save Draft works as it did: the draft is kept here, and waits to be filed on the server.
+    app.execute("mail.new", json!({"to": "bob@example.org", "subject": "Later", "account": id})).unwrap();
     assert!(app.run("compose.saveDraft", json!({})).is_ok());
-    // Nothing to send is queued by the automatic rounds either.
-    assert_eq!(app.waiting_to_go(id), 0);
+    assert_eq!(app.waiting_to_go(id), 2);
 }
 
 #[test]

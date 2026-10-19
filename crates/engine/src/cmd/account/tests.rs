@@ -55,8 +55,8 @@ fn a_jmap_account_is_added_with_its_server() {
     assert_eq!(s.mailbox.accounts.len(), 1);
     assert_eq!(s.mailbox.folders.iter().filter(|f| f.account == id).count(), mailcraft_model::FolderKind::STANDARD.len());
     // It is among those with a server (the window synchronises it) whose folders and messages are
-    // known by server ids; nothing sends its Outbox yet.
-    assert!(a.kind.has_server() && a.kind.server_ids() && !a.kind.sends_mail());
+    // known by server ids; its Send/Receive sends its Outbox.
+    assert!(a.kind.has_server() && a.kind.server_ids() && a.kind.sends_mail());
     let listed = s.run("account.list", &json!({})).unwrap();
     let account = &listed["accounts"][0];
     assert_eq!((account["kind"].as_str(), account["auth"].as_str()), (Some("jmap"), Some("password")));

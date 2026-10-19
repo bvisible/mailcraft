@@ -18,10 +18,14 @@
 //! **Folders** come down by server id as a Graph account's do ([`super::graph_mail`]): the
 //! account's standard folders are tied to the server's by role, the others are made here, and a
 //! complete listing removes what the server no longer has.
+//!
+//! **Sending and drafts** go up with the run ([`super::jmap_send`]): what waits in the Outbox is sent and
+//! the drafts saved here are filed in the server's Drafts before any mailbox is read, and the mailboxes
+//! those copies go to (Sent, Drafts) are read besides, so that what was sent shows in Sent at once.
 
 use std::collections::HashMap;
 
-use mailcraft_model::sync::{JmapKnown, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_WINDOW, SyncPhase};
+use mailcraft_model::sync::{JmapKnown, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_WINDOW, SendOutcome, SyncPhase};
 use mailcraft_model::time::Timestamp;
 use mailcraft_model::{AccountKind, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
@@ -29,6 +33,7 @@ use serde_json::{Value, json};
 use super::graph_down::{self, Down};
 use super::graph_mail::{Taken, take_listing};
 use super::jmap_down::{self, plausible_id};
+use super::jmap_send;
 use super::sync_progress::{self, Piece};
 use super::{bad, fail};
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
@@ -76,12 +81,28 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         n => n.min(MAX_JMAP_WINDOW),
     };
     let tied = s.mailbox.folders.iter().any(|f| f.account == account && f.server.is_some());
+    // What waits to go: the Outbox, and the drafts saved here.
+    let (sends, drafts) = (jmap_send::sends(s, account), jmap_send::drafts(s, account));
+    // Where the copies go is read too, so that a message that was sent is in Sent when the run is over, and a
+    // draft that was filed is in Drafts: a light run would not read them otherwise.
+    let copies_to = |kind: FolderKind| {
+        s.mailbox.folder_of_kind(account, kind).and_then(|f| s.mailbox.folder(f)).and_then(|f| f.server.as_ref()).map(|server| server.id.clone())
+    };
+    let wanted: Vec<String> = [(!sends.is_empty()).then(|| copies_to(FolderKind::Sent)), (!drafts.is_empty()).then(|| copies_to(FolderKind::Drafts))]
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect();
     let scope = if full || !tied {
         JmapScope::All
     } else {
-        let mut also: Vec<String> = also.iter().filter(|id| plausible_id(id)).take(MAX_ALSO).cloned().collect();
-        also.dedup();
-        JmapScope::Light { also }
+        let mut named: Vec<String> = Vec::new();
+        for id in wanted.iter().chain(also).filter(|id| plausible_id(id)) {
+            if named.len() < MAX_ALSO && !named.contains(id) {
+                named.push(id.clone());
+            }
+        }
+        JmapScope::Light { also: named }
     };
     Ok(JmapMailRequest {
         account,
@@ -92,10 +113,10 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         list_folders: full || !tied,
         scope,
         known: known(&s.mailbox, account, window),
-        // What was changed here goes up from a later step on; nothing is sent from here yet.
+        // What was changed here goes up from a later step on.
         changes: Vec::new(),
-        sends: Vec::new(),
-        drafts: Vec::new(),
+        sends,
+        drafts,
         background,
     })
 }
@@ -126,9 +147,10 @@ fn known(mb: &Mailbox, account: Id, window: u32) -> Vec<JmapKnown> {
     out
 }
 
-/// How many changes made in `account` its server hasn't heard of yet. None go up from here yet.
-pub fn unpushed(_s: &Session, _account: Id) -> usize {
-    0
+/// How many changes made in `account` its server hasn't heard of yet: the drafts saved here that it hasn't got
+/// in their latest form. (The Outbox is counted by the window, as for any account that sends.)
+pub fn unpushed(s: &Session, account: Id) -> usize {
+    jmap_send::pending_drafts(&s.mailbox, account)
 }
 
 fn request(s: &mut Session, v: &Value) -> CmdResult {
@@ -176,6 +198,29 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     if result.auth_refused && !result.partial {
         errors.push("The server refused the sign-in".to_string());
     }
+    // The drafts filed and the messages sent (RFC 8621 §4.8, §7): what became of each. A message that went
+    // leaves the Outbox, one that was refused or whose answer was lost is held there, with why.
+    let mut refused: Vec<String> = Vec::new();
+    for done in result.drafts.iter().take(MAX_PAGES) {
+        if jmap_send::draft_done(&mut s.mailbox, account, done, &mut refused) {
+            taken.updated += 1;
+            // A draft's server id is new: where each message is, is looked at afresh.
+            s.graph_index = Default::default();
+        }
+    }
+    let mut sent = 0;
+    for done in result.sent.iter().take(MAX_PAGES) {
+        if jmap_send::send_done(&mut s.mailbox, account, done, &mut refused) {
+            sent += usize::from(matches!(done.outcome, SendOutcome::Sent));
+            taken.updated += 1;
+            s.graph_index = Default::default();
+        }
+    }
+    // (Mail that reached the server can't be taken back by Undo.)
+    if sent > 0 {
+        s.forget_history();
+    }
+    errors.splice(0..0, refused.into_iter().map(|line| said(&line)).filter(|line| !line.is_empty()).take(MAX_ERRORS));
     if let Some(listing) = &result.listing {
         take_listing(&mut s.mailbox, account, listing, &mut taken);
     }
@@ -198,16 +243,17 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
         s.sel.messages.clear();
     }
     // Send/Receive Progress: where the run is, what it brought, what went wrong.
-    let step = match (&result.progress, &result.listing) {
-        (Some(progress), _) => {
+    let step = match (&result.progress, &result.listing, result.sent.is_empty()) {
+        (Some(progress), ..) => {
             let name = s.mailbox.folder_by_server(account, &progress.folder).and_then(|f| s.mailbox.folder(f)).map(|f| f.name.as_str());
             Some((SyncPhase::NewMail, sync_progress::shown(name.unwrap_or_default()), progress.read.min(progress.total), progress.total))
         }
-        (None, Some(_)) => Some((SyncPhase::Folders, String::new(), 0, 0)),
-        (None, None) => None,
+        (None, Some(_), _) => Some((SyncPhase::Folders, String::new(), 0, 0)),
+        (None, None, false) => Some((SyncPhase::Sending, String::new(), 0, 0)),
+        (None, None, true) => None,
     };
     let folders = result.progress.as_ref().map(|p| (p.number, p.folders));
-    let piece = Piece { step, folders, new: down.new, sent: 0, problems: &errors, last: !result.partial, stopped: result.stopped };
+    let piece = Piece { step, folders, new: down.new, sent, problems: &errors, last: !result.partial, stopped: result.stopped };
     s.sync_progress.take(account, piece);
     let summary = match (errors.first(), taken.pushed + taken.added + taken.updated + taken.removed + down.new + down.changed + down.removed) {
         (Some(e), _) => e.clone(),

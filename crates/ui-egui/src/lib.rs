@@ -1331,14 +1331,7 @@ impl MailApp {
         match &r {
             Err(e) => {
                 // (The engine's refusal of received mail for a Microsoft account, in the interface's language.)
-                // //// Neoffice — and Send's refusal for an account whose Outbox nothing sends yet (a JMAP one).
-                let said = if e == mailcraft_model::STAYS_LOCAL {
-                    tl!(mailcraft_model::STAYS_LOCAL).to_string()
-                } else if e == mailcraft_engine::cmd::compose::CANT_SEND_YET {
-                    tl!(mailcraft_engine::cmd::compose::CANT_SEND_YET).to_string()
-                } else {
-                    e.clone()
-                };
+                let said = if e == mailcraft_model::STAYS_LOCAL { tl!(mailcraft_model::STAYS_LOCAL).to_string() } else { e.clone() };
                 // What the owner has just done by hand and was refused at once is said in a
                 // message box too, as Outlook does (#152).
                 if self.by_hand && refusal_worth_a_box(id, e) {
@@ -2889,14 +2882,16 @@ impl MailApp {
     /// host's storage in the browser. A failure shows in the status bar and is tried again later.
     /// A draft of a Microsoft account that is being written is saved every five minutes while
     /// it has changes, and so goes up to its server with the next Send/Receive (R3.4.1).
+    // //// Neoffice — so is a JMAP account's: it is filed in the server's Drafts with the next Send/Receive.
     fn draft_autosave_tick(&mut self, ctx: &egui::Context) {
         const EVERY_MS: f64 = 5.0 * 60_000.0;
         let Some(c) = &self.session.compose else {
             self.draft_saved_at = 0.0;
             return;
         };
-        let graph = self.session.mailbox.account(c.account).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Microsoft);
-        if !graph || !c.dirty {
+        // //// Neoffice — a draft of any account whose server keeps drafts by id (Microsoft Graph, JMAP).
+        let kept_by_server = self.session.mailbox.account(c.account).is_some_and(|a| a.kind.server_ids());
+        if !kept_by_server || !c.dirty {
             return;
         }
         let now = now_ms();

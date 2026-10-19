@@ -26,6 +26,7 @@ pub mod graph_up;
 pub mod jmap_down;
 pub mod jmap_fetch;
 pub mod jmap_mail;
+pub mod jmap_send;
 pub mod mail;
 pub mod offline;
 #[cfg(test)]

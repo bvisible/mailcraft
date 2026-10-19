@@ -207,12 +207,11 @@ impl AccountKind {
         matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Jmap)
     }
 
-    // //// Neoffice — what a Send/Receive sends of an account: a JMAP account is synchronised, but nothing sends its Outbox yet, so mail must not be written to it.
-    /// Whether a Send/Receive sends the mail that waits in the account's Outbox (through SMTP, or
-    /// through Microsoft Graph). Not yet for a JMAP account: its sending comes after its reading,
-    /// and until then no mail is put in its Outbox, where it would wait for ever.
+    // //// Neoffice — a JMAP account's Send/Receive sends its Outbox too (it was left out until the host could).
+    /// Whether a Send/Receive sends the mail that waits in the account's Outbox (through SMTP,
+    /// through Microsoft Graph, or through a JMAP server's submission).
     pub fn sends_mail(self) -> bool {
-        matches!(self, AccountKind::Imap | AccountKind::Microsoft)
+        matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Jmap)
     }
 
     // //// Neoffice — what Microsoft Graph and JMAP have in common, so the few places that care need not name both kinds.

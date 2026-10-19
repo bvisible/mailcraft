@@ -337,3 +337,7 @@ mod tests;
 #[cfg(test)]
 #[path = "jmap_fetch_tests.rs"]
 mod fetch_tests;
+
+#[cfg(test)]
+#[path = "jmap_send_tests.rs"]
+mod send_tests;

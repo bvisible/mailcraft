@@ -13,9 +13,6 @@ use crate::{BodyFormat, CmdError, CmdResult, CommandSpec, Compose, ComposeMode, 
 const MAX_ATTACHMENT: usize = 64 << 20;
 const MAX_ATTACHMENTS: usize = 200;
 
-// //// Neoffice — what Send says for an account that is read from its server but whose Outbox nothing sends yet (a JMAP one, for now); the window shows it in the interface's language.
-pub const CANT_SEND_YET: &str = "Sending isn't available for this account yet";
-
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("mail.new", "New Email", "Home › New", new)
@@ -630,10 +627,6 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     }
     let as_draft = m.server_draft.is_some();
     let account = s.mailbox.account(m.account).cloned().ok_or_else(|| fail("the account is gone"))?;
-    // //// Neoffice — a JMAP account is kept in step with its server but nothing sends its Outbox yet: refuse, rather than leave the message there for ever or file it as sent. The message stays open, as after any refusal.
-    if account.kind.has_server() && !account.kind.sends_mail() {
-        return Err(fail(CANT_SEND_YET));
-    }
     // An account with a server queues the message for the next Send/Receive; a local one has
     // nowhere to send it, so it is filed as sent (and delivered to local accounts it names).
     let queued = account.kind.has_server();
@@ -642,6 +635,17 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     // The original is marked replied or forwarded once this has gone (#154): from the Outbox when
     // the server has taken it, at once for a local account, which files it as sent.
     m.answers = answers_of(s, &c).or_else(|| c.draft.and_then(|d| s.mailbox.message(d)).and_then(|d| d.answers.clone()));
+    // //// Neoffice — a JMAP account's draft the server has: its copy is named on the message, and the host destroys it once the message has gone (and not before: a message that is held leaves its draft where it was). Graph sends the draft itself, so it needs none.
+    let draft_copy = c
+        .draft
+        .and_then(|d| s.mailbox.message(d))
+        .filter(|d| d.account == account.id && account.kind == AccountKind::Jmap)
+        .and_then(|d| d.server.as_ref())
+        .filter(|server| !server.gone && !server.id.is_empty())
+        .map(|server| server.id.clone());
+    if let Some(copy) = &draft_copy {
+        m.server_draft = Some(ServerDraft { sent_from: copy.clone(), ..Default::default() });
+    }
     let id = s.mailbox.add_message(m.clone())?;
     if !queued {
         s.mailbox.mark_answered(id);
@@ -649,7 +653,8 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     if let Some(d) = c.draft {
         // The draft became this message: one the server has goes from there by being sent, not
         // by being deleted.
-        let _ = if as_draft { s.mailbox.forget_message(d) } else { s.mailbox.remove_message(d) };
+        // //// Neoffice — and a JMAP draft whose server copy goes with the message (`draft_copy`) is forgotten the same way: removing it would queue that copy's destruction at once, before the message has gone.
+        let _ = if as_draft || draft_copy.is_some() { s.mailbox.forget_message(d) } else { s.mailbox.remove_message(d) };
     }
     let mut delivered = 0;
     if !queued {
@@ -692,8 +697,15 @@ fn save_draft(s: &mut Session, _: &Value) -> CmdResult {
         (m.server, m.server_draft, m.uid, m.synced) = (old.server.clone(), old.server_draft.clone(), old.uid, old.synced);
         (m.read, m.flag, m.flag_due, m.categories, m.pinned) = (old.read, old.flag, old.flag_due, old.categories.clone(), old.pinned);
     }
-    // //// Neoffice — only a Microsoft account's draft is marked for its server. A JMAP account's draft stays in its Drafts folder here and goes nowhere: saving drafts on a JMAP server (an import into its Drafts) is built after reading and sending.
+    // //// Neoffice — a Microsoft account's draft is marked for its server as an answer to a message the server has, a JMAP account's draft only waits to be filed in the server's Drafts (the whole message goes: there is no "reply" to make there).
     let graph = s.mailbox.account(m.account).is_some_and(|a| a.kind == AccountKind::Microsoft);
+    let jmap = s.mailbox.account(m.account).is_some_and(|a| a.kind == AccountKind::Jmap);
+    if jmap {
+        let mut sd = m.server_draft.take().unwrap_or_default();
+        sd.pending = true;
+        sd.saves = sd.saves.saturating_add(1);
+        m.server_draft = Some(sd);
+    }
     if graph {
         // Begun as an answer to, or a forward of, a message its server has: made there as one.
         let of = c.source.and_then(|src| s.mailbox.message(src)).filter(|src| src.account == m.account).and_then(|src| {
@@ -746,6 +758,8 @@ fn close(s: &mut Session, _: &Value) -> CmdResult {
 fn discard(s: &mut Session, _: &Value) -> CmdResult {
     let draft = s.compose.take().and_then(|c| c.draft);
     if let Some(d) = draft {
+        // //// Neoffice — a JMAP draft the server has is destroyed there too (queued; the host does it with a run).
+        super::jmap_send::discard(&mut s.mailbox, d);
         // Already gone is fine.
         let _ = s.mailbox.remove_message(d);
     }
