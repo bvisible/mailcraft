@@ -2,24 +2,35 @@
 //! `http(s)://` addresses: parsed, resolved against a base, and percent-encoding.
 //!
 //! Addresses reach this crate from the owner (the session's address) and from a server (the
-//! session's `apiUrl`, `downloadUrl` and `uploadUrl`), so nothing here trusts them: they are bounded,
-//! they may hold no user name (`https://user:password@host/`), no backslash and no control
-//! character before the path, and what a parse refuses is never echoed back, since an address can
-//! hold a person's address or a password.
+//! session's `apiUrl`, `downloadUrl` and `uploadUrl`), so nothing here trusts them. They are bounded;
+//! they hold no user name (`https://user:password@host/`); a host is a name of letters, digits, hyphens
+//! and dots, or an IPv6 address in brackets; whatever in a path or a query is not printable ASCII is
+//! percent-encoded, so that an address is sent as one line of plain ASCII; and what a parse refuses is
+//! never echoed back, since an address can hold a person's address or a password.
 
 use crate::{Error, Result};
 
 /// Longest address parsed.
 const MAX_URL: usize = 8192;
+/// Longest host name (RFC 1035).
+const MAX_HOST: usize = 253;
 
 /// A parsed `http(s)://host[:port]/path?query` URL.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Url {
     pub https: bool,
     pub host: String,
     pub port: u16,
-    /// Path and query, starting with `/`.
+    /// Path and query, starting with `/`, in printable ASCII.
     pub path: String,
+}
+
+/// What may be shown of an address: the server it names and how long the rest is, never the path or the
+/// query (they can hold a person's address).
+impl std::fmt::Debug for Url {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Url").field("origin", &self.origin()).field("path_bytes", &self.path.len()).finish()
+    }
 }
 
 pub fn default_port(https: bool) -> u16 {
@@ -28,6 +39,14 @@ pub fn default_port(https: bool) -> u16 {
 
 fn strip_prefix_ci<'a>(s: &'a str, p: &str) -> Option<&'a str> {
     s.get(..p.len()).filter(|h| h.eq_ignore_ascii_case(p)).and_then(|_| s.get(p.len()..))
+}
+
+/// A port: digits only, 1 to 65535.
+fn port_of(text: &str) -> Option<u16> {
+    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<u16>().ok().filter(|port| *port != 0)
 }
 
 impl Url {
@@ -46,28 +65,28 @@ impl Url {
         };
         let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
         let (authority, tail) = rest.split_at(end);
-        if authority.is_empty() || authority.contains(['@', '\\']) || authority.chars().any(|c| c.is_whitespace() || c.is_control()) {
-            return Err(bad());
-        }
         let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
             let (h, after) = v6.split_once(']').ok_or_else(bad)?;
+            if h.parse::<std::net::Ipv6Addr>().is_err() {
+                return Err(bad());
+            }
             let port = match after.strip_prefix(':') {
-                Some(p) => p.parse().map_err(|_| bad())?,
+                Some(p) => port_of(p).ok_or_else(bad)?,
                 None if after.is_empty() => default_port(https),
                 None => return Err(bad()),
             };
             (h.to_string(), port)
         } else {
-            match authority.rsplit_once(':') {
-                // A colon inside the host is no port's: an IPv6 address is written in brackets.
-                Some((h, _)) if h.contains(':') => return Err(bad()),
-                Some((h, p)) => (h.to_string(), p.parse().map_err(|_| bad())?),
-                None => (authority.to_string(), default_port(https)),
+            let (h, port) = match authority.split_once(':') {
+                Some((h, p)) => (h, port_of(p).ok_or_else(bad)?),
+                None => (authority, default_port(https)),
+            };
+            let named = !h.is_empty() && h.len() <= MAX_HOST && h.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.'));
+            if !named {
+                return Err(bad());
             }
+            (h.to_string(), port)
         };
-        if host.is_empty() || port == 0 {
-            return Err(bad());
-        }
         let tail = tail.split('#').next().unwrap_or("");
         let path = if tail.is_empty() {
             "/".to_string()
@@ -76,16 +95,18 @@ impl Url {
         } else {
             tail.to_string()
         };
-        // Spaces and controls are percent-encoded (every byte of their UTF-8) rather than sent raw.
+        // What is not printable ASCII (spaces, controls, anything beyond ASCII: every byte of its UTF-8) is
+        // percent-encoded rather than sent raw, so that no line break, no blank and no byte of another
+        // character set reaches a request line.
         let mut encoded = String::with_capacity(path.len());
         for c in path.chars() {
-            if c == ' ' || c.is_control() {
+            if c.is_ascii_graphic() {
+                encoded.push(c);
+            } else {
                 let mut utf8 = [0u8; 4];
                 for b in c.encode_utf8(&mut utf8).bytes() {
                     encoded.push_str(&format!("%{b:02X}"));
                 }
-            } else {
-                encoded.push(c);
             }
         }
         Ok(Url { https, host: host.to_ascii_lowercase(), port, path: encoded })
@@ -109,7 +130,15 @@ impl Url {
         if l.starts_with('/') {
             return Url::parse(&format!("{origin}{l}"));
         }
-        let dir = self.path.split('?').next().unwrap_or("/").rsplit_once('/').map_or("", |(d, _)| d);
+        // Only a query, or only a fragment (which is dropped): this path (RFC 3986 §5.2.2).
+        let path = self.path.split('?').next().unwrap_or("/");
+        if l.starts_with('?') {
+            return Url::parse(&format!("{origin}{path}{l}"));
+        }
+        if l.starts_with('#') {
+            return Ok(self.clone());
+        }
+        let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
         Url::parse(&format!("{origin}{dir}/{l}"))
     }
 
@@ -124,8 +153,8 @@ impl Url {
         format!("{}{}", self.origin(), self.path)
     }
 
-    /// Whether the address is on this computer: `localhost`, or an IPv4 address in `127.0.0.0/8`
-    /// or `::1` written out in full. The only place plain `http` is allowed to go to.
+    /// Whether the address is on this computer: `localhost`, or an IP address that is a loopback one
+    /// (`127.0.0.0/8` written as four numbers, `::1`). The only place plain `http` is allowed to go to.
     pub fn is_loopback(&self) -> bool {
         self.host == "localhost" || self.host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
     }
@@ -142,6 +171,36 @@ pub fn pct(s: &str) -> String {
         }
     }
     out
+}
+
+/// Undo [`pct`]: each `%XX` becomes its byte, what is then not UTF-8 is replaced, and a `%` that starts
+/// no escape stays as it is.
+pub fn pct_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut at = 0usize;
+    while let Some(&b) = bytes.get(at) {
+        let escaped = if b == b'%' {
+            bytes
+                .get(at.saturating_add(1)..at.saturating_add(3))
+                .filter(|hex| hex.iter().all(u8::is_ascii_hexdigit))
+                .and_then(|hex| std::str::from_utf8(hex).ok())
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+        } else {
+            None
+        };
+        match escaped {
+            Some(byte) => {
+                out.push(byte);
+                at = at.saturating_add(3);
+            }
+            None => {
+                out.push(b);
+                at = at.saturating_add(1);
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -171,6 +230,9 @@ mod tests {
         assert_eq!(base.join("/p?q=1").unwrap().full(), "https://h.example:8443/p?q=1");
         assert_eq!(base.join("c").unwrap().full(), "https://h.example:8443/a/b/c");
         assert_eq!(base.join(" https://x.example ").unwrap().full(), "https://x.example/");
+        // A query alone, or a fragment alone, keeps the path.
+        assert_eq!(base.join("?y=2").unwrap().full(), "https://h.example:8443/a/b/session?y=2");
+        assert_eq!(base.join("#top").unwrap().full(), "https://h.example:8443/a/b/session?account=x");
         // The base's scheme is the reference's when it names none.
         let plain = Url::parse("http://127.0.0.1:8080/s").unwrap();
         assert_eq!(plain.join("//127.0.0.1:9/p").unwrap().full(), "http://127.0.0.1:9/p");
@@ -194,11 +256,20 @@ mod tests {
             "https://ho st.example/",
             "https://host.example:99999/",
             "https://host.example:/",
+            "https://host.example:+443/",
+            "https://host.example:4 43/",
             "https://host.example:80:80/",
             "https://::1/",
             "https://[]/",
             "https://[::1]x/",
+            "https://[evil.example]/",
+            "https://[localhost]/",
+            "https://[::1%25eth0]/",
             "https://\u{7}host/",
+            "https://h\u{f6}st.example/",
+            "https://host_name.example/",
+            "https://%65vil.example/",
+            "https://host.example%2f@evil.example/",
             "javascript:alert(1)",
             "",
         ] {
@@ -207,10 +278,18 @@ mod tests {
         }
         let long = format!("https://h.example/{}", "a".repeat(MAX_URL));
         assert!(Url::parse(&long).is_err());
-        // Controls and spaces of a path are encoded whole, however many bytes their UTF-8 takes.
-        let u = Url::parse("https://h.example/a b\r\nc\u{85}d?e=f g").unwrap();
-        assert_eq!(u.path, "/a%20b%0D%0Ac%C2%85d?e=f%20g");
-        assert!(!u.full().contains(['\r', '\n', ' ']));
+        let long_host = format!("https://{}.example/", "a".repeat(MAX_HOST));
+        assert!(Url::parse(&long_host).is_err());
+        // A path or query is plain ASCII on one line: controls, blanks and what is beyond ASCII are
+        // encoded whole, however many bytes their UTF-8 takes.
+        let u = Url::parse("https://h.example/a b\r\nc\u{85}d?e=f g\u{3000}h\u{1F600}").unwrap();
+        assert_eq!(u.path, "/a%20b%0D%0Ac%C2%85d?e=f%20g%E3%80%80h%F0%9F%98%80");
+        assert!(u.full().bytes().all(|b| b.is_ascii_graphic()));
+        // The name of a host in a form some resolvers take (a trailing dot, upper case) is kept as it is.
+        assert_eq!(Url::parse("https://H.Example./x").unwrap().host, "h.example.");
+        // Brackets hold an IPv6 address and nothing else.
+        assert_eq!(Url::parse("http://[0:0:0:0:0:0:0:1]/").unwrap().host, "0:0:0:0:0:0:0:1");
+        assert!(Url::parse("http://[0:0:0:0:0:0:0:1]/").unwrap().is_loopback());
     }
 
     #[test]
@@ -231,18 +310,65 @@ mod tests {
         }
     }
 
+    #[test]
+    fn what_is_shown_of_an_address_is_its_server() {
+        let u = Url::parse("https://jmap.example.org/jmap/session?account=ada%40example.org").unwrap();
+        let shown = format!("{u:?}");
+        assert!(shown.contains("https://jmap.example.org") && !shown.contains("ada") && !shown.contains("session"), "{shown}");
+    }
+
+    #[test]
+    fn escapes_are_undone() {
+        assert_eq!(pct_decode("ada%40example.org"), "ada@example.org");
+        assert_eq!(pct_decode("a%20b%2Fc%C3%A9"), "a b/cé");
+        assert_eq!(pct_decode("100%"), "100%");
+        assert_eq!(pct_decode("%4"), "%4");
+        assert_eq!(pct_decode("%zz%+1%-1"), "%zz%+1%-1", "only two hexadecimal digits make an escape");
+        assert_eq!(pct_decode("%ff%fe"), "\u{fffd}\u{fffd}", "what is no UTF-8 is replaced");
+        assert_eq!(pct_decode(&pct("any text é\n%41")), "any text é\n%41");
+    }
+
+    /// Strings that are nearly addresses, so that parsing is tried on more than text that never starts like one.
+    fn address_like() -> impl Strategy<Value = String> {
+        let scheme = prop_oneof![Just("https://"), Just("http://"), Just("HTTPS://"), Just("ftp://"), Just("")];
+        let host = prop_oneof![
+            "[a-zA-Z0-9.-]{0,20}",
+            Just("localhost".to_string()),
+            Just("[::1]".to_string()),
+            Just("[fe80::1]".to_string()),
+            "[ -~]{0,20}",
+            ".{0,10}",
+        ];
+        let port = prop_oneof![Just(String::new()), "[0-9]{1,6}".prop_map(|p| format!(":{p}")), ".{0,5}".prop_map(|p| format!(":{p}"))];
+        let tail = prop_oneof![Just(String::new()), "/[ -~]{0,30}", ".{0,30}", "[?#/][ -~\u{80}-\u{3000}]{0,20}"];
+        (scheme, host, port, tail).prop_map(|(scheme, host, port, tail)| format!("{scheme}{host}{port}{tail}"))
+    }
+
     proptest! {
         #[test]
-        fn any_address_parses_or_is_refused(s in ".{0,300}", rel in ".{0,100}") {
+        fn any_address_parses_or_is_refused(s in prop_oneof![address_like(), ".{0,300}"], rel in prop_oneof![address_like(), ".{0,100}"]) {
             if let Ok(u) = Url::parse(&s) {
                 prop_assert!(!u.host.is_empty() && u.port != 0 && u.path.starts_with('/'));
-                prop_assert!(!u.path.contains([' ', '\r', '\n']));
+                prop_assert!(u.full().bytes().all(|b| b.is_ascii_graphic()));
                 // What was parsed parses again to the same address.
                 prop_assert_eq!(Url::parse(&u.full()).ok(), Some(u.clone()));
-                let _ = u.join(&rel);
                 let _ = u.is_loopback();
+                if let Ok(joined) = u.join(&rel) {
+                    prop_assert!(joined.full().bytes().all(|b| b.is_ascii_graphic()));
+                    prop_assert_eq!(Url::parse(&joined.full()).ok(), Some(joined));
+                }
             }
             let _ = pct(&s);
+            prop_assert_eq!(pct_decode(&pct(&s)), s);
         }
+    }
+
+    #[test]
+    fn the_generator_reaches_addresses_that_parse() {
+        use proptest::strategy::ValueTree;
+        let mut runner = proptest::test_runner::TestRunner::default();
+        let strategy = address_like();
+        let parsed = (0..500).filter(|_| Url::parse(&strategy.new_tree(&mut runner).unwrap().current()).is_ok()).count();
+        assert!(parsed > 50, "only {parsed} of 500 parsed: the property above would test too little");
     }
 }

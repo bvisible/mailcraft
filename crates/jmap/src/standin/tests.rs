@@ -175,6 +175,22 @@ fn a_query_pages_sorts_and_counts_as_asked() {
     assert_eq!(ids_of(query(json!({"sort": [{"property": "receivedAt", "isAscending": false}]}))), json!([fourth, ids.third, ids.second, ids.first]));
     assert_eq!(ids_of(query(json!({"position": 1, "limit": 2}))), json!([ids.second, ids.third]));
     assert_eq!(ids_of(query(json!({"position": 9}))), json!([]));
+    // A negative position counts from the end, and stops at the start; the answer says where it began.
+    assert_eq!(query(json!({"position": -2})).unwrap()["ids"], json!([ids.third, fourth]));
+    assert_eq!(query(json!({"position": -2})).unwrap()["position"], 2);
+    assert_eq!(query(json!({"position": -1, "limit": 5})).unwrap()["ids"], json!([fourth]));
+    let from_far_before = query(json!({"position": -100})).unwrap();
+    assert_eq!((from_far_before["ids"].as_array().map(Vec::len), from_far_before["position"].clone()), (Some(4), json!(0)));
+    assert_eq!(query(json!({"position": i64::MIN})).unwrap()["position"], 0);
+    assert_eq!(query(json!({"collapseThreads": false})).unwrap()["ids"].as_array().map(Vec::len), Some(4));
+    assert!(query(json!({"collapseThreads": null})).is_ok());
+    // It says the limit it applied when that is its own, and only then (RFC 8620 §5.5).
+    assert_eq!(query(json!({})).unwrap()["limit"], 500);
+    assert_eq!(query(json!({"limit": 100_000})).unwrap()["limit"], 500);
+    assert_eq!(query(json!({"limit": null})).unwrap()["limit"], 500);
+    for asked in [0, 1, 10, 500] {
+        assert!(query(json!({ "limit": asked })).unwrap().get("limit").is_none(), "limit {asked}");
+    }
     assert_eq!(ids_of(query(json!({"limit": 0}))), json!([]));
     assert!(query(json!({})).unwrap().get("total").is_none(), "the total only when asked");
     assert_eq!(query(json!({"calculateTotal": true, "limit": 1})).unwrap()["total"], 4);
@@ -192,7 +208,7 @@ fn a_query_pages_sorts_and_counts_as_asked() {
 #[test]
 fn messages_are_shown_as_a_server_shows_them() {
     let stand_in = StandIn::new();
-    let (inbox, folded, lf, bare, attached, wide) = stand_in.with(|d| {
+    let (folded, lf, bare, attached, wide) = stand_in.with(|d| {
         let inbox = d.mailbox("Inbox", None, Some("inbox"));
         let folded = d.deliver(
             &inbox,
@@ -212,9 +228,8 @@ fn messages_are_shown_as_a_server_shows_them() {
         long.extend("é".repeat(1000).bytes());
         long.extend([0xff, 0xfe]);
         let wide = d.deliver(&inbox, &long, &[], "2026-01-01T00:00:05Z");
-        (inbox, folded, lf, bare, attached, wide)
+        (folded, lf, bare, attached, wide)
     });
-    let _ = inbox;
     let get = |id: &str| {
         let args = json!({"accountId": ACCOUNT, "ids": [id], "properties": ["headers", "preview", "hasAttachment", "blobId", "mailboxIds"]});
         one(&stand_in, json!(["Email/get", args, "c0"])).unwrap()["list"][0].clone()
@@ -240,6 +255,13 @@ fn messages_are_shown_as_a_server_shows_them() {
         d.deliver(&mailbox, raw.as_bytes(), &[], "2026-01-01T00:00:06Z")
     });
     assert_eq!(get(&many)["headers"].as_array().map(Vec::len), Some(MAX_HEADERS));
+}
+
+#[test]
+fn what_is_shown_of_an_email_is_not_the_message() {
+    let (stand_in, ids) = filled();
+    let shown = format!("{:?}", stand_in.with(|d| d.email(&ids.first).cloned()));
+    assert!(shown.contains("raw_bytes") && shown.contains(&ids.first) && !shown.contains("Hello") && !shown.contains("zoe@"), "{shown}");
 }
 
 #[test]
@@ -321,8 +343,28 @@ fn a_call_that_is_wrong_is_refused_for_the_reason_a_server_gives() {
             "invalidArguments",
         ),
         (
-            "a negative position",
-            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "position": -1}, "c0"]),
+            "a position that is text",
+            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "position": "0"}, "c0"]),
+            "invalidArguments",
+        ),
+        (
+            "a position that is no integer",
+            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "position": 1.5}, "c0"]),
+            "invalidArguments",
+        ),
+        (
+            "threads collapsed",
+            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "collapseThreads": true}, "c0"]),
+            "invalidArguments",
+        ),
+        (
+            "collapseThreads that is text",
+            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "collapseThreads": "no"}, "c0"]),
+            "invalidArguments",
+        ),
+        (
+            "an anchor offset",
+            json!(["Email/query", {"accountId": account, "filter": {"inMailbox": inbox}, "anchorOffset": 1}, "c0"]),
             "invalidArguments",
         ),
         (
@@ -381,6 +423,11 @@ fn a_reference_is_resolved_as_the_standard_has_it() {
     assert_eq!(pointer(&value, &[]), Some(value.clone()));
     for no in [&["a~1b", "c~0d", "2"][..], &["a~1b", "c~0d", "x"], &["a~1b", "c~0d", "1", "1"], &["nope"], &["list", "*", "nope"]] {
         assert_eq!(pointer(&value, no), None, "{no:?}");
+    }
+    let list = json!({"a": [10, 20]});
+    assert_eq!((pointer(&list, &["a", "0"]), pointer(&list, &["a", "1"])), (Some(json!(10)), Some(json!(20))));
+    for index in ["01", "00", "+1", "-0", " 1", "1 ", "", "1e0", "0x1", "\u{663}"] {
+        assert_eq!(pointer(&list, &["a", index]), None, "{index:?}");
     }
     let broken = [
         ("a name that is not the call's", json!({"#ids": by("/ids", "Email/query")})),
@@ -478,9 +525,15 @@ fn the_address_the_method_and_the_content_type_are_held_to() {
         assert_eq!(status_of("POST", api, &[("content-type", ok)]), Ok(200), "{ok}");
     }
     for bad in ["text/plain", "application/jsonx", "application/json-seq", "", "json"] {
-        assert_eq!(status_of("POST", api, &[("Content-Type", bad)]), Ok(415), "{bad}");
+        assert_eq!(status_of("POST", api, &[("Content-Type", bad)]), Ok(400), "{bad}");
     }
-    assert_eq!(status_of("POST", api, &[]), Ok(415), "no content type at all");
+    assert_eq!(status_of("POST", api, &[]), Ok(400), "no content type at all");
+    // ... and it says so as the standard has it (RFC 8620 §3.6.1).
+    let mut req = Request::post(api, "text/plain", body.clone(), 1 << 20);
+    req.headers.push(("Authorization".into(), bearer()));
+    let refused = block_on(stand_in.send(req)).unwrap();
+    let problem: Value = serde_json::from_slice(&refused.body).unwrap();
+    assert_eq!((refused.status, problem["type"].clone()), (400, json!("urn:ietf:params:jmap:error:notJSON")));
     assert_eq!(status_of("GET", api, &json_type), Ok(405));
     assert_eq!(status_of("POST", "https://jmap.standin.example/jmap/session", &json_type), Ok(405));
     assert_eq!(status_of("GET", "https://jmap.standin.example/jmap/session?account=x", &[]), Ok(200), "the query is not part of the path");

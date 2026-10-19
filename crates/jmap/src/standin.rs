@@ -11,18 +11,24 @@
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
 //!   401). Nothing else is let in, not even the session.
-//! - **What.** A body is `application/json` (415 otherwise) and a request of method calls is JSON with
-//!   `using` and `methodCalls` (400 `notJSON`, `notRequest`). Only the capabilities it knows may be
-//!   named in `using` (400 `unknownCapability`), no more calls than `maxCallsInRequest` may be in a
-//!   request (400 `limit`), and a method needs its capability in `using` or it is unknown.
-//! - **How.** Arguments are only the ones a method has, of the right type (`invalidArguments`). The
-//!   account is the one the session names (`accountNotFound`). Ids are the URL-safe alphabet,
-//!   `A-Z a-z 0-9 - _`, 1 to 512 characters, and no more than `maxObjectsInGet` are asked for at a time
-//!   (`requestTooLarge`); an id that names nothing is in `notFound`. Properties are among the ones the
-//!   stand-in has. `Email/query` lists one mailbox (`{"inMailbox": id}`, `unsupportedFilter`) sorted by
-//!   `receivedAt` (`unsupportedSort`), at most 500 at a time, and says the total when asked.
-//!   `#`-arguments resolve a back-reference to an earlier call of the same request, with RFC 6901
-//!   pointers and `*` over lists (`invalidResultReference`).
+//! - **What.** A request of method calls is `application/json` and JSON with `using` and `methodCalls`
+//!   (400 `notJSON`, `notRequest`: a content type that is not JSON is `notJSON`). Only the capabilities
+//!   it knows may be named in `using` (400 `unknownCapability`), no more calls than `maxCallsInRequest`
+//!   and no more bytes than `maxSizeRequest` may be in a request (400 `limit`), and a method needs its
+//!   capability in `using` or it is unknown.
+//! - **How.** The arguments are the ones a method has, of the right type (`invalidArguments`): all of
+//!   `Mailbox/get`'s, `Email/get`'s without the bodies, and `Email/query`'s but `anchor`, `anchorOffset`
+//!   and a `collapseThreads` that is true (it has no threads). The account is the one the session names
+//!   (`accountNotFound`). Ids are the URL-safe alphabet, `A-Z a-z 0-9 - _`, 1 to 512 characters (more than
+//!   the standard's 255, as a client must be ready to read), and no more than `maxObjectsInGet` are asked
+//!   for at a time (`requestTooLarge`); an id that names nothing is in `notFound`. Properties are among
+//!   the ones the stand-in has. `Email/query` lists one mailbox (`{"inMailbox": id}`, `unsupportedFilter`)
+//!   sorted by `receivedAt` (`unsupportedSort`), at most 500 at a time (it says the `limit` it applied),
+//!   from a `position` that may be negative, and says the total when asked. `#`-arguments resolve a
+//!   back-reference to an earlier call of the same request, with RFC 6901 pointers and `*` over lists
+//!   (`invalidResultReference`).
+//! - **Not there.** Anything that changes mail, blobs, sending, `*/changes`, threads, push. The session
+//!   names no `eventSourceUrl`.
 //!
 //! It never panics, whatever it is sent: there is no `unwrap` here, in a test build or in another
 //! crate's, which turns the `stand-in` feature on.
@@ -73,7 +79,7 @@ pub struct Mailbox {
 }
 
 /// An email the stand-in has.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Email {
     pub id: String,
     pub blob: String,
@@ -83,6 +89,19 @@ pub struct Email {
     pub received: String,
     /// The message, as it was delivered.
     pub raw: Vec<u8>,
+}
+
+/// What may be shown of an email: not the message (mail is private, even a test's).
+impl std::fmt::Debug for Email {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Email")
+            .field("id", &self.id)
+            .field("mailboxes", &self.mailboxes)
+            .field("keywords", &self.keywords)
+            .field("received", &self.received)
+            .field("raw_bytes", &self.raw.len())
+            .finish()
+    }
 }
 
 /// One HTTP request the stand-in was sent.
@@ -223,7 +242,7 @@ impl Data {
             ("POST", API_PATH) => {
                 let json = header(&req.headers, "content-type")
                     .is_some_and(|v| v.split(';').next().is_some_and(|m| m.trim().eq_ignore_ascii_case("application/json")));
-                if json { self.api(&req.body) } else { (415, problem(415, "about:blank", "the request isn't application/json"), Vec::new()) }
+                if json { self.api(&req.body) } else { rejected("notJSON", "the request isn't application/json") }
             }
             (_, SESSION_PATH | API_PATH) => (405, problem(405, "about:blank", "not a method of that address"), Vec::new()),
             _ => (404, problem(404, "about:blank", "no such address"), Vec::new()),
@@ -359,7 +378,7 @@ impl Data {
     }
 
     fn email_query(&self, args: &Map<String, Value>) -> Outcome<Value> {
-        allow_only(args, &["accountId", "filter", "sort", "position", "limit", "calculateTotal"])?;
+        allow_only(args, &["accountId", "filter", "sort", "position", "limit", "calculateTotal", "collapseThreads"])?;
         account(args)?;
         let unsupported = || refuse("unsupportedFilter", "only one mailbox can be listed: {\"inMailbox\": id}");
         let mailbox = match args.get("filter") {
@@ -373,13 +392,18 @@ impl Data {
             return Err(invalid("no such mailbox"));
         }
         let ascending = sort_direction(args)?;
-        let position = number(args, "position")?.unwrap_or(0);
-        let limit = number(args, "limit")?.map_or(MAX_QUERY, |limit| limit.min(MAX_QUERY));
+        let asked = number(args, "limit")?;
+        let limit = asked.map_or(MAX_QUERY, |limit| limit.min(MAX_QUERY));
         let total = match args.get("calculateTotal") {
             None | Some(Value::Null) => false,
             Some(Value::Bool(wanted)) => *wanted,
             Some(_) => return Err(invalid("calculateTotal is a boolean")),
         };
+        match args.get("collapseThreads") {
+            None | Some(Value::Null) | Some(Value::Bool(false)) => {}
+            Some(Value::Bool(true)) => return Err(invalid("threads can't be collapsed: there are none")),
+            Some(_) => return Err(invalid("collapseThreads is a boolean")),
+        }
         // Oldest first, and those received together in the order they were delivered.
         let mut found: Vec<(usize, &Email)> = self.emails.iter().enumerate().filter(|(_, e)| e.mailboxes.contains(mailbox)).collect();
         found.sort_by(|a, b| (a.1.received.as_str(), a.0).cmp(&(b.1.received.as_str(), b.0)));
@@ -387,10 +411,21 @@ impl Data {
             found.reverse();
         }
         let count = found.len();
+        // A negative position counts from the end (RFC 8620 §5.5), and not beyond the start.
+        let position = match integer(args, "position")?.unwrap_or(0) {
+            from_end if from_end < 0 => count.saturating_sub(usize::try_from(from_end.unsigned_abs()).unwrap_or(usize::MAX)),
+            from_start => usize::try_from(from_start).unwrap_or(usize::MAX),
+        };
         let ids: Vec<&str> = found.iter().skip(position).take(limit).map(|(_, e)| e.id.as_str()).collect();
         let mut out = json!({"accountId": ACCOUNT, "queryState": self.state(), "canCalculateChanges": false, "position": position, "ids": ids});
-        if let (true, Some(map)) = (total, out.as_object_mut()) {
-            map.insert("total".into(), json!(count));
+        if let Some(map) = out.as_object_mut() {
+            if total {
+                map.insert("total".into(), json!(count));
+            }
+            // A limit it chose, rather than the one asked for, is said (RFC 8620 §5.5).
+            if asked.is_none_or(|asked| asked > MAX_QUERY) {
+                map.insert("limit".into(), json!(MAX_QUERY));
+            }
         }
         Ok(out)
     }
@@ -505,10 +540,16 @@ fn pointer(value: &Value, segments: &[&str]) -> Option<Value> {
             }
             Some(Value::Array(joined))
         }
-        Value::Array(items) => pointer(items.get(key.parse::<usize>().ok()?)?, rest),
+        Value::Array(items) => pointer(items.get(index_of(&key)?)?, rest),
         Value::Object(map) => pointer(map.get(&key)?, rest),
         _ => None,
     }
+}
+
+/// An array index in a pointer (RFC 6901): digits, with no sign and no leading zero.
+fn index_of(token: &str) -> Option<usize> {
+    let canonical = token == "0" || (!token.starts_with('0') && !token.is_empty() && token.bytes().all(|b| b.is_ascii_digit()));
+    if canonical { token.parse().ok() } else { None }
 }
 
 fn allow_only(args: &Map<String, Value>, names: &[&str]) -> Outcome<()> {
@@ -552,6 +593,13 @@ fn properties(args: &Map<String, Value>, allowed: &[&str], default: &[&str]) -> 
             .collect::<Option<Vec<String>>>()
             .ok_or_else(|| invalid("a property this server doesn't have")),
         Some(_) => Err(invalid("properties is a list, or null")),
+    }
+}
+
+fn integer(args: &Map<String, Value>, key: &str) -> Outcome<Option<i64>> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => value.as_i64().map(Some).ok_or_else(|| invalid(format!("{key} is an integer"))),
     }
 }
 
@@ -620,10 +668,10 @@ fn email_json(email: &Email, properties: &[String]) -> Value {
 /// colon, the folds kept, RFC 8621 §4.1.2) and its body.
 fn split_message(text: &str) -> (Vec<(String, String)>, &str) {
     let mut fields: Vec<(String, String)> = Vec::new();
-    let mut offset = 0;
+    let mut offset: usize = 0;
     let mut body_at = text.len();
     for line in text.split_inclusive('\n') {
-        offset += line.len();
+        offset = offset.saturating_add(line.len());
         let content = line.trim_end_matches(['\r', '\n']);
         if content.is_empty() {
             body_at = offset;
