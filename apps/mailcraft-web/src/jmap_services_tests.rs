@@ -11,7 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_jmap::standin::{SESSION, StandIn, TOKEN};
 use mailcraft_jmap::{Auth, block_on};
-use mailcraft_model::sync::{JmapFetchRequest, JmapMailRequest, JmapMailResult, JmapScope};
+use mailcraft_model::sync::{JmapDraftUp, JmapFetchRequest, JmapMailRequest, JmapMailResult, JmapScope, JmapSend};
+use mailcraft_model::{Address, Body, Message};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
 
 use super::{ASK_AGAIN_MS, AT_ONCE, Queue, fetch, run};
@@ -141,6 +142,60 @@ fn a_token_that_expires_during_the_run_is_renewed_and_the_run_is_read_again() {
     assert_eq!(all.iter().filter(|piece| !piece.partial).count(), 1, "one last piece, the refusal held back");
     assert_eq!(messages(&all), 2);
     assert_eq!(host.asked.get(), 1);
+}
+
+#[test]
+fn a_run_read_again_after_a_renewal_sends_nothing_a_second_time() {
+    // A server with a Sent and a Drafts, who the account is, and a token that dies after the first message went.
+    let server = StandIn::new();
+    server.with(|d| {
+        d.mailbox("Inbox", None, Some("inbox"));
+        d.mailbox("Sent", None, Some("sent"));
+        d.mailbox("Drafts", None, Some("drafts"));
+        d.identity("Ada", ME);
+        // The list of mailboxes, who the account is, the first message's filing and its submission go through;
+        // the next request finds the token gone.
+        d.drop_token_after = Some(4);
+    });
+    let letter = |id: u64, subject: &str| Message {
+        id,
+        from: Address::new("Ada", ME),
+        to: vec![Address::new("Bob", "bob@example.org")],
+        subject: subject.into(),
+        message_id: format!("{subject}@example.org"),
+        date: 1_791_993_600,
+        body: Body { text: format!("About {subject}."), html: None },
+        ..Default::default()
+    };
+    let request = |sends: &[(u64, &str)], drafts: &[u64]| {
+        let mut asks = job(None);
+        asks.request.sends =
+            sends.iter().map(|&(id, subject)| JmapSend { message: id, draft_copy: String::new(), mime: Box::new(letter(id, subject)) }).collect();
+        asks.request.drafts =
+            drafts.iter().map(|&id| JmapDraftUp { message: id, saves: 1, replaces: String::new(), mime: Box::new(letter(id, "draft")) }).collect();
+        asks
+    };
+    let sent_of = |pieces: &[JmapMailResult]| pieces.iter().flat_map(|piece| piece.sent.iter().map(|done| done.message)).collect::<Vec<_>>();
+    let filed_of = |pieces: &[JmapMailResult]| pieces.iter().flat_map(|piece| piece.drafts.iter().map(|done| done.message)).collect::<Vec<_>>();
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Given(Auth::bearer("fresh"))]);
+    let (all, _) = pieces(&server, &request(&[(7, "first"), (8, "second")], &[9]), Some(&host));
+    assert!(last(&all).whole && !last(&all).auth_refused, "{:?}", last(&all));
+    assert_eq!(host.asked.get(), 1);
+    // The first went once; the run that was read again only read, so the second and the draft wait.
+    assert_eq!(sent_of(&all), [7]);
+    assert_eq!(filed_of(&all), Vec::<u64>::new());
+    assert_eq!(server.with(|d| d.delivered.len()), 1);
+    assert_eq!(server.with(|d| d.emails.iter().filter(|e| e.keywords.contains("$draft")).count()), 0);
+    // The next run, with what the engine still has waiting, sends the second and files the draft.
+    let (next, _) = pieces(&server, &request(&[(8, "second")], &[9]), Some(&host));
+    assert!(last(&next).whole, "{:?}", last(&next));
+    assert_eq!((sent_of(&next), filed_of(&next)), (vec![8], vec![9]));
+    let sent = server.with(|d| d.delivered.iter().map(|d| String::from_utf8_lossy(&d.raw).to_string()).collect::<Vec<_>>());
+    assert_eq!(sent.len(), 2, "{sent:?}");
+    assert!(sent[0].contains("Subject: first") && sent[1].contains("Subject: second"));
+    assert_eq!(server.with(|d| d.emails.iter().filter(|e| e.keywords.contains("$draft")).count()), 1);
+    assert_eq!(server.with(|d| d.emails.iter().filter(|e| !e.keywords.contains("$draft")).count()), 2, "two copies in Sent");
+    assert_eq!(host.asked.get(), 1, "the fresh token served the next run");
 }
 
 #[test]

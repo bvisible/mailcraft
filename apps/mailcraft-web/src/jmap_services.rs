@@ -18,6 +18,11 @@
 //! request that gets no answer is given up after a while (the transport's): a slow server holds a job up,
 //! never the page.
 //!
+//! **A run that is read again** (the server turned the credential down in the middle of it, and the host
+//! gave another) only reads: what the first run sent, held or filed went up already (its pieces said so), and
+//! what it did not reach (a message, a draft, a change) is the next run's, so that asking the same question
+//! twice never sends a message or files a draft a second time.
+//!
 //! A job that is stopped (its `cancel`) says so in its answer, whether it was reading or waiting.
 // Outside the browser only the tests run it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -209,8 +214,8 @@ where
             }
         };
         // The last piece of a run whose credential the server turned down is held back while the host is
-        // asked for another: the run is read again with it, and what it took in before is taken in again,
-        // which changes nothing.
+        // asked for another: the run is read again with it, and what it read before is read again, which
+        // changes nothing. What it sent or filed is not asked again (below).
         let may_renew = !renewed && host.is_some();
         let mut refused = None;
         sync_mail(&client, request, &job.cancel, &mut |piece: JmapMailResult| {
@@ -225,9 +230,9 @@ where
         match renew(host, &request.email, &job.cancel, &sleep).await {
             Renewed::Fresh(fresh) => {
                 (auth, renewed) = (fresh, true);
-                // Read again, and only read: what the run sent or changed before the refusal went up already (its
-                // pieces said so), and what didn't is the next run's to send, never this one's a second time.
-                reread = Some(JmapMailRequest { changes: Vec::new(), sends: Vec::new(), ..request.clone() });
+                // Read again, and only read: what the run sent, filed or changed before the refusal went up already
+                // (its pieces said so), and what didn't is the next run's, never this one's a second time.
+                reread = Some(JmapMailRequest { changes: Vec::new(), sends: Vec::new(), drafts: Vec::new(), ..request.clone() });
             }
             Renewed::Cancelled => {
                 (last.auth_refused, last.stopped, last.whole) = (false, true, false);
