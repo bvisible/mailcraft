@@ -141,12 +141,13 @@ fn auto_follows_the_host_s_language_and_a_chosen_one_does_not() {
     let mut harness = window(app());
     options(&mut harness);
     assert_eq!(super::current(), Lang::English);
-    // The host says the system is in French: "System default" is still what the choice says, and
-    // the window is drawn with the French catalog (which may have no entries yet).
+    // The host says the system is in French: "System default" is still what the choice says, in
+    // French now, and the window is drawn with the French catalog.
     set_system_language("fr-CH");
     harness.run_steps(3);
     assert_eq!(super::current(), Lang::from_tag("fr").unwrap());
-    assert!(choice(&harness, "System default").is_some());
+    assert_ne!(super::t("System default"), "System default", "the French catalog has it");
+    assert!(choice(&harness, super::t("System default")).is_some());
     harness.state_mut().execute("ui.language", json!({"value": "en"})).unwrap();
     harness.run_steps(3);
     assert_eq!(super::current(), Lang::English, "a chosen language is not the system's");

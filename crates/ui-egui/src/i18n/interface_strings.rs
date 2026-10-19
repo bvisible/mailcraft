@@ -657,12 +657,10 @@ fn f<'a>(x: &'a str) {
         }
     }
 
-    /// Switched on (take the `ignore` off) when the French catalog is filled: until then it is
-    /// meant to fail, since the catalogs are empty. It then keeps every catalog whole as the
-    /// interface grows. Run it on its own to see what a catalog still lacks:
-    /// `cargo test -p mailcraft-ui-egui every_interface_string -- --ignored`.
+    /// Every catalog stays whole as the interface grows: a string the interface draws and a
+    /// catalog lacks fails here, with the first ones it lacks. Run it on its own to see them:
+    /// `cargo test -p mailcraft-ui-egui every_interface_string`.
     #[test]
-    #[ignore = "switched on when the French catalog is filled"]
     fn every_interface_string_has_an_entry_in_every_catalog() {
         for row in LANGUAGES {
             let missing = missing_entries(row.source);
