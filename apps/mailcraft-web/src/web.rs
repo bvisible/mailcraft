@@ -230,6 +230,12 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
             log::warn!("the signature of a mailbox the page handed over couldn't be set");
         }
     }
+    // What set the page's mailboxes up is no change of the owner's: nothing to undo.
+    session.forget_history();
+    // A clock of 24 hours, but for a page in English.
+    if crate::host::language().is_some_and(|tag| !tag.to_ascii_lowercase().starts_with("en")) {
+        session.prefs.twelve_hour = false;
+    }
     let mut services = services(inbox, ctx.clone());
     services.persist = None;
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));

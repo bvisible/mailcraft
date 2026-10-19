@@ -35,6 +35,8 @@ use crate::credentials::{Credentials, Renewal};
 /// How long the runner waits before it asks the host again, when the host had no new credential yet, in
 /// milliseconds: one wait after the other, then the job ends.
 const ASK_AGAIN_MS: [i32; 3] = [5_000, 10_000, 20_000];
+/// Those waits are made of slices this long, between which a stop is looked at.
+const WAIT_SLICE_MS: i32 = 500;
 
 /// The most requests on their way to the servers at once, all the page's jobs together. A server says how
 /// many it takes (RFC 8620 `maxConcurrentRequests`); two is within what servers commonly take, and keeps a
@@ -83,32 +85,75 @@ pub fn jmap_fetch_service<C: Credentials + 'static>(
     })
 }
 
-/// The browser's transport for the page's jobs, at most [`AT_ONCE`] requests at a time. Clones share the
-/// count: one gate for a page.
+/// The browser's transport for the page's jobs, at most [`AT_ONCE`] requests at a time, in the order they
+/// came: a job that has just had its answer queues behind the ones already waiting. Clones share the queue:
+/// one gate for a page.
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Default)]
-pub struct Gate(std::rc::Rc<std::cell::Cell<usize>>);
+pub struct Gate(std::rc::Rc<std::cell::RefCell<Queue>>);
 
-/// A request on its way: its place is given back when it is over, however it ended.
+/// The requests on their way, and the tickets of those waiting, oldest first.
+#[derive(Default)]
+pub struct Queue {
+    going: usize,
+    waiting: std::collections::VecDeque<u64>,
+    next: u64,
+}
+
+impl Queue {
+    /// A ticket for a request that comes now.
+    fn take(&mut self) -> u64 {
+        let ticket = self.next;
+        self.next = self.next.wrapping_add(1);
+        self.waiting.push_back(ticket);
+        ticket
+    }
+
+    /// Whether the request with `ticket` may go now: its turn has come and there is room. It is then on its way.
+    fn go(&mut self, ticket: u64) -> bool {
+        if self.going >= AT_ONCE || self.waiting.front() != Some(&ticket) {
+            return false;
+        }
+        self.waiting.pop_front();
+        self.going = self.going.saturating_add(1);
+        true
+    }
+
+    /// A request is over, or one that waited gave up: its place, or its ticket, goes.
+    fn leave(&mut self, ticket: u64, went: bool) {
+        if went {
+            self.going = self.going.saturating_sub(1);
+        } else {
+            self.waiting.retain(|t| *t != ticket);
+        }
+    }
+}
+
+/// A request's ticket: its place in the queue, or on its way, is given back however it ends.
 #[cfg(target_arch = "wasm32")]
-struct Place(std::rc::Rc<std::cell::Cell<usize>>);
+struct Ticket {
+    queue: std::rc::Rc<std::cell::RefCell<Queue>>,
+    number: u64,
+    went: bool,
+}
 
 #[cfg(target_arch = "wasm32")]
-impl Drop for Place {
+impl Drop for Ticket {
     fn drop(&mut self) {
-        self.0.set(self.0.get().saturating_sub(1));
+        self.queue.borrow_mut().leave(self.number, self.went);
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl Http for Gate {
     async fn send(&self, req: mailcraft_jmap::Request) -> mailcraft_jmap::Result<mailcraft_jmap::Response> {
-        // One thread: nothing comes between the look and the taking.
-        while self.0.get() >= AT_ONCE {
+        let number = self.0.borrow_mut().take();
+        let mut ticket = Ticket { queue: self.0.clone(), number, went: false };
+        // One thread: nothing comes between the look and the taking, and no borrow is held while waiting.
+        while !self.0.borrow_mut().go(number) {
             crate::fetch::sleep(25).await;
         }
-        self.0.set(self.0.get().saturating_add(1));
-        let _place = Place(self.0.clone());
+        ticket.went = true;
         crate::fetch::Fetch.send(req).await
     }
 }
@@ -123,19 +168,21 @@ where
     S: Fn(i32) -> W,
     W: Future<Output = ()>,
 {
-    let request = &job.request;
     // The host's credential when the job carries none: the host may renew it, the owner's it can't.
     let host = if job.secret.is_some() { None } else { credentials };
     let auth = match &job.secret {
-        Some(secret) => Some(own_auth(request.bearer, &request.email, secret)),
-        None => host.and_then(|c| c.auth(&request.email)),
+        Some(secret) => Some(own_auth(job.request.bearer, &job.request.email, secret)),
+        None => host.and_then(|c| c.auth(&job.request.email)),
     };
     let Some(mut auth) = auth else {
-        emit(failed_run(request, &no_credential()));
+        emit(failed_run(&job.request, &no_credential()));
         return;
     };
     let mut renewed = false;
+    // The request of a run read again after a refusal: the reading part of the job's alone.
+    let mut reread: Option<JmapMailRequest> = None;
     loop {
+        let request = reread.as_ref().unwrap_or(&job.request);
         if job.cancel.load(Ordering::Relaxed) {
             emit(stopped(request));
             return;
@@ -176,7 +223,12 @@ where
         .await;
         let Some(mut last) = refused else { return };
         match renew(host, &request.email, &job.cancel, &sleep).await {
-            Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
+            Renewed::Fresh(fresh) => {
+                (auth, renewed) = (fresh, true);
+                // Read again, and only read: what the run sent or changed before the refusal went up already (its
+                // pieces said so), and what didn't is the next run's to send, never this one's a second time.
+                reread = Some(JmapMailRequest { changes: Vec::new(), sends: Vec::new(), ..request.clone() });
+            }
             Renewed::Cancelled => {
                 (last.auth_refused, last.stopped, last.whole) = (false, true, false);
                 emit(last);
@@ -213,7 +265,9 @@ where
             Ok(client) => return fetch_messages(&client, request, &job.cancel).await,
             Err(Error::Auth(why)) if !renewed && host.is_some() => match renew(host, &request.email, &job.cancel, &sleep).await {
                 Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
-                Renewed::Cancelled | Renewed::Refused => return failed_fetch(request, &Error::Auth(why)),
+                // Stopped: nothing fetched, and nothing to hold against the server.
+                Renewed::Cancelled => return GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() },
+                Renewed::Refused => return failed_fetch(request, &Error::Auth(why)),
             },
             Err(e) => return failed_fetch(request, &e),
         }
@@ -246,7 +300,14 @@ where
             Renewal::Given(auth) => return Renewed::Fresh(auth),
             Renewal::Reload => return Renewed::Refused,
             Renewal::Later => match waits.next() {
-                Some(ms) => sleep(*ms).await,
+                // In slices, so that a stop is not kept waiting.
+                Some(ms) => {
+                    let mut left = *ms;
+                    while left > 0 && !cancel.load(Ordering::Relaxed) {
+                        sleep(left.min(WAIT_SLICE_MS)).await;
+                        left -= WAIT_SLICE_MS;
+                    }
+                }
                 None => return Renewed::Refused,
             },
         }

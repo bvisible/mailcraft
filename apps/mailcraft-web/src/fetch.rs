@@ -50,6 +50,11 @@ impl mailcraft_jmap::Http for Fetch {
         window.clear_timeout_with_handle(timer);
         // The timer is cleared before its closure goes.
         drop(give_up);
+        // An answer refused before it was read whole (too large, by what it said of itself) is not read on.
+        if answer.is_err() && !controller.signal().aborted() {
+            controller.abort();
+            return answer;
+        }
         match answer {
             Err(Error::Io(_)) if controller.signal().aborted() => Err(Error::Io("the server took too long to answer".into())),
             answer => answer,

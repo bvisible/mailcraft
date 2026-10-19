@@ -21,8 +21,9 @@
 //! When the server refuses a token (it expired, or died with the session that asked for it), MailCraft calls
 //! `window.mailcraftJmapRenew()` if the page has it: a promise of `{ accounts: [...] }` with new secrets, as above; the
 //! mailbox then signs in again, once. An answer that leaves a mailbox out means the page gives it no more: the mailbox
-//! asks for a reload. No answer (a promise that fails, or gives no `accounts`), or one that names the mailbox without a
-//! secret, is asked again a minute later, for an hour (renewal.rs).
+//! asks for a reload. No answer (a promise that fails, gives no `accounts`, or doesn't settle within 20 seconds), or one
+//! that names the mailbox without a secret, is asked again a few seconds later, three times (renewal.rs,
+//! jmap_services.rs). A page without the function has no renewal to give: the mailbox asks for a reload at once.
 //!
 //! A page whose window may not reach other sites itself (Neodesk) offers `window.mailcraftFetchUrl(url)`, a promise of
 //! `{ status, contentType, bytes }` (`bytes` a `Uint8Array`): the pictures a message links to, once the person asked to
@@ -49,6 +50,10 @@ use crate::renewal;
 
 /// The most mailboxes taken from the page.
 const MAX_ACCOUNTS: u32 = 20;
+/// How long the page has to answer a renewal, in milliseconds: one that doesn't settle is no answer.
+const RENEW_WAIT_MS: i32 = 20_000;
+/// What the timer of a renewal resolves with, told from any answer of the page.
+const TIMED_OUT: &str = "mailcraft:renew-timed-out";
 /// The longest name of the signed-in person taken from the address.
 const MAX_AUTHOR_CHARS: usize = 128;
 /// The longest signature taken from the page, its HTML and its text.
@@ -117,16 +122,36 @@ pub struct Renewed {
     pub named: Vec<String>,
 }
 
+/// The page's `window.mailcraftJmapRenew`, and the window it belongs to.
+fn renewal() -> Option<(JsValue, js_sys::Function)> {
+    windows().into_iter().find_map(|w| {
+        let f = get(&w, "mailcraftJmapRenew").filter(JsValue::is_function)?;
+        Some((w, js_sys::Function::from(f)))
+    })
+}
+
+/// Whether the hosting page can renew tokens at all (`window.mailcraftJmapRenew`).
+pub fn can_renew() -> bool {
+    renewal().is_some()
+}
+
 /// New tokens for the mailboxes from the hosting page's `window.mailcraftJmapRenew()`, when the server refused the ones
 /// it had given: the page's answer, which may leave mailboxes out, or name none. `None` when there is no answer: the
-/// page offers no such function, its promise fails, or it gives no `accounts`.
+/// page offers no such function, its promise fails or doesn't settle within [`RENEW_WAIT_MS`], or it gives no `accounts`.
 pub async fn renew() -> Option<Renewed> {
-    let (window, renew) = windows().into_iter().find_map(|w| {
-        let f = get(&w, "mailcraftJmapRenew").filter(JsValue::is_function)?;
-        Some((w, f))
-    })?;
-    let promise = js_sys::Function::from(renew).call0(&window).ok()?;
-    let answer = JsFuture::from(js_sys::Promise::resolve(&promise)).await.ok()?;
+    let (window, renew) = renewal()?;
+    let promise = renew.call0(&window).ok()?;
+    // A page that never answers (a request of its own that hangs) must not hold the mailbox up for good.
+    let timer = js_sys::Promise::new(&mut |resolve, _| {
+        if let Some(w) = web_sys::window() {
+            let _ = w.set_timeout_with_callback_and_timeout_and_arguments_1(&resolve, RENEW_WAIT_MS, &JsValue::from_str(TIMED_OUT));
+        }
+    });
+    let raced = js_sys::Promise::race(&js_sys::Array::of2(&js_sys::Promise::resolve(&promise), &timer));
+    let answer = JsFuture::from(raced).await.ok()?;
+    if answer.as_string().as_deref() == Some(TIMED_OUT) {
+        return None;
+    }
     let list = get(&answer, "accounts").filter(js_sys::Array::is_array)?;
     let named = js_sys::Array::from(&list)
         .iter()
@@ -270,14 +295,20 @@ impl Credentials for HostCredentials {
 
     async fn renew(&self, email: &str) -> Renewal {
         let email = email.to_lowercase();
-        // Nothing is borrowed while the page answers.
+        // A page that has no renewal to give: only reloading it gives the mailbox a token again.
+        if !can_renew() {
+            return Renewal::Reload;
+        }
+        // Nothing is borrowed while the page answers: a Send/Receive and a download may ask at the same time, and each
+        // takes in what the page answered it.
         let answer = renew().await.map(|renewed| renewal::Answer { given: secrets(&renewed.accounts), named: renewed.named });
         if let Some(answer) = &answer {
             renewal::merge(&mut self.secrets.borrow_mut(), answer);
         }
-        // One run at a time asks: it is the one that asked, whatever the answer.
+        // The job that asks is the one the answer is for: there is no other start of it to see to (renewal::next's
+        // generations are for a runner that keeps its mailboxes waiting).
         match renewal::next(answer.as_ref(), &email, 0, Some(0), 0, 1) {
-            renewal::Next::SignIn(_) => self.auth(&email).map_or(Renewal::Reload, Renewal::Given),
+            renewal::Next::SignIn => self.auth(&email).map_or(Renewal::Reload, Renewal::Given),
             renewal::Next::AskLater => Renewal::Later,
             renewal::Next::Reload | renewal::Next::Skip => Renewal::Reload,
         }

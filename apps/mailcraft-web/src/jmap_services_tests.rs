@@ -14,7 +14,7 @@ use mailcraft_jmap::{Auth, block_on};
 use mailcraft_model::sync::{JmapFetchRequest, JmapMailRequest, JmapMailResult, JmapScope};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
 
-use super::{ASK_AGAIN_MS, fetch, run};
+use super::{ASK_AGAIN_MS, AT_ONCE, Queue, fetch, run};
 use crate::credentials::{Credentials, Renewal};
 
 const ME: &str = "ada@example.org";
@@ -150,7 +150,9 @@ fn a_host_with_nothing_yet_is_asked_again_a_little_later() {
     let host = Host::new(&server, Some(TOKEN), vec![Renewal::Later, Renewal::Later, Renewal::Given(Auth::bearer("fresh"))]);
     let (all, waits) = pieces(&server, &job(None), Some(&host));
     assert!(last(&all).whole);
-    assert_eq!(waits, ASK_AGAIN_MS[..2]);
+    // Waited 5 s, then 10 s, in slices that let a stop through.
+    assert_eq!(waits.iter().sum::<i32>(), ASK_AGAIN_MS[..2].iter().sum::<i32>());
+    assert!(waits.iter().all(|ms| *ms <= 500), "{waits:?}");
     assert_eq!(host.asked.get(), 3);
 }
 
@@ -163,7 +165,7 @@ fn a_host_that_never_has_one_leaves_the_refusal_standing() {
     let (all, waits) = pieces(&server, &job(None), Some(&host));
     let end = last(&all);
     assert!(end.auth_refused && !end.whole, "{end:?}");
-    assert_eq!(waits, ASK_AGAIN_MS);
+    assert_eq!(waits.iter().sum::<i32>(), ASK_AGAIN_MS.iter().sum::<i32>());
     assert_eq!(host.asked.get(), 4);
     // A host that says it has nothing more to give is asked once.
     let host = Host::new(&server, Some(TOKEN), vec![Renewal::Reload]);
@@ -220,7 +222,7 @@ fn without_any_credential_the_run_ends_refused() {
     assert!(last(&all).auth_refused);
     let (all, _) = pieces(&server, &job(None), None);
     assert!(last(&all).auth_refused);
-    assert_eq!(server.api_requests(), 0, "nothing was asked of the server");
+    assert!(server.seen().is_empty(), "nothing was asked of the server, not even its session");
 }
 
 #[test]
@@ -232,7 +234,7 @@ fn a_run_stopped_before_it_starts_or_while_it_waits_says_so() {
     let (all, _) = pieces(&server, &stopped, Some(&host));
     let end = last(&all);
     assert!(end.stopped && !end.auth_refused && !end.whole, "{end:?}");
-    assert_eq!(server.api_requests(), 0);
+    assert!(server.seen().is_empty(), "not even the session");
     // Stopped while it waits for the host: stopped, not refused.
     server.with(|d| d.token = Some("rotated".into()));
     let waiting = job(None);
@@ -290,4 +292,70 @@ fn a_download_whose_token_is_refused_signs_in_again_once_with_a_new_one() {
     let answer = block_on(fetch(server.clone(), &fetch_job(&server, Some(TOKEN)), Some(&host), |_| std::future::ready(())));
     assert!(answer.fetched.is_empty() && !answer.errors.is_empty(), "{answer:?}");
     assert_eq!(host.asked.get(), 0);
+}
+
+#[test]
+fn a_run_refused_mid_way_and_stopped_while_it_waits_ends_stopped() {
+    let server = server();
+    // The session and the list of mailboxes go through; then the token is gone, and the host has none yet.
+    server.with(|d| d.drop_token_after = Some(1));
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Later, Renewal::Later]);
+    let waiting = job(None);
+    let cancel = waiting.cancel.clone();
+    let mut all = Vec::new();
+    // The owner stops the run while it waits for the host.
+    let sleep = |_ms: i32| {
+        cancel.store(true, Ordering::Relaxed);
+        std::future::ready(())
+    };
+    block_on(run(server.clone(), &waiting, Some(&host), sleep, &mut |piece| all.push(piece)));
+    let end = last(&all);
+    assert!(end.stopped && !end.auth_refused && !end.whole, "{end:?}");
+    assert_eq!(all.iter().filter(|piece| !piece.partial).count(), 1, "one last piece");
+}
+
+#[test]
+fn a_download_whose_renewed_token_is_refused_too_asks_once() {
+    let server = server();
+    server.with(|d| d.token = Some("rotated".into()));
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Given(Auth::bearer("fresh")), Renewal::Given(Auth::bearer("fresher"))]);
+    let answer = block_on(fetch(server.clone(), &fetch_job(&server, None), Some(&Outrun(&host)), |_| std::future::ready(())));
+    assert!(answer.fetched.is_empty() && !answer.errors.is_empty(), "{answer:?}");
+    assert_eq!(host.asked.get(), 1, "one renewal a download");
+    // Stopped while it waits for the host: nothing fetched, and nothing said against the server.
+    server.with(|d| d.token = Some("rotated-again".into()));
+    let host = Host::new(&server, Some("fresh"), vec![Renewal::Later]);
+    let stopped = fetch_job(&server, None);
+    let cancel = stopped.cancel.clone();
+    let sleep = |_ms: i32| {
+        cancel.store(true, Ordering::Relaxed);
+        std::future::ready(())
+    };
+    let answer = block_on(fetch(server.clone(), &stopped, Some(&host), sleep));
+    assert!(answer.fetched.is_empty() && answer.errors.is_empty() && !answer.offline, "{answer:?}");
+}
+
+#[test]
+fn the_gate_lets_requests_go_in_the_order_they_came() {
+    let mut queue = Queue::default();
+    let (first, second, third) = (queue.take(), queue.take(), queue.take());
+    // Not out of turn, and never more than its room.
+    assert!(!queue.go(second), "the second waits for the first");
+    assert!(queue.go(first) && queue.go(second));
+    assert_eq!(AT_ONCE, 2);
+    assert!(!queue.go(third), "no room for a third");
+    // A request that was on its way takes a new ticket for its next one: behind the third.
+    queue.leave(first, true);
+    let again = queue.take();
+    assert!(!queue.go(again), "the one that waited goes first");
+    assert!(queue.go(third));
+    // A request that gives up waiting leaves the queue, and the one after it moves up.
+    let gives_up = queue.take();
+    let after = queue.take();
+    queue.leave(gives_up, false);
+    queue.leave(second, true);
+    assert!(!queue.go(after), "the one before it first");
+    assert!(queue.go(again));
+    queue.leave(third, true);
+    assert!(queue.go(after));
 }

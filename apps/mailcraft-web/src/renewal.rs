@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 /// What the page answered.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Answer {
     /// The mailboxes it gives in full: address (lower case) → (secret, Bearer).
     pub given: HashMap<String, (String, bool)>,
@@ -20,11 +20,18 @@ pub struct Answer {
     pub named: Vec<String>,
 }
 
+/// Counts only: never a secret, nor an address.
+impl std::fmt::Debug for Answer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Answer").field("given", &self.given.len()).field("named", &self.named.len()).finish()
+    }
+}
+
 /// What a mailbox waiting for the answer does next.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Next {
-    /// Sign in again with this secret.
-    SignIn(String),
+    /// Sign in again with the secret the answer gave it (kept with the others by [`merge`]).
+    SignIn,
     /// Ask the page again a little later: it had nothing for the mailbox yet.
     AskLater,
     /// Only reloading the page gives it access again.
@@ -47,8 +54,8 @@ pub fn next(answer: Option<&Answer>, email: &str, asked: u32, now: Option<u32>, 
     if now != Some(asked) {
         return Next::Skip;
     }
-    if let Some((secret, _)) = answer.and_then(|a| a.given.get(email)) {
-        return Next::SignIn(secret.clone());
+    if answer.is_some_and(|a| a.given.contains_key(email)) {
+        return Next::SignIn;
     }
     // Nothing for it yet: no answer, or one that names it without a secret.
     let later = answer.is_none_or(|a| a.named.iter().any(|n| n == email));
@@ -90,7 +97,12 @@ mod tests {
     #[test]
     fn each_mailbox_waiting_signs_in_asks_later_reloads_or_sees_to_itself() {
         let given = answer(&[("a@example.org", "new-a")], &["a@example.org", "b@example.org"]);
-        assert_eq!(next(Some(&given), "a@example.org", 1, Some(1), 0, 60), Next::SignIn("new-a".into()));
+        assert_eq!(next(Some(&given), "a@example.org", 1, Some(1), 0, 60), Next::SignIn);
+        // What it signs in with is what the answer gave it, and no secret shows when the answer is printed.
+        let mut host = HashMap::new();
+        merge(&mut host, &given);
+        assert_eq!(host.get("a@example.org").map(|(s, _)| s.as_str()), Some("new-a"));
+        assert!(!format!("{given:?}").contains("new-a") && !format!("{given:?}").contains("@"), "{given:?}");
         assert_eq!(next(Some(&given), "b@example.org", 1, Some(1), 0, 60), Next::AskLater, "named without a secret yet");
         assert_eq!(next(Some(&given), "c@example.org", 1, Some(1), 0, 60), Next::Reload, "left out");
         assert_eq!(next(None, "c@example.org", 1, Some(1), 59, 60), Next::AskLater, "no answer: again");
