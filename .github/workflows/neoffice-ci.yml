@@ -1,0 +1,58 @@
+# //// Neoffice — added file (no upstream equivalent)
+# Why: upstream's CI (ci.yml) runs the same gate, but over several jobs, one of which installs
+# cargo-deny through a third-party action that this fork's Actions settings refuse, and it needs
+# upstream's setup (CLA check, change detection). This runs `cargo xtask ci` (format, clippy without
+# warnings, tests, asset attribution, layering, wasm) and `cargo xtask deny` in one job on a GitHub
+# runner, by hand or on a push to version-15 that touches code; the maintainer's Mac has too little
+# disk to do it for every change. The Linux packages are upstream's list; cargo-deny is installed
+# from its release binary, checked against a pinned SHA-256. Upstream's workflows are disabled on
+# this fork.
+name: Neoffice CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [version-15]
+    paths: ["crates/**", "apps/**", "xtask/**", "assets/**", "Cargo.toml", "Cargo.lock", "deny.toml", "ATTRIBUTION.md", ".github/workflows/neoffice-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neoffice-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: cargo xtask ci
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Linux build dependencies (upstream's list, .github/workflows/ci.yml)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgtk-3-dev
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: neoffice-ci
+      - name: cargo xtask ci (cargo-deny runs in the next steps)
+        run: cargo xtask ci
+        env:
+          XTASK_CI_SKIP: deny
+      - name: Install cargo-deny 0.20.2 (SHA-256 pinned)
+        run: |
+          set -euo pipefail
+          url="https://github.com/EmbarkStudios/cargo-deny/releases/download/0.20.2/cargo-deny-0.20.2-x86_64-unknown-linux-musl.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/cargo-deny.tar.gz" "$url"
+          echo "9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f  $RUNNER_TEMP/cargo-deny.tar.gz" | sha256sum -c -
+          tar -xz -C "$HOME/.cargo/bin" --strip-components=1 -f "$RUNNER_TEMP/cargo-deny.tar.gz" cargo-deny-0.20.2-x86_64-unknown-linux-musl/cargo-deny
+          cargo-deny --version
+      - run: cargo xtask deny
