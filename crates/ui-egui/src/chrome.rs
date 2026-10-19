@@ -265,7 +265,28 @@ pub(crate) fn sync_shown(app: &MailApp) -> SyncShown {
         return SyncShown::Bar { label, fraction };
     }
     let sync = &app.session.sync_status;
-    if sync.is_empty() { SyncShown::Nothing } else { SyncShown::Text(sync.clone()) }
+    // //// Neoffice — the engine's words in the interface's language (status_in_language).
+    if sync.is_empty() { SyncShown::Nothing } else { SyncShown::Text(status_in_language(sync)) }
+}
+
+// //// Neoffice — the engine says how a Send/Receive ended in English: its usual words are shown in the interface's language.
+/// The status of the last Send/Receive as the status bar shows it: the engine's usual words for the end of a run in
+/// the interface's language, the time after them as it is; anything else (what a server said) as it came.
+pub(crate) fn status_in_language(status: &str) -> String {
+    let (said, at) = match status.rsplit_once(" — ") {
+        Some((said, at)) => (said, Some(at)),
+        None => (status, None),
+    };
+    let words = match said {
+        "Up to date" => tl!("Up to date"),
+        "Folders up to date" => tl!("Folders up to date"),
+        "Stopped; carries on from here next time" => tl!("Stopped; carries on from here next time"),
+        _ => return status.to_string(),
+    };
+    match at {
+        Some(at) => format!("{words} — {at}"),
+        None => words.to_string(),
+    }
 }
 
 /// The status bar, across the foot of the window.
@@ -393,7 +414,8 @@ pub fn status_bar(app: &mut MailApp, ui: &mut Ui) {
                         // Under the pointer, the run's own words say where it is.
                         let tip = match &shown_sync {
                             SyncShown::Bar { .. } if !app.session.sync_status.is_empty() => {
-                                format!("{}\n{}", app.session.sync_status, tl!("Show Send/Receive Progress"))
+                                // //// Neoffice — as above.
+                                format!("{}\n{}", status_in_language(&app.session.sync_status), tl!("Show Send/Receive Progress"))
                             }
                             _ => tl!("Show Send/Receive Progress").to_string(),
                         };

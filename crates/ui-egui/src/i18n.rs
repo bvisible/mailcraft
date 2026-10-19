@@ -163,6 +163,21 @@ pub fn set_system_language(code: &str) {
 pub fn set_current(lang: Lang) {
     // //// Neoffice — kept as a number in `state`, which a catalog language has too.
     state::set_current(lang.encode());
+    // //// Neoffice — the dates people read follow the language too (date_words).
+    mailcraft_time::set_date_words(date_words());
+}
+
+// //// Neoffice — the day and month names of the interface's language, for the dates people read; a numeric date day first.
+/// The words the dates of the message list and of an open message are written with: none in English.
+fn date_words() -> Option<mailcraft_time::DateWords> {
+    if current() == Lang::English {
+        return None;
+    }
+    Some(mailcraft_time::DateWords {
+        weekdays_short: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(|day| t(day).to_string()),
+        months_short: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(|month| t(month).to_string()),
+        day_first: Some('.'),
+    })
 }
 
 pub fn current() -> Lang {

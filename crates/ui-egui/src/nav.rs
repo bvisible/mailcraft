@@ -227,7 +227,8 @@ fn picked_in_list(ui: &Ui) -> bool {
 /// the Favorites' rows (`fav`) from the accounts' (`tree`).
 fn folder_row(app: &mut MailApp, ui: &mut Ui, f: &Folder, depth: usize, has_children: bool, key: &str, count: Count, selected: bool) {
     // Under Favorites a shared mailbox's folder says whose it is (#70); in its tree, its name.
-    let name = if key == "fav" { folder_label(&app.session.mailbox, f) } else { f.name.clone() };
+    // //// Neoffice — a standard folder under its name in the interface's language (folder_name).
+    let name = if key == "fav" { folder_label(&app.session.mailbox, f) } else { folder_name(f) };
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
     let resp = ui.interact(r, ui.id().with((key, f.id)), Sense::click());
@@ -551,9 +552,21 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
 /// in the bar over a search's results): its name, and for a folder of a shared mailbox the
 /// mailbox it is in, so that its Inbox is never taken for the owner's (#70).
 pub(crate) fn folder_label(mb: &Mailbox, f: &Folder) -> String {
-    let Some(a) = mb.account(f.account).filter(|a| a.is_shared()) else { return f.name.clone() };
+    // //// Neoffice — as above.
+    let name = folder_name(f);
+    let Some(a) = mb.account(f.account).filter(|a| a.is_shared()) else { return name };
     let mailbox = if a.name.trim().is_empty() { a.email.trim() } else { a.name.trim() };
-    crate::i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", &f.name), ("mailbox", mailbox)])
+    crate::i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", &name), ("mailbox", mailbox)])
+}
+
+// //// Neoffice — an account's standard folders under their names in the interface's language, whatever their server calls them (`INBOX`, `Sent Items`), as Outlook shows them.
+/// What a folder is called in the interface: one of an account's standard folders (its Inbox, its Sent Items…) by
+/// the standard name in the interface's language, whatever its server calls it; any other by its own name.
+pub(crate) fn folder_name(f: &Folder) -> String {
+    match f.kind {
+        FolderKind::Custom => f.name.clone(),
+        kind => crate::i18n::tc("folder", kind.default_name()).to_string(),
+    }
 }
 
 /// A folder's name on a row of a search of every mailbox (#195): [`folder_label`], and for a
@@ -563,11 +576,14 @@ pub(crate) fn folder_label(mb: &Mailbox, f: &Folder) -> String {
 pub(crate) fn result_folder_label(mb: &Mailbox, f: &Folder) -> String {
     let shared = mb.account(f.account).is_some_and(|a| a.is_shared());
     let own = |id: Id| mb.account(id).is_some_and(|a| !a.is_shared());
-    let twin = || mb.folders.iter().any(|o| o.account != f.account && own(o.account) && o.name.eq_ignore_ascii_case(&f.name));
+    // //// Neoffice — twins by the names the interface shows (folder_name).
+    let name = folder_name(f);
+    let twin = || mb.folders.iter().any(|o| o.account != f.account && own(o.account) && folder_name(o).eq_ignore_ascii_case(&name));
     match mb.account(f.account) {
         Some(a) if !shared && twin() => {
             let account = if a.name.trim().is_empty() { a.email.trim() } else { a.name.trim() };
-            crate::i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", &f.name), ("mailbox", account)])
+            // //// Neoffice — the folder by the name the interface shows (folder_name).
+            crate::i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", &name), ("mailbox", account)])
         }
         _ => folder_label(mb, f),
     }
@@ -858,5 +874,31 @@ mod tests {
         assert!(harness.state().hit.rect("folder", child).is_none());
         click(&mut harness, pos2(inbox_row.min.x + CHEVRON_X, inbox_row.center().y));
         assert!(harness.state().hit.rect("folder", child).is_some());
+    }
+
+    // //// Neoffice — an account's standard folders by their names in the interface's language (folder_name), and the dates with them.
+    #[test]
+    fn a_standard_folder_and_a_date_are_shown_in_the_interface_s_language() {
+        use crate::i18n::{Lang, set_current};
+
+        let mut mb = Mailbox::with_local_account("Ada", "ada@example.org");
+        let account = mb.accounts[0].id;
+        let inbox = mb.folder_of_kind(account, FolderKind::Inbox).unwrap();
+        // What a server calls it is not what the interface shows of a standard folder.
+        mb.folders.iter_mut().find(|f| f.id == inbox).unwrap().name = "INBOX".into();
+        let sent = mb.folder_of_kind(account, FolderKind::Sent).unwrap();
+        set_current(Lang::from_tag("fr").unwrap());
+        assert_eq!(folder_name(mb.folder(inbox).unwrap()), "Boîte de réception");
+        assert_eq!(folder_name(mb.folder(sent).unwrap()), "Éléments envoyés");
+        // A folder of the owner's own keeps its name, whatever it is called.
+        let mine = Folder { id: 9_999, account, name: "Sent Items".into(), ..Default::default() };
+        assert_eq!(folder_name(&mine), "Sent Items");
+        // The dates of the message list follow the language too.
+        let (today, now) = (mailcraft_time::Date::new(2026, 10, 14).unwrap(), 1_791_993_600);
+        let at = mailcraft_time::DateTime::new(today.add_days(-4), 15, 5, 0).unwrap().to_timestamp(0);
+        assert_eq!(mailcraft_time::list_label(at, now, 0, false), "sam. 15:05");
+        set_current(Lang::English);
+        assert_eq!(folder_name(mb.folder(inbox).unwrap()), "Inbox");
+        assert_eq!(mailcraft_time::list_label(at, now, 0, false), "Sat 15:05");
     }
 }

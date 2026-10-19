@@ -1607,3 +1607,13 @@
 	Sending isn't available for this account yet	L’envoi n’est pas encore disponible pour ce compte
 	Download Messages in Full with JMAP	Télécharger les messages en entier avec JMAP
 	Apply Downloaded Messages with JMAP	Appliquer les messages téléchargés avec JMAP
+folder	Inbox	Boîte de réception
+folder	Drafts	Brouillons
+folder	Sent Items	Éléments envoyés
+folder	Deleted Items	Éléments supprimés
+folder	Junk Email	Courrier indésirable
+folder	Archive	Archive
+folder	Outbox	Boîte d’envoi
+	Up to date	À jour
+	Folders up to date	Dossiers à jour
+	Stopped; carries on from here next time	Arrêtée ; reprendra là où elle s’est arrêtée la prochaine fois
