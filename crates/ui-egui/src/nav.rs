@@ -227,8 +227,9 @@ fn picked_in_list(ui: &Ui) -> bool {
 /// the Favorites' rows (`fav`) from the accounts' (`tree`).
 fn folder_row(app: &mut MailApp, ui: &mut Ui, f: &Folder, depth: usize, has_children: bool, key: &str, count: Count, selected: bool) {
     // Under Favorites a shared mailbox's folder says whose it is (#70); in its tree, its name.
-    // //// Neoffice — a standard folder under its name in the interface's language (folder_name).
-    let name = if key == "fav" { folder_label(&app.session.mailbox, f) } else { folder_name(f) };
+    // //// Neoffice — a standard folder under its name in the interface's language (folder_name); under Favorites, two
+    // folders of the same name (the Inboxes of several mailboxes) say whose they are, as a search's results do.
+    let name = if key == "fav" { result_folder_label(&app.session.mailbox, f) } else { folder_name(f) };
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
     let resp = ui.interact(r, ui.id().with((key, f.id)), Sense::click());
@@ -897,6 +898,11 @@ mod tests {
         let (today, now) = (mailcraft_time::Date::new(2026, 10, 14).unwrap(), 1_791_993_600);
         let at = mailcraft_time::DateTime::new(today.add_days(-4), 15, 5, 0).unwrap().to_timestamp(0);
         assert_eq!(mailcraft_time::list_label(at, now, 0, false), "sam. 15:05");
+        // Under Favorites, the Inboxes of two mailboxes say whose they are.
+        let other = mb.add_account(mailcraft_model::Account { name: "Team".into(), email: "team@example.org".into(), ..Default::default() });
+        let theirs = mb.folder_of_kind(other, FolderKind::Inbox).unwrap();
+        assert_eq!(result_folder_label(&mb, mb.folder(inbox).unwrap()), "Boîte de réception - ada@example.org");
+        assert_eq!(result_folder_label(&mb, mb.folder(theirs).unwrap()), "Boîte de réception - Team");
         set_current(Lang::English);
         assert_eq!(folder_name(mb.folder(inbox).unwrap()), "Inbox");
         assert_eq!(mailcraft_time::list_label(at, now, 0, false), "Sat 15:05");
