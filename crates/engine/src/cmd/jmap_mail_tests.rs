@@ -243,3 +243,96 @@ fn the_status_says_how_the_run_ended() {
     assert_eq!(said.len(), MAX_ERRORS);
     assert!(said.iter().all(|e| !e.as_str().unwrap().chars().any(char::is_control)));
 }
+
+#[test]
+fn a_jmap_account_counts_among_those_with_a_server_and_sync_request_hands_it_its_own_request() {
+    let (mut s, account) = session();
+    // Only a JMAP account here: Send/Receive is there for it.
+    assert!(s.enabled("sync.request"));
+    let answer = s.run("sync.request", &json!({})).unwrap();
+    assert_eq!(
+        (answer["jmap"].as_bool(), answer["account"].as_u64(), answer["session"].as_str(), answer["window"].as_u64()),
+        (Some(true), Some(account), Some(SESSION), Some(500))
+    );
+    assert!(answer.get("outbox").is_none() && answer.get("folders").is_none(), "not an IMAP request: {answer}");
+    // Named, it is the same; an account of another kind is still handed its own.
+    assert_eq!(s.run("sync.request", &json!({"account": account})).unwrap()["jmap"], true);
+    let imap = s.run("account.add", &json!({"email": "bob@example.org", "incoming": {"host": "imap.example.org"}})).unwrap();
+    let answer = s.run("sync.request", &json!({"account": imap["id"]})).unwrap();
+    assert!(answer.get("jmap").is_none() && answer.get("outbox").is_some(), "{answer}");
+    // Without an account of any kind with a server, it isn't there.
+    let mut local = Session::empty();
+    assert!(!local.enabled("sync.request"));
+    assert!(local.run("sync.request", &json!({})).is_err());
+}
+
+#[test]
+fn mail_is_not_written_to_the_outbox_of_a_jmap_account_yet() {
+    let (mut s, account) = session();
+    let outbox = s.mailbox.folder_of_kind(account, FolderKind::Outbox).unwrap();
+    let (sent, drafts) =
+        (s.mailbox.folder_of_kind(account, FolderKind::Sent).unwrap(), s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap());
+    let count = |s: &Session, folder: Id| s.mailbox.messages_in(folder).count();
+    s.run("mail.new", &json!({"to": "bob@example.org", "subject": "Hello", "body": "Hi", "account": account})).unwrap();
+    // Send says so in a plain sentence: the message isn't filed as sent, isn't left in the Outbox
+    // where nothing would ever send it, and stays open to be kept as a draft or sent another way.
+    let refused = s.run("compose.send", &json!({})).unwrap_err();
+    assert_eq!(refused.to_string(), "Sending isn't available for this account yet");
+    assert_eq!(refused.to_string(), crate::cmd::compose::CANT_SEND_YET);
+    assert!(s.compose.is_some());
+    assert_eq!((count(&s, outbox), count(&s, sent)), (0, 0));
+    // Save Draft keeps it here, in the account's Drafts, with nothing that marks it for the server.
+    let saved = s.run("compose.saveDraft", &json!({})).unwrap()["draft"].as_u64().unwrap();
+    let draft = s.mailbox.message(saved).unwrap();
+    assert_eq!((draft.folder, draft.draft, draft.server.is_none(), draft.server_draft.is_none()), (drafts, true, true, true));
+    assert_eq!((count(&s, outbox), count(&s, sent), count(&s, drafts)), (0, 0, 1));
+    // Refused again, and the draft is still the one.
+    assert!(s.run("compose.send", &json!({})).is_err());
+    assert_eq!((count(&s, outbox), count(&s, sent), count(&s, drafts)), (0, 0, 1));
+    // Every other kind of account still sends: an IMAP account queues the message.
+    let imap = s.run("account.add", &json!({"email": "bob@example.org", "incoming": {"host": "imap.example.org"}})).unwrap()["id"].as_u64().unwrap();
+    s.run("compose.discard", &json!({})).unwrap();
+    s.run("mail.new", &json!({"to": "ada@example.org", "subject": "Hi", "account": imap})).unwrap();
+    assert_eq!(s.run("compose.send", &json!({})).unwrap()["queued"], true);
+}
+
+#[test]
+fn a_meeting_is_not_mailed_through_a_jmap_account_yet() {
+    use mailcraft_model::Attachment;
+    const NOW: i64 = 1_791_993_600;
+    // An item kept on this computer is forwarded as mail through an account with a mail server to
+    // send it: not through a JMAP one, whose Outbox nothing empties.
+    let mut s = Session::at(crate::sample::mailbox(NOW, 0), NOW, 0);
+    let review = s.mailbox.events.values().find(|e| e.title.starts_with("Design review")).map(|e| e.id).unwrap();
+    let jmap =
+        s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap()["id"].as_u64().unwrap();
+    let nowhere = s.run("calendar.forward", &json!({"id": review, "to": "dana@example.org", "send": true})).unwrap_err();
+    assert_eq!(nowhere.to_string(), "No account here has a mail server to send this through.");
+    let outbox = s.mailbox.folder_of_kind(jmap, FolderKind::Outbox).unwrap();
+    assert_eq!(s.mailbox.messages_in(outbox).count(), 0);
+
+    // An invitation in its Inbox is answered here on the calendar, and can't be answered by mail.
+    let ics = format!(
+        "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:plan-1\r\nSUMMARY:Planning\r\nSEQUENCE:0\r\nORGANIZER;CN=Bo Marsh:mailto:bo@example.org\r\n\
+ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:mailto:{ME}\r\nDTSTART:20261015T160000Z\r\nDTEND:20261015T170000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"
+    );
+    let inbox = s.mailbox.folder_of_kind(jmap, FolderKind::Inbox).unwrap();
+    let invitation = Message {
+        account: jmap,
+        folder: inbox,
+        message_id: "plan-1@example.org".into(),
+        from: Address { name: "Bo Marsh".into(), email: "bo@example.org".into() },
+        to: vec![Address { name: "Ada".into(), email: ME.into() }],
+        subject: "Planning".into(),
+        attachments: vec![Attachment::new("invite.ics", "text/calendar", ics.into_bytes())],
+        ..Default::default()
+    };
+    let message = s.mailbox.add_message(invitation).unwrap();
+    let said = s.run("calendar.invitation", &json!({"message": message})).unwrap();
+    assert_eq!((said["answerable"].as_bool(), said["canSend"].as_bool()), (Some(true), Some(false)), "{said}");
+    let refused = s.run("calendar.respond", &json!({"message": message, "response": "accept", "send": true})).unwrap_err();
+    assert_eq!(refused.to_string(), "This account has no mail server to send the answer through.");
+    assert_eq!(s.mailbox.messages_in(outbox).count(), 0);
+    // Accepted without telling the organizer, it is on the calendar all the same.
+    assert!(s.run("calendar.respond", &json!({"message": message, "response": "accept"})).is_ok());
+}

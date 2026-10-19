@@ -1449,6 +1449,8 @@ impl AccountSetup {
         // //// Neoffice — the settings of a JMAP account say which server it is on, and show no mail servers: it has none.
         let jmap = self.edit.as_ref().and_then(|e| app.session.mailbox.account(e.id)).filter(|a| a.kind == AccountKind::Jmap);
         let how = jmap.map_or(how, crate::backstage::jmap_line);
+        // //// Neoffice — a JMAP account asks for a password when the host can reach its server and doesn't hold the credential itself (it never asks for one when it does).
+        let asks = if jmap.is_some() { app.services.jmap.is_some() && !app.services.jmap_host_credentials } else { asks };
         page(ui, &t, |ui| {
             heading(ui, &shown(self.email.trim(), 120), &t);
             note(ui, &how, t.text_dim);

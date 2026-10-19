@@ -201,9 +201,17 @@ pub enum AccountKind {
 }
 
 impl AccountKind {
-    // //// Neoffice — a JMAP account is left out of this for now: it is counted once a JMAP account can be synchronised.
-    /// Whether the account is kept in step with a server (by IMAP or by Microsoft Graph).
+    // //// Neoffice — a JMAP account is kept in step with its server too: the window can run its Send/Receive (it was left out until it could).
+    /// Whether the account is kept in step with a server (by IMAP, by Microsoft Graph or by JMAP).
     pub fn has_server(self) -> bool {
+        matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Jmap)
+    }
+
+    // //// Neoffice — what a Send/Receive sends of an account: a JMAP account is synchronised, but nothing sends its Outbox yet, so mail must not be written to it.
+    /// Whether a Send/Receive sends the mail that waits in the account's Outbox (through SMTP, or
+    /// through Microsoft Graph). Not yet for a JMAP account: its sending comes after its reading,
+    /// and until then no mail is put in its Outbox, where it would wait for ever.
+    pub fn sends_mail(self) -> bool {
         matches!(self, AccountKind::Imap | AccountKind::Microsoft)
     }
 
