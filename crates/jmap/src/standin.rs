@@ -189,6 +189,10 @@ pub struct Asked {
     /// How many emails a `set` was to update, and how many to destroy.
     pub updates: Option<usize>,
     pub destroys: Option<usize>,
+    /// The stretch a query of events asked about (`after`, `before`), and whether a query asked for the total.
+    pub after: Option<String>,
+    pub before: Option<String>,
+    pub total: bool,
 }
 
 impl Asked {
@@ -206,6 +210,9 @@ impl Asked {
             limit: args.get("limit").and_then(Value::as_u64).map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
             updates: args.get("update").and_then(Value::as_object).map(Map::len),
             destroys: args.get("destroy").and_then(Value::as_array).map(Vec::len),
+            after: text(args.get("filter").and_then(|filter| filter.get("after"))),
+            before: text(args.get("filter").and_then(|filter| filter.get("before"))),
+            total: args.get("calculateTotal").and_then(Value::as_bool) == Some(true),
         }
     }
 }

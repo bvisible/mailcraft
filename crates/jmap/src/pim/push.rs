@@ -11,9 +11,12 @@
 //!    occurrence the engine knows by its series and its time, wait for the series to be read in the same job; a
 //!    series the server no longer has is gone, one that can't be read now waits.
 //! 2. **One occurrence known by its series and its time** is looked for in the series' calendars, each occurrence
-//!    apart, around that time (and around where the series moved it, when it did): the one of that series that the
-//!    series has at that time, to the minute. None is gone. It is then changed, deleted or answered by its own id,
-//!    and its time is written on the clock of its series, with no zone (the server keeps the series').
+//!    apart, in the minute either side of that time and of where the series moved it, when it did (a day either side
+//!    for whole days): the one of that series, never the series itself, that says the series has it at that time, to
+//!    the minute ([`pick_occurrence`]). None is gone, when the answer held everything there; one cut short (a busy
+//!    day) leaves the change to be tried again. An event the server says is an occurrence (a `recurrenceId`) and that
+//!    names no series is not written to. The occurrence is then changed, deleted or answered by its own id, and its
+//!    time is written on the clock of its series, with no zone (the server keeps the series').
 //! 3. **The calls.** Each change is a create, an update of the whole properties it names, or a destroy. Those that
 //!    make the server write to people go in calls of their own, with `sendSchedulingMessages`: a new meeting the
 //!    person organizes, a change the people of one would see, its deletion when it is called off, and an answer the
@@ -30,13 +33,14 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use base64::Engine as _;
 use mailcraft_model::remote::{EventChangeKind, EventOp, EventOutcome, EventResult, EventsUploaded, MAX_EVENT_OPS};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
-use mailcraft_time::{DateTime, Zone};
+use mailcraft_time::{DateTime, Timestamp, Zone};
 use serde_json::{Map, Value, json};
 
 use super::write::{self, Clock, Copy, KEEPS_NO};
-use super::{ITEMS_BYTES, Stop, local_date_time, said, secrets_of, utc_date, utc_text};
+use super::{ITEMS_BYTES, Stop, local_date_time, said, secrets_of, utc_text};
 use crate::{CALENDARS, CORE, Client, Error, Http, Secrets, result_of, valid_id};
 
 /// Most events in one `CalendarEvent/set`: what such a server writes in one call (the rest it answers `rateLimit`).
@@ -71,6 +75,10 @@ const NEAR: i64 = 60;
 const RETRY: u32 = 60;
 /// The longest words of the server's kept, in characters.
 const MAX_WORDS: usize = 300;
+/// Why a change of an event that says it is one occurrence of a series and names no series is not written.
+const NO_SERIES: &str = "the server says the event is one occurrence of a series, and doesn't say of which";
+/// Why a change of one occurrence that a crowded answer didn't hold waits.
+const CROWDED: &str = "the server has too many events around that time to find the occurrence among them just now";
 /// Why a change of who is invited to an event with more people than are read is not written.
 const TOO_MANY_PEOPLE: &str = "the server has more than 1,000 people for this event, more than are rewritten from here";
 
@@ -348,7 +356,7 @@ impl<H: Http> Writer<'_, H> {
                     return Ok(None);
                 }
             };
-            match self.occurrence(&op, &series).await? {
+            match self.occurrence(at, &op, &series).await? {
                 Some((id, copy)) => (id, copy, Some(series)),
                 None => {
                     self.answer(at, EventResult::Gone, "the series no longer has that occurrence", None);
@@ -358,9 +366,15 @@ impl<H: Http> Writer<'_, H> {
         } else {
             match self.copy_of(&op.remote) {
                 Ok(copy) => {
-                    // An occurrence of a series: written to once its series was read.
-                    let base = copy.get("baseEventId").and_then(Value::as_str).filter(|_| copy.get("recurrenceId").is_some_and(|at| !at.is_null()));
-                    let series = match base.map(|base| self.copy_of(base)) {
+                    // An occurrence of a series: written to once its series was read. One that names no series it can
+                    // be told by is not written to at all: it would be written as an event of its own.
+                    let recurring = copy.get("recurrenceId").is_some_and(|at| !at.is_null());
+                    let base = copy.get("baseEventId").and_then(Value::as_str);
+                    if recurring && !base.is_some_and(valid_id) {
+                        self.answer(at, EventResult::Refused, NO_SERIES, None);
+                        return Ok(None);
+                    }
+                    let series = match base.filter(|_| recurring).map(|base| self.copy_of(base)) {
                         None => None,
                         Some(Ok(series)) => Some(series),
                         Some(Err((result, why))) => {
@@ -414,15 +428,16 @@ impl<H: Http> Writer<'_, H> {
         Ok(Some(ready))
     }
 
-    /// The occurrence of `series` (the server's copy of it) that the change `op` is about: its id and its copy, looked
-    /// for around the time the series has it (see the module documentation). `None` when there is none.
-    async fn occurrence(&mut self, op: &EventOp, series: &Copy) -> Result<Option<(String, Copy)>, Stop> {
+    /// The occurrence of `series` (the server's copy of it) that the change `op` (at `at` among the changes) is about:
+    /// its id and its copy, looked for around the time the series has it (see the module documentation). `None` when
+    /// there is none, or when the change was answered already (it failed, and waits).
+    async fn occurrence(&mut self, at: usize, op: &EventOp, series: &Copy) -> Result<Option<(String, Copy)>, Stop> {
         let shown = self.shown;
         let zone = series.get("timeZone").and_then(Value::as_str).and_then(Zone::named).unwrap_or(shown);
         let all_day = series.get("showWithoutTime").and_then(Value::as_bool) == Some(true);
-        let at = op.occurrence;
+        let when = op.occurrence;
         // Where the series moved it, when it did.
-        let named = if all_day { DateTime::from_timestamp(at, 0) } else { zone.wall(at) };
+        let named = if all_day { DateTime::from_timestamp(when, 0) } else { zone.wall(when) };
         let moved = series
             .get("recurrenceOverrides")
             .and_then(Value::as_object)
@@ -431,9 +446,11 @@ impl<H: Http> Writer<'_, H> {
             .and_then(Value::as_str)
             .and_then(local_date_time)
             .map(|start| if all_day { start.to_timestamp(0) } else { zone.instant(start) });
-        let (from, to) = (at.min(moved.unwrap_or(at)), at.max(moved.unwrap_or(at)));
-        let mut filter =
-            json!({"after": utc_text(from.saturating_sub(mailcraft_time::DAY)), "before": utc_text(to.saturating_add(mailcraft_time::DAY))});
+        let (from, to) = (when.min(moved.unwrap_or(when)), when.max(moved.unwrap_or(when)));
+        // Only what can hold it: the minute either side of those times (a whole day either side for whole days, whose
+        // days are the person's), so that a busy day doesn't crowd it out of the answer.
+        let near = if all_day { mailcraft_time::DAY } else { NEAR };
+        let mut filter = json!({"after": utc_text(from.saturating_sub(near)), "before": utc_text(to.saturating_add(near).saturating_add(1))});
         let calendars: Vec<&String> = series
             .get("calendarIds")
             .and_then(Value::as_object)
@@ -445,59 +462,38 @@ impl<H: Http> Writer<'_, H> {
         if !calendars.is_empty() {
             filter["inCalendars"] = json!(calendars);
         }
-        let query = json!({"accountId": self.account, "filter": filter, "expandRecurrences": true, "limit": PAGE});
+        let query = json!({"accountId": self.account, "filter": filter, "expandRecurrences": true, "limit": PAGE, "calculateTotal": true});
         let get = json!({"accountId": self.account, "#ids": result_of(0, "CalendarEvent/query", "/ids"), "properties": COPY_PROPERTIES});
         let answers = self.client.call_within(&USING, vec![("CalendarEvent/query", query), ("CalendarEvent/get", get)], ITEMS_BYTES).await;
         let mut answers = match answers {
             Ok(answers) => answers,
             // (The change is answered as failed: it waits.)
             Err(error) => {
-                let at = self.ops.iter().position(|one| one == op).unwrap_or(usize::MAX);
                 self.request_failed(error, &[at])?;
                 return Ok(None);
             }
         };
+        // Whether the query's answer is all there is around that time: when it is not, what isn't found is not gone.
+        let whole = answers.take(0).is_ok_and(|found| {
+            let listed = found.get("ids").and_then(Value::as_array).map_or(0, Vec::len);
+            match found.get("total").and_then(Value::as_u64).and_then(|total| usize::try_from(total).ok()) {
+                Some(total) => total <= listed,
+                None => listed < PAGE,
+            }
+        });
         let listed = match answers.take(1) {
             Ok(answer) => answer.get("list").and_then(Value::as_array).cloned().unwrap_or_default(),
             Err(error) => {
                 let words = said(&self.secrets, &error);
-                if let Some(at) = self.ops.iter().position(|one| one == op) {
-                    self.answer(at, EventResult::Failed, &words, Some(RETRY));
-                }
+                self.answer(at, EventResult::Failed, &words, Some(RETRY));
                 return Ok(None);
             }
         };
-        let base = op.series.as_str();
-        let found = listed.into_iter().filter_map(|copy| match copy {
-            Value::Object(copy) => Some(copy),
-            _ => None,
-        });
-        let mut best: Option<(i64, String, Copy)> = None;
-        for copy in found {
-            if copy.get("baseEventId").and_then(Value::as_str) != Some(base) {
-                continue;
-            }
-            let id = copy.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
-            if !valid_id(&id) {
-                continue;
-            }
-            // When the series has it: its recurrence id on the series' clock; else when it starts.
-            let named_at = copy.get("recurrenceId").and_then(Value::as_str).and_then(local_date_time).map(|at| {
-                if all_day {
-                    at.to_timestamp(0)
-                } else {
-                    let own = copy.get("recurrenceIdTimeZone").and_then(Value::as_str).and_then(Zone::named).unwrap_or(zone);
-                    own.instant(at)
-                }
-            });
-            let starts = copy.get("utcStart").and_then(Value::as_str).and_then(utc_date);
-            let Some(when) = named_at.or(starts) else { continue };
-            let off = when.saturating_sub(at).saturating_abs();
-            if off <= NEAR && best.as_ref().is_none_or(|(least, ..)| off < *least) {
-                best = Some((off, id, copy));
-            }
+        let found = pick_occurrence(listed, &op.series, when, zone, all_day);
+        if found.is_none() && !whole {
+            self.answer(at, EventResult::Failed, CROWDED, Some(RETRY));
         }
-        Ok(best.map(|(_, id, copy)| (id, copy)))
+        Ok(found)
     }
 
     /// One `CalendarEvent/set` of `call`, the server writing to people when `scheduling`, and its outcomes.
@@ -607,6 +603,61 @@ impl<H: Http> Writer<'_, H> {
             _ => self.answer(at, EventResult::Refused, &words, None),
         }
     }
+}
+
+/// Of the events a query found around the time a series has an occurrence (`listed`), that occurrence: the one of the
+/// series `series` (by its id) that says when the series has it (its `recurrenceId`, on the clock of its
+/// `recurrenceIdTimeZone`, else of `zone`; for whole days, `all_day`, its day) within [`NEAR`] of `at`, the nearest. Never
+/// the series itself (its own id, or no `recurrenceId`), and never one whose id names another series or another time
+/// than its own, for a server that names an occurrence by its series and its start ([`named_occurrence`]).
+fn pick_occurrence(listed: Vec<Value>, series: &str, at: Timestamp, zone: Zone, all_day: bool) -> Option<(String, Copy)> {
+    let mut best: Option<(i64, String, Copy)> = None;
+    for copy in listed.into_iter().filter_map(|copy| match copy {
+        Value::Object(copy) => Some(copy),
+        _ => None,
+    }) {
+        if copy.get("baseEventId").and_then(Value::as_str) != Some(series) {
+            continue;
+        }
+        let id = copy.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
+        if !valid_id(&id) || id == series {
+            continue;
+        }
+        let Some(recurrence) = copy.get("recurrenceId").and_then(Value::as_str) else { continue };
+        if let Some((of, start)) = named_occurrence(&id)
+            && (event_id_of(&of) != series || start != recurrence)
+        {
+            continue;
+        }
+        // When the series has it: its recurrence id on the series' clock.
+        let Some(named) = local_date_time(recurrence) else { continue };
+        let named_at = if all_day {
+            named.to_timestamp(0)
+        } else {
+            copy.get("recurrenceIdTimeZone").and_then(Value::as_str).and_then(Zone::named).unwrap_or(zone).instant(named)
+        };
+        let off = named_at.saturating_sub(at).saturating_abs();
+        if off <= NEAR && best.as_ref().is_none_or(|(least, ..)| off < *least) {
+            best = Some((off, id, copy));
+        }
+    }
+    best.map(|(_, id, copy)| (id, copy))
+}
+
+/// The series and the start an occurrence's id names, for a server that names an occurrence by them (whose store
+/// renumbers occurrences): `O`, then `["<the series' id in the store>", "<its recurrence id>"]` as JSON, in URL-safe
+/// base64 without padding. `None` for any other id.
+fn named_occurrence(id: &str) -> Option<(String, String)> {
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(id.strip_prefix('O')?).ok()?;
+    match serde_json::from_slice::<Value>(&bytes).ok()? {
+        Value::Array(parts) if parts.len() == 2 => Some((parts.first()?.as_str()?.to_string(), parts.get(1)?.as_str()?.to_string())),
+        _ => None,
+    }
+}
+
+/// The id such a server gives an event of its store's `raw` id: `V` and that id, in URL-safe base64 without padding.
+fn event_id_of(raw: &str) -> String {
+    format!("V{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw))
 }
 
 /// Whether a server's refusal is one that asking again later may get past.

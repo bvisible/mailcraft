@@ -675,6 +675,77 @@ fn a_second_occurrence_is_still_found_after_the_first_was_changed() {
     assert_eq!(overridden(&server, "2026-10-26T09:00:00").unwrap()["title"], "Site meeting (room C)");
 }
 
+#[test]
+fn one_occurrence_is_looked_for_in_the_minutes_around_it_and_a_crowded_answer_is_tried_again_never_gone() {
+    let server = server();
+    run(&server, &job(vec![of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)"))]));
+    let query = server.asked().into_iter().find(|a| a.method == "CalendarEvent/query").unwrap();
+    let minute = |seconds: i64| crate::pim::utc_text(utc(19, 7, 0) + seconds);
+    assert_eq!((query.after, query.before, query.total), (Some(minute(-60)), Some(minute(61)), true), "the minute either side, and the total");
+    // A day so busy that the answer can't hold everything around that time: the change waits, and nothing is taken for gone.
+    server.with(|d| {
+        for n in 0..250 {
+            d.pim.add_event(Event::timed(&format!("busy{n}"), "ada", "Busy", "2026-10-26T08:59:30", Some("Europe/Zurich"), "PT1H"));
+        }
+    });
+    let result = run(&server, &job(vec![of_site(EventChangeKind::Update, 26, 8, title("Site meeting (room C)"))]));
+    let said = &result.uploaded.as_ref().unwrap().outcomes[0];
+    assert_eq!((said.result, said.retry_after), (EventResult::Failed, Some(60)), "{said:?}");
+    assert!(overridden(&server, "2026-10-26T09:00:00").is_none(), "nothing written");
+}
+
+#[test]
+fn an_event_that_says_it_is_an_occurrence_and_names_no_series_is_not_written() {
+    let server = server();
+    server.with(|d| {
+        d.pim.add_event(
+            Event::timed("loose", "ada", "Loose", "2026-10-21T12:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("recurrenceId", json!("2026-10-21T12:00:00")),
+        );
+        d.pim.add_event(
+            Event::timed("odd", "ada", "Odd", "2026-10-22T12:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("recurrenceId", json!("2026-10-22T12:00:00"))
+                .with("baseEventId", json!("not an id!")),
+        );
+    });
+    let result = run(&server, &job(vec![update(&Pim::event_id("loose"), title("x")), update(&Pim::event_id("odd"), title("y"))]));
+    for (result, why) in outcomes(&result) {
+        assert_eq!(result, EventResult::Refused);
+        assert!(why.contains("occurrence of a series"), "{why}");
+    }
+    assert!(server.asked().iter().all(|a| a.method != "CalendarEvent/set"));
+    assert_eq!(stored(&server, "loose").unwrap().props["title"], "Loose");
+}
+
+#[test]
+fn an_occurrence_is_never_the_series_itself_nor_one_another_series_names() {
+    let zurich = Zone::named("Europe/Zurich").unwrap();
+    let series = Pim::event_id("site");
+    // When the series has it: the 19th at nine in Zurich.
+    let at = utc(19, 7, 0);
+    let candidate = |id: &str, base: &str, recurrence: Value| json!({"id": id, "baseEventId": base, "recurrenceId": recurrence, "utcStart": crate::pim::utc_text(at), "start": "2026-10-19T09:00:00"});
+    let own = Pim::occurrence_id("site", "2026-10-19T09:00:00");
+    let pick = |found: Vec<Value>| pick_occurrence(found, &series, at, zurich, false).map(|(id, _)| id);
+    let wrong = vec![
+        // The series itself, as a server that lists it among what it expands might.
+        candidate(&series, &series, Value::Null),
+        candidate(&series, &series, json!("2026-10-19T09:00:00")),
+        // No recurrence id: no occurrence.
+        candidate("Vother", &series, Value::Null),
+        // An id that names another series, or another time than its own.
+        candidate(&Pim::occurrence_id("plan", "2026-10-19T09:00:00"), &series, json!("2026-10-19T09:00:00")),
+        candidate(&Pim::occurrence_id("site", "2026-10-12T09:00:00"), &series, json!("2026-10-19T09:00:00")),
+        // Another series' occurrence.
+        candidate(&Pim::occurrence_id("plan", "2026-10-19T09:00:00"), &Pim::event_id("plan"), json!("2026-10-19T09:00:00")),
+    ];
+    assert_eq!(pick(wrong.clone()), None);
+    let mut all = wrong;
+    all.push(candidate(&own, &series, json!("2026-10-19T09:00:00")));
+    assert_eq!(pick(all), Some(own.clone()));
+    // An occurrence a server names by an id of its own (not by its series and its start) is one too.
+    assert_eq!(pick(vec![candidate("Vocc19", &series, json!("2026-10-19T09:00:00"))]), Some("Vocc19".to_string()));
+}
+
 /// Ada's answer `response` to Grace's planning meeting, told to Grace when `send`.
 fn respond(remote: &str, response: Response, send: bool) -> EventOp {
     EventOp { kind: EventChangeKind::Respond, event: 400, remote: remote.into(), response, send, ..Default::default() }
