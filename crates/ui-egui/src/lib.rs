@@ -36,6 +36,8 @@ pub mod i18n;
 pub mod icons;
 // //// Neoffice — a JMAP account's Send/Receive in the window: the job the host is handed, starting a run, taking in its pieces.
 pub mod jmap_job;
+// //// Neoffice — a JMAP account's calendars, kept current by a job of their own beside its Send/Receive.
+pub mod jmap_pim;
 mod keep_offline;
 pub mod keys;
 pub mod mail_view;
@@ -134,6 +136,12 @@ pub struct Services {
     /// reach. Absent where no JMAP server can be reached: nothing is fetched, and the reading pane says
     /// the rest of a message is on the server.
     pub jmap_fetch: Option<Box<dyn Fn(jmap_job::JmapFetchJob) -> Receiver<mailcraft_model::sync::GraphFetchResult>>>,
+    // //// Neoffice — a JMAP account's calendars are read by a task of the host's too, one answer a job (jmap_pim.rs).
+    /// Read a JMAP account's calendars (JMAP for Calendars) as a task of the host's, when the window asks
+    /// ([`jmap_pim`]): one answer comes for each job, and the host wakes the window for it; a sender dropped before
+    /// it reads as a job that came to nothing. Absent where no JMAP server can be reached, and where nothing of a
+    /// server's calendar is wanted: no calendar job is started.
+    pub jmap_pim: Option<Box<dyn Fn(jmap_pim::JmapPimJob) -> Receiver<mailcraft_model::sync::JmapPimResult>>>,
     /// The host holds the credential that opens a JMAP server (it hands it over and renews it
     /// itself): the owner is never asked for a password for a JMAP account, no job carries a secret
     /// ([`jmap_job::JmapJob::secret`]), and a Send/Receive that starts by itself can always go ahead.
@@ -1006,6 +1014,8 @@ pub struct MailApp {
     graph_consent_needed: std::collections::HashSet<Id>,
     /// Keeping the calendar current between Send/Receive runs ([`calendar_sync`]).
     calendar: calendar_sync::CalendarSync,
+    // //// Neoffice — and a JMAP account's calendars ([`jmap_pim`]).
+    jmap_pim: jmap_pim::JmapPim,
     /// Keeping the Favorites of the folder pane the ones Outlook shows ([`favorites_sync`]).
     favorites: favorites_sync::FavoritesSync,
     /// The next sign-in for Microsoft Graph also asks for the Favorites' permissions.
@@ -1213,6 +1223,8 @@ impl MailApp {
             graph_checked: Default::default(),
             graph_consent_needed: Default::default(),
             calendar: Default::default(),
+            // //// Neoffice — no calendar job of a JMAP account yet.
+            jmap_pim: Default::default(),
             favorites: Default::default(),
             favorites_next: false,
             shared_next: None,
@@ -2918,6 +2930,8 @@ impl MailApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(150));
         }
         self.poll_calendar();
+        // //// Neoffice — what a JMAP account's calendar job brought (jmap_pim.rs).
+        self.poll_jmap_pim();
         self.poll_calendar_check();
         self.poll_free_busy();
         self.poll_sync();
@@ -2927,6 +2941,8 @@ impl MailApp {
         self.auto_sync();
         // The calendar by itself, between Send/Receive runs ([`calendar_sync`]).
         self.calendar_tick(ctx);
+        // //// Neoffice — and a JMAP account's calendars, by a job of their own (jmap_pim.rs).
+        self.jmap_pim_tick(ctx);
         reminders::tick(self, ctx);
         if std::mem::take(&mut self.offer_setup) && self.dialog.is_none() && self.needs_setup() {
             self.dialog = dialogs::Dialog::open("account", self, &json!({}));

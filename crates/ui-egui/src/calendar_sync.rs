@@ -231,6 +231,10 @@ impl MailApp {
     /// (that goes first, in a job of its own). The answer is taken in like any other
     /// ([`poll_calendar`](Self::poll_calendar)). Why not, when it can't be asked now.
     pub(crate) fn calendar_job_around(&mut self, account: Id, day: mailcraft_time::Date) -> Result<(), String> {
+        // //// Neoffice — a JMAP account's calendar is asked by a job of its own (jmap_pim.rs), not by Graph's.
+        if self.is_jmap(account) {
+            return self.jmap_pim_around(account, day);
+        }
         if self.services.graph.is_none() {
             return Err(tl!("This build can't reach the account's calendar.").to_string());
         }

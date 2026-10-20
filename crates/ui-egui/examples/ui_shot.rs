@@ -67,6 +67,17 @@
 //! other word: none) has the system refuse them for that reason from that line on, as File ›
 //! Options then says, and `{"host": {"unfocused": true}}` has the window be one that isn't in
 //! front, so that new mail is told of.
+// //// Neoffice — the calendars of a JMAP account, as a host's calendar job brings them (jmap_pim.rs).
+//!
+//! And the calendars of a JMAP account (`{"host": {"pim": …}}`): from that line on, the window has a
+//! JMAP account (`ada@example.org`, added when there is none) whose host holds its credential, and
+//! a calendar job is started at once, which the host answers the way the line says: `"week"` (three
+//! calendars, all read-only: Ada's own, the main one, with a meeting she organizes with three guests,
+//! one she is invited to and hasn't answered, a whole-day event of two days, a lunch and an event
+//! with no zone; the team's weekly meeting at nine in Zurich on four Mondays, the last after the
+//! night summer time ends; and a colleague's days off and review), `"down"` (the server can't be
+//! reached: a line for the problems report, and nothing else), or `"slow"` (no answer comes; the job
+//! stays under way until the window gives it up). Every name, address and id is invented.
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -74,6 +85,9 @@ use std::sync::{Arc, Mutex};
 
 use mailcraft_engine::Session;
 use mailcraft_engine::io::{BackgroundSave, SaveProgress, SaveReport, SaveStage};
+// //// Neoffice — what a JMAP account's calendar job brings (see the header).
+use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteCalendar, RemoteEvent, RemoteEventKind};
+use mailcraft_model::sync::{JmapPimResult, PimOffers};
 use mailcraft_model::sync::{SyncResult, Tokens};
 use mailcraft_ui_egui::approval::{NEEDS_APPROVAL, NO_BROWSER, SIGN_IN_DECLINED, SIGN_IN_TIMED_OUT};
 use mailcraft_ui_egui::{AdminConsentAnswer, ControlRequest, GraphResult, MailApp, Services};
@@ -522,6 +536,10 @@ fn main() {
                     app.seed_graph_token(id, tokens);
                 }
             }
+            // //// Neoffice — a JMAP account's calendar job, answered as the line says (see the header).
+            if let Some(how) = said.get("pim").and_then(|v| v.as_str()) {
+                pim_job(harness.state_mut(), how);
+            }
             for full in said.get("fullMessages").and_then(|v| v.as_array()).into_iter().flatten() {
                 let n = |k: usize| full.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
                 let count = |k: usize| u32::try_from(n(k)).unwrap_or(u32::MAX);
@@ -565,6 +583,166 @@ fn main() {
             }
             step_n(&mut harness, 2);
         }
+    }
+}
+
+// //// Neoffice — the stand-in host's calendar job of a JMAP account (see the header).
+/// The window gets a JMAP account whose host holds its credential and answers its calendar jobs as `how` says, and one
+/// is started now.
+fn pim_job(app: &mut MailApp, how: &str) {
+    let has_jmap = app.session.mailbox.accounts.iter().any(|a| a.kind == mailcraft_model::AccountKind::Jmap);
+    if !has_jmap {
+        let added = app.execute(
+            "account.add",
+            serde_json::json!({"email": "ada@example.org", "displayName": "Ada Marlow", "kind": "jmap", "jmap": {"session": "https://mail.example.org/jmap/session", "bearer": true}}),
+        );
+        if let Err(why) = added {
+            eprintln!("the JMAP account couldn't be added: {why}");
+            return;
+        }
+    }
+    // A mail runner that never answers (a JMAP account is asked only by a window that could run it), and the host's
+    // credential.
+    let waiting: Arc<Mutex<Vec<Sender<JmapPimResult>>>> = Default::default();
+    let mail: Arc<Mutex<Vec<Sender<mailcraft_model::sync::JmapMailResult>>>> = Default::default();
+    app.services.jmap = Some(Box::new(move |_| {
+        let (tx, rx) = channel();
+        if let Ok(mut kept) = mail.lock() {
+            kept.push(tx);
+        }
+        rx
+    }));
+    app.services.jmap_host_credentials = true;
+    let how = how.to_string();
+    app.services.jmap_pim = Some(Box::new(move |job: mailcraft_ui_egui::jmap_pim::JmapPimJob| {
+        let (tx, rx) = channel();
+        let request = &job.request;
+        let answer = match how.as_str() {
+            "week" => Some(pim_week(request.account, &request.email, request.from, request.to)),
+            "down" => Some(JmapPimResult {
+                account: request.account,
+                email: request.email.clone(),
+                errors: vec!["Couldn't reach the calendar server: network: the server can't be reached".into()],
+                ..Default::default()
+            }),
+            _ => None,
+        };
+        match answer {
+            Some(answer) => {
+                let _ = tx.send(answer);
+            }
+            // (No answer comes; the sender is kept, so that the job stays under way.)
+            None => {
+                if let Ok(mut kept) = waiting.lock() {
+                    kept.push(tx);
+                }
+            }
+        }
+        rx
+    }));
+    let automatic = app.auto_sync;
+    app.auto_sync = true;
+    if !app.jmap_pim_tick_at(true, mailcraft_ui_egui::now_ms()) {
+        eprintln!("no calendar job could be started");
+    }
+    app.auto_sync = automatic;
+}
+
+/// The week of the stand-in host's calendar job (see the header), for the stretch `from`..`to`.
+fn pim_week(account: u64, email: &str, from: i64, to: i64) -> JmapPimResult {
+    use mailcraft_model::{Address, Attendee, Response, Rgb, ShowAs};
+    const DAY: i64 = 86_400;
+    // Monday 2026-10-12, midnight UTC; Zurich is two hours ahead until the 25th, then one.
+    let monday = NOW - 2 * DAY - 16 * 3_600;
+    let zurich = |day: i64, hour: i64, minute: i64| {
+        let offset = if day >= 13 { 3_600 } else { 7_200 };
+        monday + day * DAY + hour * 3_600 + minute * 60 - offset
+    };
+    let person = |name: &str, email: &str| Address::new(name, email);
+    let invited = |name: &str, email: &str, response: Response| Attendee { address: person(name, email), optional: false, response };
+    let event = |id: &str, title: &str, start: i64, minutes: i64| RemoteEvent {
+        id: id.into(),
+        uid: format!("{id}@example.org"),
+        title: title.into(),
+        start,
+        end: start + minutes * 60,
+        start_zone: "Europe/Zurich".into(),
+        is_organizer: None,
+        ..Default::default()
+    };
+    let days = |id: &str, title: &str, day: i64, length: i64| RemoteEvent {
+        id: id.into(),
+        title: title.into(),
+        start: monday + day * DAY,
+        end: monday + (day + length) * DAY,
+        all_day: true,
+        ..Default::default()
+    };
+    let calendar = |id: &str, name: &str, main: bool, color: Rgb| RemoteCalendar {
+        id: id.into(),
+        name: name.into(),
+        color: Some(color),
+        read_only: true,
+        main,
+        plain: true,
+        ..Default::default()
+    };
+    let download = |calendar: &str, events: Vec<RemoteEvent>| EventsDownload {
+        account,
+        email: email.into(),
+        calendar: calendar.into(),
+        from,
+        to,
+        complete: true,
+        events,
+        ..Default::default()
+    };
+    let budget = RemoteEvent {
+        organizer: Some(person("Ada Marlow", "ada@example.org")),
+        attendees: vec![
+            invited("Bob Lindqvist", "bob@example.org", Response::Accepted),
+            invited("Carol Duval", "carol@example.org", Response::Tentative),
+            Attendee { optional: true, ..invited("Dan Moreau", "dan@example.org", Response::None) },
+        ],
+        is_organizer: Some(true),
+        location: "Room 4".into(),
+        reminder_minutes: Some(15),
+        ..event("V-budget", "Budget review", zurich(1, 14, 0), 60)
+    };
+    let planning = RemoteEvent {
+        organizer: Some(person("Grace Okafor", "grace@example.org")),
+        attendees: vec![invited("Ada Marlow", "ada@example.org", Response::None), invited("Bob Lindqvist", "bob@example.org", Response::Accepted)],
+        is_organizer: Some(false),
+        ..event("V-planning", "Quarterly planning", zurich(2, 10, 0), 120)
+    };
+    let dentist = RemoteEvent { start_zone: String::new(), private: true, ..event("V-dentist", "Dentist", monday + 4 * DAY + 16 * 3_600, 45) };
+    let fair = RemoteEvent { show_as: ShowAs::Free, ..days("V-fair", "Book fair", 3, 2) };
+    let site = |week: i64| RemoteEvent {
+        kind: RemoteEventKind::Occurrence,
+        series: "V-site".into(),
+        location: "Workshop B".into(),
+        ..event(&format!("O-site-{week}"), "Site meeting", zurich(7 * week, 9, 0), 90)
+    };
+    JmapPimResult {
+        account,
+        email: email.into(),
+        offers: Some(PimOffers { calendars: true, contacts: true }),
+        calendars: Some(CalendarsDownload {
+            account,
+            email: email.into(),
+            complete: true,
+            calendars: vec![
+                calendar("C-ada", "Ada Marlow", true, Rgb(0x2E, 0x8B, 0x57)),
+                calendar("C-team", "Team", false, Rgb(0xE0, 0x7B, 0x1F)),
+                calendar("C-grace", "Grace Okafor", false, Rgb(0x7E, 0x57, 0xC2)),
+            ],
+        }),
+        events: Some(download("", vec![budget, planning, fair, event("V-lunch", "Lunch with Dan", zurich(1, 12, 30), 60), dentist])),
+        more_events: vec![
+            download("C-team", (-1..3).map(site).collect()),
+            download("C-grace", vec![days("V-away", "Grace away", 7, 3), event("V-review", "Design review", zurich(3, 15, 0), 60)]),
+        ],
+        ..Default::default()
     }
 }
 

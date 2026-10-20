@@ -197,6 +197,10 @@ impl MailApp {
         let also: Vec<String> = on_screen.into_iter().collect();
         let request = jmap_mail_request(&self.session, account, !quiet, &also, quiet).map_err(|e| e.to_string())?;
         self.jmap_sent = request.changes.iter().filter_map(|change| serde_json::to_string(change).ok()).collect();
+        // The owner's own Send/Receive brings the account's calendars too, once its mail is read (jmap_pim.rs).
+        if !quiet {
+            self.jmap_pim_asked_for(account);
+        }
         let Some(start) = &self.services.jmap else { return Err(tl!("This build can't connect to JMAP servers").to_string()) };
         self.services.sync_cancel.store(false, Ordering::Relaxed);
         let job = JmapJob { request, secret, cancel: self.services.sync_cancel.clone() };
@@ -211,7 +215,7 @@ impl MailApp {
     /// The secret a JMAP account's run is opened with, when one is at hand: the one typed this
     /// session, else, for a password, the one the system remembers. A bearer token is only ever in
     /// memory.
-    fn jmap_secret(&mut self, account: Id, address: &str, bearer: bool) -> Option<String> {
+    pub(crate) fn jmap_secret(&mut self, account: Id, address: &str, bearer: bool) -> Option<String> {
         if !bearer
             && !self.passwords.contains_key(&account)
             && let Some(password) = self.remembered("password", address)
