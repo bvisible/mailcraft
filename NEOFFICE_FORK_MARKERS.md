@@ -9,9 +9,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `ed2bd41` (upstream `main` on 2026-10-19 in the evening: 0.5.1, the security review fixes and the fuzz targets),
-  merged into `version-15`.
-- Before it: `d33985a` (upstream `main` on 2026-10-19: v0.5.0 and the contributor licence agreement), where the fork
+- `d7db890` (upstream `main` on 2026-10-20 at night: 0.5.2, the desktop alerts, the project's new Microsoft
+  registration, About ▸ Testers, and the governance documents), merged into `version-15`.
+- Before it: `ed2bd41` (upstream `main` on 2026-10-19 in the evening: 0.5.1, the security review fixes and the fuzz
+  targets), and `d33985a` (upstream `main` on 2026-10-19: v0.5.0 and the contributor licence agreement), where the fork
   was created.
 
 ## What the fork adds
