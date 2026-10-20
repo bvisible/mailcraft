@@ -45,13 +45,18 @@
 //!   addresses with the primary one preferred, the numbers with the primary mobile one's feature and the others as
 //!   voice, one organization, one title; `properties` keeps those it knows of the ones named (and the id). A card's id
 //!   is what the store calls the contact ([`Card::id`]), which need not be of the JMAP alphabet: a name with spaces in it.
+//! - **`ContactCard/set`** makes, changes and deletes cards as strictly as such a server takes them
+//!   (`standin/pim/cards.rs`): whole properties of what it writes, the book's rights, a card made again by its `uid`
+//!   being the one made, and a card a document names not deleted ([`Pim::linked_cards`]).
 //! - **Trouble on demand**, besides the mail part's (`refuse_next`, `drop_token_after`, `lost_answers`, method errors
 //!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
 //!   deleted between a query and a `get` ([`Pim::vanishing`]); a change of an event refused with a SetError
-//!   ([`Pim::refused_events`]); a server that says it took a time and keeps the old one ([`Pim::keeps_old_times`]).
+//!   ([`Pim::refused_events`]), and of a card ([`Pim::refused_cards`]); a server that says it took a time and keeps
+//!   the old one ([`Pim::keeps_old_times`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 
+mod cards;
 mod set;
 pub use set::{MAX_EVENTS_PER_SET, SERVER_SET, Scheduled};
 
@@ -334,6 +339,15 @@ pub struct Pim {
     /// The events made, by the `uid` they were made with: one made again is that one.
     made: BTreeMap<String, String>,
     made_count: u32,
+    /// Cards (their ids) that a document of the store names, with that document (`Issue ISS-2026-00012`): such a card
+    /// is not deleted.
+    pub linked_cards: BTreeMap<String, String>,
+    /// Cards (their ids, or a new one's `uid`) whose `ContactCard/set` is answered with the SetError of that `type`.
+    pub refused_cards: BTreeMap<String, &'static str>,
+    /// What it was sent of cards, as it came (the card's id, and the card, the change or `"destroy"`), oldest first.
+    pub card_writes: Vec<(String, Value)>,
+    /// The cards made, by the `uid` they were made with: one made again is that one.
+    made_cards: BTreeMap<String, String>,
 }
 
 impl Default for Pim {
@@ -362,6 +376,10 @@ impl Default for Pim {
             tells_the_organizer: true,
             made: BTreeMap::new(),
             made_count: 0,
+            linked_cards: BTreeMap::new(),
+            refused_cards: BTreeMap::new(),
+            card_writes: Vec::new(),
+            made_cards: BTreeMap::new(),
         }
     }
 }

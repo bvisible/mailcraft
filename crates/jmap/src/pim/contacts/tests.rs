@@ -82,10 +82,10 @@ fn the_book_and_its_rights_are_read() {
     assert!(books.complete && books.account == 7 && books.email == ME);
     let listed: Vec<(&str, &str, bool, bool, bool)> =
         books.books.iter().map(|b| (b.id.as_str(), b.name.as_str(), b.read_only, b.may_remove, b.main)).collect();
-    // Every book is read-only while writing is not carried, whatever the rights; the server's default is the main one.
-    assert_eq!(listed, [("neoffice", "Neoffice", true, false, true), ("partners", "Partners", true, false, false)]);
+    // A book is read-only unless the account may write its cards; the server's default is the main one.
+    assert_eq!(listed, [("neoffice", "Neoffice", false, true, true), ("partners", "Partners", true, false, false)]);
     assert!(books.books.iter().all(|b| b.plain), "the session says a card keeps only the basics");
-    const { assert!(!WRITE_CONTACTS) };
+    const { assert!(WRITE_CONTACTS) };
     // Each card in its book, and the cards all there.
     let download = contacts(&result);
     assert!(download.complete && download.account == 7);

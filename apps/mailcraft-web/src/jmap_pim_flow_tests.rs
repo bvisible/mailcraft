@@ -268,17 +268,21 @@ fn the_window_brings_the_servers_address_books_and_people_and_the_to_field_have_
     let names: Vec<&str> = listed["contacts"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
     assert_eq!(names, ["Carol Duval", "Lindqvist Joinery", "Grace Okafor"], "as People lists them, by last name");
     let books: Vec<(&str, bool)> = flow.app.session.mailbox.address_books.iter().map(|b| (b.name.as_str(), b.read_only)).collect();
-    assert_eq!(books, [("Neoffice", true), ("Partners", true)]);
+    assert_eq!(books, [("Neoffice", false), ("Partners", true)], "as the account's rights there say");
     // The To field completes them.
     let found = mailcraft_engine::cmd::compose::suggest(&flow.app.session, "gra", 6);
     assert_eq!(found.first().map(|s| (s.email.as_str(), s.contact)), Some(("grace@example.org", true)));
-    // Edit and Delete are greyed with the reason, and a new contact in a tab that keeps nothing too.
+    // Grace's book Ada may change; Carol's she may only read, and Edit and Delete say so.
     let grace = flow.app.session.mailbox.contacts.values().find(|c| c.first == "Grace").map(|c| c.id).unwrap();
     flow.app.execute("people.select", json!({"id": grace})).unwrap();
+    assert!(flow.app.enabled("people.edit") && flow.app.enabled("people.delete"));
+    let carol = flow.app.session.mailbox.contacts.values().find(|c| c.first == "Carol").map(|c| c.id).unwrap();
+    flow.app.execute("people.select", json!({"id": carol})).unwrap();
     assert!(!flow.app.enabled("people.edit") && !flow.app.enabled("people.delete"));
+    // A tab that keeps nothing makes a new contact in the book Ada may change, never on this computer.
     flow.app.session.keeps_local = false;
-    assert!(!flow.app.enabled("people.new"));
-    let refused = flow.app.execute("people.new", json!({"first": "Gus", "email": "gus@example.org"})).unwrap_err();
+    assert!(flow.app.enabled("people.new"));
+    let refused = flow.app.execute("people.new", json!({"first": "Gus", "email": "gus@example.org", "book": 0})).unwrap_err();
     assert!(refused.contains("Your rights do not let you add contacts"), "{refused}");
     // A card deleted on the server goes at the next read, which the changed state makes a whole one.
     flow.server.with(|d| d.pim.cards.retain(|c| c.id != "Carol Duval"));
@@ -294,6 +298,167 @@ fn the_window_brings_the_servers_address_books_and_people_and_the_to_field_have_
     let asked: Vec<String> = flow.server.calls().into_iter().skip(before).filter(|c| c.starts_with("ContactCard")).collect();
     assert_eq!(asked, ["ContactCard/query"], "the state alone");
     assert_eq!(flow.app.session.rev(), rev);
+}
+
+// What is made, changed and deleted here of the contacts goes to the server, and what it has is what comes back.
+
+impl Flow {
+    /// The team's book (Ada may change and delete its cards; the default) with Grace and Bob, and the partners' (read
+    /// only) with Carol, in a tab that keeps nothing of its own; People in front, and read.
+    fn with_books(&mut self) {
+        self.server.with(|d| {
+            d.pim.add_book(Book { default: true, ..Book::new("neoffice", "Neoffice", true) });
+            d.pim.add_book(Book::new("partners", "Partners", false));
+            d.pim.add_card(Card::person("Grace Okafor", "neoffice", "Grace", "Okafor", "grace@example.org"));
+            d.pim.add_card(Card::person("Bob Lindqvist", "neoffice", "Bob", "Lindqvist", "bob@example.org").with_phone("+41 79 555 01 02", true));
+            d.pim.add_card(Card::person("Carol Duval", "partners", "Carol", "Duval", "carol@example.org"));
+        });
+        self.app.session.keeps_local = false;
+        self.app.execute("view.people", json!({})).unwrap();
+        assert!(self.look(SECOND), "People in front: the contacts at once");
+    }
+
+    /// The contact here whose first name is `first`.
+    fn contact(&self, first: &str) -> Option<mailcraft_model::Contact> {
+        self.app.session.mailbox.contacts.values().find(|c| c.first == first).map(|c| c.as_ref().clone())
+    }
+
+    /// The server's card called `id`.
+    fn card(&self, id: &str) -> Option<Card> {
+        self.server.with(|d| d.pim.cards.iter().find(|card| card.id == id).cloned())
+    }
+}
+
+#[test]
+fn a_contact_is_made_edited_and_deleted_on_the_server() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    // Made: in the team's book, at once.
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org", "phone": "+41 79 555 02 02"})).unwrap();
+    assert!(flow.look(SECOND), "a change goes at once");
+    let made = flow.card("Gus Hale").expect("on the server");
+    assert_eq!((made.books.as_slice(), made.emails.as_slice()), (["neoffice".to_string()].as_slice(), ["gus@example.org".to_string()].as_slice()));
+    assert_eq!(made.phones, [("+41 79 555 02 02".to_string(), true)], "its mobile number, as one");
+    let here = flow.contact("Gus").unwrap();
+    assert_eq!(mailcraft_jmap::pim::server_card_id(&here.origin.id).as_deref(), Some("Gus Hale"), "the server's name for it, and no second one");
+    assert_eq!(flow.app.session.mailbox.contacts.values().filter(|c| c.first == "Gus").count(), 1);
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+    // Edited.
+    flow.app.execute("people.edit", json!({"id": here.id, "title": "Joiner", "company": "Hale & Sons"})).unwrap();
+    assert!(flow.look(SECOND));
+    let edited = flow.card("Gus Hale").unwrap();
+    assert_eq!((edited.title.as_str(), edited.company.as_str()), ("Joiner", "Hale & Sons"));
+    assert_eq!(flow.contact("Gus").map(|c| c.title), Some("Joiner".to_string()), "and what came down after it has it");
+    // What the server doesn't keep is refused here, with the reason, and nothing goes.
+    let refused = flow.app.execute("people.edit", json!({"id": here.id, "notes": "Met at the fair"})).unwrap_err();
+    assert!(refused.contains("keeps only"), "{refused}");
+    // Deleted.
+    flow.app.execute("people.delete", json!({"id": here.id})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.card("Gus Hale").is_none() && flow.contact("Gus").is_none());
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+    let sent: Vec<String> = flow.server.with(|d| d.pim.card_writes.iter().map(|(id, _)| id.clone()).collect());
+    assert_eq!(sent, ["Gus Hale"; 3], "each change once");
+}
+
+#[test]
+fn a_contact_deleted_by_somebody_else_goes_at_the_next_whole_read() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.pim.cards.retain(|card| card.id != "Bob Lindqvist"));
+    flow.app.execute("view.mail", json!({})).unwrap();
+    flow.look(SECOND);
+    flow.app.execute("view.people", json!({})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.contact("Bob").is_none());
+    assert!(flow.contact("Grace").is_some());
+}
+
+#[test]
+fn a_contact_in_a_read_only_book_cannot_be_changed_and_the_engine_says_why() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    let carol = flow.contact("Carol").unwrap();
+    for (command, params) in [("people.edit", json!({"id": carol.id, "title": "Partner"})), ("people.delete", json!({"id": carol.id}))] {
+        let refused = flow.app.execute(command, params).unwrap_err();
+        assert!(refused.contains("Your rights do not let you change this contact"), "{command}: {refused}");
+    }
+    assert!(flow.app.session.mailbox.contact_changes.is_empty() && flow.contact("Carol").is_some_and(|c| c.title.is_empty()));
+    // And a book whose rights were narrowed on the server while a read was on its way: the change made here meanwhile
+    // is undone, with a word, and never sent.
+    let grace = flow.contact("Grace").unwrap();
+    flow.app.execute("view.mail", json!({})).unwrap();
+    flow.look(SECOND);
+    flow.hold();
+    flow.app.execute("view.people", json!({})).unwrap();
+    assert!(flow.look(SECOND), "People in front again: its books and contacts at once");
+    flow.app.execute("people.edit", json!({"id": grace.id, "title": "Engineer"})).unwrap();
+    flow.server.with(|d| d.pim.books.iter_mut().for_each(|book| book.may_write = false));
+    flow.release();
+    flow.look(SECOND);
+    assert_eq!(flow.contact("Grace").map(|c| c.title), Some(String::new()));
+    let said = flow.app.sync_problems_of(flow.account);
+    assert!(
+        said.iter().any(|line| line == "\"Grace Okafor\": its address book can't be changed any more, so the change made here was undone."),
+        "{said:?}"
+    );
+    assert!(flow.card("Grace Okafor").is_some_and(|card| card.title.is_empty()), "nothing went");
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+}
+
+#[test]
+fn a_refused_deletion_comes_back_with_the_reason() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.pim.linked_cards.insert("Grace Okafor".into(), "Issue ISS-2026-00012".into()));
+    let grace = flow.contact("Grace").unwrap();
+    flow.app.execute("people.delete", json!({"id": grace.id})).unwrap();
+    assert!(flow.contact("Grace").is_none(), "gone here at once");
+    assert!(flow.look(SECOND));
+    let back = flow.contact("Grace").expect("back, as the server has her");
+    assert_eq!(back.id, grace.id);
+    let said = flow.app.sync_problems_of(flow.account);
+    assert!(
+        said.iter().any(|line| line.contains("wouldn't delete \"Grace Okafor\"") && line.contains("is linked with Issue ISS-2026-00012")),
+        "{said:?}"
+    );
+    assert!(flow.card("Grace Okafor").is_some() && flow.app.session.mailbox.contact_changes.is_empty());
+}
+
+#[test]
+fn a_token_that_dies_mid_job_replays_only_what_was_not_answered() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    let (grace, bob) = (flow.contact("Grace").unwrap(), flow.contact("Bob").unwrap());
+    flow.app.execute("people.edit", json!({"id": grace.id, "title": "Engineer"})).unwrap();
+    flow.app.execute("people.edit", json!({"id": bob.id, "title": "Joiner"})).unwrap();
+    // The changes go; the session ends while the contacts are read after them, and the page hands a new token.
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/query", mailcraft_jmap::standin::Effect::RefuseWith(401))));
+    assert!(flow.look(SECOND));
+    assert_eq!(*flow.page.renewals.borrow(), 1);
+    let sent: Vec<String> = flow.server.with(|d| d.pim.card_writes.iter().map(|(id, _)| id.clone()).collect());
+    assert_eq!(sent, ["Bob Lindqvist", "Grace Okafor"], "each once: what was answered is not sent again");
+    assert!(flow.app.session.mailbox.contact_changes.is_empty(), "and the answers were kept");
+    assert_eq!((flow.contact("Grace").unwrap().title, flow.contact("Bob").unwrap().title), ("Engineer".to_string(), "Joiner".to_string()));
+    assert!(!flow.app.jmap_refused_for(flow.account));
+}
+
+#[test]
+fn a_lost_answer_to_a_create_heals_at_the_following_read() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::LoseAnswer)));
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org"})).unwrap();
+    assert!(flow.look(SECOND));
+    // The server made it; the answer was lost: it waits to go again, and the read brought the card meanwhile.
+    assert!(flow.card("Gus Hale").is_some());
+    assert_eq!(flow.app.session.mailbox.contact_changes.len(), 1);
+    // A minute on (as the server asked), it goes again with its mark: the same card, and one Gus here.
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
+    assert!(flow.look(MINUTE));
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+    assert_eq!(flow.server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+    assert_eq!(flow.app.session.mailbox.contacts.values().filter(|c| c.first == "Gus").count(), 1);
 }
 
 // What is made, moved, changed and deleted here goes to the server, and what it has is what comes back.

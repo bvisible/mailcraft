@@ -12,7 +12,7 @@
 //! and, so that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Identity/get`
 //! and `EmailSubmission/set` (`outgoing.rs`); and, when a test turns them on, calendars: `Calendar/get`,
 //! `CalendarEvent/query`, `CalendarEvent/get` and `CalendarEvent/set`, and address books: `AddressBook/get`,
-//! `ContactCard/query` and `ContactCard/get` (`standin/pim.rs`, [`Pim`]).
+//! `ContactCard/query`, `ContactCard/get` and `ContactCard/set` (`standin/pim.rs`, [`Pim`]).
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -656,7 +656,7 @@ impl Data {
             "Identity/get" | "EmailSubmission/set" if self.submission && using.contains(&SUBMISSION) => Some(MAIL),
             "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" | "CalendarEvent/set" if self.pim.calendars => Some(CALENDARS),
             "ParticipantIdentity/get" if self.pim.calendars && self.pim.says_identities => Some(CALENDARS),
-            "AddressBook/get" | "ContactCard/query" | "ContactCard/get" if self.pim.contacts => Some(CONTACTS),
+            "AddressBook/get" | "ContactCard/query" | "ContactCard/get" | "ContactCard/set" if self.pim.contacts => Some(CONTACTS),
             _ => None,
         };
         if needs.is_none_or(|capability| !using.contains(&capability)) {
@@ -682,6 +682,7 @@ impl Data {
             "AddressBook/get" => self.pim.address_book_get(&args),
             "ContactCard/query" => self.pim.card_query(&args),
             "ContactCard/get" => self.pim.card_get(&args, self.max_get),
+            "ContactCard/set" => self.pim.card_set(&args, self.max_set),
             _ => self.email_get(&args),
         }
     }

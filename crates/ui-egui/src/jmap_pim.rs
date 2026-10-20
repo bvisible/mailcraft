@@ -17,6 +17,9 @@
 //! in before the events (`sync.applyEventChanges`), as for Microsoft Graph's calendar. A change that was just sent
 //! and is yet to be seen on the server brings the days on screen again every ten seconds for a while; the very same
 //! changes are not sent twice within half a minute; what waits and can't be sent any more is given up with a word.
+//! What is made, changed or deleted here in a server's address book goes the same way (`Mailbox::contact_changes`):
+//! with the next job, at once, written before the contacts are read, and what the server made of each taken in before
+//! them (`sync.applyContactChanges`).
 //!
 //! **When.** An account is asked for its list of calendars, its address books and the contacts in them, and the wide
 //! stretch (a month back, a year ahead) at its first job and every ten minutes after; for the days on screen and a week
@@ -42,7 +45,7 @@
 //! its answer, should it come, is never read), and counts as one that came to nothing.
 //!
 //! **The answer** is taken in in this order: the list of calendars, the address books, what the server made of the
-//! changes, the main calendar's events, the others', and the contacts. A download of a calendar the mailbox doesn't have is not taken in (the engine would
+//! changes, the main calendar's events, the others', what it made of the changes of contacts, and the contacts. A download of a calendar the mailbox doesn't have is not taken in (the engine would
 //! make the calendar for it). What the host says went wrong goes to the Send/Receive problems report and the log; what
 //! the engine says of an event (which names it) to the report alone. A server that turned the secret down stops the
 //! account's jobs and its mail runs alike; one that is busy is left alone as long as it asked.
@@ -53,7 +56,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mailcraft_engine::Module;
-use mailcraft_engine::cmd::remote;
+use mailcraft_engine::cmd::{remote, remote_contacts};
+use mailcraft_model::book::ContactsUpload;
 use mailcraft_model::remote::{CalendarAsk, EventsDownload, EventsUpload};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, PimOffers};
 use mailcraft_model::{AccountKind, Id};
@@ -152,8 +156,9 @@ pub(crate) struct JmapPim {
     /// Accounts whose next job brings the contacts though it is not the wide one: People came to the front.
     contacts_due: HashSet<Id>,
     /// What each account's server was last told, and when (milliseconds): the very same again right away would mean
-    /// that the telling settles nothing, and it is left for later.
+    /// that the telling settles nothing, and it is left for later. Likewise of its contacts.
     sent: HashMap<Id, (EventsUpload, f64)>,
+    sent_contacts: HashMap<Id, (ContactsUpload, f64)>,
     /// The state of the mailbox at which the waiting changes were last looked over for ones that can't go any more.
     settled_rev: Option<u64>,
 }
@@ -194,7 +199,9 @@ impl MailApp {
         } else {
             let accounts = self.jmap_pim_accounts();
             // Sooner when a change waits to go.
-            let waits = accounts.iter().any(|account| remote::events_waiting(&self.session, *account).due > 0);
+            let waits = accounts.iter().any(|account| {
+                remote::events_waiting(&self.session, *account).due > 0 || remote_contacts::contacts_waiting(&self.session, *account).due > 0
+            });
             if !accounts.is_empty() {
                 ctx.request_repaint_after(std::time::Duration::from_secs(if waits { 1 } else { 5 }));
             }
@@ -251,20 +258,32 @@ impl MailApp {
         // silently. (Looked at once for each state of the mailbox.)
         if self.jmap_pim.settled_rev != Some(self.session.rev()) {
             let dropped = remote::settle_changes(&mut self.session);
+            let said: Vec<(Id, String)> = dropped.into_iter().map(|one| (one.account, one.message)).collect();
+            // (And those of contacts.)
+            let contacts = remote_contacts::settle_contact_changes(&mut self.session);
             self.jmap_pim.settled_rev = Some(self.session.rev());
-            for one in dropped.iter().filter(|one| !one.message.is_empty()).take(20) {
-                self.status(one.message.clone());
-                self.keep_sync_problems(one.account, std::slice::from_ref(&one.message));
+            for (account, message) in
+                said.into_iter().chain(contacts.into_iter().map(|one| (one.account, one.message))).filter(|(_, m)| !m.is_empty()).take(20)
+            {
+                self.status(message.clone());
+                self.keep_sync_problems(account, std::slice::from_ref(&message));
             }
         }
         for account in self.jmap_pim_accounts() {
             if !self.may_ask_pim(account, now) {
                 continue;
             }
-            // What is ready to go now (and not the very same as a moment ago, which would go round in circles).
+            // What is ready to go now (and not the very same as a moment ago, which would go round in circles), of the
+            // calendars and of the contacts.
             let changes = if remote::events_waiting(&self.session, account).due > 0 { self.calendar_changes(account) } else { None };
             let again = |(sent, at): &(EventsUpload, f64)| changes.as_ref() == Some(sent) && now - at < FIRST_RETRY_MS;
-            let push = changes.is_some() && !self.jmap_pim.sent.get(&account).is_some_and(again);
+            let repeated = self.jmap_pim.sent.get(&account).is_some_and(again);
+            let changes = changes.filter(|_| !repeated);
+            let cards = if remote_contacts::contacts_waiting(&self.session, account).due > 0 { self.contact_changes(account) } else { None };
+            let again = |(sent, at): &(ContactsUpload, f64)| cards.as_ref() == Some(sent) && now - at < FIRST_RETRY_MS;
+            let repeated = self.jmap_pim.sent_contacts.get(&account).is_some_and(again);
+            let cards = cards.filter(|_| !repeated);
+            let push = changes.is_some() || cards.is_some();
             let wide = self.jmap_pim.wide.get(&account).is_none_or(|at| now - at >= WIDE_MS);
             // A change that was just sent and isn't seen on the server yet: asked for again soon.
             let every = if remote::recheck_due(&self.session, account) {
@@ -288,7 +307,7 @@ impl MailApp {
             if failures > 0 && now - at < patience {
                 continue;
             }
-            if self.start_jmap_pim(account, wide, now, None, changes.filter(|_| push)) {
+            if self.start_jmap_pim(account, wide, now, None, changes, cards) {
                 return true;
             }
         }
@@ -299,8 +318,17 @@ impl MailApp {
 
     /// Hand the host a calendar job for `account`: the `changes` to write first, when any; then its list and the wide
     /// stretch when `wide`, else the days on screen; or, for `around`, those days alone (which says nothing of when the
-    /// days on screen were last asked for). `false` when there is no service, or no credential at hand.
-    fn start_jmap_pim(&mut self, account: Id, wide: bool, now: f64, around: Option<(Timestamp, Timestamp)>, changes: Option<EventsUpload>) -> bool {
+    /// days on screen were last asked for); and the changes of contacts (`cards`) to write before the contacts, which
+    /// are read then too. `false` when there is no service, or no credential at hand.
+    fn start_jmap_pim(
+        &mut self,
+        account: Id,
+        wide: bool,
+        now: f64,
+        around: Option<(Timestamp, Timestamp)>,
+        changes: Option<EventsUpload>,
+        cards: Option<ContactsUpload>,
+    ) -> bool {
         let Some(owner) = self.session.mailbox.account(account).cloned() else { return false };
         let Some(server) = owner.jmap.clone() else { return false };
         if self.services.jmap_pim.is_none() {
@@ -334,7 +362,7 @@ impl MailApp {
         // The contacts with the wide stretch, and when People came to the front; never for the days around an invitation,
         // nor of an account whose session said it has none.
         let offered = self.jmap_pim.offers.get(&account).is_none_or(|offers| offers.contacts);
-        let contacts = around.is_none() && offered && (wide || self.jmap_pim.contacts_due.contains(&account));
+        let contacts = around.is_none() && offered && (wide || self.jmap_pim.contacts_due.contains(&account) || cards.is_some());
         let (contacts_state, contacts_read) =
             if contacts { self.jmap_pim.contacts.get(&account).cloned().unwrap_or_default() } else { Default::default() };
         let request = JmapPimRequest {
@@ -355,15 +383,19 @@ impl MailApp {
             contacts_read,
             plain_unless_said: false,
             changes: changes.clone(),
+            contact_changes: cards.clone(),
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let Some(start) = &self.services.jmap_pim else { return false };
         let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });
         self.jmap_pim.asked.insert(account, names);
-        let carried = changes.is_some();
+        let carried = changes.is_some() || cards.is_some();
         if let Some(changes) = changes {
             self.jmap_pim.sent.insert(account, (changes, now));
+        }
+        if let Some(cards) = cards {
+            self.jmap_pim.sent_contacts.insert(account, (cards, now));
         }
         self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, carried, now: today, cancel, rx });
         self.jmap_pim.last = Some(account);
@@ -413,7 +445,7 @@ impl MailApp {
         };
         let from = instant(day.add_days(-1));
         let round = (from, instant(day.add_days(2)).max(from.saturating_add(mailcraft_time::DAY)));
-        if self.start_jmap_pim(account, false, now, Some(round), None) {
+        if self.start_jmap_pim(account, false, now, Some(round), None, None) {
             Ok(())
         } else {
             Err(tl!("This account's calendar can't be asked yet: Send/Receive signs it in first.").to_string())
@@ -491,7 +523,10 @@ impl MailApp {
         self.take_in_calendar(account, result.uploaded.as_ref(), main.as_ref(), &mut errors);
         let more: Vec<EventsDownload> = std::mem::take(&mut result.more_events).into_iter().filter(|download| here(self, download)).collect();
         self.take_in_more_calendars(&more, &mut errors);
-        // The contacts last.
+        // What the server made of the changes of contacts, then the contacts: they were read after the changes went.
+        if let Some(uploaded) = &result.contacts_uploaded {
+            self.take_in_contact_outcomes(account, uploaded, &mut errors);
+        }
         if let Some(download) = &result.contacts
             && let Err(e) = mailcraft_engine::cmd::remote::apply_contacts(&mut self.session, download)
         {
@@ -502,7 +537,12 @@ impl MailApp {
             self.keep_contacts_state(account, &result, contacts_taken, asked_at);
         }
         // A job that carried changes and brought back nothing of them came to nothing.
-        let went = result.uploaded.as_ref().is_some_and(|uploaded| !uploaded.outcomes.is_empty());
+        let went = [
+            result.uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()),
+            result.contacts_uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()),
+        ]
+        .into_iter()
+        .any(|answered| answered.is_some_and(|n| n > 0));
         let well = result.offers.is_some()
             && errors.is_empty()
             && !result.auth_refused
@@ -548,6 +588,44 @@ impl MailApp {
         }
         if contacts {
             self.jmap_pim.contacts_due.insert(account);
+        }
+    }
+
+    /// What the server of `account` is to be told now of the contacts made, changed and deleted here, when anything.
+    fn contact_changes(&self, account: Id) -> Option<ContactsUpload> {
+        remote_contacts::contact_upload(&self.session, account).ok().filter(|upload| !upload.ops.is_empty())
+    }
+
+    /// Take in what the server said to the changes of contacts that were sent: what it refused or no longer has is said
+    /// to the owner (it names the contact: the report, not the log); what couldn't be sent stays and is tried again,
+    /// never without a word.
+    fn take_in_contact_outcomes(&mut self, account: Id, uploaded: &mailcraft_model::book::ContactsUploaded, errors: &mut Vec<String>) {
+        match remote_contacts::apply_contact_outcomes(&mut self.session, uploaded) {
+            Ok(applied) => {
+                if let Some(first) = applied.messages.first() {
+                    self.status(first.clone());
+                }
+                log::info!(
+                    "contacts: of {} changes sent, {} were taken, {} refused, {} are to be tried again, {} given up; {} still wait",
+                    uploaded.outcomes.len(),
+                    applied.done,
+                    applied.refused,
+                    applied.failed,
+                    applied.dropped.len(),
+                    applied.waiting
+                );
+                self.keep_sync_problems(account, &applied.messages);
+            }
+            Err(e) => errors.push(format!("{}: {e}", tl!("The contact changes couldn't be taken in"))),
+        }
+        let failed = |outcome: &&mailcraft_model::book::ContactOutcome| outcome.result == mailcraft_model::remote::EventResult::Failed;
+        for (n, outcome) in uploaded.outcomes.iter().filter(failed).take(3).enumerate() {
+            let why = if outcome.error.is_empty() { tl!("the server couldn't be reached") } else { outcome.error.as_str() };
+            let line = format!("{}: {why}", tl!("A contact change couldn't be sent yet and will be tried again"));
+            if n == 0 {
+                self.status(line.clone());
+            }
+            errors.push(line);
         }
     }
 

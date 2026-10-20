@@ -106,10 +106,10 @@ fn a_first_read_brings_the_book_and_its_cards() {
     let result = rig.run(&rig.job());
     assert!(result.errors.is_empty(), "{:?}", result.errors);
     assert_eq!(rig.names(), ["Bob Lindqvist", "Carol Duval", "Grace Okafor", "Lindqvist Joinery"]);
-    // Both books here, read-only as every book is until changes go back, and keeping only the basics.
+    // Both books here, the team's that Ada may change and the partners' she may only read, keeping only the basics.
     let books: Vec<(String, bool, bool, bool)> =
         rig.s.mailbox.address_books.iter().map(|b| (b.origin.id.clone(), b.read_only, b.main, b.plain)).collect();
-    assert_eq!(books, [("neoffice".into(), true, true, true), ("partners".into(), true, false, true)]);
+    assert_eq!(books, [("neoffice".into(), false, true, true), ("partners".into(), true, false, true)]);
     assert_eq!((rig.book_of("Grace Okafor"), rig.book_of("Carol Duval")), ("neoffice".to_string(), "partners".to_string()));
     let bob = rig.contact("Bob Lindqvist");
     assert_eq!((bob.phones[0].label.as_str(), bob.emails[0].value.as_str()), ("mobile", "bob@example.org"));
@@ -121,9 +121,13 @@ fn a_first_read_brings_the_book_and_its_cards() {
     rig.state.clear();
     rig.run(&rig.job());
     assert_eq!(rig.contact("Grace Okafor").id, grace);
-    // The book's rights hold here: its contacts can't be changed, and the engine says why.
-    let refused = rig.s.run("people.edit", &json!({"id": grace, "first": "Gracie"}));
+    // The books' rights hold here: Carol's book may only be read, and the engine says why; Grace's takes a change,
+    // which waits to go to the server.
+    let carol = rig.contact("Carol Duval").id;
+    let refused = rig.s.run("people.edit", &json!({"id": carol, "first": "Caroline"}));
     assert_eq!(refused, Err(CmdError::Failed(NO_CHANGING.into())));
+    rig.s.run("people.edit", &json!({"id": grace, "first": "Gracie"})).unwrap();
+    assert_eq!(rig.s.mailbox.contact_changes.len(), 1);
     // And the To field finds them.
     let found = mailcraft_engine::cmd::compose::suggest(&rig.s, "lindq", 6);
     assert_eq!(found.iter().map(|s| s.email.as_str()).collect::<Vec<_>>(), ["bob@example.org", "joinery@example.org"]);

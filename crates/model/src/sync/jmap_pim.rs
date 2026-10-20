@@ -27,7 +27,9 @@
 //! **What was changed here goes first.** A request may carry the changes made here to the account's calendars
 //! that its server is yet to be told ([`JmapPimRequest::changes`], as the engine says them: `sync.eventChanges`);
 //! the host writes them before it reads, so that what is read shows them, and says what the server made of each
-//! ([`JmapPimResult::uploaded`], for `sync.applyEventChanges`).
+//! ([`JmapPimResult::uploaded`], for `sync.applyEventChanges`). Likewise for the contacts of its address books
+//! ([`JmapPimRequest::contact_changes`], as `sync.contactChanges` says them; [`JmapPimResult::contacts_uploaded`], for
+//! `sync.applyContactChanges`): written before they are read.
 //!
 //! Neither type shows the server's address, the account's address, a name or a title in debug output:
 //! counts only. The secret that opens the server goes beside the request, as for a mail run, and is in
@@ -38,7 +40,7 @@ use serde::{Deserialize, Serialize};
 
 use super::is_false;
 use crate::Id;
-use crate::book::BooksDownload;
+use crate::book::{BooksDownload, ContactsUpload, ContactsUploaded, MAX_CONTACT_OPS};
 use crate::remote::{
     CalendarAsk, CalendarsDownload, ContactsDownload, EventsDownload, EventsUpload, EventsUploaded, MAX_CONTACTS, MAX_EVENT_OPS,
     MAX_REMOTE_CALENDARS, clean_key,
@@ -117,6 +119,10 @@ pub struct JmapPimRequest {
     /// first: written before anything is read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<EventsUpload>,
+    /// What was made, changed and deleted here of the contacts of the account's address books that its server is yet
+    /// to be told, oldest first: written before the contacts are read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_changes: Option<ContactsUpload>,
 }
 
 impl JmapPimRequest {
@@ -202,6 +208,9 @@ pub struct JmapPimResult {
     /// nothing. They are the person's as the accounts' addresses are ([`JmapPimRequest::me`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub identities: Option<Vec<String>>,
+    /// What the server made of the changes of contacts the request carried, as [`JmapPimResult::uploaded`] for events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contacts_uploaded: Option<ContactsUploaded>,
 }
 
 impl JmapPimResult {
@@ -246,6 +255,10 @@ impl JmapPimResult {
             }
             *identities = kept;
         }
+        if let Some(uploaded) = &mut self.contacts_uploaded {
+            uploaded.outcomes.truncate(MAX_CONTACT_OPS);
+            uploaded.outcomes.iter_mut().for_each(crate::book::ContactOutcome::tidy);
+        }
     }
 
     /// How many events came, in every download.
@@ -280,6 +293,7 @@ impl std::fmt::Debug for JmapPimRequest {
             .field("contacts_state", &!self.contacts_state.is_empty())
             .field("plain_unless_said", &self.plain_unless_said)
             .field("changes", &self.changes.as_ref().map(|changes| changes.ops.len()))
+            .field("contact_changes", &self.contact_changes.as_ref().map(|changes| changes.ops.len()))
             .finish()
     }
 }
@@ -302,6 +316,7 @@ impl std::fmt::Debug for JmapPimResult {
             .field("stopped", &self.stopped)
             .field("uploaded", &self.uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()))
             .field("identities", &self.identities.as_ref().map(Vec::len))
+            .field("contacts_uploaded", &self.contacts_uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()))
             .finish()
     }
 }
@@ -311,7 +326,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::book::RemoteBook;
+    use crate::book::{ContactChangeKind, ContactFields, ContactName, ContactOp, ContactOutcome, RemoteBook};
     use crate::remote::{EventChangeKind, EventFields, EventOp, EventOutcome, EventResult, RemoteCalendar, RemoteContact, RemoteEvent};
     use crate::{Address, Attendee, Labeled};
 
@@ -354,6 +369,21 @@ mod tests {
                     ..Default::default()
                 }],
                 zone: "Europe/Zurich".into(),
+            }),
+            contact_changes: Some(ContactsUpload {
+                account: 3,
+                email: ME.into(),
+                ops: vec![ContactOp {
+                    kind: ContactChangeKind::Update,
+                    contact: 11,
+                    remote: "Grace-Okafor".into(),
+                    book: "neoffice".into(),
+                    fields: ContactFields {
+                        name: Some(ContactName { first: "Grace".into(), last: "Okafor".into(), ..Default::default() }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }],
             }),
         }
     }
@@ -422,6 +452,12 @@ mod tests {
                 token_refused: false,
             }),
             identities: None,
+            contacts_uploaded: Some(ContactsUploaded {
+                account: 3,
+                email: ME.into(),
+                outcomes: vec![ContactOutcome { result: EventResult::Refused, error: format!("Grace is linked for {ME}"), ..Default::default() }],
+                token_refused: true,
+            }),
         }
     }
 
@@ -436,6 +472,7 @@ mod tests {
             r#""contactsState":"q-ada@example.org""#,
             r#""plainUnlessSaid":true"#,
             r#""changes":{"account":3"#,
+            r#""contactChanges":{"account":3"#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
@@ -449,6 +486,7 @@ mod tests {
             r#""authRefused":true"#,
             r#""busyFor":30"#,
             r#""uploaded":{"account":3"#,
+            r#""contactsUploaded":{"account":3"#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
@@ -472,11 +510,11 @@ mod tests {
         }
         assert_eq!(
             format!("{request:?}"),
-            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, contacts: true, contacts_state: true, plain_unless_said: true, changes: Some(1) }"
+            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, contacts: true, contacts_state: true, plain_unless_said: true, changes: Some(1), contact_changes: Some(1) }"
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1), identities: None }"
+            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1), identities: None, contacts_uploaded: Some(1) }"
         );
         // The person's identities are counted, never shown.
         let known = JmapPimResult { identities: Some(vec!["hello@example.org".into()]), ..JmapPimResult::default() };
@@ -542,6 +580,11 @@ mod tests {
             uploaded.outcomes =
                 (0..2 * MAX_EVENT_OPS).map(|n| EventOutcome { error: format!("line {n}\n").repeat(1_000), ..Default::default() }).collect();
         }
+        if let Some(uploaded) = &mut hostile.contacts_uploaded {
+            uploaded.outcomes = (0..2 * MAX_CONTACT_OPS)
+                .map(|n| ContactOutcome { remote: "two words".into(), error: format!("line {n}\n").repeat(1_000), ..Default::default() })
+                .collect();
+        }
         hostile.tidy();
         let list = hostile.calendars.as_ref().unwrap();
         assert_eq!(list.calendars.iter().filter(|c| c.main).count(), 1, "one main calendar at most");
@@ -562,6 +605,8 @@ mod tests {
         assert_eq!(hostile.contacts_state, None, "a state that can't be one is none");
         let outcomes = &hostile.uploaded.as_ref().unwrap().outcomes;
         assert!(outcomes.len() == MAX_EVENT_OPS && outcomes.iter().all(|o| !o.error.contains('\n') && o.error.chars().count() <= 300));
+        let outcomes = &hostile.contacts_uploaded.as_ref().unwrap().outcomes;
+        assert!(outcomes.len() == MAX_CONTACT_OPS && outcomes.iter().all(|o| o.remote.is_empty() && !o.error.contains('\n')));
         // Tidied once is tidied: it reads and writes as it is.
         let once = hostile.clone();
         hostile.tidy();

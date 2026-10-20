@@ -98,6 +98,15 @@ fn a_slow_or_down_server_does_what_the_query_string_says() {
     // What it was asked to call, for whoever looks.
     let log = json_of(&ask(&stand_in, &mut trouble, "GET", "/__log", None, "").unwrap().2);
     assert!(log.is_array());
+    // The cards it has, and what it was sent of them: a card made through the API is there.
+    let make = json!({
+        "using": [crate::CORE, crate::CONTACTS],
+        "methodCalls": [["ContactCard/set", {"accountId": super::super::ACCOUNT, "create": {"k0": {"uid": "t-1", "name": {"components": [{"kind": "given", "value": "Gus"}, {"kind": "surname", "value": "Hale"}]}}}}, "c0"]],
+    });
+    assert_eq!(ask(&stand_in, &mut trouble, "POST", "/jmap/api", Some(&fresh), &make.to_string()).unwrap().0, 200);
+    let cards = json_of(&ask(&stand_in, &mut trouble, "GET", "/__cards", None, "").unwrap().2);
+    assert!(cards["cards"].as_array().unwrap().iter().any(|card| card["id"] == "Gus Hale"), "{cards}");
+    assert_eq!(cards["written"][0]["id"], "Gus Hale");
     // A request that is no request is closed.
     assert!(super::answer(&stand_in, &mut trouble, b"garbage").is_none());
 }

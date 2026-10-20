@@ -155,6 +155,8 @@ pub fn demo(today: Date) -> StandIn {
         for card in team_cards() {
             pim.add_card(card);
         }
+        // A document of the store names Dan's card: it is not deleted (the store says why).
+        pim.linked_cards.insert("Dan Moreau".into(), "Issue ISS-2026-00012".into());
         let partners = [
             ("Ivo Schmid", "Ivo", "Schmid", "ivo.schmid@example.org", "Schmid Roofing"),
             ("Mei Tanaka", "Mei", "Tanaka", "mei.tanaka@example.org", "Tanaka Glass"),

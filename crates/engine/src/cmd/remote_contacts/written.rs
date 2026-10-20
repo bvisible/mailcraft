@@ -650,6 +650,12 @@ impl Taking<'_> {
                     }
                     return;
                 };
+                // A download that came before the answer (one lost on the way) brought the card as a contact of its
+                // own: it is this one.
+                if let Some(twin) = self.by_remote(&outcome.remote).filter(|twin| *twin != id) {
+                    let _ = self.mailbox.remove_contact(twin);
+                    self.mailbox.contact_changes.retain(|change| change.contact != twin);
+                }
                 let Ok(contact) = self.mailbox.contact_mut(id) else { return };
                 contact.origin.id.clone_from(&outcome.remote);
                 // What the server has is what was sent; what was changed here since is still to go.

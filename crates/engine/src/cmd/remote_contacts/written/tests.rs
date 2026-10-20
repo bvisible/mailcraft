@@ -276,6 +276,18 @@ fn a_contact_made_here_is_found_again_by_its_token_in_the_next_download() {
     assert_eq!(s.mailbox.contact(id).map(|c| (c.origin.id.as_str(), c.title.as_str())), Some(("c-hal", "Joiner")));
     let fields: ContactFields = serde_json::from_value(ops(&mut s, account)[0]["fields"].clone()).unwrap();
     assert_eq!(fields, ContactFields { title: Some("Joiner".into()), ..Default::default() });
+    answer(&mut s, account, EventResult::Done, "", "");
+    // A server that keeps no mark of a card (its uid is its name): the download brings the card as a contact of its
+    // own, and the answer that comes after says it is the one made here: one is left, the one made here.
+    let id = run(&mut s, "people.new", json!({"first": "Ivy", "email": "ivy@example.org"}))["id"].as_u64().unwrap();
+    let mut download = all(card("c-gus", "Gus", "gus@example.org", "team"));
+    download.contacts.push(card("c-hal", "Hal", "hal@example.org", "team"));
+    download.contacts.push(card("c-ivy", "Ivy", "ivy@example.org", "team"));
+    apply_contacts(&mut s, &download).unwrap();
+    assert_eq!(s.mailbox.contacts.values().filter(|c| c.first == "Ivy").count(), 2);
+    answer(&mut s, account, EventResult::Done, "c-ivy", "");
+    let ivy: Vec<(Id, &str)> = s.mailbox.contacts.values().filter(|c| c.first == "Ivy").map(|c| (c.id, c.origin.id.as_str())).collect();
+    assert_eq!(ivy, [(id, "c-ivy")]);
 }
 
 #[test]

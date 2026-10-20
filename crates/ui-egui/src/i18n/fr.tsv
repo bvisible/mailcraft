@@ -57,6 +57,8 @@
 	Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers	Son carnet d’adresses ne conserve que le nom, la société, la fonction, les adresses e-mail et les numéros de téléphone d’un contact
 	Contact Changes to Send	Modifications de contacts à envoyer
 	Apply Sent Contact Changes	Appliquer les modifications de contacts envoyées
+	The contact changes couldn't be taken in	Les modifications de contacts n’ont pas pu être prises en compte
+	A contact change couldn't be sent yet and will be tried again	Une modification de contact n’a pas encore pu être envoyée et sera réessayée
 # File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
 	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
 	Change them on the site	Modifier les signatures sur le site

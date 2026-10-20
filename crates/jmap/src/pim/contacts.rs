@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! An account's address books and the contacts in them, read for the engine (JMAP for Contacts, RFC 9610; cards as
-//! JSContact, RFC 9553): [`read`], the second part of a job ([`super::sync_pim`]).
+//! JSContact, RFC 9553): [`read`], the last part of a job ([`super::sync_pim`]), after what was changed of them here
+//! was written ([`push`]).
 //!
 //! **What is asked of the server**, in as few requests as it takes:
 //!
@@ -20,9 +21,9 @@
 //! A server that takes fewer calls in a request is asked the books and the query in turn.
 //!
 //! **What comes back.** The books ([`BooksDownload`], complete when they were listed): each with its name, read-only
-//! unless the account may write its cards (`myRights.mayWrite`) and always while
-//! [`WRITE_CONTACTS`](super::WRITE_CONTACTS) is shut, its cards deletable where it may write them and the server does
-//! not narrow that (`myRights.mayRemoveItems`), the main one (`isDefault`), and plain when the session says a card keeps
+//! unless the account may write its cards (`myRights.mayWrite`, and [`WRITE_CONTACTS`](super::WRITE_CONTACTS) open),
+//! its cards deletable where it may write them and the server does not narrow that (`myRights.mayRemoveItems`), the
+//! main one (`isDefault`), and plain when the session says a card keeps
 //! no more than its name, e-mail addresses, phone numbers, organizations and titles, or, when it says nothing of it,
 //! when the request says the server is one of those ([`JmapPimRequest::plain_unless_said`]).
 //!
@@ -40,6 +41,8 @@
 //! error is a line. A `get` that fails is asked again in halves, by its ids, until the card that breaks it is found;
 //! that one is left out. The lines name no contact and no book, and what a server says in them is scrubbed as the
 //! calendars' lines are.
+
+pub(super) mod push;
 
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,7 +70,7 @@ const MAX_STATE: usize = 256;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CONTACTS];
 /// What a card is read for.
-const CARD_PROPERTIES: [&str; 8] = ["id", "addressBookIds", "kind", "name", "emails", "phones", "organizations", "titles"];
+const CARD_PROPERTIES: [&str; 9] = ["id", "uid", "addressBookIds", "kind", "name", "emails", "phones", "organizations", "titles"];
 /// What a card keeps when a server keeps only the basics of one: a session that says it writes no more is one.
 const BASICS: [&str; 5] = ["emails", "name", "organizations", "phones", "titles"];
 

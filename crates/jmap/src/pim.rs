@@ -3,7 +3,7 @@
 // //// Neoffice — added file (no upstream equivalent)
 //! An account's calendars over JMAP (JMAP for Calendars, the IETF's draft on RFC 8620; events as JSCalendar,
 //! RFC 8984) and its address books (JMAP for Contacts, RFC 9610; cards as JSContact, RFC 9553), read for the
-//! engine, and what was changed here of the calendars written back: [`sync_pim`].
+//! engine, and what was changed here of them written back: [`sync_pim`].
 //!
 //! A job is one of its own beside a Send/Receive: the window asks for it on a clock of its own, and what it reads
 //! comes back in one answer ([`JmapPimResult`]), made of the downloads the engine already takes in for Microsoft
@@ -13,14 +13,15 @@
 //! ([`BooksDownload`](mailcraft_model::book::BooksDownload)). What is read and how is in [`calendars`] and
 //! [`contacts`]; how an event in JSCalendar and a card in JSContact become the engine's is in `jscalendar.rs` and
 //! `jscontact.rs`. What the engine says was changed of an event goes first ([`push`]), as JSCalendar writes it
-//! (`write.rs`).
+//! (`write.rs`); what it says was changed of a contact goes before the contacts are read (`contacts/push.rs`), as
+//! JSContact writes it (`jscontact.rs`).
 //!
 //! This module holds what the readers share: ISO 8601 durations, the UTC and local times of JSCalendar,
 //! the paging of a `/query` ([`query_all`]), the bounds of what is read, and how trouble ends a job and is said.
 //!
-//! **Events are written; contacts not yet.** Until cards go back to the server, every address book is handed over as
-//! one the account may only read ([`WRITE_CONTACTS`]): the engine's own lock and its reason then keep the owner from
-//! making, here, what would go nowhere. [`WRITE_EVENTS`] was the same door for calendars.
+//! **Events and contacts are written.** [`WRITE_EVENTS`] and [`WRITE_CONTACTS`] were the doors that kept every
+//! calendar and every address book read-only (the engine's own lock and its reason keeping the owner from making
+//! what would go nowhere) until what is changed here could go back.
 
 pub mod calendars;
 pub mod contacts;
@@ -46,9 +47,9 @@ pub(crate) const BUSY_FOR: u32 = 30;
 const MAX_LINE: usize = 300;
 const SECRET_ID: usize = 8;
 
-/// Write what `request` says was changed here of the account's calendars ([`push`]), then read what it asks, the
-/// calendars first and then the address books, and say what came of it all in one answer: see [`calendars`] and
-/// [`contacts`]. `client` is signed in already ([`Client::connect`]); a caller whose sign-in failed answers with
+/// Write what `request` says was changed here of the account's calendars ([`push`]), then read what it asks of them;
+/// then write what it says was changed of the contacts of its address books, and read those; and say what came of it
+/// all in one answer: see [`calendars`] and [`contacts`]. `client` is signed in already ([`Client::connect`]); a caller whose sign-in failed answers with
 /// [`failed_pim`]. `cancel` is read before every request. What the session does not offer is not asked for, and the
 /// answer says what it offers. The server refusing the credentials, saying it is busy, or a stop ends the job there:
 /// nothing is read after that.
@@ -77,11 +78,13 @@ pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, can
         }
         None => log::debug!("jmap pim: the session offers no calendars"),
     }
-    if going
-        && request.contacts
-        && let Some(account) = client.contacts_account()
-    {
-        contacts::read(client, request, account, cancel, &mut out).await;
+    if going && let Some(account) = client.contacts_account() {
+        if WRITE_CONTACTS {
+            going = contacts::push::push(client, request, account, cancel, &mut out).await;
+        }
+        if going && request.contacts {
+            contacts::read(client, request, account, cancel, &mut out).await;
+        }
     }
     log::debug!(
         "jmap pim: {} calendar(s) listed, {} download(s), {} event(s), {} book(s), {} contact(s) (state {}), {} line(s); stopped: {}, busy: {}, refused: {}",
@@ -213,9 +216,9 @@ pub fn server_card_id(key: &str) -> Option<String> {
 /// Whether what is changed here in a server's calendar is written back to it ([`push`]): a calendar the account may
 /// write is handed over as one it may write.
 pub const WRITE_EVENTS: bool = true;
-/// Likewise for the contacts of a server's address books. Not yet: every book read is handed over as read-only, so
-/// that nothing is made here that would never reach the server.
-pub const WRITE_CONTACTS: bool = false;
+/// Likewise for the contacts of a server's address books ([`contacts`]): a book whose cards the account may write is
+/// handed over as one whose contacts may be changed.
+pub const WRITE_CONTACTS: bool = true;
 
 /// The most an answer may be, in bytes, by what is asked: a list of ids (a query's page, 5,000 ids at the
 /// most), and a page of whole items (200 events, whose descriptions may be long, or 500 cards).

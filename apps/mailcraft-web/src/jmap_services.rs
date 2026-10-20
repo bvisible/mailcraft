@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_jmap::fetch::{failed_fetch, fetch_messages};
 use mailcraft_jmap::{Auth, Client, Error, Http, failed_pim, failed_run, sync_mail, sync_pim};
+use mailcraft_model::book::{ContactOp, ContactOutcome, ContactsUploaded};
 use mailcraft_model::remote::{EventOp, EventOutcome, EventsUploaded};
 use mailcraft_model::sync::{GraphFetchResult, JmapMailRequest, JmapMailResult, JmapPimRequest, JmapPimResult};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
@@ -296,8 +297,8 @@ where
 
 /// One calendar job of a JMAP account: sign in, write and read what `job` asks ([`sync_pim`]), and give the answer. A
 /// credential the server turns down in the middle of it is renewed by the host, once, and the job done again with
-/// it: what the server had answered of the changes before stays answered, and only the others go again. A server
-/// whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
+/// it: what the server had answered of the changes before (of events and of contacts) stays answered, and only the
+/// others go again. A server whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
 pub async fn pim<H, C, S, W>(http: H, job: &JmapPimJob, credentials: Option<&C>, sleep: S) -> JmapPimResult
 where
     H: Http + Clone,
@@ -314,13 +315,19 @@ where
     let Some(mut auth) = auth else { return failed_pim(request, &no_credential()) };
     let mut renewed = false;
     // The changes still to write, and what the server said of those it was told: kept in whatever answer is given.
-    let mut changes = request.changes.clone();
+    let (mut changes, mut cards) = (request.changes.clone(), request.contact_changes.clone());
     let mut answered: Vec<EventOutcome> = Vec::new();
-    let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome]| {
+    let mut answered_cards: Vec<ContactOutcome> = Vec::new();
+    let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome], answered_cards: &[ContactOutcome]| {
         if !answered.is_empty() {
             let token_refused = answer.uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);
             answer.uploaded =
                 Some(EventsUploaded { account: request.account, email: request.email.clone(), outcomes: answered.to_vec(), token_refused });
+        }
+        if !answered_cards.is_empty() {
+            let token_refused = answer.contacts_uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);
+            let outcomes = answered_cards.to_vec();
+            answer.contacts_uploaded = Some(ContactsUploaded { account: request.account, email: request.email.clone(), outcomes, token_refused });
         }
         answer
     };
@@ -330,10 +337,15 @@ where
                 renewed = now_renewed;
                 client
             }
-            SignedIn::Stopped => return with_answered(stopped_pim(request), &answered),
-            SignedIn::Out(e) => return with_answered(failed_pim(request, &e), &answered),
+            SignedIn::Stopped => return with_answered(stopped_pim(request), &answered, &answered_cards),
+            SignedIn::Out(e) => return with_answered(failed_pim(request, &e), &answered, &answered_cards),
         };
-        let asked = JmapPimRequest { plain_unless_said: client.api_path_ends_with(FACADE_API), changes: changes.clone(), ..request.clone() };
+        let asked = JmapPimRequest {
+            plain_unless_said: client.api_path_ends_with(FACADE_API),
+            changes: changes.clone(),
+            contact_changes: cards.clone(),
+            ..request.clone()
+        };
         let answer = sync_pim(&client, &asked, &job.cancel).await;
         // What the server answered of the changes before it turned the credential down stays answered: only the rest
         // goes again, with the new one.
@@ -342,14 +354,19 @@ where
             changes.ops.retain(|op| !now_answered.iter().any(|outcome| same_change(&outcome.op, op)));
         }
         answered.extend(now_answered);
-        let answer = with_answered(answer, &answered);
+        let now_answered = answer.contacts_uploaded.as_ref().map(|uploaded| uploaded.outcomes.clone()).unwrap_or_default();
+        if let Some(cards) = &mut cards {
+            cards.ops.retain(|op| !now_answered.iter().any(|outcome| same_card_change(&outcome.op, op)));
+        }
+        answered_cards.extend(now_answered);
+        let answer = with_answered(answer, &answered, &answered_cards);
         if !answer.auth_refused || renewed || host.is_none() {
             return answer;
         }
         // Turned down in the middle: a new credential from the host, and the job read again with it.
         match renew(host, &request.email, &job.cancel, &sleep).await {
             Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
-            Renewed::Cancelled => return with_answered(stopped_pim(request), &answered),
+            Renewed::Cancelled => return with_answered(stopped_pim(request), &answered, &answered_cards),
             Renewed::Refused => return answer,
         }
     }
@@ -357,6 +374,13 @@ where
 
 /// Whether two changes are the same one: an outcome carries the change it is of, as the host tidied it.
 fn same_change(answered: &EventOp, asked: &EventOp) -> bool {
+    let mut asked = asked.clone();
+    asked.tidy();
+    *answered == asked
+}
+
+/// The same, for changes of contacts.
+fn same_card_change(answered: &ContactOp, asked: &ContactOp) -> bool {
     let mut asked = asked.clone();
     asked.tidy();
     *answered == asked

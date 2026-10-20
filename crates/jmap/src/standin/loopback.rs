@@ -23,7 +23,8 @@
 //!   without an answer, as a server that is gone), `?up` (well again, and quick), `?slow=<ms>` (each answer waits that
 //!   long first, a minute at most), `?expire` (the token it holds now is no longer good: it holds another, which
 //!   `GET /__token` gives, as a hosting page's renewal would). `GET /__log` lists the methods it was asked to call,
-//!   `GET /__written` the changes of events it was sent, and `GET /__mail` the mail it would have sent about them.
+//!   `GET /__written` the changes of events it was sent, `GET /__mail` the mail it would have sent about them, and
+//!   `GET /__cards` the cards it has now with what it was sent of them.
 //! - Anything else is the stand-in's, at its own address: the session (`/jmap/session`, whose other addresses are
 //!   relative to it), the API, the downloads.
 
@@ -121,6 +122,22 @@ pub(super) fn answer(stand_in: &StandIn, trouble: &mut Trouble, raw: &[u8]) -> O
                     .collect()
             });
             return Some(reply(200, "application/json", &serde_json::to_vec(&sent).unwrap_or_default(), None));
+        }
+        "/__cards" => {
+            let cards = stand_in.with(|d| {
+                let cards: Vec<serde_json::Value> = d
+                    .pim
+                    .cards
+                    .iter()
+                    .map(|c| {
+                        let phones: Vec<serde_json::Value> = c.phones.iter().map(|(number, mobile)| serde_json::json!({"number": number, "mobile": mobile})).collect();
+                        serde_json::json!({"id": c.id, "books": c.books, "first": c.first, "last": c.last, "company": c.company, "title": c.title, "emails": c.emails, "phones": phones})
+                    })
+                    .collect();
+                let written: Vec<serde_json::Value> = d.pim.card_writes.iter().map(|(id, what)| serde_json::json!({"id": id, "what": what})).collect();
+                serde_json::json!({"cards": cards, "written": written})
+            });
+            return Some(reply(200, "application/json", &serde_json::to_vec(&cards).unwrap_or_default(), None));
         }
         "/__written" => {
             let written: Vec<serde_json::Value> =

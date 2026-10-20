@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
 use mailcraft_engine::{Module, Session};
-use mailcraft_model::book::{BooksDownload, RemoteBook};
+use mailcraft_model::book::{BooksDownload, ContactChangeKind, ContactOutcome, ContactsUploaded, RemoteBook};
 use mailcraft_model::remote::{
     CalendarsDownload, ContactsDownload, EventChangeKind, EventOutcome, EventResult, EventsDownload, EventsUploaded, RemoteCalendar, RemoteContact,
     RemoteEvent,
@@ -752,4 +752,115 @@ fn a_job_that_carried_changes_and_says_nothing_of_them_came_to_nothing() {
         JmapPimResult { account: id, email: ME.into(), offers: Some(PimOffers { calendars: true, contacts: true }), ..Default::default() },
     );
     assert_eq!(app.jmap_pim.failures.get(&id).map(|(n, _)| *n), Some(1));
+}
+
+// What is changed here of the contacts of a server's book goes with the next job too, before the contacts are read.
+
+/// The window after its first job brought the team's book, which Ada may change, with Grace and Bob in it.
+fn contacts_window() -> (MailApp, Id, Asked) {
+    let (mut app, id, asked) = window();
+    assert!(app.jmap_pim_tick_at(true, 0.0));
+    let mut first = with_contacts(answered(id), id, "s1");
+    for book in first.books.iter_mut().flat_map(|list| list.books.iter_mut()) {
+        (book.read_only, book.may_remove) = (false, true);
+    }
+    answer(&mut app, &asked, first);
+    (app, id, asked)
+}
+
+fn grace(app: &MailApp) -> mailcraft_model::Contact {
+    app.session.mailbox.contacts.values().find(|c| c.first == "Grace").map(|c| c.as_ref().clone()).unwrap()
+}
+
+/// What the host answers a job that wrote `outcomes` to the contacts and then read them, Grace with the job title
+/// `title`, at the state `state`.
+fn wrote_contacts(account: Id, outcomes: Vec<ContactOutcome>, title: &str, state: &str) -> JmapPimResult {
+    let mut result = with_contacts(answered(account), account, state);
+    for book in result.books.iter_mut().flat_map(|list| list.books.iter_mut()) {
+        (book.read_only, book.may_remove) = (false, true);
+    }
+    for contact in result.contacts.iter_mut().flat_map(|download| download.contacts.iter_mut()).filter(|c| c.first == "Grace") {
+        contact.title = title.into();
+    }
+    result.contacts_uploaded = Some(ContactsUploaded { account, email: ME.into(), outcomes, token_refused: false });
+    result
+}
+
+#[test]
+fn a_contact_changed_here_goes_at_once_and_what_the_server_said_is_taken_in_before_the_contacts() {
+    let (mut app, id, asked) = contacts_window();
+    let before = jobs(&asked);
+    app.execute("people.edit", json!({"id": grace(&app).id, "title": "Engineer"})).unwrap();
+    // A second later: the change, and the contacts after it, in one job.
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    assert_eq!(jobs(&asked), before + 1);
+    let request = last(&asked);
+    let cards = request.contact_changes.clone().unwrap();
+    assert_eq!((cards.ops.len(), cards.ops[0].kind, cards.ops[0].remote.as_str(), cards.account), (1, ContactChangeKind::Update, "c-grace", id));
+    assert!(request.contacts, "the contacts are read after the change went");
+    // Done, and the read that came after it has the change.
+    let done = ContactOutcome { op: cards.ops[0].clone(), result: EventResult::Done, remote: "c-grace".into(), ..Default::default() };
+    answer(&mut app, &asked, wrote_contacts(id, vec![done], "Engineer", "s2"));
+    assert_eq!(grace(&app).title, "Engineer");
+    assert!(app.session.mailbox.contact_changes.is_empty());
+    assert_eq!(app.jmap_contacts_state(id).map(|(state, _)| state), Some("s2".to_string()));
+    assert!(!app.jmap_pim.failures.contains_key(&id));
+}
+
+#[test]
+fn a_contact_change_the_server_refuses_is_put_back_and_said() {
+    let (mut app, id, asked) = contacts_window();
+    app.execute("people.edit", json!({"id": grace(&app).id, "title": "Engineer"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let op = last(&asked).contact_changes.unwrap().ops[0].clone();
+    let refused = ContactOutcome { op, result: EventResult::Refused, error: "Your rights do not allow it.".into(), ..Default::default() };
+    answer(&mut app, &asked, wrote_contacts(id, vec![refused], "", "s2"));
+    assert_eq!(grace(&app).title, "", "as the server has it");
+    let said = "The server wouldn't take the change to \"Grace Okafor\" (Your rights do not allow it.). It was put back as it was.";
+    assert!(app.sync_problems_of(id).iter().any(|line| line == said), "{:?}", app.sync_problems_of(id));
+    assert!(app.session.mailbox.contact_changes.is_empty());
+}
+
+#[test]
+fn a_contact_change_that_couldnt_be_sent_waits_and_says_so_and_is_not_sent_again_at_once() {
+    let (mut app, id, asked) = contacts_window();
+    app.execute("people.delete", json!({"id": grace(&app).id})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let op = last(&asked).contact_changes.unwrap().ops[0].clone();
+    assert_eq!(op.kind, ContactChangeKind::Delete);
+    let failed = ContactOutcome { op, result: EventResult::Failed, error: "the server failed".into(), retry_after: Some(60), ..Default::default() };
+    // (Grace still on the server: she stays deleted here while her deletion waits.)
+    answer(&mut app, &asked, wrote_contacts(id, vec![failed], "", "s2"));
+    assert!(!app.session.mailbox.contacts.values().any(|c| c.first == "Grace"));
+    assert_eq!(app.session.mailbox.contact_changes.len(), 1);
+    assert!(app.sync_problems_of(id).iter().any(|line| line.starts_with("A contact change couldn't be sent yet and will be tried again")));
+    // Held back as the server asked (a minute, by the session's clock, which stands still here): the days on screen are
+    // asked for as ever, and the deletion doesn't go with them.
+    assert!(app.jmap_pim_tick_at(true, 3.0 * MINUTE));
+    assert!(last(&asked).contact_changes.is_none());
+}
+
+#[test]
+fn a_job_that_carried_contact_changes_and_says_nothing_of_them_came_to_nothing() {
+    let (mut app, id, asked) = contacts_window();
+    app.execute("people.edit", json!({"id": grace(&app).id, "title": "Engineer"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    assert!(last(&asked).contact_changes.is_some());
+    answer(
+        &mut app,
+        &asked,
+        JmapPimResult {
+            account: id,
+            email: ME.into(),
+            offers: Some(PimOffers { calendars: true, contacts: true }),
+            stopped: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(app.jmap_pim.failures.get(&id).map(|(n, _)| *n), Some(1));
+    assert_eq!(app.session.mailbox.contact_changes.len(), 1, "it waits");
+    // Not the very same again within half a minute.
+    assert!(!app.jmap_pim_tick_at(true, 10.0 * SECOND));
+    assert!(app.jmap_pim_tick_at(true, 32.0 * SECOND));
+    assert!(last(&asked).contact_changes.is_some(), "and then again");
 }
