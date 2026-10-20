@@ -1006,7 +1006,8 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ),
     (
         "{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.",
-        "a calendar's, and defensive: the engine's words for a server that gives no reason, and the stand-in and the server always give one",
+        "a calendar's: a new event sent again after its answer was lost, which the server had made without its room, is answered \
+         with no room and no reason (`jmap_pim_flow_tests` makes it and reads it in French)",
     ),
     (
         "{name}: an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series.",

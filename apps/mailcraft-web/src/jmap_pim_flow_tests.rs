@@ -1391,6 +1391,30 @@ fn an_online_appointment_moved_to_another_calendar_keeps_its_room_and_no_second_
 }
 
 #[test]
+fn an_appointment_edited_before_the_answer_that_made_it_came_never_makes_a_second_room() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    let made = flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
+    let id = made.unwrap()["id"].as_u64().unwrap();
+    // The job that makes it is on its way (no link known here yet) when it is changed here.
+    flow.hold();
+    assert!(flow.look(SECOND));
+    flow.app.execute("calendar.edit", json!({"id": id, "title": "Dentist (Dr Lee)", "location": "Main Street 4"})).unwrap();
+    flow.release();
+    // What was changed meanwhile goes after it, and asks for no room.
+    for _ in 0..2 {
+        flow.look(2.0 * MINUTE + SECOND);
+    }
+    assert_eq!(flow.rooms(), 1, "one room");
+    let there = flow.on_server("Dentist (Dr Lee)").unwrap_or_else(|| panic!("{:?}", flow.server.with(|d| d.pim.events.clone())));
+    assert_eq!(there.props.get("links").and_then(Value::as_object).map(|links| links.len()), Some(1), "{:?}", there.props);
+    assert!(flow.server.with(|d| d.pim.written.iter().all(|(_, patch)| patch.get("virtualLocations").is_none())), "no room asked for again");
+    let dentist = flow.app.session.mailbox.event(id).cloned().unwrap();
+    assert_eq!((dentist.title.as_str(), dentist.join_link()), ("Dentist (Dr Lee)", Some(room("room-1").as_str())));
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.session.mailbox.event_changes);
+}
+
+#[test]
 fn a_room_the_server_wont_make_leaves_the_appointment_saved_and_says_so() {
     let mut flow = Flow::start();
     flow.with_meet();
@@ -1430,6 +1454,43 @@ fn a_room_the_server_wont_make_leaves_the_appointment_saved_and_says_so() {
         "{said}"
     );
     assert_eq!(flow.rooms(), 0);
+}
+
+#[test]
+fn a_new_appointment_made_without_its_room_whose_answer_was_lost_says_so_when_sent_again() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    // Its room refused, it is made without, and that answer is lost on the way; the read that follows fails too.
+    flow.server.with(|d| {
+        d.pim.room_refusal = Some("forbidden");
+        d.faults.push_back(Fault::later("CalendarEvent/set", 1, mailcraft_jmap::standin::Effect::LoseAnswer));
+        d.faults.push_back(Fault::on("CalendarEvent/query", mailcraft_jmap::standin::Effect::MethodError("serverFail")));
+    });
+    let made = flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
+    let id = made.unwrap()["id"].as_u64().unwrap();
+    assert!(flow.look(SECOND));
+    assert!(
+        flow.app.session.mailbox.event_changes.iter().any(|change| change.kind == mailcraft_model::remote::EventChangeKind::Create),
+        "it waits to go again"
+    );
+    // Sent again once it is due (rooms can be made by now): the server has it already, without a room, and says no more.
+    flow.server.with(|d| d.pim.room_refusal = None);
+    flow.app.session.clock.now = Some(NOW + 120);
+    flow.look(2.0 * MINUTE + SECOND);
+    let dentist = flow.app.session.mailbox.event(id).cloned().unwrap();
+    assert!(dentist.online.is_none() && !dentist.origin.id.is_empty(), "saved, without a room: {dentist:?}");
+    assert_eq!((flow.rooms(), flow.server.with(|d| d.pim.events.iter().filter(|e| e.props.get("title") == Some(&json!("Dentist"))).count())), (0, 1));
+    let problems = flow.app.sync_problems_of(flow.account);
+    let said = problems.iter().find(|line| line.starts_with("\"Dentist\"")).unwrap_or_else(|| panic!("{problems:?}"));
+    assert_eq!(
+        said,
+        "\"Dentist\" couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join."
+    );
+    assert_eq!(
+        in_french(&flow, said),
+        "\"Dentist\" n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté. La réunion elle-même est enregistrée, sans lien pour la rejoindre."
+    );
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.session.mailbox.event_changes);
 }
 
 #[test]
