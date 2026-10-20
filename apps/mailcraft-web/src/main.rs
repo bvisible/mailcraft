@@ -25,6 +25,9 @@ mod renewal;
 mod credentials;
 #[cfg(target_arch = "wasm32")]
 mod fetch;
+// //// Neoffice — what makes a tab a hosting page's (its runners, and nothing kept between visits), built everywhere so
+// that it is tested natively.
+mod hosted;
 mod jmap_services;
 // //// Neoffice — how the browser build reaches Nora, the assistant of the Neoffice server, and where her calls may go
 // (both built everywhere, so that their rules are tested natively).

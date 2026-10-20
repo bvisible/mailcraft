@@ -266,9 +266,10 @@ fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
     }
 }
 
-/// A mailbox MailCraft can open: an address, an `https` session and a secret.
+/// A mailbox MailCraft can open: an address, an `https` session (or plain `http` to this computer alone, the
+/// workshop's stand-in server: hosted.rs) and a secret.
 fn complete(a: &HostAccount) -> bool {
-    a.email.contains('@') && a.session.starts_with("https://") && !a.secret.is_empty()
+    a.email.contains('@') && crate::hosted::session_allowed(&a.session) && !a.secret.is_empty()
 }
 
 /// The product's name the person reads (Neoffice's "NeoMail"), if the page gives one.

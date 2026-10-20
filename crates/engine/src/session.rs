@@ -584,6 +584,12 @@ pub struct Session {
     /// only reads one. Set by the host (`MAILCRAFT_SHARED_MAILBOXES=1`), never by a command's
     /// params. Never saved.
     pub shared_mailboxes: bool,
+    // //// Neoffice — a browser tab of a hosting page keeps nothing between visits: what only this computer would keep is refused there.
+    /// What is made here and kept nowhere else (a contact or a task of the mailbox's own, an appointment in a calendar
+    /// of its own) outlives this session: false for a browser tab of a page that hands its mailboxes over, which keeps
+    /// nothing of them between visits. What would vanish at the next visit is then refused, with the reason, rather than
+    /// made. Set by the host, never by a command's params. Never saved.
+    pub keeps_local: bool,
     history: Vec<Undo>,
     redo: Vec<Undo>,
     /// What the last undo or redo couldn't do there (a delete for good, a message sent).
@@ -699,6 +705,8 @@ impl Session {
             graph_switch_backup: None,
             server_search: Default::default(),
             shared_mailboxes: false,
+            // //// Neoffice — see the field: kept, unless the host says otherwise.
+            keeps_local: true,
             history: Vec::new(),
             redo: Vec::new(),
             undo_said: Vec::new(),

@@ -257,19 +257,19 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
         session.prefs.twelve_hour = false;
     }
     let mut services = services(inbox, ctx.clone());
-    services.persist = None;
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
     let gate = crate::jmap_services::Gate::default();
-    services.jmap = Some(crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()));
-    services.jmap_fetch = Some(crate::jmap_services::jmap_fetch_service(ctx, credentials, gate));
-    services.jmap_host_credentials = true;
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs).
     if let Some(nora) = &mut services.nora {
         nora.mailboxes = accounts.iter().map(|a| a.email.clone()).collect();
     }
-    let mut app = MailApp::new(session, services);
-    app.autosave = false;
-    app
+    // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).
+    let runners = crate::hosted::Runners {
+        jmap: crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()),
+        jmap_fetch: crate::jmap_services::jmap_fetch_service(ctx.clone(), credentials.clone(), gate.clone()),
+        jmap_pim: crate::jmap_services::jmap_pim_service(ctx, credentials, gate),
+    };
+    crate::hosted::hosted_window(session, services, runners)
 }
 
 /// Keep the mailbox in the browser's storage. A full store is the usual failure: say so plainly.

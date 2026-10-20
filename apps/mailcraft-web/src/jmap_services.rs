@@ -1,12 +1,13 @@
 // //// Neoffice — added file (no upstream equivalent): a JMAP account's Send/Receive and downloads in the browser.
 
-//! A JMAP account's Send/Receive and downloads in the browser: what stands behind
-//! [`mailcraft_ui_egui::Services::jmap`] and [`mailcraft_ui_egui::Services::jmap_fetch`].
+//! A JMAP account's Send/Receive, downloads and calendars in the browser: what stands behind
+//! [`mailcraft_ui_egui::Services::jmap`], [`mailcraft_ui_egui::Services::jmap_fetch`] and
+//! [`mailcraft_ui_egui::Services::jmap_pim`].
 //!
-//! The window hands a job ([`JmapJob`], [`JmapFetchJob`]); the runner signs in to the server
-//! ([`Client::connect`]) over the browser's `fetch` and does what the job asks ([`sync_mail`],
-//! [`fetch_messages`]), as a task on the window's own thread. What it brings goes to the window through a
-//! plain channel and wakes it: the task never waits for the window, which takes a few pieces a frame.
+//! The window hands a job ([`JmapJob`], [`JmapFetchJob`], [`JmapPimJob`]); the runner signs in to the server
+//! ([`Client::connect`], [`signed_in`]) over the browser's `fetch` and does what the job asks ([`sync_mail`],
+//! [`fetch_messages`], [`sync_pim`]), as a task on the window's own thread. What it brings goes to the window through
+//! a plain channel and wakes it: the task never waits for the window, which takes a few pieces a frame.
 //!
 //! **The credential** is the job's own (a password the owner typed, or a bearer token), or the host's when
 //! the host holds it ([`Credentials`]). A server that refuses the host's credential, at sign-in or during
@@ -23,6 +24,10 @@
 //! what it did not reach (a message, a draft, a change) is the next run's, so that asking the same question
 //! twice never sends a message or files a draft a second time.
 //!
+//! **A calendar job** only reads: one whose credential the server turns down in the middle is read again, once, with
+//! the host's new one. A server whose API is the Neoffice facade's (its method path, [`FACADE_API`]) is one that keeps
+//! only the basics of an event, whether or not its session says what it writes.
+//!
 //! A job that is stopped (its `cancel`) says so in its answer, whether it was reading or waiting.
 // Outside the browser only the tests run it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
@@ -31,9 +36,10 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_jmap::fetch::{failed_fetch, fetch_messages};
-use mailcraft_jmap::{Auth, Client, Error, Http, failed_run, sync_mail};
-use mailcraft_model::sync::{GraphFetchResult, JmapMailRequest, JmapMailResult};
+use mailcraft_jmap::{Auth, Client, Error, Http, failed_pim, failed_run, sync_mail, sync_pim};
+use mailcraft_model::sync::{GraphFetchResult, JmapMailRequest, JmapMailResult, JmapPimRequest, JmapPimResult};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
+use mailcraft_ui_egui::jmap_pim::JmapPimJob;
 
 use crate::credentials::{Credentials, Renewal};
 
@@ -42,6 +48,10 @@ use crate::credentials::{Credentials, Renewal};
 const ASK_AGAIN_MS: [i32; 3] = [5_000, 10_000, 20_000];
 /// Those waits are made of slices this long, between which a stop is looked at.
 const WAIT_SLICE_MS: i32 = 500;
+
+/// The path the API of the Neoffice facade is served at (`frappe_webmail`'s method): a server there keeps only the
+/// basics of an event, said or not.
+pub const FACADE_API: &str = "/api/method/frappe_webmail.mailcraft_jmap.api";
 
 /// The most requests on their way to the servers at once, all the page's jobs together. A server says how
 /// many it takes (RFC 8620 `maxConcurrentRequests`); two is within what servers commonly take, and keeps a
@@ -83,6 +93,26 @@ pub fn jmap_fetch_service<C: Credentials + 'static>(
         let (ctx, credentials, gate) = (ctx.clone(), credentials.clone(), gate.clone());
         wasm_bindgen_futures::spawn_local(async move {
             let answer = fetch(gate, &job, Some(credentials.as_ref()), crate::fetch::sleep).await;
+            let _ = tx.send(answer);
+            ctx.request_repaint();
+        });
+        rx
+    })
+}
+
+/// `Services::jmap_pim` for the browser, as [`jmap_service`]: one answer for each job, through the same `gate` as the
+/// page's mail, so that a calendar job queues with the mail and never beside it.
+#[cfg(target_arch = "wasm32")]
+pub fn jmap_pim_service<C: Credentials + 'static>(
+    ctx: egui::Context,
+    credentials: std::rc::Rc<C>,
+    gate: Gate,
+) -> Box<dyn Fn(JmapPimJob) -> std::sync::mpsc::Receiver<JmapPimResult>> {
+    Box::new(move |job: JmapPimJob| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (ctx, credentials, gate) = (ctx.clone(), credentials.clone(), gate.clone());
+        wasm_bindgen_futures::spawn_local(async move {
+            let answer = pim(gate, &job, Some(credentials.as_ref()), crate::fetch::sleep).await;
             let _ = tx.send(answer);
             ctx.request_repaint();
         });
@@ -188,27 +218,16 @@ where
     let mut reread: Option<JmapMailRequest> = None;
     loop {
         let request = reread.as_ref().unwrap_or(&job.request);
-        if job.cancel.load(Ordering::Relaxed) {
-            emit(stopped(request));
-            return;
-        }
-        let client = match Client::connect(http.clone(), &request.session, &auth).await {
-            Ok(client) => client,
-            Err(Error::Auth(why)) if !renewed && host.is_some() => match renew(host, &request.email, &job.cancel, &sleep).await {
-                Renewed::Fresh(fresh) => {
-                    (auth, renewed) = (fresh, true);
-                    continue;
-                }
-                Renewed::Cancelled => {
-                    emit(stopped(request));
-                    return;
-                }
-                Renewed::Refused => {
-                    emit(failed_run(request, &Error::Auth(why)));
-                    return;
-                }
-            },
-            Err(e) => {
+        let client = match signed_in(&http, &request.session, &request.email, auth, renewed, host, &job.cancel, &sleep).await {
+            SignedIn::In(client, now_renewed) => {
+                renewed = now_renewed;
+                client
+            }
+            SignedIn::Stopped => {
+                emit(stopped(request));
+                return;
+            }
+            SignedIn::Out(e) => {
                 emit(failed_run(request, &e));
                 return;
             }
@@ -263,18 +282,98 @@ where
         Some(secret) => Some(own_auth(request.bearer, &request.email, secret)),
         None => host.and_then(|c| c.auth(&request.email)),
     };
-    let Some(mut auth) = auth else { return failed_fetch(request, &no_credential()) };
+    let Some(auth) = auth else { return failed_fetch(request, &no_credential()) };
+    match signed_in(&http, &request.session, &request.email, auth, false, host, &job.cancel, &sleep).await {
+        SignedIn::In(client, ..) => fetch_messages(&client, request, &job.cancel).await,
+        // Stopped: nothing fetched, and nothing to hold against the server.
+        SignedIn::Stopped => GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() },
+        SignedIn::Out(e) => failed_fetch(request, &e),
+    }
+}
+
+/// One calendar job of a JMAP account: sign in, read what `job` asks ([`sync_pim`]), and give the answer. It only
+/// reads, so a credential the server turns down in the middle of it is renewed by the host, once, and the job read
+/// again; a server whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
+pub async fn pim<H, C, S, W>(http: H, job: &JmapPimJob, credentials: Option<&C>, sleep: S) -> JmapPimResult
+where
+    H: Http + Clone,
+    C: Credentials,
+    S: Fn(i32) -> W,
+    W: Future<Output = ()>,
+{
+    let request = &job.request;
+    let host = if job.secret.is_some() { None } else { credentials };
+    let auth = match &job.secret {
+        Some(secret) => Some(own_auth(request.bearer, &request.email, secret)),
+        None => host.and_then(|c| c.auth(&request.email)),
+    };
+    let Some(mut auth) = auth else { return failed_pim(request, &no_credential()) };
     let mut renewed = false;
     loop {
-        match Client::connect(http.clone(), &request.session, &auth).await {
-            Ok(client) => return fetch_messages(&client, request, &job.cancel).await,
-            Err(Error::Auth(why)) if !renewed && host.is_some() => match renew(host, &request.email, &job.cancel, &sleep).await {
+        let client = match signed_in(&http, &request.session, &request.email, auth, renewed, host, &job.cancel, &sleep).await {
+            SignedIn::In(client, now_renewed) => {
+                renewed = now_renewed;
+                client
+            }
+            SignedIn::Stopped => return stopped_pim(request),
+            SignedIn::Out(e) => return failed_pim(request, &e),
+        };
+        let asked = JmapPimRequest { plain_unless_said: client.api_path_ends_with(FACADE_API), ..request.clone() };
+        let answer = sync_pim(&client, &asked, &job.cancel).await;
+        if !answer.auth_refused || renewed || host.is_none() {
+            return answer;
+        }
+        // Turned down in the middle: a new credential from the host, and the job read again with it.
+        match renew(host, &request.email, &job.cancel, &sleep).await {
+            Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
+            Renewed::Cancelled => return stopped_pim(request),
+            Renewed::Refused => return answer,
+        }
+    }
+}
+
+/// What came of signing in to a server ([`signed_in`]).
+enum SignedIn<H> {
+    /// Signed in, and whether with a credential the host renewed.
+    In(Box<Client<H>>, bool),
+    /// The job was stopped, before or while it waited for the host.
+    Stopped,
+    /// The server can't be had, or refused the credential for good.
+    Out(Error),
+}
+
+/// Sign in to the session at `session` with `auth`. A credential the server refuses is renewed by the `host`, once
+/// (none when `renewed` already), and the sign-in tried again with the new one; the owner's own credential is never
+/// renewed (the job carries it, and `host` is `None`). The stop is looked at before each try.
+#[allow(clippy::too_many_arguments)]
+async fn signed_in<H, C, S, W>(
+    http: &H,
+    session: &str,
+    email: &str,
+    mut auth: Auth,
+    mut renewed: bool,
+    host: Option<&C>,
+    cancel: &AtomicBool,
+    sleep: &S,
+) -> SignedIn<H>
+where
+    H: Http + Clone,
+    C: Credentials,
+    S: Fn(i32) -> W,
+    W: Future<Output = ()>,
+{
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return SignedIn::Stopped;
+        }
+        match Client::connect(http.clone(), session, &auth).await {
+            Ok(client) => return SignedIn::In(Box::new(client), renewed),
+            Err(Error::Auth(why)) if !renewed && host.is_some() => match renew(host, email, cancel, sleep).await {
                 Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
-                // Stopped: nothing fetched, and nothing to hold against the server.
-                Renewed::Cancelled => return GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() },
-                Renewed::Refused => return failed_fetch(request, &Error::Auth(why)),
+                Renewed::Cancelled => return SignedIn::Stopped,
+                Renewed::Refused => return SignedIn::Out(Error::Auth(why)),
             },
-            Err(e) => return failed_fetch(request, &e),
+            Err(e) => return SignedIn::Out(e),
         }
     }
 }
@@ -335,6 +434,15 @@ fn stopped(request: &JmapMailRequest) -> JmapMailResult {
     JmapMailResult { account: request.account, email: request.email.clone(), stopped: true, ..Default::default() }
 }
 
+/// The answer to a calendar job that was stopped before it read anything.
+fn stopped_pim(request: &JmapPimRequest) -> JmapPimResult {
+    JmapPimResult { account: request.account, email: request.email.clone(), stopped: true, ..Default::default() }
+}
+
 #[cfg(test)]
 #[path = "jmap_services_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "jmap_pim_flow_tests.rs"]
+mod pim_flow_tests;

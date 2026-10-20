@@ -8,7 +8,7 @@ use mailcraft_model::sync::{JmapMailRequest, JmapPimRequest, JmapScope};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
-use super::super::{DEMO_PERSON, Pim, SESSION, demo};
+use super::super::{DEMO_PERSON, Pim, SESSION, crowd, demo};
 use super::*;
 use crate::{Auth, Client, sync_mail, sync_pim};
 
@@ -146,6 +146,10 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
     assert_eq!(starts[2] - starts[1], 7 * 86_400 + 3_600, "the week the clocks go back is an hour longer");
     let grace = result.more_events.iter().find(|d| d.calendar == Pim::calendar_id("grace")).unwrap();
     assert_eq!(grace.events.len(), 2);
+    // A crowd for a look at what many events cost: all of them read, in pages.
+    crowd(&stand_in, today(), 600);
+    let crowded = block_on(sync_pim(&client, &request, &AtomicBool::new(false)));
+    assert_eq!(crowded.events.as_ref().map(|d| (d.events.len(), d.complete)), Some((609, true)));
     // And the mail is there for a mail run.
     let mail = JmapMailRequest {
         account: 1,
@@ -171,6 +175,11 @@ fn serve_the_stand_in_on_loopback() {
         .and_then(|day| Date::parse_iso(&day))
         .unwrap_or_else(|| DateTime::from_timestamp(mailcraft_time::now(), 0).date);
     let stand_in = demo(today);
-    println!("the stand-in, with the demo around {}, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C", today.iso());
+    let more = std::env::var("MAILCRAFT_STANDIN_EVENTS").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(20_000);
+    crowd(&stand_in, today, more);
+    println!(
+        "the stand-in, with the demo around {} and {more} more events, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
+        today.iso()
+    );
     serve(&stand_in, port).unwrap();
 }

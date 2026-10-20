@@ -10,8 +10,9 @@
 //! ```
 //!
 //! It listens on `127.0.0.1` alone (the port from `MAILCRAFT_STANDIN_PORT`, 8790 when unset; the demo around the day
-//! `MAILCRAFT_STANDIN_TODAY` names, else today), takes one connection at a time on one thread, and answers each
-//! request once (`Connection: close`):
+//! `MAILCRAFT_STANDIN_TODAY` names, else today, with as many more events as `MAILCRAFT_STANDIN_EVENTS` says, for a look
+//! at what they cost the tab), takes one connection at a time on one thread, and answers each request once
+//! (`Connection: close`):
 //!
 //! - **Every answer carries CORS headers** that let any page call it with a credential in a header (the browser's
 //!   preflight, an `OPTIONS`, is answered at once with 204): it is a test server on this computer, which a page of

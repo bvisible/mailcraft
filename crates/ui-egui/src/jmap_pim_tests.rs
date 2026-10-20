@@ -225,6 +225,25 @@ fn the_ticked_calendars_are_asked_on_screen_and_all_of_them_on_the_wide_stretch(
 }
 
 #[test]
+fn a_calendar_ticked_here_is_asked_for_at_once() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, answered(id));
+    assert!(!app.jmap_pim_tick_at(true, 10.0 * SECOND));
+    let team = app.session.mailbox.calendars.iter().find(|c| c.origin.id == "C-team").map(|c| c.id).unwrap();
+    app.execute("calendar.showCalendar", json!({"id": team, "value": true})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, 11.0 * SECOND), "not two minutes later: at once");
+    assert_eq!(last(&asked).asks.iter().map(|a| a.calendar.as_str()).collect::<Vec<_>>(), ["", "C-team"]);
+    answer(&mut app, &asked, answered(id));
+    // Behind the calendar, a tick waits for the cadence.
+    app.execute("calendar.showCalendar", json!({"id": team, "value": false})).unwrap();
+    app.execute("view.mail", json!({})).unwrap();
+    app.jmap_pim_tick_at(true, 12.0 * SECOND);
+    app.execute("calendar.showCalendar", json!({"id": team, "value": true})).unwrap();
+    assert!(!app.jmap_pim_tick_at(true, 13.0 * SECOND));
+}
+
+#[test]
 fn one_job_at_a_time_and_none_beside_a_mail_run_of_the_account_or_a_graph_calendar_job() {
     let (mut app, id, asked) = window();
     assert!(app.jmap_pim_tick_at(true, 0.0));

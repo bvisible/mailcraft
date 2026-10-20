@@ -10,8 +10,8 @@
 //! **When.** An account is asked for its list of calendars and the wide stretch (a month back, a year ahead) at its
 //! first job and every ten minutes after; for the days on screen and a week either side every two minutes while the
 //! calendar or People is in front, and every ten minutes otherwise; at once when the window comes back to the front
-//! or the owner switches to the calendar or to People, when other days come into view, and after the owner's
-//! Send/Receive of the account. A job that came to nothing is followed by a wait of half a minute, twice as long
+//! or the owner switches to the calendar or to People, when other days come into view or a calendar is ticked that
+//! the last job didn't read, and after the owner's Send/Receive of the account. A job that came to nothing is followed by a wait of half a minute, twice as long
 //! after each one more, ten minutes at the most. (The cadences are the server's to bear: a server of the kind that
 //! answers from a layer over another store pays for each read.)
 //!
@@ -111,8 +111,9 @@ pub(crate) struct JmapPim {
     /// Whether the window had the focus, and the calendar or People was in front, at the last look.
     focused: bool,
     in_front: bool,
-    /// The stretch of each account's calendar that was last asked for.
+    /// The stretch of each account's calendar that was last asked for, and the calendars (by their names on the server).
     shown: HashMap<Id, (Timestamp, Timestamp)>,
+    asked: HashMap<Id, Vec<String>>,
     /// The account asked for last: the next look starts after it, so that accounts take turns.
     last: Option<Id>,
 }
@@ -121,6 +122,17 @@ impl MailApp {
     /// Whether a calendar job of a JMAP account is in flight.
     pub fn jmap_pim_running(&self) -> bool {
         self.jmap_pim.rx.is_some()
+    }
+
+    /// Whether the server of the JMAP account `account` turned its secret down: no job starts by itself for it, mail
+    /// or calendar, until the owner asks. (Public for a host's tests.)
+    pub fn jmap_refused_for(&self, account: Id) -> bool {
+        self.jmap_refused.contains(&account)
+    }
+
+    /// The lines the Send/Receive problems report keeps for `account`. (Public for a host's tests.)
+    pub fn sync_problems_of(&self, account: Id) -> Vec<String> {
+        self.sync_problems.iter().filter(|(of, ..)| *of == account).flat_map(|(.., lines)| lines.iter().cloned()).collect()
     }
 
     /// Look whether a JMAP account's calendar is due, and start a job when one is. Called every frame.
@@ -184,10 +196,11 @@ impl MailApp {
             }
             let wide = self.jmap_pim.wide.get(&account).is_none_or(|at| now - at >= WIDE_MS);
             let every = if in_front { IN_FRONT_MS } else { BEHIND_MS };
-            // Other days came into view: they are asked for without waiting.
+            // Other days came into view, or a calendar was ticked that the last job didn't read: asked for without waiting.
             let elsewhere = in_front && self.jmap_pim.shown.get(&account).is_some_and(|shown| *shown != self.calendar_window());
+            let newly = in_front && self.ticked_unread(account);
             let asked = self.jmap_pim.checked.get(&account).copied();
-            let refresh = wide || ((self.jmap_pim.due || elsewhere) && in_front) || asked.is_none_or(|at| now - at >= every);
+            let refresh = wide || ((self.jmap_pim.due || elsewhere || newly) && in_front) || asked.is_none_or(|at| now - at >= every);
             if !refresh {
                 continue;
             }
@@ -251,7 +264,9 @@ impl MailApp {
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let Some(start) = &self.services.jmap_pim else { return false };
+        let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });
+        self.jmap_pim.asked.insert(account, names);
         self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), cancel, rx });
         self.jmap_pim.last = Some(account);
         if around.is_none() {
@@ -263,6 +278,13 @@ impl MailApp {
             self.jmap_pim.due = false;
         }
         true
+    }
+
+    /// Whether a calendar of `account` is ticked here that the last job didn't ask for (by its name on the server).
+    fn ticked_unread(&self, account: Id) -> bool {
+        let Some(asked) = self.jmap_pim.asked.get(&account) else { return false };
+        let ticked = |c: &&mailcraft_model::Calendar| c.origin.account == account && c.visible;
+        self.session.mailbox.calendars.iter().filter(ticked).any(|c| !asked.contains(&c.origin.id))
     }
 
     /// Ask the server of the JMAP account `account` for the days round `day` now, in a job of its own: for a meeting

@@ -9,13 +9,15 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mailcraft_jmap::standin::{SESSION, StandIn, TOKEN};
-use mailcraft_jmap::{Auth, block_on};
-use mailcraft_model::sync::{JmapDraftUp, JmapFetchRequest, JmapMailRequest, JmapMailResult, JmapScope, JmapSend};
+use mailcraft_jmap::standin::{Calendar, Event, Pim, SESSION, StandIn, TOKEN};
+use mailcraft_jmap::{Auth, Http, Request, Response, block_on};
+use mailcraft_model::remote::CalendarAsk;
+use mailcraft_model::sync::{JmapDraftUp, JmapFetchRequest, JmapMailRequest, JmapMailResult, JmapPimRequest, JmapPimResult, JmapScope, JmapSend};
 use mailcraft_model::{Address, Body, Message};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
+use mailcraft_ui_egui::jmap_pim::JmapPimJob;
 
-use super::{ASK_AGAIN_MS, AT_ONCE, Queue, fetch, run};
+use super::{ASK_AGAIN_MS, AT_ONCE, FACADE_API, Queue, fetch, pim, run};
 use crate::credentials::{Credentials, Renewal};
 
 const ME: &str = "ada@example.org";
@@ -413,4 +415,134 @@ fn the_gate_lets_requests_go_in_the_order_they_came() {
     assert!(queue.go(again));
     queue.leave(third, true);
     assert!(queue.go(after));
+}
+
+/// A server with an Inbox and Ada's calendar, which holds a meeting on Thursday.
+fn pim_server() -> StandIn {
+    let server = server();
+    server.with(|d| {
+        d.pim = Pim::offered();
+        d.pim.add_calendar(Calendar { flagged: true, ..Calendar::new("ada", "Ada", true) });
+        d.pim.add_event(Event::timed("budget", "ada", "Budget review", "2026-10-15T09:00:00", Some("Europe/Zurich"), "PT1H"));
+    });
+    server
+}
+
+/// A calendar job of the days around Wednesday 2026-10-14, listing the calendars, with the job's own secret or none.
+fn pim_job(secret: Option<&str>) -> JmapPimJob {
+    let now = 1_791_993_600;
+    let request = JmapPimRequest {
+        account: 7,
+        email: ME.into(),
+        session: SESSION.into(),
+        bearer: true,
+        me: vec![ME.into()],
+        now,
+        from: now - 7 * 86_400,
+        to: now + 14 * 86_400,
+        lists: true,
+        asks: vec![CalendarAsk { calendar: String::new(), series: Vec::new() }],
+        ..Default::default()
+    };
+    JmapPimJob { request, secret: secret.map(str::to_string), cancel: Arc::new(AtomicBool::new(false)) }
+}
+
+fn pim_of(http: impl Http + Clone, job: &JmapPimJob, host: Option<&Host>) -> JmapPimResult {
+    block_on(pim(http, job, host, |_| std::future::ready(())))
+}
+
+/// What a calendar job read whole: the titles of the main calendar's events.
+fn read_titles(result: &JmapPimResult) -> Vec<String> {
+    result.events.iter().flat_map(|d| d.events.iter().map(|e| e.title.clone())).collect()
+}
+
+#[test]
+fn a_pim_job_signs_in_with_the_jobs_secret_or_the_hosts_credential() {
+    let server = pim_server();
+    let host = Host::new(&server, Some(TOKEN), Vec::new());
+    let with_host = pim_of(server.clone(), &pim_job(None), Some(&host));
+    assert_eq!(read_titles(&with_host), ["Budget review"]);
+    assert!(with_host.errors.is_empty() && (with_host.account, with_host.email.as_str()) == (7, ME), "{with_host:?}");
+    let own = pim_of(server.clone(), &pim_job(Some(TOKEN)), None);
+    assert_eq!(read_titles(&own), ["Budget review"]);
+    // The owner's own token refused: refused, and the host never asked.
+    let refused = pim_of(server.clone(), &pim_job(Some("wrong")), Some(&host));
+    assert!(refused.auth_refused && refused.events.is_none());
+    assert_eq!(host.asked.get(), 0);
+    // No credential at all: refused, and nothing asked of the server.
+    let fresh = pim_server();
+    assert!(pim_of(fresh.clone(), &pim_job(None), None).auth_refused);
+    assert!(fresh.seen().is_empty());
+}
+
+#[test]
+fn a_pim_job_whose_token_is_refused_is_renewed_once_and_read_again() {
+    // At sign-in: the host's token has expired.
+    let server = pim_server();
+    server.with(|d| d.token = Some("rotated".into()));
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Given(Auth::bearer("fresh"))]);
+    let result = pim_of(server.clone(), &pim_job(None), Some(&host));
+    assert_eq!((read_titles(&result), host.asked.get()), (vec!["Budget review".to_string()], 1));
+    // In the middle of the job: a server that takes one call at a time, whose token dies after the list.
+    let server = pim_server();
+    server.with(|d| {
+        d.max_calls = 1;
+        d.drop_token_after = Some(1);
+    });
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Given(Auth::bearer("fresh"))]);
+    let result = pim_of(server.clone(), &pim_job(None), Some(&host));
+    assert!(!result.auth_refused && result.errors.is_empty(), "{result:?}");
+    assert_eq!((read_titles(&result), host.asked.get()), (vec!["Budget review".to_string()], 1), "read again, once");
+    assert!(result.events.as_ref().unwrap().complete);
+}
+
+#[test]
+fn a_pim_job_whose_renewed_token_is_refused_too_answers_auth_refused() {
+    let server = pim_server();
+    server.with(|d| d.token = Some("rotated".into()));
+    let host = Host::new(&server, Some(TOKEN), vec![Renewal::Given(Auth::bearer("fresh")), Renewal::Given(Auth::bearer("fresher"))]);
+    let result = block_on(pim(server.clone(), &pim_job(None), Some(&Outrun(&host)), |_| std::future::ready(())));
+    assert!(result.auth_refused, "{result:?}");
+    assert_eq!(host.asked.get(), 1, "one renewal a job");
+}
+
+#[test]
+fn a_pim_job_stopped_before_it_starts_says_so() {
+    let server = pim_server();
+    let host = Host::new(&server, Some(TOKEN), Vec::new());
+    let job = pim_job(None);
+    job.cancel.store(true, Ordering::Relaxed);
+    let result = pim_of(server.clone(), &job, Some(&host));
+    assert!(result.stopped && !result.auth_refused && result.events.is_none(), "{result:?}");
+    assert!(server.seen().is_empty(), "not even the session");
+}
+
+/// The stand-in as the facade serves it: its API at the facade's method path.
+#[derive(Clone)]
+struct Facade(StandIn);
+
+impl Http for Facade {
+    async fn send(&self, mut req: Request) -> mailcraft_jmap::Result<Response> {
+        req.url = req.url.replace(FACADE_API, "/jmap/api");
+        let session = req.url.ends_with("/jmap/session");
+        let mut resp = self.0.send(req).await?;
+        if session {
+            let text = String::from_utf8(resp.body).unwrap_or_default();
+            resp.body = text.replace("\"/jmap/api\"", &format!("\"{FACADE_API}\"")).into_bytes();
+        }
+        Ok(resp)
+    }
+}
+
+#[test]
+fn a_pim_job_against_the_facades_api_takes_its_calendars_for_plain() {
+    let server = pim_server();
+    server.with(|d| d.pim.says_writable = false);
+    let host = Host::new(&server, Some(TOKEN), Vec::new());
+    let plain = |result: &JmapPimResult| result.calendars.as_ref().unwrap().calendars.iter().all(|c| c.plain);
+    // Its session says nothing of what it writes: elsewhere a server is taken to keep everything, there the basics.
+    assert!(!plain(&pim_of(server.clone(), &pim_job(None), Some(&host))));
+    let facade = pim_of(Facade(server.clone()), &pim_job(None), Some(&host));
+    assert!(plain(&facade), "{facade:?}");
+    assert_eq!(read_titles(&facade), ["Budget review"]);
 }

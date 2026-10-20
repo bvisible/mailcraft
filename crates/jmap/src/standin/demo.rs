@@ -9,7 +9,8 @@
 //!   to five weeks after; around the end of October it crosses the night summer time ends, and stays at nine.
 //! - **Grace's calendar**, a colleague's she may only read: her days off and a review.
 //!
-//! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it.
+//! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it. For
+//! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar.
 
 use mailcraft_time::{Date, DateTime, format_iso_utc, format_rfc5322};
 use serde_json::json;
@@ -106,4 +107,19 @@ pub fn demo(today: Date) -> StandIn {
         pim.add_event(Event::timed("grace-review", "grace", "Design review", &at(3, "15:00"), zurich, "PT1H"));
     });
     stand_in
+}
+
+/// Add `count` events of half an hour to Ada's calendar of a [`demo`] around `today`, spread over the days a window
+/// reads at its first job (from thirty days back to a year ahead), between eight and six on the clock in Zurich.
+pub fn crowd(stand_in: &StandIn, today: Date, count: usize) {
+    let first = today.add_days(-30);
+    stand_in.with(|d| {
+        for n in 0..count {
+            let n64 = i64::try_from(n).unwrap_or(i64::MAX);
+            let day = first.add_days(n64.rem_euclid(395));
+            let slot = (n64 / 395).rem_euclid(20);
+            let start = format!("{}T{:02}:{:02}:00", day.iso(), 8 + slot / 2, (slot % 2) * 30);
+            d.pim.add_event(Event::timed(&format!("crowd-{n}"), "ada", &format!("Slot {n}"), &start, Some("Europe/Zurich"), "PT30M"));
+        }
+    });
 }

@@ -84,7 +84,7 @@ mod outgoing;
 mod pim;
 mod set;
 
-pub use demo::{DEMO_PERSON, demo};
+pub use demo::{DEMO_PERSON, crowd, demo};
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 pub use pim::{Calendar, Event, Pim, WRITABLE_CARD, WRITABLE_EVENT};
