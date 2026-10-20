@@ -752,9 +752,19 @@ fn a_new_contact_the_server_keeps_making_without_a_name_is_left_to_the_next_read
     assert_eq!(
         said["messages"],
         json!([
-            "\"Gus\" was made on the server, which doesn't say what it calls it: it is kept on this computer, and the next read brings the server's card too."
+            "\"Gus\" was made on the server, which doesn't say what it calls it. It is kept on this computer only. The next read brings the server's card too."
         ])
     );
+    // In a tab that keeps nothing of its own, it stays until the tab is closed, and that is said.
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    let id = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    answer(&mut s, account, EventResult::Done, "", "");
+    s.clock.now = s.clock.now.map(|now| now + 120);
+    let said = answer(&mut s, account, EventResult::Done, "", "");
+    assert!(s.mailbox.contact(id).is_some());
+    let line = said["messages"][0].as_str().unwrap_or_default().to_string();
+    assert!(line.contains("It stays here until this tab is closed") && !line.contains("this computer"), "{line}");
 }
 
 #[test]
@@ -1202,5 +1212,24 @@ fn a_deletion_may_be_of_a_new_contacts_card_by_its_name_an_address_a_number_or_i
     assert!(copy(Contact { display_name: "G. Hale".into(), phones: vec![Labeled::new("", "+41 (79) 555-02-02")], ..Default::default() }));
     let firm = Contact { company: "Hale & Sons".into(), ..Default::default() };
     assert!(super::may_be(&firm, Some(&Contact { display_name: "Somebody".into(), company: "hale & sons".into(), ..Default::default() })));
+    // The company only for one that has no name, address nor number of its own: else every colleague would be it.
+    let gus = Contact { first: "Gus".into(), company: "Hale & Sons".into(), emails: vec![Labeled::new("", "gus@example.org")], ..Default::default() };
+    assert!(!super::may_be(&gus, Some(&Contact { first: "Bob".into(), company: "Hale & Sons".into(), ..Default::default() })));
     assert!(!copy(Contact { first: "Bob".into(), phones: vec![Labeled::new("", "+41 44 555 01 03")], ..Default::default() }));
+}
+
+#[test]
+fn a_change_whose_contact_was_deleted_meanwhile_and_had_no_room_leaves_the_deletion_to_say_so() {
+    let (mut s, account) = session();
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Joiner"}));
+    let first = upload(&mut s, account);
+    // Deleted here while the change was on its way; the change's answer: no room.
+    run(&mut s, "people.delete", json!({"id": bob.id}));
+    let full = |op: &Value| json!({"op": op, "result": "failed", "error": "overQuota", "full": true});
+    let said = run(&mut s, "sync.applyContactChanges", json!({"result": {"account": account, "email": ME, "outcomes": [full(&first["ops"][0])]}}));
+    assert_eq!(said["messages"], json!([]), "nothing of the change, which is no more");
+    // The deletion's own answer: no room either, and that is said.
+    let said = answer_with(&mut s, account, "delete", json!({"result": "failed", "error": "overQuota", "full": true}));
+    assert_eq!(said["messages"], json!(["The server's mailbox is full: deleting \"Bob\" waits here and goes as soon as there is room."]));
 }

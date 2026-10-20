@@ -118,6 +118,8 @@ struct InFlight {
     contacts: bool,
     /// It carried changes to write.
     carried: bool,
+    /// The changes of contacts it carried.
+    cards: Option<ContactsUpload>,
     now: Timestamp,
     cancel: Arc<AtomicBool>,
     rx: Receiver<JmapPimResult>,
@@ -401,10 +403,10 @@ impl MailApp {
         if let Some(changes) = changes {
             self.jmap_pim.sent.insert(account, (changes, now));
         }
-        if let Some(cards) = cards {
-            self.jmap_pim.sent_contacts.insert(account, (cards, now));
+        if let Some(cards) = &cards {
+            self.jmap_pim.sent_contacts.insert(account, (cards.clone(), now));
         }
-        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, carried, now: today, cancel, rx });
+        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, carried, cards, now: today, cancel, rx });
         self.jmap_pim.last = Some(account);
         if contacts {
             self.jmap_pim.contacts_due.remove(&account);
@@ -472,6 +474,7 @@ impl MailApp {
     pub fn poll_jmap_pim(&mut self) {
         let Some(job) = &self.jmap_pim.rx else { return };
         let (account, started, wide, contacts, carried, asked_at) = (job.account, job.started, job.wide, job.contacts, job.carried, job.now);
+        let cards = job.cards.clone();
         let result = match job.rx.try_recv() {
             Ok(result) => result,
             Err(TryRecvError::Empty) => return,
@@ -483,12 +486,12 @@ impl MailApp {
             }
         };
         self.jmap_pim.rx = None;
-        self.take_in_pim(account, Taken { started, wide, contacts, carried, asked_at }, result);
+        self.take_in_pim(account, Taken { started, wide, contacts, carried, cards, asked_at }, result);
     }
 
     /// What one job brought, for `account` whatever it names (the engine still checks the address it carries).
     fn take_in_pim(&mut self, account: Id, job: Taken, mut result: JmapPimResult) {
-        let Taken { started, wide, contacts, carried, asked_at } = job;
+        let Taken { started, wide, contacts, carried, cards, asked_at } = job;
         result.account = account;
         result.tidy();
         if let Some(offers) = result.offers {
@@ -533,6 +536,11 @@ impl MailApp {
         // What the server made of the changes of contacts, then the contacts: they were read after the changes went.
         if let Some(uploaded) = &result.contacts_uploaded {
             self.take_in_contact_outcomes(account, uploaded, &mut errors);
+        }
+        // A new contact noted as on its way that the job never sent (it ended before the contacts were written, or before
+        // it) is not on its way after all.
+        if let Some(cards) = &cards {
+            remote_contacts::note_unsent(&mut self.session, cards, result.contacts_uploaded.as_ref());
         }
         if let Some(download) = &result.contacts
             && let Err(e) = mailcraft_engine::cmd::remote::apply_contacts(&mut self.session, download)
@@ -649,6 +657,8 @@ impl MailApp {
 struct Taken {
     started: f64,
     wide: bool,
+    /// The changes of contacts the job carried.
+    cards: Option<ContactsUpload>,
     contacts: bool,
     carried: bool,
     asked_at: Timestamp,

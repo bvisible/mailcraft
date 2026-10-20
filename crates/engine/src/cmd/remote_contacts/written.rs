@@ -354,8 +354,9 @@ fn due_at(change: &ContactChange, holders: &[(Timestamp, u32, &Contact)]) -> Tim
 }
 
 /// Whether the card a deletion is of (`deleted`: the contact as the server had it) may be the one a new contact was
-/// made as (`sent`: what it was sent with): the same name or company, or an address or a number of both (its digits).
-/// Unknown: it may be.
+/// made as (`sent`: what it was sent with): the same name, or an address or a number of both (its digits); the same
+/// company only for one that has no name, address nor number of its own (else every colleague would be it). Unknown:
+/// it may be.
 fn may_be(sent: &Contact, deleted: Option<&Contact>) -> bool {
     let Some(deleted) = deleted else { return true };
     let same = |a: &str, b: &str| !a.trim().is_empty() && a.trim().eq_ignore_ascii_case(b.trim());
@@ -364,10 +365,15 @@ fn may_be(sent: &Contact, deleted: Option<&Contact>) -> bool {
         let a = digits(a);
         !a.is_empty() && a == digits(b)
     };
-    same(&sent.name(), &deleted.name())
-        || same(&sent.company, &deleted.company)
+    let person = |c: &Contact| {
+        let parts = [c.display_name.trim(), c.first.trim(), c.middle.trim(), c.last.trim()];
+        parts.into_iter().filter(|part| !part.is_empty()).collect::<Vec<&str>>().join(" ")
+    };
+    let only_a_company = person(sent).is_empty() && sent.emails.is_empty() && sent.phones.is_empty();
+    same(&person(sent), &person(deleted))
         || sent.emails.iter().any(|a| deleted.emails.iter().any(|b| same(&a.value, &b.value)))
         || sent.phones.iter().any(|a| deleted.phones.iter().any(|b| same_number(&a.value, &b.value)))
+        || (only_a_company && same(&sent.company, &deleted.company))
 }
 
 /// How much of an account's contacts waits to go to its server: due now, all of them, and when the next held back is
@@ -463,6 +469,30 @@ pub fn note_sending(s: &mut Session, upload: &ContactsUpload) {
         }
     }
     if noted {
+        s.mailbox_changed();
+    }
+}
+
+/// The changes of `upload` that a job carried and never sent (it ended before the contacts were written, or before
+/// these: a busy server, a refused sign-in, a stop): what `uploaded` has no answer to. A new contact among them that was
+/// noted as on its way for the first time ([`note_sending`]) is not, after all: nothing of it is on the server.
+pub fn note_unsent(s: &mut Session, upload: &ContactsUpload, uploaded: Option<&ContactsUploaded>) {
+    let answered = |op: &ContactOp| {
+        uploaded.is_some_and(|uploaded| {
+            uploaded.outcomes.iter().any(|outcome| outcome.op.kind == ContactChangeKind::Create && outcome.op.token == op.token)
+        })
+    };
+    let mut undone = false;
+    for op in upload.ops.iter().filter(|op| op.kind == ContactChangeKind::Create && op.base.is_none() && !op.token.is_empty() && !answered(op)) {
+        let making = |change: &&mut ContactChange| {
+            change.kind == ContactChangeKind::Create && change.account == upload.account && change.token == op.token && change.base.is_some()
+        };
+        if let Some(change) = s.mailbox.contact_changes.iter_mut().find(making) {
+            change.base = None;
+            undone = true;
+        }
+    }
+    if undone {
         s.mailbox_changed();
     }
 }
@@ -899,11 +929,9 @@ impl Taking<'_> {
                 if nameless.is_some_and(|n| n >= MAX_NAMELESS) {
                     self.mailbox.contact_changes.remove(at);
                     let name = called_first(contact.and_then(|id| self.mailbox.contact(id)));
-                    if let Some(id) = contact {
-                        keep_here(self.mailbox, id, self.keeps_local);
-                    }
+                    let kept = contact.map(|id| keep_here(self.mailbox, id, self.keeps_local)).unwrap_or_default();
                     self.applied.say(format!(
-                        "{name} was made on the server, which doesn't say what it calls it: it is kept on this computer, and the next read brings the server's card too."
+                        "{name} was made on the server, which doesn't say what it calls it.{kept} The next read brings the server's card too."
                     ));
                 }
                 self.applied.failed += 1;
@@ -1090,7 +1118,9 @@ impl Taking<'_> {
             }
             EventResult::Failed => {
                 let Some(at) = at else { return };
-                let first = self.first_full(at, outcome);
+                // (A change's own answer: not one about a deletion that overtook it here.)
+                let change = self.mailbox.contact_changes.get(at).is_some_and(|change| change.kind == ContactChangeKind::Update);
+                let first = change && self.first_full(at, outcome);
                 let held = self
                     .mailbox
                     .contact_changes

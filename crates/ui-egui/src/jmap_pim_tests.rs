@@ -864,3 +864,36 @@ fn a_job_that_carried_contact_changes_and_says_nothing_of_them_came_to_nothing()
     assert!(app.jmap_pim_tick_at(true, 32.0 * SECOND));
     assert!(last(&asked).contact_changes.is_some(), "and then again");
 }
+
+#[test]
+fn a_new_contact_noted_as_on_its_way_is_not_once_the_job_ended_before_sending_it() {
+    let (mut app, id, asked) = contacts_window();
+    app.execute("people.new", json!({"first": "Gus", "email": "gus@example.org"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    assert!(last(&asked).contact_changes.is_some_and(|cards| cards.ops.iter().any(|op| op.kind == ContactChangeKind::Create)));
+    let on_its_way = |app: &MailApp| app.session.mailbox.contact_changes.iter().any(|change| change.base.is_some());
+    assert!(on_its_way(&app), "noted as on its way while the job runs");
+    // The calendar's part answered busy: the contacts were never written, and Gus was never sent.
+    answer(
+        &mut app,
+        &asked,
+        JmapPimResult {
+            account: id,
+            email: ME.into(),
+            offers: Some(PimOffers { calendars: true, contacts: true }),
+            busy_for: Some(30),
+            ..Default::default()
+        },
+    );
+    assert!(!on_its_way(&app), "nothing of him is on the server: nothing waits for him, and no look is made first");
+    // A job that wrote the contacts and answered him keeps what the answer says.
+    let (mut app, id, asked) = contacts_window();
+    app.execute("people.new", json!({"first": "Gus", "email": "gus@example.org"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let op = last(&asked).contact_changes.unwrap().ops[0].clone();
+    let lost = ContactOutcome { op, result: EventResult::Failed, error: "the connection was lost".into(), ..Default::default() };
+    let mut lost = serde_json::to_value(lost).unwrap();
+    lost["made"] = json!("perhaps");
+    answer(&mut app, &asked, wrote_contacts(id, vec![serde_json::from_value(lost).unwrap()], "", "s2"));
+    assert!(on_its_way(&app));
+}
