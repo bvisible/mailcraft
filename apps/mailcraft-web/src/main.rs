@@ -26,6 +26,10 @@ mod credentials;
 #[cfg(target_arch = "wasm32")]
 mod fetch;
 mod jmap_services;
+// //// Neoffice — how the browser build reaches Nora, the assistant of the Neoffice server, and where her calls may go
+// (both built everywhere, so that their rules are tested natively).
+mod nora;
+mod nora_origin;
 // //// Neoffice — the signature a hosting page gives a mailbox, its logo by its bytes (built everywhere, so that it is
 // tested natively).
 mod page_signature;

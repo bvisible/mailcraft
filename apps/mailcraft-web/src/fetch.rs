@@ -96,8 +96,8 @@ async fn exchange(window: &web_sys::Window, req: Request, signal: &web_sys::Abor
     Ok(Response { status, body, retry_after })
 }
 
-/// The body of `resp`, read a piece at a time and given up past `max` bytes.
-async fn read(resp: &web_sys::Response, max: usize) -> Result<Vec<u8>> {
+/// The body of `resp`, read a piece at a time and given up past `max` bytes (Nora's answers are read so too, nora.rs).
+pub(crate) async fn read(resp: &web_sys::Response, max: usize) -> Result<Vec<u8>> {
     let Some(stream) = resp.body() else { return Ok(Vec::new()) };
     let reader: web_sys::ReadableStreamDefaultReader = stream.get_reader().dyn_into().map_err(|e| Error::Protocol(js(&e)))?;
     let mut body: Vec<u8> = Vec::new();

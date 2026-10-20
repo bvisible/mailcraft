@@ -168,6 +168,8 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
     let no_credentials = std::rc::Rc::new(crate::credentials::NoCredentials);
     // //// Neoffice — the pictures on the web a message links to, through the hosting page when it fetches them (host.rs): a browser tab can't read another site's bytes itself.
     let pictures = crate::host::fetches_urls().then(|| pictures(ctx.clone()));
+    // //// Neoffice — Nora, the assistant of the Neoffice server, when the hosting page turns her on (nora.rs); the mailboxes it handed over are named in hosted_app.
+    let nora = crate::nora::service(ctx.clone()).map(|call| mailcraft_ui_egui::nora::Host { call, mailboxes: Vec::new() });
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();
@@ -195,6 +197,8 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         jmap_fetch: Some(crate::jmap_services::jmap_fetch_service(jmap_ctx, no_credentials, gate)),
         // //// Neoffice — as above.
         pictures,
+        // //// Neoffice — as above.
+        nora,
         ..Default::default()
     }
 }
@@ -259,6 +263,10 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     services.jmap = Some(crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()));
     services.jmap_fetch = Some(crate::jmap_services::jmap_fetch_service(ctx, credentials, gate));
     services.jmap_host_credentials = true;
+    // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs).
+    if let Some(nora) = &mut services.nora {
+        nora.mailboxes = accounts.iter().map(|a| a.email.clone()).collect();
+    }
     let mut app = MailApp::new(session, services);
     app.autosave = false;
     app

@@ -83,7 +83,7 @@ impl std::fmt::Debug for HostAccount {
     }
 }
 
-fn get(target: &JsValue, key: &str) -> Option<JsValue> {
+pub(crate) fn get(target: &JsValue, key: &str) -> Option<JsValue> {
     js_sys::Reflect::get(target, &JsValue::from_str(key)).ok().filter(|value| !value.is_undefined() && !value.is_null())
 }
 
@@ -91,8 +91,9 @@ fn text(target: &JsValue, key: &str) -> String {
     get(target, key).and_then(|v| v.as_string()).map(|s| s.trim().to_string()).unwrap_or_default()
 }
 
-/// The page itself, then the page that frames it when it is of the same origin.
-fn windows() -> Vec<JsValue> {
+/// The page itself, then the page that frames it when it is of the same origin (Nora's way through the page is
+/// looked for there too, nora.rs).
+pub(crate) fn windows() -> Vec<JsValue> {
     let Some(window) = web_sys::window() else { return Vec::new() };
     let own = JsValue::from(window.clone());
     let mut all = vec![own.clone()];
