@@ -137,7 +137,9 @@ impl Kind {
             "address" | "addresses" => Kind::Addresses,
             "folder" => Kind::Folder,
             "why" | "doubt" | "doing" | "text" => Kind::Reason,
-            "said" | "description" | "browser" | "parser" | "method" | "key" | "limit" | "id" | "account" | "size" | "name" => Kind::Text,
+            "said" | "description" | "browser" | "parser" | "method" | "key" | "limit" | "id" | "account" | "size" | "name" | "title" | "copy" => {
+                Kind::Text
+            }
             _ => return None,
         })
     }

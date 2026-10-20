@@ -280,6 +280,20 @@ pub(super) static ROWS: &[Row] = &[
     row(NOTES, Line, run_word!("A note holds 100,000 characters at most"), &[]),
     row(NOTES, Line, run_word!("This note has no web address"), &[]),
     row(NOTES, Line, run_word!("Too many note changes are waiting to be sent. Let them get through first."), &[]),
+    // What became of a change of a note a server was told (`notes/server.rs`, in the words of `notes/words.rs`).
+    row(NOTES, Line, run_word!("{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}."), &[]),
+    row(NOTES, Line, run_word!("{title} was deleted elsewhere meanwhile: your version is kept as a note of its own."), &[]),
+    row(NOTES, Line, run_word!("{title} couldn't be saved on the server: {said}"), &[]),
+    row(NOTES, Line, run_word!("The change to {title} was put back as the server has it: {said}"), &[]),
+    row(NOTES, Line, run_word!("The server wouldn't delete {title}, which is back in the notes: {said}"), &[]),
+    row(NOTES, Line, run_word!("{title} was already deleted on the server when its deletion was undone here: it is made there anew."), &[]),
+    row(NOTES, Line, run_word!("The server no longer keeps notes here: the notes that waited to go are kept on this computer."), &[]),
+    row(
+        NOTES,
+        Line,
+        run_word!("The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept."),
+        &[],
+    ),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

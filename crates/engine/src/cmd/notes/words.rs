@@ -19,3 +19,39 @@ pub const NOTE_TOO_LONG: &str = "A note holds 100,000 characters at most";
 pub const NOTE_NO_LINK: &str = "This note has no web address";
 /// More changes waiting than are ever kept.
 pub const TOO_MANY_NOTE_CHANGES: &str = "Too many note changes are waiting to be sent. Let them get through first.";
+
+/// What became of a change a server was told, said to the person: `{title}` is the note's, quoted; `{said}` the
+/// server's words, as it said them.
+pub const KEPT_AS_COPY: &str = "{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.";
+pub const KEPT_WHEN_GONE: &str = "{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.";
+pub const NOT_SAVED: &str = "{title} couldn't be saved on the server: {said}";
+pub const CHANGE_PUT_BACK: &str = "The change to {title} was put back as the server has it: {said}";
+pub const NOT_DELETED: &str = "The server wouldn't delete {title}, which is back in the notes: {said}";
+pub const MADE_ANEW: &str = "{title} was already deleted on the server when its deletion was undone here: it is made there anew.";
+/// A server that no longer keeps notes: what waited to go to it is kept on this computer, or (a session that keeps
+/// nothing of its own) not at all.
+pub const NO_LONGER_KEPT: &str = "The server no longer keeps notes here: the notes that waited to go are kept on this computer.";
+pub const NO_LONGER_KEPT_LOST: &str =
+    "The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.";
+
+/// `template` with each `{name}` filled with its value, in one pass.
+pub fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let (before, from) = rest.split_at(open);
+        out.push_str(before);
+        match from.get(1..).and_then(|inner| inner.split_once('}')) {
+            Some((name, after)) if values.iter().any(|(key, _)| *key == name) => {
+                out.push_str(values.iter().find(|(key, _)| *key == name).map(|(_, value)| *value).unwrap_or_default());
+                rest = after;
+            }
+            _ => {
+                out.push('{');
+                rest = from.get(1..).unwrap_or_default();
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}

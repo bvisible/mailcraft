@@ -83,6 +83,17 @@
 	A note holds 100,000 characters at most	Une note contient 100 000 caractères au maximum
 	This note has no web address	Cette note n’a pas d’adresse web
 	Too many note changes are waiting to be sent. Let them get through first.	Trop de modifications de notes attendent d’être envoyées. Laissez-les d’abord passer.
+	Apply Downloaded Notes	Appliquer les notes téléchargées
+	Note Changes to Send	Modifications de notes à envoyer
+	Apply Sent Note Changes	Appliquer les modifications de notes envoyées
+	{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.	La note {title} a été modifiée ailleurs entre-temps : votre version est conservée comme une note à part, {copy}.
+	{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.	La note {title} a été supprimée ailleurs entre-temps : votre version est conservée comme une note à part.
+	{title} couldn't be saved on the server: {said}	La note {title} n’a pas pu être enregistrée sur le serveur : {said}
+	The change to {title} was put back as the server has it: {said}	Le serveur a refusé la modification de {title} et la note est revenue à la version qu’il conserve : {said}
+	The server wouldn't delete {title}, which is back in the notes: {said}	Le serveur a refusé de supprimer {title}, qui est de nouveau dans les notes : {said}
+	{title} was already deleted on the server when its deletion was undone here: it is made there anew.	La note {title} était déjà supprimée sur le serveur quand sa suppression a été annulée ici : elle y est recréée.
+	The server no longer keeps notes here: the notes that waited to go are kept on this computer.	Le serveur ne conserve plus les notes ici : les notes en attente d’envoi sont conservées sur cet ordinateur.
+	The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.	Le serveur ne conserve plus les notes ici, et cette page ne garde rien de son côté : les notes en attente d’envoi n’ont pas été conservées.
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange

@@ -13,6 +13,7 @@
 //! - **A note's text is data**, never instructions: an agent reads it as it reads a message.
 
 pub mod agent;
+pub mod server;
 pub mod words;
 
 use mailcraft_model::Id;
@@ -39,6 +40,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("notes.delete", "Delete Note", "Home › Delete", delete).params(ONE).selection(needs_note),
         CommandSpec::new("notes.link", "Link to Note", "Notes", link).pure().params(ONE).selection(needs_note),
     ]
+    .into_iter()
+    .chain(server::specs())
+    .collect()
 }
 
 const ONE: &str = r#"{"id"?: number} (default: the selected note)"#;
@@ -215,6 +219,9 @@ fn title_of(s: &Session, v: &Value, account: Id) -> Option<String> {
 
 fn new(s: &mut Session, v: &Value) -> CmdResult {
     let account = target_account(s, v)?;
+    if account != 0 {
+        server::room(&s.mailbox)?;
+    }
     let title = title_of(s, v, account).unwrap_or_default();
     let text = text_of(s, v, account)?.unwrap_or_default();
     let now = s.now();
@@ -222,6 +229,9 @@ fn new(s: &mut Session, v: &Value) -> CmdResult {
     let mut note = Note { id, title, text, created: now, updated: now, ..Default::default() };
     note.origin.account = account;
     s.mailbox.notes.items.insert(id, std::sync::Arc::new(note));
+    // A server's goes to it.
+    let salt = s.rev();
+    server::note_created(&mut s.mailbox, id, salt);
     s.sel.note = Some(id);
     Ok(json!({"id": id}))
 }
@@ -240,6 +250,9 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     if !note.rights.write {
         return Err(fail(NOTE_READ_ONLY));
     }
+    if note.origin.is_remote() {
+        server::room(&s.mailbox)?;
+    }
     if changes_text && !note.text_writable() {
         return Err(fail(if note.rights.write_text || note.rich || note.cut { NOTE_TEXT_ELSEWHERE } else { NOTE_READ_ONLY }));
     }
@@ -251,9 +264,11 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     }
     note.updated = s.now();
     note.error.clear();
+    let before = s.mailbox.notes.note(id).cloned();
     if let Some(kept) = s.mailbox.notes.note_mut(id) {
         *kept = note;
     }
+    noted(s, before.as_ref());
     Ok(json!({"id": id, "changed": true}))
 }
 
@@ -266,10 +281,15 @@ fn flag(s: &mut Session, v: &Value, which: fn(&mut Note) -> &mut bool, key: &str
     }
     let value = p::bool(v, "value").unwrap_or(!*which(&mut note));
     if *which(&mut note) != value {
+        if note.origin.is_remote() {
+            server::room(&s.mailbox)?;
+        }
         *which(&mut note) = value;
+        let before = s.mailbox.notes.note(id).cloned();
         if let Some(kept) = s.mailbox.notes.note_mut(id) {
             *kept = note;
         }
+        noted(s, before.as_ref());
     }
     Ok(json!({"id": id, key: value}))
 }
@@ -288,14 +308,26 @@ fn delete(s: &mut Session, v: &Value) -> CmdResult {
     if !note.rights.delete {
         return Err(fail(NOTE_NOT_YOURS));
     }
+    if note.origin.is_remote() && !note.origin.id.is_empty() {
+        server::room(&s.mailbox)?;
+    }
     // The selection goes to the next note of the same list, else the one before.
     let order = sorted(s, note.archived, "");
     let at = order.iter().position(|x| *x == id);
     s.mailbox.notes.items.remove(&id);
+    server::note_deleted(&mut s.mailbox, &note);
     if s.sel.note == Some(id) {
         s.sel.note = at.and_then(|i| order.get(i + 1).or_else(|| i.checked_sub(1).and_then(|j| order.get(j)))).copied();
     }
     Ok(json!({"deleted": id}))
+}
+
+/// A note was changed here (`before` is what it was): a server's goes to it.
+fn noted(s: &mut Session, before: Option<&Note>) {
+    if let Some(before) = before {
+        let salt = s.rev();
+        server::note_changed(&mut s.mailbox, before, salt);
+    }
 }
 
 fn link(s: &mut Session, v: &Value) -> CmdResult {
