@@ -17,7 +17,8 @@
 //!   ([`Copy`]), with the person's change made to it, so that what somebody else changed there meanwhile stays. A
 //!   change of who is invited is who came and who went since the event it was made to (`EventOp::invited_before`):
 //!   anybody else of the server's stays as the server has them. A copy of more than [`MAX_COPY_PEOPLE`] is not
-//!   rewritten. A reminder is the one alert the reader takes for it, set or taken away; the other alerts stay.
+//!   rewritten. A reminder is the one alert the reader takes for it, set; turned off, every alert the reader would take
+//!   for it goes; the other alerts stay.
 //! - **What a server that keeps only the basics doesn't keep** (categories, importance, response options, online
 //!   meetings) is not written: it would refuse the whole event, and the person's other changes with it. A change of
 //!   nothing else is none ([`patch`] says so).
@@ -186,25 +187,28 @@ fn trigger(minutes: u32) -> Value {
 }
 
 /// The server's alerts (of `copy`; none for a new event) with the reminder as the person has it: the alert that is the
-/// reminder as it is read ([`jscalendar::reminder_alert`]) set to that many minutes before the start, or taken away
-/// when it is off, or a new one when there is none; every other alert as the server has it.
+/// reminder as it is read ([`jscalendar::reminder_alert`]) set to that many minutes before the start, or a new one when
+/// there is none; when it is off, every alert that would be read as the reminder taken away, one after the other, so
+/// that the next read finds none. Every other alert stays as the server has it.
 fn alerts(copy: Option<&Copy>, on: bool, minutes: u32) -> Value {
     let mut map: Map<String, Value> = copy.and_then(|copy| copy.get("alerts")).and_then(Value::as_object).cloned().unwrap_or_default();
-    let reminder = jscalendar::reminder_alert(&map).map(|(key, _)| key.clone());
-    match (reminder, on) {
-        (Some(key), false) => {
+    if !on {
+        // (Each turn takes one away: no more turns than there are alerts.)
+        while let Some(key) = jscalendar::reminder_alert(&map).map(|(key, _)| key.clone()) {
             map.remove(&key);
         }
-        (Some(key), true) => {
+        return Value::Object(map);
+    }
+    match jscalendar::reminder_alert(&map).map(|(key, _)| key.clone()) {
+        Some(key) => {
             if let Some(Value::Object(alert)) = map.get_mut(&key) {
                 alert.insert("trigger".into(), trigger(minutes));
             }
         }
-        (None, true) => {
+        None => {
             let key = free_key(&map, "a");
             map.insert(key, json!({"@type": "Alert", "trigger": trigger(minutes), "action": "display"}));
         }
-        (None, false) => {}
     }
     Value::Object(map)
 }

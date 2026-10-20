@@ -586,10 +586,14 @@ fn a_reminder_set_here_leaves_the_other_alerts_of_the_server_as_they_are() {
     let kept = stored(&server, "lunch").unwrap().props["alerts"].clone();
     assert_eq!(kept["a1"]["trigger"]["offset"], "-PT45M");
     assert_eq!((kept["a2"].clone(), kept["a3"].clone()), (alerts["a2"].clone(), alerts["a3"].clone()));
-    // Off: the reminder alone goes.
-    assert_eq!(outcomes(&run(&server, &job(vec![reminder(false, 0)])))[0].0, EventResult::Done);
+    // Off: every alert that would be read as the reminder goes, the e-mail one stays; read back, it has no reminder.
+    let reading = JmapPimRequest { asks: vec![CalendarAsk::default()], ..job(vec![reminder(false, 0)]) };
+    let result = run(&server, &reading);
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
     let left = stored(&server, "lunch").unwrap().props["alerts"].clone();
-    assert_eq!(left, json!({"a2": alerts["a2"], "a3": alerts["a3"]}));
+    assert_eq!(left, json!({"a2": alerts["a2"]}));
+    let lunch = result.events.unwrap().events.into_iter().find(|e| e.title == "Lunch").unwrap();
+    assert_eq!(lunch.reminder_minutes, None);
 }
 
 #[test]

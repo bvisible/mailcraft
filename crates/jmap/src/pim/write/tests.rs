@@ -385,11 +385,15 @@ fn a_reminder_changes_only_the_alert_that_is_the_reminder_and_keeps_the_others()
     for kept in ["a1", "a3", "x"] {
         assert_eq!(half[kept], alerted["alerts"][kept], "{kept} as the server has it");
     }
-    // Off: that one goes, the others stay.
+    // Off: every alert that would be read as the reminder goes (the second display one too, or it would be the reminder
+    // the next time the event is read); the others stay.
     let off = reminded(&alerted, false, 0);
     let mut keys: Vec<&String> = off.as_object().unwrap().keys().collect();
     keys.sort();
-    assert_eq!(keys, ["a1", "a3", "x"]);
+    assert_eq!(keys, ["a1", "x"]);
+    let event = json!({"id": "V1", "start": "2026-10-19T09:00:00", "timeZone": "Europe/Zurich", "duration": "PT1H", "alerts": off});
+    let read = crate::pim::jscalendar::event_of(&event, &[ME.to_string()], Some(zurich())).unwrap();
+    assert_eq!(read.event.reminder_minutes, None, "read back, it has no reminder");
     // None of them a reminder: one more, beside them.
     alerted.insert("alerts".into(), json!({"a1": offset("-PT1H", "email")}));
     let added = reminded(&alerted, true, 10);
