@@ -64,7 +64,7 @@ fn parse(answer: &NoraAnswer, task: Task) -> Result<Value, String> {
         return Err(task.failed(tl!("the answer is too long")));
     }
     let body: Value = serde_json::from_str(&answer.body).unwrap_or(Value::Null);
-    if answer.status == 200 && body.get("message").is_some_and(Value::is_object) { Ok(body) } else { Err(task.failed(&reason(&body, answer.status))) }
+    if answer.status == 200 && body.get("message").is_some_and(Value::is_object) { Ok(body) } else { Err(task.failed(&refused(answer, &body))) }
 }
 
 /// A text field of the answer's `message`, trimmed: `None` when it is missing, not text, or empty.
@@ -142,18 +142,46 @@ pub(crate) fn style_started(answer: &NoraAnswer) -> Result<bool, String> {
     }
 }
 
-/// Why the server said no, as what the person can do about it when that is known: a sign-in that
-/// ended (401 or 403, whatever comes with it: Frappe answers a call without a session with a page that
-/// sends to its sign-in, and Neodesk's shell with nothing), or a page older than the session (its CSRF
-/// token was refused: the person signed in again elsewhere). Otherwise the first message it shows
-/// (Frappe's `_server_messages`), else the last part of its exception, else the HTTP status.
-pub(crate) fn reason(body: &Value, status: u16) -> String {
-    if matches!(status, 401 | 403) {
+/// Why a call was refused, from its whole answer (`body` is its JSON, or nothing): a sign-in that ended,
+/// or a page older than its session, as what the person can do about it; anything else as the server
+/// says it ([`reason`]).
+///
+/// A sign-in ended on a 401 (Neodesk's shell answers so, with nothing, when the person isn't signed
+/// in); on a 403 whose answer is a page that sends to the sign-in rather than Frappe's JSON (Frappe's
+/// answer to a call without a session); and on a 403 whose JSON says the session expired
+/// (`session_expired`). Any other 403 is no sign-in that ended: a signed-in person refused, whose server
+/// says why; a method or an origin Neodesk's shell doesn't let through (a 403 with nothing); something
+/// between that turns the call down. The page is older than its session when its CSRF token was refused
+/// (`CSRFTokenError`: the person signed in again elsewhere).
+fn refused(answer: &NoraAnswer, body: &Value) -> String {
+    let ended = match answer.status {
+        401 => true,
+        403 if body.is_object() => truthy(body.get("session_expired")),
+        403 => answer.body.contains("/login"),
+        _ => false,
+    };
+    if ended {
         return tl!("your Neoffice session has ended. Reload the page and sign in again.").to_string();
     }
     if body.get("exc_type").and_then(Value::as_str) == Some("CSRFTokenError") {
         return tl!("the page is out of date. Reload it and try again.").to_string();
     }
+    reason(body, answer.status)
+}
+
+/// A flag as Frappe writes one: `1`, `true` or `"1"`.
+fn truthy(flag: Option<&Value>) -> bool {
+    match flag {
+        Some(Value::Bool(set)) => *set,
+        Some(Value::Number(n)) => n.as_f64().is_some_and(|n| n != 0.0),
+        Some(Value::String(s)) => s == "1" || s.eq_ignore_ascii_case("true"),
+        _ => false,
+    }
+}
+
+/// Why the server said no: the first message it shows (Frappe's `_server_messages`), else the last
+/// part of its exception, else the HTTP status.
+pub(crate) fn reason(body: &Value, status: u16) -> String {
     let exception = || {
         let said = body.get("exception")?.as_str()?;
         let last = said.rsplit(": ").next().unwrap_or(said);

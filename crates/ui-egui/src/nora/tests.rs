@@ -63,8 +63,9 @@ fn a_refusal_says_what_the_server_said() {
     assert!(answer::draft(&not_a_message).is_err(), "a draft is in a `message` object");
     // A 200 that isn't Nora's answer at all, a page of a proxy say, is no draft either.
     assert!(answer::draft(&NoraAnswer { id: 1, status: 200, body: "<html>Sign in</html>".into() }).is_err());
-    // `_server_messages` as a list of objects, as other versions of Frappe send it.
-    let listed = answer(417, json!({"_server_messages": [{"message": "Not permitted"}]}));
+    // `_server_messages` as a list of objects, as other versions of Frappe send it, and on a 403: a signed-in person
+    // refused (a `PermissionError`), whom signing in again wouldn't help.
+    let listed = answer(403, json!({"_server_messages": [{"message": "Not permitted"}]}));
     assert_eq!(answer::draft(&listed), Err("Nora couldn't write the reply: Not permitted".to_string()));
     // Each kind of call says it in its own words.
     let said = |task: Task| task.failed("Access denied");
@@ -74,18 +75,21 @@ fn a_refusal_says_what_the_server_said() {
 }
 
 /// A session that ended and a page older than its session, as the server answers them (measured on a Neoffice
-/// server): said as what the person does about them, in their language, for every kind of call. What the server says
-/// otherwise is said as before.
+/// server): said as what the person does about them, in their language, for every kind of call. A 403 for anything
+/// else, and what the server says otherwise, are said as before.
 #[test]
 fn an_ended_session_and_an_old_page_say_what_to_do() {
     use crate::i18n::{Lang, set_current};
     const ENDED: &str = "your Neoffice session has ended. Reload the page and sign in again.";
     const OLD: &str = "the page is out of date. Reload it and try again.";
-    // Without a session: 403 and a page that sends to the sign-in; Neodesk's shell without a sign-in: 401 and nothing;
-    // and a 403 that says why, whatever it says.
-    let to_login = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url=/login\"></head><body></body></html>";
-    let not_permitted =
-        answer(403, json!({"exc_type": "PermissionError", "_server_messages": json!([json!({"message": "Not permitted"}).to_string()]).to_string()}));
+    // Without a session, Frappe sends to its sign-in (a redirect's page, with 403); Neodesk's shell answers 401 when the
+    // person isn't signed in; a session Frappe found expired is said in the answer.
+    let to_login = "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n\
+<p>You should be redirected automatically to the target URL: <a href=\"/login\">/login</a>. If not, click the link.\n";
+    let expired = answer(
+        403,
+        json!({"session_expired": 1, "exc_type": "PermissionError", "_server_messages": json!([json!({"message": "Not permitted"}).to_string()]).to_string()}),
+    );
     // A CSRF token that isn't the session's: 400, and a message that says nothing of use (translated on a server in
     // another language).
     let invalid = json!({"message": "Invalid Request", "title": "Message", "indicator": "red"}).to_string();
@@ -93,11 +97,21 @@ fn an_ended_session_and_an_old_page_say_what_to_do() {
         400,
         json!({"exc_type": "CSRFTokenError", "exception": "frappe.exceptions.CSRFTokenError", "_server_messages": json!([invalid]).to_string()}),
     );
+    // Not a sign-in that ended: a signed-in person refused (Frappe's message is kept), a method or an origin Neodesk's
+    // shell doesn't let through (403 and nothing), and a 403 page of something between that doesn't send to the sign-in.
+    let refused =
+        answer(403, json!({"exc_type": "PermissionError", "_server_messages": json!([json!({"message": "Not permitted"}).to_string()]).to_string()}));
+    let firewall = "<html><body><h1>403 Forbidden</h1><p>Request blocked.</p></body></html>";
     for (said, why) in [
         (NoraAnswer { id: 1, status: 403, body: to_login.into() }, ENDED),
         (NoraAnswer { id: 1, status: 401, body: String::new() }, ENDED),
-        (not_permitted, ENDED),
+        (NoraAnswer { id: 1, status: 401, body: "<html>Unauthorized</html>".into() }, ENDED),
+        (expired, ENDED),
         (stale, OLD),
+        (refused, "Not permitted"),
+        (NoraAnswer { id: 1, status: 403, body: String::new() }, "HTTP 403"),
+        (NoraAnswer { id: 1, status: 403, body: "  ".into() }, "HTTP 403"),
+        (NoraAnswer { id: 1, status: 403, body: firewall.into() }, "HTTP 403"),
     ] {
         assert_eq!(answer::draft(&said), Err(Task::Reply.failed(why)), "{}", said.body);
         assert_eq!(answer::translation(&said, "fr"), Err(Task::Translate.failed(why)), "{}", said.body);
