@@ -95,7 +95,8 @@ fn search_box(app: &mut MailApp, ui: &mut Ui, rect: Rect) {
     let hint = match app.session.view.module {
         Module::People => tl!("Search people"),
         // Calendar and Tasks have no search of their own yet: what is typed looks in the mail.
-        Module::Calendar | Module::Tasks => tl!("Search mail"),
+        // //// Neoffice — Notes has no search box of its own here: its search is in its pane.
+        Module::Calendar | Module::Tasks | Module::Notes => tl!("Search mail"),
         Module::Mail => tl!("Search mail (try from:, has:attachment, is:unread)"),
     };
     // The tabs' size in the tall box of the title row; the small one in the macOS title bar.
@@ -365,6 +366,10 @@ pub fn status_bar(app: &mut MailApp, ui: &mut Ui) {
                     Module::Tasks => {
                         let open = app.session.mailbox.tasks.values().filter(|x| !x.is_complete()).count();
                         st(ui, &n(open, "{n} open task", "{n} open tasks"), t.text_dim);
+                    }
+                    // //// Neoffice — how many notes are kept (`cmd/notes.rs`).
+                    Module::Notes => {
+                        st(ui, &n(app.session.mailbox.notes.items.len(), "{n} note", "{n} notes"), t.text_dim);
                     }
                 }
                 if let Some((msg, at)) = &app.status_msg

@@ -417,6 +417,7 @@ const CENSUS: &[&str] = &[
     "crates/engine/src/cmd/jmap_up.rs",
     "crates/engine/src/undo.rs",
     "crates/model/src/jmap_server.rs",
+    "crates/engine/src/cmd/notes/words.rs",
 ];
 
 /// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.

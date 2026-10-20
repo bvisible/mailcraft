@@ -432,6 +432,10 @@ const NEVER: &[&str] = &[
 
 /// A command's class by id; `None`: not classified (and so refused).
 pub fn access(id: &str) -> Option<Access> {
+    // //// Neoffice — the notes' commands are classed with them (`cmd/notes/agent.rs`).
+    if let Some(access) = crate::cmd::notes::agent::access(id) {
+        return Some(access);
+    }
     let is = |list: &[&str]| list.contains(&id);
     Some(if is(SAFE) {
         Access::Safe
@@ -508,6 +512,10 @@ pub fn classify(s: &Session, id: &str, params: &Value) -> Access {
     let Some(base) = access(id) else { return Access::Never };
     if base != Access::Safe {
         return base;
+    }
+    // //// Neoffice — a note made or changed on a server is written for the person there: Send, as a server's contact is (`cmd/notes/agent.rs`).
+    if let Some(access) = crate::cmd::notes::agent::classify(s, id, params) {
+        return access;
     }
     let sends = p::bool(params, "send") == Some(true);
     match id {
@@ -608,6 +616,10 @@ fn event_title(s: &Session, params: &Value) -> String {
 pub fn describe(s: &Session, id: &str, params: &Value) -> String {
     let label = s.registry.get(id).map(|c| c.label).unwrap_or(id);
     let st = |k: &str| p::str(params, k).unwrap_or("");
+    // //// Neoffice — the notes' commands say which note, and that it is on the server (`cmd/notes/agent.rs`).
+    if let Some(said) = crate::cmd::notes::agent::describe(s, id, params) {
+        return said;
+    }
     match id {
         "compose.send" => match &s.compose {
             Some(c) => {
@@ -719,7 +731,8 @@ pub(crate) fn overstep(before: &Mailbox, after: &Mailbox, allow: &[Class]) -> Op
     if !allow.contains(&Class::Delete) && noted(ContactChangeKind::Delete) {
         return Some(Class::Delete);
     }
-    None
+    // //// Neoffice — and the same of a server's notes (`cmd/notes/agent.rs`).
+    crate::cmd::notes::agent::overstep(before, after, allow)
 }
 
 #[cfg(test)]

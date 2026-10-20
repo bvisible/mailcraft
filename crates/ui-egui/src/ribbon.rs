@@ -291,6 +291,8 @@ pub(crate) fn describe(app: &MailApp) -> Tab {
             Module::Calendar => home_calendar(app),
             Module::People => home_people(app),
             Module::Tasks => home_tasks(app),
+            // //// Neoffice — Notes' Home tab comes with its module (`ribbon/notes_home.rs`); Mail's meanwhile.
+            Module::Notes => home_mail(app),
         },
     };
     // //// Neoffice — Nora's place in the tab, when a host reaches her (nora/ribbon.rs).

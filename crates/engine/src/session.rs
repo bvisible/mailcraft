@@ -53,10 +53,13 @@ pub enum Module {
     Calendar,
     People,
     Tasks,
+    // //// Neoffice — notes, the mailbox's own and a server's (`cmd/notes.rs`), offered only where they are kept.
+    Notes,
 }
 
 impl Module {
-    pub const ALL: [Module; 4] = [Module::Mail, Module::Calendar, Module::People, Module::Tasks];
+    // //// Neoffice — see `Notes`.
+    pub const ALL: [Module; 5] = [Module::Mail, Module::Calendar, Module::People, Module::Tasks, Module::Notes];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -64,6 +67,8 @@ impl Module {
             Module::Calendar => "Calendar",
             Module::People => "People",
             Module::Tasks => "Tasks",
+            // //// Neoffice — see `Notes`.
+            Module::Notes => "Notes",
         }
     }
 }
@@ -282,6 +287,8 @@ pub struct Selection {
     /// The day of the selected occurrence, for an event that repeats.
     pub event_day: Option<Date>,
     pub task: Option<Id>,
+    // //// Neoffice — the note selected in Notes (`cmd/notes.rs`).
+    pub note: Option<Id>,
 }
 
 impl Selection {

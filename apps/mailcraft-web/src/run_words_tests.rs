@@ -1027,6 +1027,17 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
         "{name} couldn't be made an online meeting: the account's server doesn't let you make meeting rooms. The meeting itself is saved, without a link to join.",
         "a calendar's: as above",
     ),
+    // The notes' (`cmd/notes/words.rs`): a command's refusal or a notes job's line, not a mail run's.
+    (
+        "Notes aren't kept here: this page's server offers none.",
+        "a notes command's refusal: the engine's tests make them, run_words' read them in French",
+    ),
+    ("Your rights do not let you change this note", "as above"),
+    ("Only its owner deletes a note: this one was shared with you", "as above"),
+    ("This note's text is changed where it was written: open it on the web", "as above"),
+    ("A note holds 100,000 characters at most", "as above"),
+    ("This note has no web address", "as above"),
+    ("Too many note changes are waiting to be sent. Let them get through first.", "as above"),
 ];
 
 // ---------------------------------------------------------------------------------------------

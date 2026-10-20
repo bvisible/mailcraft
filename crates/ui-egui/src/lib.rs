@@ -3367,6 +3367,8 @@ impl MailApp {
                 mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),
                 mailcraft_engine::Module::People => people_view::show(self, ui),
                 mailcraft_engine::Module::Tasks => tasks_view::show(self, ui),
+                // //// Neoffice — Notes' module is drawn by `notes_view`; Mail's meanwhile.
+                mailcraft_engine::Module::Notes => mail_view::show(self, ui),
             });
         }
         sync_panel::show(self, &ctx);

@@ -33,6 +33,7 @@ const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
 const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
+const NOTES: &str = "crates/engine/src/cmd/notes/words.rs";
 
 /// Every row, family by family.
 pub(super) static ROWS: &[Row] = &[
@@ -271,6 +272,14 @@ pub(super) static ROWS: &[Row] = &[
         ),
         &[],
     ),
+    // Why a note's command is refused (`notes/words.rs`).
+    row(NOTES, Line, run_word!("Notes aren't kept here: this page's server offers none."), &[]),
+    row(NOTES, Line, run_word!("Your rights do not let you change this note"), &[]),
+    row(NOTES, Line, run_word!("Only its owner deletes a note: this one was shared with you"), &[]),
+    row(NOTES, Line, run_word!("This note's text is changed where it was written: open it on the web"), &[]),
+    row(NOTES, Line, run_word!("A note holds 100,000 characters at most"), &[]),
+    row(NOTES, Line, run_word!("This note has no web address"), &[]),
+    row(NOTES, Line, run_word!("Too many note changes are waiting to be sent. Let them get through first."), &[]),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

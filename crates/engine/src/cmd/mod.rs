@@ -37,6 +37,8 @@ pub mod jmap_up;
 pub mod mail;
 #[cfg(test)]
 mod newer_account_tests;
+// //// Neoffice — notes, the mailbox's own and a server's.
+pub mod notes;
 pub mod offline;
 #[cfg(test)]
 mod offline_tests;
@@ -81,6 +83,8 @@ pub fn registry() -> Registry {
     v.extend(zones::specs());
     v.extend(people::specs());
     v.extend(tasks::specs());
+    // //// Neoffice — see `notes`.
+    v.extend(notes::specs());
     v.extend(rules::specs());
     v.extend(category::specs());
     v.extend(account::specs());

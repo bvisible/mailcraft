@@ -64,6 +64,8 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
                 Module::Calendar => ("calendar", "view.calendar"),
                 Module::People => ("people", "view.people"),
                 Module::Tasks => ("tasks", "view.tasks"),
+                // //// Neoffice — Notes' place comes with its module (`notes_view`).
+                Module::Notes => continue,
             };
             let (r, resp) = ui.allocate_exact_size(vec2(RAIL_W, RAIL_PITCH), Sense::click());
             let active = app.session.view.module == m;

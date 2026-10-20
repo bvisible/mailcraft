@@ -64,6 +64,25 @@
 	Apply Sent Contact Changes	Appliquer les modifications de contacts envoyées
 	The contact changes couldn't be taken in	Les modifications de contacts n’ont pas pu être prises en compte
 	A contact change couldn't be sent yet and will be tried again	Une modification de contact n’a pas encore pu être envoyée et sera réessayée
+# Notes, the mailbox's own and a server's (crates/engine/src/cmd/notes.rs and notes/, crates/ui-egui/src/notes_view.rs): kept together, near the top.
+	Find Notes	Rechercher des notes
+	Open Note	Ouvrir la note
+	Select Note	Sélectionner une note
+	New Note	Nouvelle note
+	Edit Note	Modifier la note
+	Pin Note	Épingler la note
+	Archive Note	Archiver la note
+	Delete Note	Supprimer la note
+	Link to Note	Lien vers la note
+	{n} note	{n} note
+	{n} notes	{n} notes
+	Notes aren't kept here: this page's server offers none.	Les notes ne sont pas conservées ici : le serveur de cette page n’en propose aucune.
+	Your rights do not let you change this note	Vos droits ne vous permettent pas de modifier cette note
+	Only its owner deletes a note: this one was shared with you	Seul le propriétaire supprime une note : celle-ci a été partagée avec vous
+	This note's text is changed where it was written: open it on the web	Le texte de cette note se modifie là où elle a été écrite : ouvrez-la sur le web
+	A note holds 100,000 characters at most	Une note contient 100 000 caractères au maximum
+	This note has no web address	Cette note n’a pas d’adresse web
+	Too many note changes are waiting to be sent. Let them get through first.	Trop de modifications de notes attendent d’être envoyées. Laissez-les d’abord passer.
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange
