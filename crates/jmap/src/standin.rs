@@ -12,7 +12,8 @@
 //! and, so that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Identity/get`
 //! and `EmailSubmission/set` (`outgoing.rs`); and, when a test turns them on, calendars: `Calendar/get`,
 //! `CalendarEvent/query`, `CalendarEvent/get` and `CalendarEvent/set`, and address books: `AddressBook/get`,
-//! `ContactCard/query`, `ContactCard/get` and `ContactCard/set` (`standin/pim.rs`, [`Pim`]).
+//! `ContactCard/query`, `ContactCard/get` and `ContactCard/set` (`standin/pim.rs`, [`Pim`]); and a person's notes,
+//! `Note/query`, `Note/get` and `Note/set` (`standin/notes.rs`, [`Notes`]).
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -83,12 +84,14 @@ mod demo;
 mod facade;
 #[cfg(test)]
 mod loopback;
+mod notes;
 mod outgoing;
 mod pim;
 mod set;
 
 pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
 pub use facade::Profile;
+pub use notes::{Notes, StoredNote, WRITABLE_NOTE, crowd_notes};
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 pub use pim::{
     Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, MEET_ROOMS, ONLINE_MEETING_REQUEST, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT,
@@ -290,6 +293,8 @@ pub struct Data {
     pub lost_answers: usize,
     /// What it offers besides mail: calendars and address books ([`Pim`], `standin/pim.rs`). Nothing at first.
     pub pim: Pim,
+    /// A person's notes, when a test turns them on ([`Notes`], `standin/notes.rs`). Nothing at first.
+    pub notes: Notes,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -330,6 +335,7 @@ impl Data {
             refused_moves: BTreeMap::new(),
             lost_answers: 0,
             pim: Pim::default(),
+            notes: Notes::default(),
             next: 0,
             version: 0,
             retry_after: None,
@@ -583,6 +589,7 @@ impl Data {
         }
         // Calendars and address books, when a test turns them on (`standin/pim.rs`).
         self.pim.add_to(&mut session, ACCOUNT);
+        self.notes.add_to(&mut session, ACCOUNT);
         session
     }
 
@@ -598,8 +605,12 @@ impl Data {
         let (Some(using), Some(calls)) = (using, request.get("methodCalls").and_then(Value::as_array)) else {
             return rejected("notRequest", "a request has `using` (a list of names) and `methodCalls`");
         };
-        let known =
-            |capability: &str| matches!(capability, CORE | MAIL) || (capability == SUBMISSION && self.submission) || self.pim.knows(capability);
+        let known = |capability: &str| {
+            matches!(capability, CORE | MAIL)
+                || (capability == SUBMISSION && self.submission)
+                || self.pim.knows(capability)
+                || self.notes.knows(capability)
+        };
         if using.iter().any(|capability| !known(capability)) {
             return rejected("unknownCapability", "a capability this server doesn't have is in `using`");
         }
@@ -670,6 +681,7 @@ impl Data {
             "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" | "CalendarEvent/set" if self.pim.calendars => Some(CALENDARS),
             "ParticipantIdentity/get" if self.pim.calendars && self.pim.says_identities => Some(CALENDARS),
             "AddressBook/get" | "ContactCard/query" | "ContactCard/get" | "ContactCard/set" if self.pim.contacts => Some(CONTACTS),
+            _ if self.notes.has(name) => Some(crate::pim::notes::NOTES),
             _ => None,
         };
         if needs.is_none_or(|capability| !using.contains(&capability)) {
@@ -696,6 +708,7 @@ impl Data {
             "ContactCard/query" => self.pim.card_query(&args),
             "ContactCard/get" => self.pim.card_get(&args, self.max_get),
             "ContactCard/set" => self.pim.card_set(&args, self.max_set),
+            _ if self.notes.has(name) => self.notes.method(name, &args, self.max_get, self.max_set),
             _ => self.email_get(&args),
         }
     }

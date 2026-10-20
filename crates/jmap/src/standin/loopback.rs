@@ -13,7 +13,8 @@
 //!
 //! It listens on `127.0.0.1` alone (the port from `MAILCRAFT_STANDIN_PORT`, 8790 when unset; the demo around the day
 //! `MAILCRAFT_STANDIN_TODAY` names, else today, with as many more events as `MAILCRAFT_STANDIN_EVENTS` says and as many
-//! more cards as `MAILCRAFT_STANDIN_CARDS` says, for a look at what they cost the tab), takes one connection at a time
+//! more cards as `MAILCRAFT_STANDIN_CARDS` says and as many more notes as `MAILCRAFT_STANDIN_NOTES` says, for a look at
+//! what they cost the tab), takes one connection at a time
 //! on one thread, and answers each request once (`Connection: close`):
 //!
 //! - **Every answer carries CORS headers** that let any page call it with a credential in a header (the browser's

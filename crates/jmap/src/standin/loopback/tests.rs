@@ -10,7 +10,7 @@ use mailcraft_model::sync::{JmapMailRequest, JmapPimRequest, JmapScope};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
-use super::super::{DEMO_CARDS, DEMO_PERSON, Pim, SESSION, crowd, crowd_cards, demo};
+use super::super::{DEMO_CARDS, DEMO_PERSON, Pim, SESSION, crowd, crowd_cards, crowd_notes, demo};
 use super::*;
 use crate::{Auth, Client, sync_mail, sync_pim};
 
@@ -213,8 +213,10 @@ fn serve_the_stand_in_on_loopback() {
     crowd(&stand_in, today, more);
     let cards = std::env::var("MAILCRAFT_STANDIN_CARDS").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(20_000);
     crowd_cards(&stand_in, cards);
+    let notes = std::env::var("MAILCRAFT_STANDIN_NOTES").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(4_000);
+    stand_in.with(|d| crowd_notes(&mut d.notes, notes));
     println!(
-        "the stand-in, with the demo around {}, {more} more events and {cards} more cards, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
+        "the stand-in, with the demo around {}, {more} more events, {cards} more cards and {notes} more notes, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
         today.iso()
     );
     serve(&stand_in, port).unwrap();

@@ -27,6 +27,7 @@ pub mod calendars;
 pub mod contacts;
 pub(crate) mod jscalendar;
 pub(crate) mod jscontact;
+pub mod notes;
 pub mod push;
 #[cfg(test)]
 mod tests;

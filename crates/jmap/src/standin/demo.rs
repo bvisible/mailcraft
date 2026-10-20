@@ -23,6 +23,10 @@
 //! The server knows Ada by an alias too ([`DEMO_ALIAS`], a participant identity of hers that no mailbox of the page
 //! has), and makes online meetings when they are asked for ([`Pim::meet`]).
 //!
+//! And her notes (`standin/notes.rs`): a pinned list of ideas for the team's offsite, groceries, a rich quarterly plan
+//! (a checklist and an attachment: its text is changed where it was written), the room booking codes Grace shares
+//! with her for reading, and an archived checklist.
+//!
 //! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it. For
 //! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar, and
 //! [`crowd_cards`] as many cards as asked to the team's book.
@@ -170,6 +174,8 @@ pub fn demo(today: Date) -> StandIn {
         for (name, first, last, email, firm) in partners {
             pim.add_card(Card::person(name, "partners", first, last, email).working("Partner", firm));
         }
+        // Her notes, the morning of the Monday.
+        super::notes::demo_notes(&mut d.notes, morning.saturating_mul(1_000));
     });
     stand_in
 }
