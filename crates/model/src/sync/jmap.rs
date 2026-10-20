@@ -13,6 +13,7 @@
 //! A JMAP account's folders and messages are known to its server by the ids the server hands out
 //! ([`crate::AccountKind::server_ids`]), as a Microsoft account's are. What carries no Graph
 //! meaning is used again here instead of being copied: [`FolderListing`], [`MessagePage`],
+// //// Neoffice — not `SendUp`: a message to send goes as a `JmapSend` here (see the `use` below).
 //! [`SendDone`], [`GraphProgress`] and, for a message fetched whole, what that brings
 //! ([`GraphFetchResult`](super::GraphFetchResult)). What is asked for it is a [`JmapFetchRequest`]
 //! of its own, since a host needs to know where the server is.
@@ -26,6 +27,8 @@
 //! counts only. The secret that opens the server (a password, or a bearer token) is handed to the
 //! host beside the request and is in neither.
 //!
+// //// Neoffice — the sending and the drafts of a JMAP account are here: this fork sends from one (`mailcraft-jmap`'s
+// `send`), where upstream has them still to come.
 //! **Sending** (RFC 8621 §7): what waits in the Outbox goes with the run as [`JmapSend`], each message
 //! whole, and what became of each comes back as a [`SendDone`] (sent, held with a reason, or not
 //! tried). **Drafts** (RFC 8621 §4.8): a draft saved here goes up as a [`JmapDraftUp`], to be filed in
@@ -240,6 +243,8 @@ pub enum JmapChange {
         forwarded: Option<bool>,
     },
     /// The message lies in another mailbox here: `to` instead of `from`. Some servers give a
+    // //// Neoffice — a server that gives a moved message a new id may not say it: this fork finds the message again
+    // (`cmd/jmap_down.rs`), so the change says so.
     /// message a new id when it moves ([`JmapOutcome::Done`] says it), and may not say which: then
     /// the message has none until a window of the mailbox it was moved to shows it.
     Move { message: Id, id: String, from: String, to: String },
@@ -260,6 +265,8 @@ impl JmapChange {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum JmapOutcome {
+    // //// Neoffice — what an empty `id` means here: for a move, that the id changed and nobody said to what (the engine
+    // finds the message again), where upstream reads it as "the id stays"; this fork's host says the id that stays.
     /// Done. For a move, `id` is the message's server id now: the new one when the server said it, or the one it
     /// had when the host found that the id stays (a server that does not name a message by where it lies); empty
     /// when the id has changed and nobody said to what, and the engine finds the message again in the mailbox it
@@ -327,6 +334,7 @@ pub struct JmapMailResult {
     /// More of this run comes after this piece.
     #[serde(skip_serializing_if = "is_false")]
     pub partial: bool,
+    // //// Neoffice — what counts against a run being whole, as this fork's run of the changes made here goes.
     /// Nothing went wrong in the run and it was not stopped: every mailbox it meant to read was read,
     /// if in part (a change of marks, or a delete, that the server did not take does not count against it: it waits
     /// for the next run and no window says otherwise; a move that was not answered does, for it may have been
