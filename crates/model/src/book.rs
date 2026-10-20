@@ -383,6 +383,29 @@ pub struct ContactOutcome {
     /// asking again is unlikely to get past; not for a server that was busy or a connection that broke.
     #[serde(skip_serializing_if = "is_false")]
     pub lasting: bool,
+    /// For a new contact that failed: what is known now of a card made of it.
+    #[serde(skip_serializing_if = "CardMade::is_unsaid")]
+    pub made: CardMade,
+}
+
+/// What is known of a card made of a new contact that failed ([`ContactOutcome::made`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CardMade {
+    /// Nothing new: it was not sent, or the server didn't run what it was sent.
+    #[default]
+    Unsaid,
+    /// It may have been made: it was sent, and no answer came that says (a connection lost, an answer too large).
+    Perhaps,
+    /// None was made: the server refused to make it, and made none of it before (it was never sent before, or the
+    /// server found none made with its mark).
+    No,
+}
+
+impl CardMade {
+    pub fn is_unsaid(&self) -> bool {
+        *self == CardMade::Unsaid
+    }
 }
 
 impl ContactOutcome {
@@ -719,11 +742,15 @@ mod tests {
             error: "no\n".repeat(1_000),
             retry_after: Some(5),
             lasting: true,
+            made: CardMade::Perhaps,
         };
         outcome.tidy();
         assert!(outcome.remote.is_empty() && !outcome.error.contains('\n') && outcome.error.chars().count() <= MAX_WHY);
         let uploaded = ContactsUploaded { account, email: "ada@neoffice.example.org".into(), outcomes: vec![outcome], token_refused: true };
-        assert!(round_trip(&uploaded).contains(r#""result":"refused""#));
+        let sent = round_trip(&uploaded);
+        assert!(sent.contains(r#""result":"refused""#) && sent.contains(r#""made":"perhaps""#), "{sent}");
+        // Nothing new known of a card: not said at all.
+        assert!(!round_trip(&ContactOutcome::default()).contains("made"));
         round_trip(&ContactsUpload { ops: vec![op], ..Default::default() }.for_account(&mailbox.accounts[1]));
     }
 

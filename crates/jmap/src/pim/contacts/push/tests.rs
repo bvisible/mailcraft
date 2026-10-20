@@ -484,6 +484,7 @@ fn a_lost_answer_to_a_create_heals_at_the_following_read() {
     server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
     let first = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
     assert_eq!(first[0].result, EventResult::Failed, "whether it went is not known: it goes again");
+    assert_eq!(made(&first[0]), "perhaps", "and its card may be on the server");
     assert!(card(&server, "Gus Hale").is_some_and(|c| c.phones.len() == 2), "the server made it");
     // A number taken out here before the next try: sent again with its mark, it is the same card, which has what was
     // sent this time; and the next read brings that one alone.
@@ -705,11 +706,17 @@ fn a_look_for_a_card_that_fails_sends_nothing_and_what_the_desk_added_stays() {
         }
     });
     let titled = ContactFields { title: Some("Master joiner".into()), ..gus() };
-    // The server fails to look for him once: he is not sent whole (which would take the desk's number away), but waits.
-    server.with(|d| d.faults.push_back(Fault::on("ContactCard/query", Effect::MethodError("serverFail"))));
+    // The server fails to look for him: he is not sent whole (which would take the desk's number away), but waits. A
+    // look the server fails with is likely to fail again (given up after a few); a connection lost on the way is not.
     let before = writes(&server).len();
-    let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled.clone(), gus())])));
-    assert_eq!((done[0].result, done[0].lasting), (EventResult::Failed, false), "{done:?}");
+    for (effect, lasting) in
+        [(Effect::MethodError("serverFail"), true), (Effect::MethodError("invalidArguments"), true), (Effect::RefuseWith(500), false)]
+    {
+        server.with(|d| d.faults.push_back(Fault::on("ContactCard/query", effect)));
+        let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled.clone(), gus())])));
+        assert_eq!((done[0].result, done[0].lasting), (EventResult::Failed, lasting), "{effect:?}: {done:?}");
+        assert_eq!(made(&done[0]), "", "{effect:?}: nothing new is known of his card");
+    }
     assert_eq!(writes(&server).len(), before, "nothing sent");
     // The next time it finds him, and writes only the title.
     let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled, gus())])));
@@ -737,4 +744,55 @@ fn a_new_card_sent_again_refused_for_good_names_the_card_it_was_made_as() {
     let titled = ContactFields { title: Some("Master joiner".into()), ..gus() };
     let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled, gus())])));
     assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Refused, Some("Gus Hale")));
+}
+
+/// What an outcome says of a card made of a new contact, as a host hands it to the engine (`""`: nothing new).
+fn made(outcome: &ContactOutcome) -> String {
+    serde_json::to_value(outcome).ok().and_then(|value| value.get("made").and_then(Value::as_str).map(str::to_string)).unwrap_or_default()
+}
+
+#[test]
+fn a_new_card_the_server_refuses_to_make_says_none_was_made_and_holds_no_deletion_back() {
+    // An account over its quota: the new card is refused (likely to be again), none was made, and the deletion that
+    // would make room goes.
+    let server = server();
+    server.with(|d| d.pim.refused_cards.insert("t-gus".into(), "overQuota"));
+    let done = outcomes(&run(&server, &request(vec![create("t-gus", gus()), destroy("Bob Lindqvist")])));
+    let answered: Vec<(ContactChangeKind, EventResult, bool, String)> = done.iter().map(|o| (o.op.kind, o.result, o.lasting, made(o))).collect();
+    assert_eq!(
+        answered,
+        [
+            (ContactChangeKind::Create, EventResult::Failed, true, "no".to_string()),
+            (ContactChangeKind::Delete, EventResult::Done, false, String::new())
+        ]
+    );
+    assert!(card(&server, "Bob Lindqvist").is_none());
+    // One sent before that its server looked for and found none of, refused again: none was made, and nothing waits
+    // for it either.
+    server.with(|d| d.pim.refused_cards.insert("t-hal".into(), "overQuota"));
+    let hal = ContactFields { name: name("Hal", "Berg"), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-hal", hal.clone(), hal), destroy("Grace Okafor")])));
+    let answered: Vec<(EventResult, String)> = done.iter().map(|o| (o.result, made(o))).collect();
+    assert_eq!(answered, [(EventResult::Failed, "no".to_string()), (EventResult::Done, String::new())]);
+    // A server that can't look: one sent before may have been made the first time, refused or not now.
+    let server = self::server();
+    server.with(|d| {
+        d.pim.finds_by_uid = false;
+        d.pim.refused_cards.insert("t-hal".into(), "overQuota");
+    });
+    let hal = ContactFields { name: name("Hal", "Berg"), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-hal", hal.clone(), hal)])));
+    assert_eq!((done[0].result, made(&done[0])), (EventResult::Failed, String::new()));
+}
+
+#[test]
+fn a_second_new_card_sent_again_that_finds_a_card_another_took_waits() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    run(&server, &request(vec![create("t-gus", gus())]));
+    let before = writes(&server).len();
+    let twice = vec![resend("t-gus", gus(), gus()), ContactOp { contact: 43, ..resend("t-gus", gus(), gus()) }];
+    let done = outcomes(&run(&server, &request(twice)));
+    assert_eq!(done.iter().map(|o| (o.op.contact, o.result)).collect::<Vec<_>>(), [(40, EventResult::Done)], "the second waits, unanswered");
+    assert_eq!(writes(&server).len(), before, "and is not sent whole");
 }

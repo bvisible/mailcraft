@@ -393,7 +393,7 @@ pub fn merged_json(op: &ContactOp, card: &Value) -> Value {
 /// to it here (`was` → `now`) made to it: what was taken out here goes, what was added here is added, a label changed
 /// here is that (the entry made anew), and the others stay as they are. The first here goes first when the order was
 /// changed here: the first of `was` that is still there is another, or none of `was` is left (all of it replaced);
-/// taking out the first alone is no new order.
+/// taking out the first alone is no new order, and adding one where there was none puts it after what the server has.
 fn merged(
     server: Vec<(Labeled, Map<String, Value>)>,
     was: &[Labeled],
@@ -423,7 +423,7 @@ fn merged(
     }
     let first_kept = was.iter().find(|entry| had(now, &entry.value).is_some());
     if let Some(first) = now.first()
-        && first_kept.is_none_or(|before| !same(&before.value, &first.value))
+        && first_kept.map_or(!was.is_empty(), |before| !same(&before.value, &first.value))
         && let Some(at) = out.iter().position(|(entry, _)| same(&entry.value, &first.value))
     {
         let entry = out.remove(at);

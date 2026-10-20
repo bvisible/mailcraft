@@ -230,6 +230,11 @@ fn what_the_server_has_besides_stays_as_it_is_and_its_first_address_too_unless_t
     server["emails"] = json!({"e1": {"@type": "EmailAddress", "address": x, "pref": 1}, "e2": {"@type": "EmailAddress", "address": a}});
     let op = change((vec![l("", a)], Vec::new()), (vec![l("", c)], Vec::new()));
     assert_eq!(addresses(&merged_json(&op, &server)), [(c.to_string(), Some(1)), (x.to_string(), None)]);
+    // She had none here, and the desk gave her one, her primary: the one added here comes after it.
+    let mut server = card();
+    server["emails"] = json!({"e1": {"@type": "EmailAddress", "address": x, "pref": 1}});
+    let op = change((Vec::new(), Vec::new()), (vec![l("", c)], Vec::new()));
+    assert_eq!(addresses(&merged_json(&op, &server)), [(x.to_string(), Some(1)), (c.to_string(), None)]);
 }
 
 proptest! {

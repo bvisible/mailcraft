@@ -646,8 +646,7 @@ proptest! {
 /// what the next try sends.
 fn lost_then_copied(s: &mut Session, account: Id) -> (Id, Id) {
     let id = run(s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
-    let first = upload(s, account);
-    answer_to(s, account, &first, EventResult::Failed, "", "the connection was lost");
+    answer_with(s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
     let gus = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
     apply_contacts(s, &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus]))
         .unwrap();
@@ -946,7 +945,7 @@ fn a_new_contact_whose_answer_didnt_come_goes_again_with_what_it_was_first_sent_
     let made = json!({"first": "Gus", "email": "gus@example.org", "phones": [{"label": "mobile", "value": "+41 79 555 02 02"}]});
     let id = run(&mut s, "people.new", made)["id"].as_u64().unwrap();
     assert!(ops(&mut s, account)[0].get("base").is_none(), "not sent before");
-    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
     // His number taken out here: something new to say, at once.
     run(&mut s, "people.edit", json!({"id": id, "phones": []}));
     let fields = |op: &Value, key: &str| serde_json::from_value::<ContactFields>(op[key].clone()).unwrap();
@@ -954,7 +953,7 @@ fn a_new_contact_whose_answer_didnt_come_goes_again_with_what_it_was_first_sent_
     assert_eq!(fields(&op, "base").phones.map(|phones| phones.len()), Some(1), "what it was sent with the first time");
     assert_eq!(fields(&op, "fields").phones, Some(Vec::new()));
     // A second try lost too keeps what the first was sent with (the card, if made, was made with that).
-    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
     s.clock.now = s.clock.now.map(|now| now + 1_000);
     let op = ops(&mut s, account).remove(0);
     assert_eq!(fields(&op, "base").phones.map(|phones| phones.len()), Some(1));
@@ -964,8 +963,7 @@ fn a_new_contact_whose_answer_didnt_come_goes_again_with_what_it_was_first_sent_
 fn the_deletion_of_a_copy_goes_only_with_the_contact_whose_card_it_may_be() {
     let (mut s, account) = session();
     run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));
-    let first = upload(&mut s, account);
-    answer_to(&mut s, account, &first, EventResult::Failed, "", "the connection was lost");
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
     let gus = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
     apply_contacts(
         &mut s,
@@ -993,7 +991,7 @@ fn the_deletion_of_a_copy_goes_only_with_the_contact_whose_card_it_may_be() {
 fn a_new_contact_sent_again_whose_card_refuses_the_change_is_that_card_as_the_server_has_it() {
     let (mut s, account) = session();
     let id = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
-    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
     run(&mut s, "people.edit", json!({"id": id, "title": "Joiner"}));
     // Found on the server by its mark, the change of that card is refused for good.
     let said = answer(&mut s, account, EventResult::Refused, "c-gus", "Your rights do not allow it.");
@@ -1013,4 +1011,68 @@ fn a_new_contact_sent_again_whose_card_refuses_the_change_is_that_card_as_the_se
     )
     .unwrap();
     assert_eq!(s.mailbox.contacts.values().filter(|c| c.first == "Gus").map(|c| c.id).collect::<Vec<_>>(), [id]);
+}
+
+/// The server's answer to every op that is to go now and is of `kind`: `outcome` (JSON: `result`, `error`, `lasting`,
+/// `made`) for each, as a host hands it over.
+fn answer_with(s: &mut Session, account: Id, kind: &str, outcome: Value) -> Value {
+    let upload = upload(s, account);
+    let outcomes: Vec<Value> = upload["ops"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|op| op["kind"] == kind)
+        .map(|op| {
+            let mut one = outcome.clone();
+            one["op"] = op.clone();
+            one
+        })
+        .collect();
+    run(s, "sync.applyContactChanges", json!({"result": {"account": account, "email": ME, "outcomes": outcomes}}))
+}
+
+#[test]
+fn a_new_contact_the_server_refuses_to_make_holds_no_deletion_back_and_is_given_up_after_a_few() {
+    let (mut s, account) = session();
+    let gus = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    // The account is over its quota: Gus is refused, and none was made.
+    let refused = json!({"result": "failed", "error": "overQuota", "lasting": true, "made": "no"});
+    answer_with(&mut s, account, "create", refused.clone());
+    assert!(s.mailbox.contact_changes.iter().all(|change| change.base.is_none()), "nothing of him may be on the server");
+    // Old contacts deleted to make room go at once: they wait for nothing.
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.delete", json!({"id": bob.id}));
+    let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
+    assert_eq!(kinds, ["delete"]);
+    answer_with(&mut s, account, "delete", json!({"result": "done"}));
+    // Refused a few times in a row: given up with a word, and kept on this computer only.
+    s.clock.now = s.clock.now.map(|now| now + 1_000);
+    answer_with(&mut s, account, "create", refused.clone());
+    s.clock.now = s.clock.now.map(|now| now + 1_000);
+    let said = answer_with(&mut s, account, "create", refused);
+    assert!(s.mailbox.contact_changes.is_empty());
+    assert_eq!(s.mailbox.contact(gus).map(|c| c.book), Some(0), "kept here only");
+    assert_eq!(
+        said["messages"],
+        json!(["\"Gus\" could not be sent to the server, which keeps failing with it (overQuota). It is kept on this computer only."])
+    );
+}
+
+#[test]
+fn a_new_contact_whose_card_cant_be_looked_for_is_given_up_after_a_few_and_the_deletions_go() {
+    let (mut s, account) = session();
+    run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));
+    // Its answer lost: its card may be on the server.
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
+    assert!(s.mailbox.contact_changes.iter().any(|change| change.base.is_some()));
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.delete", json!({"id": bob.id}));
+    assert!(ops(&mut s, account).is_empty(), "the deletion waits for him");
+    // The server fails every look for his card: three times, then he is given up, and the deletion goes.
+    for _ in 0..3 {
+        s.clock.now = s.clock.now.map(|now| now + 10_000);
+        answer_with(&mut s, account, "create", json!({"result": "failed", "error": "serverFail", "lasting": true}));
+    }
+    let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
+    assert_eq!(kinds, ["delete"]);
 }

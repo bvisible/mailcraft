@@ -21,8 +21,9 @@
 //!   done. Refused: a change is put back as the server has it, a deleted contact comes back, a new one is kept on this
 //!   computer only, or (in a session that keeps nothing of its own) taken away (one sent again as a change of the card
 //!   the server made of it the first time is that card, put back as it was sent then); each says so, once. Denied: tried once
-//!   more, then refused. Failed: it waits, longer after every failure in a row; a new contact keeps what it was sent
-//!   with (the server may have made it), so that sending it again makes only what was changed since to that card. One
+//!   more, then refused. Failed: it waits, longer after every failure in a row; a new contact the server may have
+//!   made (it was sent, and no answer said) keeps what it was sent with, so that sending it again makes only what was
+//!   changed since to that card, and one it refused to make, having made none of it, keeps nothing of the kind. One
 //!   the server keeps failing with (a few times in a row, with this very change), or a new contact it keeps making
 //!   without saying what it calls it (counted apart), is given up with a word, and the contact follows the server
 //!   again; another answer, or a new change here, starts the count again.
@@ -46,8 +47,8 @@
 use std::collections::HashSet;
 
 use mailcraft_model::book::{
-    ContactChange, ContactChangeKind, ContactFields, ContactName, ContactOp, ContactOutcome, ContactsUpload, ContactsUploaded, MAX_CONTACT_CHANGES,
-    MAX_CONTACT_OPS,
+    CardMade, ContactChange, ContactChangeKind, ContactFields, ContactName, ContactOp, ContactOutcome, ContactsUpload, ContactsUploaded,
+    MAX_CONTACT_CHANGES, MAX_CONTACT_OPS,
 };
 use mailcraft_model::remote::{ContactsDownload, EventResult, clean_key};
 use mailcraft_model::{Contact, Id, Mailbox, Origin};
@@ -800,6 +801,15 @@ impl Taking<'_> {
         self.applied.dropped.push(ContactDropped { account: self.account, kind: change.kind, reason: STUCK, message });
     }
 
+    /// The contact `contact` as it was sent to be made (`op`): what the card made of it has.
+    fn sent_as(&self, contact: Option<Id>, op: &ContactOp) -> Option<Box<Contact>> {
+        contact.and_then(|id| self.mailbox.contact(id)).map(|here| {
+            let mut sent = here.clone();
+            put_fields(&mut sent, &op.fields);
+            Box::new(sent)
+        })
+    }
+
     /// The answer to making a contact.
     fn created(&mut self, outcome: &ContactOutcome) {
         let (op, account, now) = (&outcome.op, self.account, self.now);
@@ -811,10 +821,15 @@ impl Taking<'_> {
             at.and_then(|at| self.mailbox.contact_changes.get(at)).map(|change| change.contact).filter(|id| self.mailbox.contact(*id).is_some());
         match outcome.result {
             EventResult::Done if outcome.remote.is_empty() => {
-                // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one). A
-                // server that says so again is not asked for ever: what it made comes with the next read.
+                // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one, and
+                // with what it was sent with, which the card made of it has). A server that says so again is not asked
+                // for ever: what it made comes with the next read.
                 let Some(at) = at else { return };
+                let sent = self.sent_as(contact, op);
                 let nameless = self.mailbox.contact_changes.get_mut(at).map(|change| {
+                    if change.base.is_none() {
+                        change.base = sent;
+                    }
                     change.failures = change.failures.saturating_add(1);
                     (change.nameless, change.stuck) = (change.nameless.saturating_add(1), 0);
                     change.retry_at = now.saturating_add(wait_after(change.failures, None));
@@ -870,16 +885,15 @@ impl Taking<'_> {
             }
             EventResult::Failed => {
                 let Some(at) = at else { return };
-                // The server may have made it (no answer came that says it didn't): what was sent the first time is
-                // kept, so that sending it again makes only what was changed here since to the card made of it.
-                let sent = contact.and_then(|id| self.mailbox.contact(id)).map(|here| {
-                    let mut sent = here.clone();
-                    put_fields(&mut sent, &op.fields);
-                    Box::new(sent)
-                });
+                // The server may have made it (it was sent, and no answer came that says): what was sent the first
+                // time is kept, so that sending it again makes only what was changed here since to the card made of
+                // it. One it refused to make, and made none of before, may not be anywhere there: nothing of it is.
+                let sent = self.sent_as(contact, op);
                 let held = self.mailbox.contact_changes.get_mut(at).map(|change| {
-                    if change.base.is_none() {
-                        change.base = sent;
+                    match outcome.made {
+                        CardMade::Perhaps if change.base.is_none() => change.base = sent,
+                        CardMade::No => change.base = None,
+                        _ => {}
                     }
                     held_back(change, outcome, now)
                 });
