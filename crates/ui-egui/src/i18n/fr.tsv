@@ -115,6 +115,58 @@
 # run_words, how a run ended (crates/engine/src/cmd/jmap_mail.rs).
 	1 moved message can't be found on the server yet, so changes to it wait.	1 message déplacé n’a pas encore été retrouvé sur le serveur : les modifications qui le concernent attendent.
 	{n} moved messages can't be found on the server yet, so changes to them wait.	{n} messages déplacés n’ont pas encore été retrouvés sur le serveur : les modifications qui les concernent attendent.
+# run_words, why a message or a draft is held or refused (crates/jmap/src/send.rs, crates/engine/src/cmd/jmap_send.rs).
+	the message has no sender	le message n’a pas d’expéditeur
+	"{address}" isn't an address mail can be sent from	« {address} » n’est pas une adresse d’où envoyer du courrier
+	"{address}" isn't an address mail can be sent to	« {address} » n’est pas une adresse à laquelle envoyer du courrier
+	the message has too many recipients	le message a trop de destinataires
+	the message has no recipients	le message n’a aucun destinataire
+	the server doesn't send mail	le serveur n’envoie pas de courrier
+	the server has no Sent folder to keep a copy of it in	le serveur n’a pas de dossier Envoyés pour y garder une copie
+	the message is larger than the server takes ({size})	le message est plus volumineux que ce que le serveur accepte ({size})
+	the server lists no identity to send as {address}	le serveur ne propose aucune identité d’envoi pour l’adresse {address}
+	the server doesn't let this account send as {address}	le serveur ne permet pas à ce compte d’envoyer avec l’adresse {address}
+	the server doesn't let this account send as that address	le serveur ne permet pas à ce compte d’envoyer avec cette adresse
+	the server doesn't let this account send mail just now	le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant
+	the server doesn't accept {addresses}	le serveur n’accepte pas {addresses}
+	the server doesn't accept an address the message is for	le serveur n’accepte pas une des adresses destinataires du message
+	the message has more recipients than the server allows ({most})	le message a plus de destinataires que le serveur n’en autorise ({most})
+	the message has more recipients than the server allows	le message a plus de destinataires que le serveur n’en autorise
+	the message is too large for the server	le message est trop volumineux pour le serveur
+	the mailbox on the server is full	la boîte aux lettres du serveur est pleine
+	the server found the message invalid	le serveur a jugé le message invalide
+	the server lost the message it was sent	le serveur a perdu le message qui lui avait été remis
+	the server refused it	le serveur l’a refusé
+	the server refused it ({kind})	le serveur l’a refusé ({kind})
+	the server refused it: {description}	le serveur l’a refusé : {description}
+	the server refused it ({kind}): {description}	le serveur l’a refusé ({kind}) : {description}
+	the server wouldn't take it ({said})	le serveur n’a pas voulu l’accepter ({said})
+	the server's answer wasn't understood	la réponse du serveur n’a pas été comprise
+	the server wouldn't take it	le serveur n’a pas voulu l’accepter
+	the server has no Drafts folder to keep it in	le serveur n’a pas de dossier Brouillons où le garder
+	it is larger than the server takes ({size})	il est plus volumineux que ce que le serveur accepte ({size})
+	it is too large for the server	il est trop volumineux pour le serveur
+	the server doesn't let this account keep drafts there	le serveur ne permet pas à ce compte d’y garder des brouillons
+# run_words, why it isn't known whether a message went (crates/jmap/src/send.rs, crates/engine/src/cmd/jmap_send.rs).
+	the server failed after it was asked to send it (HTTP {status})	le serveur a échoué après avoir reçu la demande d’envoi (HTTP {status})
+	the server's answer didn't say whether it was sent	la réponse du serveur n’indiquait pas s’il avait été envoyé
+	the server failed while it was sending it	le serveur a échoué pendant l’envoi
+	the server failed while it was sending it: {description}	le serveur a échoué pendant l’envoi : {description}
+	the server answered with something this program doesn't know	le serveur a répondu par quelque chose que ce programme ne connaît pas
+	the server answered with something this program doesn't know: {description}	le serveur a répondu par quelque chose que ce programme ne connaît pas : {description}
+	the server answered with something this program doesn't know ({kind})	le serveur a répondu par quelque chose que ce programme ne connaît pas ({kind})
+	the server answered with something this program doesn't know ({kind}): {description}	le serveur a répondu par quelque chose que ce programme ne connaît pas ({kind}) : {description}
+	the server's answer was lost	la réponse du serveur a été perdue
+# run_words, the engine's lines of sending, and the banner of a message held in the Outbox (crates/engine/src/cmd/jmap_send.rs).
+	Couldn't send '{subject}': {why}. It is held in the Outbox.	Impossible d’envoyer « {subject} » : {why}. Il est retenu dans la Boîte d’envoi.
+	'{subject}' may have been sent: {doubt}. It is held in the Outbox.	« {subject} » a peut-être été envoyé : {doubt}. Il est retenu dans la Boîte d’envoi.
+	'{subject}' was sent, although it was taken out of the Outbox meanwhile. Look in Sent.	« {subject} » a été envoyé, bien qu’il ait été retiré de la Boîte d’envoi entre-temps. Consultez le dossier Envoyés.
+	'{subject}' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent.	« {subject} » a peut-être été envoyé, bien qu’il ait été retiré de la Boîte d’envoi entre-temps. Consultez le dossier Envoyés.
+	A message was sent, although it was taken out of the Outbox meanwhile. Look in Sent.	Un message a été envoyé, bien qu’il ait été retiré de la Boîte d’envoi entre-temps. Consultez le dossier Envoyés.
+	A message may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent.	Un message a peut-être été envoyé, bien qu’il ait été retiré de la Boîte d’envoi entre-temps. Consultez le dossier Envoyés.
+	Couldn't save the draft '{subject}' on the server: {why}. It stays here, and goes up the next time it is saved.	Impossible d’enregistrer le brouillon « {subject} » sur le serveur : {why}. Il reste ici et sera transmis au serveur à son prochain enregistrement.
+	It wasn't sent: {why}. Change it, or send it again.	Il n’a pas été envoyé : {why}. Modifiez-le, ou renvoyez-le.
+	It may have been sent: {doubt}. Before you send it again, ask a recipient whether it arrived; the copy in Sent was filed first, so it doesn't tell.	Il a peut-être été envoyé : {doubt}. Avant de le renvoyer, demandez à un destinataire s’il l’a reçu ; la copie du dossier Envoyés a été classée avant l’envoi, elle ne permet donc pas de le savoir.
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

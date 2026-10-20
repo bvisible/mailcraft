@@ -6,7 +6,7 @@
 //! line in `fr.tsv`, found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
 //! that lacks one fails its test. The tests hold the rows to the files they name (a census of their sentences).
 
-use super::Family::{Inner, Line, Why};
+use super::Family::{Banner, Doubt, Hold, Inner, Line, Why};
 use super::{Family, Row};
 
 /// A row: the file that writes the sentence, its family, the sentence, and the family each reason in it is read with.
@@ -21,6 +21,7 @@ const UP: &str = "crates/jmap/src/mail/up.rs";
 const URL: &str = "crates/jmap/src/url.rs";
 const SEND: &str = "crates/jmap/src/send.rs";
 const ENGINE: &str = "crates/engine/src/cmd/jmap_mail.rs";
+const SENDING: &str = "crates/engine/src/cmd/jmap_send.rs";
 const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 
 /// Every row, family by family.
@@ -93,4 +94,67 @@ pub(super) static ROWS: &[Row] = &[
     row(ENGINE, Line, run_word!("The server refused the sign-in"), &[]),
     row(ENGINE, Line, run_word!("1 moved message can't be found on the server yet, so changes to it wait."), &[]),
     row(ENGINE, Line, run_word!("{n} moved messages can't be found on the server yet, so changes to them wait."), &[]),
+    // Sending and filing drafts: the engine's lines (`jmap_send::send_done`, `draft_done`) and the banner of a message held in
+    // the Outbox (`Message::held`), round why a message is held (`jmap::send`'s words) or why it isn't known whether it went.
+    row(SENDING, Line, run_word!("Couldn't send '{subject}': {why}. It is held in the Outbox."), &[("why", Hold)]),
+    row(SENDING, Line, run_word!("'{subject}' may have been sent: {doubt}. It is held in the Outbox."), &[("doubt", Doubt)]),
+    row(SENDING, Line, run_word!("'{subject}' was sent, although it was taken out of the Outbox meanwhile. Look in Sent."), &[]),
+    row(SENDING, Line, run_word!("'{subject}' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."), &[]),
+    row(SENDING, Line, run_word!("A message was sent, although it was taken out of the Outbox meanwhile. Look in Sent."), &[]),
+    row(SENDING, Line, run_word!("A message may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."), &[]),
+    row(
+        SENDING,
+        Line,
+        run_word!("Couldn't save the draft '{subject}' on the server: {why}. It stays here, and goes up the next time it is saved."),
+        &[("why", Hold)],
+    ),
+    row(SENDING, Banner, run_word!("It wasn't sent: {why}. Change it, or send it again."), &[("why", Hold)]),
+    row(
+        SENDING,
+        Banner,
+        run_word!(
+            "It may have been sent: {doubt}. Before you send it again, ask a recipient whether it arrived; the copy in Sent was filed first, so it doesn't tell."
+        ),
+        &[("doubt", Doubt)],
+    ),
+    row(SEND, Hold, run_word!("the message has no sender"), &[]),
+    row(SEND, Hold, run_word!("\"{address}\" isn't an address mail can be sent from"), &[]),
+    row(SEND, Hold, run_word!("\"{address}\" isn't an address mail can be sent to"), &[]),
+    row(SEND, Hold, run_word!("the message has too many recipients"), &[]),
+    row(SEND, Hold, run_word!("the message has no recipients"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't send mail"), &[]),
+    row(SEND, Hold, run_word!("the server has no Sent folder to keep a copy of it in"), &[]),
+    row(SEND, Hold, run_word!("the message is larger than the server takes ({size})"), &[]),
+    row(SEND, Hold, run_word!("the server lists no identity to send as {address}"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't let this account send as {address}"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't let this account send as that address"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't let this account send mail just now"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't accept {addresses}"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't accept an address the message is for"), &[]),
+    row(SEND, Hold, run_word!("the message has more recipients than the server allows ({most})"), &[]),
+    row(SEND, Hold, run_word!("the message has more recipients than the server allows"), &[]),
+    row(SEND, Hold, run_word!("the message is too large for the server"), &[]),
+    row(SEND, Hold, run_word!("the mailbox on the server is full"), &[]),
+    row(SEND, Hold, run_word!("the server found the message invalid"), &[]),
+    row(SEND, Hold, run_word!("the server lost the message it was sent"), &[]),
+    row(SEND, Hold, run_word!("the server refused it"), &[]),
+    row(SEND, Hold, run_word!("the server refused it ({kind})"), &[]),
+    row(SEND, Hold, run_word!("the server refused it: {description}"), &[]),
+    row(SEND, Hold, run_word!("the server refused it ({kind}): {description}"), &[]),
+    row(SEND, Hold, run_word!("the server wouldn't take it ({said})"), &[]),
+    row(SEND, Hold, run_word!("the server's answer wasn't understood"), &[]),
+    row(SENDING, Hold, run_word!("the server wouldn't take it"), &[]),
+    row(SEND, Hold, run_word!("the server has no Drafts folder to keep it in"), &[]),
+    row(SEND, Hold, run_word!("it is larger than the server takes ({size})"), &[]),
+    row(SEND, Hold, run_word!("it is too large for the server"), &[]),
+    row(SEND, Hold, run_word!("the server doesn't let this account keep drafts there"), &[]),
+    row(SEND, Doubt, run_word!("the server failed after it was asked to send it (HTTP {status})"), &[]),
+    row(SEND, Doubt, run_word!("the server's answer didn't say whether it was sent"), &[]),
+    row(SEND, Doubt, run_word!("the server failed while it was sending it"), &[]),
+    row(SEND, Doubt, run_word!("the server failed while it was sending it: {description}"), &[]),
+    row(SEND, Doubt, run_word!("the server answered with something this program doesn't know"), &[]),
+    row(SEND, Doubt, run_word!("the server answered with something this program doesn't know: {description}"), &[]),
+    row(SEND, Doubt, run_word!("the server answered with something this program doesn't know ({kind})"), &[]),
+    row(SEND, Doubt, run_word!("the server answered with something this program doesn't know ({kind}): {description}"), &[]),
+    row(SENDING, Doubt, run_word!("the server's answer was lost"), &[]),
 ];

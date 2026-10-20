@@ -19,7 +19,7 @@ use mailcraft_engine::Session;
 use mailcraft_engine::cmd::jmap_mail::{apply_jmap_mail, jmap_mail_request};
 use mailcraft_jmap::standin::{Effect, Fault, SESSION, StandIn, TOKEN};
 use mailcraft_jmap::{Error, Http, Request, Response, Result, block_on};
-use mailcraft_model::{Id, Mailbox};
+use mailcraft_model::{FolderKind, Id, Mailbox};
 use mailcraft_ui_egui::i18n::Lang;
 use mailcraft_ui_egui::i18n::run_words::{Family, Reading, explain, explain_status, rows};
 use mailcraft_ui_egui::jmap_job::JmapJob;
@@ -129,12 +129,23 @@ impl Rig {
         self.job_over(http, full, false)
     }
 
+    /// [`Rig::run`], with `meanwhile` done to the session after the run asked for its work and before its pieces are
+    /// taken in: what the owner does while a run is under way.
+    fn run_meanwhile(&mut self, full: bool, meanwhile: impl FnOnce(&mut Session)) -> Shown {
+        self.job(self.server.clone(), full, false, meanwhile)
+    }
+
     /// [`Rig::run_over`], stopped by the owner before it began when `stopped`.
     fn job_over(&mut self, http: impl Http + Clone, full: bool, stopped: bool) -> Shown {
+        self.job(http, full, stopped, |_| {})
+    }
+
+    fn job(&mut self, http: impl Http + Clone, full: bool, stopped: bool, meanwhile: impl FnOnce(&mut Session)) -> Shown {
         let request = jmap_mail_request(&self.s, self.account, full, &[], false).unwrap();
         let job = JmapJob { request, secret: Some(TOKEN.into()), cancel: Arc::new(AtomicBool::new(stopped)) };
         let pieces = RefCell::new(Vec::new());
         block_on(run(http, &job, None::<&NoCredentials>, |_| std::future::ready(()), &mut |piece| pieces.borrow_mut().push(piece)));
+        meanwhile(&mut self.s);
         let mut shown = Shown::default();
         for mut piece in pieces.into_inner() {
             piece.account = self.account;
@@ -156,6 +167,12 @@ impl Rig {
     fn send(&mut self, to: &str, subject: &str) {
         self.s.run("mail.new", &json!({"to": to, "subject": subject, "body": format!("About {subject}."), "account": self.account})).unwrap();
         self.s.run("compose.send", &json!({})).unwrap();
+    }
+
+    /// Write a draft from the account and save it: it waits to go up.
+    fn save_draft(&mut self, subject: &str) {
+        self.s.run("mail.new", &json!({"to": "bob@example.org", "subject": subject, "body": "A draft.", "account": self.account})).unwrap();
+        self.s.run("compose.saveDraft", &json!({})).unwrap();
     }
 
     /// Mark the messages of the account here as read: changes the server hasn't heard of.
@@ -553,6 +570,212 @@ fn too_many_mailboxes() -> Vec<Scenario> {
         .collect()
 }
 
+/// A message sent to `to` (a list of addresses, as the To field takes it), with the server answering its submission with
+/// `effect`, when there is one: what the window was shown.
+fn sent_with(rig: &mut Rig, to: &str, effect: Option<(&'static str, Effect)>) -> Shown {
+    rig.send(to, "Plans");
+    if let Some((on, effect)) = effect {
+        rig.fault(on, effect);
+    }
+    rig.run(false)
+}
+
+/// A server's refusal of a message, in every type the crate has words for and in types it hasn't: of its submission,
+/// or of its filing in Sent before that (a type the crate doesn't know is a refusal there, and a doubt at the
+/// submission, which may have sent it).
+fn refusals() -> Vec<Scenario> {
+    let kinds: [(&'static str, &'static str, &'static str, &'static [&'static str]); 18] = [
+        ("EmailSubmission/set", "forbiddenFrom", "Not as that.", &[]),
+        ("EmailSubmission/set", "forbiddenToSend", "Not now.", &[]),
+        ("EmailSubmission/set", "noRecipients", "Nobody.", &[]),
+        ("EmailSubmission/set", "invalidRecipients", "nobody here", &[]),
+        ("EmailSubmission/set", "tooManyRecipients", "Too many.", &[]),
+        ("EmailSubmission/set", "tooLarge", "Too big.", &[]),
+        ("EmailSubmission/set", "overQuota", "Full.", &[]),
+        ("EmailSubmission/set", "invalidEmail", "Bad.", &[]),
+        ("EmailSubmission/set", "accountReadOnly", "Read-only.", &["Read-only"]),
+        ("EmailSubmission/set", "somethingNew", "It said so.", &["It said so"]),
+        ("EmailSubmission/set", "somethingNew", "", &[]),
+        ("EmailSubmission/set", "", "It said so.", &["It said so"]),
+        ("EmailSubmission/set", "", "", &[]),
+        ("Email/import", "blobNotFound", "Lost it.", &[]),
+        ("Email/import", "somethingNew", "It said so.", &["It said so"]),
+        ("Email/import", "somethingNew", "", &[]),
+        ("Email/import", "", "It said so.", &["It said so"]),
+        ("Email/import", "", "", &[]),
+    ];
+    let mut out: Vec<Scenario> = kinds
+        .into_iter()
+        .map(|(on, kind, description, theirs)| {
+            let mut rig = Rig::listed();
+            let shown = sent_with(&mut rig, "bob@example.org", Some((on, Effect::SetError(kind, description))));
+            Scenario::new("a refusal", &rig, shown, theirs)
+        })
+        .collect();
+    // A call refused as a whole has no message to name an address of.
+    let mut rig = Rig::listed();
+    let shown = sent_with(&mut rig, "bob@example.org", Some(("Email/import", Effect::MethodError("forbiddenFrom"))));
+    out.push(Scenario::new("a refusal of the whole call", &rig, shown, &[]));
+    out
+}
+
+/// What the server and the message itself make a message held for.
+fn held_messages() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    // Recipients the server won't take: it names one of the message's.
+    let mut rig = Rig::listed();
+    let shown = sent_with(&mut rig, "bob@example.org", Some(("EmailSubmission/set", Effect::SetError("invalidRecipients", "bob@example.org"))));
+    out.push(Scenario::new("recipients the server won't take", &rig, shown, &[]));
+    // More than it allows.
+    let mut rig = Rig::listed();
+    let many: Vec<String> = (0..120).map(|n| format!("p{n}@example.org")).collect();
+    let shown = sent_with(&mut rig, &many.join(", "), None);
+    out.push(Scenario::new("more recipients than the server allows", &rig, shown, &[]));
+    // An address mail can't be sent to, and too many recipients for the program.
+    let mut rig = Rig::listed();
+    let shown = sent_with(&mut rig, "zoé@exämple.org", None);
+    out.push(Scenario::new("an address mail can't go to", &rig, shown, &[]));
+    let mut rig = Rig::listed();
+    let crowd: Vec<String> = (0..1_001).map(|n| format!("p{n}@example.org")).collect();
+    let shown = sent_with(&mut rig, &crowd.join(", "), None);
+    out.push(Scenario::new("too many recipients", &rig, shown, &[]));
+    // A server that doesn't send, has no Sent, no identity, takes small messages only.
+    let mut rig = Rig::listed();
+    rig.server.with(|d| d.submission = false);
+    let shown = sent_with(&mut rig, "bob@example.org", None);
+    out.push(Scenario::new("a server that doesn't send", &rig, shown, &[]));
+    let mut rig = Rig::listed();
+    rig.server.with(|d| d.identities.clear());
+    let shown = sent_with(&mut rig, "bob@example.org", None);
+    out.push(Scenario::new("no identity", &rig, shown, &[]));
+    let mut rig = Rig::listed();
+    rig.server.with(|d| d.max_upload = 100);
+    let shown = sent_with(&mut rig, "bob@example.org", None);
+    out.push(Scenario::new("a small upload", &rig, shown, &[]));
+    // A gateway's refusal, an answer that is no JMAP, an upload that is too large.
+    for (name, on, effect) in [
+        ("a refused upload", "upload", Effect::Status(400)),
+        ("a filing that is no JMAP", "Email/import", Effect::Garbage),
+        ("an upload too large", "upload", Effect::Status(413)),
+    ] {
+        let mut rig = Rig::listed();
+        let shown = sent_with(&mut rig, "bob@example.org", Some((on, effect)));
+        out.push(Scenario::new(name, &rig, shown, &[]));
+    }
+    out
+}
+
+/// Messages that may have gone: the server sends them and then says something went wrong, or its answer is lost, or a
+/// gateway fails after the submission.
+fn doubts() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    for (kind, description, theirs) in [
+        ("serverFail", "It went, then failed.", &["It went, then failed"][..]),
+        ("serverFail", "", &[][..]),
+        ("somethingNew", "", &[][..]),
+        ("somethingNew", "Odd.", &["Odd"][..]),
+        ("", "", &[][..]),
+        ("", "Odd.", &["Odd"][..]),
+    ] {
+        let mut rig = Rig::listed();
+        let shown = sent_with(&mut rig, "bob@example.org", Some(("EmailSubmission/set", Effect::SentThenSetError(kind, description))));
+        out.push(Scenario::new("sent, then a failure", &rig, shown, theirs));
+    }
+    for (name, effect) in [("an answer lost", Effect::LoseAnswer), ("a gateway that fails after", Effect::Status(502))] {
+        let mut rig = Rig::listed();
+        let shown = sent_with(&mut rig, "bob@example.org", Some(("EmailSubmission/set", effect)));
+        out.push(Scenario::new(name, &rig, shown, &[]));
+    }
+    // An answer that doesn't say.
+    let mut rig = Rig::listed();
+    rig.send("bob@example.org", "Plans");
+    let http = rig.through(|req, answer| {
+        if calls(req).iter().any(|c| c == "EmailSubmission/set") {
+            edited(answer, |doc| {
+                if let Some(answers) = doc["methodResponses"].as_array_mut() {
+                    for answer in answers.iter_mut().filter(|a| a[0] == "EmailSubmission/set") {
+                        answer[1] = json!({"accountId": "A1"});
+                    }
+                }
+            })
+        } else {
+            answer
+        }
+    });
+    let shown = rig.run_over(http, false);
+    out.push(Scenario::new("an answer that doesn't say", &rig, shown, &[]));
+    out
+}
+
+/// A message that went (or may have) after the owner took it out of the Outbox while the run was under way: moved to
+/// Drafts, or deleted for good.
+fn taken_out_meanwhile() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    for (lost, deleted) in [(false, false), (true, false), (false, true), (true, true)] {
+        let mut rig = Rig::listed();
+        rig.send("bob@example.org", "Plans");
+        if lost {
+            rig.fault("EmailSubmission/set", Effect::LoseAnswer);
+        }
+        let shown = rig.run_meanwhile(false, |s| {
+            let account = s.mailbox.accounts.iter().find(|a| a.email == ME).map(|a| a.id).unwrap_or_default();
+            let outbox = s.mailbox.folder_of_kind(account, FolderKind::Outbox);
+            let ids: Vec<Id> = s.mailbox.messages.values().filter(|m| Some(m.folder) == outbox).map(|m| m.id).collect();
+            for id in ids {
+                if deleted {
+                    let _ = s.mailbox.forget_message(id);
+                } else if let Some(drafts) = s.mailbox.folder_of_kind(account, FolderKind::Drafts)
+                    && let Ok(m) = s.mailbox.message_mut(id)
+                {
+                    m.folder = drafts;
+                }
+            }
+        });
+        out.push(Scenario::new("taken out of the Outbox meanwhile", &rig, shown, &[]));
+    }
+    out
+}
+
+/// Drafts the server won't file: no Drafts, too large for it, a refusal, one of a kind of its own.
+fn drafts_refused() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    let mut rig = Rig::listed();
+    rig.save_draft("Notes");
+    // (Its Drafts is a mailbox like any other now: the draft is still one here.)
+    rig.server.with(|d| d.mailboxes.iter_mut().filter(|m| m.role.as_deref() == Some("drafts")).for_each(|m| m.role = None));
+    let shown = rig.run(true);
+    out.push(Scenario::new("no Drafts on the server", &rig, shown, &[]));
+    let mut rig = Rig::listed();
+    rig.server.with(|d| d.max_upload = 100);
+    rig.save_draft("Notes");
+    let shown = rig.run(false);
+    out.push(Scenario::new("a draft too large", &rig, shown, &[]));
+    for (name, on, effect, theirs) in [
+        ("a draft the server forbids", "Email/import", Effect::SetError("forbidden", "No."), &[][..]),
+        ("a draft over quota", "Email/import", Effect::SetError("overQuota", "Full."), &[][..]),
+        ("a draft of a kind of its own", "Email/import", Effect::SetError("weird", "It said so."), &["It said so"][..]),
+        ("a draft upload too large", "upload", Effect::Status(413), &[][..]),
+        ("a draft upload refused", "upload", Effect::Status(400), &[][..]),
+        ("a draft filing that is no JMAP", "Email/import", Effect::Garbage, &[][..]),
+    ] {
+        let mut rig = Rig::listed();
+        rig.save_draft("Notes");
+        rig.fault(on, effect);
+        let shown = rig.run(false);
+        out.push(Scenario::new(name, &rig, shown, theirs));
+    }
+    out
+}
+
+/// A server with no Sent to keep a copy in.
+fn no_sent() -> Scenario {
+    let mut rig = Rig::listed();
+    rig.server.with(|d| d.mailboxes.retain(|m| m.role.as_deref() != Some("sent")));
+    rig.run(true);
+    let shown = sent_with(&mut rig, "bob@example.org", None);
+    Scenario::new("no Sent on the server", &rig, shown, &[])
+}
+
 /// Every scenario.
 fn scenarios() -> Vec<Scenario> {
     let mut all = vec![
@@ -575,6 +798,12 @@ fn scenarios() -> Vec<Scenario> {
         limits(),
         answers_that_lack(),
         too_many_mailboxes(),
+        refusals(),
+        held_messages(),
+        doubts(),
+        taken_out_meanwhile(),
+        drafts_refused(),
+        vec![no_sent()],
     ] {
         all.extend(more);
     }
@@ -589,6 +818,9 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("the session address is too long", "defensive: the model caps the address first"),
     ("a JMAP address is too long", "defensive: as above"),
     ("not a web address", "defensive: the engine checks the session's address before a run, and an `apiUrl` that is none is one that can't be used"),
+    ("the message has no sender", "defensive: a message written here is from its account"),
+    ("\"{address}\" isn't an address mail can be sent from", "defensive: an account's address is checked when the account is added"),
+    ("the server wouldn't take it", "defensive: the engine's word for a host that gives no reason, and the crate always gives one"),
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -639,4 +871,24 @@ fn print_the_scenarios() {
             println!("  EN {english}\n  FR {}", reading.text);
         }
     }
+}
+
+#[test]
+fn a_message_held_says_why_in_french_and_the_mailbox_keeps_the_english() {
+    let mut rig = Rig::listed();
+    let shown = sent_with(&mut rig, "bob@example.org", Some(("EmailSubmission/set", Effect::SetError("forbiddenToSend", "Not now."))));
+    assert_eq!(shown.held, ["It wasn't sent: the server doesn't let this account send mail just now. Change it, or send it again."]);
+    let scenario = Scenario::new("held", &rig, shown, &[]);
+    let french: Vec<String> = scenario.readings().into_iter().map(|(_, reading)| reading.text).collect();
+    assert!(
+        french.contains(
+            &"Il n’a pas été envoyé : le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant. Modifiez-le, ou renvoyez-le."
+                .to_string()
+        ),
+        "{french:#?}"
+    );
+    assert!(
+        french.contains(&"Impossible d’envoyer « Plans » : le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant. Il est retenu dans la Boîte d’envoi.".to_string()),
+        "{french:#?}"
+    );
 }

@@ -388,8 +388,16 @@ fn the_crates_lines_read_in_french() {
 // The census: the table against the crates' source
 
 /// The files whose every sentence a person can be shown has a row (or is on [`NOT_SHOWN`]).
-const CENSUS: &[&str] =
-    &["crates/jmap/src/lib.rs", "crates/jmap/src/mail.rs", "crates/jmap/src/mail/up.rs", "crates/jmap/src/url.rs", "apps/mailcraft-web/src/fetch.rs"];
+const CENSUS: &[&str] = &[
+    "crates/jmap/src/lib.rs",
+    "crates/jmap/src/mail.rs",
+    "crates/jmap/src/mail/up.rs",
+    "crates/jmap/src/url.rs",
+    "apps/mailcraft-web/src/fetch.rs",
+    "crates/jmap/src/send.rs",
+    "crates/jmap/src/mail/outgoing.rs",
+    "crates/engine/src/cmd/jmap_send.rs",
+];
 
 /// Sentences of those files that are no line a person is shown, and why.
 const NOT_SHOWN: &[(&str, &str)] = &[
@@ -405,6 +413,15 @@ const NOT_SHOWN: &[(&str, &str)] = &[
     ("not a blob id", "a download's alone, whose problems are only logged (`graph_fetch`)"),
     ("(not a web address)", "the `Debug` of a request"),
     ("Answers({} of which {} failed)", "the `Debug` of the answers"),
+    ("the server takes no message as large as this", "`Outgoing::trouble` and `draft_failed` say a refused size in their own words"),
+    ("the server's answer to an upload names no blob", "an answer that is no JMAP is said in their own words too"),
+    ("the server kept another number of octets than it was sent", "as above"),
+    ("the server's answer doesn't say what it made of the message", "as above"),
+    ("the server's answer to a filing names no email", "as above"),
+    ("the answer has no list of identities", "as above"),
+    ("a copy filed in Sent for a message that was not sent", "words for the log, of what `destroy_unwanted` couldn't destroy"),
+    ("the draft a message was written as", "as above"),
+    ("the earlier copy of a draft", "as above"),
 ];
 
 /// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text
@@ -590,15 +607,7 @@ fn the_panel_draws_the_lines_in_french() {
     app.sync_panel = crate::sync_panel::Panel::named("syncProblems");
     // (The window sets the language of its setting each frame.)
     app.ui.language = "fr".into();
-    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-        |ui, app: &mut crate::MailApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
-    harness.run_steps(3);
+    let harness = drawn(app);
     for (en, fr) in FAILED {
         assert!(harness.query_by_label(fr).is_some(), "{fr:?} isn't drawn");
         assert!(harness.query_by_label(en).is_none(), "{en:?} is drawn in English");
@@ -617,5 +626,70 @@ fn in_english_a_line_is_handed_back_as_it_came() {
     let other = "Receiving mail failed: the server closed the connection";
     assert!(matches!(super::line(other, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, other)));
     assert!(matches!(super::line(line, &mb), std::borrow::Cow::Owned(_)));
+    super::super::set_current(Lang::English);
+}
+
+#[test]
+fn what_sending_says_reads_in_french() {
+    let mb = mailbox();
+    let fr = |family: Family, text: &str| super::explain(french(), family, text, &mb).map(|r| r.text);
+    assert_eq!(
+        fr(Family::Line, "Couldn't send 'Hello': the server doesn't accept (address). It is held in the Outbox.").as_deref(),
+        Some("Impossible d’envoyer « Hello » : le serveur n’accepte pas (adresse). Il est retenu dans la Boîte d’envoi.")
+    );
+    assert_eq!(
+        fr(Family::Line, "'(no subject)' may have been sent: the server's answer was lost. It is held in the Outbox.").as_deref(),
+        Some("« (sans objet) » a peut-être été envoyé : la réponse du serveur a été perdue. Il est retenu dans la Boîte d’envoi.")
+    );
+    assert_eq!(
+        fr(Family::Banner, "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.").as_deref(),
+        Some("Il n’a pas été envoyé : le serveur n’accepte pas bob@example.org. Modifiez-le, ou renvoyez-le.")
+    );
+    // A server's words stay as they came, under words of ours.
+    assert_eq!(
+        fr(Family::Banner, "It wasn't sent: the server refused it (somethingNew): It said so. Change it, or send it again.").as_deref(),
+        Some("Il n’a pas été envoyé : le serveur l’a refusé (somethingNew) : It said so. Modifiez-le, ou renvoyez-le.")
+    );
+    // A subject that holds what follows it.
+    assert_eq!(
+        fr(Family::Line, "Couldn't send 'Re: plans': the details': the message has no recipients. It is held in the Outbox.").as_deref(),
+        Some("Impossible d’envoyer « Re: plans': the details » : le message n’a aucun destinataire. Il est retenu dans la Boîte d’envoi.")
+    );
+}
+
+/// The window, drawn for a few frames.
+fn drawn(app: crate::MailApp) -> egui_kittest::Harness<'static, crate::MailApp> {
+    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
+        |ui, app: &mut crate::MailApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    harness.run_steps(3);
+    harness
+}
+
+#[test]
+fn the_banner_of_a_held_message_says_why_in_the_interface_s_language() {
+    let (mut app, account) = window();
+    let outbox = app.session.mailbox.folder_of_kind(account, FolderKind::Outbox).unwrap();
+    let held = "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.";
+    let message = mailcraft_model::Message { account, folder: outbox, subject: "Plans".into(), held: held.into(), ..Default::default() };
+    let id = app.session.mailbox.add_message(message).unwrap();
+    app.session.view.folder = outbox;
+    app.ui.language = "fr".into();
+    let mut harness = drawn(app);
+    harness.state_mut().execute("mail.select", serde_json::json!({"id": id})).unwrap();
+    harness.run_steps(3);
+    let french = "Il n’a pas été envoyé : le serveur n’accepte pas bob@example.org. Modifiez-le, ou renvoyez-le.";
+    assert!(harness.query_by_label(french).is_some(), "the banner in French");
+    assert!(harness.query_by_label(held).is_none());
+    // The mailbox keeps the English; in English it is shown as it is.
+    assert_eq!(harness.state().session.mailbox.message(id).map(|m| m.held.clone()).as_deref(), Some(held));
+    harness.state_mut().ui.language = "en".into();
+    harness.run_steps(3);
+    assert!(harness.query_by_label(held).is_some(), "the banner in English");
     super::super::set_current(Lang::English);
 }

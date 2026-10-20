@@ -221,6 +221,11 @@ pub(crate) fn line<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
     in_language(current(), Family::Line, text, mb)
 }
 
+/// What a message held in the Outbox says of itself, in the interface's language: the mailbox keeps it in English.
+pub(crate) fn held<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    in_language(current(), Family::Banner, text, mb)
+}
+
 /// The status of Send/Receive, in the interface's language: a line (how a run ended, or its first problem), with what
 /// the engine may add to it (`1 moved message can't be found…`) and the time it ended (` — 15:05`).
 pub(crate) fn status<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
