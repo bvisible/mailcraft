@@ -101,6 +101,9 @@ the marker check does not know as one that takes comments:
 
 - `Cargo.lock`: the `mailcraft-jmap` package (with its dependencies on `mailcraft-mime`, `mailcraft-model` and
   `mailcraft-time`), the dependencies on it of the web app and, for its tests, the command line, and nothing else.
+- `Cargo.lock`: `rustls-webpki` 0.103.16 (was 0.103.15) and `webpki-roots` 1.0.10 (was 1.0.9), for RUSTSEC-2026-0382
+  and RUSTSEC-2026-0381 (distrusted emSign intermediates), which fail `cargo deny` since 2026-10-20. To drop when an
+  upstream merge brings these versions or later.
 - `crates/ui-egui/src/i18n/fr.tsv`: the French interface catalog. Its first line is a `#` comment that says it is ours
   (the format has comments), but the check reads a `.tsv` as text without comment syntax. Each catalog added next to
   it (`crates/ui-egui/src/i18n/<code>.tsv`) is named here the same way.
