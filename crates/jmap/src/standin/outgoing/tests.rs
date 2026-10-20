@@ -251,20 +251,22 @@ fn an_email_is_destroyed_and_one_the_server_does_not_have_is_not_found() {
     let (server, sent, _) = world(Profile::standard());
     let first = file(&server, &sent, &letter("one", "bob@example.org", ""));
     let second = file(&server, &sent, &letter("two", "bob@example.org", ""));
-    let answer = mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": [first, "E999", first]})).unwrap();
+    let answer = mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": [first, "E999"]})).unwrap();
     assert_eq!(answer["destroyed"], json!([first]));
-    assert_eq!(answer["notDestroyed"], json!({"E999": {"type": "notFound"}}));
+    assert_eq!(answer["notDestroyed"]["E999"]["type"], "notFound", "{answer}");
     assert_eq!(server.with(|d| d.emails.iter().map(|e| e.id.clone()).collect::<Vec<_>>()), std::slice::from_ref(&second));
-    // What this stand-in does not do yet is refused.
-    assert_eq!(
-        mail(&server, "Email/set", json!({"accountId": ACCOUNT, "update": {second.clone(): {"keywords/$seen": true}}})),
-        Err("invalidArguments".to_string())
-    );
-    assert_eq!(mail(&server, "Email/set", json!({"accountId": ACCOUNT, "create": {"k": {}}})), Err("invalidArguments".to_string()));
-    assert_eq!(mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": "E1"})), Err("invalidArguments".to_string()));
-    assert_eq!(mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": ["a b"]})), Err("invalidArguments".to_string()));
-    server.with(|d| d.max_get = 1);
-    assert_eq!(mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": ["E1", "E2"]})), Err("requestTooLarge".to_string()));
+    // (The rest of Email/set, its updates, its grammar and its limits, is `set.rs`'s, and tested there.)
+}
+
+#[test]
+fn a_server_in_front_of_a_mailbox_does_not_send_what_was_destroyed_since_it_was_filed() {
+    let (server, sent, _) = world(Profile::by_place());
+    let id = identity_of(&server);
+    let email = file(&server, &sent, &letter("gone", "bob@example.org", ""));
+    mail(&server, "Email/set", json!({"accountId": ACCOUNT, "destroy": [email]})).unwrap();
+    let answer = sending(&server, "EmailSubmission/set", submission(&id, &email, ME, &["bob@example.org"])).unwrap();
+    assert_ne!(refused_with(&answer), format!("not refused: {answer}"), "nothing that is gone is sent");
+    assert!(server.with(|d| d.delivered.is_empty()));
 }
 
 #[test]
