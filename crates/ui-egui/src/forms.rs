@@ -2224,6 +2224,10 @@ mod event {
         // //// Neoffice — an appointment may be held online where its calendar's server makes rooms now (`own_rooms`).
         /// Its calendar's server makes rooms of its own now ([`own_rooms`]): an appointment may be held online there.
         online_rooms: bool,
+        // //// Neoffice — an online meeting the form stopped asking for, as its calendar's server makes rooms no more.
+        /// The form stopped asking for an online meeting, as its calendar's server makes rooms no more
+        /// ([`EventForm::follow_calendar`]): an item that exists is saved without it.
+        online_dropped: bool,
         /// The link to join it by, when its server has given one.
         join_url: String,
         /// How many of the people invited have proposed another time (a meeting the owner
@@ -2749,6 +2753,9 @@ mod event {
             // //// Neoffice — an appointment of a calendar whose server makes rooms of its own may be held online too.
             if !self.meeting && self.online_rooms {
                 m.insert("online".into(), json!(self.online));
+            } else if !self.meeting && self.online_dropped && self.id.is_some() {
+                // //// Neoffice — (one the form stopped asking for: the engine is told, or the item would keep it)
+                m.insert("online".into(), json!(false));
             }
             // The zones the times above are by, for an event that has (or had) zones of its
             // own: none for whole days, and none again when Time Zones was turned off.
@@ -3062,6 +3069,18 @@ mod event {
             items
         }
 
+        // //// Neoffice — what the row of an online meeting not made yet says: an appointment held online is made when it is
+        // saved, sent to nobody.
+        /// What the row of an online meeting says while its server has yet to make it.
+        fn still_to_make(&self) -> &'static str {
+            // (Upstream's words wherever the save makes nothing: a meeting, and an appointment where no room is made.)
+            if self.meeting || !self.online_rooms {
+                tl!("The account's server makes it when the meeting is sent; the link to join by comes back with it.")
+            } else {
+                tl!("The account's server makes it when the appointment is saved; the link to join by comes back with it.")
+            }
+        }
+
         // //// Neoffice — what the form says of an online meeting follows the calendar it is in now.
         /// Whose online meetings the calendar the item is in now holds (it may have been changed in the form): an
         /// appointment that goes to a calendar without them is held online no more, as its button is gone there.
@@ -3070,14 +3089,13 @@ mod event {
             (self.online_own, self.online_rooms) = (online_own(s, self.calendar), own_rooms(s, self.calendar));
             // (Only when that changes: a Teams meeting is a meeting's, and stays as it is.)
             if had_rooms && !self.online_rooms && !self.meeting && !self.online_made {
+                self.online_dropped |= self.online;
                 self.online = false;
             }
         }
 
         /// The window's own bar. The key of the button that was clicked.
         fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
-            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form)
-            self.follow_calendar(&app.session);
             let items = self.bar_items();
             let categories: Vec<(String, egui::Color32)> =
                 app.session.mailbox.categories.iter().map(|c| (c.name.clone(), c32(c.color))).take(200).collect();
@@ -3184,13 +3202,8 @@ mod event {
                         ui.label(egui::RichText::new(tl!("The account's server hasn't given it a link to join by yet.")).color(t.text_dim));
                     }
                     None => {
-                        // //// Neoffice — (an appointment held online: made when it is saved, sent to nobody)
-                        let words = if self.meeting {
-                            tl!("The account's server makes it when the meeting is sent; the link to join by comes back with it.")
-                        } else {
-                            tl!("The account's server makes it when the appointment is saved; the link to join by comes back with it.")
-                        };
-                        ui.add(egui::Label::new(egui::RichText::new(words).color(t.text_dim)).truncate());
+                        // //// Neoffice — (`still_to_make`: an appointment held online is made when it is saved)
+                        ui.add(egui::Label::new(egui::RichText::new(self.still_to_make()).color(t.text_dim)).truncate());
                     }
                 });
             }
@@ -3374,6 +3387,9 @@ mod event {
         }
 
         fn lay_out(&mut self, app: &mut MailApp, ui: &mut Ui, ask: Option<Ask>) -> Verdict {
+            // //// Neoffice — what it says of an online meeting, as the calendar it is in now has them (it may have been
+            // changed in the form), in a window of its own or in the dialog.
+            self.follow_calendar(&app.session);
             let windowed = kit::windowed();
             // The zones that were picked in the form are listed near the top from now on.
             for zone in std::mem::take(&mut self.picked_zones) {
@@ -3721,6 +3737,23 @@ mod event {
             }
         }
 
+        // //// Neoffice — the two lines of an online meeting its server has yet to make say it of « la réunion en ligne »
+        // in French, alike.
+        #[test]
+        fn the_two_lines_of_an_online_meeting_still_to_be_made_read_alike_in_french() {
+            let french = crate::i18n::Lang::from_tag("fr").unwrap();
+            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
+            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
+            assert_eq!(
+                crate::i18n::t_in(french, meeting),
+                "Le serveur du compte la crée à l’envoi de la réunion ; le lien pour la rejoindre revient avec elle."
+            );
+            assert_eq!(
+                crate::i18n::t_in(french, appointment),
+                "Le serveur du compte la crée à l’enregistrement du rendez-vous ; le lien pour la rejoindre revient avec elle."
+            );
+        }
+
         // //// Neoffice — what the form says of an online meeting follows its calendar, and only where that changes it.
         /// A JMAP account's calendar whose server makes rooms (`rooms`: its list of services), and a Microsoft
         /// account's that allows Teams. The session and the two calendars.
@@ -3752,21 +3785,6 @@ mod event {
         }
 
         #[test]
-        fn the_two_lines_of_an_online_meeting_still_to_be_made_read_alike_in_french() {
-            let french = crate::i18n::Lang::from_tag("fr").unwrap();
-            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
-            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
-            assert_eq!(
-                crate::i18n::t_in(french, meeting),
-                "Le serveur du compte la crée à l’envoi de la réunion ; le lien pour la rejoindre revient avec elle."
-            );
-            assert_eq!(
-                crate::i18n::t_in(french, appointment),
-                "Le serveur du compte la crée à l’enregistrement du rendez-vous ; le lien pour la rejoindre revient avec elle."
-            );
-        }
-
-        #[test]
         fn a_teams_meeting_turned_into_an_appointment_and_back_is_still_held_online() {
             let (s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
             let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
@@ -3793,6 +3811,85 @@ mod event {
             let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
             f.follow_calendar(&s);
             assert!(f.online && !f.meeting, "its row is shown");
+        }
+
+        #[test]
+        fn the_row_says_an_appointment_is_made_online_when_saved_only_where_it_is() {
+            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
+            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
+            // A Teams meeting turned into an appointment (Cancel Invitation): its save makes nothing, as upstream says.
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
+            f.online = true;
+            f.meeting = false;
+            f.follow_calendar(&s);
+            assert_eq!(f.still_to_make(), meeting);
+            assert!(f.save_command().1.get("online").is_none());
+            // An appointment held online where the server makes rooms: made when it is saved.
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Visit", "calendar": jmap}), false);
+            f.follow_calendar(&s);
+            f.online = true;
+            assert_eq!(f.still_to_make(), appointment);
+        }
+
+        #[test]
+        fn an_appointment_whose_calendar_stops_making_rooms_while_it_is_open_is_saved_without_its_request() {
+            let (mut s, jmap, _) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            let made = s.run("calendar.new", &json!({"title": "Visit", "start": "2026-10-16T15:00", "calendar": jmap, "online": true}));
+            let id = made.unwrap()["id"].as_u64().unwrap();
+            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
+            f.follow_calendar(&s);
+            assert!(f.online && f.online_rooms && !f.online_made);
+            // The server's list says it makes no rooms any more while the form is open.
+            let account = s.mailbox.calendar(jmap).map(|c| c.origin.account).unwrap();
+            let calendar = mailcraft_model::remote::RemoteCalendar {
+                id: "C1".into(),
+                name: "Main".into(),
+                main: true,
+                online_providers: Some(Vec::new()),
+                ..Default::default()
+            };
+            let list =
+                mailcraft_model::remote::CalendarsDownload { account, email: "ada@example.org".into(), complete: true, calendars: vec![calendar] };
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
+            f.follow_calendar(&s);
+            assert!(!f.online);
+            // Saved: the engine is told, and the request goes.
+            let (command, params) = f.command();
+            assert_eq!((command, params["online"].as_bool()), ("calendar.edit", Some(false)));
+            s.run(command, &params).unwrap();
+            assert!(s.mailbox.event(id).is_some_and(|e| e.online.is_none()));
+        }
+
+        #[test]
+        fn a_form_in_the_dialog_follows_its_calendar_too() {
+            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            let mut app = MailApp::new(s, crate::Services::default());
+            app.autosave = false;
+            app.execute("ui.dialog", json!({"name": "event", "calendar": jmap, "start": "2026-10-16T15:00", "title": "Visit"})).unwrap();
+            let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
+                |ui, app: &mut MailApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
+            h.run_steps(4);
+            // Its calendar changed in the form (the combo), to the Microsoft account's.
+            match &mut h.state_mut().dialog {
+                Some(crate::dialogs::Dialog::Form(super::super::Form::Event(f))) => {
+                    assert!(f.online_rooms);
+                    f.online = true;
+                    f.calendar = microsoft;
+                }
+                _ => panic!("the form is in the dialog"),
+            }
+            h.run_steps(2);
+            match &h.state().dialog {
+                Some(crate::dialogs::Dialog::Form(super::super::Form::Event(f))) => assert!(!f.online_rooms && !f.online_own && !f.online),
+                _ => panic!("the form is in the dialog"),
+            }
         }
 
         #[test]
