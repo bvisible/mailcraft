@@ -28,9 +28,12 @@
 //! 4. **What such a server doesn't keep is not written** ([`write`](super::write)): a change of nothing else, a
 //!    forward, and another time proposed with an answer, are refused with the reason. **An online meeting** is asked
 //!    of a server that writes virtual locations, by the request ([`write::online_request`]): the link the server made
-//!    comes back with the outcome (`online`, `join_url`). One refused (not for now, or the server's limit of rooms) is
-//!    sent once more in the same job without it, and done as an event that is no online meeting, with the server's
-//!    words; one asked for one occurrence of a series is not asked for (the whole series' is one), and said so.
+//!    comes back with the outcome (`online`, `join_url`). One whose meeting was refused (a SetError that names
+//!    `virtualLocations`: not for the person, or the server's limit of rooms; or a `forbidden`, `invalidProperties` that
+//!    names nothing) is sent once more in the same job without it, writing to people only when what is left is seen by
+//!    them, and done as an event that is no online meeting, with the server's words; a limit of the server's on writing
+//!    events that names nothing is the change's, which waits. One asked for one occurrence of a series is not asked for
+//!    (the whole series' is one), and said so.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
 //!    uid; one occurrence with its own id, which names it from now on), gone, refused with the server's words, or
 //!    failed with when to try again (a busy server, a server that failed, a connection that broke, a change not
@@ -40,7 +43,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine as _;
-use mailcraft_model::remote::{EventChangeKind, EventOp, EventOutcome, EventResult, EventsUploaded, MAX_EVENT_OPS};
+use mailcraft_model::remote::{EventChangeKind, EventFields, EventOp, EventOutcome, EventResult, EventsUploaded, MAX_EVENT_OPS};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
 use mailcraft_time::{DateTime, Timestamp, Zone};
 use serde_json::{Map, Value, json};
@@ -277,11 +280,15 @@ impl<H: Http> Writer<'_, H> {
         for (group, scheduling) in [(quiet, false), (loud, true)] {
             for call in calls(group, MAX_PER_CALL.min(self.client.max_objects_in_set().max(1))) {
                 self.check()?;
-                // What the server refused for the online meeting it asked for goes once more without it.
-                let again = self.set(call, scheduling).await?;
-                if !again.is_empty() {
-                    self.check()?;
-                    self.set(again, scheduling).await?;
+                // What the server refused for the online meeting it asked for goes once more without it: writing to
+                // people as what is left of it does.
+                let (loud_again, quiet_again): (Vec<Ready>, Vec<Ready>) =
+                    self.set(call, scheduling).await?.into_iter().partition(|one| one.scheduling);
+                for (again, scheduling) in [(quiet_again, false), (loud_again, true)] {
+                    if !again.is_empty() {
+                        self.check()?;
+                        self.set(again, scheduling).await?;
+                    }
                 }
             }
         }
@@ -653,28 +660,33 @@ impl<H: Http> Writer<'_, H> {
                         self.held_online(one.at, Some(false), String::new(), why);
                     }
                 }
-                (None, Some(error)) => {
-                    // Refused, with the online meeting it asked for: once more without it, which the server may take.
-                    let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
-                    let unwritten = one.marker && !matches!(kind, "notFound" | "alreadyExists") && (kind == "rateLimit" || !failed_for_now(kind));
-                    let without = one.body.as_mut().and_then(Value::as_object_mut).map(|body| {
+                // Refused for the online meeting it asked for: once more without it, which the server may take. (Any
+                // other refusal is the change's: a limit of the server's on writing events waits, the meeting with it.)
+                (None, Some(error)) if one.marker && refuses_the_meeting(&error) => {
+                    let left = one.body.as_mut().and_then(Value::as_object_mut).map(|body| {
                         body.remove(write::ONLINE);
-                        body.is_empty()
+                        body.len()
                     });
-                    match (unwritten, without) {
+                    match left {
                         // Nothing else to write: done, without the meeting.
-                        (true, Some(true)) => {
+                        Some(0) => {
                             self.done(one.at, one.target.clone(), String::new(), one.zone.clone());
                             self.held_online(one.at, Some(false), String::new(), &self.set_error_words(&error));
                         }
-                        (true, Some(false)) => {
+                        Some(_) => {
                             one.unmade = Some(self.set_error_words(&error));
                             one.marker = false;
+                            // What is left may be nothing the people of a meeting see (a reminder): then it writes to
+                            // nobody.
+                            if op.kind != EventChangeKind::Create {
+                                one.scheduling = one.scheduling && write::seen_by_others(&EventFields { online: None, ..op.fields.clone() });
+                            }
                             again.push(one);
                         }
-                        _ => self.refused(one.at, &op, &error, &one.zone),
+                        None => self.refused(one.at, &op, &error, &one.zone),
                     }
                 }
+                (None, Some(error)) => self.refused(one.at, &op, &error, &one.zone),
                 (None, None) => self.answer(one.at, EventResult::Failed, "the server's answer said nothing of it", Some(RETRY)),
             }
         }
@@ -800,6 +812,24 @@ fn says_already(copy: &Copy, body: &Value) -> bool {
                 copy.get(key).unwrap_or(&Value::Null) == value
             })
     })
+}
+
+/// Whether a server's refusal of a change that asked for an online meeting refuses the meeting rather than the change:
+/// one that names the property of the meeting (`virtualLocations`, or a part of it), as a server that makes them says
+/// it of a room it won't make (not for the person, or no more just now); or a `forbidden` or `invalidProperties` that
+/// names no property at all (sent again without the meeting, a refusal of the change's own comes back). Any other is
+/// the change's: a limit (`rateLimit`) that doesn't name it is the server's on writing events, and the change waits,
+/// the meeting with it.
+fn refuses_the_meeting(error: &Value) -> bool {
+    let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
+    let properties: Vec<&str> = error.get("properties").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    let names_it = properties.iter().any(|property| property.split('/').next() == Some(write::ONLINE));
+    match kind {
+        "notFound" | "alreadyExists" => false,
+        _ if names_it => true,
+        "forbidden" | "invalidProperties" => properties.is_empty(),
+        _ => false,
+    }
 }
 
 /// Whether a server's refusal is one that asking again later may get past.

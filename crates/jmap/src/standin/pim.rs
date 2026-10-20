@@ -338,8 +338,8 @@ pub struct Pim {
     pub says_identities: bool,
     /// The server makes online meetings (a room of its own, [`MEET_ROOMS`]) when a client asks for one by
     /// [`ONLINE_MEETING_REQUEST`]: its session then lists `virtualLocations` among what an event keeps. The SetError of
-    /// that `type` answers a room asked for instead (`rateLimit`: the limit of new rooms reached), and how many rooms it
-    /// made.
+    /// that `type` answers a room asked for instead (`rateLimit`: the limit of new rooms reached), naming the property
+    /// (`virtualLocations`) as the server names a refusal of the room; and how many rooms it made.
     pub meet: bool,
     pub room_refusal: Option<&'static str>,
     pub rooms: u32,

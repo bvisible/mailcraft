@@ -1002,6 +1002,41 @@ fn a_room_limit_reached_makes_the_event_without_its_room() {
 }
 
 #[test]
+fn the_servers_own_limit_on_writing_events_is_no_refusal_of_the_room_and_the_change_waits_with_it() {
+    let server = with_meet();
+    // The server's limit on writing events (a `rateLimit` that names no property), of a new event and of her lunch.
+    server.with(|d| {
+        d.pim.refused_events.insert("mc-busy".into(), "rateLimit");
+        d.pim.refused_events.insert(Pim::event_id("lunch"), "rateLimit");
+    });
+    let made = run(&server, &job(vec![online(create("mc-busy", "Kick-off", utc(22, 9, 0)))]));
+    let said = outcome(&made);
+    assert_eq!((said.result, said.online, said.retry_after.is_some()), (EventResult::Failed, None, true), "{said:?}");
+    let sets = server.asked().into_iter().filter(|a| a.method == "CalendarEvent/set").count();
+    assert_eq!(sets, 1, "not sent again without its room");
+    // The toggle alone: it waits too, and is not done as an event that is no online meeting.
+    let only = run(&server, &job(vec![online(update(&Pim::event_id("lunch"), EventFields::default()))]));
+    let said = outcome(&only);
+    assert_eq!((said.result, said.online, said.retry_after.is_some()), (EventResult::Failed, None, true), "{said:?}");
+    assert_eq!(server.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
+fn a_change_sent_again_without_its_room_writes_to_nobody_when_what_is_left_is_unseen_by_the_people() {
+    let server = with_meet();
+    server.with(|d| d.pim.room_refusal = Some("forbidden"));
+    // Her meeting made online, with a reminder: the room refused, what is left is the reminder, which the people don't see.
+    let reminder = EventFields { reminder: Some(EventReminder { on: true, minutes: 10 }), ..EventFields::default() };
+    let op = EventOp { send: true, ..online(update(&Pim::event_id("budget"), reminder)) };
+    let result = run(&server, &job(vec![op]));
+    let said = outcome(&result);
+    assert_eq!((said.result, said.online), (EventResult::Done, Some(false)), "{said:?}");
+    let (_, patch) = server.with(|d| d.pim.written.last().cloned()).unwrap();
+    assert!(patch.get("alerts").is_some() && patch.get("virtualLocations").is_none(), "{patch}");
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 0, "nobody written to about her reminder");
+}
+
+#[test]
 fn a_change_of_one_occurrence_goes_without_the_marker_and_says_why() {
     let server = with_meet();
     let result = run(&server, &job(vec![online(of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)")))]));

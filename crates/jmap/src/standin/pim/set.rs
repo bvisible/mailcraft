@@ -28,8 +28,10 @@
 //!   ([`ONLINE_MEETING_REQUEST`]) makes a room for the event (before it is written: a room refused leaves nothing), its
 //!   link kept among the event's links; asked again of an event that has one, nothing more. A change that names none of
 //!   its rooms takes their links away (the room stays). Another address is `invalidProperties`, and so is any of it for
-//!   one occurrence; a room asked for on a meeting the person doesn't organize is `forbidden`, and where the server makes
-//!   none too. What it said back names the event's virtual locations as they now are, when the call named them.
+//!   one occurrence; a room asked for on a meeting the person doesn't organize is `forbidden`. A room the server won't
+//!   make (where it makes none: `forbidden`; or the refusal a test asks for, [`Pim::room_refusal`]) is refused with the
+//!   property it is about (`virtualLocations`), said apart from the server's own limits on writing events, which name
+//!   none. What it said back names the event's virtual locations as they now are, when the call named them.
 //! - **Trouble on demand.** An event (by its id, or a new one by its `uid`) answered with the SetError a test names
 //!   ([`Pim::refused_events`]); events whose time a change says it took and doesn't keep ([`Pim::keeps_old_times`]).
 
@@ -84,6 +86,12 @@ pub struct Scheduled {
 /// A SetError.
 fn set_error(kind: &str, description: impl Into<String>) -> Value {
     json!({"type": kind, "description": description.into()})
+}
+
+/// A SetError of the room an event asked for, said apart from the event's own refusals: it names the property of the
+/// online meeting (`virtualLocations`), so that a client tells "no room" from "the server's limits, try again".
+fn room_error(kind: &str, description: &str) -> Value {
+    json!({"type": kind, "properties": [ONLINE], "description": description})
 }
 
 /// An address without its `mailto:`, in lower case.
@@ -180,11 +188,13 @@ impl Pim {
         for (key, event) in &creates {
             match if spend() { self.create(event, notify) } else { Err(limited()) } {
                 Ok((id, uid, online)) => {
-                    let mut made = json!({"id": id, "uid": uid});
+                    let mut made = Map::new();
+                    made.insert("id".into(), json!(id));
+                    made.insert("uid".into(), json!(uid));
                     if let Some(places) = online {
-                        made[ONLINE] = places;
+                        made.insert(ONLINE.into(), places);
                     }
-                    created.insert(key.clone(), made);
+                    created.insert(key.clone(), Value::Object(made));
                 }
                 Err(error) => {
                     not_created.insert(key.clone(), error);
@@ -399,13 +409,13 @@ impl Pim {
     }
 
     /// A room for an online meeting: its link. Refused where the server makes none (`forbidden`), or with the SetError
-    /// a test asks for ([`Pim::room_refusal`]).
+    /// a test asks for ([`Pim::room_refusal`]); either names the property of the online meeting ([`room_error`]).
     fn make_room(&mut self) -> Result<String, Value> {
         if !self.meet {
-            return Err(set_error("forbidden", "No online meeting can be made here: Meet is not set up for you."));
+            return Err(room_error("forbidden", "No online meeting can be made here: Meet is not set up for you."));
         }
         if let Some(kind) = self.room_refusal {
-            return Err(set_error(kind, "No more rooms can be made just now: try again later."));
+            return Err(room_error(kind, "No more rooms can be made just now: try again later."));
         }
         self.rooms = self.rooms.saturating_add(1);
         Ok(format!("{MEET_ROOMS}room-{}", self.rooms))

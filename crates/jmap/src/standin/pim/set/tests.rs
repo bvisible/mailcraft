@@ -311,6 +311,35 @@ fn the_marker_makes_one_room_whose_link_comes_back() {
 }
 
 #[test]
+fn a_refused_room_names_its_property_and_the_servers_own_limit_names_none() {
+    let stand_in = with_meet();
+    let properties = |error: &Value| error.get("properties").cloned();
+    // The limit of new rooms reached: the room's refusal, said apart from the event's.
+    stand_in.with(|d| d.pim.room_refusal = Some("rateLimit"));
+    let limited = set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-limit", "virtualLocations": request()}))}})).unwrap();
+    let error = &limited["notCreated"]["k"];
+    assert_eq!((kind(error), properties(error)), ("rateLimit", Some(json!(["virtualLocations"]))), "{limited}");
+    // Where the server makes none: the same.
+    stand_in.with(|d| {
+        d.pim.room_refusal = None;
+        d.pim.meet = false;
+    });
+    let lunch = Pim::event_id("lunch");
+    let none = set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": request()}}})).unwrap();
+    let error = &none["notUpdated"][&lunch];
+    assert_eq!((kind(error), properties(error)), ("forbidden", Some(json!(["virtualLocations"]))), "{none}");
+    // The server's own limit on writing events names no property.
+    stand_in.with(|d| {
+        d.pim.meet = true;
+        d.pim.refused_events.insert("mc-busy".into(), "rateLimit");
+    });
+    let busy = set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-busy", "virtualLocations": request()}))}})).unwrap();
+    let error = &busy["notCreated"]["k"];
+    assert_eq!((kind(error), properties(error)), ("rateLimit", None), "{busy}");
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
 fn the_marker_again_makes_no_second_room() {
     let stand_in = with_meet();
     let lunch = Pim::event_id("lunch");
