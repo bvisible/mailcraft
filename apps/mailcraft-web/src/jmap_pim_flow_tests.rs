@@ -1619,3 +1619,7 @@ fn one_day_of_a_series_made_online_goes_without_it_and_says_the_whole_series_is_
     assert!(problems.iter().any(|line| line.starts_with("\"Site meeting\": an online meeting is the whole series'")), "{problems:?}");
     assert_eq!(flow.rooms(), 0);
 }
+
+// The person's notes, on the same rig.
+#[path = "jmap_notes_flow_tests.rs"]
+mod notes;
