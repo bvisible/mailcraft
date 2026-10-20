@@ -665,6 +665,9 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     if e.title.is_empty() {
         return Err(fail("an event needs a title"));
     }
+    // //// Neoffice — what a server that keeps only the basics doesn't keep is refused for one occurrence too, with the
+    // same reason as for the whole series, before the day becomes an event of its own (`change_one` checks no more).
+    fits_plain(s, &e, Some(&before))?;
     if let Part::One(day) = one {
         return change_one(s, v, &before, day, e);
     }

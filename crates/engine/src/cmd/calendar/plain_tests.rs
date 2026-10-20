@@ -116,6 +116,48 @@ fn show_as_other_than_free_or_busy_is_refused_in_a_plain_calendar() {
 }
 
 #[test]
+fn one_occurrence_of_a_series_is_refused_up_front_what_the_whole_series_would_be() {
+    let (mut s, _, _) = session(true);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    // Ada's weekly review, Tuesdays at nine.
+    let series = RemoteEvent {
+        id: "V5".into(),
+        title: "Weekly review".into(),
+        start: at(13, 9),
+        end: at(13, 10),
+        is_organizer: Some(true),
+        kind: mailcraft_model::remote::RemoteEventKind::SeriesMaster,
+        recurrence: Some(mailcraft_model::Recurrence { count: Some(4), ..mailcraft_model::Recurrence::every(mailcraft_model::Freq::Weekly) }),
+        series_day: Date::new(2026, 10, 13),
+        ..Default::default()
+    };
+    let download =
+        EventsDownload { account, email: "ada@example.org".into(), from: at(1, 0), to: at(31, 0), events: vec![series], ..Default::default() };
+    apply_events(&mut s, &download).unwrap();
+    let weekly = s.mailbox.events.values().find(|e| e.title == "Weekly review").map(|e| e.id).unwrap();
+    let one = |more: Value| {
+        let mut params = json!({"id": weekly, "scope": "occurrence", "occurrence": "2026-10-20"});
+        params.as_object_mut().unwrap().extend(more.as_object().unwrap().clone());
+        params
+    };
+    for (more, why) in [
+        (json!({"categories": ["Red"]}), PLAIN_KEEPS_NO),
+        (json!({"importance": "high"}), PLAIN_KEEPS_NO),
+        (json!({"requestResponses": false}), PLAIN_KEEPS_NO),
+        (json!({"online": true}), PLAIN_KEEPS_NO),
+        (json!({"showAs": "outOfOffice"}), PLAIN_FREE_BUSY),
+    ] {
+        assert_eq!(refused(&mut s, "calendar.edit", one(more.clone())), why, "{more}");
+    }
+    assert!(s.mailbox.event_changes.is_empty(), "nothing noted for the server");
+    assert_eq!(s.mailbox.events.values().filter(|e| e.title == "Weekly review").count(), 1, "the day is the series' still");
+    // What such a server keeps goes as before, for that day alone; and so does a move of it.
+    s.run("calendar.edit", &one(json!({"title": "Weekly review (room 5)"}))).unwrap();
+    s.run("calendar.move", &json!({"id": weekly, "scope": "occurrence", "occurrence": "2026-10-27", "start": "2026-10-13T11:00"})).unwrap();
+    assert_eq!(s.mailbox.event_changes.len(), 2);
+}
+
+#[test]
 fn a_graph_calendar_is_not_plain() {
     let (mut s, mine, _) = session(false);
     s.run("calendar.categorize", &json!({"id": mine, "category": "Red"})).unwrap();
