@@ -11,7 +11,10 @@ use std::sync::{Arc, Mutex};
 
 use mailcraft_engine::{Module, Session};
 use mailcraft_model::book::{BooksDownload, RemoteBook};
-use mailcraft_model::remote::{CalendarsDownload, ContactsDownload, EventsDownload, RemoteCalendar, RemoteContact, RemoteEvent};
+use mailcraft_model::remote::{
+    CalendarsDownload, ContactsDownload, EventChangeKind, EventOutcome, EventResult, EventsDownload, EventsUploaded, RemoteCalendar, RemoteContact,
+    RemoteEvent,
+};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, PimOffers};
 use mailcraft_model::{Id, Labeled, Mailbox};
 use serde_json::json;
@@ -380,7 +383,7 @@ fn the_answer_is_taken_in_the_order_lists_then_the_main_calendar_then_the_others
         app.session.mailbox.calendar(event.calendar).unwrap().origin.id.clone()
     };
     assert_eq!((calendar_of(&app, "Budget review"), calendar_of(&app, "Team stand-up")), (String::new(), "C-team".to_string()));
-    // Every calendar of the server is read-only until writing is carried: the engine refuses a new appointment.
+    // The server says they may only be read: the engine refuses a new appointment.
     let refused = app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"}));
     assert!(refused.unwrap_err().contains("can only be read"));
 }
@@ -634,4 +637,119 @@ fn a_job_that_came_to_nothing_brings_the_contacts_at_the_next() {
     // Half a minute on: the next asks for them again, and the state is still the one held.
     assert!(app.jmap_pim_tick_at(true, 32.0 * SECOND));
     assert!(last(&asked).contacts && last(&asked).contacts_state == "s1");
+}
+
+// What is changed here goes with the next job, first.
+
+/// The window after its first job was answered with calendars Ada may write.
+fn writable_window() -> (MailApp, Id, Asked) {
+    let (mut app, id, asked) = window();
+    assert!(app.jmap_pim_tick_at(true, 0.0));
+    let mut first = answered(id);
+    for calendar in first.calendars.as_mut().map(|list| list.calendars.iter_mut()).into_iter().flatten() {
+        calendar.read_only = false;
+    }
+    answer(&mut app, &asked, first);
+    (app, id, asked)
+}
+
+/// What the host answers a job that wrote `outcomes` and read the main calendar's `events`.
+fn wrote(account: Id, outcomes: Vec<EventOutcome>, events: Vec<RemoteEvent>) -> JmapPimResult {
+    JmapPimResult {
+        account,
+        email: ME.into(),
+        offers: Some(PimOffers { calendars: true, contacts: true }),
+        uploaded: Some(EventsUploaded { account, email: ME.into(), outcomes, token_refused: false }),
+        events: Some(EventsDownload {
+            account,
+            email: ME.into(),
+            from: NOW - 86_400,
+            to: NOW + 14 * 86_400,
+            complete: true,
+            events,
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_change_made_here_goes_at_once_and_what_the_server_said_is_taken_in_before_the_events() {
+    let (mut app, id, asked) = writable_window();
+    app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"})).unwrap();
+    // A second later, not two minutes: the change, then the days on screen.
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let request = last(&asked);
+    let changes = request.changes.clone().unwrap();
+    assert_eq!((changes.ops.len(), changes.ops[0].kind, changes.account), (1, EventChangeKind::Create, id));
+    assert!(!changes.ops[0].token.is_empty() && !request.asks.is_empty());
+    // Made as V9: the download that has it is the same event, under the server's name.
+    let op = changes.ops[0].clone();
+    let lunch = RemoteEvent {
+        id: "V9".into(),
+        token: op.token.clone(),
+        uid: op.token.clone(),
+        title: "Lunch".into(),
+        start: op.fields.time.unwrap().start,
+        end: op.fields.time.unwrap().end,
+        is_organizer: Some(true),
+        ..Default::default()
+    };
+    let done = EventOutcome { op, result: EventResult::Done, remote: "V9".into(), ..Default::default() };
+    answer(&mut app, &asked, wrote(id, vec![done], vec![lunch]));
+    let made: Vec<_> = app.session.mailbox.events.values().filter(|e| e.title == "Lunch").collect();
+    assert_eq!((made.len(), made[0].origin.id.as_str()), (1, "V9"));
+    assert!(app.session.mailbox.event_changes.is_empty() && app.session.mailbox.event_checks.is_empty());
+}
+
+#[test]
+fn the_same_changes_are_not_sent_again_within_half_a_minute() {
+    let (mut app, id, asked) = writable_window();
+    app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    // The job came back without a word of the change (stopped on its way): it waits, and is not sent again at once.
+    answer(
+        &mut app,
+        &asked,
+        JmapPimResult {
+            account: id,
+            email: ME.into(),
+            offers: Some(PimOffers { calendars: true, contacts: true }),
+            stopped: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(app.session.mailbox.event_changes.len(), 1);
+    assert!(!app.jmap_pim_tick_at(true, 10.0 * SECOND));
+    assert!(app.jmap_pim_tick_at(true, 32.0 * SECOND));
+    assert!(last(&asked).changes.is_some(), "and then again");
+}
+
+#[test]
+fn a_change_just_sent_and_not_seen_yet_brings_the_days_on_screen_every_ten_seconds() {
+    let (mut app, id, asked) = writable_window();
+    let budget = app.session.mailbox.events.values().find(|e| e.title == "Budget review").map(|e| e.id).unwrap();
+    app.execute("calendar.edit", json!({"id": budget, "title": "Budget review (2027)"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let op = last(&asked).changes.unwrap().ops[0].clone();
+    // Done, says the server; the download that came with it still has the old title.
+    let old = RemoteEvent { id: "V1".into(), title: "Budget review".into(), start: NOW + 86_400, end: NOW + 90_000, ..Default::default() };
+    answer(&mut app, &asked, wrote(id, vec![EventOutcome { op, result: EventResult::Done, remote: "V1".into(), ..Default::default() }], vec![old]));
+    assert_eq!(app.session.mailbox.event_checks.len(), 1, "yet to be seen there");
+    assert!(!app.jmap_pim_tick_at(true, 6.0 * SECOND));
+    assert!(app.jmap_pim_tick_at(true, 12.0 * SECOND), "ten seconds on, not two minutes");
+    assert!(last(&asked).changes.is_none(), "nothing more to send");
+}
+
+#[test]
+fn a_job_that_carried_changes_and_says_nothing_of_them_came_to_nothing() {
+    let (mut app, id, asked) = writable_window();
+    app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    answer(
+        &mut app,
+        &asked,
+        JmapPimResult { account: id, email: ME.into(), offers: Some(PimOffers { calendars: true, contacts: true }), ..Default::default() },
+    );
+    assert_eq!(app.jmap_pim.failures.get(&id).map(|(n, _)| *n), Some(1));
 }

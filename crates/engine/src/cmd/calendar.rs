@@ -11,6 +11,9 @@ use crate::{CmdError, CmdResult, CommandSpec, Module, Session, p};
 
 mod invitation;
 mod meeting;
+// //// Neoffice — what a calendar whose server keeps only the basics of an event refuses, tested apart.
+#[cfg(test)]
+mod plain_tests;
 
 pub use meeting::teams_refusal;
 
@@ -235,6 +238,41 @@ fn fits_server(s: &Session, e: &Event) -> Result<(), CmdError> {
 /// Refuse to change what is in a calendar the account may only read.
 fn writable(s: &Session, calendar: Id) -> Result<(), CmdError> {
     remote::writable(&s.mailbox, calendar)
+}
+
+// //// Neoffice — a calendar whose server keeps only the basics of an event (`Calendar::plain`: JMAP for Calendars on a
+// hosting page's server) refuses here what that server would refuse, with the reason, rather than note a change its
+// host has to drop and the next download undoes.
+/// Why a calendar whose server keeps only the basics of an event refuses categories, importance, response options,
+/// an online meeting and another time proposed (and forwarding, which such a server doesn't do).
+pub const PLAIN_KEEPS_NO: &str = "This calendar's server keeps no categories, importance, response options, online meetings or proposed times.";
+/// Why it refuses an event that shows otherwise than free or busy.
+pub const PLAIN_FREE_BUSY: &str = "This calendar's server keeps only Free and Busy.";
+
+/// Whether `calendar` is one whose server keeps only the basics of an event.
+pub(crate) fn plain(s: &Session, calendar: Id) -> bool {
+    s.mailbox.calendar(calendar).is_some_and(|c| c.plain && remote::keeper(&s.mailbox, &c.origin).is_some())
+}
+
+/// Refuse what the server of a plain calendar doesn't keep, of the event `e` as it is to be (`before`: as it was, for
+/// one that is changed; what was so before is not refused again).
+pub(crate) fn fits_plain(s: &Session, e: &Event, before: Option<&Event>) -> Result<(), CmdError> {
+    if !plain(s, e.calendar) {
+        return Ok(());
+    }
+    let was = before.cloned().unwrap_or_default();
+    let more = (e.categories != was.categories && !e.categories.is_empty())
+        || (e.importance != was.importance && e.importance != mailcraft_model::Importance::Normal)
+        || (e.response_options != was.response_options && e.response_options != mailcraft_model::ResponseOptions::default())
+        || (e.online.is_some() && was.online.is_none());
+    if more {
+        return Err(fail(PLAIN_KEEPS_NO));
+    }
+    let shows = |show_as: ShowAs| matches!(show_as, ShowAs::Free | ShowAs::Busy);
+    if !shows(e.show_as) && (before.is_none() || e.show_as != was.show_as) {
+        return Err(fail(PLAIN_FREE_BUSY));
+    }
+    Ok(())
 }
 
 /// Our own palette for calendars, cycled.
@@ -850,6 +888,10 @@ fn respond(s: &mut Session, v: &Value) -> CmdResult {
         writable(s, before.calendar)?;
         let (send, note) = (p::bool(v, "send") == Some(true), comment(v));
         // Another time proposed with the answer (`calendar.propose`): mail to the organizer.
+        // //// Neoffice — which a server that keeps only the basics doesn't take.
+        if v.get("propose").is_some_and(|asked| !asked.is_null()) && plain(s, before.calendar) {
+            return Err(fail(PLAIN_KEEPS_NO));
+        }
         let proposal = meeting::proposed(s, v, before.response_options.allow_proposals, send, response)?;
         match part(s, &before, v)? {
             Part::One(day) => {
@@ -875,11 +917,14 @@ fn respond(s: &mut Session, v: &Value) -> CmdResult {
                 }
             }
             Part::Series => {
+                // //// Neoffice — a server that keeps only the basics keeps only Free and Busy: a tentative answer shows busy there.
+                let only_busy = plain(s, before.calendar);
                 let e = s.mailbox.event_mut(id)?;
                 for a in e.attendees.iter_mut().filter(|a| mine.contains(&a.address.email.to_lowercase())) {
                     a.response = response;
                 }
-                e.show_as = if response == Response::Tentative { ShowAs::Tentative } else { ShowAs::Busy };
+                // //// Neoffice — (busy rather than tentative in such a calendar)
+                e.show_as = if response == Response::Tentative && !only_busy { ShowAs::Tentative } else { ShowAs::Busy };
             }
         }
         remote::note_responded(&mut s.mailbox, &before, response, send, &note)?;
@@ -910,6 +955,8 @@ fn show_as(s: &mut Session, v: &Value) -> CmdResult {
     let before = changing(s, v)?;
     let id = before.id;
     let value = ShowAs::parse(p::req_str(v, "value")?).ok_or_else(|| bad("`value` is free, tentative, busy, outOfOffice or workingElsewhere"))?;
+    // //// Neoffice — a server that keeps only the basics keeps only Free and Busy.
+    fits_plain(s, &Event { show_as: value, ..before.clone() }, Some(&before))?;
     s.mailbox.event_mut(id)?.show_as = value;
     changed(s, &before)?;
     Ok(json!({"id": id, "showAs": value}))
@@ -947,6 +994,10 @@ fn categorize(s: &mut Session, v: &Value) -> CmdResult {
     let name = clean_name(p::req_str(v, "category")?).ok_or_else(|| bad("`category` is empty"))?;
     if kept_by(s, &before).is_some() {
         writable(s, before.calendar)?;
+    }
+    // //// Neoffice — a server that keeps only the basics keeps no categories.
+    if plain(s, before.calendar) {
+        return Err(fail(PLAIN_KEEPS_NO));
     }
     let e = s.mailbox.event_mut(id)?;
     let has = e.categories.iter().any(|c| c.eq_ignore_ascii_case(&name));

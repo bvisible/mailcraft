@@ -346,8 +346,8 @@ fn a_pim_answer_over_its_bound_is_refused() {
 }
 
 #[test]
-fn the_doors_stay_shut_until_writing_is_carried() {
-    const { assert!(!WRITE_EVENTS && !WRITE_CONTACTS) };
+fn events_are_written_and_the_door_of_contacts_stays_shut_until_they_are() {
+    const { assert!(WRITE_EVENTS && !WRITE_CONTACTS) };
 }
 
 /// `value` changed by `change`, for building a session from another.

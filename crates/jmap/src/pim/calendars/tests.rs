@@ -94,9 +94,14 @@ fn the_calendars_and_their_rights_are_read() {
 }
 
 #[test]
-fn every_calendar_is_read_only_while_writes_are_not_carried() {
+fn a_calendar_is_writable_where_every_event_of_it_may_be_written() {
     let result = run(&server(), &request());
-    assert!(result.calendars.unwrap().calendars.iter().all(|c| c.read_only), "the door stays shut");
+    let rights: Vec<(String, bool)> = result.calendars.unwrap().calendars.into_iter().map(|c| (c.name, c.read_only)).collect();
+    assert_eq!(
+        rights,
+        [("Ada".to_string(), false), ("Team".to_string(), true), ("Own".to_string(), true)],
+        "her own events alone is not all of them"
+    );
 }
 
 #[test]

@@ -39,6 +39,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_jmap::fetch::{failed_fetch, fetch_messages};
 use mailcraft_jmap::{Auth, Client, Error, Http, failed_pim, failed_run, sync_mail, sync_pim};
+use mailcraft_model::remote::{EventOp, EventOutcome, EventsUploaded};
 use mailcraft_model::sync::{GraphFetchResult, JmapMailRequest, JmapMailResult, JmapPimRequest, JmapPimResult};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
 use mailcraft_ui_egui::jmap_pim::JmapPimJob;
@@ -293,9 +294,10 @@ where
     }
 }
 
-/// One calendar job of a JMAP account: sign in, read what `job` asks ([`sync_pim`]), and give the answer. It only
-/// reads, so a credential the server turns down in the middle of it is renewed by the host, once, and the job read
-/// again; a server whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
+/// One calendar job of a JMAP account: sign in, write and read what `job` asks ([`sync_pim`]), and give the answer. A
+/// credential the server turns down in the middle of it is renewed by the host, once, and the job done again with
+/// it: what the server had answered of the changes before stays answered, and only the others go again. A server
+/// whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
 pub async fn pim<H, C, S, W>(http: H, job: &JmapPimJob, credentials: Option<&C>, sleep: S) -> JmapPimResult
 where
     H: Http + Clone,
@@ -311,27 +313,53 @@ where
     };
     let Some(mut auth) = auth else { return failed_pim(request, &no_credential()) };
     let mut renewed = false;
+    // The changes still to write, and what the server said of those it was told: kept in whatever answer is given.
+    let mut changes = request.changes.clone();
+    let mut answered: Vec<EventOutcome> = Vec::new();
+    let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome]| {
+        if !answered.is_empty() {
+            let token_refused = answer.uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);
+            answer.uploaded =
+                Some(EventsUploaded { account: request.account, email: request.email.clone(), outcomes: answered.to_vec(), token_refused });
+        }
+        answer
+    };
     loop {
         let client = match signed_in(&http, &request.session, &request.email, auth, renewed, host, &job.cancel, &sleep).await {
             SignedIn::In(client, now_renewed) => {
                 renewed = now_renewed;
                 client
             }
-            SignedIn::Stopped => return stopped_pim(request),
-            SignedIn::Out(e) => return failed_pim(request, &e),
+            SignedIn::Stopped => return with_answered(stopped_pim(request), &answered),
+            SignedIn::Out(e) => return with_answered(failed_pim(request, &e), &answered),
         };
-        let asked = JmapPimRequest { plain_unless_said: client.api_path_ends_with(FACADE_API), ..request.clone() };
+        let asked = JmapPimRequest { plain_unless_said: client.api_path_ends_with(FACADE_API), changes: changes.clone(), ..request.clone() };
         let answer = sync_pim(&client, &asked, &job.cancel).await;
+        // What the server answered of the changes before it turned the credential down stays answered: only the rest
+        // goes again, with the new one.
+        let now_answered = answer.uploaded.as_ref().map(|uploaded| uploaded.outcomes.clone()).unwrap_or_default();
+        if let Some(changes) = &mut changes {
+            changes.ops.retain(|op| !now_answered.iter().any(|outcome| same_change(&outcome.op, op)));
+        }
+        answered.extend(now_answered);
+        let answer = with_answered(answer, &answered);
         if !answer.auth_refused || renewed || host.is_none() {
             return answer;
         }
         // Turned down in the middle: a new credential from the host, and the job read again with it.
         match renew(host, &request.email, &job.cancel, &sleep).await {
             Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
-            Renewed::Cancelled => return stopped_pim(request),
+            Renewed::Cancelled => return with_answered(stopped_pim(request), &answered),
             Renewed::Refused => return answer,
         }
     }
+}
+
+/// Whether two changes are the same one: an outcome carries the change it is of, as the host tidied it.
+fn same_change(answered: &EventOp, asked: &EventOp) -> bool {
+    let mut asked = asked.clone();
+    asked.tidy();
+    *answered == asked
 }
 
 /// What came of signing in to a server ([`signed_in`]).

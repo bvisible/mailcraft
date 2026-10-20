@@ -26,6 +26,10 @@
 //!   one with its start and end in UTC worked out (`utcStart`, `utcEnd`: the clock of its zone, or of the person's for
 //!   one that names none, then its length, the days on the clock and the hours after them); `properties` keeps those
 //!   named (and the id).
+//! - **`CalendarEvent/set`** makes, changes and deletes events, a series or one of its occurrences, as strictly as
+//!   such a server takes them (`standin/pim/set.rs`): whole properties of what it writes, fifty events a call, the
+//!   organizer and the draft state left as they are, mail to the people of an event only from its organizer, and the
+//!   person's answer to an invitation told to its organizer ([`Pim::scheduled`]).
 //! - **`AddressBook/get`** lists every address book (`ids: null`) or those named, each with the rights a server that
 //!   keeps only the basics says (`myRights`: `mayWrite` for its cards, and `mayRemoveItems`, which narrows a book whose
 //!   cards may be written to one whose cards may not be deleted).
@@ -41,9 +45,13 @@
 //!   is what the store calls the contact ([`Card::id`]), which need not be of the JMAP alphabet: a name with spaces in it.
 //! - **Trouble on demand**, besides the mail part's (`refuse_next`, `drop_token_after`, `lost_answers`, method errors
 //!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
-//!   deleted between a query and a `get` ([`Pim::vanishing`]).
+//!   deleted between a query and a `get` ([`Pim::vanishing`]); a change of an event refused with a SetError
+//!   ([`Pim::refused_events`]); a server that says it took a time and keeps the old one ([`Pim::keeps_old_times`]).
 
 use std::collections::{BTreeMap, BTreeSet};
+
+mod set;
+pub use set::{MAX_EVENTS_PER_SET, SERVER_SET, Scheduled};
 
 use base64::Engine as _;
 use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
@@ -98,12 +106,15 @@ pub struct Calendar {
     /// The account may write every event of it; only its own.
     pub write_all: bool,
     pub write_own: bool,
+    /// The person's answers to invitations go to their organizers from it (`mayRSVP`, where they may write): a mail
+    /// server's calendar does, one kept in a store that sends no mail doesn't.
+    pub sends_answers: bool,
 }
 
 impl Calendar {
     /// A calendar whose events the account may write, or (`writable: false`) only read.
     pub fn new(raw: &str, name: &str, writable: bool) -> Calendar {
-        Calendar { raw: raw.into(), name: name.into(), color: None, flagged: false, write_all: writable, write_own: writable }
+        Calendar { raw: raw.into(), name: name.into(), color: None, flagged: false, write_all: writable, write_own: writable, sends_answers: true }
     }
 }
 
@@ -296,6 +307,22 @@ pub struct Pim {
     pub card_limit: usize,
     /// A query of the cards says their state (`queryState`).
     pub says_state: bool,
+    /// The person's own addresses: the organizer of what they make, and the participant who answers (none: the
+    /// stand-in's user).
+    pub own: Vec<String>,
+    /// The mail the server sent about events, oldest first.
+    pub scheduled: Vec<Scheduled>,
+    /// Events (their ids in the API, or a new one's `uid`) whose `CalendarEvent/set` is answered with the SetError of
+    /// that `type`.
+    pub refused_events: BTreeMap<String, &'static str>,
+    /// Events (their ids in the API) whose time a change says it took, and doesn't keep.
+    pub keeps_old_times: BTreeSet<String>,
+    /// The person's answer to an invitation is told to its organizer (as such a server does since it answers through
+    /// the desk's own answer); off: kept on the person's copy only.
+    pub tells_the_organizer: bool,
+    /// The events made, by the `uid` they were made with: one made again is that one.
+    made: BTreeMap<String, String>,
+    made_count: u32,
 }
 
 impl Default for Pim {
@@ -315,6 +342,13 @@ impl Default for Pim {
             vanishing: BTreeSet::new(),
             card_limit: MAX_CARDS,
             says_state: true,
+            own: Vec::new(),
+            scheduled: Vec::new(),
+            refused_events: BTreeMap::new(),
+            keeps_old_times: BTreeSet::new(),
+            tells_the_organizer: true,
+            made: BTreeMap::new(),
+            made_count: 0,
         }
     }
 }
@@ -455,7 +489,7 @@ impl Pim {
                     "mayWriteAll": calendar.write_all,
                     "mayWriteOwn": calendar.write_own,
                     "mayUpdatePrivate": calendar.write_all,
-                    "mayRSVP": calendar.write_all || calendar.write_own,
+                    "mayRSVP": calendar.sends_answers && (calendar.write_all || calendar.write_own),
                     "mayAdmin": false,
                     "mayDelete": false,
                 },

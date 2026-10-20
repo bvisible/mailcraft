@@ -11,6 +11,13 @@
 //! takes in through `sync.applyCalendars`, `sync.applyBooks`, `sync.applyEvents` and `sync.applyContacts`. Nothing new
 //! is asked of the engine.
 //!
+//! **What was changed here goes first.** What is made, moved, changed, deleted or answered here in a calendar the
+//! server keeps is noted by the engine (`Mailbox::event_changes`) and goes up with the next job, at once (a job starts
+//! as soon as something waits): the host writes it before it reads, and what the server made of each change is taken
+//! in before the events (`sync.applyEventChanges`), as for Microsoft Graph's calendar. A change that was just sent
+//! and is yet to be seen on the server brings the days on screen again every ten seconds for a while; the very same
+//! changes are not sent twice within half a minute; what waits and can't be sent any more is given up with a word.
+//!
 //! **When.** An account is asked for its list of calendars, its address books and the contacts in them, and the wide
 //! stretch (a month back, a year ahead) at its first job and every ten minutes after; for the days on screen and a week
 //! either side every two minutes while the calendar or People is in front, and every ten minutes otherwise; at once
@@ -34,8 +41,8 @@
 //! went up must never be taken in after it. A job not answered in two minutes is given up (its `cancel` is set and
 //! its answer, should it come, is never read), and counts as one that came to nothing.
 //!
-//! **The answer** is taken in in this order: the list of calendars, the address books, the main calendar's events,
-//! the others', and the contacts. A download of a calendar the mailbox doesn't have is not taken in (the engine would
+//! **The answer** is taken in in this order: the list of calendars, the address books, what the server made of the
+//! changes, the main calendar's events, the others', and the contacts. A download of a calendar the mailbox doesn't have is not taken in (the engine would
 //! make the calendar for it). What the host says went wrong goes to the Send/Receive problems report and the log; what
 //! the engine says of an event (which names it) to the report alone. A server that turned the secret down stops the
 //! account's jobs and its mail runs alike; one that is busy is left alone as long as it asked.
@@ -46,7 +53,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mailcraft_engine::Module;
-use mailcraft_model::remote::{CalendarAsk, EventsDownload};
+use mailcraft_engine::cmd::remote;
+use mailcraft_model::remote::{CalendarAsk, EventsDownload, EventsUpload};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, PimOffers};
 use mailcraft_model::{AccountKind, Id};
 use mailcraft_time::{DateTime, Timestamp};
@@ -64,6 +72,8 @@ const FIRST_RETRY_MS: f64 = 30_000.0;
 const LONGEST_RETRY_MS: f64 = 600_000.0;
 /// How long a job may take before it is given up.
 const DEADLINE_MS: f64 = 120_000.0;
+/// How often the days on screen are asked for while a change that was just sent is yet to be seen on the server.
+const RECHECK_MS: f64 = 10_000.0;
 /// The longest a server's wish to be left alone is followed, in milliseconds.
 const MAX_CALM_MS: f64 = 900_000.0;
 /// The wide stretch: a month back, a year ahead (seconds).
@@ -102,6 +112,8 @@ struct InFlight {
     /// Whether it asked for the contacts, and when it was asked for by the session's clock (Unix seconds): what a
     /// state of the contacts it brings back is kept with.
     contacts: bool,
+    /// It carried changes to write.
+    carried: bool,
     now: Timestamp,
     cancel: Arc<AtomicBool>,
     rx: Receiver<JmapPimResult>,
@@ -136,6 +148,11 @@ pub(crate) struct JmapPim {
     contacts: HashMap<Id, (String, Timestamp)>,
     /// Accounts whose next job brings the contacts though it is not the wide one: People came to the front.
     contacts_due: HashSet<Id>,
+    /// What each account's server was last told, and when (milliseconds): the very same again right away would mean
+    /// that the telling settles nothing, and it is left for later.
+    sent: HashMap<Id, (EventsUpload, f64)>,
+    /// The state of the mailbox at which the waiting changes were last looked over for ones that can't go any more.
+    settled_rev: Option<u64>,
 }
 
 impl MailApp {
@@ -165,8 +182,13 @@ impl MailApp {
         if self.jmap_pim.rx.is_some() {
             // An answer is on its way (the host wakes the window when it is there, too), or the job's time runs out.
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
-        } else if !self.jmap_pim_accounts().is_empty() {
-            ctx.request_repaint_after(std::time::Duration::from_secs(5));
+        } else {
+            let accounts = self.jmap_pim_accounts();
+            // Sooner when a change waits to go.
+            let waits = accounts.iter().any(|account| remote::events_waiting(&self.session, *account).due > 0);
+            if !accounts.is_empty() {
+                ctx.request_repaint_after(std::time::Duration::from_secs(if waits { 1 } else { 5 }));
+            }
         }
     }
 
@@ -216,18 +238,39 @@ impl MailApp {
         if self.jmap_pim.rx.is_some() || self.calendar.rx.is_some() {
             return false;
         }
+        // What waits and can't be sent any more is given up before anything is sent: with a word to the owner, never
+        // silently. (Looked at once for each state of the mailbox.)
+        if self.jmap_pim.settled_rev != Some(self.session.rev()) {
+            let dropped = remote::settle_changes(&mut self.session);
+            self.jmap_pim.settled_rev = Some(self.session.rev());
+            for one in dropped.iter().filter(|one| !one.message.is_empty()).take(20) {
+                self.status(one.message.clone());
+                self.keep_sync_problems(one.account, std::slice::from_ref(&one.message));
+            }
+        }
         for account in self.jmap_pim_accounts() {
             if !self.may_ask_pim(account, now) {
                 continue;
             }
+            // What is ready to go now (and not the very same as a moment ago, which would go round in circles).
+            let changes = if remote::events_waiting(&self.session, account).due > 0 { self.calendar_changes(account) } else { None };
+            let again = |(sent, at): &(EventsUpload, f64)| changes.as_ref() == Some(sent) && now - at < FIRST_RETRY_MS;
+            let push = changes.is_some() && !self.jmap_pim.sent.get(&account).is_some_and(again);
             let wide = self.jmap_pim.wide.get(&account).is_none_or(|at| now - at >= WIDE_MS);
-            let every = if in_front { IN_FRONT_MS } else { BEHIND_MS };
+            // A change that was just sent and isn't seen on the server yet: asked for again soon.
+            let every = if remote::recheck_due(&self.session, account) {
+                RECHECK_MS
+            } else if in_front {
+                IN_FRONT_MS
+            } else {
+                BEHIND_MS
+            };
             // Other days came into view, or a calendar was ticked that the last job didn't read: asked for without waiting.
             let elsewhere = in_front && self.jmap_pim.shown.get(&account).is_some_and(|shown| *shown != self.calendar_window());
             let newly = in_front && self.ticked_unread(account);
             let asked = self.jmap_pim.checked.get(&account).copied();
             let refresh = wide || ((self.jmap_pim.due || elsewhere || newly) && in_front) || asked.is_none_or(|at| now - at >= every);
-            if !refresh {
+            if !refresh && !push {
                 continue;
             }
             // A server that didn't answer the last time is given longer each time.
@@ -236,7 +279,7 @@ impl MailApp {
             if failures > 0 && now - at < patience {
                 continue;
             }
-            if self.start_jmap_pim(account, wide, now, None) {
+            if self.start_jmap_pim(account, wide, now, None, changes.filter(|_| push)) {
                 return true;
             }
         }
@@ -245,10 +288,10 @@ impl MailApp {
         false
     }
 
-    /// Hand the host a calendar job for `account`: its list and the wide stretch when `wide`, else the days on screen;
-    /// or, for `around`, those days alone (which says nothing of when the days on screen were last asked for). `false`
-    /// when there is no service, or no credential at hand.
-    fn start_jmap_pim(&mut self, account: Id, wide: bool, now: f64, around: Option<(Timestamp, Timestamp)>) -> bool {
+    /// Hand the host a calendar job for `account`: the `changes` to write first, when any; then its list and the wide
+    /// stretch when `wide`, else the days on screen; or, for `around`, those days alone (which says nothing of when the
+    /// days on screen were last asked for). `false` when there is no service, or no credential at hand.
+    fn start_jmap_pim(&mut self, account: Id, wide: bool, now: f64, around: Option<(Timestamp, Timestamp)>, changes: Option<EventsUpload>) -> bool {
         let Some(owner) = self.session.mailbox.account(account).cloned() else { return false };
         let Some(server) = owner.jmap.clone() else { return false };
         if self.services.jmap_pim.is_none() {
@@ -296,13 +339,18 @@ impl MailApp {
             contacts_state,
             contacts_read,
             plain_unless_said: false,
+            changes: changes.clone(),
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let Some(start) = &self.services.jmap_pim else { return false };
         let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });
         self.jmap_pim.asked.insert(account, names);
-        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, now: today, cancel, rx });
+        let carried = changes.is_some();
+        if let Some(changes) = changes {
+            self.jmap_pim.sent.insert(account, (changes, now));
+        }
+        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, carried, now: today, cancel, rx });
         self.jmap_pim.last = Some(account);
         if contacts {
             self.jmap_pim.contacts_due.remove(&account);
@@ -350,7 +398,7 @@ impl MailApp {
         };
         let from = instant(day.add_days(-1));
         let round = (from, instant(day.add_days(2)).max(from.saturating_add(mailcraft_time::DAY)));
-        if self.start_jmap_pim(account, false, now, Some(round)) {
+        if self.start_jmap_pim(account, false, now, Some(round), None) {
             Ok(())
         } else {
             Err(tl!("This account's calendar can't be asked yet: Send/Receive signs it in first.").to_string())
@@ -369,7 +417,7 @@ impl MailApp {
     /// The calendar job answered: take in what it brought, in order. (Public for a host's tests.)
     pub fn poll_jmap_pim(&mut self) {
         let Some(job) = &self.jmap_pim.rx else { return };
-        let (account, started, wide, contacts, asked_at) = (job.account, job.started, job.wide, job.contacts, job.now);
+        let (account, started, wide, contacts, carried, asked_at) = (job.account, job.started, job.wide, job.contacts, job.carried, job.now);
         let result = match job.rx.try_recv() {
             Ok(result) => result,
             Err(TryRecvError::Empty) => return,
@@ -381,12 +429,12 @@ impl MailApp {
             }
         };
         self.jmap_pim.rx = None;
-        self.take_in_pim(account, Taken { started, wide, contacts, asked_at }, result);
+        self.take_in_pim(account, Taken { started, wide, contacts, carried, asked_at }, result);
     }
 
     /// What one job brought, for `account` whatever it names (the engine still checks the address it carries).
     fn take_in_pim(&mut self, account: Id, job: Taken, mut result: JmapPimResult) {
-        let Taken { started, wide, contacts, asked_at } = job;
+        let Taken { started, wide, contacts, carried, asked_at } = job;
         result.account = account;
         result.tidy();
         if let Some(offers) = result.offers {
@@ -420,8 +468,9 @@ impl MailApp {
             }
             kept
         };
+        // What the server made of the changes first, then the events: they were read after the changes went.
         let main = result.events.take().filter(|download| here(self, download));
-        self.take_in_calendar(account, None, main.as_ref(), &mut errors);
+        self.take_in_calendar(account, result.uploaded.as_ref(), main.as_ref(), &mut errors);
         let more: Vec<EventsDownload> = std::mem::take(&mut result.more_events).into_iter().filter(|download| here(self, download)).collect();
         self.take_in_more_calendars(&more, &mut errors);
         // The contacts last.
@@ -434,7 +483,14 @@ impl MailApp {
         if contacts {
             self.keep_contacts_state(account, &result, contacts_taken, asked_at);
         }
-        let well = result.offers.is_some() && errors.is_empty() && !result.auth_refused && result.busy_for.is_none() && !result.stopped;
+        // A job that carried changes and brought back nothing of them came to nothing.
+        let went = result.uploaded.as_ref().is_some_and(|uploaded| !uploaded.outcomes.is_empty());
+        let well = result.offers.is_some()
+            && errors.is_empty()
+            && !result.auth_refused
+            && result.busy_for.is_none()
+            && !result.stopped
+            && (went || !carried);
         if well {
             self.jmap_pim.failures.remove(&account);
         } else {
@@ -489,6 +545,7 @@ struct Taken {
     started: f64,
     wide: bool,
     contacts: bool,
+    carried: bool,
     asked_at: Timestamp,
 }
 

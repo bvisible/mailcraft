@@ -78,6 +78,8 @@ pub fn demo(today: Date) -> StandIn {
         // The calendars.
         let pim = &mut d.pim;
         *pim = Pim::offered();
+        // What is made here is Ada's, and her answers are hers.
+        pim.own = vec![DEMO_PERSON.into()];
         pim.add_calendar(Calendar { flagged: true, color: Some("#2E8B57".into()), ..Calendar::new("ada", "Ada Marlow", true) });
         pim.add_calendar(Calendar { color: Some("#E07B1F".into()), ..Calendar::new("team", "Team", true) });
         pim.add_calendar(Calendar { color: Some("#7E57C2".into()), ..Calendar::new("grace", "Grace Okafor", false) });

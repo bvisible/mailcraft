@@ -4,17 +4,19 @@
 
 //! The whole way of a JMAP account's calendars and contacts: the window's job (`jmap_pim.rs`), the browser runner's core
 //! ([`super::pim`], what `jmap_pim_service` runs in the browser) and the in-process server, on the test's own thread:
-//! the host answers each job at once, as the browser's task answers it when the window next looks. The window is a
-//! hosting page's: its credential is the page's, which renews it as the page would, from what the server holds.
-//! Nothing here leaves this machine; every name, address and id is invented.
+//! the host answers each job at once, as the browser's task answers it when the window next looks, or holds it until
+//! the test lets it go ([`Flow::hold`]), for what happens while a job is on its way. The window is a hosting page's:
+//! its credential is the page's, which renews it as the page would, from what the server holds. Nothing here leaves
+//! this machine; every name, address and id is invented.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, Sender};
 
 use mailcraft_engine::Session;
 use mailcraft_jmap::standin::{Book, Calendar, Card, Event, Fault, Pim, SESSION, StandIn, TOKEN};
 use mailcraft_jmap::{Auth, block_on};
+use mailcraft_model::sync::JmapPimResult;
 use mailcraft_model::{Id, Mailbox};
 use mailcraft_time::Zone;
 use mailcraft_ui_egui::jmap_pim::JmapPimJob;
@@ -61,6 +63,9 @@ struct Flow {
     page: Rc<Page>,
     account: Id,
     at: f64,
+    /// Jobs are held rather than answered at once, and the one held.
+    holding: Rc<Cell<bool>>,
+    held: Rc<RefCell<Option<(JmapPimJob, Sender<JmapPimResult>)>>>,
 }
 
 impl Flow {
@@ -69,6 +74,7 @@ impl Flow {
         server.with(|d| {
             d.mailbox("Inbox", None, Some("inbox"));
             d.pim = Pim::offered();
+            d.pim.own = vec![ME.into()];
             d.pim.add_calendar(Calendar { flagged: true, ..Calendar::new("ada", "Ada", true) });
             d.pim.add_calendar(Calendar::new("team", "Team", true));
             d.pim.add_calendar(Calendar::new("grace", "Grace", false));
@@ -84,15 +90,21 @@ impl Flow {
         app.services.jmap = Some(Box::new(|_| mpsc::channel().1));
         app.services.jmap_host_credentials = true;
         let (to, credentials) = (server.clone(), page.clone());
+        let (holding, held) = (Rc::new(Cell::new(false)), Rc::new(RefCell::new(None)));
+        let (hold, keep) = (holding.clone(), held.clone());
         app.services.jmap_pim = Some(Box::new(move |job: JmapPimJob| {
             let (tx, rx) = mpsc::channel();
-            let _ = tx.send(block_on(super::pim(to.clone(), &job, Some(credentials.as_ref()), |_| std::future::ready(()))));
+            if hold.get() {
+                *keep.borrow_mut() = Some((job, tx));
+            } else {
+                let _ = tx.send(block_on(super::pim(to.clone(), &job, Some(credentials.as_ref()), |_| std::future::ready(()))));
+            }
             rx
         }));
         let added = app.execute("account.add", json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
         app.execute("view.calendar", json!({})).unwrap();
         let account = added["id"].as_u64().unwrap();
-        let mut flow = Flow { app, server, page, account, at: 0.0 };
+        let mut flow = Flow { app, server, page, account, at: 0.0, holding, held };
         assert!(flow.look(0.0), "the first look asks at once");
         flow
     }
@@ -103,6 +115,36 @@ impl Flow {
         let started = self.app.jmap_pim_tick_at(true, self.at);
         self.app.poll_jmap_pim();
         started
+    }
+
+    /// Hold the next job instead of answering it: it is on its way until [`Flow::release`].
+    fn hold(&self) {
+        self.holding.set(true);
+    }
+
+    /// Let the job held go to the server now, and have the window take its answer in.
+    fn release(&mut self) {
+        self.holding.set(false);
+        if let Some((job, tx)) = self.held.borrow_mut().take() {
+            let _ = tx.send(block_on(super::pim(self.server.clone(), &job, Some(self.page.as_ref()), |_| std::future::ready(()))));
+        }
+        self.app.poll_jmap_pim();
+    }
+
+    /// The event called `title` here.
+    fn event(&self, title: &str) -> Option<mailcraft_model::Event> {
+        self.app.session.mailbox.events.values().find(|e| e.title == title).map(|e| e.as_ref().clone())
+    }
+
+    /// The server's event of the title `title`, as its store has it.
+    fn on_server(&self, title: &str) -> Option<Event> {
+        self.server.with(|d| d.pim.events.iter().find(|e| e.props.get("title") == Some(&json!(title))).cloned())
+    }
+
+    /// When the calendar shows what is called `title` between the 12th and the 30th, by its clock.
+    fn when(&mut self, title: &str) -> Vec<String> {
+        let listed: Value = self.app.execute("calendar.list", json!({"from": "2026-10-12", "to": "2026-11-03"})).unwrap();
+        listed["events"].as_array().unwrap().iter().filter(|e| e["title"] == title).map(|e| e["start"].as_str().unwrap().to_string()).collect()
     }
 
     /// The titles of what the calendar shows in the week of 2026-10-12 (the ticked calendars').
@@ -124,7 +166,8 @@ fn the_window_brings_the_servers_calendars_and_their_events_and_the_calendar_sho
     let (ada, team, grace) = (flow.calendar("Ada").unwrap(), flow.calendar("Team").unwrap(), flow.calendar("Grace").unwrap());
     assert!(ada.origin.id.is_empty() && ada.visible, "the main one, ticked");
     assert!(!team.visible && !grace.visible, "the others wait to be ticked");
-    assert!([ada, team, grace].iter().all(|c| c.read_only && c.plain));
+    assert!([ada, team, grace].iter().all(|c| c.plain));
+    assert_eq!([ada, team, grace].map(|c| c.read_only), [false, false, true], "Grace's she may only read");
     // The main calendar's week shows.
     assert_eq!(flow.shown(), ["Book fair", "Budget review"]);
     let budget = flow.app.session.mailbox.events.values().find(|e| e.title == "Budget review").unwrap();
@@ -198,12 +241,14 @@ fn a_token_that_dies_is_renewed_and_nothing_is_lost() {
 }
 
 #[test]
-fn every_calendar_is_read_only_and_a_new_event_is_refused_with_its_reason() {
+fn a_calendar_she_may_only_read_refuses_a_new_event_with_its_reason() {
     let mut flow = Flow::start();
-    let refused = flow.app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"}));
+    let grace = flow.calendar("Grace").map(|c| c.id).unwrap();
+    let refused =
+        flow.app.execute("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00", "calendar": grace}));
     let why = refused.unwrap_err();
     assert!(why.contains("can only be read"), "{why}");
-    assert_eq!(flow.shown(), ["Book fair", "Budget review"], "nothing was made");
+    assert!(flow.event("Lunch").is_none() && flow.app.session.mailbox.event_changes.is_empty(), "nothing was made");
 }
 
 #[test]
@@ -249,4 +294,165 @@ fn the_window_brings_the_servers_address_books_and_people_and_the_to_field_have_
     let asked: Vec<String> = flow.server.calls().into_iter().skip(before).filter(|c| c.starts_with("ContactCard")).collect();
     assert_eq!(asked, ["ContactCard/query"], "the state alone");
     assert_eq!(flow.app.session.rev(), rev);
+}
+
+// What is made, moved, changed and deleted here goes to the server, and what it has is what comes back.
+
+#[test]
+fn an_appointment_is_made_edited_and_deleted_on_the_server() {
+    let mut flow = Flow::start();
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND), "a change goes at once");
+    let made = flow.on_server("Dentist").unwrap();
+    assert_eq!((made.start.as_str(), made.zone.as_deref(), made.duration.as_str()), ("2026-10-15T14:00:00", Some("Europe/Zurich"), "PT1H"));
+    let here = flow.event("Dentist").unwrap();
+    assert_eq!(here.origin.id, Pim::event_id(&made.raw), "the server's name for it, and no second one");
+    assert!(flow.app.session.mailbox.event_changes.is_empty() && flow.app.session.mailbox.event_checks.is_empty(), "sent, and seen there");
+    // Dragged to four, then made half an hour longer.
+    flow.app.execute("calendar.move", json!({"id": here.id, "start": "2026-10-15T16:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.on_server("Dentist").map(|e| e.start), Some("2026-10-15T16:00:00".to_string()));
+    flow.app.execute("calendar.move", json!({"id": here.id, "start": "2026-10-15T16:00", "end": "2026-10-15T17:30"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.on_server("Dentist").map(|e| e.duration), Some("PT1H30M".to_string()));
+    // Edited.
+    flow.app.execute("calendar.edit", json!({"id": here.id, "title": "Dentist (Dr Lee)", "location": "Rue du Lac 4"})).unwrap();
+    assert!(flow.look(SECOND));
+    let edited = flow.on_server("Dentist (Dr Lee)").unwrap();
+    assert_eq!(edited.props["locations"]["l1"]["name"], "Rue du Lac 4");
+    assert_eq!(flow.when("Dentist (Dr Lee)"), ["2026-10-15T16:00:00"]);
+    // Deleted.
+    flow.app.execute("calendar.delete", json!({"id": here.id})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Dentist (Dr Lee)").is_none());
+    assert!(flow.event("Dentist (Dr Lee)").is_none());
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
+fn a_whole_day_and_a_series_are_what_the_server_has() {
+    let mut flow = Flow::start();
+    flow.app.execute("calendar.new", json!({"title": "Holiday", "start": "2026-10-16T00:00", "end": "2026-10-17T00:00", "allDay": true})).unwrap();
+    assert!(flow.look(SECOND));
+    let holiday = flow.on_server("Holiday").unwrap();
+    // Friday and Saturday, the last day included.
+    assert_eq!(
+        (holiday.all_day, holiday.start.as_str(), holiday.duration.as_str(), holiday.zone.as_deref()),
+        (true, "2026-10-16T00:00:00", "P2D", None)
+    );
+    flow.app
+        .execute(
+            "calendar.new",
+            json!({"title": "Yoga", "start": "2026-10-13T18:00", "end": "2026-10-13T19:00", "recurrence": {"freq": "weekly", "count": 3}}),
+        )
+        .unwrap();
+    assert!(flow.look(SECOND));
+    let yoga = flow.on_server("Yoga").unwrap();
+    assert_eq!(
+        (yoga.start.as_str(), yoga.zone.as_deref(), yoga.rule.as_ref().map(|r| r["count"].clone())),
+        ("2026-10-13T18:00:00", Some("Europe/Zurich"), Some(json!(3)))
+    );
+    // Here it is one series, the server's, on its three Tuesdays.
+    let series: Vec<_> = flow.app.session.mailbox.events.values().filter(|e| e.title == "Yoga").collect();
+    assert_eq!((series.len(), series[0].origin.id.as_str()), (1, Pim::event_id(&yoga.raw).as_str()));
+    assert_eq!(flow.when("Yoga"), ["2026-10-13T18:00:00", "2026-10-20T18:00:00", "2026-10-27T18:00:00"]);
+}
+
+#[test]
+fn a_server_that_says_yes_and_keeps_the_old_time_is_found_out_and_said() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        d.pim.keeps_old_times.insert(Pim::event_id("budget"));
+    });
+    let budget = flow.event("Budget review").unwrap();
+    flow.app.execute("calendar.move", json!({"id": budget.id, "start": "2026-10-15T11:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    // Not seen there yet: looked at again every ten seconds, until three downloads have shown the old time.
+    for _ in 0..4 {
+        flow.look(11.0 * SECOND);
+    }
+    assert_eq!(flow.when("Budget review"), ["2026-10-15T09:00:00"], "put back to what the server has");
+    let problems = flow.app.sync_problems_of(flow.account);
+    assert!(problems.iter().any(|line| line.contains("Budget review")), "{problems:?}");
+}
+
+#[test]
+fn a_change_made_while_a_read_is_in_flight_is_not_lost() {
+    let mut flow = Flow::start();
+    // A read goes, and is on its way.
+    flow.hold();
+    assert!(flow.look(2.0 * MINUTE + SECOND));
+    let budget = flow.event("Budget review").unwrap();
+    flow.app.execute("calendar.edit", json!({"id": budget.id, "title": "Budget review (2027)"})).unwrap();
+    // The read comes back with the old title: the change made meanwhile stays, and goes next.
+    flow.release();
+    assert!(flow.event("Budget review (2027)").is_some());
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Budget review (2027)").is_some());
+    assert!(flow.event("Budget review (2027)").is_some() && flow.app.session.mailbox.event_changes.is_empty());
+}
+
+#[test]
+fn a_deletion_the_server_answers_not_found_is_settled_by_what_comes_down() {
+    let mut flow = Flow::start();
+    let fair = flow.event("Book fair").unwrap();
+    // Somebody deletes it in the desk; Ada deletes it here before she has seen that.
+    flow.server.with(|d| d.pim.events.retain(|e| e.raw != "fair"));
+    flow.app.execute("calendar.delete", json!({"id": fair.id})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.event("Book fair").is_none() && flow.app.session.mailbox.event_changes.is_empty());
+    flow.look(11.0 * SECOND);
+    assert!(flow.app.session.mailbox.event_checks.is_empty(), "the download said it is gone");
+    assert!(flow.event("Book fair").is_none());
+}
+
+#[test]
+fn what_is_undone_while_it_is_being_made_is_deleted() {
+    let mut flow = Flow::start();
+    flow.app.execute("calendar.new", json!({"title": "Coffee", "start": "2026-10-15T10:00", "end": "2026-10-15T10:30"})).unwrap();
+    flow.hold();
+    assert!(flow.look(SECOND));
+    // Taken back while it is on its way.
+    let coffee = flow.event("Coffee").unwrap();
+    flow.app.execute("calendar.delete", json!({"id": coffee.id})).unwrap();
+    flow.release();
+    // The server made it: it is deleted there with the next job.
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Coffee").is_none());
+    assert!(flow.event("Coffee").is_none());
+}
+
+#[test]
+fn an_appointment_made_in_another_zone_is_the_same_moment_on_the_server_and_here() {
+    let mut flow = Flow::start();
+    flow.app
+        .execute(
+            "calendar.new",
+            json!({"title": "Call with New York", "start": "2026-10-15T09:00", "end": "2026-10-15T10:00", "startZone": "America/New_York"}),
+        )
+        .unwrap();
+    assert!(flow.look(SECOND));
+    let call = flow.on_server("Call with New York").unwrap();
+    assert_eq!((call.start.as_str(), call.zone.as_deref()), ("2026-10-15T09:00:00", Some("America/New_York")));
+    // Nine in New York is three in Zurich.
+    assert_eq!(flow.when("Call with New York"), ["2026-10-15T15:00:00"]);
+    assert_eq!(flow.event("Call with New York").map(|e| e.start_zone), Some("America/New_York".to_string()));
+}
+
+#[test]
+fn a_series_keeps_its_hour_across_a_change_of_the_clock_here_and_on_the_server() {
+    let mut flow = Flow::start();
+    flow.app
+        .execute(
+            "calendar.new",
+            json!({"title": "Site meeting", "start": "2026-10-19T09:00", "end": "2026-10-19T10:00", "recurrence": {"freq": "weekly", "count": 3}}),
+        )
+        .unwrap();
+    assert!(flow.look(SECOND));
+    let site = flow.on_server("Site meeting").unwrap();
+    assert_eq!((site.start.as_str(), site.zone.as_deref()), ("2026-10-19T09:00:00", Some("Europe/Zurich")));
+    // Read back: nine either side of the 25th, here as on the server.
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.when("Site meeting"), ["2026-10-19T09:00:00", "2026-10-26T09:00:00", "2026-11-02T09:00:00"]);
+    assert_eq!(flow.app.session.mailbox.events.values().filter(|e| e.title == "Site meeting").count(), 1);
 }

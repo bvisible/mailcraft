@@ -91,6 +91,9 @@ pub fn teams_refusal(s: &Session, calendar: Id) -> Option<String> {
 /// server can't, and taking it back once a server has made it (a server keeps a meeting online
 /// that was made so). `before` is the event as it was, for one that is changed.
 pub(super) fn online_fits(s: &Session, e: &Event, before: Option<&Event>) -> Result<(), CmdError> {
+    // //// Neoffice — and what a server that keeps only the basics of an event doesn't keep (categories, importance,
+    // response options, online meetings, a Show As other than Free or Busy), refused with the reason.
+    super::fits_plain(s, e, before)?;
     let was = before.and_then(|before| before.online.as_ref());
     match (&e.online, was) {
         (Some(_), None) => {
@@ -246,6 +249,12 @@ pub(super) fn proposed(
 }
 
 fn propose(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — a server that keeps only the basics takes no other time proposed with an answer.
+    if let Some(event) = super::target(s, v).ok().and_then(|id| s.mailbox.event(id))
+        && super::plain(s, event.calendar)
+    {
+        return Err(fail(super::PLAIN_KEEPS_NO));
+    }
     let start = p::datetime(v, "start")?.ok_or_else(|| bad("`start` is required"))?;
     let end = p::datetime(v, "end")?.ok_or_else(|| bad("`end` is required"))?;
     let response = match p::str(v, "response").map(str::trim) {
@@ -292,6 +301,10 @@ fn recipients(v: &Value) -> Result<Vec<Address>, CmdError> {
 fn forward(s: &mut Session, v: &Value) -> CmdResult {
     let id = super::target(s, v)?;
     let event = s.mailbox.event(id).cloned().ok_or_else(|| fail("the event is gone"))?;
+    // //// Neoffice — a server that keeps only the basics forwards no meetings.
+    if super::plain(s, event.calendar) {
+        return Err(fail(super::PLAIN_KEEPS_NO));
+    }
     let to = recipients(v)?;
     if p::bool(v, "send") != Some(true) {
         let who = if to.len() == 1 { "1 person".to_string() } else { format!("{} people", to.len()) };

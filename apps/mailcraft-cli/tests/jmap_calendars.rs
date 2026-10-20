@@ -118,10 +118,10 @@ fn a_first_read_brings_the_calendars_and_the_events_of_the_stretch() {
     let mut rig = Rig::new();
     let result = rig.run(&rig.job(true, &[""]));
     assert!(result.errors.is_empty(), "{:?}", result.errors);
-    // The main calendar under its name, and the team's beside it, unticked and read-only, as every one is until writing
-    // is carried; and both keep only the basics of an event.
+    // The main calendar under its name, Ada's to write, and the team's beside it, unticked and hers only to read; and
+    // both keep only the basics of an event.
     let main = rig.calendar("");
-    assert_eq!((main.name.as_str(), main.visible, main.read_only, main.plain), ("Ada", true, true, true));
+    assert_eq!((main.name.as_str(), main.visible, main.read_only, main.plain), ("Ada", true, false, true));
     let team = rig.calendar(&Pim::calendar_id("team"));
     assert_eq!((team.name.as_str(), team.visible, team.read_only, team.plain), ("Team", false, true, true));
     assert_eq!(rig.titles(""), ["Book fair", "Budget review"]);
@@ -134,8 +134,11 @@ fn a_first_read_brings_the_calendars_and_the_events_of_the_stretch() {
     assert!(fair.all_day);
     assert_eq!((fair.start.date.day, fair.end.date.day), (19, 21));
     assert_eq!(rig.main, Pim::calendar_id("ada"));
-    // A new appointment can't go to a calendar of the server: it is read-only, and says so.
-    let refused = rig.s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"}));
+    // A new appointment goes to the main calendar, noted for its server; not to the team's, which says why.
+    rig.s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"})).unwrap();
+    assert_eq!(rig.s.mailbox.event_changes.len(), 1);
+    let team = rig.calendar(&Pim::calendar_id("team")).id;
+    let refused = rig.s.run("calendar.new", &json!({"title": "Stand-up", "start": "2026-10-15T08:00", "end": "2026-10-15T08:15", "calendar": team}));
     assert!(refused.unwrap_err().to_string().contains("can only be read"));
 }
 
