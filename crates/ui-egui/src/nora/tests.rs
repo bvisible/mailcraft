@@ -64,13 +64,73 @@ fn a_refusal_says_what_the_server_said() {
     // A 200 that isn't Nora's answer at all, a page of a proxy say, is no draft either.
     assert!(answer::draft(&NoraAnswer { id: 1, status: 200, body: "<html>Sign in</html>".into() }).is_err());
     // `_server_messages` as a list of objects, as other versions of Frappe send it.
-    let listed = answer(403, json!({"_server_messages": [{"message": "Not permitted"}]}));
+    let listed = answer(417, json!({"_server_messages": [{"message": "Not permitted"}]}));
     assert_eq!(answer::draft(&listed), Err("Nora couldn't write the reply: Not permitted".to_string()));
     // Each kind of call says it in its own words.
     let said = |task: Task| task.failed("Access denied");
     assert_eq!(said(Task::Translate), "Nora couldn't translate the message: Access denied");
     assert_eq!(said(Task::Rewrite), "Nora couldn't rewrite the text: Access denied");
     assert_eq!(said(Task::Style), "Nora couldn't learn your style: Access denied");
+}
+
+/// A session that ended and a page older than its session, as the server answers them (measured on a Neoffice
+/// server): said as what the person does about them, in their language, for every kind of call. What the server says
+/// otherwise is said as before.
+#[test]
+fn an_ended_session_and_an_old_page_say_what_to_do() {
+    use crate::i18n::{Lang, set_current};
+    const ENDED: &str = "your Neoffice session has ended. Reload the page and sign in again.";
+    const OLD: &str = "the page is out of date. Reload it and try again.";
+    // Without a session: 403 and a page that sends to the sign-in; Neodesk's shell without a sign-in: 401 and nothing;
+    // and a 403 that says why, whatever it says.
+    let to_login = "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url=/login\"></head><body></body></html>";
+    let not_permitted =
+        answer(403, json!({"exc_type": "PermissionError", "_server_messages": json!([json!({"message": "Not permitted"}).to_string()]).to_string()}));
+    // A CSRF token that isn't the session's: 400, and a message that says nothing of use (translated on a server in
+    // another language).
+    let invalid = json!({"message": "Invalid Request", "title": "Message", "indicator": "red"}).to_string();
+    let stale = answer(
+        400,
+        json!({"exc_type": "CSRFTokenError", "exception": "frappe.exceptions.CSRFTokenError", "_server_messages": json!([invalid]).to_string()}),
+    );
+    for (said, why) in [
+        (NoraAnswer { id: 1, status: 403, body: to_login.into() }, ENDED),
+        (NoraAnswer { id: 1, status: 401, body: String::new() }, ENDED),
+        (not_permitted, ENDED),
+        (stale, OLD),
+    ] {
+        assert_eq!(answer::draft(&said), Err(Task::Reply.failed(why)), "{}", said.body);
+        assert_eq!(answer::translation(&said, "fr"), Err(Task::Translate.failed(why)), "{}", said.body);
+        assert_eq!(answer::rewritten(&said, "corrected_text"), Err(Task::Rewrite.failed(why)), "{}", said.body);
+        assert_eq!(answer::style_started(&said), Err(Task::Style.failed(why)), "{}", said.body);
+    }
+    assert_eq!(
+        answer::draft(&NoraAnswer { id: 1, status: 403, body: to_login.into() }),
+        Err("Nora couldn't write the reply: your Neoffice session has ended. Reload the page and sign in again.".to_string())
+    );
+    // Any other refusal says what the server said, a 400 of another kind too.
+    assert_eq!(answer::draft(&answer(417, refusal("Account not found"))), Err("Nora couldn't write the reply: Account not found".to_string()));
+    let other = answer(
+        400,
+        json!({"exc_type": "ValidationError", "_server_messages": json!([json!({"message": "Unsupported target language"}).to_string()]).to_string()}),
+    );
+    assert_eq!(answer::translation(&other, "fr"), Err("Nora couldn't translate the message: Unsupported target language".to_string()));
+    // In the person's language.
+    set_current(Lang::from_tag("fr").unwrap());
+    let in_french = (
+        answer::draft(&NoraAnswer { id: 1, status: 403, body: to_login.into() }),
+        answer::style_started(&answer(400, json!({"exc_type": "CSRFTokenError"}))),
+        answer::draft(&answer(417, refusal("Account not found"))),
+    );
+    set_current(Lang::English);
+    assert_eq!(
+        in_french,
+        (
+            Err("Nora n’a pas pu rédiger la réponse : votre session Neoffice a pris fin. Actualisez la page et reconnectez-vous.".to_string()),
+            Err("Nora n’a pas pu apprendre votre style : la page n’est plus à jour. Actualisez-la et réessayez.".to_string()),
+            Err("Nora n’a pas pu rédiger la réponse : Account not found".to_string()),
+        )
+    );
 }
 
 #[test]

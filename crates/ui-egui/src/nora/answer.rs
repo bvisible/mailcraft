@@ -13,7 +13,9 @@
 //!
 //! The server is Frappe: a good answer is `{"message": {…}}` with status 200; a refusal
 //! (`frappe.throw`) is status 417 with `_server_messages`, a list written as JSON text of messages
-//! that are each JSON text of an object with a `message`; a crash is status 500 with `exception`.
+//! that are each JSON text of an object with a `message`; a crash is status 500 with `exception`. A
+//! call without a session is status 403 with a page that sends to the sign-in, and one whose CSRF
+//! token is not the session's is status 400 with `exc_type` `CSRFTokenError` and a vague message.
 
 use serde_json::Value;
 
@@ -140,9 +142,18 @@ pub(crate) fn style_started(answer: &NoraAnswer) -> Result<bool, String> {
     }
 }
 
-/// Why the server said no: the first message it shows (Frappe's `_server_messages`), else the last
-/// part of its exception, else the HTTP status.
+/// Why the server said no, as what the person can do about it when that is known: a sign-in that
+/// ended (401 or 403, whatever comes with it: Frappe answers a call without a session with a page that
+/// sends to its sign-in, and Neodesk's shell with nothing), or a page older than the session (its CSRF
+/// token was refused: the person signed in again elsewhere). Otherwise the first message it shows
+/// (Frappe's `_server_messages`), else the last part of its exception, else the HTTP status.
 pub(crate) fn reason(body: &Value, status: u16) -> String {
+    if matches!(status, 401 | 403) {
+        return tl!("your Neoffice session has ended. Reload the page and sign in again.").to_string();
+    }
+    if body.get("exc_type").and_then(Value::as_str) == Some("CSRFTokenError") {
+        return tl!("the page is out of date. Reload it and try again.").to_string();
+    }
     let exception = || {
         let said = body.get("exception")?.as_str()?;
         let last = said.rsplit(": ").next().unwrap_or(said);

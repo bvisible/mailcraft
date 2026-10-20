@@ -49,6 +49,8 @@
 	Show the original	Afficher l’original
 	the message didn't download	le message n’a pas été téléchargé
 	the answer had no text	la réponse ne contenait pas de texte
+	your Neoffice session has ended. Reload the page and sign in again.	votre session Neoffice a pris fin. Actualisez la page et reconnectez-vous.
+	the page is out of date. Reload it and try again.	la page n’est plus à jour. Actualisez-la et réessayez.
 # The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
 	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
 # Contacts made, changed and deleted here in a server's address book (crates/engine/src/cmd/remote_contacts/written.rs, crates/ui-egui/src/pim_rights.rs, the question before a deletion in crates/ui-egui/src/dialogs.rs).
