@@ -282,6 +282,29 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
         // account's server keeps can't be deleted here, and the command says so without asking.
         "people.delete" => {
             let c = mb.contact(params.get("id").and_then(Value::as_u64).or(app.session.sel.contact)?)?;
+            // //// Neoffice — one of a server's address book the account may delete from is deleted there, for everyone who uses it: asked about first, naming the book (one it may not is refused by the command, with the reason).
+            if let Some(book) = mailcraft_engine::cmd::remote_contacts::writable_book_of(mb, c)
+                && mailcraft_engine::cmd::remote_contacts::delete_refusal(mb, c).is_none()
+            {
+                let book = if book.name.trim().is_empty() { book.origin.id.as_str() } else { book.name.trim() };
+                let name = c.name();
+                let what = if name.trim().is_empty() {
+                    crate::i18n::fmt(
+                        tl!("This contact will be deleted from the server's address book \"{book}\", for everyone who uses it."),
+                        &[("book", book)],
+                    )
+                } else {
+                    crate::i18n::fmt(
+                        tl!("\"{name}\" will be deleted from the server's address book \"{book}\", for everyone who uses it."),
+                        &[("name", name.trim()), ("book", book)],
+                    )
+                };
+                return question(
+                    tl!("Delete Contact"),
+                    format!("{what} {}", tl!("An administrator of the server may be able to restore it.")),
+                    tl!("Delete"),
+                );
+            }
             if mailcraft_engine::cmd::remote::keeper(mb, &c.origin).is_some() {
                 return None;
             }

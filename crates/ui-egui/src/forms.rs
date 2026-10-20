@@ -589,6 +589,8 @@ pub(crate) mod kit {
             ui.painter().circle_filled(mark, 4.0, color);
         }
         paint_clipped(ui.painter(), pos2(r.min.x + 22.0, r.center().y), text_w + 2.0, label, regular(11.5), if on { t.text } else { t.text_dim });
+        // //// Neoffice — what a screen reader (and a test) reads of it: its name, and whether it is on.
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, label));
         resp.clicked()
     }
 
@@ -633,6 +635,21 @@ pub(crate) mod kit {
         ui.spacing_mut().item_spacing.x = gap;
     }
 
+    // //// Neoffice — the six categories a new mailbox starts with are named in the interface's language on screen; their names stay as they are, being what items carry.
+    /// A category's name as the window shows it: one of those a mailbox starts with in the interface's language, any
+    /// other as it was named.
+    pub fn category_shown(name: &str) -> &str {
+        match name {
+            "Red category" => tl!("Red category"),
+            "Orange category" => tl!("Orange category"),
+            "Yellow category" => tl!("Yellow category"),
+            "Green category" => tl!("Green category"),
+            "Blue category" => tl!("Blue category"),
+            "Purple category" => tl!("Purple category"),
+            _ => name,
+        }
+    }
+
     /// Toggle chips for the mailbox's categories, and for names the item carries that the
     /// mailbox doesn't list.
     pub fn category_chips(ui: &mut Ui, all: &[Category], chosen: &mut Vec<String>) {
@@ -651,7 +668,8 @@ pub(crate) mod kit {
             ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
             for (name, color) in chips {
                 let on = chosen.iter().any(|c| c.eq_ignore_ascii_case(&name));
-                if chip(ui, &name, on, color) {
+                // //// Neoffice — see `category_shown`.
+                if chip(ui, category_shown(&name), on, color) {
                     chosen.retain(|c| !c.eq_ignore_ascii_case(&name));
                     if !on {
                         chosen.push(name);
@@ -3038,7 +3056,9 @@ mod event {
                             if on {
                                 ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "✓", crate::theme::medium(10.0), egui::Color32::WHITE);
                             }
-                            if ui.add(egui::Button::new(kit::shown(name, 60)).selected(on).min_size(vec2(170.0, 0.0))).clicked() {
+                            // //// Neoffice — see `kit::category_shown`.
+                            if ui.add(egui::Button::new(kit::shown(kit::category_shown(name), 60)).selected(on).min_size(vec2(170.0, 0.0))).clicked()
+                            {
                                 self.categories.retain(|c| !c.eq_ignore_ascii_case(name));
                                 if !on {
                                     self.categories.push(name.clone());
@@ -3207,7 +3227,8 @@ mod event {
                         for name in self.categories.iter().take(100) {
                             let color =
                                 s.mailbox.categories.iter().find(|c| c.name.eq_ignore_ascii_case(name)).map_or(t.text_disabled, |c| c32(c.color));
-                            if chip(ui, &kit::shown(name, 60), true, color) {
+                            // //// Neoffice — see `kit::category_shown`.
+                            if chip(ui, &kit::shown(kit::category_shown(name), 60), true, color) {
                                 off = Some(name.clone());
                             }
                         }
@@ -4502,10 +4523,13 @@ mod contact {
     }
 
     /// The menu that labels an address or a number.
-    fn label_combo(ui: &mut Ui, salt: impl Hash + Debug, label: &mut String, options: &[&str]) {
-        egui::ComboBox::from_id_salt(salt).width(84.0).selected_text(label_text(label)).truncate().show_ui(ui, |ui| {
+    // //// Neoffice — `none`: what a label shows when there is none (a server's card that says no kind of an address): the kind a new one has; it stays none until one is picked.
+    fn label_combo(ui: &mut Ui, salt: impl Hash + Debug, label: &mut String, options: &[&str], none: &str) {
+        let shown = if label.trim().is_empty() { none.to_string() } else { label.clone() };
+        egui::ComboBox::from_id_salt(salt).width(84.0).selected_text(label_text(&shown)).truncate().show_ui(ui, |ui| {
             for option in options {
-                if ui.selectable_label(label.eq_ignore_ascii_case(option), label_text(option)).clicked() {
+                // //// Neoffice — see `none` above: the kind shown is the one ticked.
+                if ui.selectable_label(shown.eq_ignore_ascii_case(option), label_text(option)).clicked() {
                     *label = (*option).to_string();
                 }
             }
@@ -4513,12 +4537,14 @@ mod contact {
     }
 
     /// The rows of e-mail addresses or phone numbers, with a button that adds one more.
-    fn labeled_rows(ui: &mut Ui, pass: &mut Pass, title: &str, key: &'static str, rows: &mut Vec<Labeled>, labels: &[&str], more: &str) {
+    // //// Neoffice — `none`: see `label_combo`.
+    fn labeled_rows(ui: &mut Ui, pass: &mut Pass, title: &str, key: &'static str, rows: &mut Vec<Labeled>, labels: &[&str], none: &str, more: &str) {
         let count = rows.len();
         let mut add = false;
         for (i, entry) in rows.iter_mut().enumerate() {
             row(ui, if i == 0 { title } else { "" }, |ui| {
-                label_combo(ui, (key, "label", i), &mut entry.label, labels);
+                // //// Neoffice — see `none` above.
+                label_combo(ui, (key, "label", i), &mut entry.label, labels, none);
                 let last = i + 1 == count && count < MAX_ROWS;
                 // Every row leaves the room the button takes, so the fields line up.
                 let width = ui.available_width() - 30.0;
@@ -4713,13 +4739,14 @@ mod contact {
                         pass.text(ui, "department", &mut self.department, f32::INFINITY, "");
                     });
                 }
-                labeled_rows(ui, &mut pass, tl!("E-mail"), "email", &mut self.emails, &EMAIL_LABELS, tl!("Add another e-mail address"));
+                // //// Neoffice — an address of no kind shows the kind a new one has, a number the one that says nothing more of it.
+                labeled_rows(ui, &mut pass, tl!("E-mail"), "email", &mut self.emails, &EMAIL_LABELS, "work", tl!("Add another e-mail address"));
                 // //// Neoffice — see `keeps`: the labels a phone number keeps there.
                 let phone_labels = keeps.phone_labels(&PHONE_LABELS);
-                labeled_rows(ui, &mut pass, tl!("Phone"), "phone", &mut self.phones, phone_labels, tl!("Add another phone number"));
+                labeled_rows(ui, &mut pass, tl!("Phone"), "phone", &mut self.phones, phone_labels, "other", tl!("Add another phone number"));
                 // //// Neoffice — see `keeps`.
                 if keeps.everything {
-                    row(ui, tl!("Address"), |ui| label_combo(ui, "address_label", &mut self.address.label, &ADDRESS_LABELS));
+                    row(ui, tl!("Address"), |ui| label_combo(ui, "address_label", &mut self.address.label, &ADDRESS_LABELS, "work"));
                     tall_row(ui, tl!("Street"), |ui| {
                         multiline(ui, "street", &mut self.address.street, 2);
                     });

@@ -150,3 +150,89 @@ fn the_engines_reasons_and_the_tables_are_the_same_strings() {
     assert_eq!(REASONS, [remote_contacts::NO_KEEPING, remote_contacts::NO_ADDING, remote_contacts::NO_CHANGING, remote_contacts::NO_DELETING]);
     assert_eq!(KEEPS_ONLY, remote_contacts::NO_KEEPING);
 }
+
+#[test]
+fn deleting_a_contact_of_a_servers_book_is_asked_about_first_naming_it_and_where_it_goes() {
+    let (mut s, account) = session();
+    // Cy, in Grace's book (she may only read it).
+    let cy = RemoteContact {
+        id: "c-cy".into(),
+        book: "grace".into(),
+        first: "Cy".into(),
+        emails: vec![Labeled::new("", "cy@example.org")],
+        ..Default::default()
+    };
+    let bob = RemoteContact {
+        id: "c-bob".into(),
+        book: "team".into(),
+        first: "Bob".into(),
+        emails: vec![Labeled::new("", "bob@example.org")],
+        ..Default::default()
+    };
+    remote_contacts_apply(&mut s, account, vec![bob, cy]);
+    let (bob, cy) = (contact(&s, "Bob"), contact(&s, "Cy"));
+    let mut app = MailApp::new(s, Services::default());
+    app.autosave = false;
+    // By the person: asked first, the contact and the book named, and where it goes said.
+    assert_eq!(app.run("people.delete", json!({"id": bob})).unwrap()["pending"], "confirm");
+    let Some(crate::dialogs::Dialog::Confirm { ask, command, .. }) = &app.dialog else { panic!("no question") };
+    assert_eq!((command.as_str(), ask.title.as_str(), ask.action.as_str()), ("people.delete", "Delete Contact", "Delete"));
+    assert_eq!(
+        ask.text,
+        "\"Bob\" will be deleted from the server's address book \"Team\", for everyone who uses it. An administrator of the server may be able to restore it."
+    );
+    // Cancelled: still here, nothing noted. Confirmed: gone, and noted for the server.
+    app.dialog = None;
+    assert!(app.session.mailbox.contact(bob).is_some() && app.session.mailbox.contact_changes.is_empty());
+    app.run("people.delete", json!({"id": bob, "confirmed": true})).unwrap();
+    assert!(app.session.mailbox.contact(bob).is_none() && app.session.mailbox.contact_changes.len() == 1);
+    // One of a book it may only read is not asked about: the command says why.
+    let refused = app.run("people.delete", json!({"id": cy})).unwrap_err();
+    assert!(refused.contains("Your rights do not let you change this contact"), "{refused}");
+    // On screen, in French.
+    crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+    let (s, _) = session();
+    let bob = contact(&s, "Bob");
+    let mut app = MailApp::new(s, Services::default());
+    app.autosave = false;
+    app.run("people.delete", json!({"id": bob})).unwrap();
+    let Some(crate::dialogs::Dialog::Confirm { ask, .. }) = &app.dialog else { panic!("no question") };
+    let french = ask.text.clone();
+    crate::i18n::set_current(crate::i18n::Lang::English);
+    assert!(french.contains("Bob") && french.contains("Team") && !french.contains("will be deleted"), "{french}");
+}
+
+#[test]
+fn the_contact_form_names_the_categories_in_the_interfaces_language() {
+    let (s, _) = session();
+    let bob = contact(&s, "Bob");
+    let mut app = MailApp::new(s, Services::default());
+    app.autosave = false;
+    app.execute("ui.language", json!({"value": "fr"})).unwrap();
+    app.execute("ui.dialog", json!({"name": "editContact", "id": bob})).unwrap();
+    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
+        |ui, app: &mut MailApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    let french = crate::i18n::Lang::from_tag("fr").unwrap();
+    let (in_english, in_french) = (h.query_by_label("Red category").is_some(), h.query_by_label(crate::i18n::t_in(french, "Red category")).is_some());
+    // What the contact carries is the name as it is.
+    let carried = h.state().session.mailbox.categories.first().map(|c| c.name.clone());
+    crate::i18n::set_current(crate::i18n::Lang::English);
+    assert!(!in_english && in_french, "the chips in French");
+    assert_eq!(carried.as_deref(), Some("Red category"));
+}
+
+#[test]
+fn an_address_whose_kind_the_server_says_nothing_of_shows_the_kind_a_new_one_has() {
+    let (s, _) = session();
+    let bob = contact(&s, "Bob");
+    assert_eq!(s.mailbox.contact(bob).map(|c| c.emails[0].label.clone()), Some(String::new()), "the server says no kind");
+    let h = dialog(s, "editContact", json!({"id": bob}));
+    assert!(h.query_by_value("Work").is_some(), "the e-mail's kind shown as a new contact's is");
+}

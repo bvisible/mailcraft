@@ -51,7 +51,10 @@
 	the answer had no text	la réponse ne contenait pas de texte
 # The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
 	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
-# Contacts made, changed and deleted here in a server's address book (crates/engine/src/cmd/remote_contacts/written.rs, crates/ui-egui/src/pim_rights.rs).
+# Contacts made, changed and deleted here in a server's address book (crates/engine/src/cmd/remote_contacts/written.rs, crates/ui-egui/src/pim_rights.rs, the question before a deletion in crates/ui-egui/src/dialogs.rs).
+	This contact will be deleted from the server's address book "{book}", for everyone who uses it.	Ce contact sera supprimé du carnet d’adresses du serveur « {book} », pour tous ceux qui l’utilisent.
+	"{name}" will be deleted from the server's address book "{book}", for everyone who uses it.	« {name} » sera supprimé du carnet d’adresses du serveur « {book} », pour tous ceux qui l’utilisent.
+	An administrator of the server may be able to restore it.	Un administrateur du serveur pourra peut-être le restaurer.
 	Address book	Carnet d’adresses
 	This page keeps no categories or favorites: they would be gone at the next visit	Cette page ne conserve ni catégories ni favoris : ils seraient perdus à la prochaine visite
 	Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers	Son carnet d’adresses ne conserve que le nom, la société, la fonction, les adresses e-mail et les numéros de téléphone d’un contact
@@ -59,6 +62,13 @@
 	Apply Sent Contact Changes	Appliquer les modifications de contacts envoyées
 	The contact changes couldn't be taken in	Les modifications de contacts n’ont pas pu être prises en compte
 	A contact change couldn't be sent yet and will be tried again	Une modification de contact n’a pas encore pu être envoyée et sera réessayée
+# The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
+	Red category	Catégorie rouge
+	Orange category	Catégorie orange
+	Yellow category	Catégorie jaune
+	Green category	Catégorie verte
+	Blue category	Catégorie bleue
+	Purple category	Catégorie violette
 # File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
 	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
 	Change them on the site	Modifier les signatures sur le site
