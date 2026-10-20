@@ -983,3 +983,13 @@ fn deleting_a_jmap_message_for_good_says_it_goes_from_the_server_too_where_the_w
     app.services.jmap = None;
     assert_eq!(asked(&app).as_deref(), Some("This message will be deleted for good."));
 }
+
+/// What the engine says of a JMAP account's mail follows the window's runners from the start, before any frame or command.
+#[test]
+fn a_window_with_a_jmap_runner_tells_the_engine_so_from_the_start() {
+    let services = Services { jmap: Some(Box::new(|_: JmapJob| mpsc::channel().1)), ..Default::default() };
+    let app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), services);
+    assert!(app.session.jmap_runs);
+    let app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
+    assert!(!app.session.jmap_runs);
+}

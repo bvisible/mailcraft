@@ -1216,6 +1216,10 @@ pub struct MailApp {
 impl MailApp {
     pub fn new(session: Session, services: Services) -> Self {
         let saved_rev = session.rev();
+        // //// Neoffice — the engine knows from the start whether this window runs a JMAP account's Send/Receive (as in
+        // `execute` and each frame).
+        let mut session = session;
+        session.jmap_runs = services.can_run(mailcraft_model::AccountKind::Jmap);
         MailApp {
             session,
             ui: UiState::default(),
