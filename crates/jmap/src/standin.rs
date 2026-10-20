@@ -87,7 +87,7 @@ mod outgoing;
 mod pim;
 mod set;
 
-pub use demo::{DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
+pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 pub use pim::{Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT};
@@ -655,6 +655,7 @@ impl Data {
             "Mailbox/set" if self.profile.fixed_mailboxes => Some(MAIL),
             "Identity/get" | "EmailSubmission/set" if self.submission && using.contains(&SUBMISSION) => Some(MAIL),
             "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" | "CalendarEvent/set" if self.pim.calendars => Some(CALENDARS),
+            "ParticipantIdentity/get" if self.pim.calendars && self.pim.says_identities => Some(CALENDARS),
             "AddressBook/get" | "ContactCard/query" | "ContactCard/get" if self.pim.contacts => Some(CONTACTS),
             _ => None,
         };
@@ -674,6 +675,7 @@ impl Data {
             "Identity/get" => self.identity_get(&args),
             "EmailSubmission/set" => self.submission_set(&args),
             "Calendar/get" => self.pim.calendar_get(&args),
+            "ParticipantIdentity/get" => self.pim.participant_identity_get(&args),
             "CalendarEvent/query" => self.pim.event_query(&args),
             "CalendarEvent/get" => self.pim.event_get(&args, self.max_get),
             "CalendarEvent/set" => self.pim.event_set(&args, self.max_set),

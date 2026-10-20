@@ -56,6 +56,8 @@ pub const MAX_PIM_ADDRESSES: usize = 20;
 /// Most problem lines one answer carries, and the longest of them, in characters.
 pub const MAX_PIM_ERRORS: usize = 50;
 const MAX_PIM_LINE: usize = 600;
+/// The longest address of the person's identities that is taken, in characters.
+const MAX_ADDRESS: usize = 1_000;
 
 /// What a calendar job of a [`crate::AccountKind::Jmap`] account is asked to do: list the account's
 /// calendars when `lists` says so, and bring the events of the calendars in `asks` between `from` and
@@ -195,6 +197,11 @@ pub struct JmapPimResult {
     /// were; one without an outcome was not tried, and waits as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uploaded: Option<EventsUploaded>,
+    /// The addresses the server knows the person by in events (JMAP for Calendars' participant identities: an alias,
+    /// the one what they make is organized under), in lower case, when it said; `None` when it was not asked, or said
+    /// nothing. They are the person's as the accounts' addresses are ([`JmapPimRequest::me`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identities: Option<Vec<String>>,
 }
 
 impl JmapPimResult {
@@ -227,6 +234,17 @@ impl JmapPimResult {
         if let Some(uploaded) = &mut self.uploaded {
             uploaded.outcomes.truncate(MAX_EVENT_OPS);
             uploaded.outcomes.iter_mut().for_each(crate::remote::EventOutcome::tidy);
+        }
+        if let Some(identities) = &mut self.identities {
+            let mut kept: Vec<String> = Vec::new();
+            for address in identities.iter().map(|address| address.trim().to_lowercase()) {
+                let fits =
+                    address.contains('@') && !address.chars().any(|c| c.is_whitespace() || c.is_control()) && address.chars().count() <= MAX_ADDRESS;
+                if fits && !kept.contains(&address) && kept.len() < MAX_PIM_ADDRESSES {
+                    kept.push(address);
+                }
+            }
+            *identities = kept;
         }
     }
 
@@ -283,6 +301,7 @@ impl std::fmt::Debug for JmapPimResult {
             .field("auth_refused", &self.auth_refused)
             .field("stopped", &self.stopped)
             .field("uploaded", &self.uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()))
+            .field("identities", &self.identities.as_ref().map(Vec::len))
             .finish()
     }
 }
@@ -402,6 +421,7 @@ mod tests {
                 outcomes: vec![EventOutcome { result: EventResult::Refused, error: format!("Not written here for {ME}"), ..Default::default() }],
                 token_refused: false,
             }),
+            identities: None,
         }
     }
 
@@ -456,8 +476,34 @@ mod tests {
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1) }"
+            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1), identities: None }"
         );
+        // The person's identities are counted, never shown.
+        let known = JmapPimResult { identities: Some(vec!["hello@example.org".into()]), ..JmapPimResult::default() };
+        let shown = format!("{known:?}");
+        assert!(shown.contains("identities: Some(1)") && !shown.contains("hello"), "{shown}");
+    }
+
+    #[test]
+    fn the_persons_identities_are_addresses_in_lower_case_each_once_and_few() {
+        let mut said = JmapPimResult {
+            identities: Some(
+                ["Hello@Example.org", " hello@example.org ", "no address", "two words@example.org", "x\u{0}@example.org", ""]
+                    .into_iter()
+                    .map(String::from)
+                    .chain((0..2 * MAX_PIM_ADDRESSES).map(|n| format!("alias{n}@example.org")))
+                    .collect(),
+            ),
+            ..JmapPimResult::default()
+        };
+        said.tidy();
+        let kept = said.identities.clone().unwrap();
+        assert_eq!(kept.first().map(String::as_str), Some("hello@example.org"));
+        assert_eq!(kept.len(), MAX_PIM_ADDRESSES);
+        assert!(kept.iter().all(|address| address.contains('@') && !address.contains(' ') && address == &address.to_lowercase()));
+        said.tidy();
+        assert_eq!(said.identities, Some(kept), "tidy twice changes nothing more");
+        assert!(round_trip(&said).contains(r#""identities":["hello@example.org""#));
     }
 
     #[test]

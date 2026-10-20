@@ -214,8 +214,9 @@ impl Pim {
         }))
     }
 
-    /// The person's own addresses, in lower case: those a test names, else the stand-in's user.
-    fn own(&self) -> Vec<String> {
+    /// The person's own addresses, in lower case: those a test names, else the stand-in's user. The first is the one
+    /// what they make is organized under.
+    pub(in crate::standin) fn own(&self) -> Vec<String> {
         let own: Vec<String> = self.own.iter().map(|a| a.trim().to_ascii_lowercase()).filter(|a| !a.is_empty()).collect();
         if own.is_empty() { vec![USER.to_string()] } else { own }
     }

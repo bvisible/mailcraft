@@ -14,6 +14,8 @@
 //!   (`myRights`: `mayWriteAll` says whether its events may be written; a calendar where only the account's own
 //!   events may be is not one), one of them the default (the first flagged among those whose events may be written,
 //!   else the first of those, else the first flagged, else the first), its colour as `#rrggbb` or `null`.
+//! - **`ParticipantIdentity/get`** lists the person's own addresses ([`Pim::own`], the first the default) as
+//!   participant identities, `mailto:` addresses, unless [`Pim::says_identities`] is off (`unknownMethod`).
 //! - **`CalendarEvent/query`** takes a stretch it requires (`after` and `before`, UTC, 500 days at most) and the
 //!   calendars to look in (`inCalendars`, by id; names it doesn't have find nothing), and no other filter, no sort
 //!   and no anchor; it lists the events that overlap the stretch by their start, each occurrence of a series apart
@@ -312,9 +314,11 @@ pub struct Pim {
     pub card_limit: usize,
     /// A query of the cards says their state (`queryState`).
     pub says_state: bool,
-    /// The person's own addresses: the organizer of what they make, and the participant who answers (none: the
-    /// stand-in's user).
+    /// The person's own addresses (their participant identities, the first the default): the organizer of what they
+    /// make, the participant who answers, and what `ParticipantIdentity/get` serves (none: the stand-in's user).
     pub own: Vec<String>,
+    /// The server answers `ParticipantIdentity/get`; off: it knows no such method (`unknownMethod`).
+    pub says_identities: bool,
     /// The mail the server sent about events, oldest first.
     pub scheduled: Vec<Scheduled>,
     /// The changes it was sent, as they came (the id of the event or occurrence, and the patch), oldest first.
@@ -350,6 +354,7 @@ impl Default for Pim {
             card_limit: MAX_CARDS,
             says_state: true,
             own: Vec::new(),
+            says_identities: true,
             scheduled: Vec::new(),
             written: Vec::new(),
             refused_events: BTreeMap::new(),
@@ -504,6 +509,29 @@ impl Pim {
             }));
         }
         let found: Vec<&str> = list.iter().filter_map(|c| c["id"].as_str()).collect();
+        let not_found: Vec<&String> = wanted.iter().flatten().filter(|id| !found.contains(&id.as_str())).collect();
+        Ok(json!({"accountId": ACCOUNT, "state": "0", "list": list, "notFound": not_found}))
+    }
+
+    /// `ParticipantIdentity/get`: the person's own addresses as participant identities (every one, `ids: null`, or
+    /// those named), the first the default.
+    pub(super) fn participant_identity_get(&self, args: &Map<String, Value>) -> Outcome<Value> {
+        allow_only(args, &["accountId", "ids", "properties"])?;
+        account(args)?;
+        let wanted: Option<Vec<String>> = match args.get("ids") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(ids)) if ids.len() > MAX_NAMED => return Err(refuse("requestTooLarge", "too many ids")),
+            Some(Value::Array(ids)) => Some(ids.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+            Some(_) => return Err(invalid("ids is a list, or null")),
+        };
+        let list: Vec<Value> = self
+            .own()
+            .iter()
+            .enumerate()
+            .map(|(n, address)| json!({"id": format!("I{n}"), "name": "", "calendarAddress": format!("mailto:{address}"), "isDefault": n == 0}))
+            .filter(|identity| wanted.as_ref().is_none_or(|wanted| identity["id"].as_str().is_some_and(|id| wanted.iter().any(|w| w == id))))
+            .collect();
+        let found: Vec<&str> = list.iter().filter_map(|identity| identity["id"].as_str()).collect();
         let not_found: Vec<&String> = wanted.iter().flatten().filter(|id| !found.contains(&id.as_str())).collect();
         Ok(json!({"accountId": ACCOUNT, "state": "0", "list": list, "notFound": not_found}))
     }

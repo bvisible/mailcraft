@@ -523,7 +523,7 @@ fn a_401_mid_job_ends_the_job_and_leaves_the_rest_unanswered() {
 #[test]
 fn a_create_whose_answer_was_lost_is_found_again_by_its_uid_and_not_made_twice() {
     let server = server();
-    server.with(|d| d.lost_answers = 1);
+    server.with(|d| d.faults.push_back(Fault::on("CalendarEvent/set", Effect::LoseAnswer)));
     let op = create("mc-lost", "Physio", utc(23, 15, 0));
     let first = run(&server, &job(vec![op.clone()]));
     assert_eq!(outcomes(&first)[0].0, EventResult::Failed);
@@ -811,6 +811,28 @@ fn an_answer_is_the_servers_participants_map_with_the_persons_status_set() {
 }
 
 #[test]
+fn an_answer_by_an_identity_the_server_knows_her_by_is_hers_and_a_server_without_them_still_writes() {
+    let server = server();
+    // Ada is invited to Grace's planning by an alias of hers that no mailbox of the window has.
+    server.with(|d| {
+        d.pim.own = vec![ME.into(), "a.lovelace@example.org".into()];
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["calendarAddress"] = json!("mailto:a.lovelace@example.org");
+    });
+    let result = run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Accepted, false)]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done, "{result:?}");
+    assert_eq!(status_of_ada(&server), "accepted");
+    assert_eq!(result.identities.as_ref().map(Vec::len), Some(2), "asked first, as the writing needs them");
+    // A server that doesn't know the method: the job goes on with the addresses it has (and finds no entry of hers).
+    server.with(|d| d.pim.says_identities = false);
+    let result = run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Tentative, false)]));
+    assert_eq!(outcomes(&result)[0], (EventResult::Refused, "you are not among the people invited to it".to_string()));
+    let lunch = run(&server, &job(vec![update(&Pim::event_id("lunch"), title("Lunch (late)"))]));
+    assert_eq!(outcomes(&lunch)[0].0, EventResult::Done);
+    assert!(lunch.identities.is_none() && lunch.errors.is_empty(), "{lunch:?}");
+}
+
+#[test]
 fn an_answer_with_send_asks_the_server_to_tell_the_organizer_and_one_without_does_not() {
     let server = server();
     run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Tentative, false)]));
@@ -888,8 +910,13 @@ fn a_write_to_an_event_of_a_series_is_never_sent_before_the_master_was_read() {
     let methods: Vec<(String, Option<usize>)> = server.asked().into_iter().map(|a| (a.method, a.ids)).collect();
     assert_eq!(
         methods,
-        [("CalendarEvent/get".to_string(), Some(1)), ("CalendarEvent/get".to_string(), Some(1)), ("CalendarEvent/set".to_string(), None)],
-        "the occurrence, its series, then the write"
+        [
+            ("ParticipantIdentity/get".to_string(), None),
+            ("CalendarEvent/get".to_string(), Some(1)),
+            ("CalendarEvent/get".to_string(), Some(1)),
+            ("CalendarEvent/set".to_string(), None)
+        ],
+        "the person's identities, the occurrence, its series, then the write"
     );
     // A series that can't be read just now: nothing is written, and the change waits.
     server.with(|d| {

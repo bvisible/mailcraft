@@ -124,16 +124,16 @@ fn the_main_calendar_is_the_default_one_else_the_first_writable_else_the_first()
 }
 
 #[test]
-fn the_window_is_asked_in_one_request_of_three_calls() {
+fn the_window_is_asked_in_one_request_of_the_identities_the_list_and_the_events() {
     let server = server();
     let result = run(&server, &request());
     let requests: Vec<_> = server.seen().into_iter().filter(|s| s.path == "/jmap/api").collect();
     assert_eq!(requests.len(), 1, "{requests:?}");
-    assert_eq!(requests[0].calls, ["Calendar/get", "CalendarEvent/query", "CalendarEvent/get"]);
+    assert_eq!(requests[0].calls, ["ParticipantIdentity/get", "Calendar/get", "CalendarEvent/query", "CalendarEvent/get"]);
     // The query is for every calendar (the main one has no name here yet), the get of what it found by reference.
     let asked = server.asked();
-    assert_eq!((asked[1].limit, asked[2].ids), (Some(200), Some(3)));
-    assert!(asked[2].properties.iter().any(|p| p == "utcStart") && !asked[2].properties.iter().any(|p| p == "keywords"));
+    assert_eq!((asked[2].limit, asked[3].ids), (Some(200), Some(3)));
+    assert!(asked[3].properties.iter().any(|p| p == "utcStart") && !asked[3].properties.iter().any(|p| p == "keywords"));
     // What is not asked for is left out: the team's stand-up is in a calendar the job did not ask about.
     let main = result.events.as_ref().unwrap();
     assert_eq!((main.calendar.as_str(), main.complete), ("", true));
@@ -148,7 +148,7 @@ fn a_job_with_the_main_calendars_name_asks_by_name_and_without_the_list() {
     let result = run(&server, &request);
     let requests: Vec<_> = server.seen().into_iter().filter(|s| s.path == "/jmap/api").collect();
     assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].calls, ["CalendarEvent/query", "CalendarEvent/get"]);
+    assert_eq!(requests[0].calls, ["ParticipantIdentity/get", "CalendarEvent/query", "CalendarEvent/get"]);
     assert!(result.calendars.is_none(), "no list was asked for");
     assert_eq!(titles(result.events.as_ref().unwrap()), ["Book fair", "Budget review"]);
     assert_eq!(titles(more(&result, &Pim::calendar_id("team"))), ["Team stand-up"]);
@@ -166,7 +166,7 @@ fn only_the_asked_calendars_are_queried() {
     assert_eq!(titles(&result.more_events[0]), ["Team stand-up"]);
     // The query named the calendar: what it found, and the get read, is its one event.
     let asked = server.asked();
-    assert_eq!((asked[1].method.as_str(), asked[1].ids), ("CalendarEvent/get", Some(1)), "{asked:?}");
+    assert_eq!((asked[2].method.as_str(), asked[2].ids), ("CalendarEvent/get", Some(1)), "{asked:?}");
 }
 
 #[test]
@@ -251,7 +251,8 @@ fn a_server_that_takes_one_call_at_a_time_is_asked_in_turn() {
     server.with(|d| d.max_calls = 1);
     let result = run(&server, &request());
     let calls: Vec<Vec<String>> = server.seen().into_iter().filter(|s| s.path == "/jmap/api").map(|s| s.calls).collect();
-    assert_eq!(calls, [vec!["Calendar/get".to_string()], vec!["CalendarEvent/query".to_string()], vec!["CalendarEvent/get".to_string()]]);
+    let one = |method: &str| vec![method.to_string()];
+    assert_eq!(calls, [one("ParticipantIdentity/get"), one("Calendar/get"), one("CalendarEvent/query"), one("CalendarEvent/get")]);
     assert_eq!(titles(result.events.as_ref().unwrap()), ["Book fair", "Budget review"]);
     assert!(result.events.unwrap().complete);
 }
@@ -628,4 +629,75 @@ fn one_day_the_person_declined_alone_is_left_out_of_a_whole_download_of_a_series
     // Eleven in Zurich: nine UTC on the 13th, ten on the 27th (winter time); the 20th is out.
     assert_eq!(days, [at(13, 9), at(27, 10)]);
     assert!(main.events.iter().filter(|e| e.series == Pim::event_id("sync")).all(|e| e.kind == RemoteEventKind::Occurrence));
+}
+
+// The person's participant identities.
+
+/// The server knows Ada by the address what she makes is organized under (`hello@example.org`, its default identity),
+/// which no mailbox of hers has, and by her own.
+fn with_identity(server: &StandIn) {
+    server.with(|d| d.pim.own = vec!["hello@example.org".into(), ME.into()]);
+}
+
+/// The event of `title` the job's main download brought.
+fn read_one(result: &JmapPimResult, title: &str) -> Option<RemoteEvent> {
+    result.events.as_ref().and_then(|download| download.events.iter().find(|e| e.title == title).cloned())
+}
+
+#[test]
+fn an_event_organized_under_the_persons_identity_reads_as_hers_and_a_server_without_them_still_reads() {
+    let server = server();
+    with_identity(&server);
+    server.with(|d| {
+        d.pim.add_event(
+            Event::timed("dentist", "ada", "Dentist", "2026-10-15T14:00:00", Some("Europe/Zurich"), "PT30M")
+                .with("organizerCalendarAddress", json!("mailto:hello@example.org"))
+                .with("participants", json!({"o": participant("hello@example.org", json!({"owner": true}), "accepted")})),
+        );
+    });
+    let result = run(&server, &request());
+    assert_eq!(result.identities, Some(vec!["hello@example.org".to_string(), ME.to_string()]));
+    assert_eq!(read_one(&result, "Dentist").map(|e| e.is_organizer), Some(Some(true)), "hers");
+    // A server that doesn't know the method: the job reads as before, says nothing of it, and the event is somebody else's.
+    server.with(|d| d.pim.says_identities = false);
+    let result = run(&server, &request());
+    assert!(result.identities.is_none() && result.errors.is_empty(), "{result:?}");
+    assert_eq!(read_one(&result, "Dentist").map(|e| e.is_organizer), Some(Some(false)));
+    assert!(result.events.as_ref().is_some_and(|download| download.complete));
+}
+
+#[test]
+fn a_meeting_she_organizes_under_her_identity_stays_whatever_her_own_entry_says() {
+    let server = server();
+    with_identity(&server);
+    server.with(|d| {
+        d.pim.add_event(
+            Event::timed("kickoff", "ada", "Kick-off", "2026-10-16T10:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("organizerCalendarAddress", json!("mailto:hello@example.org"))
+                .with(
+                    "participants",
+                    json!({
+                        "o": participant("hello@example.org", json!({"owner": true}), "accepted"),
+                        "z": participant(ME, json!({"attendee": true}), "declined"),
+                        "b": participant("bob@example.org", json!({"attendee": true}), "accepted"),
+                    }),
+                ),
+        );
+    });
+    assert!(read_one(&run(&server, &request()), "Kick-off").is_some_and(|e| e.is_organizer == Some(true)));
+    // Not known as hers (the server says no identities): somebody else's, declined, and left out.
+    server.with(|d| d.pim.says_identities = false);
+    assert!(read_one(&run(&server, &request()), "Kick-off").is_none());
+}
+
+#[test]
+fn the_identities_go_by_themselves_when_the_first_request_has_no_room_for_them() {
+    let server = server();
+    with_identity(&server);
+    server.with(|d| d.max_calls = 3);
+    let result = run(&server, &request());
+    let calls: Vec<Vec<String>> = server.seen().into_iter().filter(|s| s.path == "/jmap/api").map(|s| s.calls).collect();
+    assert_eq!(calls.first().map(Vec::as_slice), Some(["ParticipantIdentity/get".to_string()].as_slice()), "{calls:?}");
+    assert_eq!(calls.get(1).map(Vec::len), Some(3), "then the list and the events, as before");
+    assert_eq!(result.identities.map(|found| found.len()), Some(2));
 }

@@ -34,7 +34,7 @@ pub mod write;
 use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 
-use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, PimOffers};
+use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, PimOffers};
 use mailcraft_time::{DateTime, Timestamp, format_iso_utc, parse_iso};
 use serde_json::{Map, Value};
 
@@ -58,11 +58,21 @@ pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, can
     let mut going = true;
     match client.calendars_account() {
         Some(account) => {
+            // The addresses the server knows the person by in events (an alias, the one what they make is organized
+            // under) are the person's too: asked for first when there is something to write, which needs them, else
+            // with the first request of the reading.
+            let writes = WRITE_EVENTS && request.changes.as_ref().is_some_and(|changes| !changes.ops.is_empty());
+            let identities = if writes { calendars::identities(client, account, cancel).await } else { None };
+            let widened = identities.as_ref().map(|found| with_identities(request, found));
+            let request = widened.as_ref().unwrap_or(request);
             if WRITE_EVENTS {
                 going = push::push(client, request, account, cancel, &mut out).await;
             }
             if going {
-                going = calendars::read(client, request, account, cancel, &mut out).await;
+                going = calendars::read(client, request, account, cancel, &mut out, !writes).await;
+            }
+            if out.identities.is_none() {
+                out.identities = identities;
             }
         }
         None => log::debug!("jmap pim: the session offers no calendars"),
@@ -87,6 +97,18 @@ pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, can
         out.auth_refused
     );
     out
+}
+
+/// `request` with the person's `identities` among the addresses it knows them by ([`JmapPimRequest::me`]), each once,
+/// [`MAX_PIM_ADDRESSES`] in all.
+fn with_identities(request: &JmapPimRequest, identities: &[String]) -> JmapPimRequest {
+    let mut widened = request.clone();
+    for address in identities {
+        if widened.me.len() < MAX_PIM_ADDRESSES && !widened.me.iter().any(|have| have.trim().eq_ignore_ascii_case(address)) {
+            widened.me.push(address.clone());
+        }
+    }
+    widened
 }
 
 /// The answer to a job that could not begin: signing in to the server (`Client::connect`) failed with `error`. What

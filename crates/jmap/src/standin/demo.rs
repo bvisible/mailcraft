@@ -19,6 +19,9 @@
 //!   office numbers, a second address.
 //! - **Partners**, which she may only read: a few people of other firms.
 //!
+//! The server knows Ada by an alias too ([`DEMO_ALIAS`], a participant identity of hers that no mailbox of the page
+//! has).
+//!
 //! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it. For
 //! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar, and
 //! [`crowd_cards`] as many cards as asked to the team's book.
@@ -41,8 +44,10 @@ const LAST_NAMES: [&str; 15] = [
 ];
 const TITLES: [&str; 5] = ["Project manager", "Accountant", "Site foreman", "Architect", "Sales"];
 
-/// The person the demo is for: the address a hosting page hands the window for it.
+/// The person the demo is for: the address a hosting page hands the window for it; and another address the server
+/// knows her by in events (a participant identity of hers), which no mailbox of the page has.
 pub const DEMO_PERSON: &str = "ada@example.org";
+pub const DEMO_ALIAS: &str = "a.marlow@example.org";
 
 /// A stand-in filled with the demo around `today` (see the module).
 pub fn demo(today: Date) -> StandIn {
@@ -79,8 +84,8 @@ pub fn demo(today: Date) -> StandIn {
         // The calendars.
         let pim = &mut d.pim;
         *pim = Pim::offered();
-        // What is made here is Ada's, and her answers are hers.
-        pim.own = vec![DEMO_PERSON.into()];
+        // What is made here is Ada's, and her answers are hers; the server knows her by an alias too.
+        pim.own = vec![DEMO_PERSON.into(), DEMO_ALIAS.into()];
         pim.add_calendar(Calendar { flagged: true, color: Some("#2E8B57".into()), ..Calendar::new("ada", "Ada Marlow", true) });
         pim.add_calendar(Calendar { color: Some("#E07B1F".into()), ..Calendar::new("team", "Team", true) });
         pim.add_calendar(Calendar { color: Some("#7E57C2".into()), ..Calendar::new("grace", "Grace Okafor", false) });

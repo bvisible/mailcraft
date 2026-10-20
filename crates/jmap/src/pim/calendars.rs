@@ -27,6 +27,13 @@
 //! A server that takes fewer calls in a request is asked in more requests: the list alone, then the query and its
 //! `get`, or the query alone and then the `get` of the ids it gave.
 //!
+//! **The person's identities.** The first request asks too for the addresses the server knows the person by in events
+//! (`ParticipantIdentity/get`: an alias, the identity what they make is organized under), in a request of their own when
+//! there is no room in it, and not at all when the job asked for them before it wrote ([`identities`]). Their
+//! `calendarAddress`es are the person's as the request's addresses are: who organizes an event, which entry is the
+//! person's own, and what they answered are read with them; and they come back with the answer (`identities`). A server
+//! that doesn't know the method, or won't tell, leaves the addresses as they were.
+//!
 //! **What comes back.** The list ([`CalendarsDownload`], complete when it was read): each calendar with its name,
 //! its colour (`#rrggbb`, `#rgb` or a CSS name, else none), read-only unless the account may write all of its events
 //! (`myRights.mayWriteAll`; one it may write only its own events in is read-only here, as the server will write only
@@ -125,10 +132,22 @@ const EVENT_PROPERTIES: [&str; 28] = [
 /// Read the calendars of the account `request` is for, as it says (see the module documentation), into `out`; the
 /// calendars are in the account `account` of the session. Whether the job may go on: not after a stop, a refusal of
 /// the credentials or a busy server, which `out` then says.
-pub(super) async fn read<H: Http>(client: &Client<H>, request: &JmapPimRequest, account: &str, cancel: &AtomicBool, out: &mut JmapPimResult) -> bool {
+/// `ask_identities`: the person's participant identities are asked for in the first request (see [`identities`]); not
+/// when they were asked for before in the job, and are among `request.me` already.
+pub(super) async fn read<H: Http>(
+    client: &Client<H>,
+    request: &JmapPimRequest,
+    account: &str,
+    cancel: &AtomicBool,
+    out: &mut JmapPimResult,
+    ask_identities: bool,
+) -> bool {
     let job = Job::new(client, request, account, cancel);
-    let mut got = Gathered::new();
+    let mut got = Gathered::new(job.me.clone(), ask_identities);
     let stop = job.run(&mut got).await.err();
+    if got.identities.is_some() {
+        out.identities = got.identities.take();
+    }
     let going = matches!(stop, None | Some(Stop::Failed(_)));
     match stop {
         None => {}
@@ -153,6 +172,12 @@ struct Ask {
 
 /// What the job has read so far.
 struct Gathered {
+    /// The addresses events are read with: the person's (the job's `me`), and the identities the server knows them by
+    /// in events, once it said.
+    me: Vec<String>,
+    /// The identities are to be asked for, and what the server said of them (`None` until it did).
+    wants_identities: bool,
+    identities: Option<Vec<String>>,
     /// The calendars listed, when they were; `None` when the list was not asked for, or could not be read.
     listed: Option<Vec<Listed>>,
     /// Why the list could not be read, when it was asked for.
@@ -177,8 +202,11 @@ struct Gathered {
 }
 
 impl Gathered {
-    fn new() -> Gathered {
+    fn new(me: Vec<String>, wants_identities: bool) -> Gathered {
         Gathered {
+            me,
+            wants_identities,
+            identities: None,
             listed: None,
             listing: None,
             events: Vec::new(),
@@ -269,6 +297,10 @@ impl<'a, H: Http> Job<'a, H> {
         }
         // The calendars asked for by name, when every one has a name; else every calendar's events are asked for.
         let named: Option<Vec<String>> = self.asks.iter().map(|ask| ask.id.clone()).collect();
+        // The person's identities go with the first request when there is room in it; else by themselves, first.
+        if got.wants_identities && !self.identities_fit(list, events) {
+            self.identities_alone(got).await?;
+        }
         let mut first = true;
         while (first && list) || (events && got.pager.done().is_none()) {
             self.check()?;
@@ -278,6 +310,26 @@ impl<'a, H: Http> Job<'a, H> {
         if events {
             self.masters(got).await?;
         }
+        Ok(())
+    }
+
+    /// Whether the identities fit in the first request of the job (`list`: it lists the calendars; `events`: it reads
+    /// events): beside the list, in the request that has it, when the server takes one more call there.
+    fn identities_fit(&self, list: bool, events: bool) -> bool {
+        let calls = self.client.max_calls_in_request();
+        let together = events && calls >= 2 && (!list || calls >= 3);
+        match (together, list) {
+            (true, _) => calls >= usize::from(list) + 3,
+            (false, true) => calls >= 2,
+            (false, false) => false,
+        }
+    }
+
+    /// The identities asked for in a request of their own.
+    async fn identities_alone(&self, got: &mut Gathered) -> Result<(), Stop> {
+        self.check()?;
+        let mut answers = self.client.call_within(&USING, vec![identity_call(self.account)], LIST_BYTES).await.map_err(|e| self.call_stop(e))?;
+        take_identities(got, answers.take(0));
         Ok(())
     }
 
@@ -321,7 +373,7 @@ impl<'a, H: Http> Job<'a, H> {
             if !asked.contains(id) || came.contains(id) {
                 continue;
             }
-            match jscalendar::event_of(value, &self.me, self.zone) {
+            match jscalendar::event_of(value, &got.me, self.zone) {
                 Ok(read) if read.event.kind == RemoteEventKind::SeriesMaster && got.seen.insert(read.event.id.clone()) => {
                     came.insert(id.to_string());
                     got.events.push(read);
@@ -363,9 +415,15 @@ impl<'a, H: Http> Job<'a, H> {
         let list_call = || ("Calendar/get", json!({"accountId": self.account, "ids": null}));
         let query = self.query(&got.pager, named);
         let calls = self.client.max_calls_in_request();
+        // The identities with the first request, when they are still to be asked for (`identities_fit` said there is room).
+        let identities = got.wants_identities && got.identities.is_none();
         // Everything in one request, when the server takes it.
         if events && calls >= 2 && (!list || calls >= 3) {
             let mut sent: Vec<(&str, Value)> = Vec::new();
+            if identities {
+                sent.push(identity_call(self.account));
+            }
+            let list_at = sent.len();
             if list {
                 sent.push(list_call());
             }
@@ -374,8 +432,11 @@ impl<'a, H: Http> Job<'a, H> {
             sent.push(("CalendarEvent/query", query));
             sent.push(("CalendarEvent/get", get));
             let mut answers = self.client.call_within(&USING, sent, ITEMS_BYTES).await.map_err(|e| self.call_stop(e))?;
+            if identities {
+                take_identities(got, answers.take(0));
+            }
             if list {
-                self.take_list(got, answers.take(0));
+                self.take_list(got, answers.take(list_at));
             }
             let found = answers.take(at).map_err(Stop::Failed)?;
             let ids = got.pager.page(&found);
@@ -390,8 +451,12 @@ impl<'a, H: Http> Job<'a, H> {
         }
         // A server that takes fewer calls: one thing at a time.
         if list {
-            let mut answers = self.client.call_within(&USING, vec![list_call()], LIST_BYTES).await.map_err(|e| self.call_stop(e))?;
-            self.take_list(got, answers.take(0));
+            let sent = if identities { vec![identity_call(self.account), list_call()] } else { vec![list_call()] };
+            let mut answers = self.client.call_within(&USING, sent, LIST_BYTES).await.map_err(|e| self.call_stop(e))?;
+            if identities {
+                take_identities(got, answers.take(0));
+            }
+            self.take_list(got, answers.take(usize::from(identities)));
         }
         if !events {
             return Ok(());
@@ -439,7 +504,7 @@ impl<'a, H: Http> Job<'a, H> {
                 continue;
             }
             came.insert(id.to_string());
-            match jscalendar::event_of(value, &self.me, self.zone) {
+            match jscalendar::event_of(value, &got.me, self.zone) {
                 Ok(read) if got.seen.insert(read.event.id.clone()) => got.events.push(read),
                 Ok(_) => {}
                 Err(missing) => {
@@ -610,6 +675,60 @@ impl<'a, H: Http> Job<'a, H> {
             }
         }
     }
+}
+
+/// The longest address of one of the person's identities that is taken, in characters.
+const MAX_IDENTITY: usize = 1_000;
+
+/// The call that asks for the person's participant identities (JMAP for Calendars' `ParticipantIdentity/get`): the
+/// addresses the server knows them by in events, an alias and the one what they make is organized under among them.
+fn identity_call(account: &str) -> (&'static str, Value) {
+    ("ParticipantIdentity/get", json!({"accountId": account, "ids": null}))
+}
+
+/// The addresses of a `ParticipantIdentity/get`'s answer: each identity's `calendarAddress` without its `mailto:`, in
+/// lower case, an address (an `@`, no space), [`MAX_IDENTITY`] characters at most; each once; at most
+/// [`MAX_PIM_ADDRESSES`]. `None` for an answer that has no list.
+pub(super) fn identity_addresses(answer: &Value) -> Option<Vec<String>> {
+    let list = answer.get("list").and_then(Value::as_array)?;
+    let mut found: Vec<String> = Vec::new();
+    for identity in list.iter().take(MAX_PIM_ADDRESSES.saturating_mul(10)) {
+        let Some(said) = identity.get("calendarAddress").and_then(Value::as_str) else { continue };
+        let address = super::mailto(said).to_lowercase();
+        let fits = address.contains('@') && !address.chars().any(|c| c.is_whitespace() || c.is_control()) && address.chars().count() <= MAX_IDENTITY;
+        if fits && !found.contains(&address) && found.len() < MAX_PIM_ADDRESSES {
+            found.push(address);
+        }
+    }
+    Some(found)
+}
+
+/// Take what the server said of the identities: their addresses join those events are read with. A server that
+/// doesn't know the method, or won't tell, leaves the addresses as they were.
+fn take_identities(got: &mut Gathered, answer: crate::Result<Value>) {
+    match answer.as_ref().ok().and_then(identity_addresses) {
+        Some(found) => {
+            for address in &found {
+                if got.me.len() <= MAX_PIM_ADDRESSES && !got.me.iter().any(|have| have.eq_ignore_ascii_case(address)) {
+                    got.me.push(address.clone());
+                }
+            }
+            got.identities = Some(found);
+        }
+        None => log::debug!("jmap pim: the server said nothing of the person's identities"),
+    }
+    got.wants_identities = false;
+}
+
+/// Ask for the person's identities in a request of their own (when a job writes before it reads, and the writing needs
+/// them): their addresses, or `None` when the server doesn't say (the method unknown, refused, or a request that
+/// failed: the job goes on with the addresses it has).
+pub(super) async fn identities<H: Http>(client: &Client<H>, account: &str, cancel: &AtomicBool) -> Option<Vec<String>> {
+    if cancel.load(Ordering::Relaxed) {
+        return None;
+    }
+    let mut answers = client.call_within(&USING, vec![identity_call(account)], LIST_BYTES).await.ok()?;
+    answers.take(0).ok().as_ref().and_then(identity_addresses)
 }
 
 /// Whether the person declined a meeting that is known to be somebody else's: their own answer is no, its organizer is
