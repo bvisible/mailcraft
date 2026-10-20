@@ -613,11 +613,13 @@ impl<'a, H: Http> Job<'a, H> {
 }
 
 /// Whether the person declined a meeting that is known to be somebody else's: their own answer is no, its organizer is
-/// named and is none of their addresses, and their own entry is not an owner's (one they organize under an address the
-/// request doesn't name). Such a meeting is out of their calendar, as it is for a server that takes it away on a no;
-/// one whose organizer is not known stays.
+/// named by an address and that is none of theirs, and their own entry is not an owner's (one they organize under an
+/// address the request doesn't name). Such a meeting is out of their calendar, as it is for a server that takes it
+/// away on a no; one whose organizer is not known (or known by a name alone) stays.
 fn declined(read: &Read) -> bool {
-    read.event.response == Response::Declined && read.event.is_organizer == Some(false) && !read.owner_role
+    // (An organizer known by a name and no address is not known to be anybody's: the meeting stays.)
+    let named = read.event.organizer.as_ref().is_some_and(|organizer| !organizer.email.trim().is_empty());
+    read.event.response == Response::Declined && named && read.event.is_organizer == Some(false) && !read.owner_role
 }
 
 /// Whether an occurrence says otherwise than its series what an event is besides its time (what it is called,

@@ -511,9 +511,9 @@ fn people(organizer: &str, ada: &str) -> serde_json::Value {
 
 /// A server with, in Ada's calendar: Grace's review, which Ada declined; Grace's weekly planning, which she declined
 /// whole; Grace's weekly board (Thursdays at two), which she declined whole and accepted on the 22nd alone; Bob's
-/// weekly sync (Tuesdays at eleven), which she accepted and declined on the 20th alone; and three where her own entry
+/// weekly sync (Tuesdays at eleven), which she accepted and declined on the 20th alone; and four where her own entry
 /// oddly says declined: her retro, a meeting she organizes under an address the job doesn't know as hers, her own
-/// entry being the owner's, and one that names no organizer.
+/// entry being the owner's, one that names no organizer, and one whose organizer is known by a name and no address.
 fn declined() -> StandIn {
     let server = server();
     server.with(|d| {
@@ -557,6 +557,10 @@ fn declined() -> StandIn {
             "participants",
             json!({"a": participant("bob@example.org", json!({"attendee": true}), "accepted"), "b": participant(ME, json!({"attendee": true}), "declined")}),
         ));
+        d.pim.add_event(Event::timed("desk", "ada", "Desk visit", "2026-10-24T09:00:00", zurich, "PT1H").with(
+            "participants",
+            json!({"o": {"@type": "Participant", "name": "Front desk", "roles": {"owner": true}, "participationStatus": "accepted"}, "z": participant(ME, json!({"attendee": true}), "declined")}),
+        ));
         d.pim.add_event(
             Event::timed("retro", "ada", "Retro", "2026-10-21T16:00:00", zurich, "PT1H")
                 .with("organizerCalendarAddress", json!(format!("mailto:{ME}")))
@@ -576,8 +580,8 @@ fn a_meeting_the_person_declined_is_in_no_download_and_one_she_organizes_stays()
     titles.dedup();
     assert!(!titles.contains(&"Design review") && !titles.contains(&"Planning") && !titles.contains(&"Board"), "{titles:?}");
     // Kept unless it is known to be somebody else's: her own, whatever her entry says; one organized under another
-    // address whose owner's entry is hers; one that names no organizer.
-    for kept in ["Retro", "Offsite", "Open hour"] {
+    // address whose owner's entry is hers; one that names no organizer; one whose organizer has a name and no address.
+    for kept in ["Retro", "Offsite", "Open hour", "Desk visit"] {
         assert!(titles.contains(&kept), "{kept}: {titles:?}");
     }
     // A series she declined is gone whole, asked about by name or not.
