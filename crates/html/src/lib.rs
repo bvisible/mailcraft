@@ -39,6 +39,8 @@ pub use entities::{escape, unescape};
 pub use preview::{MAX_PREVIEW_CHARS, preview, text_preview};
 pub use quote::quotable;
 pub use text::{blocks_to_text, from_text, text_blocks, to_text};
+// //// Neoffice — a text body as HTML that links only the addresses it is told to (text.rs; Nora's translation, ui-egui nora/flow.rs).
+pub use text::from_text_keeping;
 
 /// Longest input [`parse`], [`to_text`], [`text_blocks`], [`from_text`], [`preview`],
 /// [`text_preview`] and [`quotable`] read, in bytes; the rest is ignored.

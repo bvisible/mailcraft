@@ -391,6 +391,14 @@ fn says_where(text: &str, url: &str) -> bool {
 /// `<blockquote>`s, and web and e-mail addresses links. Runs of spaces and leading spaces are kept
 /// with no-break spaces.
 pub fn from_text(text: &str) -> String {
+    // //// Neoffice — the same with a say on which addresses become links (from_text_keeping, below).
+    from_text_keeping(text, |_| true)
+}
+
+// //// Neoffice — a plain-text body as HTML whose addresses become links only where `keep` says (Nora's translation of a message keeps the links the message had, ui-egui nora/flow.rs).
+/// [`from_text`], where a web or e-mail address becomes a link only when `keep` takes the address it would link to;
+/// any other stays text.
+pub fn from_text_keeping(text: &str, keep: impl Fn(&str) -> bool) -> String {
     let mut out = String::new();
     let mut depth = 0usize;
     for block in text_blocks(text) {
@@ -406,7 +414,9 @@ pub fn from_text(text: &str) -> String {
         out.push_str("<p>");
         let mut prev = '\n';
         for span in &block.spans {
-            if let Some(url) = &span.link {
+            // //// Neoffice — only the addresses `keep` takes are links.
+            let link = span.link.as_deref().filter(|url| keep(url));
+            if let Some(url) = link {
                 out.push_str("<a href=\"");
                 out.push_str(&escape(url));
                 out.push_str("\">");
@@ -424,7 +434,8 @@ pub fn from_text(text: &str) -> String {
                 }
                 prev = c;
             }
-            if span.link.is_some() {
+            // //// Neoffice — the link closed where one was opened (above).
+            if link.is_some() {
                 out.push_str("</a>");
             }
         }
@@ -595,6 +606,22 @@ mod tests {
             "<blockquote>\n<p>quoted</p>\n<blockquote>\n<p>deeper</p>\n</blockquote>\n</blockquote>\n<p>back</p>\n"
         );
         assert_eq!(from_text("  two  spaces"), "<p>&nbsp;&nbsp;two &nbsp;spaces</p>\n");
+    }
+
+    // //// Neoffice — from_text_keeping (above): only the addresses it is told to keep are links.
+    #[test]
+    fn text_as_html_links_only_the_addresses_kept() {
+        let text = "see https://a.example.org and https://b.example.org, or write to ada@example.org.";
+        let html = from_text_keeping(text, |url| url == "https://a.example.org");
+        assert_eq!(
+            html,
+            "<p>see <a href=\"https://a.example.org\">https://a.example.org</a> and https://b.example.org, or write to ada@example.org.</p>\n"
+        );
+        assert_eq!(from_text_keeping(text, |_| true), from_text(text));
+        // What was not kept reads back as words, and nothing in it is a link.
+        let none = from_text_keeping(text, |_| false);
+        assert!(parse(&none).iter().all(|b| b.spans.iter().all(|s| s.link.is_none())), "{none}");
+        assert_eq!(to_text(&none), text);
     }
 
     #[test]

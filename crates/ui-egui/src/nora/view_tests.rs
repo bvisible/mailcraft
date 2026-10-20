@@ -354,7 +354,8 @@ fn a_translation_is_not_shown_in_the_quote_or_the_preview() {
     }
     for place in [crate::reading::Place::Pane, crate::reading::Place::Window(3)] {
         let shown = super::pane::shown(&app, &m, place);
-        assert_eq!((shown.id, shown.body.text.as_str(), shown.body.html.is_none()), (id, TRANSLATION, true), "{place:?}");
+        // Its HTML is its text, with links only where the message had them (flow.rs, show_translation).
+        assert_eq!((shown.id, shown.body.text.as_str(), shown.body.html.is_some()), (id, TRANSLATION, true), "{place:?}");
     }
     let other = app.session.mailbox.messages.values().find(|m| m.subject == "Release checklist").cloned().unwrap();
     assert!(std::sync::Arc::ptr_eq(&super::pane::shown(&app, &other, crate::reading::Place::Pane), &other));

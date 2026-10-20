@@ -384,7 +384,8 @@ fn translate_keeps_the_text_and_original_forgets_it() {
     let t = app.nora.translation.as_ref().unwrap();
     assert_eq!((t.message, t.language), (message, "fr"));
     assert_eq!(t.shown.id, message);
-    assert_eq!(t.shown.body, mailcraft_model::Body { text: "Avery,\n\nLa revue est déplacée à jeudi.".into(), html: None });
+    assert_eq!(t.shown.body.text, "Avery,\n\nLa revue est déplacée à jeudi.");
+    assert_eq!(t.shown.body.html.as_deref(), Some("<p>Avery,</p>\n<p>La revue est déplacée à jeudi.</p>\n"));
     let original = app.session.mailbox.messages.get(&message).unwrap();
     assert_eq!((&t.shown.subject, &t.shown.from), (&original.subject, &original.from), "the rest is the message's own");
     assert_eq!(status(&app), "Translated by Nora into French");
@@ -394,6 +395,25 @@ fn translate_keeps_the_text_and_original_forgets_it() {
     assert!(app.nora.translation.is_none());
     assert!(app.session.mailbox.messages.get(&message).is_some_and(|m| m.body.text.starts_with("Avery,")), "the message itself never changed");
     calls.all_fit();
+}
+
+#[test]
+fn a_translation_links_only_the_addresses_its_message_had() {
+    let (mut app, calls, message) = sample(PLAIN);
+    let m = app.session.mailbox.message_mut(message).unwrap();
+    m.body.text = "Avery,\n\nThe agenda is at https://kept.example.org/agenda now.\n\nAda".into();
+    m.body.html = None;
+    app.run("ui.noraTranslate", json!({"language": "fr"})).unwrap();
+    // She translated, and added an address and a mail address the message never had.
+    let translated = "Avery,\n\nL’ordre du jour est sur https://kept.example.org/agenda. Inscrivez-vous sur \
+                      https://added.example.org/login ou écrivez à grace@example.org.\n\nAda";
+    calls.answer(200, json!({"message": {"translated_text": translated, "source_language": "en", "has_changes": true}}));
+    app.poll_nora();
+    let shown = &app.nora.translation.as_ref().unwrap().shown;
+    let html = shown.body.html.as_deref().unwrap();
+    let links: Vec<String> = mailcraft_html::parse(html).into_iter().flat_map(|block| block.spans).filter_map(|span| span.link).collect();
+    assert_eq!(links, ["https://kept.example.org/agenda"], "{html}");
+    assert_eq!(shown.body.text, translated, "what she added stays, as words");
 }
 
 #[test]

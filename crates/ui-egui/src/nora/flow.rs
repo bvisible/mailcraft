@@ -20,6 +20,7 @@
 //! and source, and both check what they go over. While a signature is open in File › Signatures those
 //! commands would write in it: what writes waits until it is closed.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -686,13 +687,16 @@ fn put_over_own_text(app: &mut MailApp, sent: &OwnText, (mode, source): (Compose
     }
 }
 
-/// Keep a translation to show in place of its message's body, made into a message once.
+/// Keep a translation to show in place of its message's body, made into a message once. An address in it is a link
+/// only where the message itself had it: one she added (by mistake, or because the message asked her to) stays words.
 fn show_translation(app: &mut MailApp, message: Id, language: &'static str, text: String) {
     let Some(original) = app.session.mailbox.messages.get(&message) else { return };
+    let kept = links_of(app, original);
     let mut shown = Message::clone(original);
     // Shown as plain text: line breaks and tabs, no other control characters.
-    let text = text.replace("\r\n", "\n").chars().filter(|c| !c.is_control() || matches!(c, '\n' | '\t')).collect();
-    shown.body = Body { text, html: None };
+    let text: String = text.replace("\r\n", "\n").chars().filter(|c| !c.is_control() || matches!(c, '\n' | '\t')).collect();
+    let html = mailcraft_html::from_text_keeping(&text, |url| kept.contains(url));
+    shown.body = Body { text, html: Some(html) };
     // Its body is the translation, whole: nothing of it waits on disk.
     shown.kept = None;
     app.nora.translation = Some(Translation { message, language, shown: Arc::new(shown) });
@@ -700,6 +704,29 @@ fn show_translation(app: &mut MailApp, message: Id, language: &'static str, text
         app.nora.said = None;
     }
     app.status(fmt(tl!("Translated by Nora into {language}"), &[("language", language_name(language))]));
+}
+
+/// The most addresses of a message that a translation of it keeps as links.
+const MAX_LINKS: usize = 10_000;
+
+/// The addresses a message links to, as the reading pane makes them: those of its HTML, in its tables too, and those its
+/// text writes out. [`MAX_LINKS`] at most: past them, an address of the translation stays words.
+fn links_of(app: &MailApp, m: &Message) -> HashSet<String> {
+    let loaded = app.session.loaded_message_where(m.id, |_| false).ok();
+    let body = loaded.as_ref().map_or(&m.body, |m| &m.body);
+    let mut blocks = body.html.as_deref().map(mailcraft_html::parse).unwrap_or_default();
+    blocks.extend(mailcraft_html::text_blocks(&body.text));
+    let mut links = HashSet::new();
+    while let Some(block) = blocks.pop() {
+        if links.len() >= MAX_LINKS {
+            break;
+        }
+        links.extend(block.spans.into_iter().filter_map(|span| span.link));
+        if let mailcraft_html::BlockKind::Table(table) = block.kind {
+            blocks.extend(table.rows.into_iter().flat_map(|row| row.cells).flat_map(|cell| cell.blocks));
+        }
+    }
+    links
 }
 
 #[cfg(test)]
