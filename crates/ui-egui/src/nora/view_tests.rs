@@ -358,6 +358,102 @@ fn a_translation_is_not_shown_in_the_quote_or_the_preview() {
     assert!(std::sync::Arc::ptr_eq(&super::pane::shown(&app, &other, crate::reading::Place::Pane), &other));
 }
 
+/// Nora's controls of the ribbon hold to what the ribbon's own test asks of every control: a key of
+/// their own in the tab, an icon that is drawn, a command the window knows or a menu, and a place in
+/// both layouts. They are there with a host only.
+#[test]
+fn nora_is_in_the_ribbon_with_a_host_only() {
+    use crate::ribbon::{Size, describe, row};
+    let mine = ["nora", "ui.noraCorrect", "ui.noraImprove", "noraTranslate", "ui.noraLearnStyle"];
+    for host in [true, false] {
+        let (mut app, _calls, account) = page(true);
+        if !host {
+            app.services.nora = None;
+        }
+        let mut tabs = Vec::new();
+        app.execute("ui.tab", json!({"tab": "Home"})).unwrap();
+        tabs.push(("Home", describe(&app)));
+        app.run("mail.new", json!({"account": account})).unwrap();
+        assert_eq!(app.ui.tab, "Message");
+        tabs.push(("Message", describe(&app)));
+        for (name, tab) in &tabs {
+            let items: Vec<&crate::ribbon::Item> = tab.items().collect();
+            let hers: Vec<&str> = items.iter().map(|i| i.key).filter(|k| mine.contains(k)).collect();
+            let expected: &[&str] = match (host, *name) {
+                (false, _) => &[],
+                (true, "Home") => &["nora"],
+                _ => &["ui.noraCorrect", "ui.noraImprove", "noraTranslate", "ui.noraLearnStyle"],
+            };
+            assert_eq!(hers, expected, "{name}");
+            for item in &items {
+                assert_eq!(items.iter().filter(|other| other.key == item.key).count(), 1, "{name}: {}", item.key);
+                assert!(crate::icons::NAMES.contains(&item.icon), "{name}: {} has no drawing", item.key);
+                assert!(item.size != Size::Hidden && item.command.is_some() != item.menu.is_some(), "{name}: {}", item.key);
+                if let Some((command, _)) = &item.command {
+                    assert!(app.session.registry.get(command).is_some() || crate::UI_COMMANDS.iter().any(|c| c.0 == *command), "{command}");
+                }
+            }
+            let buttons = row(tab);
+            assert_eq!(buttons.len() + buttons.iter().map(|b| b.drops.len()).sum::<usize>(), items.len(), "{name}");
+            assert!(buttons.windows(2).all(|pair| pair[0].item.section <= pair[1].item.section), "{name}");
+        }
+    }
+    // A message of the sample mailbox being written: no My style.
+    let (mut app, _calls, _) = sample(PLAIN);
+    app.run("mail.reply", json!({})).unwrap();
+    let tab = crate::ribbon::describe(&app);
+    assert!(tab.items().any(|i| i.key == "ui.noraCorrect") && !tab.items().any(|i| i.key == "ui.noraLearnStyle"));
+}
+
+#[test]
+fn the_ribbon_reaches_her_in_both_layouts() {
+    for mode in ["classic", "simplified"] {
+        let (mut app, calls, id) = sample(PLAIN);
+        app.execute("ui.ribbonMode", json!({"value": mode})).unwrap();
+        // With the reading pane off, the ribbon is the way to her.
+        app.execute("view.readingPane", json!({"value": "off"})).unwrap();
+        let mut harness = window(app, (1440.0, 900.0));
+        assert!(harness.state().hit.rect("nora", id).is_none(), "{mode}: no pane, no pane button");
+        let nora = harness.state().hit.rect("ribbon", crate::ribbon::hit_id("nora")).unwrap_or_else(|| panic!("{mode}: no Nora in Home"));
+        click_at(&mut harness, nora.center());
+        harness.query_all_by_label_contains("Reply with Nora").next().unwrap_or_else(|| panic!("{mode}: no menu")).click();
+        harness.run_steps(3);
+        assert_eq!((calls.count(), calls.last().method), (1, GENERATE_EMAIL), "{mode}");
+        // The reply is open: the Message tab has her group.
+        assert_eq!(harness.state().ui.tab, "Message");
+        calls.answer(200, json!({"message": {"draft_text": "Bonjour Priya,\n\nmerci"}}));
+        harness.run_steps(3);
+        let correct = harness.state().hit.rect("ribbon", crate::ribbon::hit_id("ui.noraCorrect")).unwrap_or_else(|| panic!("{mode}: no Correct"));
+        click_at(&mut harness, correct.center());
+        assert_eq!((calls.count(), calls.last().method), (2, PROOFREAD), "{mode}");
+        assert_eq!(calls.last().args["html_content"], "<p>Bonjour Priya,</p>\n<p>merci</p>", "{mode}");
+    }
+}
+
+/// Her words are the interface's: in French, and in the pseudo language that shows what went through
+/// the catalog (the labels a table hands on, which the catalog test can't follow, among them).
+#[test]
+fn her_words_follow_the_interface_language() {
+    let (mut app, _calls, id) = sample(PLAIN);
+    app.execute("ui.language", json!({"value": "fr"})).unwrap();
+    let mut harness = window(app, (1440.0, 900.0));
+    let at = harness.state().hit.rect("nora", id).unwrap().center();
+    click_at(&mut harness, at);
+    for words in ["Répondre avec Nora", "Répondre à tous avec Nora", "Traduire"] {
+        assert!(harness.query_all_by_label_contains(words).next().is_some(), "{words}");
+    }
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(2);
+    run(&mut harness, "mail.reply", json!({}));
+    for words in ["Corriger", "Améliorer", "Traduire"] {
+        assert!(harness.query_all_by_label(words).next().is_some(), "{words}");
+    }
+    run(&mut harness, "ui.language", json!({"value": "pseudo"}));
+    for words in ["Córréct", "Impróvé", "Tránsláté"] {
+        assert!(harness.query_all_by_label(words).next().is_some(), "{words}");
+    }
+}
+
 /// Nora in the window, in light and dark, wide and narrow, as PNG files to look at:
 /// `MAILCRAFT_SHOTS_DIR=<dir> cargo test -p mailcraft-ui-egui shots_of_nora -- --ignored`
 #[test]
@@ -428,6 +524,15 @@ fn shots_of_nora() {
             shot(&mut harness, "pane-3-translating");
             calls.answer(200, json!({"message": {"translated_text": "Bonjour Ada,\n\nLe bon à tirer est-il prêt ?\n\nGrace", "has_changes": true}}));
             shot(&mut harness, "pane-4-translated");
+            // The ribbon, in both its layouts: Home with her button, a message's tab with her group.
+            for mode in ["classic", "simplified"] {
+                run(&mut harness, "ui.ribbonMode", json!({"value": mode}));
+                run(&mut harness, "ui.tab", json!({"tab": "Home"}));
+                shot(&mut harness, &format!("ribbon-{mode}-home"));
+                run(&mut harness, "mail.new", json!({"account": account}));
+                shot(&mut harness, &format!("ribbon-{mode}-message"));
+                run(&mut harness, "compose.discard", json!({}));
+            }
         }
     }
 }

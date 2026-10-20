@@ -26,9 +26,10 @@
 mod answer;
 mod band;
 mod flow;
-mod look;
+pub(crate) mod look;
 mod own_text;
 pub(crate) mod pane;
+pub(crate) mod ribbon;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]

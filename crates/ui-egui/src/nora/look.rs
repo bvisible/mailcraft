@@ -137,6 +137,32 @@ pub(crate) fn pill(ui: &mut Ui, t: &Tokens, label: &str, mark: Mark, menu: bool,
     resp
 }
 
+/// Nora's marks as icons of the window (`icons::paint` draws them by these names, the ribbon uses
+/// them): `nora`, her sphere, in her clay unless the icon is drawn in one colour (greyed); `noraWand`,
+/// the wand of Improve, in the icon's ink.
+pub(crate) fn icon(painter: &Painter, r: Rect, name: &str, ink: Color32, accent: Color32) {
+    let side = r.width().min(r.height());
+    if !side.is_finite() || side <= 0.0 {
+        return;
+    }
+    let square = Rect::from_center_size(r.center(), vec2(side, side));
+    match name {
+        "nora" => {
+            let clay = tone(&Tokens::get(painter.ctx())).orb;
+            orb(painter, square, if ink == accent { ink } else { clay });
+        }
+        "noraWand" => {
+            let s = Stroke::new((side / 12.0).clamp(1.2, 2.6), ink);
+            let p = |x: f32, y: f32| pos2(square.min.x + x * side, square.min.y + y * side);
+            painter.line_segment([p(0.15, 0.85), p(0.62, 0.38)], s);
+            let glint = Stroke::new(s.width, accent);
+            painter.line_segment([p(0.75, 0.08), p(0.75, 0.36)], glint);
+            painter.line_segment([p(0.61, 0.22), p(0.89, 0.22)], glint);
+        }
+        _ => {}
+    }
+}
+
 fn paint_mark(painter: &Painter, r: Rect, mark: Mark, tone: &Tone) {
     let s = Stroke::new(1.4, tone.text);
     let p = |x: f32, y: f32| pos2(r.min.x + x * r.width(), r.min.y + y * r.height());

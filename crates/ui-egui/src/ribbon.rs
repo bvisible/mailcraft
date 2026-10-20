@@ -125,6 +125,9 @@ pub(crate) enum Menu {
     CategorizeTask,
     FilterTasks,
     Signature,
+    // //// Neoffice — Nora's menus, when a host reaches her: what she does on a message, and the languages she translates the owner's text into (nora/ribbon.rs).
+    Nora,
+    NoraTranslate,
     MoveFolder,
     ReadingPane,
     Preview,
@@ -274,7 +277,8 @@ impl Tab {
 
 /// The tab in view, as the window stands.
 pub(crate) fn describe(app: &MailApp) -> Tab {
-    match app.ui.tab.as_str() {
+    // //// Neoffice — kept, for Nora's controls to be added to it (below).
+    let mut tab = match app.ui.tab.as_str() {
         "Message" => message(app),
         "Send / Receive" => send_receive(app),
         "Folder" => folder(app),
@@ -286,7 +290,10 @@ pub(crate) fn describe(app: &MailApp) -> Tab {
             Module::People => home_people(app),
             Module::Tasks => home_tasks(app),
         },
-    }
+    };
+    // //// Neoffice — Nora's place in the tab, when a host reaches her (nora/ribbon.rs).
+    crate::nora::ribbon::add(app, &mut tab);
+    tab
 }
 
 fn no() -> Value {
@@ -854,6 +861,8 @@ fn plain_item(ui: &mut Ui, label: &str) -> bool {
 fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
     match menu {
         Menu::NewItems => new_items(ui, app),
+        // //// Neoffice — Nora's menus (nora/ribbon.rs).
+        Menu::Nora | Menu::NoraTranslate => crate::nora::ribbon::menu(ui, app, menu),
         Menu::MoveMessages => {
             if app.session.sel.messages.is_empty() {
                 ui.label(tl!("Select a message first"));

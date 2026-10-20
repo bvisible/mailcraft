@@ -1078,6 +1078,8 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(3.5, 10.0), (16.5, 10.0)]);
             pen.line(&[(3.5, 14.5), (11.5, 14.5)]);
         }
+        // //// Neoffice — Nora's marks, for her place in the ribbon: her sphere, and the wand of Improve (nora/look.rs).
+        "nora" | "noraWand" => crate::nora::look::icon(p, r, name, c, a),
         // Anything else: a lettered tile, so a missing drawing is visible rather than empty.
         _ => {
             pen.rect(3.5, 3.5, 16.5, 16.5, c);
@@ -1243,6 +1245,9 @@ pub const NAMES: &[&str] = &[
     "responseOptions",
     "timeZones",
     "globe",
+    // //// Neoffice — Nora's marks (nora/look.rs).
+    "nora",
+    "noraWand",
     "notes",
     "description",
     "work",

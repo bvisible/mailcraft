@@ -437,6 +437,11 @@ fn nothing_to_rewrite_and_nothing_to_change_are_said() {
     assert_eq!(app.run("ui.noraImprove", json!({})).unwrap_err(), "Write your text first: Nora works on it.");
     assert_eq!(said(&app), Some(("Write your text first: Nora works on it.".into(), true, About::Writing)), "said in the band too");
     assert_eq!(calls.count(), 0, "an empty text isn't sent");
+    // What is said of a message being written goes with it.
+    app.execute("compose.discard", json!({})).unwrap();
+    app.poll_nora();
+    assert_eq!(said(&app), None, "the next message's band starts clean");
+    app.run("mail.reply", json!({})).unwrap();
     typed(&mut app, &"x".repeat(8_001));
     assert_eq!(app.run("ui.noraCorrect", json!({})).unwrap_err(), "Your text is too long for Nora: 8000 characters at most.");
     assert_eq!(calls.count(), 0, "nor one longer than she takes");

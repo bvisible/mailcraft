@@ -499,6 +499,10 @@ enum Landed {
 /// Take in Nora's answers, ask for the draft of a reply that has opened, and give up on what took too
 /// long. Once a frame.
 pub(crate) fn poll(app: &mut MailApp) {
+    // What was said of a message being written goes with it: the next one's band starts clean.
+    if app.session.compose.is_none() && app.nora.said.as_ref().is_some_and(|s| s.about == About::Writing) {
+        app.nora.said = None;
+    }
     if !app.nora.busy() {
         return;
     }

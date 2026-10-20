@@ -45,19 +45,22 @@ pub(crate) fn button(app: &mut MailApp, ui: &mut Ui, m: &Message) {
     let pill = look::pill(ui, &t, tl!("Nora"), Mark::Orb, true, State::Live).on_hover_text(tl!("Nora, the Neoffice assistant"));
     app.hit.add("nora", m.id, pill.rect);
     let id = m.id;
-    egui::Popup::menu(&pill).show(|ui| {
-        crate::widgets::mi(ui, app, "Reply with Nora", "ui.noraReply", json!({"message": id}));
-        crate::widgets::mi(ui, app, "Reply all with Nora", "ui.noraReply", json!({"message": id, "all": true}));
-        ui.separator();
-        ui.menu_button(tl!("Translate"), |ui| {
-            for (code, name) in LANGUAGES {
-                crate::widgets::mi(ui, app, name, "ui.noraTranslate", json!({"message": id, "language": code}));
-            }
-        });
-        if app.nora.translation.as_ref().is_some_and(|t| t.message == id) {
-            crate::widgets::mi(ui, app, "Show the original", "ui.noraOriginal", json!({"message": id}));
+    egui::Popup::menu(&pill).show(|ui| menu(ui, app, id));
+}
+
+/// What Nora does on `message`, as a menu: her button's here, and the ribbon's.
+pub(crate) fn menu(ui: &mut Ui, app: &mut MailApp, message: mailcraft_model::Id) {
+    crate::widgets::mi(ui, app, "Reply with Nora", "ui.noraReply", json!({"message": message}));
+    crate::widgets::mi(ui, app, "Reply all with Nora", "ui.noraReply", json!({"message": message, "all": true}));
+    ui.separator();
+    ui.menu_button(tl!("Translate"), |ui| {
+        for (code, name) in LANGUAGES {
+            crate::widgets::mi(ui, app, name, "ui.noraTranslate", json!({"message": message, "language": code}));
         }
     });
+    if app.nora.translation.as_ref().is_some_and(|t| t.message == message) {
+        crate::widgets::mi(ui, app, "Show the original", "ui.noraOriginal", json!({"message": message}));
+    }
 }
 
 /// The strip between a message's header and its body while Nora translates it, once she has (with
