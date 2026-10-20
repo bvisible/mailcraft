@@ -94,6 +94,20 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   online meeting that is no Teams one), `cmd/remote.rs` (what became of one, said as an online meeting, also for one
   occurrence) and `crates/ui-egui/src/forms.rs` (the toggle and the row say "Online Meeting"); its French lines are in
   `fr.tsv`, and the engine's sentences have their rows in `crates/ui-egui/src/i18n/run_words/rows.rs`.
+- Notes, the mailbox's own and those of a server that keeps them (the hosting page's server, whose notes are the
+  person's: one place for notes): the model (`crates/model/src/note.rs`), the commands, their refusals and what an agent
+  may do (`crates/engine/src/cmd/notes.rs` and `notes/`, among them `notes/server.rs`, what is noted for the server and
+  taken back from it), the job's part (`crates/jmap/src/pim/notes.rs`, its capability's name the one place the crate
+  names that server) and the stand-in's notes (`crates/jmap/src/standin/notes.rs`), the window's job
+  (`crates/ui-egui/src/jmap_notes.rs`), the module (`notes_view.rs`, `ribbon/notes_home.rs`), the browser's replay
+  of a job done again (`apps/mailcraft-web/src/jmap_notes.rs`) and its question before a hosting page is left
+  (`hosted/leave.rs`), and their tests (`apps/mailcraft-cli/tests/jmap_notes.rs`, `apps/mailcraft-web/src/jmap_notes_flow_tests.rs`).
+  The marked hunks are in `crates/model/src/lib.rs` and `mailbox.rs` (the field, its repair and the accounts that go),
+  `crates/engine/src/session.rs` (`Module::Notes`, the selected note), `cmd/mod.rs`, `agent.rs` (the notes' classes,
+  `ui.openNote` among them), `crates/ui-egui/src/lib.rs` (the module, `ui.openNote`), `nav.rs` (Notes in the module
+  bar where notes are kept, and each module's button in the hit map), `ribbon.rs`, `chrome.rs`, `keys.rs`,
+  `apps/mailcraft-web/src/web.rs` and `Cargo.toml` (the `web-sys` features of the question); their French lines are a
+  block near the top of `fr.tsv`.
 - This file.
 
 ## What cannot carry a comment
