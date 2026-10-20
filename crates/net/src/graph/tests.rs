@@ -1295,6 +1295,9 @@ proptest! {
             response: [Response::None, Response::Accepted, Response::Tentative, Response::Declined][usize::from(flags.2)],
             send: flags.0,
             comment: title.clone(),
+            // //// Neoffice — who was invited before a change of the people (for JMAP for Calendars): Graph doesn't read it,
+            // and junk there must not trouble it either.
+            invited_before: flags.1.then(|| vec![Attendee { address: Address::new(remote.clone(), title.clone()), ..Default::default() }]),
         }).collect::<Vec<_>>();
         let upload = EventsUpload { account: 3, email: "ada@example.org".into(), ops, ..Default::default() };
         let uploaded = push_events_at(&server.url(""), TOKEN, &upload, &EventOptions { zone });

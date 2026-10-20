@@ -269,13 +269,15 @@ fn locations_and_participants_are_the_servers_map_with_the_persons_change_made_t
     let none = patched(EventFields { location: Some(String::new()), ..Default::default() });
     assert_eq!(none["locations"].as_object().unwrap().keys().collect::<Vec<_>>(), ["l2"]);
     // Carol no longer invited, Dan invited, Bob optional: the organizer and Bob's own entry stay as the server has them.
-    let people = patched(EventFields {
+    let now = EventFields {
         attendees: Some(vec![
             Attendee { address: Address::new("Bob", "bob@example.org"), optional: true, response: Response::None },
             Attendee { address: Address::new("Dan Moreau", "Dan@Example.org"), ..Default::default() },
         ]),
         ..Default::default()
-    });
+    };
+    let people = patch(&EventOp { invited_before: Some(bob_and_carol()), ..change(now) }, Some(&copy()), Clock::Own(zurich()), &[ME.to_string()]);
+    let people = people.unwrap().0;
     let people = people["participants"].as_object().unwrap();
     let mut keys: Vec<&String> = people.keys().collect();
     keys.sort();
@@ -286,6 +288,78 @@ fn locations_and_participants_are_the_servers_map_with_the_persons_change_made_t
         people["p1"],
         json!({"@type": "Participant", "name": "Dan Moreau", "email": "Dan@Example.org", "sendTo": {"imip": "mailto:Dan@Example.org"}, "roles": {"attendee": true}, "participationStatus": "needs-action", "expectReply": true})
     );
+}
+
+/// Who the window had invited to the meeting of [`copy`] when the change was made: Bob and Carol.
+fn bob_and_carol() -> Vec<Attendee> {
+    vec![
+        Attendee { address: Address::new("Bob", "bob@example.org"), ..Default::default() },
+        Attendee { address: Address::new("Carol", "carol@example.org"), ..Default::default() },
+    ]
+}
+
+#[test]
+fn a_change_of_the_people_takes_away_only_who_went_and_keeps_whoever_the_server_has_besides() {
+    // Since the window read the meeting: Eve was invited on the server, and a room and somebody informed are there, whom
+    // the window never shows.
+    let mut theirs = copy();
+    theirs["participants"].as_object_mut().unwrap().extend(
+        json!({
+            "eve": {"@type": "Participant", "calendarAddress": "mailto:eve@example.org", "roles": {"attendee": true}, "participationStatus": "needs-action"},
+            "room": {"@type": "Participant", "name": "Room 4", "email": "room4@example.org", "kind": "location", "roles": {"chair": true}},
+            "info": {"@type": "Participant", "email": "info@example.org", "roles": {"informational": true}},
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    let with = |people: Vec<Attendee>, before: Option<Vec<Attendee>>| {
+        let op = EventOp { invited_before: before, ..change(EventFields { attendees: Some(people), ..Default::default() }) };
+        let (body, _) = patch(&op, Some(&theirs), Clock::Own(zurich()), &[ME.to_string()]).unwrap();
+        let mut keys: Vec<String> = body["participants"].as_object().unwrap().keys().cloned().collect();
+        keys.sort();
+        (keys, body)
+    };
+    // Dan added here: everybody stays, Dan comes.
+    let mut added = bob_and_carol();
+    added.push(Attendee { address: Address::new("Dan", "dan@example.org"), ..Default::default() });
+    let (keys, body) = with(added, Some(bob_and_carol()));
+    assert_eq!(keys, ["ada", "bob", "carol", "eve", "info", "p1", "room"]);
+    assert_eq!(body["participants"]["p1"]["email"], "dan@example.org");
+    for kept in ["eve", "room", "info", "bob", "carol"] {
+        assert_eq!(body["participants"][kept], theirs["participants"][kept], "{kept} as the server has them");
+    }
+    // Carol taken away here: she alone goes.
+    let (keys, _) = with(vec![Attendee { address: Address::new("Bob", "bob@example.org"), ..Default::default() }], Some(bob_and_carol()));
+    assert_eq!(keys, ["ada", "bob", "eve", "info", "room"]);
+    // Not known who was invited before: nobody goes, and nobody's role changes; only who is not there comes.
+    let only = vec![Attendee { address: Address::new("Bob", "bob@example.org"), optional: true, response: Response::None }];
+    let (keys, body) = with(only, None);
+    assert_eq!(keys, ["ada", "bob", "carol", "eve", "info", "room"]);
+    assert_eq!(body["participants"]["bob"], theirs["participants"]["bob"]);
+    // Somebody invited before and taken away on the server meanwhile is not brought back by another change.
+    let mut without_carol = copy();
+    without_carol["participants"].as_object_mut().unwrap().remove("carol");
+    let op = EventOp {
+        invited_before: Some(bob_and_carol()),
+        ..change(EventFields {
+            attendees: Some([bob_and_carol(), vec![Attendee { address: Address::new("Dan", "dan@example.org"), ..Default::default() }]].concat()),
+            ..Default::default()
+        })
+    };
+    let (body, _) = patch(&op, Some(&without_carol), Clock::Own(zurich()), &[ME.to_string()]).unwrap();
+    let mut keys: Vec<&String> = body["participants"].as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["ada", "bob", "p1"]);
+}
+
+#[test]
+fn a_copy_with_more_people_than_are_read_is_told_apart() {
+    let mut crowded = copy();
+    let many: serde_json::Map<String, Value> =
+        (0..=MAX_COPY_PEOPLE).map(|n| (format!("x{n}"), json!({"email": format!("guest{n}@example.org"), "roles": {"attendee": true}}))).collect();
+    crowded.insert("participants".into(), Value::Object(many));
+    assert!(too_many_people(&crowded) && !too_many_people(&copy()));
 }
 
 #[test]

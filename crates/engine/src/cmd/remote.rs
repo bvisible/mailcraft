@@ -1285,6 +1285,9 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
         let said = cancel || change.kind == EventChangeKind::Respond || forwards;
         // Another time is proposed with an answer that is sent, and only with one that isn't a yes.
         let proposes = change.kind == EventChangeKind::Respond && change.send && matches!(change.response, Response::Tentative | Response::Declined);
+        // //// Neoffice — who was invited in the event a change of the people was made to (see `invited_before` below).
+        let invited_before =
+            change.base.as_deref().filter(|_| change.kind == EventChangeKind::Update && fields.attendees.is_some()).map(self::invited);
         ops.push(EventOp {
             kind: change.kind,
             event: change.event,
@@ -1303,6 +1306,9 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
             comment: if said { change.comment.clone() } else { String::new() },
             proposed: change.proposed.filter(|_| proposes),
             to: if forwards && change.send { change.to.clone() } else { Vec::new() },
+            // //// Neoffice — with a change of who is invited, who was invited in the event it was made to: a server that
+            // keeps the people as one map is told only who came and who went.
+            invited_before,
         });
     }
     // (The zone the calendar is shown in: whole days are days there, and a series without a

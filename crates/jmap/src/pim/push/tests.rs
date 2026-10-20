@@ -233,6 +233,57 @@ fn a_guest_added_in_the_desk_meanwhile_is_kept_by_a_change_of_the_title_and_of_t
 }
 
 #[test]
+fn a_guest_added_here_leaves_one_added_on_the_server_meanwhile_where_it_is() {
+    let server = server();
+    // Eve is invited in the desk after the window read the meeting; then Ada invites Dan here, with her yes.
+    server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget.props["participants"]["eve"] = person("Eve", "eve@example.org", json!({"attendee": true}), "needs-action");
+    });
+    let invite = |name: &str, email: &str| mailcraft_model::Attendee { address: Address::new(name, email), ..Default::default() };
+    let before = vec![invite("Bob", "bob@example.org"), invite("Carol", "carol@example.org")];
+    let now = [before.clone(), vec![invite("Dan", "dan@example.org")]].concat();
+    let op = EventOp {
+        send: true,
+        invited_before: Some(before),
+        ..update(&Pim::event_id("budget"), EventFields { attendees: Some(now), ..Default::default() })
+    };
+    let result = run(&server, &job(vec![op]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done, "{result:?}");
+    let people = stored(&server, "budget").unwrap().props["participants"].as_object().unwrap().clone();
+    let mut addresses: Vec<String> = people.values().map(|p| p["calendarAddress"].as_str().or(p["email"].as_str()).unwrap().to_string()).collect();
+    addresses.sort();
+    assert_eq!(
+        addresses,
+        ["dan@example.org", "mailto:ada@example.org", "mailto:bob@example.org", "mailto:carol@example.org", "mailto:eve@example.org"]
+    );
+    // The update goes to everybody invited: Eve is told of a change, never of a cancellation.
+    let told = server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| t.what).collect::<Vec<_>>(), ["update"]);
+    assert!(told[0].to.contains(&"eve@example.org".to_string()), "{told:?}");
+}
+
+#[test]
+fn a_change_of_the_people_of_an_event_with_more_than_are_read_is_refused() {
+    let server = server();
+    server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        for n in 0..1_001 {
+            budget.props["participants"][format!("g{n}")] =
+                person("Guest", &format!("guest{n}@example.org"), json!({"attendee": true}), "needs-action");
+        }
+    });
+    let attendees = vec![mailcraft_model::Attendee { address: Address::new("Dan", "dan@example.org"), ..Default::default() }];
+    let op = EventOp { send: true, ..update(&Pim::event_id("budget"), EventFields { attendees: Some(attendees), ..Default::default() }) };
+    let said = outcomes(&run(&server, &job(vec![op])));
+    assert_eq!(said[0].0, EventResult::Refused);
+    assert!(said[0].1.contains("more than 1,000 people"), "{said:?}");
+    assert!(server.asked().iter().all(|a| a.method != "CalendarEvent/set"), "nothing written");
+    // Its title is still changed.
+    assert_eq!(outcomes(&run(&server, &job(vec![update(&Pim::event_id("budget"), title("All hands"))])))[0].0, EventResult::Done);
+}
+
+#[test]
 fn scheduling_messages_only_for_the_organizer_of_a_meeting_and_in_calls_of_their_own() {
     let server = server();
     let ops = vec![

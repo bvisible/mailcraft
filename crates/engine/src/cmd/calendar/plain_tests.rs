@@ -219,3 +219,18 @@ fn the_owners_yes_to_the_mail_goes_to_the_server_with_each_change_she_gave_it_fo
     s.run("calendar.delete", &json!({"id": review, "send": true})).unwrap();
     assert!(said(&s).contains(&(EventChangeKind::Delete, "V9".into(), true, true)), "{:?}", said(&s));
 }
+
+#[test]
+fn a_change_of_who_is_invited_says_who_was_invited_before_it() {
+    let (mut s, mine, _) = session(true);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    s.run("calendar.edit", &json!({"id": mine, "attendees": "bo@example.org", "send": true})).unwrap();
+    s.run("calendar.edit", &json!({"id": mine, "title": "Budget review (moved)", "send": true})).unwrap();
+    let ops = event_upload(&s, account).unwrap().ops;
+    let invited = |list: &Option<Vec<Attendee>>| list.iter().flatten().map(|a| a.address.email.clone()).collect::<Vec<_>>();
+    assert_eq!((invited(&ops[0].fields.attendees), ops[0].invited_before.as_ref().map(Vec::len)), (vec!["bo@example.org".to_string()], Some(0)));
+    // A change that leaves who is invited as it was says nothing of them.
+    let (mut s, mine, _) = session(true);
+    s.run("calendar.edit", &json!({"id": mine, "title": "Budget review (moved)"})).unwrap();
+    assert_eq!(event_upload(&s, account).unwrap().ops[0].invited_before, None);
+}

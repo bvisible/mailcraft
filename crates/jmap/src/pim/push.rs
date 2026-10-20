@@ -70,6 +70,8 @@ const NEAR: i64 = 60;
 const RETRY: u32 = 60;
 /// The longest words of the server's kept, in characters.
 const MAX_WORDS: usize = 300;
+/// Why a change of who is invited to an event with more people than are read is not written.
+const TOO_MANY_PEOPLE: &str = "the server has more than 1,000 people for this event, more than are rewritten from here";
 
 /// Write what `request.changes` says to the account's calendars (in `account` of the session) and put what came of
 /// each change into `out.uploaded`. Whether the job may go on to read: not after a stop, a refusal of the credentials
@@ -386,6 +388,11 @@ impl<H: Http> Writer<'_, H> {
             }
             None => Clock::Own(self.shown),
         };
+        // A change of who is invited is made to the server's people whole: not to more of them than are read.
+        if op.kind == EventChangeKind::Update && op.fields.attendees.is_some() && write::too_many_people(&copy) {
+            self.answer(at, EventResult::Refused, TOO_MANY_PEOPLE, None);
+            return Ok(None);
+        }
         let ready = match op.kind {
             EventChangeKind::Delete => Ready { at, target, body: None, scheduling: op.cancel && meeting, zone: String::new() },
             EventChangeKind::Respond => match write::answer(&copy, op.response, &self.me) {

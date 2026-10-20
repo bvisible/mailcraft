@@ -780,6 +780,12 @@ pub struct EventOp {
     /// For a meeting that is forwarded: who to (with `comment` for them to read).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub to: Vec<Address>,
+    // //// Neoffice — who was invited before a change of the people, so that a server that keeps an event's people as
+    // one map (JMAP for Calendars) is told who came and who went, and keeps whoever was added there meanwhile.
+    /// For a change of who is invited ([`EventFields::attendees`]): who was invited in the event the change was made to
+    /// ([`EventChange::base`]), as `attendees` says them. `None` when that is not known: nobody is then taken away.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invited_before: Option<Vec<Attendee>>,
 }
 
 impl EventOp {
@@ -795,6 +801,12 @@ impl EventOp {
             time.end = time.end.max(time.start);
         }
         self.to = recipients(std::mem::take(&mut self.to));
+        // //// Neoffice — who was invited before is cut as who is invited now is.
+        if let Some(before) = self.invited_before.take() {
+            let mut was = EventFields { attendees: Some(before), ..Default::default() };
+            was.tidy();
+            self.invited_before = was.attendees;
+        }
     }
 
     /// It is about one occurrence of a series, known by its series and its time only.

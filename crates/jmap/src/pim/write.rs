@@ -14,7 +14,10 @@
 //!   such an event is written in UTC, and loses its own zone. One occurrence of a series keeps its series' zone: its
 //!   start is on that clock, and no zone goes with it ([`Clock::Series`]).
 //! - **Places and people** are written whole, as the server takes them: the server's own map, read just before
-//!   ([`Copy`]), with the person's change made to it, so that what somebody else changed there meanwhile stays.
+//!   ([`Copy`]), with the person's change made to it, so that what somebody else changed there meanwhile stays. A
+//!   change of who is invited is who came and who went since the event it was made to (`EventOp::invited_before`):
+//!   anybody else of the server's stays as the server has them. A copy of more than [`MAX_COPY_PEOPLE`] is not
+//!   rewritten.
 //! - **What a server that keeps only the basics doesn't keep** (categories, importance, response options, online
 //!   meetings) is not written: it would refuse the whole event, and the person's other changes with it. A change of
 //!   nothing else is none ([`patch`] says so).
@@ -32,6 +35,8 @@ pub const UTC_ZONE: &str = "Etc/UTC";
 pub const KEEPS_NO: &str = "this calendar's server keeps no categories, importance, response options, online meetings or proposed times";
 /// Most people of an event that are written.
 const MAX_PEOPLE: usize = 500;
+/// Most people of the server's copy of an event that are rewritten: as many as are read.
+pub const MAX_COPY_PEOPLE: usize = 1_000;
 /// The longest a whole-day event is written to last, in days.
 const MAX_DAYS: i64 = 3_660;
 
@@ -248,32 +253,49 @@ fn locations(copy: Option<&Copy>, place: &str) -> Value {
     Value::Object(map)
 }
 
-/// The server's people with the people invited as `invited_now` says (the person and the organizer stay, whoever
-/// they are; a guest no longer invited goes; one newly invited comes; who is optional is as it says).
-fn participants(copy: Option<&Copy>, invited_now: &[Attendee], me: &[String]) -> Value {
+/// Whether the server's copy of an event has more people than are rewritten here ([`MAX_COPY_PEOPLE`]).
+pub fn too_many_people(copy: &Copy) -> bool {
+    copy.get("participants").and_then(Value::as_object).is_some_and(|map| map.len() > MAX_COPY_PEOPLE)
+}
+
+/// The server's people with the person's change of who is invited made to them: those invited in the event the change
+/// was made to (`before`) and not now go, those invited now and not before come, those whose being optional changed
+/// are so; everybody else of the server's stays as the server has them (one added there meanwhile, one the window
+/// never shows: a room, somebody informed, a chair). The person and the organizer always stay. Without `before`, nobody
+/// goes and nothing is changed of those there: those invited now who are not there come.
+fn participants(copy: Option<&Copy>, invited_now: &[Attendee], before: Option<&[Attendee]>, me: &[String]) -> Value {
     let mut map: Map<String, Value> = copy.and_then(|copy| copy.get("participants")).and_then(Value::as_object).cloned().unwrap_or_default();
     let organizer = copy.map(|copy| mailto(copy.get("organizerCalendarAddress").and_then(Value::as_str).unwrap_or_default())).unwrap_or_default();
-    let listed = |email: &str| invited_now.iter().find(|who| who.address.email.trim().eq_ignore_ascii_case(email));
+    let same = |one: &Attendee, email: &str| !email.is_empty() && one.address.email.trim().eq_ignore_ascii_case(email);
+    let now_of = |email: &str| invited_now.iter().find(|who| same(who, email));
+    let before_of = |email: &str| before.and_then(|before| before.iter().find(|was| same(was, email)));
+    // Gone: invited before, and not now. Optional or not: as now says, of those it changed for.
+    let gone = |email: &str| before_of(email).is_some() && now_of(email).is_none();
+    let reoptioned = |email: &str| match (before_of(email), now_of(email)) {
+        (Some(was), Some(now)) if was.optional != now.optional => Some(now.optional),
+        _ => None,
+    };
     map.retain(|_, entry| {
         let email = address_of(entry);
         let keeps = has_role(entry, "owner") || mine(me, &email) || (!organizer.is_empty() && organizer.eq_ignore_ascii_case(&email));
-        keeps || email.is_empty() || listed(&email).is_some()
+        keeps || email.is_empty() || !gone(&email)
     });
     for entry in map.values_mut() {
         let email = address_of(entry);
-        if let (Some(who), Some(roles)) =
-            (listed(&email), entry.as_object_mut().and_then(|entry| entry.get_mut("roles")).and_then(Value::as_object_mut))
+        if let (Some(optional), Some(roles)) =
+            (reoptioned(&email), entry.as_object_mut().and_then(|entry| entry.get_mut("roles")).and_then(Value::as_object_mut))
         {
-            if who.optional {
+            if optional {
                 roles.insert("optional".into(), json!(true));
             } else {
                 roles.remove("optional");
             }
         }
     }
+    // Come: invited now, and not before (any of them, when before is not known), and not there already.
     for who in invited_now.iter().take(MAX_PEOPLE) {
         let email = who.address.email.trim();
-        if email.is_empty() || map.values().any(|entry| address_of(entry).eq_ignore_ascii_case(email)) {
+        if email.is_empty() || before_of(email).is_some() || map.values().any(|entry| address_of(entry).eq_ignore_ascii_case(email)) {
             continue;
         }
         let key = free_key(&map, "p");
@@ -311,7 +333,7 @@ pub fn create(op: &EventOp, clock: Clock) -> Option<(Value, bool, String)> {
     }
     let invites = fields.attendees.as_ref().is_some_and(|people| !people.is_empty());
     if let Some(people) = fields.attendees.as_ref().filter(|people| !people.is_empty()) {
-        out.insert("participants".into(), participants(None, people, &[]));
+        out.insert("participants".into(), participants(None, people, None, &[]));
     }
     Some((Value::Object(out), invites, zone))
 }
@@ -357,7 +379,7 @@ pub fn patch(op: &EventOp, copy: Option<&Copy>, clock: Clock, me: &[String]) -> 
         out.insert("recurrenceRule".into(), repeat.rule.as_ref().map_or(Value::Null, |rule| rule_json(rule, repeat.first)));
     }
     if let Some(people) = &fields.attendees {
-        out.insert("participants".into(), participants(copy, people, me));
+        out.insert("participants".into(), participants(copy, people, op.invited_before.as_deref(), me));
     }
     (!out.is_empty()).then_some((Value::Object(out), zone))
 }
