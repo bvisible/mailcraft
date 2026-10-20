@@ -418,3 +418,20 @@ fn the_session_names_the_notes_account_and_its_limits_clamped() {
 fn limits_of(capability: Option<&Value>) -> (usize, usize) {
     limits(capability)
 }
+
+#[test]
+fn a_job_that_only_writes_reads_when_a_change_was_not_taken_as_sent() {
+    let server = server();
+    let pin = update("VN-2", NoteFields { pinned: Some(true), ..Default::default() }, "");
+    let only = |ops: Vec<NoteOp>| NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops }), ..Default::default() };
+    // Taken: nothing is read.
+    let result = run(&server, &request(only(vec![pin])));
+    assert!(answer(&result).download.is_none(), "{result:?}");
+    // Stale: what the server has now comes with the answer.
+    let old = version_of(&server, "VN-1");
+    server.with(|d| d.notes.change("VN-1", |note| note.text = "On the phone".into()));
+    let result = run(&server, &request(only(vec![update("VN-1", NoteFields { text: Some("Mine".into()), ..Default::default() }, &old)])));
+    assert_eq!(outcomes(&result)[0].0, NoteResult::Stale);
+    let read = download(&result);
+    assert!(read.complete && read.notes.iter().any(|note| note.id == "VN-1" && note.text == "On the phone"));
+}

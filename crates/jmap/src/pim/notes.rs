@@ -25,7 +25,8 @@
 //!    change its answer says nothing of, failed, to go again after the time it asked for or a minute. A call refused for
 //!    its size is sent again in halves. A refused sign-in ends the job (`token_refused`: what was not tried waits), a
 //!    busy server too.
-//! 2. **Then the notes are read.** When the window holds the state of its last whole read and it is less than an hour
+//! 2. **Then the notes are read**, when the window asks, or when the server didn't take a change as it was sent (the
+//!    window's notes are then other than the server's). When the window holds the state of its last whole read and it is less than an hour
 //!    old ([`NotesAsk::state_to_ask`]), one `Note/query` for one id asks whether the server still says it: then nothing
 //!    has changed, and nothing more is read. (After changes the server took, every one, from that very state, the
 //!    state it said after them is the one asked about.) Otherwise `Note/query` from the start, archived notes too,
@@ -100,6 +101,9 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
     let mut lines: Vec<String> = Vec::new();
     let mut held = ask.state_to_ask(request.now).map(str::to_string);
     let mut stop = None;
+    // A job that only writes reads too when the server didn't take a change as it was sent: the window's notes are
+    // other than the server's (a stale one put back, a note gone), and what the server has now is read at once.
+    let mut read_again = false;
     if let Some(upload) = ask.changes.as_ref().filter(|upload| !upload.ops.is_empty()) {
         let (uploaded, stopped, line) = job.write(upload, request).await;
         lines.extend(line);
@@ -113,10 +117,11 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
             Some(state) if uploaded.old_state == state && !uploaded.new_state.is_empty() => Some(uploaded.new_state.clone()),
             other => other,
         };
+        read_again = !kept;
         answer.uploaded = Some(uploaded);
         stop = stopped;
     }
-    if stop.is_none() && ask.read {
+    if stop.is_none() && (ask.read || read_again) {
         let mut got = Gathered::new();
         let read = job.read(held.as_deref(), &mut got).await.err();
         match read {
