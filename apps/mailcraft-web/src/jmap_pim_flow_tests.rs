@@ -752,3 +752,65 @@ fn a_series_declined_elsewhere_stays_while_a_change_of_one_of_its_days_waits_and
     flow.look(2.0 * MINUTE + SECOND);
     assert!(flow.event("Planning").is_none() && flow.when("Planning").is_empty(), "{:?}", flow.when("Planning"));
 }
+
+#[test]
+fn a_series_declined_elsewhere_stays_while_a_change_of_one_of_its_events_of_their_own_waits() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let planning = flow.event("Planning").unwrap();
+    // A reminder of her own on the 20th, sent: the day is an event of its own on the server, under a name of its own.
+    flow.app.execute("calendar.edit", json!({"id": planning.id, "scope": "occurrence", "occurrence": "2026-10-20", "reminder": 30})).unwrap();
+    assert!(flow.look(SECOND));
+    let twentieth = Pim::occurrence_id("planning", "2026-10-20T10:00:00");
+    let day = flow.app.session.mailbox.events.values().find(|e| e.origin.id == twentieth).map(|e| e.id).unwrap();
+    assert!(flow.app.session.mailbox.event_changes.is_empty());
+    // Changed again, by that name; the server can't take it just now; and on her phone the series is declined.
+    flow.server.with(|d| {
+        d.pim.refused_events.insert(twentieth.clone(), "serverFail");
+    });
+    flow.app.execute("calendar.edit", json!({"id": day, "reminder": 45})).unwrap();
+    flow.server.with(|d| {
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["participationStatus"] = json!("declined");
+    });
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.app.session.mailbox.event_changes.len(), 1, "{:?}", flow.app.sync_problems_of(flow.account));
+    assert!(flow.event("Planning").is_some_and(|e| e.recurrence.is_some()), "the series stays while the change waits");
+    // Once it went, the series goes, whole, without a word.
+    flow.server.with(|d| d.pim.refused_events.clear());
+    flow.app.session.clock.now = Some(NOW + 10 * 60);
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.when("Planning").is_empty(), "{:?}", flow.when("Planning"));
+    let problems = flow.app.sync_problems_of(flow.account);
+    assert!(!problems.iter().any(|line| line.contains("took the change") || line.contains("taken out")), "{problems:?}");
+}
+
+#[test]
+fn a_series_declined_elsewhere_goes_at_once_after_a_day_of_it_was_moved_and_sent_and_nothing_is_said() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let planning = flow.event("Planning").unwrap();
+    // The 20th an hour later, here; then, before the next read, the series declined on her phone.
+    flow.app
+        .execute("calendar.move", json!({"id": planning.id, "scope": "occurrence", "occurrence": "2026-10-20", "start": "2026-10-13T11:00"}))
+        .unwrap();
+    flow.server.with(|d| {
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["participationStatus"] = json!("declined");
+    });
+    // The move goes, and the read after it says the series is gone: it goes at once, the move's check with it.
+    assert!(flow.look(SECOND));
+    assert!(
+        flow.server.with(|d| d.pim.events.iter().find(|e| e.raw == "planning").unwrap().overrides.contains_key("2026-10-20T10:00:00")),
+        "the move went"
+    );
+    assert!(flow.app.session.mailbox.event_changes.is_empty());
+    assert!(flow.when("Planning").is_empty(), "{:?}", flow.when("Planning"));
+    for _ in 0..4 {
+        flow.look(2.0 * MINUTE + SECOND);
+    }
+    assert!(flow.when("Planning").is_empty());
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "nothing to say: {:?}", flow.app.sync_problems_of(flow.account));
+}
