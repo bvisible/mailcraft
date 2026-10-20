@@ -52,7 +52,7 @@
 //! - **Trouble on demand**, besides the mail part's (`refuse_next`, `drop_token_after`, `lost_answers`, method errors
 //!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
 //!   deleted between a query and a `get` ([`Pim::vanishing`]), and cards a `get` says nothing of
-//!   ([`Pim::unsaid_cards`]); a change of an event refused with a SetError
+//!   ([`Pim::unsaid_cards`]); an account over its quota ([`Pim::full`]); a change of an event refused with a SetError
 //!   ([`Pim::refused_events`]), and of a card ([`Pim::refused_cards`]); a server that says it took a time and keeps
 //!   the old one ([`Pim::keeps_old_times`]).
 
@@ -365,6 +365,8 @@ pub struct Pim {
     pub finds_by_uid: bool,
     /// Cards (their ids) a `get` says nothing of: neither listed nor not found.
     pub unsaid_cards: BTreeSet<String>,
+    /// The account is over its quota: a new card is refused (`overQuota`).
+    pub full: bool,
 }
 
 impl Default for Pim {
@@ -400,6 +402,7 @@ impl Default for Pim {
             cards_clock: CARDS_CLOCK,
             finds_by_uid: true,
             unsaid_cards: BTreeSet::new(),
+            full: false,
         }
     }
 }

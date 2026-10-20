@@ -30,13 +30,14 @@
 //!    markup taken out, [`MAX_WORDS`] characters at most), or failed with when to try again (a busy server, one that
 //!    failed, a connection that broke, an answer too large to take, a change not reached). A failure that asking again
 //!    is unlikely to get past (the server failed with this very card, or with the look for it, said nothing of it,
-//!    won't make a new one for now, or a change alone is too large for it) says so ([`ContactOutcome::lasting`]); so
-//!    does one of a new card what is known of a card made of it ([`ContactOutcome::made`]: perhaps, when it was sent
-//!    and no answer said; none, when the server refused it and made none of it before). A card the server says is
-//!    there already (`alreadyExists` with its id) is that card: it is read, and what was changed here since it was
-//!    sent before is made to it. A new card sent again as a change of its card, refused, says which card (the contact
-//!    is that one). A server that refuses the credentials, or is busy, ends the job: what was not tried waits as it
-//!    was, with no outcome.
+//!    or a change alone is too large for it) says so ([`ContactOutcome::lasting`]); one over the account's quota goes
+//!    again however long it takes, and says so too ([`ContactOutcome::full`]). One of a new card says what is known of
+//!    a card made of it ([`ContactOutcome::made`]): perhaps, when the server may have run it (no answer said, it ran
+//!    in part, a gateway failed after it); none, when it refused it or ran nothing, and made none of it before (it was
+//!    never sent before, or its look found none). A card the server says is there already (`alreadyExists` with its
+//!    id) is that card: it is read, and what was changed here since it was sent before is made to it. A new card sent
+//!    again as a change of its card, refused, says which card (the contact is that one). A server that refuses the
+//!    credentials, or is busy, ends the job: what was not tried waits as it was, with no outcome.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -218,7 +219,7 @@ impl<H: Http> Writer<'_, H> {
         let Some(op) = self.ops.get(at) else { return };
         if let Some(slot) = self.outcomes.get_mut(at).filter(|slot| slot.is_none()) {
             let mut outcome =
-                ContactOutcome { op: op.clone(), result, remote, error: crate::tidy(error, MAX_WORDS), retry_after, lasting, made: CardMade::Unsaid };
+                ContactOutcome { op: op.clone(), result, remote, error: crate::tidy(error, MAX_WORDS), retry_after, lasting, ..Default::default() };
             outcome.tidy();
             *slot = Some(outcome);
         }
@@ -608,11 +609,12 @@ impl<H: Http> Writer<'_, H> {
             // says with no more): smaller calls may go.
             Err(Error::TooLarge(_)) if status.is_some_and(|status| (400..500).contains(&status)) => return Ok(true),
             Err(_) if status == Some(413) => return Ok(true),
-            // Anything else (an answer too large to take, a connection lost): whether it went is not known. It goes
-            // again: a new card with its mark, which makes no second one (and whose card may be on the server now); a
-            // change made again to the card read anew; a deletion of a card that is gone, which is done.
+            // Anything else (an answer too large to take, a connection lost, a gateway that gave up): whether it went is
+            // not known. It goes again: a new card with its mark, which makes no second one (and whose card may be on
+            // the server now); a change made again to the card read anew; a deletion of a card that is gone, which is
+            // done. Only a request refused as a whole before anything ran (a 4xx but a 429) made nothing.
             Err(error) => {
-                let ran = !matches!(error, Error::Busy { .. } | Error::Auth(_));
+                let ran = !status.is_some_and(|status| (400..500).contains(&status) && status != 429);
                 let went = self.request_failed(error, &affected);
                 if ran {
                     for one in call.iter().filter(|one| one.target.is_empty()) {
@@ -627,14 +629,22 @@ impl<H: Http> Writer<'_, H> {
             Err(Error::Refused { kind, .. }) if kind == "requestTooLarge" => return Ok(true),
             Err(error) => {
                 let words = said(&self.secrets, &error);
-                let (result, retry) = match &error {
-                    Error::Refused { kind, .. } if failed_for_now(kind) => (EventResult::Failed, Some(RETRY)),
-                    Error::Refused { .. } => (EventResult::Refused, None),
-                    _ => (EventResult::Failed, Some(RETRY)),
+                // The method refused as a whole ran nothing; one that ran in part (`serverPartialFail`), or an answer
+                // that is no answer to it, may have made the new cards.
+                let (result, retry, ran) = match &error {
+                    Error::Refused { kind, .. } if kind == "serverPartialFail" => (EventResult::Failed, Some(RETRY), true),
+                    Error::Refused { kind, .. } if failed_for_now(kind) => (EventResult::Failed, Some(RETRY), false),
+                    Error::Refused { .. } => (EventResult::Refused, None, false),
+                    _ => (EventResult::Failed, Some(RETRY), true),
                 };
                 for one in call {
                     let remote = if result == EventResult::Refused { self.card_named(one) } else { String::new() };
                     self.answer(one.at, result, remote, &words, retry, false);
+                    match (one.target.is_empty(), ran) {
+                        (true, true) => self.made_is(one.at, CardMade::Perhaps),
+                        (true, false) => self.not_made(one.at),
+                        (false, _) => {}
+                    }
                 }
                 return Ok(false);
             }
@@ -710,18 +720,33 @@ impl<H: Http> Writer<'_, H> {
         let new_card = op.kind == ContactChangeKind::Create && one.target.is_empty();
         match kind {
             "notFound" if !one.target.is_empty() => self.answer(at, EventResult::Gone, String::new(), &words, None, false),
-            // The server failed with this very card: asking again may get past it once or twice, not for ever. So with
-            // a new card it won't make for now (over its quota, say), unless it asks to be left alone a while.
+            // The server failed with this very card: asking again may get past it once or twice, not for ever.
             "serverFail" | "serverPartialFail" => self.failed(at, &words, retry, true),
-            kind if failed_for_now(kind) => self.failed(at, &words, retry, new_card && !matches!(kind, "rateLimit" | "tooManyRequests")),
+            // Busy, unavailable, or over its quota: it goes again, however long it takes (room may be made); the last
+            // says so, for the owner to hear.
+            kind if failed_for_now(kind) => {
+                self.failed(at, &words, retry, false);
+                if kind == "overQuota"
+                    && let Some(Some(outcome)) = self.outcomes.get_mut(at)
+                {
+                    outcome.full = true;
+                }
+            }
             _ => {
                 let remote = self.card_named(one);
                 self.answer(at, EventResult::Refused, remote, &words, None, false);
             }
         }
-        // None was made of it, when it was never sent before or the server found none made with its mark: nothing
-        // waits for it.
-        if new_card && (op.base.is_none() || self.none_made.contains(&at)) {
+        if new_card {
+            self.not_made(at);
+        }
+    }
+
+    /// The server made nothing of the new card at `at` this time: none was made of it at all when it was never sent
+    /// before, or the server found none made with its mark. (One sent before that it couldn't look for may have been
+    /// made the first time: nothing new is known.)
+    fn not_made(&mut self, at: usize) {
+        if self.ops.get(at).is_some_and(|op| op.base.is_none()) || self.none_made.contains(&at) {
             self.made_is(at, CardMade::No);
         }
     }

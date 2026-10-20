@@ -987,6 +987,11 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
         "these messages were for another account, not for {account}",
         "defensive: a download for an account replaced meanwhile, which the window ends first",
     ),
+    (
+        "The server's mailbox is full: {name} waits here and goes as soon as there is room.",
+        "a contacts job's, not a mail run's: the contacts flow over the same in-process server makes it and reads it in French \
+         (`jmap_pim_flow_tests`, a new contact the server has no room for)",
+    ),
 ];
 
 // ---------------------------------------------------------------------------------------------

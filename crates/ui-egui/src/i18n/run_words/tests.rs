@@ -384,6 +384,14 @@ fn the_crates_lines_read_in_french() {
     assert_eq!(fr("Receiving mail failed: the server closed the connection"), None);
 }
 
+/// A new contact the server has no room for, as the engine says it (`remote_contacts::written`).
+#[test]
+fn a_new_contact_the_server_has_no_room_for_reads_in_french() {
+    let line = "The server's mailbox is full: \"Gus Hale\" waits here and goes as soon as there is room.";
+    let read = super::explain(french(), Family::Line, line, &mailbox()).map(|reading| reading.text);
+    assert_eq!(read.as_deref(), Some("L’espace du serveur est plein : \"Gus Hale\" attend ici et partira dès qu’il y aura de la place."));
+}
+
 // ---------------------------------------------------------------------------------------------
 // The census: the table against the crates' source
 

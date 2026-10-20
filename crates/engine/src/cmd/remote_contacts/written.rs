@@ -19,18 +19,21 @@
 //! - **What the server said.** Done: a new contact has the server's name for it, and the note goes (what was changed
 //!   since is noted afresh). Gone: a change has nothing to change there, and the contact goes here too; a deletion is
 //!   done. Refused: a change is put back as the server has it, a deleted contact comes back, a new one is kept on this
-//!   computer only, or (in a session that keeps nothing of its own) taken away (one sent again as a change of the card
-//!   the server made of it the first time is that card, put back as it was sent then); each says so, once. Denied: tried once
-//!   more, then refused. Failed: it waits, longer after every failure in a row; a new contact the server may have
-//!   made (it was sent, and no answer said) keeps what it was sent with, so that sending it again makes only what was
-//!   changed since to that card, and one it refused to make, having made none of it, keeps nothing of the kind. One
-//!   the server keeps failing with (a few times in a row, with this very change), or a new contact it keeps making
-//!   without saying what it calls it (counted apart), is given up with a word, and the contact follows the server
-//!   again; another answer, or a new change here, starts the count again.
+//!   computer only (in a session that keeps nothing of its own, until the tab is closed: a contact the person made is
+//!   never taken away because a server wouldn't have it); one sent again as a change of the card the server made of
+//!   it the first time is that card, put back as it was sent then; each says so, once. Denied: tried once more, then
+//!   refused. Failed: it waits, longer after every failure in a row; a new contact the server may have made (it may
+//!   have run what it was sent) keeps what it was sent with, so that sending it again makes only what was changed since
+//!   to that card, and one it refused to make, having made none of it, keeps nothing of the kind. One the server has
+//!   no room for (the account over its quota) waits however long it takes, and the owner is told once. One the server
+//!   keeps failing with (a few times in a row, with this very change), or a new contact it keeps making without saying
+//!   what it calls it (counted apart), is given up with a word, and the contact follows the server again (a new one is
+//!   kept here, as a refused one is); another answer, or a new change here, starts the count again.
 //! - **A copy.** A read that came before the answer to a new contact (one lost on the way) brings its card as a contact
 //!   of its own. A note is that contact's own (a change of one of the two is never the other's), and deleting one of
-//!   two contacts with one card deletes nothing there. A deletion waits while a new contact sent before is not due
-//!   again ([`contact_upload`]): it may be of that one's card. Once every answer of the job is in, a copy goes when
+//!   two contacts with one card deletes nothing there. A deletion waits for a new contact that may have been made on
+//!   the server and is not due again ([`due_at`]): it may be of that one's card (after a few failures of it in a row,
+//!   only one of a card with its name or an address of it waits). Once every answer of the job is in, a copy goes when
 //!   nothing of it waits (what it changed went to the card), a deletion of it is not sent (it would delete the contact
 //!   made here), and a contact made here whose card was deleted with its copy is made anew ([`apply_contact_outcomes`]).
 //! - **An answer about a change that is no longer noted** (it was undone while it was on its way): the server did what
@@ -318,24 +321,47 @@ fn book_name(mailbox: &Mailbox, contact: &Contact) -> String {
         .unwrap_or_default()
 }
 
-/// When a change of `account` is due: a deletion not before every new contact of the account that was sent before and
-/// is not due again yet (its answer didn't come) is ([`contact_upload`]).
-fn due_at(change: &ContactChange, resent_at: Option<Timestamp>) -> Timestamp {
-    match resent_at {
-        Some(at) if change.kind == ContactChangeKind::Delete => change.retry_at.max(at),
-        _ => change.retry_at,
-    }
-}
+/// How many failures in a row of a new contact that may have been made on its server (its answer didn't come) hold back
+/// every deletion of its account; after them, only the deletion of a card that may be its own does.
+const MAX_HOLDS: u32 = 3;
 
-/// When the last new contact of `account` that was sent before (its answer didn't come) and is not due again yet is
-/// due; `None` when there is none.
-fn resent_at(mailbox: &Mailbox, account: Id, now: Timestamp) -> Option<Timestamp> {
+/// The new contacts of `account` that may have been made on its server (sent, and no answer said) and are not due
+/// again yet: when each is due, how many times in a row it failed, and what it was sent with.
+fn holders(mailbox: &Mailbox, account: Id, now: Timestamp) -> Vec<(Timestamp, u32, &Contact)> {
     mailbox
         .contact_changes
         .iter()
-        .filter(|change| change.account == account && change.kind == ContactChangeKind::Create && change.base.is_some() && change.retry_at > now)
-        .map(|change| change.retry_at)
-        .max()
+        .filter(|change| change.account == account && change.kind == ContactChangeKind::Create && change.retry_at > now)
+        .filter_map(|change| change.base.as_deref().map(|sent| (change.retry_at, change.failures, sent)))
+        .collect()
+}
+
+/// When a change is due. A deletion waits for each new contact of its account that may have been made on its server
+/// and is not due again yet (`holders`): the card that one was made as may be the one deleted (a copy of it a read
+/// brought), and the server is to say which first. After [`MAX_HOLDS`] failures of one in a row, only the deletion of
+/// a card that may be its own (its name, or an address of it) waits for it.
+fn due_at(change: &ContactChange, holders: &[(Timestamp, u32, &Contact)]) -> Timestamp {
+    if change.kind != ContactChangeKind::Delete {
+        return change.retry_at;
+    }
+    holders
+        .iter()
+        .filter(|(_, failures, sent)| *failures < MAX_HOLDS || may_be(sent, change.base.as_deref()))
+        .map(|(at, ..)| *at)
+        .fold(change.retry_at, Timestamp::max)
+}
+
+/// Whether the card a deletion is of (`deleted`: the contact as the server had it) may be the one a new contact was
+/// made as (`sent`: what it was sent with): the same name, or an address of both. Unknown: it may be.
+fn may_be(sent: &Contact, deleted: Option<&Contact>) -> bool {
+    let Some(deleted) = deleted else { return true };
+    let name = sent.name();
+    let same_name = !name.trim().is_empty() && name.trim().eq_ignore_ascii_case(deleted.name().trim());
+    same_name
+        || sent
+            .emails
+            .iter()
+            .any(|a| deleted.emails.iter().any(|b| !a.value.trim().is_empty() && a.value.trim().eq_ignore_ascii_case(b.value.trim())))
 }
 
 /// How much of an account's contacts waits to go to its server: due now, all of them, and when the next held back is
@@ -346,10 +372,10 @@ pub fn contacts_waiting(s: &Session, account: Id) -> EventsWaiting {
         return waiting;
     }
     let (now, here) = (s.now(), contacts_here(&s.mailbox));
-    let resent = resent_at(&s.mailbox, account, now);
+    let holders = holders(&s.mailbox, account, now);
     for change in s.mailbox.contact_changes.iter().filter(|change| change.account == account && unfit(&s.mailbox, change, &here).is_none()) {
         waiting.total += 1;
-        let at = due_at(change, resent);
+        let at = due_at(change, &holders);
         if at <= now {
             waiting.due += 1;
         } else {
@@ -360,16 +386,15 @@ pub fn contacts_waiting(s: &Session, account: Id) -> EventsWaiting {
 }
 
 /// What the server of `account` is to be told now of the contacts made, changed and deleted here in its books: the
-/// changes that are due, oldest first, [`MAX_CONTACT_OPS`] at most. A deletion waits while a new contact of the account
-/// that was sent before (its answer didn't come) is not due again: the card that one was made as, if it was, may be
-/// the one deleted (a copy of it a read brought), and the server is to say which first (a host sends the new ones
-/// first, and holds the deletions back while one has no answer that names its card).
+/// changes that are due, oldest first, [`MAX_CONTACT_OPS`] at most. A deletion waits for a new contact that may have
+/// been made on the server ([`due_at`]; a host sends the new ones first, and holds the deletions back while one has no
+/// answer that names its card).
 pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdError> {
     let owner = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
     let (mailbox, now) = (&s.mailbox, s.now());
     let here = contacts_here(mailbox);
-    let resent = resent_at(mailbox, account, now);
-    let due = |change: &&ContactChange| change.account == account && due_at(change, resent) <= now;
+    let holders = holders(mailbox, account, now);
+    let due = |change: &&ContactChange| change.account == account && due_at(change, &holders) <= now;
     let mut ops = Vec::new();
     for change in mailbox.contact_changes.iter().filter(due) {
         if ops.len() >= MAX_CONTACT_OPS {
@@ -525,20 +550,22 @@ fn tidy_contact_changes(mailbox: &mut Mailbox, keeps_local: bool) -> Vec<Contact
     given_up.iter().take(MAX_OUTCOMES).map(|(change, reason)| give_up(mailbox, change, reason, keeps_local)).collect()
 }
 
-/// Take a contact that can't be on its server out of its book and keep it as one of the mailbox's own, or (`keeps_local`
-/// false: the session keeps nothing of its own) take it away. Whether it is kept.
-fn keep_here(mailbox: &mut Mailbox, id: Id, keeps_local: bool) -> bool {
-    if !keeps_local {
-        let _ = mailbox.remove_contact(id);
-        return false;
-    }
+/// Where a contact that can't be on its server is kept, said at the end of a line: on this computer, or (a session that
+/// keeps nothing of its own) here until the tab is closed.
+const KEPT_HERE: &str = " It is kept on this computer only.";
+const KEPT_FOR_NOW: &str = " It stays here until this tab is closed: copy what you need of it.";
+
+/// Take a contact that can't be on its server out of its book and keep it as one of the mailbox's own: a contact the
+/// person made is never taken away because its server wouldn't have it (in a session that keeps nothing of its own, it
+/// stays until the tab is closed). Where it is kept, for the owner; nothing when it is no longer here.
+fn keep_here(mailbox: &mut Mailbox, id: Id, keeps_local: bool) -> &'static str {
     match mailbox.contact_mut(id) {
         Ok(contact) => {
             contact.book = 0;
             contact.origin = Origin::default();
-            true
+            if keeps_local { KEPT_HERE } else { KEPT_FOR_NOW }
         }
-        Err(_) => false,
+        Err(_) => "",
     }
 }
 
@@ -574,11 +601,8 @@ fn give_up(mailbox: &mut Mailbox, change: &ContactChange, reason: &'static str, 
             format!("{name}: its address book can't be changed any more, so the change made here was undone.")
         }
         (READ_ONLY, ContactChangeKind::Create) => {
-            if keep_here(mailbox, change.contact, keeps_local) {
-                format!("{name} was not sent to the server: its address book can't be changed any more. It is kept on this computer only.")
-            } else {
-                format!("{name} was not sent to the server: its address book can't be changed any more. It was removed here.")
-            }
+            let kept = keep_here(mailbox, change.contact, keeps_local);
+            format!("{name} was not sent to the server: its address book can't be changed any more.{kept}")
         }
         // (Not put back here: a deletion whose answer was lost may have been done there. The next read brings it back
         // if the server still has it.)
@@ -774,11 +798,14 @@ impl Taking<'_> {
         let message = match change.kind {
             ContactChangeKind::Create => {
                 let name = called_first(self.mailbox.contact(change.contact));
-                if keep_here(self.mailbox, change.contact, self.keeps_local) {
-                    format!("{name} could not be sent to the server, which keeps failing with it{why}. It is kept on this computer only.")
+                let kept = keep_here(self.mailbox, change.contact, self.keeps_local);
+                // (One whose answer didn't come may be there all the same.)
+                let there = if change.base.is_some() {
+                    " The server may have it already: then the next read brings it too, as a contact of its own."
                 } else {
-                    format!("{name} could not be sent to the server, which keeps failing with it{why}. It was removed here.")
-                }
+                    ""
+                };
+                format!("{name} could not be sent to the server, which keeps failing with it{why}.{kept}{there}")
             }
             ContactChangeKind::Update => {
                 let name = called(self.mailbox.contact(change.contact).or(change.base.as_deref()));
@@ -889,14 +916,22 @@ impl Taking<'_> {
                 // time is kept, so that sending it again makes only what was changed here since to the card made of
                 // it. One it refused to make, and made none of before, may not be anywhere there: nothing of it is.
                 let sent = self.sent_as(contact, op);
+                let mut told = true;
                 let held = self.mailbox.contact_changes.get_mut(at).map(|change| {
                     match outcome.made {
                         CardMade::Perhaps if change.base.is_none() => change.base = sent,
                         CardMade::No => change.base = None,
                         _ => {}
                     }
+                    // No room for it on the server: said once while it lasts.
+                    told = change.full || !outcome.full;
+                    change.full = outcome.full;
                     held_back(change, outcome, now)
                 });
+                if !told {
+                    let name = called(contact.and_then(|id| self.mailbox.contact(id)));
+                    self.applied.say(format!("The server's mailbox is full: {name} waits here and goes as soon as there is room."));
+                }
                 self.applied.failed += 1;
                 if held == Some(Held::Stuck) {
                     self.applied.failed -= 1;
@@ -934,9 +969,8 @@ impl Taking<'_> {
                 }
                 // What was written is not thrown away where it can be kept.
                 let name = called(contact.and_then(|id| self.mailbox.contact(id)));
-                let kept = contact.is_some_and(|id| keep_here(self.mailbox, id, self.keeps_local));
-                let then = if kept { " It is kept on this computer only." } else { " It was removed here." };
-                self.applied.say(format!("The server wouldn't take {name}{}.{then}", because(&outcome.error)));
+                let kept = contact.map(|id| keep_here(self.mailbox, id, self.keeps_local)).unwrap_or_default();
+                self.applied.say(format!("The server wouldn't take {name}{}.{kept}", because(&outcome.error)));
             }
         }
     }

@@ -343,13 +343,20 @@ fn refused_puts_a_changed_contact_back_to_its_base_and_says_so_once() {
 }
 
 #[test]
-fn refused_removes_a_contact_the_server_never_had_and_says_so() {
+fn refused_never_takes_away_a_contact_made_here_and_says_where_it_is() {
+    // A tab that keeps nothing of its own: the contact stays here (as one of the mailbox's own) until the tab is
+    // closed, and the owner is told so.
     let (mut s, account) = session();
     s.keeps_local = false;
     let id = run(&mut s, "people.new", json!({"company": "Hale & Sons"}))["id"].as_u64().unwrap();
     let said = answer(&mut s, account, EventResult::Refused, "", "A contact needs a name or an address.");
-    assert_eq!(said["messages"], json!(["The server wouldn't take \"Hale & Sons\" (A contact needs a name or an address.). It was removed here."]));
-    assert!(s.mailbox.contact(id).is_none() && s.mailbox.contact_changes.is_empty());
+    assert_eq!(
+        said["messages"],
+        json!([
+            "The server wouldn't take \"Hale & Sons\" (A contact needs a name or an address.). It stays here until this tab is closed: copy what you need of it."
+        ])
+    );
+    assert!(s.mailbox.contact(id).is_some_and(|c| c.book == 0 && c.origin.is_local()) && s.mailbox.contact_changes.is_empty());
     // Where what is made here is kept, it stays, as the mailbox's own.
     s.keeps_local = true;
     let id = run(&mut s, "people.new", json!({"company": "Hale & Sons"}))["id"].as_u64().unwrap();
@@ -1032,30 +1039,40 @@ fn answer_with(s: &mut Session, account: Id, kind: &str, outcome: Value) -> Valu
 }
 
 #[test]
-fn a_new_contact_the_server_refuses_to_make_holds_no_deletion_back_and_is_given_up_after_a_few() {
-    let (mut s, account) = session();
-    let gus = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
-    // The account is over its quota: Gus is refused, and none was made.
-    let refused = json!({"result": "failed", "error": "overQuota", "lasting": true, "made": "no"});
-    answer_with(&mut s, account, "create", refused.clone());
-    assert!(s.mailbox.contact_changes.iter().all(|change| change.base.is_none()), "nothing of him may be on the server");
-    // Old contacts deleted to make room go at once: they wait for nothing.
-    let bob = kept(&s, "c-bob");
-    run(&mut s, "people.delete", json!({"id": bob.id}));
-    let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
-    assert_eq!(kinds, ["delete"]);
-    answer_with(&mut s, account, "delete", json!({"result": "done"}));
-    // Refused a few times in a row: given up with a word, and kept on this computer only.
-    s.clock.now = s.clock.now.map(|now| now + 1_000);
-    answer_with(&mut s, account, "create", refused.clone());
-    s.clock.now = s.clock.now.map(|now| now + 1_000);
-    let said = answer_with(&mut s, account, "create", refused);
-    assert!(s.mailbox.contact_changes.is_empty());
-    assert_eq!(s.mailbox.contact(gus).map(|c| c.book), Some(0), "kept here only");
-    assert_eq!(
-        said["messages"],
-        json!(["\"Gus\" could not be sent to the server, which keeps failing with it (overQuota). It is kept on this computer only."])
-    );
+fn a_new_contact_the_server_has_no_room_for_waits_holds_no_deletion_back_and_goes_once_there_is_room() {
+    for keeps_local in [true, false] {
+        let (mut s, account) = session();
+        s.keeps_local = keeps_local;
+        let gus = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+        // The account is over its quota: Gus is refused, none was made, and the owner is told, once.
+        let full = json!({"result": "failed", "error": "overQuota", "made": "no", "full": true});
+        let said = answer_with(&mut s, account, "create", full.clone());
+        assert_eq!(said["messages"], json!(["The server's mailbox is full: \"Gus\" waits here and goes as soon as there is room."]));
+        assert!(s.mailbox.contact_changes.iter().all(|change| change.base.is_none()), "nothing of him may be on the server");
+        // Old contacts deleted to make room go at once: they wait for nothing.
+        let bob = kept(&s, "c-bob");
+        run(&mut s, "people.delete", json!({"id": bob.id}));
+        let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
+        assert_eq!(kinds, ["delete"], "keeps_local {keeps_local}");
+        answer_with(&mut s, account, "delete", json!({"result": "done"}));
+        // Refused again and again: he waits, in his book, however long it takes, and nothing more is said.
+        for _ in 0..5 {
+            s.clock.now = s.clock.now.map(|now| now + 1_000);
+            let said = answer_with(&mut s, account, "create", full.clone());
+            assert_eq!(said["messages"], json!([]), "keeps_local {keeps_local}");
+            assert!(s.mailbox.contact(gus).is_some_and(|c| c.book != 0), "keeps_local {keeps_local}: never taken away");
+        }
+        assert_eq!(kinds_of(&s), [ContactChangeKind::Create]);
+        // Room again: he goes.
+        s.clock.now = s.clock.now.map(|now| now + 1_000);
+        answer_with(&mut s, account, "create", json!({"result": "done", "remote": "c-gus"}));
+        assert_eq!(s.mailbox.contact(gus).map(|c| c.origin.id.clone()), Some("c-gus".to_string()));
+        assert!(s.mailbox.contact_changes.is_empty());
+    }
+}
+
+fn kinds_of(s: &Session) -> Vec<ContactChangeKind> {
+    s.mailbox.contact_changes.iter().map(|change| change.kind).collect()
 }
 
 #[test]
@@ -1068,11 +1085,43 @@ fn a_new_contact_whose_card_cant_be_looked_for_is_given_up_after_a_few_and_the_d
     let bob = kept(&s, "c-bob");
     run(&mut s, "people.delete", json!({"id": bob.id}));
     assert!(ops(&mut s, account).is_empty(), "the deletion waits for him");
-    // The server fails every look for his card: three times, then he is given up, and the deletion goes.
+    // The server fails every look for his card: three times, then he is given up, and the deletion goes. He may be
+    // on the server all the same: that is said.
+    let mut said = Value::Null;
     for _ in 0..3 {
         s.clock.now = s.clock.now.map(|now| now + 10_000);
-        answer_with(&mut s, account, "create", json!({"result": "failed", "error": "serverFail", "lasting": true}));
+        said = answer_with(&mut s, account, "create", json!({"result": "failed", "error": "serverFail", "lasting": true}));
     }
+    let line = said["messages"][0].as_str().unwrap_or_default().to_string();
+    assert!(line.starts_with("\"Gus\" could not be sent to the server") && line.contains("The server may have it already"), "{line}");
     let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
     assert_eq!(kinds, ["delete"]);
+}
+
+#[test]
+fn a_new_contact_whose_answers_keep_being_lost_holds_back_only_the_deletion_of_what_may_be_its_card() {
+    let (mut s, account) = session();
+    run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));
+    // His answers lost three times in a row (he may be on the server); a read brought a card of his as a contact of its
+    // own, and both that copy and Bob are deleted here.
+    for _ in 0..3 {
+        s.clock.now = s.clock.now.map(|now| now + 10_000);
+        answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
+    }
+    let gus = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
+    apply_contacts(
+        &mut s,
+        &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus]),
+    )
+    .unwrap();
+    let copy = kept(&s, "c-gus");
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.delete", json!({"id": copy.id}));
+    run(&mut s, "people.delete", json!({"id": bob.id}));
+    // Before he is due again, Bob's deletion goes; the copy's (his address: it may be his very card) waits for him.
+    let going: Vec<(String, String)> = ops(&mut s, account)
+        .iter()
+        .map(|op| (op["kind"].as_str().unwrap_or_default().to_string(), op["remote"].as_str().unwrap_or_default().to_string()))
+        .collect();
+    assert_eq!(going, [("delete".to_string(), "c-bob".to_string())]);
 }

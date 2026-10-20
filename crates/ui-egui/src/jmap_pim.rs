@@ -618,7 +618,9 @@ impl MailApp {
             }
             Err(e) => errors.push(format!("{}: {e}", tl!("The contact changes couldn't be taken in"))),
         }
-        let failed = |outcome: &&mailcraft_model::book::ContactOutcome| outcome.result == mailcraft_model::remote::EventResult::Failed;
+        // (One the server has no room for waits however long it takes, and the engine said so once: the job went well.)
+        let failed =
+            |outcome: &&mailcraft_model::book::ContactOutcome| outcome.result == mailcraft_model::remote::EventResult::Failed && !outcome.full;
         for (n, outcome) in uploaded.outcomes.iter().filter(failed).take(3).enumerate() {
             let why = if outcome.error.is_empty() { tl!("the server couldn't be reached") } else { outcome.error.as_str() };
             let line = format!("{}: {why}", tl!("A contact change couldn't be sent yet and will be tried again"));

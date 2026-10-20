@@ -222,6 +222,10 @@ pub struct ContactChange {
     /// For a new contact: how many times in a row the server said it made it without saying what it calls it.
     #[serde(skip_serializing_if = "is_zero")]
     pub nameless: u32,
+    /// The server said it had no room for it (the account over its quota), and the owner was told: not again while it
+    /// keeps saying so.
+    #[serde(skip_serializing_if = "is_false")]
+    pub full: bool,
 }
 
 /// A contact's name as a server's card holds it: one whole, sent together ([`ContactFields::name`]).
@@ -386,6 +390,10 @@ pub struct ContactOutcome {
     /// For a new contact that failed: what is known now of a card made of it.
     #[serde(skip_serializing_if = "CardMade::is_unsaid")]
     pub made: CardMade,
+    /// For a change that failed: the server has no room for it (the account is over its quota). It goes again, however
+    /// long it takes: room may be made.
+    #[serde(skip_serializing_if = "is_false")]
+    pub full: bool,
 }
 
 /// What is known of a card made of a new contact that failed ([`ContactOutcome::made`]).
@@ -743,6 +751,7 @@ mod tests {
             retry_after: Some(5),
             lasting: true,
             made: CardMade::Perhaps,
+            full: true,
         };
         outcome.tidy();
         assert!(outcome.remote.is_empty() && !outcome.error.contains('\n') && outcome.error.chars().count() <= MAX_WHY);

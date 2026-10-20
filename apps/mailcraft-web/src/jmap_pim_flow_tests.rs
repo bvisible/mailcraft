@@ -1163,3 +1163,58 @@ fn a_new_contact_sent_again_is_found_on_the_server_and_what_the_desk_added_there
     assert_eq!(here.len(), 1, "one Gus, the one made here");
     assert_eq!((here[0].id, here[0].phones.len(), here[0].title.as_str()), (gus, 1, "Joiner"));
 }
+
+#[test]
+fn a_new_contact_whose_answer_says_the_server_ran_part_of_it_is_looked_for_before_it_goes_again() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::MethodError("serverPartialFail"))));
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.app.session.mailbox.contact_changes.len(), 1);
+    // The next try looks for the card first (the server may have made it), then sends it.
+    let before = flow.server.calls().len();
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
+    assert!(flow.look(MINUTE));
+    let asked: Vec<String> = flow.server.calls().into_iter().skip(before).filter(|c| c.starts_with("ContactCard/")).collect();
+    assert_eq!(asked.first().map(String::as_str), Some("ContactCard/query"), "{asked:?}");
+    assert!(asked.iter().any(|call| call == "ContactCard/set"), "{asked:?}");
+    assert_eq!(flow.server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+}
+
+#[test]
+fn a_new_contact_the_server_has_no_room_for_waits_and_goes_once_there_is_room() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    // A tab that keeps nothing of its own (as `with_books` makes it), and an account over its quota.
+    flow.server.with(|d| d.pim.full = true);
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org"})).unwrap();
+    let gus = flow.contact("Gus").map(|c| c.id).unwrap();
+    assert!(flow.look(SECOND));
+    let said = flow.app.sync_problems_of(flow.account);
+    let line = "The server's mailbox is full: \"Gus Hale\" waits here and goes as soon as there is room.";
+    assert!(said.iter().any(|said| said == line), "{said:?}");
+    // In French, as the window reads it back.
+    let french = mailcraft_ui_egui::i18n::Lang::from_tag("fr").unwrap();
+    let read = mailcraft_ui_egui::i18n::run_words::explain(french, mailcraft_ui_egui::i18n::run_words::Family::Line, line, &flow.app.session.mailbox);
+    assert_eq!(
+        read.map(|reading| reading.text).as_deref(),
+        Some("L’espace du serveur est plein : \"Gus Hale\" attend ici et partira dès qu’il y aura de la place.")
+    );
+    // Refused again and again: he stays, in his book, and waits.
+    for _ in 0..4 {
+        flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 1_000);
+        flow.look(MINUTE);
+        assert!(flow.app.session.mailbox.contact(gus).is_some_and(|c| c.book != 0 && c.origin.id.is_empty()), "never taken away");
+        assert_eq!(flow.app.session.mailbox.contact_changes.len(), 1);
+    }
+    assert!(flow.card("Gus Hale").is_none());
+    // Room again: he goes.
+    flow.server.with(|d| d.pim.full = false);
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 1_000);
+    assert!(flow.look(MINUTE));
+    assert!(flow.card("Gus Hale").is_some());
+    assert_eq!(flow.contact("Gus").map(|c| (c.id, mailcraft_jmap::pim::server_card_id(&c.origin.id))), Some((gus, Some("Gus Hale".to_string()))));
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+}

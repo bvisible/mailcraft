@@ -753,19 +753,21 @@ fn made(outcome: &ContactOutcome) -> String {
 
 #[test]
 fn a_new_card_the_server_refuses_to_make_says_none_was_made_and_holds_no_deletion_back() {
-    // An account over its quota: the new card is refused (likely to be again), none was made, and the deletion that
-    // would make room goes.
+    // An account over its quota: the new card is refused (it goes again when there is room: it is not given up),
+    // none was made, the answer says the server has no room, and the deletion that would make room goes.
     let server = server();
-    server.with(|d| d.pim.refused_cards.insert("t-gus".into(), "overQuota"));
+    server.with(|d| d.pim.full = true);
     let done = outcomes(&run(&server, &request(vec![create("t-gus", gus()), destroy("Bob Lindqvist")])));
-    let answered: Vec<(ContactChangeKind, EventResult, bool, String)> = done.iter().map(|o| (o.op.kind, o.result, o.lasting, made(o))).collect();
+    let answered: Vec<(ContactChangeKind, EventResult, bool, String, bool)> =
+        done.iter().map(|o| (o.op.kind, o.result, o.lasting, made(o), says(o, "full"))).collect();
     assert_eq!(
         answered,
         [
-            (ContactChangeKind::Create, EventResult::Failed, true, "no".to_string()),
-            (ContactChangeKind::Delete, EventResult::Done, false, String::new())
+            (ContactChangeKind::Create, EventResult::Failed, false, "no".to_string(), true),
+            (ContactChangeKind::Delete, EventResult::Done, false, String::new(), false)
         ]
     );
+    server.with(|d| d.pim.full = false);
     assert!(card(&server, "Bob Lindqvist").is_none());
     // One sent before that its server looked for and found none of, refused again: none was made, and nothing waits
     // for it either.
@@ -795,4 +797,46 @@ fn a_second_new_card_sent_again_that_finds_a_card_another_took_waits() {
     let done = outcomes(&run(&server, &request(twice)));
     assert_eq!(done.iter().map(|o| (o.op.contact, o.result)).collect::<Vec<_>>(), [(40, EventResult::Done)], "the second waits, unanswered");
     assert_eq!(writes(&server).len(), before, "and is not sent whole");
+}
+
+/// Whether an outcome says `key`, as a host hands it to the engine.
+fn says(outcome: &ContactOutcome, key: &str) -> bool {
+    serde_json::to_value(outcome).ok().and_then(|value| value.get(key).and_then(Value::as_bool)).unwrap_or(false)
+}
+
+#[test]
+fn whatever_may_have_run_says_a_new_card_may_be_on_the_server_and_only_a_refusal_before_says_none() {
+    // The server may have made it: a call that ran in part, a gateway's 503 or 429 after it ran, an answer lost or
+    // that is no JMAP.
+    for effect in [Effect::MethodError("serverPartialFail"), Effect::Status(503), Effect::Status(429), Effect::LoseAnswer, Effect::Garbage] {
+        let server = server();
+        server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", effect)));
+        let done = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
+        assert_eq!((done[0].result, made(&done[0])), (EventResult::Failed, "perhaps".to_string()), "{effect:?}");
+    }
+    // The method refused as a whole: it ran nothing, and none was made of a card never sent before.
+    for effect in [Effect::MethodError("invalidArguments"), Effect::MethodError("serverFail")] {
+        let server = server();
+        server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", effect)));
+        let done = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
+        assert_eq!(made(&done[0]), "no", "{effect:?}");
+    }
+    // The request refused as a whole before it ran: nothing new is known.
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::RefuseWith(400))));
+    let done = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
+    assert_eq!((done[0].result, made(&done[0])), (EventResult::Failed, String::new()));
+}
+
+#[test]
+fn a_new_card_sent_again_whose_set_ran_nothing_after_its_look_found_none_holds_no_deletion_back() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::MethodError("invalidArguments"))));
+    let hal = ContactFields { name: name("Hal", "Berg"), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-hal", hal.clone(), hal), destroy("Bob Lindqvist")])));
+    let answered: Vec<(ContactChangeKind, EventResult, String)> = done.iter().map(|o| (o.op.kind, o.result, made(o))).collect();
+    assert_eq!(
+        answered,
+        [(ContactChangeKind::Create, EventResult::Refused, "no".to_string()), (ContactChangeKind::Delete, EventResult::Done, String::new())]
+    );
 }

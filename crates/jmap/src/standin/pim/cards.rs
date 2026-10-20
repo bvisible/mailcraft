@@ -27,7 +27,8 @@
 //!   rights do not allow it."), and so is deleting one where it may not delete; a card it doesn't have is `notFound`.
 //!   A card a document names is not deleted: `forbidden`, with the words of the store ([`Pim::linked_cards`]).
 //! - **Trouble on demand**: a card (by its id, or a new one by its `uid`) answered with the SetError a test names
-//!   ([`Pim::refused_cards`]). What it was sent is kept, in order ([`Pim::card_writes`]).
+//!   ([`Pim::refused_cards`]), and every new one refused while the account is over its quota ([`Pim::full`]). What
+//!   it was sent is kept, in order ([`Pim::card_writes`]).
 
 use serde_json::{Map, Value, json};
 
@@ -318,6 +319,9 @@ impl Pim {
         let book = named.or_else(|| self.default_book().map(|book| book.id.clone())).unwrap_or_default();
         if !self.books.iter().any(|b| b.id == book && b.may_write) {
             return Err(forbidden());
+        }
+        if self.full {
+            return Err(set_error("overQuota", "The account has no room left."));
         }
         let uid = card.get("uid").and_then(Value::as_str).map(|uid| uid.chars().take(MAX_UID).collect::<String>()).unwrap_or_default();
         if let Some(error) = self.refused_cards.get(&uid).filter(|_| !uid.is_empty()) {
