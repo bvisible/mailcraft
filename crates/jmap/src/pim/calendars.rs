@@ -49,8 +49,11 @@
 //! from one another. A download is complete when the query was read whole, every event it found was read (or the
 //! server said it was gone since), the stretch was not cut and the job was not stopped. A calendar asked for that the
 //! list read in the same job no longer has gets no download: the list takes it away, with its events, and a download
-//! of it would make it again. Categories, importance, response options, online meetings and proposed times are not
-//! read (`has_categories` and `has_options` are false): they stay as they are here.
+//! of it would make it again. Categories, importance, response options and proposed times are not read
+//! (`has_categories` is false). An event is held online when it has a virtual location with a link to join by
+//! (`virtualLocations`, [`jscalendar`]); the downloads of a server that keeps only the basics say so of their events
+//! (`has_options`: what else they have of the options is what such a server keeps, the defaults), those of another
+//! server don't (`has_options` false: the options stay as they are here).
 //!
 //! **A meeting the person declined** (their own answer is no, and it is known to be somebody else's: its organizer is
 //! named, is none of their addresses, and their own entry is not an owner's) is in no download, as it is for a server
@@ -98,7 +101,7 @@ const MAX_SPLITS: usize = 32;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CALENDARS];
 /// What an event is read for.
-const EVENT_PROPERTIES: [&str; 28] = [
+const EVENT_PROPERTIES: [&str; 29] = [
     "id",
     "uid",
     "calendarIds",
@@ -127,6 +130,7 @@ const EVENT_PROPERTIES: [&str; 28] = [
     "recurrenceRules",
     "excludedRecurrenceRules",
     "recurrenceOverrides",
+    "virtualLocations",
 ];
 
 /// Read the calendars of the account `request` is for, as it says (see the module documentation), into `out`; the
@@ -557,11 +561,13 @@ impl<'a, H: Http> Job<'a, H> {
         // The main calendar: the list's, when it was read, else the one the request names.
         let main_listed = got.listed.as_ref().and_then(|listed| main_of(listed)).map(|listed| listed.calendar.id.clone());
         let main = main_listed.or_else(|| Some(self.request.main.clone()).filter(|id| valid_id(id)));
+        // Whether the server keeps only the basics of an event: the list says so of each calendar, and its downloads are
+        // then the whole of what it keeps of an event's options (online or not), the rest being defaults here.
+        let plain = match self.client.calendars_writable() {
+            Some(written) => !written.iter().any(|property| property == "keywords"),
+            None => self.request.plain_unless_said,
+        };
         if let Some(listed) = &got.listed {
-            let plain = match self.client.calendars_writable() {
-                Some(written) => !written.iter().any(|property| property == "keywords"),
-                None => self.request.plain_unless_said,
-            };
             let calendars = listed
                 .iter()
                 .map(|listed| mailcraft_model::remote::RemoteCalendar {
@@ -614,6 +620,7 @@ impl<'a, H: Http> Job<'a, H> {
                 from: self.from,
                 to: self.to,
                 complete,
+                has_options: plain,
                 gone,
                 ..Default::default()
             };

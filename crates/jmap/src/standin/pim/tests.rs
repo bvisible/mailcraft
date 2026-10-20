@@ -359,3 +359,28 @@ fn the_methods_of_address_books_are_unknown_where_none_are_offered() {
     let (_, body) = raw(&stand_in, json!([CORE, CALENDARS]), json!([["AddressBook/get", {"accountId": ACCOUNT}, "c0"]]));
     assert_eq!(body["methodResponses"][0][1]["type"].as_str(), Some("unknownMethod"));
 }
+
+#[test]
+fn the_meet_links_of_an_event_read_back_as_virtual_locations() {
+    let stand_in = StandIn::new();
+    let room = format!("{MEET_ROOMS}abcd-efgh-ijkl");
+    stand_in.with(|d| {
+        d.pim = Pim::offered();
+        d.pim.add_calendar(Calendar::new("ada", "Ada", true));
+        d.pim.add_event(
+            Event::timed("budget", "ada", "Budget review", "2026-10-19T09:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("links", json!({"meet": {"@type": "Link", "href": room}, "doc": {"@type": "Link", "href": "https://docs.example.org/agenda"}})),
+        );
+        d.pim.add_event(Event::timed("lunch", "ada", "Lunch", "2026-10-19T12:00:00", Some("Europe/Zurich"), "PT1H"));
+    });
+    let got = one(
+        &stand_in,
+        "CalendarEvent/get",
+        json!({"accountId": ACCOUNT, "ids": [Pim::event_id("budget"), Pim::event_id("lunch")], "properties": ["virtualLocations"]}),
+    )
+    .unwrap();
+    let places = &got["list"][0]["virtualLocations"];
+    assert_eq!(places.as_object().map(|map| map.len()), Some(1), "the room, not the other link: {places}");
+    assert_eq!((places["meet"]["uri"].as_str(), places["meet"]["@type"].as_str()), (Some(room.as_str()), Some("VirtualLocation")));
+    assert!(got["list"][1].get("virtualLocations").is_none(), "none for an event without a room");
+}

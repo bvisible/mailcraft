@@ -90,7 +90,7 @@ mod set;
 pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
-pub use pim::{Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT};
+pub use pim::{Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, MEET_ROOMS, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT};
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";

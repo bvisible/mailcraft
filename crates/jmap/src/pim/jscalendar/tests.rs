@@ -667,3 +667,44 @@ fn the_recurrence_id_is_read_in_its_own_zone_or_the_masters() {
     let stray = read(&event(|e| e["recurrenceId"] = json!("2026-10-19T09:00:00")));
     assert_eq!((stray.event.kind, stray.recurrence_id), (RemoteEventKind::Single, None));
 }
+
+// Held online: a virtual location with a link to join by.
+
+fn placed(places: Value) -> Option<mailcraft_model::OnlineMeeting> {
+    read(&event(|e| e["virtualLocations"] = places)).event.online
+}
+
+#[test]
+fn a_virtual_location_with_an_https_address_is_an_online_meeting_with_its_link() {
+    let room = "https://meet.example.org/meet/abcd-efgh-ijkl";
+    let online = placed(json!({"meet": {"@type": "VirtualLocation", "name": "Meet", "uri": room}})).unwrap();
+    assert_eq!((online.provider, online.join_url.as_str()), (mailcraft_model::OnlineProvider::Other, room));
+    assert_eq!(read(&event(|_| {})).event.online, None, "none: no meeting");
+}
+
+#[test]
+fn a_virtual_location_that_is_no_https_link_makes_no_meeting() {
+    for uri in [
+        json!("urn:x-online-meeting:new"),
+        json!("http://meet.example.org/meet/abcd"),
+        json!("javascript:alert(1)"),
+        json!("https://meet.example.org/meet/a b"),
+        json!(format!("https://meet.example.org/{}", "a".repeat(3_000))),
+        json!(7),
+        json!(null),
+    ] {
+        assert_eq!(placed(json!({"v": {"@type": "VirtualLocation", "uri": uri}})), None, "{uri}");
+    }
+    assert_eq!(placed(json!(["https://meet.example.org/meet/abcd"])), None, "a list is no map");
+    assert_eq!(placed(json!({"v": "https://meet.example.org/meet/abcd"})), None, "an entry that is no object");
+}
+
+#[test]
+fn of_several_virtual_locations_the_first_by_name_with_a_link_is_taken() {
+    let places = json!({
+        "a": {"uri": "urn:x-online-meeting:new"},
+        "b": {"uri": "https://second.example.org/meet/b"},
+        "c": {"uri": "https://third.example.org/meet/c"},
+    });
+    assert_eq!(placed(places).map(|online| online.join_url), Some("https://second.example.org/meet/b".to_string()));
+}

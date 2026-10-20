@@ -27,7 +27,8 @@
 //!   id, a series by its `V` id with its rule and the occurrences it leaves out (`recurrenceOverrides`); each timed
 //!   one with its start and end in UTC worked out (`utcStart`, `utcEnd`: the clock of its zone, or of the person's for
 //!   one that names none, then its length, the days on the clock and the hours after them); `properties` keeps those
-//!   named (and the id).
+//!   named (and the id). Each of its links that is a room of the stand-in's online meetings ([`MEET_ROOMS`]) is served as
+//!   a virtual location too, as such a server serves the rooms it keeps among an event's links.
 //! - **`CalendarEvent/set`** makes, changes and deletes events, a series or one of its occurrences, as strictly as
 //!   such a server takes them (`standin/pim/set.rs`): whole properties of what it writes, fifty events a call, the
 //!   organizer and the draft state left as they are, mail to the people of an event only from its organizer, and the
@@ -702,6 +703,10 @@ impl Pim {
             out.insert("utcStart".into(), json!(utc_text(from)));
             out.insert("utcEnd".into(), json!(utc_text(to)));
         }
+        let places = virtual_locations(&out);
+        if !places.is_empty() {
+            out.insert("virtualLocations".into(), Value::Object(places));
+        }
         Value::Object(out)
     }
 
@@ -1087,6 +1092,37 @@ fn served_card(card: &Card) -> Value {
         out["updated"] = json!(utc_text(card.updated.max(card.created)));
     }
     out
+}
+
+/// Where the stand-in's online meeting rooms are: a link that starts so is one of its rooms.
+pub const MEET_ROOMS: &str = "https://standin.example/meet/";
+
+/// An event's virtual locations as such a server serves them: its own, and each of its links that is a room of the
+/// stand-in's online meetings ([`MEET_ROOMS`]) as one, keyed as its link (the store keeps a room among the links).
+pub(super) fn virtual_locations(props: &Map<String, Value>) -> Map<String, Value> {
+    let mut places: Map<String, Value> = props
+        .get("virtualLocations")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter(|(_, place)| place.is_object())
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    let rooms = props.get("links").and_then(Value::as_object).into_iter().flatten().filter_map(|(key, link)| {
+        let href = link.get("href").and_then(Value::as_str)?;
+        href.starts_with(MEET_ROOMS).then(|| (key.clone(), href.to_string()))
+    });
+    for (key, href) in rooms.collect::<Vec<_>>() {
+        if places.values().any(|place| place.get("uri").and_then(Value::as_str) == Some(href.as_str())) {
+            continue;
+        }
+        let key = if places.contains_key(&key) { format!("meet-{key}") } else { key };
+        places.insert(
+            key,
+            json!({"@type": "VirtualLocation", "name": "Meet", "uri": href, "features": {"audio": true, "chat": true, "screen": true, "video": true}}),
+        );
+    }
+    places
 }
 
 /// A colour as the store keeps it, as `#rrggbb`: `#rgb`, `#rrggbb` and a few names; `None` for anything else.

@@ -701,3 +701,33 @@ fn the_identities_go_by_themselves_when_the_first_request_has_no_room_for_them()
     assert_eq!(calls.get(1).map(Vec::len), Some(3), "then the list and the events, as before");
     assert_eq!(result.identities.map(|found| found.len()), Some(2));
 }
+
+// Held online.
+
+#[test]
+fn virtual_locations_are_asked_for_with_the_events() {
+    let server = server();
+    run(&server, &request());
+    let asked = server.asked().into_iter().find(|a| a.method == "CalendarEvent/get").unwrap();
+    assert!(asked.properties.iter().any(|p| p == "virtualLocations"), "{:?}", asked.properties);
+}
+
+#[test]
+fn a_plain_calendars_downloads_say_whether_their_events_are_held_online() {
+    let server = server();
+    // A room kept among the review's links: served as a virtual location, read as a meeting held online.
+    server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget.props.insert("links".into(), json!({"meet": {"@type": "Link", "href": format!("{}abcd-efgh-ijkl", crate::standin::MEET_ROOMS)}}));
+    });
+    let result = run(&server, &request());
+    let main = result.events.unwrap();
+    assert!(main.has_options, "a server that keeps only the basics says all it keeps of the options: online or not");
+    let budget = main.events.iter().find(|e| e.title == "Budget review").unwrap();
+    assert_eq!(budget.online.as_ref().map(|online| online.join_url.clone()), Some(format!("{}abcd-efgh-ijkl", crate::standin::MEET_ROOMS)));
+    assert!(main.events.iter().filter(|e| e.title != "Budget review").all(|e| e.online.is_none()));
+    // A server that is not known to keep only the basics: its downloads say nothing of the options.
+    server.with(|d| d.pim.says_writable = false);
+    let other = run(&server, &JmapPimRequest { plain_unless_said: false, ..request() });
+    assert!(!other.events.unwrap().has_options);
+}

@@ -18,6 +18,8 @@
 //!   participant whose calendar address, else email, is one of the owner's addresses (as the server finds it when it is
 //!   told an answer, [`own_entry`](super::own_entry)): what it answered is the event's answer. Whether the organizer is
 //!   one of the owner's addresses says whether the owner organizes it (`None` when nobody does).
+//! - **Online.** The first virtual location (in the order of their names) whose `uri` is an `https` link to join by
+//!   makes it a meeting held online, with that link ([`OnlineMeeting::clean_link`]).
 //! - **The rest.** Free or Busy from `freeBusyStatus`, Tentative from a `status` of `tentative`; private when its
 //!   `privacy` is `private` or `secret`; cancelled from its `status`; the reminder is the first alert (in the order of
 //!   their names) that shows itself, with an offset before the start ([`reminder_alert`]); the place is the first
@@ -37,7 +39,7 @@
 //! cut to size afterwards ([`RemoteEvent::tidy`]).
 
 use mailcraft_model::remote::{RemoteCalendar, RemoteEvent, RemoteEventKind};
-use mailcraft_model::{Address, Attendee, Freq, Recurrence, Response, Rgb, ShowAs};
+use mailcraft_model::{Address, Attendee, Freq, OnlineMeeting, OnlineProvider, Recurrence, Response, Rgb, ShowAs};
 use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
 use serde_json::{Map, Value};
 
@@ -228,6 +230,7 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
         },
         series: if occurrence { series.to_string() } else { String::new() },
         reminder_minutes: reminder(value),
+        online: online_of(value),
         modified: utc_date(updated).unwrap_or(0),
         is_organizer,
         recurrence: clock.filter(|_| master).and_then(|clock| one_rule(value).and_then(|rule| rule_of(rule, clock, all_day))),
@@ -426,6 +429,16 @@ fn instants(value: &Value, here: Option<Zone>) -> Result<(Timestamp, Timestamp),
     };
     let end = utc_date(text(value, "utcEnd")).or_else(worked_out).ok_or(Missing::End)?;
     Ok((start, end.max(start)))
+}
+
+/// The meeting an event is held online as: its first virtual location (by the order of their names) whose address is a
+/// link to join by, an `https` address as [`OnlineMeeting::clean_link`] lets one in (a request for one, `http`,
+/// `javascript:`, a long or spaced address is none); with a service of its own (`Other`).
+fn online_of(value: &Value) -> Option<OnlineMeeting> {
+    entries(value, "virtualLocations", MAX_ENTRIES).find_map(|place| {
+        let join_url = OnlineMeeting::clean_link(place.get("uri").and_then(Value::as_str)?)?;
+        Some(OnlineMeeting { provider: OnlineProvider::Other, join_url })
+    })
 }
 
 /// The first location (by the order of their names) that has a name.
