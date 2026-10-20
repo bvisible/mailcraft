@@ -268,3 +268,23 @@ fn words_typed_into_a_note_in_a_hosting_tab_would_be_lost_until_they_are_in_it()
     assert_eq!(note(&window, id).text, "Milk and eggs");
     assert!(window.state().notes_unsent(), "in the note, and its change waits to go");
 }
+
+#[test]
+fn what_is_typed_into_a_note_stops_at_what_its_server_takes() {
+    let mut window = window(false, "view.notes");
+    let account = with_server(&mut window);
+    if let Some(server) = window.state_mut().session.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
+        (server.max_title, server.max_text) = (12, 10);
+    }
+    let id = server_note(&mut window, account, Note { title: "Plan".into(), text: "Steps".into(), ..Default::default() });
+    window.state_mut().execute("notes.select", json!({"id": id})).unwrap();
+    window.run_steps(3);
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " one two three four");
+    click_into(&mut window, "noteTitle", id);
+    text(&mut window, " for the whole year");
+    key(&mut window, Key::Escape);
+    window.run_steps(3);
+    let kept = note(&window, id);
+    assert_eq!((kept.text.as_str(), kept.title.as_str()), ("Steps one ", "Plan for the"), "as much as it takes, nothing refused");
+}

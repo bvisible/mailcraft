@@ -21,7 +21,7 @@
 use egui::{Align2, Rect, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 use mailcraft_engine::cmd::notes::{self, NOTE_NO_LINK, NOTE_NOT_YOURS, NOTE_READ_ONLY};
 use mailcraft_model::Id;
-use mailcraft_model::note::Note;
+use mailcraft_model::note::{MAX_NOTE_TEXT, MAX_NOTE_TITLE, Note};
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, paint_clipped, regular, semibold};
@@ -350,6 +350,14 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
         draft = Draft::of(note);
     }
     let (write, write_text) = (note.rights.write, note.rights.write && note.text_writable());
+    // No more than the note's server takes (or this computer keeps): what is typed is never refused for its length.
+    let (max_title, max_text) = app
+        .session
+        .mailbox
+        .notes
+        .server(note.origin.account)
+        .filter(|_| note.origin.is_remote())
+        .map_or((MAX_NOTE_TITLE, MAX_NOTE_TEXT), |server| (server.max_title, server.max_text));
     ui.add_space(12.0);
     let mut left = false;
     ui.horizontal(|ui| {
@@ -359,6 +367,7 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
             .font(semibold(17.0))
             .frame(egui::Frame::NONE)
             .desired_width(ui.available_width() - 12.0)
+            .char_limit(max_title)
             .interactive(write);
         let resp = ui.add(title);
         app.hit.add("noteTitle", note.id, resp.rect);
@@ -420,6 +429,7 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
                 .frame(egui::Frame::NONE)
                 .desired_rows(16)
                 .desired_width(ui.available_width() - 12.0)
+                .char_limit(max_text)
                 .interactive(write_text);
             let resp = ui.add(text);
             app.hit.add("noteText", note.id, resp.rect);

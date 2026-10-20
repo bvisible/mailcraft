@@ -45,8 +45,9 @@ struct NotesJob {
     due: bool,
     /// When the notes were last asked to be read (milliseconds).
     read: Option<f64>,
-    /// What was last sent, and when (milliseconds).
+    /// What was last sent, and when (milliseconds); and the state of the mailbox then.
     sent: Option<(NotesUpload, f64)>,
+    sent_rev: Option<u64>,
 }
 
 /// The job in flight's notes: whether it read them and carried changes, and when it was asked for.
@@ -100,6 +101,12 @@ impl MailApp {
         if notes_waiting(&self.session, account).due == 0 || now - self.jmap_pim.notes.changed < QUIET_MS {
             return None;
         }
+        // Nothing changed here since the last went, a moment ago: the very same would go (it isn't even worked out again).
+        let job = self.jmap_pim.notes.accounts.get(&account);
+        let lately = job.and_then(|job| job.sent.as_ref()).is_some_and(|(_, at)| now - at < SAME_AGAIN_MS);
+        if lately && job.and_then(|job| job.sent_rev) == Some(self.session.rev()) {
+            return None;
+        }
         let upload = note_upload(&self.session, account).ok().filter(|upload| !upload.ops.is_empty())?;
         let again = self.jmap_pim.notes.accounts.get(&account).and_then(|job| job.sent.as_ref());
         let repeated = again.is_some_and(|(sent, at)| *sent == upload && now - at < SAME_AGAIN_MS);
@@ -146,6 +153,7 @@ impl MailApp {
         if let Some(changes) = &changes {
             job.sent = Some((changes.clone(), now));
         }
+        job.sent_rev = Some(self.session.rev());
         self.jmap_pim.notes.flight = Some(Flight { account, read, carried: changes.is_some(), asked_at });
         Some(NotesAsk { read, state, read_at, changes })
     }
