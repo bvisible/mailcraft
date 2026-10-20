@@ -447,6 +447,7 @@ fn a_create_answered_already_exists_is_taken_as_that_event() {
         copies: HashMap::new(),
         gone: HashSet::new(),
         unread: HashMap::new(),
+        online: false,
     };
     writer.refused(0, &ops[0], &json!({"type": "alreadyExists", "existingId": "Vmade"}), "Europe/Zurich");
     writer.refused(1, &ops[1], &json!({"type": "invalidProperties", "description": "<b>title</b> is   too long"}), "");
@@ -931,4 +932,102 @@ fn a_write_to_an_event_of_a_series_is_never_sent_before_the_master_was_read() {
     server.with(|d| d.pim.events.retain(|e| e.raw != "site"));
     let gone = run(&server, &job(vec![of_site(EventChangeKind::Delete, 26, 8, EventFields::default()), update(&own, title("x"))]));
     assert_eq!(outcomes(&gone).iter().map(|o| o.0).collect::<Vec<_>>(), [EventResult::Gone, EventResult::Gone]);
+}
+
+// Online meetings, made by a server that makes them.
+
+/// The server makes online meetings.
+fn with_meet() -> StandIn {
+    let server = server();
+    server.with(|d| d.pim.meet = true);
+    server
+}
+
+fn online(op: EventOp) -> EventOp {
+    EventOp { fields: EventFields { online: Some(mailcraft_model::OnlineProvider::Other), ..op.fields }, ..op }
+}
+
+fn outcome(result: &JmapPimResult) -> &EventOutcome {
+    &result.uploaded.as_ref().unwrap().outcomes[0]
+}
+
+fn room(n: u32) -> String {
+    format!("{}room-{n}", crate::standin::MEET_ROOMS)
+}
+
+#[test]
+fn the_link_the_server_made_comes_back_with_the_outcome_of_a_create_and_of_an_update() {
+    let server = with_meet();
+    let made = run(&server, &job(vec![online(create("mc-online", "Kick-off", utc(22, 9, 0)))]));
+    let said = outcome(&made);
+    assert_eq!((said.result, said.online, said.join_url.as_str()), (EventResult::Done, Some(true), room(1).as_str()), "{said:?}");
+    let event = server.with(|d| d.pim.events.iter().find(|e| e.props.get("uid") == Some(&json!("mc-online"))).cloned()).unwrap();
+    assert!(event.props["links"].to_string().contains(&room(1)), "the room among its links");
+    // An event of her own made one by a change.
+    let changed = run(&server, &job(vec![online(update(&Pim::event_id("lunch"), EventFields::default()))]));
+    let said = outcome(&changed);
+    assert_eq!((said.result, said.online, said.join_url.as_str()), (EventResult::Done, Some(true), room(2).as_str()), "{said:?}");
+    let written = server.with(|d| d.pim.written.last().cloned()).unwrap();
+    assert_eq!(written.1, json!({"virtualLocations": {"online": {"@type": "VirtualLocation", "uri": crate::standin::ONLINE_MEETING_REQUEST}}}));
+    // Without meetings asked for, nothing of them goes, and the outcome says nothing of one.
+    let plain = run(&server, &job(vec![update(&Pim::event_id("lunch"), title("Lunch (late)"))]));
+    assert_eq!((outcome(&plain).online, server.with(|d| d.pim.written.last().cloned()).unwrap().1), (None, json!({"title": "Lunch (late)"})));
+}
+
+#[test]
+fn a_create_refused_for_its_online_meeting_is_made_again_without_it_and_says_so() {
+    let server = with_meet();
+    server.with(|d| d.pim.room_refusal = Some("forbidden"));
+    let result = run(&server, &job(vec![online(create("mc-refused", "Kick-off", utc(22, 9, 0)))]));
+    let said = outcome(&result);
+    assert_eq!((said.result, said.online, said.join_url.as_str()), (EventResult::Done, Some(false), ""), "{said:?}");
+    assert!(said.error.contains("No more rooms"), "the server's words: {said:?}");
+    let made: Vec<_> = server.with(|d| d.pim.events.iter().filter(|e| e.props.get("uid") == Some(&json!("mc-refused"))).cloned().collect());
+    assert_eq!(made.len(), 1, "made once, without its room");
+    assert!(made[0].props.get("links").is_none());
+    let sets = server.asked().into_iter().filter(|a| a.method == "CalendarEvent/set").count();
+    assert_eq!(sets, 2, "the second without the request");
+}
+
+#[test]
+fn a_room_limit_reached_makes_the_event_without_its_room() {
+    let server = with_meet();
+    server.with(|d| d.pim.room_refusal = Some("rateLimit"));
+    let result = run(&server, &job(vec![online(create("mc-limit", "Kick-off", utc(22, 9, 0)))]));
+    assert_eq!((outcome(&result).result, outcome(&result).online), (EventResult::Done, Some(false)));
+    // Only a meeting asked for, of an event that is there: done, nothing more written, and not a meeting held online.
+    let only = run(&server, &job(vec![online(update(&Pim::event_id("lunch"), EventFields::default()))]));
+    assert_eq!((outcome(&only).result, outcome(&only).online), (EventResult::Done, Some(false)), "{:?}", outcome(&only));
+    assert_eq!(server.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
+fn a_change_of_one_occurrence_goes_without_the_marker_and_says_why() {
+    let server = with_meet();
+    let result = run(&server, &job(vec![online(of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)")))]));
+    let said = outcome(&result);
+    assert_eq!((said.result, said.online), (EventResult::Done, Some(false)), "{said:?}");
+    assert!(said.error.contains("whole series"), "{said:?}");
+    let (_, patch) = server.with(|d| d.pim.written.last().cloned()).unwrap();
+    assert_eq!(patch, json!({"title": "Site meeting (room B)"}), "the rest goes");
+    // Nothing but the meeting, for one occurrence: refused, with that reason.
+    let only = run(&server, &job(vec![online(of_site(EventChangeKind::Update, 26, 8, EventFields::default()))]));
+    assert_eq!(outcome(&only).result, EventResult::Refused);
+    assert!(outcome(&only).error.contains("whole series"));
+}
+
+#[test]
+fn a_resent_scheduling_change_with_its_room_already_is_not_written_twice() {
+    let server = with_meet();
+    server.with(|d| d.faults.push_back(Fault::on("CalendarEvent/set", Effect::LoseAnswer)));
+    let op = EventOp { send: true, ..online(update(&Pim::event_id("budget"), title("Budget review (online)"))) };
+    let first = run(&server, &job(vec![op.clone()]));
+    assert_eq!(outcome(&first).result, EventResult::Failed);
+    assert_eq!(server.with(|d| (d.pim.rooms, d.pim.scheduled.len())), (1, 1));
+    let before = server.asked().len();
+    let again = run(&server, &job(vec![op]));
+    let said = outcome(&again);
+    assert_eq!((said.result, said.online, said.join_url.as_str()), (EventResult::Done, Some(true), room(1).as_str()), "{said:?}");
+    assert!(server.asked().into_iter().skip(before).all(|a| a.method != "CalendarEvent/set"), "not written again");
+    assert_eq!(server.with(|d| (d.pim.rooms, d.pim.scheduled.len())), (1, 1), "no second room, nobody written to twice");
 }

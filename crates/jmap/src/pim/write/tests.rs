@@ -477,3 +477,36 @@ fn hostile_copies_never_panic() {
         let _ = meeting(&copy, &[ME.to_string()]);
     }
 }
+
+// An online meeting, asked of a server that makes them.
+
+fn held_online(op: EventOp) -> EventOp {
+    EventOp { fields: EventFields { online: Some(mailcraft_model::OnlineProvider::Other), ..op.fields }, ..op }
+}
+
+#[test]
+fn an_online_meeting_asked_for_goes_as_the_marker_in_a_create_and_a_patch() {
+    let marker = json!({"online": {"@type": "VirtualLocation", "uri": ONLINE_MEETING_REQUEST}});
+    assert_eq!(online_request(&held_online(new_event(|_| {})), Clock::Own(zurich())), Some(marker.clone()));
+    assert_eq!(online_request(&held_online(change(title("x"))), Clock::Own(zurich())), Some(marker.clone()));
+    assert!(
+        is_online_request(&marker) && !is_online_request(&json!({"m": {"uri": "https://meet.example.org/meet/a"}})) && !is_online_request(&json!({}))
+    );
+    // Not asked: none.
+    assert_eq!(online_request(&new_event(|_| {}), Clock::Own(zurich())), None);
+    // The link of what the server made, read back.
+    assert_eq!(
+        join_link(&json!({"a": {"uri": ONLINE_MEETING_REQUEST}, "b": {"uri": "https://meet.example.org/meet/a"}})),
+        Some("https://meet.example.org/meet/a".into())
+    );
+    assert_eq!(join_link(&json!({"a": {"uri": "http://meet.example.org/meet/a"}})), None);
+}
+
+#[test]
+fn no_marker_for_one_occurrence() {
+    assert_eq!(online_request(&held_online(change(title("x"))), Clock::Series(None, zurich())), None, "an online meeting is the whole series'");
+}
+
+fn title(title: &str) -> EventFields {
+    EventFields { title: Some(title.into()), ..Default::default() }
+}

@@ -568,12 +568,16 @@ impl<'a, H: Http> Job<'a, H> {
             None => self.request.plain_unless_said,
         };
         if let Some(listed) = &got.listed {
+            // The service a meeting there may be held online with: the server's own, where it writes virtual locations.
+            let online = self.client.calendars_writable().is_some_and(|written| written.iter().any(|property| property == "virtualLocations"));
+            let services = if online { vec![mailcraft_model::OnlineProvider::Other] } else { Vec::new() };
             let calendars = listed
                 .iter()
                 .map(|listed| mailcraft_model::remote::RemoteCalendar {
                     read_only: !(listed.writable && WRITE_EVENTS),
                     main: main.as_deref() == Some(listed.calendar.id.as_str()),
                     plain,
+                    online_providers: Some(services.clone()),
                     ..listed.calendar.clone()
                 })
                 .collect();

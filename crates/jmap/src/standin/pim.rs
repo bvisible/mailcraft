@@ -32,7 +32,8 @@
 //! - **`CalendarEvent/set`** makes, changes and deletes events, a series or one of its occurrences, as strictly as
 //!   such a server takes them (`standin/pim/set.rs`): whole properties of what it writes, fifty events a call, the
 //!   organizer and the draft state left as they are, mail to the people of an event only from its organizer, and the
-//!   person's answer to an invitation told to its organizer ([`Pim::scheduled`]).
+//!   person's answer to an invitation told to its organizer ([`Pim::scheduled`]); and, when [`Pim::meet`] is on, an
+//!   online meeting room made for an event that asks for one.
 //! - **`AddressBook/get`** lists every address book (`ids: null`) or those named, each with the rights a server that
 //!   keeps only the basics says (`myRights`: `mayWrite` for its cards, and `mayRemoveItems`, which narrows a book whose
 //!   cards may be written to one whose cards may not be deleted).
@@ -335,6 +336,13 @@ pub struct Pim {
     pub own: Vec<String>,
     /// The server answers `ParticipantIdentity/get`; off: it knows no such method (`unknownMethod`).
     pub says_identities: bool,
+    /// The server makes online meetings (a room of its own, [`MEET_ROOMS`]) when a client asks for one by
+    /// [`ONLINE_MEETING_REQUEST`]: its session then lists `virtualLocations` among what an event keeps. The SetError of
+    /// that `type` answers a room asked for instead (`rateLimit`: the limit of new rooms reached), and how many rooms it
+    /// made.
+    pub meet: bool,
+    pub room_refusal: Option<&'static str>,
+    pub rooms: u32,
     /// The mail the server sent about events, oldest first.
     pub scheduled: Vec<Scheduled>,
     /// The changes it was sent, as they came (the id of the event or occurrence, and the patch), oldest first.
@@ -389,6 +397,9 @@ impl Default for Pim {
             says_state: true,
             own: Vec::new(),
             says_identities: true,
+            meet: false,
+            room_refusal: None,
+            rooms: 0,
             scheduled: Vec::new(),
             written: Vec::new(),
             refused_events: BTreeMap::new(),
@@ -473,7 +484,12 @@ impl Pim {
                 "mayCreateCalendar": false,
             });
             if self.says_writable {
-                said["writableProperties"] = json!(WRITABLE_EVENT);
+                let mut writable: Vec<&str> = WRITABLE_EVENT.to_vec();
+                if self.meet {
+                    writable.push("virtualLocations");
+                    writable.sort_unstable();
+                }
+                said["writableProperties"] = json!(writable);
             }
             session["accounts"][account]["accountCapabilities"][crate::CALENDARS] = said;
             session["primaryAccounts"][crate::CALENDARS] = json!(account);
@@ -1096,6 +1112,8 @@ fn served_card(card: &Card) -> Value {
 
 /// Where the stand-in's online meeting rooms are: a link that starts so is one of its rooms.
 pub const MEET_ROOMS: &str = "https://standin.example/meet/";
+/// The address of a virtual location by which a client asks for an online meeting to be made.
+pub const ONLINE_MEETING_REQUEST: &str = "urn:x-online-meeting:new";
 
 /// An event's virtual locations as such a server serves them: its own, and each of its links that is a room of the
 /// stand-in's online meetings ([`MEET_ROOMS`]) as one, keyed as its link (the store keeps a room among the links).

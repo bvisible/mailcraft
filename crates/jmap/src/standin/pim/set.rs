@@ -24,6 +24,12 @@
 //!   the organizer ([`Pim::tells_the_organizer`]); one occurrence of somebody else's invitation is not answered alone
 //!   (`forbidden`, "answered as a whole"). The person's own entry is the first whose calendar address, else email, is
 //!   one of theirs: one known only by where invitations go or by a scheduling id is not theirs.
+//! - **Online meetings** ([`Pim::meet`]): a virtual location whose address is the request
+//!   ([`ONLINE_MEETING_REQUEST`]) makes a room for the event (before it is written: a room refused leaves nothing), its
+//!   link kept among the event's links; asked again of an event that has one, nothing more. A change that names none of
+//!   its rooms takes their links away (the room stays). Another address is `invalidProperties`, and so is any of it for
+//!   one occurrence; a room asked for on a meeting the person doesn't organize is `forbidden`, and where the server makes
+//!   none too. What it said back names the event's virtual locations as they now are, when the call named them.
 //! - **Trouble on demand.** An event (by its id, or a new one by its `uid`) answered with the SetError a test names
 //!   ([`Pim::refused_events`]); events whose time a change says it took and doesn't keep ([`Pim::keeps_old_times`]).
 
@@ -31,7 +37,7 @@ use mailcraft_time::Zone;
 use serde_json::{Map, Value, json};
 
 use super::super::{ACCOUNT, Outcome, USER, account, allow_only, invalid, refuse};
-use super::{Event, Pim, WRITABLE_EVENT, unb64};
+use super::{Event, MEET_ROOMS, ONLINE_MEETING_REQUEST, Pim, WRITABLE_EVENT, unb64, virtual_locations};
 use crate::pim::{duration, local_date_time};
 
 /// What such a server sets or keeps for itself: a client may send it back as it read it.
@@ -173,8 +179,12 @@ impl Pim {
         let (mut created, mut not_created) = (Map::new(), Map::new());
         for (key, event) in &creates {
             match if spend() { self.create(event, notify) } else { Err(limited()) } {
-                Ok((id, uid)) => {
-                    created.insert(key.clone(), json!({"id": id, "uid": uid}));
+                Ok((id, uid, online)) => {
+                    let mut made = json!({"id": id, "uid": uid});
+                    if let Some(places) = online {
+                        made[ONLINE] = places;
+                    }
+                    created.insert(key.clone(), made);
                 }
                 Err(error) => {
                     not_created.insert(key.clone(), error);
@@ -184,8 +194,8 @@ impl Pim {
         let (mut updated, mut not_updated) = (Map::new(), Map::new());
         for (id, patch) in &updates {
             match if spend() { self.update(id, patch, notify) } else { Err(limited()) } {
-                Ok(()) => {
-                    updated.insert(id.clone(), Value::Null);
+                Ok(online) => {
+                    updated.insert(id.clone(), online.map_or(Value::Null, |places| json!({ONLINE: places})));
                 }
                 Err(error) => {
                     not_updated.insert(id.clone(), error);
@@ -228,7 +238,7 @@ impl Pim {
             return Err(wrong("A whole property replaces it: no patch of a part."));
         }
         let mut unknown: Vec<&str> =
-            event.keys().map(String::as_str).filter(|key| !WRITABLE_EVENT.contains(key) && !SERVER_SET.contains(key)).collect();
+            event.keys().map(String::as_str).filter(|key| !WRITABLE_EVENT.contains(key) && !SERVER_SET.contains(key) && *key != ONLINE).collect();
         if !unknown.is_empty() {
             unknown.sort_unstable();
             let listed: Vec<String> = unknown.iter().take(10).map(|key| key.chars().take(40).collect()).collect();
@@ -320,8 +330,8 @@ impl Pim {
         }
     }
 
-    /// A new event: its id and its uid.
-    fn create(&mut self, event: &Value, notify: bool) -> Result<(String, String), Value> {
+    /// A new event: its id, its uid, and its virtual locations when it named them.
+    fn create(&mut self, event: &Value, notify: bool) -> Result<(String, String, Option<Value>), Value> {
         let Some(event) = event.as_object() else { return Err(set_error("invalidProperties", "An event must be an object.")) };
         if event.get("recurrenceId").is_some_and(|at| !at.is_null()) {
             return Err(set_error("invalidProperties", "An occurrence is changed through its series, not created."));
@@ -339,11 +349,13 @@ impl Pim {
         let uid: String = event.get("uid").and_then(Value::as_str).unwrap_or_default().chars().take(MAX_UID).collect();
         // Sent again, its answer lost on the way: the event it made.
         if let Some(raw) = self.made.get(&uid).filter(|_| !uid.is_empty())
-            && self.events.iter().any(|e| &e.raw == raw)
+            && let Some(again) = self.events.iter().find(|e| &e.raw == raw)
         {
-            return Ok((Pim::event_id(raw), uid));
+            let online = event.contains_key(ONLINE).then(|| Value::Object(virtual_locations(&again.props)));
+            return Ok((Pim::event_id(raw), uid, online));
         }
         self.refused_on_demand(&uid)?;
+        let online = online_change(event, None)?;
         let calendars = match fields.calendars {
             Some(calendars) => calendars,
             None => match self.default_calendar().filter(|raw| self.calendar_list.iter().any(|c| &c.raw == raw && c.write_all)) {
@@ -351,6 +363,8 @@ impl Pim {
                 None => return Err(set_error("forbidden", "Your rights do not allow it.")),
             },
         };
+        // A room asked for is made before the event, which is then written with its link: one refused leaves nothing.
+        let room = if matches!(online, Online::Make) { Some(self.make_room()?) } else { None };
         self.made_count = self.made_count.saturating_add(1);
         let raw = format!("made-{}", self.made_count);
         let uid = if uid.is_empty() { format!("{raw}@standin.example") } else { uid };
@@ -369,15 +383,32 @@ impl Pim {
         made.props.insert("uid".into(), json!(uid));
         made.props.insert("organizerCalendarAddress".into(), json!(format!("mailto:{}", self.own().first().cloned().unwrap_or_default())));
         apply(&mut made, &fields.named);
+        if let Some(room) = room {
+            add_room(&mut made.props, &room);
+        }
         if notify {
             let to = self.guests(&made.props);
             if !to.is_empty() {
                 self.scheduled.push(Scheduled { what: "invitation", event: raw.clone(), occurrence: None, to });
             }
         }
+        let online = event.contains_key(ONLINE).then(|| Value::Object(virtual_locations(&made.props)));
         self.events.push(made);
         self.made.insert(uid.clone(), raw.clone());
-        Ok((Pim::event_id(&raw), uid))
+        Ok((Pim::event_id(&raw), uid, online))
+    }
+
+    /// A room for an online meeting: its link. Refused where the server makes none (`forbidden`), or with the SetError
+    /// a test asks for ([`Pim::room_refusal`]).
+    fn make_room(&mut self) -> Result<String, Value> {
+        if !self.meet {
+            return Err(set_error("forbidden", "No online meeting can be made here: Meet is not set up for you."));
+        }
+        if let Some(kind) = self.room_refusal {
+            return Err(set_error(kind, "No more rooms can be made just now: try again later."));
+        }
+        self.rooms = self.rooms.saturating_add(1);
+        Ok(format!("{MEET_ROOMS}room-{}", self.rooms))
     }
 
     /// The event an id of the API names for a change: `notFound` for one it doesn't have now.
@@ -451,8 +482,8 @@ impl Pim {
         !event.calendars.is_empty() && event.calendars.iter().all(|raw| self.calendar_list.iter().any(|c| &c.raw == raw && c.may_rsvp()))
     }
 
-    /// A change of the event (or occurrence) `id`.
-    fn update(&mut self, id: &str, patch: &Value, notify: bool) -> Result<(), Value> {
+    /// A change of the event (or occurrence) `id`: its virtual locations as they now are, when it named them.
+    fn update(&mut self, id: &str, patch: &Value, notify: bool) -> Result<Option<Value>, Value> {
         if self.written.len() < MAX_WRITTEN {
             self.written.push((id.chars().take(MAX_UID).collect(), patch.clone()));
         }
@@ -463,6 +494,15 @@ impl Pim {
         let Some(patch) = patch.as_object() else { return Err(set_error("invalidProperties", "A change must be an object.")) };
         self.keep_own(patch, Some(&stored.props))?;
         let mut fields = self.fields(patch)?;
+        // An online meeting is the whole series', and is added by the meeting's organizer.
+        let online = online_change(patch, Some(&stored.props))?;
+        if !matches!(online, Online::Keep) && addressed.occurrence.is_some() {
+            return Err(set_error("invalidProperties", "An online meeting is the whole series': change it on the series."));
+        }
+        let has_people = stored.props.get("participants").and_then(Value::as_object).is_some_and(|people| !people.is_empty());
+        if matches!(online, Online::Make) && has_people && !self.organizes(&stored.props) {
+            return Err(set_error("forbidden", "An online meeting is added by the meeting's organizer."));
+        }
         let draft = stored.props.get("isDraft").and_then(Value::as_bool).unwrap_or(false);
         let asked = notify && !draft;
         let organizes = asked && self.organizes(&stored.props);
@@ -487,8 +527,9 @@ impl Pim {
             if self.tells_the_organizer && !organizer.is_empty() {
                 self.scheduled.push(Scheduled { what: "reply", event: stored.raw.clone(), occurrence: None, to: vec![organizer] });
             }
-            return Ok(());
+            return Ok(None);
         }
+        let room = if matches!(online, Online::Make) { Some(self.make_room()?) } else { None };
         let old_times = self.keeps_old_times.contains(id);
         if old_times {
             for key in ["start", "duration", "timeZone", "showWithoutTime"] {
@@ -512,12 +553,19 @@ impl Pim {
                 if let Some(calendars) = fields.calendars {
                     event.calendars = calendars;
                 }
+                match (&online, &room) {
+                    (_, Some(room)) => add_room(&mut event.props, room),
+                    // The links go, the room stays (as when the desk's switch is turned off).
+                    (Online::Drop, _) => drop_rooms(&mut event.props),
+                    _ => {}
+                }
             }
         }
         if organizes && !guests.is_empty() {
             self.scheduled.push(Scheduled { what: "update", event: stored.raw.clone(), occurrence: addressed.occurrence.clone(), to: guests });
         }
-        Ok(())
+        let now = self.events.get(addressed.at).map(|event| virtual_locations(&event.props)).unwrap_or_default();
+        Ok(patch.contains_key(ONLINE).then_some(Value::Object(now)))
     }
 
     /// The deletion of the event (or occurrence) `id`.
@@ -545,6 +593,68 @@ impl Pim {
             }
         }
         Ok(())
+    }
+}
+
+/// The property of an event's online meeting.
+const ONLINE: &str = "virtualLocations";
+
+/// What an event's or a change's `virtualLocations` asks of its online meeting room.
+enum Online {
+    /// A room, asked for ([`ONLINE_MEETING_REQUEST`]) by an event that has none.
+    Make,
+    /// None of the event's rooms any more: their links go.
+    Drop,
+    /// Not named, or as it is.
+    Keep,
+}
+
+/// What `given` (a new event, or a change of `stored`, the event as the store has it) asks of the event's online meeting
+/// ([`Online`]). A place that is neither the request nor one of the event's rooms is refused: only a room made here is
+/// written.
+fn online_change(given: &Map<String, Value>, stored: Option<&Map<String, Value>>) -> Result<Online, Value> {
+    let Some(asked) = given.get(ONLINE) else { return Ok(Online::Keep) };
+    let uris: Vec<&str> = asked.as_object().into_iter().flatten().filter_map(|(_, place)| place.get("uri").and_then(Value::as_str)).collect();
+    let rooms: Vec<String> = stored.map(room_links).unwrap_or_default();
+    if uris.iter().any(|uri| *uri != ONLINE_MEETING_REQUEST && !rooms.iter().any(|room| room == uri)) {
+        return Err(set_error("invalidProperties", "Only an online meeting made here is written: a Meet room of this site."));
+    }
+    if uris.contains(&ONLINE_MEETING_REQUEST) {
+        return Ok(if rooms.is_empty() { Online::Make } else { Online::Keep });
+    }
+    Ok(if !rooms.is_empty() && !rooms.iter().any(|room| uris.contains(&room.as_str())) { Online::Drop } else { Online::Keep })
+}
+
+/// The links of an event (as the store has it) that are rooms of the stand-in's online meetings.
+fn room_links(props: &Map<String, Value>) -> Vec<String> {
+    props
+        .get("links")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, link)| link.get("href").and_then(Value::as_str))
+        .filter(|href| href.starts_with(MEET_ROOMS))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The room's link among the event's links.
+fn add_room(props: &mut Map<String, Value>, room: &str) {
+    let links = props.entry("links").or_insert_with(|| json!({}));
+    if !links.is_object() {
+        *links = json!({});
+    }
+    if let Value::Object(links) = links {
+        let key =
+            (1..=links.len().saturating_add(1)).map(|n| format!("meet{n}")).find(|key| !links.contains_key(key)).unwrap_or_else(|| "meet".into());
+        links.insert(key, json!({"@type": "Link", "href": room, "contentType": "text/html"}));
+    }
+}
+
+/// The links of the event's rooms taken away (the rooms stay).
+fn drop_rooms(props: &mut Map<String, Value>) {
+    if let Some(Value::Object(links)) = props.get_mut("links") {
+        links.retain(|_, link| !link.get("href").and_then(Value::as_str).is_some_and(|href| href.starts_with(MEET_ROOMS)));
     }
 }
 

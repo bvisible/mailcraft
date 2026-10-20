@@ -384,3 +384,14 @@ fn the_meet_links_of_an_event_read_back_as_virtual_locations() {
     assert_eq!((places["meet"]["uri"].as_str(), places["meet"]["@type"].as_str()), (Some(room.as_str()), Some("VirtualLocation")));
     assert!(got["list"][1].get("virtualLocations").is_none(), "none for an event without a room");
 }
+
+#[test]
+fn the_session_lists_virtual_locations_when_meet_is_on() {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| d.pim = Pim::offered());
+    let writes_them =
+        |stand_in: &StandIn| connect(stand_in).calendars_writable().is_some_and(|written| written.iter().any(|p| p == "virtualLocations"));
+    assert!(!writes_them(&stand_in));
+    stand_in.with(|d| d.pim.meet = true);
+    assert!(writes_them(&stand_in));
+}

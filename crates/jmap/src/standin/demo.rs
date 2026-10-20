@@ -9,7 +9,8 @@
 //!   zone (a floating one), a private one, a tentative one, one shown as free, one cancelled; and a weekly meeting of
 //!   Grace's she is invited to, four Thursdays at eleven, not answered yet.
 //! - **The team's calendar**, which she may write: a weekly meeting on Mondays at nine in Zurich, from the week before
-//!   to five weeks after; around the end of October it crosses the night summer time ends, and stays at nine.
+//!   to five weeks after, held online (a room of the stand-in's); around the end of October it crosses the night summer
+//!   time ends, and stays at nine.
 //! - **Grace's calendar**, a colleague's she may only read: her days off and a review.
 //!
 //! And two address books, whose cards are named as a server that calls a card by its contact's name names them:
@@ -20,7 +21,7 @@
 //! - **Partners**, which she may only read: a few people of other firms.
 //!
 //! The server knows Ada by an alias too ([`DEMO_ALIAS`], a participant identity of hers that no mailbox of the page
-//! has).
+//! has), and makes online meetings when they are asked for ([`Pim::meet`]).
 //!
 //! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it. For
 //! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar, and
@@ -29,7 +30,7 @@
 use mailcraft_time::{Date, DateTime, format_iso_utc, format_rfc5322};
 use serde_json::json;
 
-use super::{Book, Calendar, Card, Event, Pim, StandIn};
+use super::{Book, Calendar, Card, Event, MEET_ROOMS, Pim, StandIn};
 
 /// How many cards the team's book of the demo holds.
 pub const DEMO_CARDS: usize = 300;
@@ -86,6 +87,8 @@ pub fn demo(today: Date) -> StandIn {
         *pim = Pim::offered();
         // What is made here is Ada's, and her answers are hers; the server knows her by an alias too.
         pim.own = vec![DEMO_PERSON.into(), DEMO_ALIAS.into()];
+        // Its server makes online meetings when they are asked for.
+        pim.meet = true;
         pim.add_calendar(Calendar { flagged: true, color: Some("#2E8B57".into()), ..Calendar::new("ada", "Ada Marlow", true) });
         pim.add_calendar(Calendar { color: Some("#E07B1F".into()), ..Calendar::new("team", "Team", true) });
         pim.add_calendar(Calendar { color: Some("#7E57C2".into()), ..Calendar::new("grace", "Grace Okafor", false) });
@@ -140,11 +143,12 @@ pub fn demo(today: Date) -> StandIn {
                     }),
                 ),
         );
-        // The team's weekly meeting, from the week before to five weeks after.
+        // The team's weekly meeting, from the week before to five weeks after, held online too (a room of the stand-in's).
         pim.add_event(
             Event::timed("site", "team", "Site meeting", &at(-7, "09:00"), zurich, "PT1H30M")
                 .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 7}))
-                .with("locations", json!({"l1": {"@type": "Location", "name": "Workshop B"}})),
+                .with("locations", json!({"l1": {"@type": "Location", "name": "Workshop B"}}))
+                .with("links", json!({"meet": {"@type": "Link", "href": format!("{MEET_ROOMS}site-weekly"), "contentType": "text/html"}})),
         );
         // Grace's own, which Ada may only read.
         pim.add_event(Event::whole_days("grace-off", "grace", "Grace away", &day(7), 3));

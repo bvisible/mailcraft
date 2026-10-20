@@ -21,7 +21,8 @@
 //!   for it goes; the other alerts stay.
 //! - **What a server that keeps only the basics doesn't keep** (categories, importance, response options, online
 //!   meetings) is not written: it would refuse the whole event, and the person's other changes with it. A change of
-//!   nothing else is none ([`patch`] says so).
+//!   nothing else is none ([`patch`] says so). But an online meeting is asked of a server that writes virtual locations,
+//!   by the request ([`online_request`]): the server makes a room and gives the event its link.
 
 use mailcraft_model::remote::{EventFields, EventOp, EventTime};
 use mailcraft_model::{Attendee, Freq, Recurrence, Response, ShowAs};
@@ -32,6 +33,11 @@ use super::{Span, duration_text, jscalendar, local_text, mailto, mine, own_entry
 
 /// The zone a time is written in that can't be told on its own clock.
 pub const UTC_ZONE: &str = "Etc/UTC";
+/// The address of a virtual location by which a client asks the server to make an event an online meeting (a room of
+/// its own, whose link it then gives the event).
+pub const ONLINE_MEETING_REQUEST: &str = "urn:x-online-meeting:new";
+/// The property an event's online meeting is in.
+pub const ONLINE: &str = "virtualLocations";
 /// What the person is told when only what such a server doesn't keep was changed.
 pub const KEEPS_NO: &str = "this calendar's server keeps no categories, importance, response options, online meetings or proposed times";
 /// Most people of an event that are written.
@@ -361,6 +367,27 @@ pub fn create(op: &EventOp, clock: Clock) -> Option<(Value, bool, String)> {
         out.insert("participants".into(), participants(None, people, None, &[]));
     }
     Some((Value::Object(out), invites, zone))
+}
+
+/// The virtual locations by which an event asks to be made an online meeting ([`ONLINE_MEETING_REQUEST`]), for a change
+/// that asks for one (`EventFields::online`) of an event that is not one occurrence of a series (an online meeting is
+/// the whole series'); `None` otherwise. Only for a server that writes virtual locations (its session says so).
+pub fn online_request(op: &EventOp, clock: Clock) -> Option<Value> {
+    (op.fields.online.is_some() && !matches!(clock, Clock::Series(..)))
+        .then(|| json!({"online": {"@type": "VirtualLocation", "uri": ONLINE_MEETING_REQUEST}}))
+}
+
+/// Whether the virtual locations of a change (or of a new event) are the request for an online meeting.
+pub fn is_online_request(places: &Value) -> bool {
+    places.as_object().is_some_and(|places| {
+        !places.is_empty() && places.values().all(|place| place.get("uri").and_then(Value::as_str) == Some(ONLINE_MEETING_REQUEST))
+    })
+}
+
+/// The link to join by of the first of `places` (an event's virtual locations, by the order of their names) whose
+/// address is one ([`mailcraft_model::OnlineMeeting::clean_link`]).
+pub fn join_link(places: &Value) -> Option<String> {
+    places.as_object()?.values().find_map(|place| mailcraft_model::OnlineMeeting::clean_link(place.get("uri").and_then(Value::as_str)?))
 }
 
 /// How an event shows, as such a server keeps it: free or busy.

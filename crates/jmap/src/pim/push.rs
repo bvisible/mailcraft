@@ -26,7 +26,11 @@
 //!    was lost) is done without being written: nobody is written to about it twice. At most [`MAX_PER_CALL`] events in
 //!    a call, and as many as the session takes in a `set`.
 //! 4. **What such a server doesn't keep is not written** ([`write`](super::write)): a change of nothing else, a
-//!    forward, and another time proposed with an answer, are refused with the reason.
+//!    forward, and another time proposed with an answer, are refused with the reason. **An online meeting** is asked
+//!    of a server that writes virtual locations, by the request ([`write::online_request`]): the link the server made
+//!    comes back with the outcome (`online`, `join_url`). One refused (not for now, or the server's limit of rooms) is
+//!    sent once more in the same job without it, and done as an event that is no online meeting, with the server's
+//!    words; one asked for one occurrence of a series is not asked for (the whole series' is one), and said so.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
 //!    uid; one occurrence with its own id, which names it from now on), gone, refused with the server's words, or
 //!    failed with when to try again (a busy server, a server that failed, a connection that broke, a change not
@@ -53,7 +57,8 @@ const PAGE: usize = 200;
 const USING: [&str; 2] = [CORE, CALENDARS];
 /// What the server's copy of an event is read for.
 /// (Everything a change writes is among them, so that one that writes to people is told from one the copy says already.)
-const COPY_PROPERTIES: [&str; 22] = [
+const COPY_PROPERTIES: [&str; 23] = [
+    "virtualLocations",
     "id",
     "uid",
     "calendarIds",
@@ -87,6 +92,8 @@ const MAX_WORDS: usize = 300;
 const NO_SERIES: &str = "the server says the event is one occurrence of a series, and doesn't say of which";
 /// Why a change of one occurrence that a crowded answer didn't hold waits.
 const CROWDED: &str = "the server has too many events around that time to find the occurrence among them just now";
+/// Why an online meeting asked for one occurrence of a series is not made.
+const WHOLE_SERIES: &str = "an online meeting is the whole series': make the series one";
 /// Why a change of who is invited to an event with more people than are read is not written.
 const TOO_MANY_PEOPLE: &str = "the server has more than 1,000 people for this event, more than are rewritten from here";
 
@@ -120,6 +127,7 @@ pub(super) async fn push<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
         copies: HashMap::new(),
         gone: HashSet::new(),
         unread: HashMap::new(),
+        online: client.calendars_writable().is_some_and(|written| written.iter().any(|property| property == write::ONLINE)),
     };
     let stop = writer.run().await.err();
     let token_refused = matches!(stop, Some(Stop::Auth));
@@ -148,6 +156,11 @@ struct Ready {
     scheduling: bool,
     /// The zone its time was written in, when one was.
     zone: String,
+    /// The event asks for an online meeting in it ([`write::online_request`]).
+    marker: bool,
+    /// Why the online meeting it asked for is not asked for, or was refused: it goes without, done as an event that
+    /// is not one (an occurrence: the whole series' is; or sent again without it).
+    unmade: Option<String>,
 }
 
 /// The writes of one job.
@@ -167,6 +180,8 @@ struct Writer<'a, H> {
     copies: HashMap<String, Copy>,
     gone: HashSet<String>,
     unread: HashMap<String, String>,
+    /// The server makes online meetings: it writes virtual locations, its session says.
+    online: bool,
 }
 
 impl<H: Http> Writer<'_, H> {
@@ -262,7 +277,12 @@ impl<H: Http> Writer<'_, H> {
         for (group, scheduling) in [(quiet, false), (loud, true)] {
             for call in calls(group, MAX_PER_CALL.min(self.client.max_objects_in_set().max(1))) {
                 self.check()?;
-                self.set(call, scheduling).await?;
+                // What the server refused for the online meeting it asked for goes once more without it.
+                let again = self.set(call, scheduling).await?;
+                if !again.is_empty() {
+                    self.check()?;
+                    self.set(again, scheduling).await?;
+                }
             }
         }
         Ok(())
@@ -347,12 +367,14 @@ impl<H: Http> Writer<'_, H> {
     async fn prepare(&mut self, at: usize) -> Result<Option<Ready>, Stop> {
         let Some(op) = self.ops.get(at).cloned() else { return Ok(None) };
         if op.kind == EventChangeKind::Create {
-            let Some((body, invites, zone)) = write::create(&op, Clock::Own(self.shown)) else {
+            let Some((mut body, invites, zone)) = write::create(&op, Clock::Own(self.shown)) else {
                 self.answer(at, EventResult::Refused, "the event has no time to be made with", None);
                 return Ok(None);
             };
+            let marker = self.ask_online(&mut body, &op, Clock::Own(self.shown));
             // (Invitations only with the person's yes: `op.send`.)
-            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling: invites && op.send, zone }));
+            let scheduling = invites && op.send;
+            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, unmade: None }));
         }
         // The event on the server, and (for an occurrence) its series.
         let (target, copy, series) = if op.of_occurrence() {
@@ -416,30 +438,64 @@ impl<H: Http> Writer<'_, H> {
             self.answer(at, EventResult::Refused, TOO_MANY_PEOPLE, None);
             return Ok(None);
         }
+        let plain = |body: Option<Value>, scheduling: bool, zone: String| Ready {
+            at,
+            target: target.clone(),
+            body,
+            scheduling,
+            zone,
+            marker: false,
+            unmade: None,
+        };
+        // An online meeting asked for one occurrence: the whole series' is one, or none.
+        let unmade = (self.online && op.fields.online.is_some() && matches!(clock, Clock::Series(..))).then(|| WHOLE_SERIES.to_string());
         let ready = match op.kind {
-            EventChangeKind::Delete => Ready { at, target, body: None, scheduling: op.cancel && meeting, zone: String::new() },
+            EventChangeKind::Delete => plain(None, op.cancel && meeting, String::new()),
             EventChangeKind::Respond => match write::answer(&copy, op.response, &self.me) {
-                Some(body) => Ready { at, target, body: Some(body), scheduling: op.send, zone: String::new() },
+                Some(body) => plain(Some(body), op.send, String::new()),
                 None => {
                     self.answer(at, EventResult::Refused, "you are not among the people invited to it", None);
                     return Ok(None);
                 }
             },
-            _ => match write::patch(&op, Some(&copy), clock, &self.me) {
-                Some((body, zone)) => Ready { at, target, body: Some(body), scheduling: meeting && write::seen_by_others(&op.fields), zone },
-                None => {
-                    self.answer(at, EventResult::Refused, KEEPS_NO, None);
-                    return Ok(None);
-                }
-            },
+            _ => {
+                let scheduling = meeting && write::seen_by_others(&op.fields);
+                let (mut body, zone) = match write::patch(&op, Some(&copy), clock, &self.me) {
+                    Some((body, zone)) => (body, zone),
+                    // Nothing but an online meeting: asked for by itself, where the server makes them.
+                    None if self.online && write::online_request(&op, clock).is_some() => (json!({}), String::new()),
+                    None => {
+                        self.answer(at, EventResult::Refused, unmade.as_deref().unwrap_or(KEEPS_NO), None);
+                        return Ok(None);
+                    }
+                };
+                let marker = self.ask_online(&mut body, &op, clock);
+                Ready { marker, unmade, ..plain(Some(body), scheduling, zone) }
+            }
         };
         // A change that writes to people and that the server's copy says already (its answer was lost on the way, and
         // it is sent again): done, without writing it, so that nobody is written to about it twice.
         if ready.scheduling && ready.body.as_ref().is_some_and(|body| says_already(&copy, body)) {
             self.done(at, ready.target, String::new(), ready.zone);
+            // (The online meeting it asked for is the one the copy has.)
+            if let Some(link) = copy.get(write::ONLINE).and_then(write::join_link).filter(|_| ready.marker) {
+                self.held_online(at, Some(true), link, "");
+            }
             return Ok(None);
         }
         Ok(Some(ready))
+    }
+
+    /// Put the request for an online meeting into `body` (an event, or a change of one), when `op` asks for one and the
+    /// server makes them; whether it was put.
+    fn ask_online(&self, body: &mut Value, op: &EventOp, clock: Clock) -> bool {
+        match (write::online_request(op, clock).filter(|_| self.online), body.as_object_mut()) {
+            (Some(request), Some(body)) => {
+                body.insert(write::ONLINE.into(), request);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The occurrence of `series` (the server's copy of it) that the change `op` (at `at` among the changes) is about:
@@ -510,8 +566,9 @@ impl<H: Http> Writer<'_, H> {
         Ok(found)
     }
 
-    /// One `CalendarEvent/set` of `call`, the server writing to people when `scheduling`, and its outcomes.
-    async fn set(&mut self, call: Vec<Ready>, scheduling: bool) -> Result<(), Stop> {
+    /// One `CalendarEvent/set` of `call`, the server writing to people when `scheduling`, and its outcomes; what the
+    /// server refused for the online meeting it asked for, to be sent once more without it.
+    async fn set(&mut self, call: Vec<Ready>, scheduling: bool) -> Result<Vec<Ready>, Stop> {
         let (mut create, mut update, mut destroy) = (Map::new(), Map::new(), Vec::new());
         for one in &call {
             match (&one.body, self.ops.get(one.at).map(|op| op.kind)) {
@@ -541,7 +598,7 @@ impl<H: Http> Writer<'_, H> {
         let mut answers = match self.client.call_within(&USING, vec![("CalendarEvent/set", args)], super::IDS_BYTES).await {
             Ok(answers) => answers,
             // Whether it went is not known: it goes again (a new event with its mark, which makes no second one).
-            Err(error) => return self.request_failed(error, &affected),
+            Err(error) => return self.request_failed(error, &affected).map(|()| Vec::new()),
         };
         let answer = match answers.take(0) {
             Ok(answer) => answer,
@@ -555,7 +612,7 @@ impl<H: Http> Writer<'_, H> {
                 for at in affected {
                     self.answer(at, result, &words, retry);
                 }
-                return Ok(());
+                return Ok(Vec::new());
             }
         };
         let map = |key: &str| answer.get(key).and_then(Value::as_object).cloned().unwrap_or_default();
@@ -563,13 +620,18 @@ impl<H: Http> Writer<'_, H> {
             (map("created"), map("notCreated"), map("updated"), map("notUpdated"), map("notDestroyed"));
         let destroyed: HashSet<String> =
             answer.get("destroyed").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
-        for one in call {
+        let mut again: Vec<Ready> = Vec::new();
+        for mut one in call {
             let Some(op) = self.ops.get(one.at).cloned() else { continue };
             let key = format!("k{}", one.at);
+            // (What the server says of an update besides that it took it: the online meeting it made, when asked.)
             let (done, error) = match op.kind {
                 EventChangeKind::Create => (created.get(&key).cloned(), not_created.get(&key).cloned()),
                 _ if one.body.is_none() => (destroyed.contains(&one.target).then(|| json!({})), not_destroyed.get(&one.target).cloned()),
-                _ => (updated.contains_key(&one.target).then(|| json!({})), not_updated.get(&one.target).cloned()),
+                _ => (
+                    updated.get(&one.target).map(|said| if said.is_object() { said.clone() } else { json!({}) }),
+                    not_updated.get(&one.target).cloned(),
+                ),
             };
             match (done, error) {
                 (Some(done), _) => {
@@ -579,12 +641,64 @@ impl<H: Http> Writer<'_, H> {
                     };
                     let uid = done.get("uid").and_then(Value::as_str).unwrap_or_default().to_string();
                     self.done(one.at, remote, uid, one.zone);
+                    // The online meeting it asked for: made, with its link; not made; or not said.
+                    if one.marker {
+                        if let Some(places) = done.get(write::ONLINE) {
+                            match write::join_link(places) {
+                                Some(link) => self.held_online(one.at, Some(true), link, ""),
+                                None => self.held_online(one.at, Some(false), String::new(), ""),
+                            }
+                        }
+                    } else if let Some(why) = &one.unmade {
+                        self.held_online(one.at, Some(false), String::new(), why);
+                    }
                 }
-                (None, Some(error)) => self.refused(one.at, &op, &error, &one.zone),
+                (None, Some(error)) => {
+                    // Refused, with the online meeting it asked for: once more without it, which the server may take.
+                    let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
+                    let unwritten = one.marker && !matches!(kind, "notFound" | "alreadyExists") && (kind == "rateLimit" || !failed_for_now(kind));
+                    let without = one.body.as_mut().and_then(Value::as_object_mut).map(|body| {
+                        body.remove(write::ONLINE);
+                        body.is_empty()
+                    });
+                    match (unwritten, without) {
+                        // Nothing else to write: done, without the meeting.
+                        (true, Some(true)) => {
+                            self.done(one.at, one.target.clone(), String::new(), one.zone.clone());
+                            self.held_online(one.at, Some(false), String::new(), &self.set_error_words(&error));
+                        }
+                        (true, Some(false)) => {
+                            one.unmade = Some(self.set_error_words(&error));
+                            one.marker = false;
+                            again.push(one);
+                        }
+                        _ => self.refused(one.at, &op, &error, &one.zone),
+                    }
+                }
                 (None, None) => self.answer(one.at, EventResult::Failed, "the server's answer said nothing of it", Some(RETRY)),
             }
         }
-        Ok(())
+        Ok(again)
+    }
+
+    /// The online meeting of the change at `at`, done: whether the server made it (`None`: it didn't say), its link,
+    /// and why it isn't one.
+    fn held_online(&mut self, at: usize, online: Option<bool>, join_url: String, why: &str) {
+        if let Some(Some(outcome)) = self.outcomes.get_mut(at).filter(|slot| slot.as_ref().is_some_and(|outcome| outcome.result == EventResult::Done))
+        {
+            outcome.online = online;
+            outcome.join_url = mailcraft_model::OnlineMeeting::clean_link(&join_url).unwrap_or_default();
+            if !why.is_empty() {
+                outcome.error = crate::tidy(why, MAX_WORDS);
+            }
+        }
+    }
+
+    /// The words of a SetError: its description without markup, the session's secrets hidden; else its type.
+    fn set_error_words(&self, error: &Value) -> String {
+        let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
+        let words = error.get("description").and_then(Value::as_str).map(strip_tags).unwrap_or_default();
+        if words.trim().is_empty() { kind.to_string() } else { self.secrets.hide(&words) }
     }
 
     /// The change at `at` was done: the server's name for its event (a new one's, or one occurrence's), its uid.
@@ -600,8 +714,7 @@ impl<H: Http> Writer<'_, H> {
     /// The server didn't do the change at `at`: `error` is its SetError (RFC 8620 §5.3).
     fn refused(&mut self, at: usize, op: &EventOp, error: &Value, zone: &str) {
         let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
-        let words = error.get("description").and_then(Value::as_str).map(strip_tags).unwrap_or_default();
-        let words = if words.trim().is_empty() { kind.to_string() } else { self.secrets.hide(&words) };
+        let words = self.set_error_words(error);
         // An event that is there already (a server that says so of one made before): that one.
         if op.kind == EventChangeKind::Create
             && kind == "alreadyExists"
@@ -677,7 +790,16 @@ fn event_id_of(raw: &str) -> String {
 /// Whether the server's copy of an event says everything `body` would write of it: each property as it is there (one
 /// it doesn't have is one that is null).
 fn says_already(copy: &Copy, body: &Value) -> bool {
-    body.as_object().is_some_and(|body| !body.is_empty() && body.iter().all(|(key, value)| copy.get(key).unwrap_or(&Value::Null) == value))
+    body.as_object().is_some_and(|body| {
+        !body.is_empty()
+            && body.iter().all(|(key, value)| {
+                // (The request for an online meeting is said by one that has its link.)
+                if key == write::ONLINE && write::is_online_request(value) {
+                    return copy.get(key).and_then(write::join_link).is_some();
+                }
+                copy.get(key).unwrap_or(&Value::Null) == value
+            })
+    })
 }
 
 /// Whether a server's refusal is one that asking again later may get past.

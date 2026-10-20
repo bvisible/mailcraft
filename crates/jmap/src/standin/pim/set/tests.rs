@@ -271,3 +271,86 @@ fn the_organizer_and_the_draft_state_are_the_events_own() {
     let refused = set(&stand_in, json!({"update": {review.clone(): {"title": "x"}}, "destroy": [review.clone()]})).unwrap();
     assert_eq!((kind(&refused["notUpdated"][&review]), kind(&refused["notDestroyed"][&review])), ("forbidden", "forbidden"));
 }
+
+// Online meetings.
+
+fn request() -> Value {
+    json!({"online": {"@type": "VirtualLocation", "uri": ONLINE_MEETING_REQUEST}})
+}
+
+/// The stand-in, making online meetings.
+fn with_meet() -> StandIn {
+    let stand_in = stand_in();
+    stand_in.with(|d| d.pim.meet = true);
+    stand_in
+}
+
+fn links_of(stand_in: &StandIn, raw: &str) -> Value {
+    stand_in.with(|d| d.pim.events.iter().find(|e| e.raw == raw).and_then(|e| e.props.get("links").cloned()).unwrap_or(Value::Null))
+}
+
+#[test]
+fn the_marker_makes_one_room_whose_link_comes_back() {
+    let stand_in = with_meet();
+    let made = set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-room", "virtualLocations": request()}))}})).unwrap();
+    let places = &made["created"]["k"]["virtualLocations"];
+    let room = format!("{MEET_ROOMS}room-1");
+    assert_eq!(places.as_object().map(|p| p.values().filter_map(|v| v["uri"].as_str()).collect::<Vec<_>>()), Some(vec![room.as_str()]), "{made}");
+    // A change of her lunch: the same, with its own room.
+    let lunch = Pim::event_id("lunch");
+    let changed = set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": request()}}})).unwrap();
+    assert!(changed["updated"][&lunch]["virtualLocations"].to_string().contains("room-2"), "{changed}");
+    // A change that doesn't name them says nothing of them.
+    let quiet = set(&stand_in, json!({"update": {lunch.clone(): {"title": "Lunch (late)"}}})).unwrap();
+    assert_eq!(quiet["updated"][&lunch], Value::Null);
+    // Where the server makes none: refused, nothing made.
+    stand_in.with(|d| d.pim.meet = false);
+    let refused = set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-none", "virtualLocations": request()}))}})).unwrap();
+    assert_eq!(kind(&refused["notCreated"]["k"]), "forbidden");
+    assert!(stand_in.with(|d| d.pim.events.iter().all(|e| e.props.get("uid") != Some(&json!("mc-none")))));
+}
+
+#[test]
+fn the_marker_again_makes_no_second_room() {
+    let stand_in = with_meet();
+    let lunch = Pim::event_id("lunch");
+    set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": request()}}})).unwrap();
+    let again = set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": request(), "title": "Lunch (online)"}}})).unwrap();
+    assert_eq!(again["notUpdated"], json!({}));
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 1);
+    // A create sent again (its answer lost): the event it made, with its room, and no second one.
+    let event = new_event(json!({"uid": "mc-twice", "virtualLocations": request()}));
+    set(&stand_in, json!({"create": {"k": event.clone()}})).unwrap();
+    let twice = set(&stand_in, json!({"create": {"k": event}})).unwrap();
+    assert!(twice["created"]["k"]["virtualLocations"].to_string().contains("room-2"), "{twice}");
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 2);
+}
+
+#[test]
+fn another_virtual_location_is_refused() {
+    let stand_in = with_meet();
+    let lunch = Pim::event_id("lunch");
+    let other =
+        set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": {"x": {"uri": "https://elsewhere.example.org/room"}}}}})).unwrap();
+    assert_eq!(kind(&other["notUpdated"][&lunch]), "invalidProperties");
+    // For one occurrence: refused, the whole series' is one.
+    let one = Pim::occurrence_id("weekly", "2026-10-19T09:00:00");
+    let occurrence = set(&stand_in, json!({"update": {one.clone(): {"virtualLocations": request()}}})).unwrap();
+    assert_eq!(kind(&occurrence["notUpdated"][&one]), "invalidProperties");
+    // Of a meeting somebody else organizes: refused.
+    let planning = Pim::event_id("planning");
+    let theirs = set(&stand_in, json!({"update": {planning.clone(): {"virtualLocations": request()}}})).unwrap();
+    assert_eq!(kind(&theirs["notUpdated"][&planning]), "forbidden");
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
+fn an_empty_map_drops_the_link() {
+    let stand_in = with_meet();
+    let lunch = Pim::event_id("lunch");
+    set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": request()}}})).unwrap();
+    assert!(links_of(&stand_in, "lunch").to_string().contains("room-1"));
+    let dropped = set(&stand_in, json!({"update": {lunch.clone(): {"virtualLocations": {}}}})).unwrap();
+    assert_eq!(dropped["updated"][&lunch]["virtualLocations"], json!({}));
+    assert!(!links_of(&stand_in, "lunch").to_string().contains("room-1"), "the link goes (the room stays)");
+}

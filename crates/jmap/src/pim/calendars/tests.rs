@@ -731,3 +731,13 @@ fn a_plain_calendars_downloads_say_whether_their_events_are_held_online() {
     let other = run(&server, &JmapPimRequest { plain_unless_said: false, ..request() });
     assert!(!other.events.unwrap().has_options);
 }
+
+#[test]
+fn a_calendar_whose_server_writes_virtual_locations_makes_online_meetings_and_others_make_none() {
+    let server = server();
+    let services =
+        |server: &StandIn| run(server, &request()).calendars.unwrap().calendars.into_iter().map(|c| c.online_providers).collect::<Vec<_>>();
+    assert!(services(&server).iter().all(|said| said.as_deref() == Some(&[][..])), "none: its server makes no online meetings");
+    server.with(|d| d.pim.meet = true);
+    assert!(services(&server).iter().all(|said| said.as_deref() == Some(&[mailcraft_model::OnlineProvider::Other][..])), "its own");
+}
