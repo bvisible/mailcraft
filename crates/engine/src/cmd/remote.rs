@@ -516,7 +516,8 @@ fn put_fields(event: &mut Event, fields: &EventFields, offset_at: &dyn Fn(Timest
 }
 
 /// The account a download is for, when the mailbox has it and it is the one the download names.
-fn owner<'a>(mailbox: &'a Mailbox, account: Id, email: &str) -> Result<&'a Account, CmdError> {
+// //// Neoffice — the address books' download (`remote_contacts.rs`) is checked against its account the same way.
+pub(crate) fn owner<'a>(mailbox: &'a Mailbox, account: Id, email: &str) -> Result<&'a Account, CmdError> {
     let owner = mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
     // A download for another account (the mailbox was replaced while it was under way) would fill
     // this one's calendar with a stranger's.
@@ -3263,6 +3264,8 @@ pub fn merge_contacts(mailbox: &mut Mailbox, download: &ContactsDownload) -> Res
             continue;
         }
         fresh.origin.account = account;
+        // //// Neoffice — in the address book of its server that it says it is in, as the books were taken in (`remote_contacts.rs`).
+        fresh.book = super::remote_contacts::book_here(mailbox, account, &remote.book);
         match known.get(&remote.id).and_then(|id| mailbox.contact(*id)) {
             Some(old) => {
                 fresh.id = old.id;
@@ -3356,6 +3359,8 @@ pub fn forget(s: &mut Session, account: Id) -> CmdResult {
     for id in &contacts {
         let _ = mailbox.remove_contact(*id);
     }
+    // //// Neoffice — and the address books its contacts were in.
+    let books = super::remote_contacts::forget_books(mailbox, account);
     // What was waiting to be sent to that server has nowhere to go.
     let unsent = mailbox.event_changes.len();
     mailbox.event_changes.retain(|change| change.account != account);
@@ -3378,7 +3383,8 @@ pub fn forget(s: &mut Session, account: Id) -> CmdResult {
         }
     }
     mailbox.calendars.retain(|calendar| !followed(calendar));
-    if !events.is_empty() || !contacts.is_empty() || calendars > 0 || unsent > 0 {
+    // //// Neoffice — forgetting only its address books is a change too.
+    if !events.is_empty() || !contacts.is_empty() || calendars > 0 || unsent > 0 || books > 0 {
         s.mailbox_changed();
     }
     Ok(json!({"events": events.len(), "contacts": contacts.len(), "calendars": gone.len()}))

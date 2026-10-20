@@ -49,6 +49,8 @@
 	Show the original	Afficher l’original
 	the message didn't download	le message n’a pas été téléchargé
 	the answer had no text	la réponse ne contenait pas de texte
+# The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
+	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

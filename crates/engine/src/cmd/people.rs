@@ -11,11 +11,16 @@ use crate::{CmdError, CmdResult, CommandSpec, Module, Session, p};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("people.new", "New Contact", "Home › New", new).key("Mod+Shift+C").params(CONTACT),
+        // //// Neoffice — refused, with the reason a greyed control says, where a new contact would be kept nowhere (`remote_contacts::adding_refusal`).
+        CommandSpec::new("people.new", "New Contact", "Home › New", new)
+            .key("Mod+Shift+C")
+            .params(CONTACT)
+            .when(super::remote_contacts::adding_refusal),
+        // //// Neoffice — Edit and Delete say why the address book of the selected contact refuses them (`remote_contacts`).
         CommandSpec::new("people.edit", "Edit Contact", "Contact", edit)
             .params(r#"{"id"?: number, …the fields of people.new}"#)
-            .selection(needs_contact),
-        CommandSpec::new("people.delete", "Delete", "Home › Delete", delete).params(ONE).selection(needs_contact),
+            .selection(needs_changeable_contact),
+        CommandSpec::new("people.delete", "Delete", "Home › Delete", delete).params(ONE).selection(needs_deletable_contact),
         CommandSpec::new("people.select", "Select Contact", "People", select).pure().params(r#"{"id": number | null}"#),
         CommandSpec::new("people.get", "Get Contact", "People", get).pure().params(ONE),
         CommandSpec::new("people.list", "List Contacts", "People", list).pure().params(r#"{"query"?: string}"#),
@@ -27,9 +32,10 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"category": string, "value"?: bool, "id"?: number}"#)
             .selection(needs_contact),
         CommandSpec::new("people.email", "Email", "Home › Communicate", email).pure().params(ONE).selection(needs_contact),
+        // //// Neoffice — see `people.new`: the sender would be a contact kept nowhere.
         CommandSpec::new("people.fromMessage", "Add to Contacts", "Home › Actions", from_message)
             .params(r#"{"id"?: number} (a message; default: the selected one)"#)
-            .selection(needs_message),
+            .selection(needs_message_to_add),
     ]
 }
 
@@ -38,6 +44,24 @@ const CONTACT: &str = r#"{"first"?: string, "last"?: string, "displayName"?: str
 
 fn needs_contact(s: &Session) -> Option<&'static str> {
     if s.sel.contact.is_none() { Some("select a contact first") } else { None }
+}
+
+// //// Neoffice — what the address book of the selected contact says against changing or deleting it, and a session that keeps nothing against adding the sender.
+/// [`needs_contact`], and a selected contact whose address book the account may change ([`super::remote_contacts`]).
+fn needs_changeable_contact(s: &Session) -> Option<&'static str> {
+    needs_contact(s)
+        .or_else(|| s.sel.contact.and_then(|id| s.mailbox.contact(id)).and_then(|c| super::remote_contacts::change_refusal(&s.mailbox, c)))
+}
+
+/// [`needs_contact`], and a selected contact whose address book lets the account delete it.
+fn needs_deletable_contact(s: &Session) -> Option<&'static str> {
+    needs_contact(s)
+        .or_else(|| s.sel.contact.and_then(|id| s.mailbox.contact(id)).and_then(|c| super::remote_contacts::delete_refusal(&s.mailbox, c)))
+}
+
+/// [`needs_message`], and somewhere to keep the contact.
+fn needs_message_to_add(s: &Session) -> Option<&'static str> {
+    needs_message(s).or_else(|| super::remote_contacts::adding_refusal(s))
 }
 
 fn target(s: &Session, v: &Value) -> Result<Id, CmdError> {
@@ -51,6 +75,10 @@ fn target(s: &Session, v: &Value) -> Result<Id, CmdError> {
 fn own_target(s: &Session, v: &Value) -> Result<Id, CmdError> {
     let id = target(s, v)?;
     if let Some(c) = s.mailbox.contact(id) {
+        // //// Neoffice — an address book the account may only read says so first, in the words of the greyed control.
+        if let Some(why) = super::remote_contacts::change_refusal(&s.mailbox, c) {
+            return Err(fail(why));
+        }
         super::remote::changeable(&s.mailbox, &c.origin, "contact")?;
     }
     Ok(id)
@@ -155,6 +183,10 @@ fn apply(c: &mut Contact, v: &Value) -> Result<(), CmdError> {
 }
 
 fn new(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — never made where it would be kept nowhere (the spec's `when` says it first; this holds for any caller).
+    if let Some(why) = super::remote_contacts::adding_refusal(s) {
+        return Err(fail(why));
+    }
     let mut c = Contact::default();
     apply(&mut c, v)?;
     if c.name().is_empty() {
@@ -184,6 +216,10 @@ pub fn sorted(s: &Session, query: &str) -> Vec<Id> {
 }
 
 fn delete(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — an address book whose contacts may be changed and not deleted refuses the deletion alone, with its reason.
+    if let Some(why) = target(s, v).ok().and_then(|id| s.mailbox.contact(id)).and_then(|c| super::remote_contacts::delete_refusal(&s.mailbox, c)) {
+        return Err(fail(why));
+    }
     let id = own_target(s, v)?;
     // The selection moves to the neighbour in the list.
     let order = sorted(s, &s.view.people_search);
@@ -268,6 +304,10 @@ fn from_message(s: &mut Session, v: &Value) -> CmdResult {
         s.sel.contact = Some(existing);
         s.view.module = Module::People;
         return Ok(json!({"id": existing, "existing": true}));
+    }
+    // //// Neoffice — see `new`: the sender is not made a contact where it would be kept nowhere.
+    if let Some(why) = super::remote_contacts::adding_refusal(s) {
+        return Err(fail(why));
     }
     // "First Last" splits at the last space; a single word is a first name.
     let (first, last) = match from.name.trim().rsplit_once(' ') {

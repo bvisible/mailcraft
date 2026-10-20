@@ -406,6 +406,8 @@ const NEVER: &[&str] = &[
     "sync.applyEventChanges",
     "sync.applyEvents",
     "sync.applyContacts",
+    // //// Neoffice — the address books a host brought from a server (JMAP for Contacts): the host's side, as the contacts are.
+    "sync.applyBooks",
     "sync.applyCalendars",
     "sync.applyCategories",
     "sync.applyFavorites",

@@ -1707,6 +1707,8 @@ fn contact_of(entry: &Value) -> Option<RemoteContact> {
         birthday: Some(text(entry, "birthday")).filter(|day| day.len() <= MAX_DATE).and_then(mailcraft_time::parse_iso).map(|(day, _)| day.date),
         notes: text(entry, "personalNotes").to_string(),
         modified: instant(text(entry, "lastModifiedDateTime")).unwrap_or(0),
+        // //// Neoffice — a Microsoft contact is in no address book here (the field is for a JMAP server's books).
+        book: String::new(),
     };
     // Entries with nothing in them (no mobile number, no home address) go here.
     contact.tidy();

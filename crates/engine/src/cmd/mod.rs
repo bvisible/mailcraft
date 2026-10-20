@@ -39,6 +39,8 @@ pub mod people;
 #[cfg(test)]
 mod quote_tests;
 pub mod remote;
+// //// Neoffice — the address books of a server (JMAP for Contacts) and what the owner may do with their contacts.
+pub mod remote_contacts;
 pub mod rules;
 pub mod search_server;
 pub mod shared;
@@ -87,6 +89,8 @@ pub fn registry() -> Registry {
     v.extend(graph_switch::specs());
     v.extend(graph_send::specs());
     v.extend(remote::specs());
+    // //// Neoffice — see `remote_contacts`.
+    v.extend(remote_contacts::specs());
     v.extend(sync_progress::specs());
     v.extend(search_server::specs());
     Registry::new(v)

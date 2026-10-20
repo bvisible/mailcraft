@@ -9,6 +9,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod address;
+// //// Neoffice — the address books of servers (JMAP for Contacts): what a kept contact is in, and what the account may do there.
+pub mod book;
 mod calendar;
 mod contact;
 // //// Neoffice — where a JMAP account's server is (`Account::jmap`), and what its address must be.
@@ -31,6 +33,8 @@ pub mod zoned;
 use serde::{Deserialize, Serialize};
 
 pub use address::{Address, MAX_ADDRESS, format_list, mailbox_address};
+// //// Neoffice — see `book`.
+pub use book::AddressBook;
 pub use calendar::{
     Attendee, Calendar, Event, Freq, MAX_JOIN_LINK, Occurrence, OnlineMeeting, OnlineProvider, Proposal, Recurrence, Response, ResponseOptions,
     ShowAs,

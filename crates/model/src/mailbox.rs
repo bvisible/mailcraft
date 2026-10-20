@@ -612,6 +612,11 @@ pub struct Mailbox {
     pub folders: Vec<Folder>,
     pub messages: BTreeMap<Id, Arc<Message>>,
     pub contacts: BTreeMap<Id, Arc<Contact>>,
+    // //// Neoffice — the address books of servers that the kept contacts are in (JMAP for Contacts, `book.rs`).
+    /// The address books of the accounts' servers that their contacts are in ([`crate::AddressBook`]), as the servers
+    /// last listed them. Nothing is written of them while there are none.
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub address_books: Vec<crate::AddressBook>,
     pub calendars: Vec<Calendar>,
     pub events: BTreeMap<Id, Arc<Event>>,
     pub tasks: BTreeMap<Id, Arc<Task>>,
@@ -667,6 +672,8 @@ impl Default for Mailbox {
             folders: Vec::new(),
             messages: BTreeMap::new(),
             contacts: BTreeMap::new(),
+            // //// Neoffice — see `address_books`.
+            address_books: Vec::new(),
             calendars: Vec::new(),
             events: BTreeMap::new(),
             tasks: BTreeMap::new(),
@@ -1836,6 +1843,8 @@ impl Mailbox {
             .chain(self.accounts.iter().map(|a| a.id))
             .chain(self.folders.iter().map(|f| f.id))
             .chain(self.calendars.iter().map(|c| c.id))
+            // //// Neoffice — the address books' ids are given from the same count.
+            .chain(self.address_books.iter().map(|b| b.id))
             .chain(self.rules.iter().map(|r| r.id))
             .filter(sane)
             .max()
@@ -1998,6 +2007,8 @@ impl Mailbox {
                 Arc::make_mut(e).calendar = default;
             }
         }
+        // //// Neoffice — the address books hang together too: each once, of an account here, and a contact in one of its own account's or none (`book::repair`).
+        fixed.extend(crate::book::repair(self, &sane));
         // The Favorites a server listed: one list an account, of folders that account has.
         let stated = std::mem::take(&mut self.favorites_from_server);
         let before: usize = stated.iter().map(|list| list.folders.len().saturating_add(1)).sum();

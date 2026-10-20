@@ -73,6 +73,11 @@ pub struct Contact {
     /// vCard `UID`, kept so an exported card updates the same contact elsewhere.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub uid: String,
+    // //// Neoffice — the address book of its server that a kept contact is in (JMAP for Contacts): where its rights are.
+    /// For a contact that an account's server keeps in an address book: that book ([`crate::AddressBook`], by its id
+    /// here). 0 for none: a contact of the mailbox's own, or of a server that has no books.
+    #[serde(skip_serializing_if = "crate::book::no_book")]
+    pub book: Id,
     /// Set for a contact that an account's server keeps: it is a copy of the server's, and what
     /// the server calls it is how the next download finds it again.
     #[serde(skip_serializing_if = "Origin::is_local")]

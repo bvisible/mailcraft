@@ -259,6 +259,11 @@ pub struct RemoteContact {
     /// The server's mark of this version of it ([`Origin::change_key`]).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub change_key: String,
+    // //// Neoffice — the address book it is in on its server (JMAP for Contacts), by which the engine finds the book here.
+    /// What the server calls the address book it is in ([`crate::book::RemoteBook::id`]); empty for a server that has
+    /// no books.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub book: String,
     pub display_name: String,
     pub first: String,
     pub middle: String,
@@ -285,6 +290,8 @@ impl RemoteContact {
     pub fn tidy(&mut self) {
         self.id = key(&self.id);
         self.change_key = key(&self.change_key);
+        // //// Neoffice — the server's name of its address book is an id like its own.
+        self.book = key(&self.book);
         for name in [
             &mut self.display_name,
             &mut self.first,
