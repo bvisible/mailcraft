@@ -392,3 +392,40 @@ fn the_link_that_comes_back_settles_the_meeting_and_a_refusal_says_online_meetin
     );
     assert!(s.mailbox.event(lunch).is_some_and(|e| e.online.is_none()));
 }
+
+#[test]
+fn an_appointment_held_online_is_no_meeting_and_keeps_its_room_when_people_are_invited_later() {
+    use mailcraft_model::remote::{EventOutcome, EventResult, EventsUploaded};
+    let (mut s, _, _) = served_online(vec![mailcraft_model::OnlineProvider::Other]);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    let made = s.run("calendar.new", &json!({"title": "Site visit", "start": "2026-10-23T14:00", "end": "2026-10-23T15:00", "online": true}));
+    let id = made.unwrap()["id"].as_u64().unwrap();
+    // An appointment: nobody invited, nobody written to, and the room asked for of the server's own service.
+    let ops = event_upload(&s, account).unwrap().ops;
+    assert_eq!(
+        (ops[0].kind, ops[0].fields.online, ops[0].fields.attendees.is_none(), ops[0].send),
+        (EventChangeKind::Create, Some(mailcraft_model::OnlineProvider::Other), true, false)
+    );
+    let link = "https://meet.example.org/meet/abcd-efgh-ijkl";
+    let outcomes = ops
+        .iter()
+        .map(|op| EventOutcome {
+            op: op.clone(),
+            result: EventResult::Done,
+            remote: format!("V-{}", op.token),
+            online: Some(true),
+            join_url: link.into(),
+            ..Default::default()
+        })
+        .collect();
+    crate::cmd::remote::apply_event_outcomes(&mut s, &EventsUploaded { account, email: "ada@example.org".into(), outcomes, ..Default::default() })
+        .unwrap();
+    assert_eq!(s.mailbox.event(id).and_then(|e| e.join_link().map(str::to_string)).as_deref(), Some(link));
+    // Grace invited later, with the yes to that mail: who is invited goes, and no room is asked for again.
+    s.run("calendar.edit", &json!({"id": id, "attendees": "grace@example.org", "send": true})).unwrap();
+    let ops = event_upload(&s, account).unwrap().ops;
+    let invited: Vec<&str> = ops[0].fields.attendees.iter().flatten().map(|who| who.address.email.as_str()).collect();
+    assert_eq!((ops.len(), ops[0].kind, ops[0].fields.online, ops[0].send), (1, EventChangeKind::Update, None, true));
+    assert_eq!(invited, ["grace@example.org"]);
+    assert_eq!(s.mailbox.event(id).and_then(|e| e.join_link().map(str::to_string)).as_deref(), Some(link));
+}

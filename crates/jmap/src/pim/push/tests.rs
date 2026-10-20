@@ -257,10 +257,12 @@ fn a_guest_added_here_leaves_one_added_on_the_server_meanwhile_where_it_is() {
         addresses,
         ["dan@example.org", "mailto:ada@example.org", "mailto:bob@example.org", "mailto:carol@example.org", "mailto:eve@example.org"]
     );
-    // The update goes to everybody invited: Eve is told of a change, never of a cancellation.
+    // Dan is sent his invitation; the update goes to everybody invited before: Eve is told of a change, never of a
+    // cancellation.
     let told = server.with(|d| d.pim.scheduled.clone());
-    assert_eq!(told.iter().map(|t| t.what).collect::<Vec<_>>(), ["update"]);
-    assert!(told[0].to.contains(&"eve@example.org".to_string()), "{told:?}");
+    assert_eq!(told.iter().map(|t| t.what).collect::<Vec<_>>(), ["invitation", "update"]);
+    assert_eq!(told[0].to, ["dan@example.org"]);
+    assert!(told[1].to.contains(&"eve@example.org".to_string()), "{told:?}");
 }
 
 #[test]
@@ -383,21 +385,21 @@ fn a_change_that_writes_to_people_whose_answer_was_lost_is_not_written_and_maile
         ..Default::default()
     };
     let op = EventOp { send: true, invited_before: Some(before), ..update(&Pim::event_id("budget"), fields) };
-    // The server did it, and wrote to the people; the answer was lost on the way.
+    // The server did it, and wrote to the people (Dan's invitation, the others' update); the answer was lost on the way.
     let first = run(&server, &job(vec![op.clone()]));
     assert_eq!(outcomes(&first)[0].0, EventResult::Failed);
-    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1);
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 2);
     // Sent again: the server's copy says it all already. Done, nothing written, nobody written to a second time.
     let before_again = server.asked().len();
     let again = run(&server, &job(vec![op]));
     let done = &again.uploaded.as_ref().unwrap().outcomes[0];
     assert_eq!((done.result, done.remote.as_str()), (EventResult::Done, Pim::event_id("budget").as_str()), "{done:?}");
-    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1);
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 2);
     assert!(server.asked().into_iter().skip(before_again).all(|a| a.method != "CalendarEvent/set"));
     // A change the copy doesn't say yet still goes.
     let other = EventOp { send: true, ..update(&Pim::event_id("budget"), title("Budget review (final, really)")) };
     assert_eq!(outcomes(&run(&server, &job(vec![other])))[0].0, EventResult::Done);
-    assert_eq!(server.with(|d| d.pim.scheduled.len()), 2);
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 3);
 }
 
 #[test]
@@ -1029,6 +1031,24 @@ fn the_servers_own_limit_on_writing_events_is_no_refusal_of_the_room_and_the_cha
     let said = outcome(&only);
     assert_eq!((said.result, said.online, said.retry_after.is_some()), (EventResult::Failed, None, true), "{said:?}");
     assert_eq!(server.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
+fn people_invited_to_an_appointment_of_hers_are_sent_their_invitation_with_her_yes_only() {
+    let server = server();
+    let carol = vec![mailcraft_model::Attendee { address: Address::new("Carol", "carol@example.org"), ..Default::default() }];
+    let invited = EventFields { attendees: Some(carol), ..EventFields::default() };
+    // Her lunch had nobody: inviting Carol without her yes to that mail writes to nobody.
+    let quiet = run(&server, &job(vec![EventOp { invited_before: Some(Vec::new()), ..update(&Pim::event_id("lunch"), invited.clone()) }]));
+    assert_eq!(outcome(&quiet).result, EventResult::Done);
+    assert!(server.with(|d| d.pim.scheduled.is_empty()));
+    // With it, Carol is sent her invitation.
+    let lunch = Pim::event_id("lunch");
+    server.with(|d| d.pim.events.iter_mut().filter(|e| e.raw == "lunch").for_each(|e| drop(e.props.remove("participants"))));
+    let op = EventOp { send: true, invited_before: Some(Vec::new()), ..update(&lunch, invited) };
+    assert_eq!(outcome(&run(&server, &job(vec![op]))).result, EventResult::Done);
+    let told = server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("invitation", vec!["carol@example.org".to_string()])]);
 }
 
 #[test]

@@ -1366,6 +1366,45 @@ fn a_change_of_title_never_makes_a_second_room() {
 }
 
 #[test]
+fn an_appointment_made_online_keeps_its_one_room_through_a_new_title_and_guests_invited_later() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    // An appointment (nobody invited), saved as one with Online Meeting on: its room is made, its link comes back, and
+    // nobody is written to.
+    let made =
+        flow.app.execute("calendar.new", json!({"title": "Site visit", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
+    let id = made.unwrap()["id"].as_u64().unwrap();
+    assert!(flow.look(SECOND));
+    let visit = flow.app.session.mailbox.event(id).cloned().unwrap();
+    assert_eq!((visit.attendees.len(), visit.join_link()), (0, Some(room("room-1").as_str())));
+    assert_eq!(flow.app.execute("calendar.join", json!({"id": id})).unwrap()["url"], room("room-1"));
+    assert!(flow.server.with(|d| d.pim.scheduled.is_empty()), "no mail to anyone");
+    // A new title: the same room.
+    flow.app.execute("calendar.edit", json!({"id": id, "title": "Site visit (north wing)"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.rooms(), 1);
+    // Grace invited later: she is sent the invitation, and the meeting keeps its one room.
+    flow.app.execute("calendar.edit", json!({"id": id, "attendees": "grace@example.org", "send": true})).unwrap();
+    assert!(flow.look(SECOND));
+    let told = flow.server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("invitation", vec!["grace@example.org".to_string()])]);
+    let there = flow.on_server("Site visit (north wing)").unwrap();
+    let links: Vec<String> = there
+        .props
+        .get("links")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, link)| link.get("href").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    assert_eq!(links, [room("room-1")], "{:?}", there.props);
+    assert!(there.props.get("participants").is_some_and(|people| people.to_string().contains("grace@example.org")), "{:?}", there.props);
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!((flow.rooms(), flow.app.session.mailbox.event(id).and_then(|e| e.join_link().map(str::to_string))), (1, Some(room("room-1"))));
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.session.mailbox.event_changes);
+}
+
+#[test]
 fn an_online_appointment_moved_to_another_calendar_keeps_its_room_and_no_second_is_made() {
     let mut flow = Flow::start();
     flow.with_meet();

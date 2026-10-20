@@ -272,6 +272,26 @@ fn the_organizer_and_the_draft_state_are_the_events_own() {
     assert_eq!((kind(&refused["notUpdated"][&review]), kind(&refused["notDestroyed"][&review])), ("forbidden", "forbidden"));
 }
 
+#[test]
+fn people_added_to_an_event_of_hers_are_sent_an_invitation_and_those_there_before_an_update() {
+    let stand_in = stand_in();
+    let lunch = Pim::event_id("lunch");
+    let person = |email: &str| json!({"@type": "Participant", "calendarAddress": format!("mailto:{email}"), "roles": {"attendee": true}});
+    let bob = json!({"bob": person("bob@example.org")});
+    set(&stand_in, json!({"update": {lunch.clone(): {"participants": bob}}, "sendSchedulingMessages": true})).unwrap();
+    let both = json!({"bob": person("bob@example.org"), "cy": person("cy@example.org")});
+    set(&stand_in, json!({"update": {lunch.clone(): {"participants": both}}, "sendSchedulingMessages": true})).unwrap();
+    let told: Vec<(&str, Vec<String>)> = stand_in.with(|d| d.pim.scheduled.iter().map(|t| (t.what, t.to.clone())).collect());
+    assert_eq!(
+        told,
+        [
+            ("invitation", vec!["bob@example.org".to_string()]),
+            ("invitation", vec!["cy@example.org".to_string()]),
+            ("update", vec!["bob@example.org".to_string()]),
+        ]
+    );
+}
+
 // Online meetings.
 
 fn request() -> Value {

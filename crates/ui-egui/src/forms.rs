@@ -2736,6 +2736,10 @@ mod event {
                 m.insert("attendees".into(), json!(""));
                 m.insert("optional".into(), json!(""));
             }
+            // //// Neoffice — an appointment of a calendar whose server makes rooms of its own may be held online too.
+            if !self.meeting && self.online_own {
+                m.insert("online".into(), json!(self.online));
+            }
             // The zones the times above are by, for an event that has (or had) zones of its
             // own: none for whole days, and none again when Time Zones was turned off.
             let zoned = self.zones && !self.all_day;
@@ -3014,7 +3018,10 @@ mod event {
                 checked: self.importance == Importance::Low,
                 ..item("importanceLow", "importanceLow", tl!("Low Importance"), 3, 8)
             });
-            if organizes {
+            // //// Neoffice — the online meeting's button, for a meeting the owner organizes (as upstream) and for an
+            // appointment of a calendar whose server makes rooms of its own (`online_own`): one held online without
+            // being a meeting, saved, sent to nobody.
+            if organizes || (!self.guest && self.online_own) {
                 // A Teams meeting is made by the calendar's server: where there is none to make
                 // it, and once one is made (which it then stays), the button is there and says why
                 // it can't be pressed.
@@ -3031,6 +3038,9 @@ mod event {
                     tip: if self.online_made { made.to_string() } else { label.to_string() },
                     ..item("teams", "onlineMeeting", label, 4, 3)
                 });
+            }
+            // //// Neoffice — (what follows is a meeting's only, as upstream)
+            if organizes {
                 // (Set once for most meetings, if at all: it gives way before what was in the row
                 // before it.)
                 items.push(bar::Item { menu: true, plain: true, ..item("responseOptions", "responseOptions", tl!("Response Options"), 4, 7) });
@@ -3044,8 +3054,12 @@ mod event {
 
         /// The window's own bar. The key of the button that was clicked.
         fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
-            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form)
+            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form; an appointment
+            // that goes to a calendar without them is held online no more, as its button is gone)
             self.online_own = online_own(&app.session, self.calendar);
+            if !self.meeting && !self.online_own && !self.online_made {
+                self.online = false;
+            }
             let items = self.bar_items();
             let categories: Vec<(String, egui::Color32)> =
                 app.session.mailbox.categories.iter().map(|c| (c.name.clone(), c32(c.color))).take(200).collect();
@@ -3152,7 +3166,12 @@ mod event {
                         ui.label(egui::RichText::new(tl!("The account's server hasn't given it a link to join by yet.")).color(t.text_dim));
                     }
                     None => {
-                        let words = tl!("The account's server makes it when the meeting is sent; the link to join by comes back with it.");
+                        // //// Neoffice — (an appointment held online: made when it is saved, sent to nobody)
+                        let words = if self.meeting {
+                            tl!("The account's server makes it when the meeting is sent; the link to join by comes back with it.")
+                        } else {
+                            tl!("The account's server makes it when the appointment is saved; the link to join by comes back with it.")
+                        };
                         ui.add(egui::Label::new(egui::RichText::new(words).color(t.text_dim)).truncate());
                     }
                 });
@@ -3626,6 +3645,62 @@ mod event {
             let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
             let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": theirs}), true);
             assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
+        }
+
+        // //// Neoffice — an appointment of a JMAP account's calendar whose server makes rooms may be held online without
+        // becoming a meeting; elsewhere an appointment has no such button, as upstream.
+        #[test]
+        fn an_appointment_where_the_server_makes_rooms_offers_online_meeting_and_is_saved_as_an_appointment() {
+            let mut s = session();
+            let added = s.run(
+                "account.add",
+                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
+            );
+            let account = added.unwrap()["id"].as_u64().unwrap();
+            let list = |account: Id, email: &str, services: Vec<mailcraft_model::OnlineProvider>| mailcraft_model::remote::CalendarsDownload {
+                account,
+                email: email.into(),
+                complete: true,
+                calendars: vec![mailcraft_model::remote::RemoteCalendar {
+                    id: "C1".into(),
+                    name: "Ada".into(),
+                    main: true,
+                    plain: true,
+                    online_providers: Some(services),
+                    ..Default::default()
+                }],
+            };
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(account, "ada@example.org", vec![mailcraft_model::OnlineProvider::Other]))
+                .unwrap();
+            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
+            let keys = |f: &EventForm| f.bar_items().into_iter().map(|item| (item.key, item.label)).collect::<Vec<_>>();
+            let visit = json!({"start": "2026-10-16T15:00", "end": "2026-10-16T16:00", "title": "Site visit", "calendar": calendar});
+            let mut f = EventForm::new(&s, &visit, false);
+            let bar = keys(&f);
+            assert!(bar.contains(&("teams", "Online Meeting".to_string())), "{bar:?}");
+            assert!(bar.iter().any(|(key, _)| *key == "save") && bar.iter().all(|(key, _)| *key != "send"), "saved, not sent: {bar:?}");
+            // On: saved as an appointment held online, nobody invited.
+            f.online = true;
+            let (command, params) = f.save_command();
+            assert_eq!((command, params["online"].as_bool(), params.get("attendees")), ("calendar.new", Some(true), None));
+            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
+            let made = s.mailbox.event(id).unwrap();
+            assert!(made.attendees.is_empty() && made.online.as_ref().is_some_and(|o| o.provider == mailcraft_model::OnlineProvider::Other));
+            // Off, as it opens: nothing of it is said.
+            let f = EventForm::new(&s, &visit, false);
+            assert_eq!(f.save_command().1["online"].as_bool(), Some(false));
+            // An appointment of this computer's calendar, or of a Microsoft account's: no button, as before.
+            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
+            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
+            let microsoft = added.unwrap()["id"].as_u64().unwrap();
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(microsoft, "bo@example.org", vec![mailcraft_model::OnlineProvider::Teams]))
+                .unwrap();
+            let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
+            for calendar in [own, theirs] {
+                let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), false);
+                assert!(keys(&f).iter().all(|(key, _)| *key != "teams"), "{calendar}");
+                assert!(f.save_command().1.get("online").is_none());
+            }
         }
 
         fn day(y: i32, m: u8, d: u8) -> Date {

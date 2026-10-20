@@ -18,8 +18,8 @@
 //!   (by its `O` id) is that occurrence's alone: what the series has instead, there, and never another zone or another
 //!   calendar for it (those two are dropped). A deletion of one occurrence leaves it out of its series.
 //! - **Mail.** The server writes to the people of an event only when the call asks for it (`sendSchedulingMessages`)
-//!   and the person organizes the event and it is not a draft: invitations, updates and cancellations
-//!   ([`Pim::scheduled`]). A change that is nothing but the person's own answer to somebody else's invitation, asked
+//!   and the person organizes the event and it is not a draft: invitations (of a new event, and of the people a change
+//!   adds to one), updates (to those it had) and cancellations ([`Pim::scheduled`]). A change that is nothing but the person's own answer to somebody else's invitation, asked
 //!   to be sent from calendars that all send answers (`mayRSVP`), is that answer: kept on the person's copy and told to
 //!   the organizer ([`Pim::tells_the_organizer`]); one occurrence of somebody else's invitation is not answered alone
 //!   (`forbidden`, "answered as a whole"). The person's own entry is the first whose calendar address, else email, is
@@ -579,6 +579,14 @@ impl Pim {
                     _ => {}
                 }
             }
+        }
+        // Those the change invites (to the event, not to one occurrence) are sent their invitation; those it had, the update.
+        let invited: Vec<String> = match (&addressed.occurrence, self.events.get(addressed.at)) {
+            (None, Some(event)) => self.guests(&event.props).into_iter().filter(|who| !guests.contains(who)).collect(),
+            _ => Vec::new(),
+        };
+        if organizes && !invited.is_empty() {
+            self.scheduled.push(Scheduled { what: "invitation", event: stored.raw.clone(), occurrence: None, to: invited });
         }
         if organizes && !guests.is_empty() {
             self.scheduled.push(Scheduled { what: "update", event: stored.raw.clone(), occurrence: addressed.occurrence.clone(), to: guests });

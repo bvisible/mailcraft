@@ -470,9 +470,11 @@ impl<H: Http> Writer<'_, H> {
             }
         };
         let (organizes, others, draft) = write::meeting(series.as_ref().unwrap_or(&copy), &self.me);
+        // (Or one the change makes a meeting: an appointment of hers that people are invited to now.)
+        let invites = op.fields.attendees.as_ref().is_some_and(|people| people.iter().any(|who| !super::mine(&self.me, &who.address.email)));
         // A meeting of the person's whose people are written to: only with the person's yes to that mail (`op.send`,
         // as the engine noted it), whatever the server's copy says of who is invited now.
-        let meeting = organizes && others && !draft && op.send;
+        let meeting = organizes && (others || invites) && !draft && op.send;
         // The clock its time is written on: an occurrence's is its series'.
         let clock = match &series {
             Some(series) => {
