@@ -105,6 +105,8 @@ fn module_of(id: &str) -> Option<Module> {
         "calendar" => Some(Module::Calendar),
         "people" => Some(Module::People),
         "tasks" => Some(Module::Tasks),
+        // //// Neoffice — and a note in Notes.
+        "notes" => Some(Module::Notes),
         _ => None,
     }
 }
@@ -127,6 +129,8 @@ fn module_delete(app: &MailApp) -> Option<&'static str> {
         Module::Calendar if app.session.sel.event.is_some() => Some("calendar.delete"),
         Module::People if app.session.sel.contact.is_some() => Some("people.delete"),
         Module::Tasks if app.session.sel.task.is_some() => Some("tasks.delete"),
+        // //// Neoffice — and a note.
+        Module::Notes if app.session.sel.note.is_some() => Some("notes.delete"),
         _ => None,
     }
 }

@@ -199,4 +199,7 @@ fn agents_read_freely_writes_to_a_servers_note_ask_and_deletes_are_delete_class(
     }
     // As a server's contact is.
     assert!(agent::describe(&s, "notes.edit", &json!({"id": theirs})).contains("Offsite"));
+    // The window's opening of a note's link in the system's browser is the owner's to allow, as a meeting's is.
+    assert_eq!(agent::access("ui.openNote"), Some(Access::Owner(Class::Send)));
+    assert!(agent::describe(&s, "ui.openNote", &json!({"id": theirs})).contains("on the web"));
 }

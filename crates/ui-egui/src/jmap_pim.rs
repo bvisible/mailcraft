@@ -195,6 +195,8 @@ impl MailApp {
 
     /// Look whether a JMAP account's calendar is due, and start a job when one is. Called every frame.
     pub(crate) fn jmap_pim_tick(&mut self, ctx: &egui::Context) {
+        // What was typed into a note goes into it once Notes is left (`notes_view`), before its job is worked out.
+        crate::notes_view::flush(self, ctx, false);
         let focused = ctx.input(|i| i.focused);
         self.jmap_pim_tick_at(focused, now_ms());
         if self.services.jmap_pim.is_none() || !self.auto_sync {

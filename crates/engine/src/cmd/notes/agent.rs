@@ -21,6 +21,8 @@ pub fn access(id: &str) -> Option<Access> {
         "notes.new" | "notes.edit" | "notes.pin" | "notes.archive" => Access::Safe,
         "notes.delete" => Access::Owner(Class::Delete),
         "sync.applyNotes" | "sync.noteChanges" | "sync.applyNoteChanges" => Access::Never,
+        // The window's: a note's link opened in the system's browser, as a meeting's is (Send).
+        "ui.openNote" => Access::Owner(Class::Send),
         _ => return None,
     })
 }
@@ -55,6 +57,7 @@ pub fn describe(s: &Session, id: &str, params: &Value) -> Option<String> {
         "notes.pin" => format!("pin or unpin {named} in your notes on the server"),
         "notes.archive" => format!("archive or unarchive {named} in your notes on the server"),
         "notes.delete" => format!("delete {named}"),
+        "ui.openNote" => format!("open {named} on the web"),
         _ => return None,
     })
 }

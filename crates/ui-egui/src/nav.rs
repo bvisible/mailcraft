@@ -64,10 +64,13 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
                 Module::Calendar => ("calendar", "view.calendar"),
                 Module::People => ("people", "view.people"),
                 Module::Tasks => ("tasks", "view.tasks"),
-                // //// Neoffice — Notes' place comes with its module (`notes_view`).
-                Module::Notes => continue,
+                // //// Neoffice — Notes, where notes are kept (a hosting page's tab whose server keeps none offers none).
+                Module::Notes if !mailcraft_engine::cmd::notes::offered(&app.session) => continue,
+                Module::Notes => ("notes", "view.notes"),
             };
             let (r, resp) = ui.allocate_exact_size(vec2(RAIL_W, RAIL_PITCH), Sense::click());
+            // //// Neoffice — where each module's button is, for the control channel and the tests (which modules are offered).
+            app.hit.add("module", m as u64, r);
             let active = app.session.view.module == m;
             if active {
                 // The module in view: a bar at the window's edge, and its icon in the accent.

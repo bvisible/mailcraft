@@ -58,6 +58,8 @@ pub mod keys;
 pub mod mail_view;
 mod meeting_dialogs;
 pub mod nav;
+// //// Neoffice — Notes: the mailbox's own and a server's, as cards, typed into in place.
+pub mod notes_view;
 // //// Neoffice — Nora, the assistant of the Neoffice server, reached through the hosting page: her answers, her commands, her band and her button.
 pub mod nora;
 pub mod people_view;
@@ -972,6 +974,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Meeting › Teams Meeting",
         r#"{"event"?: number (default: the selected item)} — opens the link to join an online meeting by in the system's browser. The link comes from the meeting's server: only an https address is opened, and only on this command"#,
     ),
+    // //// Neoffice — a note opened on the web, in the system's browser, on the owner's click (notes_view.rs).
+    (
+        "ui.openNote",
+        "Open Note on the Web",
+        "Notes",
+        r#"{"id"?: number (default: the selected note)} — opens a note of a server's where it was written, in the system's browser. The link comes from the note's server: only an https address is opened, and only on this command"#,
+    ),
     (
         "ui.findInvitation",
         "Look for This Meeting on the Calendar",
@@ -1798,7 +1807,9 @@ impl MailApp {
                     .or_else(|| approval::ui_command(self, id, p))
                     .or_else(|| graph_switch::ui_command(self, id, p))
                     .or_else(|| updates::ui_command(self, id, p))
-                    .or_else(|| attachment_open::ui_command(self, id, p));
+                    .or_else(|| attachment_open::ui_command(self, id, p))
+                    // //// Neoffice — a note opened on the web (notes_view.rs).
+                    .or_else(|| notes_view::ui_command(self, id, p));
             }
         })
     }
@@ -3369,8 +3380,8 @@ impl MailApp {
                 mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),
                 mailcraft_engine::Module::People => people_view::show(self, ui),
                 mailcraft_engine::Module::Tasks => tasks_view::show(self, ui),
-                // //// Neoffice — Notes' module is drawn by `notes_view`; Mail's meanwhile.
-                mailcraft_engine::Module::Notes => mail_view::show(self, ui),
+                // //// Neoffice — Notes' module (notes_view.rs).
+                mailcraft_engine::Module::Notes => notes_view::show(self, ui),
             });
         }
         sync_panel::show(self, &ctx);

@@ -100,6 +100,30 @@
 	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
 	their text is more than one job reads	leur texte dépasse ce qu’une seule synchronisation peut lire
 	The notes couldn't be taken in	Les notes n’ont pas pu être prises en compte
+	Archived notes	Notes archivées
+	Changed {when}	Modifiée {when}
+	Formatted	Formatée
+	New\nNote	Nouvelle\nnote
+	No archived notes.	Aucune note archivée.
+	No note matches.	Aucune note ne correspond.
+	No notes yet: New Note starts one.	Aucune note pour l’instant : Nouvelle note en crée une.
+	Not saved yet: tried again shortly.	Pas encore enregistrée : nouvel essai dans un instant.
+	Not saved: {why}	Non enregistrée : {why}
+	Open Note on the Web	Ouvrir la note sur le web
+	Open on the Web	Ouvrir sur le web
+	Open on\nthe Web	Ouvrir sur\nle web
+	Pinned notes	Notes épinglées
+	Saved	Enregistrée
+	Saving…	Enregistrement…
+	Search notes	Rechercher dans les notes
+	Select a note first	Sélectionnez d’abord une note
+	Shared by {name}	Partagée par {name}
+	This note has formatting, a checklist or attachments: change its text where it was written.	Cette note contient une mise en forme, une liste de contrôle ou des pièces jointes : modifiez son texte à l’endroit où elle a été écrite.
+	Unarchive	Désarchiver
+	Unpin	Détacher
+	Untitled	Sans titre
+	Write your note…	Écrivez votre note…
+	You may read this note, not change it.	Vous pouvez lire cette note, pas la modifier.
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange

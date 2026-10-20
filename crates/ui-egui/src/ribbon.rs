@@ -16,6 +16,9 @@ use crate::theme::{Tokens, medium, paint_clipped, regular, semibold};
 use crate::widgets::{CONTENT_H, LABEL_H, bg, big_frame, command_tooltip, group, mi, mi_check, shortcut_text, small_frame, stack};
 use crate::{MailApp, icons};
 
+// //// Neoffice — Notes' Home tab.
+mod notes_home;
+
 /// The height of the tab strip, and the size of the tabs' names (10 pt).
 const TAB_H: f32 = 30.0;
 const TAB_SIZE: f32 = 13.333;
@@ -291,8 +294,8 @@ pub(crate) fn describe(app: &MailApp) -> Tab {
             Module::Calendar => home_calendar(app),
             Module::People => home_people(app),
             Module::Tasks => home_tasks(app),
-            // //// Neoffice — Notes' Home tab comes with its module (`ribbon/notes_home.rs`); Mail's meanwhile.
-            Module::Notes => home_mail(app),
+            // //// Neoffice — Notes' Home tab (ribbon/notes_home.rs).
+            Module::Notes => notes_home::home(app),
         },
     };
     // //// Neoffice — Nora's place in the tab, when a host reaches her (nora/ribbon.rs).
