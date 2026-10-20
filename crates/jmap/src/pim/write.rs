@@ -22,7 +22,8 @@
 //! - **What a server that keeps only the basics doesn't keep** (categories, importance, response options, online
 //!   meetings) is not written: it would refuse the whole event, and the person's other changes with it. A change of
 //!   nothing else is none ([`patch`] says so). But an online meeting is asked of a server that writes virtual locations,
-//!   by the request ([`online_request`]): the server makes a room and gives the event its link.
+//!   by the request ([`online_request`]): the server makes a room and gives the event its link. The copy of an event
+//!   moved to another calendar keeps its own, by that link ([`kept_online`]).
 
 use mailcraft_model::remote::{EventFields, EventOp, EventTime};
 use mailcraft_model::{Attendee, Freq, Recurrence, Response, ShowAs};
@@ -38,6 +39,8 @@ pub const UTC_ZONE: &str = "Etc/UTC";
 pub const ONLINE_MEETING_REQUEST: &str = "urn:x-online-meeting:new";
 /// The property an event's online meeting is in.
 pub const ONLINE: &str = "virtualLocations";
+/// The property of an event's links, among which a server that makes online meetings keeps the room it made.
+pub const LINKS: &str = "links";
 /// What the person is told when only what such a server doesn't keep was changed.
 pub const KEEPS_NO: &str = "this calendar's server keeps no categories, importance, response options, online meetings or proposed times";
 /// Most people of an event that are written.
@@ -375,6 +378,18 @@ pub fn create(op: &EventOp, clock: Clock) -> Option<(Value, bool, String)> {
 pub fn online_request(op: &EventOp, clock: Clock) -> Option<Value> {
     (op.fields.online.is_some() && !matches!(clock, Clock::Series(..)))
         .then(|| json!({"online": {"@type": "VirtualLocation", "uri": ONLINE_MEETING_REQUEST}}))
+}
+
+/// The online meeting a new event keeps (the copy of one moved to another calendar), by the link to join it by: as its
+/// virtual location, and among its links when the server writes them (`links`), where a server that makes online
+/// meetings keeps the room it made: one whose links name its room keeps that room, and makes none.
+pub fn kept_online(link: &str, links: bool) -> Map<String, Value> {
+    let mut out = Map::new();
+    out.insert(ONLINE.into(), json!({"online": {"@type": "VirtualLocation", "uri": link}}));
+    if links {
+        out.insert(LINKS.into(), json!({"online": {"@type": "Link", "href": link, "contentType": "text/html"}}));
+    }
+    out
 }
 
 /// Whether the virtual locations of a change (or of a new event) are the request for an online meeting.

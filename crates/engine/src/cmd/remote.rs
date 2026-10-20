@@ -1290,6 +1290,12 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
         // //// Neoffice — who was invited in the event a change of the people was made to (see `invited_before` below).
         let invited_before =
             change.base.as_deref().filter(|_| change.kind == EventChangeKind::Update && fields.attendees.is_some()).map(self::invited);
+        // //// Neoffice — the link of the online meeting the copy of a moved appointment keeps (see `join_url` below).
+        let join_url = event
+            .filter(|_| change.kind == EventChangeKind::Create && !change.replaces.is_empty())
+            .and_then(|event| event.online.as_ref())
+            .map(|online| online.join_url.clone())
+            .unwrap_or_default();
         ops.push(EventOp {
             kind: change.kind,
             event: change.event,
@@ -1311,6 +1317,10 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
             // //// Neoffice — with a change of who is invited, who was invited in the event it was made to: a server that
             // keeps the people as one map is told only who came and who went.
             invited_before,
+            // //// Neoffice — the copy of a moved appointment held online keeps its meeting: a server that makes online
+            // meetings keeps the room its link names, and makes no second one (the copy's fields don't ask for one, as
+            // it has a link).
+            join_url,
         });
     }
     // (The zone the calendar is shown in: whole days are days there, and a series without a

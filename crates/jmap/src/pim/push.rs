@@ -33,7 +33,8 @@
 //!    names nothing) is sent once more in the same job without it, writing to people only when what is left is seen by
 //!    them, and done as an event that is no online meeting, with the server's words; a limit of the server's on writing
 //!    events that names nothing is the change's, which waits. One asked for one occurrence of a series is not asked for
-//!    (the whole series' is one), and said so.
+//!    (the whole series' is one), and said so. The copy of an appointment moved from another calendar keeps the online
+//!    meeting it has, by its link ([`write::kept_online`]): no second one is asked for.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
 //!    uid; one occurrence with its own id, which names it from now on), gone, refused with the server's words, or
 //!    failed with when to try again (a busy server, a server that failed, a connection that broke, a change not
@@ -131,6 +132,7 @@ pub(super) async fn push<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
         gone: HashSet::new(),
         unread: HashMap::new(),
         online: client.calendars_writable().is_some_and(|written| written.iter().any(|property| property == write::ONLINE)),
+        links: client.calendars_writable().is_some_and(|written| written.iter().any(|property| property == write::LINKS)),
     };
     let stop = writer.run().await.err();
     let token_refused = matches!(stop, Some(Stop::Auth));
@@ -183,8 +185,9 @@ struct Writer<'a, H> {
     copies: HashMap<String, Copy>,
     gone: HashSet<String>,
     unread: HashMap<String, String>,
-    /// The server makes online meetings: it writes virtual locations, its session says.
+    /// The server makes online meetings: it writes virtual locations, its session says. And it writes links.
     online: bool,
+    links: bool,
 }
 
 impl<H: Http> Writer<'_, H> {
@@ -379,6 +382,13 @@ impl<H: Http> Writer<'_, H> {
                 return Ok(None);
             };
             let marker = self.ask_online(&mut body, &op, Clock::Own(self.shown));
+            // The copy of an appointment moved here from another calendar keeps its online meeting, by its link.
+            if !op.join_url.is_empty()
+                && self.online
+                && let Some(body) = body.as_object_mut()
+            {
+                body.extend(write::kept_online(&op.join_url, self.links));
+            }
             // (Invitations only with the person's yes: `op.send`.)
             let scheduling = invites && op.send;
             return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, unmade: None }));

@@ -356,6 +356,23 @@ fn the_marker_again_makes_no_second_room() {
 }
 
 #[test]
+fn a_room_the_event_names_among_its_own_links_is_kept_and_none_is_made() {
+    let stand_in = with_meet();
+    // A copy of an event held in a room (the room's link among its links, and as its virtual location): kept as it is.
+    let room = format!("{MEET_ROOMS}abcd-efgh-ijkl");
+    let links = json!({"online": {"@type": "Link", "href": room, "contentType": "text/html"}});
+    let places = json!({"online": {"@type": "VirtualLocation", "uri": room}});
+    let made = set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-copy", "links": links, "virtualLocations": places}))}})).unwrap();
+    assert!(made["created"]["k"]["virtualLocations"].to_string().contains(&room), "{made}");
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 0);
+    // Asked for, with the room it names: none made either.
+    let asked =
+        set(&stand_in, json!({"create": {"k": new_event(json!({"uid": "mc-asked", "links": links, "virtualLocations": request()}))}})).unwrap();
+    assert!(asked["created"]["k"]["virtualLocations"].to_string().contains(&room), "{asked}");
+    assert_eq!(stand_in.with(|d| d.pim.rooms), 0);
+}
+
+#[test]
 fn another_virtual_location_is_refused() {
     let stand_in = with_meet();
     let lunch = Pim::event_id("lunch");

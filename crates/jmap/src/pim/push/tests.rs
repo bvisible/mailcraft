@@ -448,6 +448,7 @@ fn a_create_answered_already_exists_is_taken_as_that_event() {
         gone: HashSet::new(),
         unread: HashMap::new(),
         online: false,
+        links: false,
     };
     writer.refused(0, &ops[0], &json!({"type": "alreadyExists", "existingId": "Vmade"}), "Europe/Zurich");
     writer.refused(1, &ops[1], &json!({"type": "invalidProperties", "description": "<b>title</b> is   too long"}), "");
@@ -1034,6 +1035,32 @@ fn a_change_sent_again_without_its_room_writes_to_nobody_when_what_is_left_is_un
     let (_, patch) = server.with(|d| d.pim.written.last().cloned()).unwrap();
     assert!(patch.get("alerts").is_some() && patch.get("virtualLocations").is_none(), "{patch}");
     assert_eq!(server.with(|d| d.pim.scheduled.len()), 0, "nobody written to about her reminder");
+}
+
+#[test]
+fn the_copy_of_a_moved_appointment_keeps_its_room_by_its_link_and_none_is_made() {
+    let meet = with_meet();
+    // The room of the appointment it is the copy of (made for it before, as such a server keeps one: among its links).
+    let op = EventOp { join_url: room(7), ..create("mc-copy", "Dentist", utc(22, 9, 0)) };
+    let result = run(&meet, &job(vec![op.clone()]));
+    assert_eq!(outcome(&result).result, EventResult::Done, "{:?}", outcome(&result));
+    let copy = meet.with(|d| d.pim.events.iter().find(|e| e.props.get("uid") == Some(&json!("mc-copy"))).cloned()).unwrap();
+    let links: Vec<String> = copy
+        .props
+        .get("links")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(_, link)| link["href"].as_str().map(str::to_string))
+        .collect();
+    assert_eq!(links, [room(7)], "its own link, as a link of the copy's");
+    assert_eq!(meet.with(|d| d.pim.rooms), 0, "no room made");
+    // A server that writes no virtual locations is not told of it: the copy goes as it did.
+    let plain = server();
+    let result = run(&plain, &job(vec![EventOp { token: "mc-plain".into(), ..op }]));
+    assert_eq!(outcome(&result).result, EventResult::Done, "{:?}", outcome(&result));
+    let copy = plain.with(|d| d.pim.events.iter().find(|e| e.props.get("uid") == Some(&json!("mc-plain"))).cloned()).unwrap();
+    assert!(copy.props.get("links").is_none(), "{:?}", copy.props);
 }
 
 #[test]

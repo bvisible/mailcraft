@@ -1299,6 +1299,9 @@ proptest! {
             // //// Neoffice — who was invited before a change of the people (for JMAP for Calendars): Graph doesn't read it,
             // and junk there must not trouble it either.
             invited_before: flags.1.then(|| vec![Attendee { address: Address::new(remote.clone(), title.clone()), ..Default::default() }]),
+            // //// Neoffice — the link a moved appointment's copy keeps (for JMAP for Calendars): Graph doesn't read it
+            // either.
+            join_url: remote.clone(),
         }).collect::<Vec<_>>();
         let upload = EventsUpload { account: 3, email: "ada@example.org".into(), ops, ..Default::default() };
         let uploaded = push_events_at(&server.url(""), TOKEN, &upload, &EventOptions { zone });

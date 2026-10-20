@@ -792,6 +792,12 @@ pub struct EventOp {
     /// ([`EventChange::base`]), as `attendees` says them. `None` when that is not known: nobody is then taken away.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invited_before: Option<Vec<Attendee>>,
+    // //// Neoffice — the online meeting a moved appointment's copy keeps: a server that makes online meetings (JMAP for
+    // Calendars) keeps the room the copy names by its link, rather than the copy losing it (and a second being made).
+    /// For a new event that is the copy of an appointment moved from another of the account's calendars
+    /// ([`EventChange::replaces`]): the link to join its online meeting by, which the copy keeps. Empty otherwise.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub join_url: String,
 }
 
 impl EventOp {
@@ -813,6 +819,8 @@ impl EventOp {
             was.tidy();
             self.invited_before = was.attendees;
         }
+        // //// Neoffice — the link a copy keeps, as any link to join by.
+        self.join_url = OnlineMeeting::clean_link(&self.join_url).unwrap_or_default();
     }
 
     /// It is about one occurrence of a series, known by its series and its time only.

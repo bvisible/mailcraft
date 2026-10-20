@@ -26,8 +26,10 @@
 //!   one of theirs: one known only by where invitations go or by a scheduling id is not theirs.
 //! - **Online meetings** ([`Pim::meet`]): a virtual location whose address is the request
 //!   ([`ONLINE_MEETING_REQUEST`]) makes a room for the event (before it is written: a room refused leaves nothing), its
-//!   link kept among the event's links; asked again of an event that has one, nothing more. A change that names none of
-//!   its rooms takes their links away (the room stays). Another address is `invalidProperties`, and so is any of it for
+//!   link kept among the event's links; asked again of an event that has one, nothing more (its links back, when the
+//!   change's leave them out). An event whose own links name a room has that room: one made with it keeps it, and none
+//!   is made. A change that names none of its rooms takes their links away (the room stays). Another address is
+//!   `invalidProperties`, and so is any of it for
 //!   one occurrence; a room asked for on a meeting the person doesn't organize is `forbidden`. A room the server won't
 //!   make (where it makes none: `forbidden`; or the refusal a test asks for, [`Pim::room_refusal`]) is refused with the
 //!   property it is about (`virtualLocations`), said apart from the server's own limits on writing events, which name
@@ -567,6 +569,13 @@ impl Pim {
                     (_, Some(room)) => add_room(&mut event.props, room),
                     // The links go, the room stays (as when the desk's switch is turned off).
                     (Online::Drop, _) => drop_rooms(&mut event.props),
+                    // Its rooms' links back among the links the change gave.
+                    (Online::Restore, _) => {
+                        let have = room_links(&event.props);
+                        for room in room_links(&stored.props).into_iter().filter(|room| !have.contains(room)) {
+                            add_room(&mut event.props, &room);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -613,6 +622,8 @@ const ONLINE: &str = "virtualLocations";
 enum Online {
     /// A room, asked for ([`ONLINE_MEETING_REQUEST`]) by an event that has none.
     Make,
+    /// Asked for again by a change whose links leave out the rooms the event has: their links go back.
+    Restore,
     /// None of the event's rooms any more: their links go.
     Drop,
     /// Not named, or as it is.
@@ -620,17 +631,25 @@ enum Online {
 }
 
 /// What `given` (a new event, or a change of `stored`, the event as the store has it) asks of the event's online meeting
-/// ([`Online`]). A place that is neither the request nor one of the event's rooms is refused: only a room made here is
-/// written.
+/// ([`Online`]). The rooms the event has are those its links name: the links `given` names, when it names them (a copy
+/// of an event held in a room keeps that room), else the store's. A place that is neither the request nor one of those
+/// rooms (or of the store's) is refused: only a room made here is written.
 fn online_change(given: &Map<String, Value>, stored: Option<&Map<String, Value>>) -> Result<Online, Value> {
     let Some(asked) = given.get(ONLINE) else { return Ok(Online::Keep) };
     let uris: Vec<&str> = asked.as_object().into_iter().flatten().filter_map(|(_, place)| place.get("uri").and_then(Value::as_str)).collect();
-    let rooms: Vec<String> = stored.map(room_links).unwrap_or_default();
-    if uris.iter().any(|uri| *uri != ONLINE_MEETING_REQUEST && !rooms.iter().any(|room| room == uri)) {
+    let stored_rooms: Vec<String> = stored.map(room_links).unwrap_or_default();
+    let given_rooms = room_links(given);
+    let known = |uri: &str| stored_rooms.iter().chain(&given_rooms).any(|room| room == uri);
+    if uris.iter().any(|uri| *uri != ONLINE_MEETING_REQUEST && !known(uri)) {
         return Err(set_error("invalidProperties", "Only an online meeting made here is written: a Meet room of this site."));
     }
+    let rooms = if given.contains_key("links") { &given_rooms } else { &stored_rooms };
     if uris.contains(&ONLINE_MEETING_REQUEST) {
-        return Ok(if rooms.is_empty() { Online::Make } else { Online::Keep });
+        return Ok(match (rooms.is_empty(), stored_rooms.is_empty()) {
+            (false, _) => Online::Keep,
+            (true, false) => Online::Restore,
+            (true, true) => Online::Make,
+        });
     }
     Ok(if !rooms.is_empty() && !rooms.iter().any(|room| uris.contains(&room.as_str())) { Online::Drop } else { Online::Keep })
 }

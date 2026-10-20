@@ -1366,6 +1366,31 @@ fn a_change_of_title_never_makes_a_second_room() {
 }
 
 #[test]
+fn an_online_appointment_moved_to_another_calendar_keeps_its_room_and_no_second_is_made() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    let made = flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
+    let id = made.unwrap()["id"].as_u64().unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.event("Dentist").and_then(|e| e.join_link().map(str::to_string)), Some(room("room-1")));
+    // Into the team's calendar: made again there, and the first deleted once the copy is seen there.
+    let team = flow.calendar("Team").unwrap().id;
+    assert_eq!(flow.app.execute("calendar.edit", json!({"id": id, "calendar": team})).unwrap()["moved"], true);
+    for _ in 0..3 {
+        flow.look(2.0 * MINUTE + SECOND);
+    }
+    let there: Vec<Event> = flow.server.with(|d| d.pim.events.iter().filter(|e| e.props.get("title") == Some(&json!("Dentist"))).cloned().collect());
+    assert_eq!(there.iter().map(|e| e.calendars.clone()).collect::<Vec<_>>(), [vec!["team".to_string()]], "the copy, in the team's calendar");
+    assert!(there[0].props.get("links").is_some_and(|links| links.to_string().contains(&room("room-1"))), "with its room: {:?}", there[0].props);
+    assert_eq!(flow.rooms(), 1, "no second room");
+    // Here: the same, and Join opens the same room.
+    let dentist = flow.event("Dentist").unwrap();
+    assert_eq!((dentist.calendar, dentist.join_link()), (team, Some(room("room-1").as_str())));
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.session.mailbox.event_changes);
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
 fn a_room_the_server_wont_make_leaves_the_appointment_saved_and_says_so() {
     let mut flow = Flow::start();
     flow.with_meet();
