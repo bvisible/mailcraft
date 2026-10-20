@@ -878,9 +878,23 @@ fn two_contacts_with_one_card_each_keep_their_own_changes() {
     run(&mut s, "people.delete", json!({"id": copy}));
     assert_eq!(waiting(&s), [(ContactChangeKind::Update, gus)]);
     assert_eq!(s.mailbox.contact(gus).map(|c| c.phones.len()), Some(1));
-    // Once his change went, a whole read leaves him, as the server has him.
+    // Once his change went, a whole read leaves him, as the server has him: one Gus, the one made here.
     answer(&mut s, account, EventResult::Done, "", "");
     assert!(s.mailbox.contact_changes.is_empty());
+    let gus_card = RemoteContact {
+        emails: vec![Labeled::new("work", "gus@example.org")],
+        phones: vec![Labeled::new("mobile", "+41 79 555 02 02")],
+        title: "Joiner".into(),
+        ..card("c-gus", "Gus", "gus@example.org", "team")
+    };
+    apply_contacts(
+        &mut s,
+        &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus_card]),
+    )
+    .unwrap();
+    let left: Vec<(Id, String, usize)> =
+        s.mailbox.contacts.values().filter(|c| c.first == "Gus").map(|c| (c.id, c.title.clone(), c.phones.len())).collect();
+    assert_eq!(left, [(gus, "Joiner".to_string(), 1)]);
 }
 
 #[test]
@@ -960,7 +974,43 @@ fn the_deletion_of_a_copy_goes_only_with_the_contact_whose_card_it_may_be() {
     .unwrap();
     let copy = s.mailbox.contacts.values().find(|c| c.origin.id == "c-gus").map(|c| c.id).unwrap();
     run(&mut s, "people.delete", json!({"id": copy}));
-    // Gus is not due again yet, the deletion is: it goes with him, and a host sends him first.
-    let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
-    assert_eq!(kinds, ["create", "delete"]);
+    // Gus is not due again yet: the deletion waits for him (it may be of his card), and nothing is due meanwhile.
+    let kinds = |s: &mut Session| -> Vec<String> { ops(s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect() };
+    assert!(kinds(&mut s).is_empty());
+    let waiting = super::contacts_waiting(&s, account);
+    assert_eq!((waiting.total, waiting.due), (2, 0));
+    assert!(waiting.next.is_some());
+    // Nor does a change of another card drag him along before his time.
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Joiner"}));
+    assert_eq!(kinds(&mut s), ["update"]);
+    // When he is due, the deletion goes with him, and a host sends him first.
+    s.clock.now = s.clock.now.map(|now| now + 1_000);
+    assert_eq!(kinds(&mut s), ["create", "delete", "update"]);
+}
+
+#[test]
+fn a_new_contact_sent_again_whose_card_refuses_the_change_is_that_card_as_the_server_has_it() {
+    let (mut s, account) = session();
+    let id = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    run(&mut s, "people.edit", json!({"id": id, "title": "Joiner"}));
+    // Found on the server by its mark, the change of that card is refused for good.
+    let said = answer(&mut s, account, EventResult::Refused, "c-gus", "Your rights do not allow it.");
+    let gus = s.mailbox.contact(id).cloned().expect("still here");
+    assert_eq!((gus.origin.id.as_str(), gus.book == 0), ("c-gus", false), "that card, in its book");
+    assert_eq!(gus.title, "", "as it was sent the first time, which the server has");
+    assert!(s.mailbox.contact_changes.is_empty());
+    assert_eq!(
+        said["messages"],
+        json!(["The server wouldn't take the change to \"Gus\" (Your rights do not allow it.). It was put back as it was."])
+    );
+    // The read that follows has that card: still one Gus.
+    let gus_card = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
+    apply_contacts(
+        &mut s,
+        &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus_card]),
+    )
+    .unwrap();
+    assert_eq!(s.mailbox.contacts.values().filter(|c| c.first == "Gus").map(|c| c.id).collect::<Vec<_>>(), [id]);
 }

@@ -8,7 +8,8 @@
 //!    for by the mark it was made with (`ContactCard/query` by `uid`, RFC 9610 §3.3), and found, it is a change of
 //!    that card, of what was changed here since it was sent ([`merged_json`]). A server that can't look for it there
 //!    (it filters on no `uid`) has it sent as a new card again: its `uid` makes no second one where the server knows
-//!    it.
+//!    it. One that couldn't be looked for now (the look failed) is not sent, and goes again later: sent whole, it
+//!    would take away from the card what someone else added there meanwhile.
 //! 2. **The server's card first.** Every card a change or a deletion is about is read (a `ContactCard/get` of their
 //!    names). One the server no longer has is gone; one it made at another time than the card the change is about
 //!    (`created`, compared as instants: a server gave a new contact the name of one that was deleted) is another
@@ -22,16 +23,17 @@
 //!    waits for the next job. A call the server refuses for its size, before running it (a 4xx that says so, or a
 //!    413), is sent again in halves. In a job that sends a new card again, the new cards go first, and a change of the
 //!    card one of them is answered with waits for the next job (a copy of it a read brought, changed or deleted here,
-//!    is made to the card as it is then, and never deletes it).
+//!    is made to the card as it is then, and never deletes it); when one has no answer that names its card (lost, or
+//!    not sent), every change and deletion of a card the server has waits.
 //! 4. **Outcomes**, one for each change tried, in the order they came: done (a new card with what the server calls it,
 //!    as the engine names a card: [`card_key`](super::super::card_key)), gone, refused with the server's words (its
 //!    markup taken out, [`MAX_WORDS`] characters at most), or failed with when to try again (a busy server, one that
 //!    failed, a connection that broke, an answer too large to take, a change not reached). A failure that asking again
 //!    is unlikely to get past (the server failed with this very card, said nothing of it, or a change alone is too
 //!    large for it) says so ([`ContactOutcome::lasting`]). A card the server says is there already (`alreadyExists`
-//!    with its id) is that card: it is read, and what was changed here since it was sent before is made to it. A
-//!    server that refuses the credentials, or is busy, ends the job: what was not tried waits as it was, with no
-//!    outcome.
+//!    with its id) is that card: it is read, and what was changed here since it was sent before is made to it. A new
+//!    card sent again as a change of its card, refused, says which card (the contact is that one). A server that
+//!    refuses the credentials, or is busy, ends the job: what was not tried waits as it was, with no outcome.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -259,16 +261,27 @@ impl<H: Http> Writer<'_, H> {
                 None => tried.push(at),
             }
         }
-        // New cards sent before: the cards the server made of them, where it can say.
+        // New cards sent before: the cards the server made of them, where it can say (one that couldn't be looked for
+        // now is answered, and not sent).
         self.find_made(&tried).await?;
+        let resent: Vec<usize> = tried
+            .iter()
+            .copied()
+            .filter(|at| {
+                !self.found.contains_key(at) && self.ops.get(*at).is_some_and(|op| op.kind == ContactChangeKind::Create && op.base.is_some())
+            })
+            .collect();
+        tried.retain(|at| self.outcomes.get(*at).is_some_and(Option::is_none));
         // One change of a card in a job, a new card sent again that was found first; a second waits for the next job,
         // with no outcome (it is made to what the first leaves).
         let mut claimed: HashSet<String> = HashSet::new();
         let mut found: Vec<(usize, String)> = self.found.iter().map(|(at, card)| (*at, card.clone())).collect();
         found.sort_unstable();
+        let mut resent = resent;
         for (at, card) in found {
             if !claimed.insert(card) {
                 self.found.remove(&at);
+                resent.push(at);
             }
         }
         let (mut creates, mut others): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
@@ -287,17 +300,28 @@ impl<H: Http> Writer<'_, H> {
         // The server's cards the changes are about, as they are now.
         let wanted: Vec<String> = others.iter().filter_map(|at| self.card_at(*at)).collect();
         self.read_cards(wanted).await?;
-        let resending = creates.iter().any(|at| self.ops.get(*at).is_some_and(|op| op.base.is_some()));
         let creates: Vec<Ready> = creates.into_iter().filter_map(|at| self.prepare(at)).collect();
         let others: Vec<Ready> = others.into_iter().filter_map(|at| self.prepare(at)).collect();
         let size = MAX_PER_CALL.min(self.client.max_objects_in_set().max(1));
-        if resending {
-            // A new card sent again may be one the server made the first time, that another change here is about (a
-            // copy of it that a read brought): the new cards first; a change of the card one of them is answered with
-            // waits for the next job, when it is made to the card as it is then.
+        if !resent.is_empty() {
+            // A new card sent again as a new one may be one the server made the first time, that another change here is
+            // about (a copy of it that a read brought): the new cards first; a change of the card one of them is
+            // answered with waits for the next job, when it is made to the card as it is then. One that no answer
+            // named (lost, or not sent) may be any card: every change or deletion of a card the server has waits.
             self.write(creates, size).await?;
             self.write_again(size).await?;
-            let others: Vec<Ready> = others.into_iter().filter(|one| !self.made.contains(&one.target)).collect();
+            let named = |outcome: &Option<ContactOutcome>| {
+                outcome.as_ref().is_some_and(|outcome| outcome.result == EventResult::Done && !outcome.remote.is_empty())
+            };
+            let unnamed = resent.iter().any(|at| !self.outcomes.get(*at).is_some_and(named));
+            if unnamed {
+                log::debug!("jmap pim: a new card sent again has no answer that names its card: the changes of cards wait");
+            }
+            let held = |one: &Ready| {
+                self.made.contains(&one.target)
+                    || (unnamed && !one.target.is_empty() && self.ops.get(one.at).is_some_and(|op| op.kind != ContactChangeKind::Create))
+            };
+            let others: Vec<Ready> = others.into_iter().filter(|one| !held(one)).collect();
             self.write(others, size).await?;
         } else {
             let mut all: Vec<Ready> = creates.into_iter().chain(others).collect();
@@ -317,8 +341,10 @@ impl<H: Http> Writer<'_, H> {
     }
 
     /// The new cards at `tried` that were sent before (whose answer didn't come) looked for by the mark they were made
-    /// with ([`Writer::found`]). A server that can't look for them so, or whose answer can't be read, finds none: they
-    /// are sent as new cards again.
+    /// with ([`Writer::found`]). One the server says it has none of, or that a server says it can't look for so
+    /// (`unsupportedFilter`), is sent as a new card again. One that couldn't be looked for now (the request failed, the
+    /// server failed with the look, its answer can't be read) is not sent: it fails, to go again later (sent whole, it
+    /// would take away from the card what someone else added there meanwhile).
     async fn find_made(&mut self, tried: &[usize]) -> Result<(), Stop> {
         let sent_before: Vec<usize> = tried
             .iter()
@@ -326,7 +352,11 @@ impl<H: Http> Writer<'_, H> {
             .filter(|at| self.ops.get(*at).is_some_and(|op| op.kind == ContactChangeKind::Create && op.base.is_some()))
             .collect();
         let per = self.client.max_calls_in_request().clamp(1, MAX_FINDS);
+        let mut can = true;
         for chunk in sent_before.chunks(per) {
+            if !can {
+                break;
+            }
             self.check()?;
             let calls: Vec<(&str, Value)> = chunk
                 .iter()
@@ -336,38 +366,31 @@ impl<H: Http> Writer<'_, H> {
             let mut answers = match self.client.call_within(&USING, calls, IDS_BYTES).await {
                 Ok(answers) => answers,
                 Err(error) => {
-                    let words = said(&self.secrets, &error);
-                    return match Stop::of(error, &self.secrets) {
-                        Stop::Failed(_) => Ok(()),
-                        Stop::Busy(seconds, why) => {
-                            for at in chunk {
-                                self.failed(*at, &words, Some(seconds), false);
-                            }
-                            Err(Stop::Busy(seconds, why))
-                        }
-                        stop => Err(stop),
-                    };
+                    self.request_failed(error, chunk)?;
+                    continue;
                 }
             };
-            let mut can = true;
             for (n, at) in chunk.iter().enumerate() {
                 match answers.take(n) {
-                    Ok(answer) => {
-                        let ids: Vec<&str> =
-                            answer.get("ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).take(3).collect();
-                        // (Two cards made with one mark: neither is taken for it.)
-                        if let [one] = ids.as_slice()
-                            && card_id(one)
-                        {
-                            self.found.insert(*at, (*one).to_string());
+                    Ok(answer) => match answer.get("ids").and_then(Value::as_array) {
+                        Some(ids) => {
+                            let ids: Vec<&str> = ids.iter().filter_map(Value::as_str).take(3).collect();
+                            // (None: it wasn't made. Two cards made with one mark: neither is taken for it.)
+                            if let [one] = ids.as_slice()
+                                && card_id(one)
+                            {
+                                self.found.insert(*at, (*one).to_string());
+                            }
                         }
+                        None => self.failed(*at, "the server's answer to the look for its card can't be read", None, false),
+                    },
+                    // (Not asked again in this job.)
+                    Err(Error::Refused { kind, .. }) if kind == "unsupportedFilter" => can = false,
+                    Err(error) => {
+                        let words = said(&self.secrets, &error);
+                        self.failed(*at, &words, None, false);
                     }
-                    // (A server that filters on no `uid`: not asked again in this job.)
-                    Err(_) => can = false,
                 }
-            }
-            if !can {
-                break;
             }
         }
         if !self.found.is_empty() {
@@ -588,8 +611,9 @@ impl<H: Http> Writer<'_, H> {
                     Error::Refused { .. } => (EventResult::Refused, None),
                     _ => (EventResult::Failed, Some(RETRY)),
                 };
-                for at in affected {
-                    self.answer(at, result, String::new(), &words, retry, false);
+                for one in call {
+                    let remote = if result == EventResult::Refused { self.card_named(one) } else { String::new() };
+                    self.answer(one.at, result, remote, &words, retry, false);
                 }
                 return Ok(false);
             }
@@ -661,8 +685,18 @@ impl<H: Http> Writer<'_, H> {
             // The server failed with this very card: asking again may get past it once or twice, not for ever.
             "serverFail" | "serverPartialFail" => self.failed(at, &words, retry, true),
             kind if failed_for_now(kind) => self.failed(at, &words, retry, false),
-            _ => self.answer(at, EventResult::Refused, String::new(), &words, None, false),
+            _ => {
+                let remote = self.card_named(one);
+                self.answer(at, EventResult::Refused, remote, &words, None, false);
+            }
         }
+    }
+
+    /// For a new card sent again as a change of the card the server made of it (`one`): that card, as the engine names
+    /// it, for a refusal to say (the contact is that card); else nothing.
+    fn card_named(&self, one: &Ready) -> String {
+        let resent = self.ops.get(one.at).is_some_and(|op| op.kind == ContactChangeKind::Create) && !one.target.is_empty();
+        if resent { card_key(&one.target) } else { String::new() }
     }
 }
 

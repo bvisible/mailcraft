@@ -546,8 +546,12 @@ fn resend(token: &str, fields: ContactFields, sent: ContactFields) -> ContactOp 
 
 #[test]
 fn a_new_card_sent_again_takes_out_there_what_was_taken_out_here() {
+    // A server that can't look for a card by its uid (its only filter is the book).
     let server = server();
-    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    server.with(|d| {
+        d.pim.finds_by_uid = false;
+        d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer));
+    });
     run(&server, &request(vec![create("t-gus", gus())]));
     assert!(card(&server, "Gus Hale").is_some_and(|c| c.phones.len() == 2 && !c.company.is_empty()), "the server made it");
     // His numbers and his company taken out here before the next try. Sent again (the server finds no card by its
@@ -666,4 +670,71 @@ fn a_cards_time_of_making_is_compared_as_an_instant() {
     ] {
         assert_eq!(super::another(&op(mark), &json!({"id": "Grace Okafor", "created": now})), another, "{mark} / {now}");
     }
+}
+
+#[test]
+fn every_deletion_waits_while_a_new_card_sent_again_has_no_answer_that_names_its_card() {
+    // A server that can't look for a card by its uid: Gus's first answer was lost, a read brought his card as a contact
+    // of its own, and that copy was deleted here. Sent again, his answer is lost too: which card he is isn't known, and
+    // the deletion (of that very card) waits, with no outcome.
+    let server = server();
+    server.with(|d| {
+        d.pim.finds_by_uid = false;
+        d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer));
+    });
+    run(&server, &request(vec![create("t-gus", gus())]));
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    let title = ContactFields { title: Some("Lead".into()), ..Default::default() };
+    let ops = vec![resend("t-gus", gus(), gus()), destroy("Gus Hale"), update("Grace Okafor", title)];
+    let done = outcomes(&run(&server, &request(ops)));
+    let answered: Vec<(ContactChangeKind, EventResult)> = done.iter().map(|o| (o.op.kind, o.result)).collect();
+    assert_eq!(answered, [(ContactChangeKind::Create, EventResult::Failed)], "what is about a card the server has waits");
+    assert!(card(&server, "Gus Hale").is_some(), "never deleted");
+    assert!(writes(&server).iter().all(|(_, sent)| sent != "destroy"));
+}
+
+#[test]
+fn a_look_for_a_card_that_fails_sends_nothing_and_what_the_desk_added_stays() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    run(&server, &request(vec![create("t-gus", gus())]));
+    // The desk gives him a number meanwhile; here, a job title.
+    server.with(|d| {
+        if let Some(card) = d.pim.cards.iter_mut().find(|card| card.id == "Gus Hale") {
+            card.phones.push(("+41 44 555 02 09".into(), false));
+        }
+    });
+    let titled = ContactFields { title: Some("Master joiner".into()), ..gus() };
+    // The server fails to look for him once: he is not sent whole (which would take the desk's number away), but waits.
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/query", Effect::MethodError("serverFail"))));
+    let before = writes(&server).len();
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled.clone(), gus())])));
+    assert_eq!((done[0].result, done[0].lasting), (EventResult::Failed, false), "{done:?}");
+    assert_eq!(writes(&server).len(), before, "nothing sent");
+    // The next time it finds him, and writes only the title.
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled, gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+    let made = card(&server, "Gus Hale").unwrap();
+    assert_eq!((made.phones.len(), made.title.as_str()), (3, "Master joiner"), "{made:?}");
+    // A server that says it can't look so (`unsupportedFilter`) has him sent again as a new card at once.
+    let server = self::server();
+    server.with(|d| {
+        d.pim.finds_by_uid = false;
+        d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer));
+    });
+    run(&server, &request(vec![create("t-gus", gus())]));
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", gus(), gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+}
+
+#[test]
+fn a_new_card_sent_again_refused_for_good_names_the_card_it_was_made_as() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    run(&server, &request(vec![create("t-gus", gus())]));
+    // Found by its mark, the change of that card is refused: the answer says which card, for the contact to be it.
+    server.with(|d| d.pim.refused_cards.insert("Gus Hale".into(), "forbidden"));
+    let titled = ContactFields { title: Some("Master joiner".into()), ..gus() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled, gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Refused, Some("Gus Hale")));
 }

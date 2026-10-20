@@ -223,6 +223,13 @@ fn what_the_server_has_besides_stays_as_it_is_and_its_first_address_too_unless_t
     server["emails"] = json!({"e1": {"@type": "EmailAddress", "address": a, "pref": 1}, "e2": {"@type": "EmailAddress", "address": b}});
     let op = change((vec![l("", a), l("", b)], Vec::new()), (vec![l("", b), l("", a)], Vec::new()));
     assert_eq!(addresses(&merged_json(&op, &server)), [(b.to_string(), Some(1)), (a.to_string(), None)]);
+    // Her one address replaced here, while the desk added one and made it her primary: nothing of what was there
+    // before is left, and the one she has now goes first.
+    let x = "x@example.org";
+    let mut server = card();
+    server["emails"] = json!({"e1": {"@type": "EmailAddress", "address": x, "pref": 1}, "e2": {"@type": "EmailAddress", "address": a}});
+    let op = change((vec![l("", a)], Vec::new()), (vec![l("", c)], Vec::new()));
+    assert_eq!(addresses(&merged_json(&op, &server)), [(c.to_string(), Some(1)), (x.to_string(), None)]);
 }
 
 proptest! {

@@ -1118,10 +1118,48 @@ fn a_copy_deleted_while_a_new_contact_waited_to_go_again_deletes_nothing_there()
     // The read brought his card as a contact of its own, which is deleted here before Gus went again.
     let copy = flow.app.session.mailbox.contacts.values().find(|c| c.first == "Gus" && c.id != gus).map(|c| c.id).expect("the copy");
     flow.app.execute("people.delete", json!({"id": copy})).unwrap();
-    // (A minute on the page's clock; on the engine's, Gus is not due again yet.)
-    assert!(flow.look(MINUTE), "the deletion is due, and Gus goes with it");
+    // Gus is not due again yet (a minute on the page's clock, not on the engine's): the deletion waits for him, for it
+    // may be of his very card.
+    flow.look(MINUTE);
+    assert!(flow.card("Gus Hale").is_some());
+    // When he is due, both go, he first: the card he is answered with is the copy's, whose deletion is not sent.
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
+    assert!(flow.look(MINUTE));
     assert!(flow.server.with(|d| d.pim.card_writes.iter().all(|(_, sent)| sent != "destroy")), "his card was never deleted");
     assert_eq!(flow.card("Gus Hale").map(|card| card.created), Some(made.created), "the card made the first time");
     assert_eq!(flow.contact("Gus").map(|c| (c.id, mailcraft_jmap::pim::server_card_id(&c.origin.id))), Some((gus, Some("Gus Hale".to_string()))));
     assert!(flow.app.session.mailbox.contact_changes.is_empty(), "{:?}", flow.app.session.mailbox.contact_changes);
+}
+
+#[test]
+fn a_new_contact_sent_again_is_found_on_the_server_and_what_the_desk_added_there_stays() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    // A server that finds a card by the uid it was made with (as Neoffice's does).
+    flow.server.with(|d| {
+        d.pim.finds_by_uid = true;
+        d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::LoseAnswer));
+    });
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org"})).unwrap();
+    let gus = flow.contact("Gus").map(|c| c.id).unwrap();
+    assert!(flow.look(SECOND));
+    // The desk gives his card a number; here, he gets a job title.
+    flow.server.with(|d| {
+        if let Some(card) = d.pim.cards.iter_mut().find(|card| card.id == "Gus Hale") {
+            card.phones.push(("+41 44 555 02 09".into(), false));
+        }
+    });
+    flow.app.execute("people.edit", json!({"id": gus, "title": "Joiner"})).unwrap();
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
+    assert!(flow.look(MINUTE));
+    let card = flow.card("Gus Hale").unwrap();
+    assert_eq!((card.phones.len(), card.title.as_str()), (1, "Joiner"), "the desk's number stays: {card:?}");
+    let (_, last) = flow.server.with(|d| d.pim.card_writes.last().cloned()).unwrap();
+    assert_eq!(last.as_object().map(|map| map.keys().cloned().collect::<Vec<String>>()), Some(vec!["titles".to_string()]), "only what changed here");
+    assert_eq!(flow.server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+    let here: Vec<mailcraft_model::Contact> =
+        flow.app.session.mailbox.contacts.values().filter(|c| c.first == "Gus").map(|c| c.as_ref().clone()).collect();
+    assert_eq!(here.len(), 1, "one Gus, the one made here");
+    assert_eq!((here[0].id, here[0].phones.len(), here[0].title.as_str()), (gus, 1, "Joiner"));
 }
