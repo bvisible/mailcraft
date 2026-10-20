@@ -297,8 +297,8 @@ where
 
 /// One calendar job of a JMAP account: sign in, write and read what `job` asks ([`sync_pim`]), and give the answer. A
 /// credential the server turns down in the middle of it is renewed by the host, once, and the job done again with
-/// it: what the server had answered of the changes before (of events and of contacts) stays answered, and only the
-/// others go again. A server whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
+/// it: what the server had answered of the changes before (of events, of contacts and of notes: `jmap_notes.rs`) stays
+/// answered, and only the others go again. A server whose API is the facade's is taken for one that keeps only the basics ([`FACADE_API`]).
 pub async fn pim<H, C, S, W>(http: H, job: &JmapPimJob, credentials: Option<&C>, sleep: S) -> JmapPimResult
 where
     H: Http + Clone,
@@ -318,7 +318,9 @@ where
     let (mut changes, mut cards) = (request.changes.clone(), request.contact_changes.clone());
     let mut answered: Vec<EventOutcome> = Vec::new();
     let mut answered_cards: Vec<ContactOutcome> = Vec::new();
-    let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome], answered_cards: &[ContactOutcome]| {
+    // (And of the notes: `jmap_notes.rs`.)
+    let mut notes = notes::NotesReplay::new(request);
+    let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome], answered_cards: &[ContactOutcome], notes: &notes::NotesReplay| {
         if !answered.is_empty() {
             let token_refused = answer.uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);
             answer.uploaded =
@@ -329,7 +331,7 @@ where
             let outcomes = answered_cards.to_vec();
             answer.contacts_uploaded = Some(ContactsUploaded { account: request.account, email: request.email.clone(), outcomes, token_refused });
         }
-        answer
+        notes.give(answer)
     };
     loop {
         let client = match signed_in(&http, &request.session, &request.email, auth, renewed, host, &job.cancel, &sleep).await {
@@ -337,13 +339,14 @@ where
                 renewed = now_renewed;
                 client
             }
-            SignedIn::Stopped => return with_answered(stopped_pim(request), &answered, &answered_cards),
-            SignedIn::Out(e) => return with_answered(failed_pim(request, &e), &answered, &answered_cards),
+            SignedIn::Stopped => return with_answered(stopped_pim(request), &answered, &answered_cards, &notes),
+            SignedIn::Out(e) => return with_answered(failed_pim(request, &e), &answered, &answered_cards, &notes),
         };
         let asked = JmapPimRequest {
             plain_unless_said: client.api_path_ends_with(FACADE_API),
             changes: changes.clone(),
             contact_changes: cards.clone(),
+            notes: notes.ask(),
             ..request.clone()
         };
         let answer = sync_pim(&client, &asked, &job.cancel).await;
@@ -359,14 +362,15 @@ where
             cards.ops.retain(|op| !now_answered.iter().any(|outcome| same_card_change(&outcome.op, op)));
         }
         answered_cards.extend(now_answered);
-        let answer = with_answered(answer, &answered, &answered_cards);
+        notes.take(&answer);
+        let answer = with_answered(answer, &answered, &answered_cards, &notes);
         if !answer.auth_refused || renewed || host.is_none() {
             return answer;
         }
         // Turned down in the middle: a new credential from the host, and the job read again with it.
         match renew(host, &request.email, &job.cancel, &sleep).await {
             Renewed::Fresh(fresh) => (auth, renewed) = (fresh, true),
-            Renewed::Cancelled => return with_answered(stopped_pim(request), &answered, &answered_cards),
+            Renewed::Cancelled => return with_answered(stopped_pim(request), &answered, &answered_cards, &notes),
             Renewed::Refused => return answer,
         }
     }
@@ -496,6 +500,9 @@ fn stopped_pim(request: &JmapPimRequest) -> JmapPimResult {
 #[cfg(test)]
 #[path = "jmap_services_tests.rs"]
 mod tests;
+
+#[path = "jmap_notes.rs"]
+mod notes;
 
 #[cfg(test)]
 #[path = "jmap_pim_flow_tests.rs"]
