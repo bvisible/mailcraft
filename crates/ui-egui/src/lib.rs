@@ -16,6 +16,7 @@ macro_rules! tl {
 
 mod account_setup;
 pub mod agent_gate;
+pub mod alerts;
 pub mod approval;
 mod attachment_open;
 pub mod backstage;
@@ -235,6 +236,11 @@ pub struct Services {
     /// update it installed ([`updates::UpdateStart`]): one that wasn't installed after all, or a
     /// newly installed version that didn't start twice running, with the one it replaced kept.
     pub update_start: updates::UpdateStart,
+    /// Desktop: the system's notifications, for a reminder falling due and for new mail while the
+    /// window isn't in front ([`alerts`]): the host shows what it is handed, says why it can't
+    /// when it can't, and hands back which were clicked. Only the window asks for one, never a
+    /// command. Absent in the browser and the tests: nothing is shown.
+    pub alert: Option<Box<dyn alerts::AlertHost>>,
 }
 
 // //// Neoffice — which accounts this build can run a Send/Receive for: a JMAP account needs the host's JMAP runner, not its mail connections.
@@ -581,6 +587,11 @@ pub struct UiState {
     pub update_skip: String,
     /// The owner has been told, once, that MailCraft now installs its updates itself.
     pub update_install_told: bool,
+    /// Show a desktop alert when new mail arrives in an Inbox of the owner's own accounts while
+    /// the window isn't in front ([`alerts`]): on unless the owner turns it off.
+    pub alert_new_mail: bool,
+    /// Show a desktop alert for each reminder as it falls due: on unless the owner turns it off.
+    pub alert_reminders: bool,
 }
 
 impl Default for UiState {
@@ -617,6 +628,8 @@ impl Default for UiState {
             update_install: true,
             update_skip: String::new(),
             update_install_told: false,
+            alert_new_mail: true,
+            alert_reminders: true,
         }
     }
 }
@@ -635,7 +648,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "ui.dialog",
         "Open Dialog",
         "Window",
-        r#"{"name": "commands"|"event"|"meeting"|"editEvent"|"contact"|"editContact"|"task"|"editTask"|"folder"|"goToDate"|"link"|"account"|"categories"|"rules"|"about"|"contributors"|"proposeTime"|"forwardMeeting"|"proposals", …} (account: "email"?: string to start with, or "id": number for that account's settings, and with "page": "approval" the page that says what to do when its organisation has to approve MailCraft first (as `ui.approvalHelp` opens it); proposeTime: "id"?: number (an item of the calendar) | "message": number (an invitation in the mail); forwardMeeting: "id"?: number; proposals: "id"?: number | "message": number — the first two write to other people only from their own Propose and Send buttons)"#,
+        r#"{"name": "commands"|"event"|"meeting"|"editEvent"|"contact"|"editContact"|"task"|"editTask"|"folder"|"goToDate"|"link"|"account"|"categories"|"rules"|"about"|"contributors"|"testers"|"proposeTime"|"forwardMeeting"|"proposals", …} (account: "email"?: string to start with, or "id": number for that account's settings, and with "page": "approval" the page that says what to do when its organisation has to approve MailCraft first (as `ui.approvalHelp` opens it); proposeTime: "id"?: number (an item of the calendar) | "message": number (an invitation in the mail); forwardMeeting: "id"?: number; proposals: "id"?: number | "message": number — the first two write to other people only from their own Propose and Send buttons)"#,
     ),
     ("ui.closeDialog", "Close Dialog", "Window", "{}"),
     ("ui.theme", "Interface Theme", "File › Options", r#"{"value": "light"|"dark"|"system"}"#),
@@ -760,6 +773,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
     ),
     ("ui.microsoftClientId", "Microsoft Application ID", "File › Options", r#"{"value": string (empty: the build's own)}"#),
     ("ui.rememberSignIn", "Remember Passwords and Sign-Ins", "File › Options", r#"{"value"?: bool (default: toggle)}"#),
+    (
+        "ui.desktopAlerts",
+        "Desktop Alerts",
+        "File › Options",
+        r#"{"newMail"?: bool, "reminders"?: bool} — whether the system shows a desktop alert when new mail arrives in an Inbox of your own accounts while the window isn't in front, and for each reminder as it falls due (both on unless turned off). Nothing else is changed, and no alert is shown by this. Answers the two switches"#,
+    ),
     ("ui.open", "Open Mailbox", "File › Open & Export", "{}"),
     ("ui.import", "Import", "File › Open & Export", "{}"),
     ("ui.attach", "Attach File", "Message › Include", "{}"),
@@ -1109,6 +1128,8 @@ pub struct MailApp {
     pub(crate) free_busy: scheduling::Store,
     /// What this run knows of new versions ([`updates`]).
     pub(crate) updates: updates::Updates,
+    /// The desktop alerts shown, and the mailbox as the last Send/Receive found it ([`alerts`]).
+    pub(crate) alerts: alerts::State,
 }
 
 impl MailApp {
@@ -1217,6 +1238,7 @@ impl MailApp {
             ran: (0, String::new(), Ok(Value::Null)),
             free_busy: Default::default(),
             updates: Default::default(),
+            alerts: Default::default(),
         }
     }
 
@@ -1552,6 +1574,19 @@ impl MailApp {
                     }
                 }
                 Ok(json!({"value": on}))
+            }
+            "ui.desktopAlerts" => {
+                let (mail, reminders) = (p.get("newMail"), p.get("reminders"));
+                if mail.is_none() && reminders.is_none() {
+                    return Some(Err(tl!("Say which: `newMail`, `reminders` (true or false)").to_string()));
+                }
+                let (Some(mail), Some(reminders)) =
+                    (mail.map_or(Some(self.ui.alert_new_mail), Value::as_bool), reminders.map_or(Some(self.ui.alert_reminders), Value::as_bool))
+                else {
+                    return Some(Err(tl!("`newMail` and `reminders` are true or false").to_string()));
+                };
+                (self.ui.alert_new_mail, self.ui.alert_reminders) = (mail, reminders);
+                Ok(json!({"newMail": mail, "reminders": reminders}))
             }
             "ui.dismissReminder" => {
                 let one = p.get("event").and_then(Value::as_u64).zip(s("occurrence"));
@@ -2795,6 +2830,8 @@ impl MailApp {
         if self.ctx.is_none() {
             self.ctx = Some(ctx.clone());
         }
+        // Before anything can start or end a Send/Receive in this frame ([`alerts`]).
+        alerts::tick(self, ctx);
         self.drain_control(ctx);
         control::trail(self, ctx);
         self.poll_sign_in();
