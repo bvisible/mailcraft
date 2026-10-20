@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent): a JMAP account's calendars from the window to the server and back.
+// //// Neoffice — added file (no upstream equivalent): a JMAP account's calendars and contacts from the window to the server and back.
 
-//! The whole way of a JMAP account's calendars: the window's calendar job (`jmap_pim.rs`), the browser runner's core
+//! The whole way of a JMAP account's calendars and contacts: the window's job (`jmap_pim.rs`), the browser runner's core
 //! ([`super::pim`], what `jmap_pim_service` runs in the browser) and the in-process server, on the test's own thread:
 //! the host answers each job at once, as the browser's task answers it when the window next looks. The window is a
 //! hosting page's: its credential is the page's, which renews it as the page would, from what the server holds.
@@ -13,7 +13,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 
 use mailcraft_engine::Session;
-use mailcraft_jmap::standin::{Calendar, Event, Fault, Pim, SESSION, StandIn, TOKEN};
+use mailcraft_jmap::standin::{Book, Calendar, Card, Event, Fault, Pim, SESSION, StandIn, TOKEN};
 use mailcraft_jmap::{Auth, block_on};
 use mailcraft_model::{Id, Mailbox};
 use mailcraft_time::Zone;
@@ -204,4 +204,49 @@ fn every_calendar_is_read_only_and_a_new_event_is_refused_with_its_reason() {
     let why = refused.unwrap_err();
     assert!(why.contains("can only be read"), "{why}");
     assert_eq!(flow.shown(), ["Book fair", "Budget review"], "nothing was made");
+}
+
+#[test]
+fn the_window_brings_the_servers_address_books_and_people_and_the_to_field_have_them() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        d.pim.add_book(Book { default: true, ..Book::new("neoffice", "Neoffice", true) });
+        d.pim.add_book(Book::new("partners", "Partners", false));
+        d.pim.add_card(Card::person("Grace Okafor", "neoffice", "Grace", "Okafor", "grace@example.org"));
+        d.pim.add_card(Card::company("Lindqvist Joinery", "neoffice", "Lindqvist Joinery", "joinery@example.org"));
+        d.pim.add_card(Card::person("Carol Duval", "partners", "Carol", "Duval", "carol@example.org"));
+    });
+    // People comes to the front: they are asked for at once.
+    flow.app.execute("view.people", json!({})).unwrap();
+    assert!(flow.look(SECOND));
+    let listed = flow.app.execute("people.list", json!({})).unwrap();
+    let names: Vec<&str> = listed["contacts"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["Carol Duval", "Lindqvist Joinery", "Grace Okafor"], "as People lists them, by last name");
+    let books: Vec<(&str, bool)> = flow.app.session.mailbox.address_books.iter().map(|b| (b.name.as_str(), b.read_only)).collect();
+    assert_eq!(books, [("Neoffice", true), ("Partners", true)]);
+    // The To field completes them.
+    let found = mailcraft_engine::cmd::compose::suggest(&flow.app.session, "gra", 6);
+    assert_eq!(found.first().map(|s| (s.email.as_str(), s.contact)), Some(("grace@example.org", true)));
+    // Edit and Delete are greyed with the reason, and a new contact in a tab that keeps nothing too.
+    let grace = flow.app.session.mailbox.contacts.values().find(|c| c.first == "Grace").map(|c| c.id).unwrap();
+    flow.app.execute("people.select", json!({"id": grace})).unwrap();
+    assert!(!flow.app.enabled("people.edit") && !flow.app.enabled("people.delete"));
+    flow.app.session.keeps_local = false;
+    assert!(!flow.app.enabled("people.new"));
+    let refused = flow.app.execute("people.new", json!({"first": "Gus", "email": "gus@example.org"})).unwrap_err();
+    assert!(refused.contains("Your rights do not let you add contacts"), "{refused}");
+    // A card deleted on the server goes at the next read, which the changed state makes a whole one.
+    flow.server.with(|d| d.pim.cards.retain(|c| c.id != "Carol Duval"));
+    assert!(flow.look(10.0 * MINUTE + SECOND));
+    assert!(!flow.app.session.mailbox.contacts.values().any(|c| c.first == "Carol"));
+    // Nothing changed since: the next costs one question of the contacts, and changes nothing here.
+    flow.app.execute("view.mail", json!({})).unwrap();
+    flow.look(SECOND);
+    flow.app.execute("view.people", json!({})).unwrap();
+    let rev = flow.app.session.rev();
+    let before = flow.server.calls().len();
+    assert!(flow.look(SECOND));
+    let asked: Vec<String> = flow.server.calls().into_iter().skip(before).filter(|c| c.starts_with("ContactCard")).collect();
+    assert_eq!(asked, ["ContactCard/query"], "the state alone");
+    assert_eq!(flow.app.session.rev(), rev);
 }

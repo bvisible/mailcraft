@@ -223,3 +223,107 @@ fn the_methods_of_calendars_are_unknown_where_none_are_offered() {
     let (status, body) = raw(&stand_in, json!([CORE, MAIL]), json!([["Calendar/get", {"accountId": ACCOUNT}, "c0"]]));
     assert_eq!((status, body["methodResponses"][0][1]["type"].as_str()), (200, Some("unknownMethod")));
 }
+
+/// What one call of address books answered: its result, or the `type` of its error.
+fn card_call(stand_in: &StandIn, name: &str, args: Value) -> Result<Value, String> {
+    let (status, body) = raw(stand_in, json!([CORE, CONTACTS]), json!([[name, args, "c0"]]));
+    assert_eq!(status, 200, "{body}");
+    let answer = body["methodResponses"][0].clone();
+    if answer[0] == "error" { Err(answer[1]["type"].as_str().unwrap_or_default().to_string()) } else { Ok(answer[1].clone()) }
+}
+
+#[test]
+fn cards_are_served_as_a_server_that_keeps_only_the_basics_serves_them() {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| {
+        d.pim = Pim::offered();
+        d.pim.add_book(Book { default: true, ..Book::new("neoffice", "Neoffice", true) });
+        d.pim.add_book(Book { may_remove: false, ..Book::new("sales", "Sales", true) });
+        d.pim.add_book(Book::new("partners", "Partners", false));
+        d.pim.add_card(
+            Card::person("Grace Okafor", "neoffice", "Grace", "Okafor", "grace@example.org")
+                .with_email("g.okafor@example.org")
+                .with_phone("+41 44 555 01 01", false)
+                .with_phone("+41 79 555 01 02", true)
+                .working("Engineer", "Okafor Engineering"),
+        );
+        d.pim.add_card(Card::company("Lindqvist Joinery", "partners", "Lindqvist Joinery", "joinery@example.org"));
+    });
+    // The books, with the rights such a server says.
+    let books = card_call(&stand_in, "AddressBook/get", json!({"accountId": ACCOUNT, "ids": null})).unwrap();
+    let rights: Vec<(Value, Value, Value)> = books["list"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| (b["isDefault"].clone(), b["myRights"]["mayWrite"].clone(), b["myRights"]["mayRemoveItems"].clone()))
+        .collect();
+    assert_eq!(
+        rights,
+        [(json!(true), json!(true), json!(true)), (json!(false), json!(true), json!(false)), (json!(false), json!(false), json!(false))]
+    );
+    let some = card_call(&stand_in, "AddressBook/get", json!({"accountId": ACCOUNT, "ids": ["sales", "gone"]})).unwrap();
+    assert_eq!((some["list"].as_array().map(Vec::len), some["notFound"].clone()), (Some(1), json!(["gone"])));
+    // A card: its id is the contact's name, its name in components, the primary address preferred, the primary mobile
+    // number a mobile and the others voice, one organization, one title.
+    let got = card_call(&stand_in, "ContactCard/get", json!({"accountId": ACCOUNT, "ids": ["Grace Okafor", "Nobody"]})).unwrap();
+    let grace = &got["list"][0];
+    assert_eq!(
+        (grace["id"].clone(), grace["uid"].clone(), grace["addressBookIds"].clone()),
+        (json!("Grace Okafor"), json!("Grace Okafor"), json!({"neoffice": true}))
+    );
+    assert_eq!(grace["name"]["full"], "Grace Okafor");
+    assert_eq!(
+        grace["name"]["components"],
+        json!([{"@type": "NameComponent", "kind": "given", "value": "Grace"}, {"@type": "NameComponent", "kind": "surname", "value": "Okafor"}])
+    );
+    assert_eq!((grace["emails"]["e1"]["pref"].clone(), grace["emails"]["e2"].get("pref").cloned()), (json!(1), None));
+    assert_eq!(
+        (grace["phones"]["p1"]["features"].clone(), grace["phones"]["p2"]["features"].clone()),
+        (json!({"voice": true}), json!({"mobile": true}))
+    );
+    assert_eq!((grace["organizations"]["o1"]["name"].clone(), grace["titles"]["t1"]["kind"].clone()), (json!("Okafor Engineering"), json!("title")));
+    assert_eq!(got["notFound"], json!(["Nobody"]));
+    assert!(got["state"].as_str().is_some_and(|state| !state.is_empty()));
+    // A company of its own: called by its company, with no components.
+    let joinery = card_call(&stand_in, "ContactCard/get", json!({"accountId": ACCOUNT, "ids": ["Lindqvist Joinery"]})).unwrap();
+    assert_eq!(
+        (joinery["list"][0]["name"]["full"].clone(), joinery["list"][0]["name"]["components"].clone()),
+        (json!("Lindqvist Joinery"), json!([]))
+    );
+    // `properties` keeps what it knows of what was named, the id always; what it doesn't know is no error.
+    let few =
+        card_call(&stand_in, "ContactCard/get", json!({"accountId": ACCOUNT, "ids": ["Grace Okafor"], "properties": ["emails", "notes"]})).unwrap();
+    let keys: Vec<&String> = few["list"][0].as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["@type", "emails", "id", "version"]);
+    // Every card at once only while there are no more than a `get` takes.
+    assert!(card_call(&stand_in, "ContactCard/get", json!({"accountId": ACCOUNT, "ids": null})).is_ok());
+    stand_in.with(|d| d.max_get = 1);
+    assert_eq!(card_call(&stand_in, "ContactCard/get", json!({"accountId": ACCOUNT, "ids": null})), Err("requestTooLarge".into()));
+    // The query: by id, a page of them, the total, the limit it set, a position from the end, and the state.
+    stand_in.with(|d| d.pim.card_limit = 1);
+    let page = card_call(&stand_in, "ContactCard/query", json!({"accountId": ACCOUNT, "calculateTotal": true})).unwrap();
+    assert_eq!((page["ids"].clone(), page["total"].clone(), page["limit"].clone()), (json!(["Grace Okafor"]), json!(2), json!(1)));
+    assert!(page["queryState"].as_str().is_some() && page["canCalculateChanges"] == false);
+    let last = card_call(&stand_in, "ContactCard/query", json!({"accountId": ACCOUNT, "position": -1, "limit": 1})).unwrap();
+    assert_eq!((last["ids"].clone(), last["position"].clone(), last.get("limit").cloned()), (json!(["Lindqvist Joinery"]), json!(1), None));
+    assert_eq!(card_call(&stand_in, "ContactCard/query", json!({"accountId": ACCOUNT, "limit": -1})), Err("invalidArguments".into()));
+    // The state changes when a card does.
+    let before = page["queryState"].clone();
+    stand_in.with(|d| d.pim.cards[0].last = "Okafor-Mensah".into());
+    let after = card_call(&stand_in, "ContactCard/query", json!({"accountId": ACCOUNT})).unwrap();
+    assert!(after["queryState"] != before);
+    stand_in.with(|d| d.pim.says_state = false);
+    assert!(card_call(&stand_in, "ContactCard/query", json!({"accountId": ACCOUNT})).unwrap().get("queryState").is_none());
+}
+
+#[test]
+fn the_methods_of_address_books_are_unknown_where_none_are_offered() {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| d.pim = Pim { contacts: false, ..Pim::offered() });
+    let (status, body) = raw(&stand_in, json!([CORE, CALENDARS]), json!([["ContactCard/query", {"accountId": ACCOUNT}, "c0"]]));
+    assert_eq!((status, body["methodResponses"][0][1]["type"].as_str()), (200, Some("unknownMethod")));
+    // Offered, a method of address books needs their capability named.
+    stand_in.with(|d| d.pim = Pim::offered());
+    let (_, body) = raw(&stand_in, json!([CORE, CALENDARS]), json!([["AddressBook/get", {"accountId": ACCOUNT}, "c0"]]));
+    assert_eq!(body["methodResponses"][0][1]["type"].as_str(), Some("unknownMethod"));
+}

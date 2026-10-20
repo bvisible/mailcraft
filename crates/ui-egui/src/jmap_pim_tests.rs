@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's calendar jobs in the window: a host that keeps every job for the test to answer by hand, when
-//! jobs start and what they ask, one at a time, a job given up, a sender dropped, a refused token, a busy server, and
-//! the order an answer is taken in. Invented people at `example.org`.
+//! jobs start and what they ask, one at a time, a job given up, a sender dropped, a refused token, a busy server, the
+//! order an answer is taken in, and the address books and contacts that come with it. Invented people at `example.org`.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 
 use mailcraft_engine::{Module, Session};
-use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteCalendar, RemoteEvent};
+use mailcraft_model::book::{BooksDownload, RemoteBook};
+use mailcraft_model::remote::{CalendarsDownload, ContactsDownload, EventsDownload, RemoteCalendar, RemoteContact, RemoteEvent};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, PimOffers};
-use mailcraft_model::{Id, Mailbox};
+use mailcraft_model::{Id, Labeled, Mailbox};
 use serde_json::json;
 
 use super::JmapPimJob;
@@ -467,4 +468,170 @@ fn an_account_without_a_credential_at_hand_is_not_asked() {
     let job = JmapPimJob { request: last(&asked), secret: Some("secret".into()), cancel: Arc::new(AtomicBool::new(false)) };
     let shown = format!("{job:?}");
     assert!(!shown.contains("secret\"") && !shown.contains('@') && shown.contains("secret: true"), "{shown}");
+}
+
+/// `result` with what a server that keeps an address book answers besides: its book (read-only, as every book is until
+/// writing is carried) and two people in it, the contacts at the state `state`.
+fn with_contacts(mut result: JmapPimResult, account: Id, state: &str) -> JmapPimResult {
+    let person = |id: &str, first: &str, last: &str, email: &str| RemoteContact {
+        id: id.into(),
+        book: "neoffice".into(),
+        first: first.into(),
+        last: last.into(),
+        emails: vec![Labeled::new("", email)],
+        ..Default::default()
+    };
+    let book = RemoteBook { id: "neoffice".into(), name: "Neoffice".into(), read_only: true, main: true, plain: true, ..Default::default() };
+    result.books = Some(BooksDownload { account, email: ME.into(), complete: true, books: vec![book] });
+    let contacts = vec![person("c-grace", "Grace", "Okafor", "grace@example.org"), person("c-bob", "Bob", "Lindqvist", "bob@example.org")];
+    result.contacts = Some(ContactsDownload { account, email: ME.into(), complete: true, contacts });
+    result.contacts_state = Some(state.into());
+    result
+}
+
+/// The names of the contacts of the account's server here, in order.
+fn kept_contacts(app: &MailApp, account: Id) -> Vec<String> {
+    let mut names: Vec<String> = app.session.mailbox.contacts.values().filter(|c| c.origin.account == account).map(|c| c.name()).collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn the_contacts_are_asked_with_the_lists_every_ten_minutes_and_at_once_when_people_comes_to_the_front() {
+    let (mut app, id, asked) = window();
+    // The first job brings the contacts, holding no state.
+    assert!(app.jmap_pim_tick_at(true, 0.0));
+    let first = last(&asked);
+    assert!(first.contacts && first.contacts_state.is_empty() && first.contacts_read == 0);
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s1"));
+    assert_eq!(kept_contacts(&app, id), ["Bob Lindqvist", "Grace Okafor"]);
+    assert_eq!(app.jmap_contacts_state(id), Some(("s1".to_string(), NOW)), "kept, with when the job was asked for");
+    // The days on screen, two minutes on, don't bring them.
+    assert!(app.jmap_pim_tick_at(true, 2.0 * MINUTE + SECOND));
+    assert!(!last(&asked).contacts);
+    answer(&mut app, &asked, answered(id));
+    // People comes to the front: at once, with the state held, which the server still says.
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, 2.0 * MINUTE + 2.0 * SECOND));
+    let people = last(&asked);
+    assert!(people.contacts && !people.lists);
+    assert_eq!((people.contacts_state.as_str(), people.contacts_read), ("s1", NOW));
+    answer(&mut app, &asked, JmapPimResult { contacts: None, ..with_contacts(answered(id), id, "s1") });
+    assert_eq!(app.jmap_contacts_state(id), Some(("s1".to_string(), NOW)), "unchanged: kept as it was");
+    assert_eq!(kept_contacts(&app, id), ["Bob Lindqvist", "Grace Okafor"], "and the contacts stay as they are");
+    // While People stays in front, the days on screen every two minutes, without the contacts.
+    assert!(app.jmap_pim_tick_at(true, 4.0 * MINUTE + 3.0 * SECOND));
+    assert!(!last(&asked).contacts);
+    answer(&mut app, &asked, answered(id));
+    // Ten minutes on: the wide stretch, and the contacts with it.
+    assert!(app.jmap_pim_tick_at(true, 10.0 * MINUTE + SECOND));
+    assert!(last(&asked).lists && last(&asked).contacts);
+}
+
+#[test]
+fn the_state_of_the_contacts_is_forgotten_after_an_error() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s1"));
+    // A job whose contacts couldn't be read: no state comes, and the window forgets the one it had.
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let line = "Couldn't bring the contacts down from the server: the server refused: serverFail".to_string();
+    answer(&mut app, &asked, JmapPimResult { errors: vec![line], ..answered(id) });
+    assert_eq!(app.jmap_contacts_state(id), None);
+    assert_eq!(kept_contacts(&app, id), ["Bob Lindqvist", "Grace Okafor"], "what is here stays");
+    // The next job that brings them holds none: they are all read.
+    app.execute("view.mail", json!({})).unwrap();
+    app.jmap_pim_tick_at(true, 10.0 * MINUTE + 2.0 * SECOND);
+    assert!(last(&asked).contacts && last(&asked).contacts_state.is_empty());
+    // A job that ends before the contacts (a busy server) learns nothing of them: the state is kept.
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s2"));
+    assert_eq!(app.jmap_contacts_state(id).map(|(state, _)| state), Some("s2".to_string()));
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, 10.0 * MINUTE + 3.0 * SECOND));
+    answer(
+        &mut app,
+        &asked,
+        JmapPimResult { account: id, busy_for: Some(60), offers: Some(PimOffers { calendars: true, contacts: true }), ..Default::default() },
+    );
+    assert_eq!(app.jmap_contacts_state(id).map(|(state, _)| state), Some("s2".to_string()));
+}
+
+#[test]
+fn an_unreadable_answer_changes_nothing() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s1"));
+    let before = app.session.mailbox.clone();
+    // A job whose books and contacts are for another account (a mailbox replaced while it was under way).
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    let mut stranger =
+        with_contacts(JmapPimResult { account: id, offers: Some(PimOffers { calendars: true, contacts: true }), ..Default::default() }, id, "s2");
+    for download in stranger.books.iter_mut() {
+        download.email = "eve@example.org".into();
+        download.books[0].name = "Eve's".into();
+    }
+    for download in stranger.contacts.iter_mut() {
+        download.email = "eve@example.org".into();
+        download.contacts.clear();
+    }
+    answer(&mut app, &asked, stranger);
+    assert!(app.session.mailbox.address_books == before.address_books && app.session.mailbox.contacts == before.contacts);
+    assert!(app.sync_problems_of(id).iter().any(|line| line.contains("another account")), "{:?}", app.sync_problems_of(id));
+    assert_eq!(app.jmap_contacts_state(id), None, "nothing that came was taken in: read them all next time");
+}
+
+#[test]
+fn a_kept_contact_completes_the_to_field() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s1"));
+    // In their book, which came first.
+    let grace = app.session.mailbox.contacts.values().find(|c| c.first == "Grace").cloned().unwrap();
+    assert_eq!(app.session.mailbox.book_of(&grace).map(|b| (b.origin.id.as_str(), b.read_only)), Some(("neoffice", true)));
+    // The To field finds her among the contacts, and People lists her.
+    let found = mailcraft_engine::cmd::compose::suggest(&app.session, "gra", 6);
+    assert_eq!(found.first().map(|s| (s.name.as_str(), s.email.as_str(), s.contact)), Some(("Grace Okafor", "grace@example.org", true)));
+    let listed = app.execute("people.list", json!({"query": "Okafor"})).unwrap();
+    assert_eq!(listed["contacts"][0]["email"], "grace@example.org");
+    // Selected, Edit and Delete are greyed with their reason: the book may only be read.
+    app.execute("people.select", json!({"id": grace.id})).unwrap();
+    let reason = |app: &MailApp, command: &str| app.session.registry.get(command).and_then(|spec| (spec.enabled)(&app.session));
+    let why = mailcraft_engine::cmd::remote_contacts::NO_CHANGING;
+    assert_eq!((reason(&app, "people.edit"), reason(&app, "people.delete")), (Some(why), Some(why)));
+    assert!(!app.enabled("people.edit") && !app.enabled("people.delete"));
+}
+
+#[test]
+fn an_account_that_offers_no_contacts_is_not_asked_for_them() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, JmapPimResult { offers: Some(PimOffers { calendars: true, contacts: false }), ..answered(id) });
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    assert!(!last(&asked).contacts, "a session with no address book");
+    answer(&mut app, &asked, JmapPimResult { offers: Some(PimOffers { calendars: true, contacts: false }), ..answered(id) });
+    assert!(app.jmap_pim_tick_at(true, 10.0 * MINUTE + 2.0 * SECOND));
+    assert!(last(&asked).lists && !last(&asked).contacts);
+    // Nor for the days around an invitation.
+    let (mut app, id, asked) = window();
+    app.calendar_job_around(id, mailcraft_time::Date::new(2026, 10, 21).unwrap()).unwrap();
+    assert!(!last(&asked).contacts);
+}
+
+#[test]
+fn a_job_that_came_to_nothing_brings_the_contacts_at_the_next() {
+    let (mut app, id, asked) = window();
+    app.jmap_pim_tick_at(true, 0.0);
+    answer(&mut app, &asked, with_contacts(answered(id), id, "s1"));
+    // People in front: a job for the contacts, whose task ends without an answer.
+    app.execute("view.people", json!({})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, SECOND));
+    assert!(last(&asked).contacts);
+    asked.lock().unwrap().clear();
+    app.poll_jmap_pim();
+    // Half a minute on: the next asks for them again, and the state is still the one held.
+    assert!(app.jmap_pim_tick_at(true, 32.0 * SECOND));
+    assert!(last(&asked).contacts && last(&asked).contacts_state == "s1");
 }

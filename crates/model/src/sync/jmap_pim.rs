@@ -1,20 +1,28 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! A JMAP account's calendars (JMAP for Calendars, on RFC 8620): what a job is asked to do and what it
-//! brings back.
+//! A JMAP account's calendars (JMAP for Calendars, on RFC 8620) and address books (JMAP for Contacts,
+//! RFC 9610): what a job is asked to do and what it brings back.
 //!
-//! The counterpart for calendars of [`JmapMailRequest`](super::JmapMailRequest) and
+//! The counterpart for calendars and contacts of [`JmapMailRequest`](super::JmapMailRequest) and
 //! [`JmapMailResult`](super::JmapMailResult), and a job of its own beside a Send/Receive rather than a
-//! part of one: the calendar is looked at on a clock of its own, trouble with it must not end a mail
+//! part of one: they are looked at on a clock of their own, trouble with them must not end a mail
 //! run, and what is read is small enough to come back in one answer. Plain data, as the rest of
 //! [`crate::sync`]: the window works the request out from the engine's public functions (the
 //! calendars on screen, the series it expects), a host with a way to reach the server does the
 //! talking, and the window takes the answer in through the engine (`sync.applyCalendars`,
-//! `sync.applyEvents`), as it takes in what Microsoft Graph brings.
+//! `sync.applyEvents`, `sync.applyBooks`, `sync.applyContacts`), as it takes in what Microsoft Graph
+//! brings.
 //!
-//! What comes back is made of the downloads Graph's calendar brings already ([`CalendarsDownload`],
-//! [`EventsDownload`]): the engine knows them, and needs nothing new to keep a JMAP account's calendars.
+//! What comes back is made of the downloads Graph's calendar and contacts bring already
+//! ([`CalendarsDownload`], [`EventsDownload`], [`ContactsDownload`]) and of the address books
+//! ([`BooksDownload`]): the engine knows them all.
+//!
+//! **Reading the contacts again costs one question when nothing changed.** A server says a state of
+//! its contacts with every query of them (`queryState`). The window keeps the state of the last read
+//! that brought them all and hands it back with the next request ([`JmapPimRequest::contacts_state`]);
+//! the host asks for that state alone first, and reads everything only when it changed or is an hour
+//! old ([`CONTACTS_STATE_FOR`]).
 //!
 //! Neither type shows the server's address, the account's address, a name or a title in debug output:
 //! counts only. The secret that opens the server goes beside the request, as for a mail run, and is in
@@ -25,7 +33,14 @@ use serde::{Deserialize, Serialize};
 
 use super::is_false;
 use crate::Id;
-use crate::remote::{CalendarAsk, CalendarsDownload, EventsDownload, MAX_REMOTE_CALENDARS};
+use crate::book::BooksDownload;
+use crate::remote::{CalendarAsk, CalendarsDownload, ContactsDownload, EventsDownload, MAX_CONTACTS, MAX_REMOTE_CALENDARS, clean_key};
+
+/// How long the state of a whole read of the contacts is trusted, in seconds: after that they are read again in
+/// full, whatever the server says of them (a state can stay the same while what one may read of them changes).
+pub const CONTACTS_STATE_FOR: i64 = 3_600;
+/// The longest state of the contacts that is kept, in bytes: a longer one is none.
+const MAX_STATE: usize = 256;
 
 /// Most calendars one job asks about, and most of the owner's addresses it is told: more are left out.
 pub const MAX_PIM_ASKS: usize = 20;
@@ -74,10 +89,29 @@ pub struct JmapPimRequest {
     /// The calendars whose events are brought, the main one as an empty name.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub asks: Vec<CalendarAsk>,
-    /// A server whose session does not say what it writes of an event keeps only the basics: set by
-    /// a host that knows the server for one that does (a hosting page's), never by the window.
+    /// Bring the account's address books and their contacts too.
+    #[serde(skip_serializing_if = "is_false")]
+    pub contacts: bool,
+    /// The state of the contacts at the last read that brought them all, as the server said it; empty when the
+    /// window holds none. While the server still says it, nothing of the contacts is read but that.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub contacts_state: String,
+    /// When that read was (Unix seconds, by the window's clock, as `now`): a state [`CONTACTS_STATE_FOR`] old or more
+    /// is not asked about, and everything is read.
+    pub contacts_read: Timestamp,
+    /// A server whose session does not say what it writes of an event or a card keeps only the basics:
+    /// set by a host that knows the server for one that does (a hosting page's), never by the window.
     #[serde(skip_serializing_if = "is_false")]
     pub plain_unless_said: bool,
+}
+
+impl JmapPimRequest {
+    /// The state of the contacts that the host may ask about instead of reading them all: the one held, while it is
+    /// less than [`CONTACTS_STATE_FOR`] old by `now` (and not from after it).
+    pub fn contacts_state_to_ask(&self) -> Option<&str> {
+        let age = self.now.saturating_sub(self.contacts_read);
+        (!self.contacts_state.is_empty() && self.contacts_read > 0 && (0..CONTACTS_STATE_FOR).contains(&age)).then_some(self.contacts_state.as_str())
+    }
 }
 
 /// What the session of a JMAP account offers besides mail.
@@ -121,7 +155,19 @@ pub struct JmapPimResult {
     /// The same stretch of the other calendars asked for, one download each.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub more_events: Vec<EventsDownload>,
-    /// Problems worth telling the owner; empty when all went well. They name no event.
+    /// The account's address books, when the job read them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub books: Option<BooksDownload>,
+    /// The contacts in them, when the job read them; none when they were not asked for, could not be read, or are
+    /// as they were at the state the request held ([`JmapPimResult::contacts_state`] says which).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contacts: Option<ContactsDownload>,
+    /// The state of the contacts as the server says it, when the host vouches for it: the state they were all read
+    /// at (with `contacts`), or the one the request held, which the server still says (without). None after any
+    /// trouble with them: the next job reads them all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contacts_state: Option<String>,
+    /// Problems worth telling the owner; empty when all went well. They name no event and no contact.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
     /// The server said it was busy and to stay away this many seconds.
@@ -137,8 +183,9 @@ pub struct JmapPimResult {
 
 impl JmapPimResult {
     /// Cut to what a window takes in, as everything from outside is: as many downloads as an account has
-    /// calendars, each event cut to size ([`crate::remote::RemoteEvent::tidy`]), the list tidied, and a few
-    /// problem lines of one line each. Doing it twice changes nothing more.
+    /// calendars, each event cut to size ([`crate::remote::RemoteEvent::tidy`]), the lists tidied, the
+    /// contacts cut to size ([`crate::remote::RemoteContact::tidy`]) and to as many as a download holds, a
+    /// state that can be one, and a few problem lines of one line each. Doing it twice changes nothing more.
     pub fn tidy(&mut self) {
         if let Some(list) = &mut self.calendars {
             list.tidy();
@@ -150,6 +197,14 @@ impl JmapPimResult {
             download.gone.truncate(crate::remote::MAX_EVENTS);
         }
         self.more_events.truncate(MAX_REMOTE_CALENDARS);
+        if let Some(books) = &mut self.books {
+            books.tidy();
+        }
+        if let Some(download) = &mut self.contacts {
+            download.contacts.truncate(MAX_CONTACTS);
+            download.contacts.iter_mut().for_each(crate::remote::RemoteContact::tidy);
+        }
+        self.contacts_state = self.contacts_state.take().map(|state| clean_key(&state)).filter(|state| !state.is_empty() && state.len() <= MAX_STATE);
         self.errors =
             std::mem::take(&mut self.errors).iter().map(|line| one_line(line)).filter(|line| !line.is_empty()).take(MAX_PIM_ERRORS).collect();
         self.busy_for = self.busy_for.map(|seconds| seconds.min(3_600));
@@ -183,6 +238,8 @@ impl std::fmt::Debug for JmapPimRequest {
             .field("main", &!self.main.is_empty())
             .field("asks", &self.asks.len())
             .field("series", &series)
+            .field("contacts", &self.contacts)
+            .field("contacts_state", &!self.contacts_state.is_empty())
             .field("plain_unless_said", &self.plain_unless_said)
             .finish()
     }
@@ -197,6 +254,9 @@ impl std::fmt::Debug for JmapPimResult {
             .field("calendars", &self.calendars.as_ref().map(|list| list.calendars.len()))
             .field("downloads", &(usize::from(self.events.is_some()) + self.more_events.len()))
             .field("events", &self.event_count())
+            .field("books", &self.books.as_ref().map(|list| list.books.len()))
+            .field("contacts", &self.contacts.as_ref().map(|download| download.contacts.len()))
+            .field("contacts_state", &self.contacts_state.is_some())
             .field("errors", &self.errors.len())
             .field("busy_for", &self.busy_for)
             .field("auth_refused", &self.auth_refused)
@@ -210,8 +270,9 @@ mod tests {
     use proptest::prelude::*;
 
     use super::*;
-    use crate::remote::{RemoteCalendar, RemoteEvent};
-    use crate::{Address, Attendee};
+    use crate::book::RemoteBook;
+    use crate::remote::{RemoteCalendar, RemoteContact, RemoteEvent};
+    use crate::{Address, Attendee, Labeled};
 
     const ME: &str = "ada@example.org";
     const SESSION: &str = "https://mail.example.org/jmap/session?account=ada@example.org";
@@ -237,6 +298,9 @@ mod tests {
             lists: true,
             main: format!("C-{ME}"),
             asks: vec![CalendarAsk { calendar: String::new(), series: vec!["V1".into()] }, CalendarAsk { calendar: "C2".into(), series: Vec::new() }],
+            contacts: true,
+            contacts_state: "q-ada@example.org".into(),
+            contacts_read: 1_791_993_600 - 600,
             plain_unless_said: true,
         }
     }
@@ -267,6 +331,33 @@ mod tests {
             }),
             events: Some(EventsDownload { account: 3, email: ME.into(), complete: true, events: vec![event.clone()], ..Default::default() }),
             more_events: vec![EventsDownload { account: 3, calendar: "C2".into(), events: vec![event], ..Default::default() }],
+            books: Some(BooksDownload {
+                account: 3,
+                email: ME.into(),
+                complete: true,
+                books: vec![RemoteBook {
+                    id: "neoffice".into(),
+                    name: "Neoffice of Ada".into(),
+                    read_only: true,
+                    main: true,
+                    plain: true,
+                    ..Default::default()
+                }],
+            }),
+            contacts: Some(ContactsDownload {
+                account: 3,
+                email: ME.into(),
+                complete: true,
+                contacts: vec![RemoteContact {
+                    id: "Grace-Okafor".into(),
+                    book: "neoffice".into(),
+                    first: "Grace".into(),
+                    last: "Okafor".into(),
+                    emails: vec![Labeled::new("", "grace@example.org")],
+                    ..Default::default()
+                }],
+            }),
+            contacts_state: Some("a1b2c3d4".into()),
             errors: vec![format!("Couldn't read a calendar of {ME}")],
             busy_for: Some(30),
             auth_refused: true,
@@ -281,12 +372,22 @@ mod tests {
             r#""lists":true"#,
             r#""main":"C-ada@example.org""#,
             r#""asks":[{"series":["V1"]},{"calendar":"C2","series":[]}]"#,
+            r#""contacts":true"#,
+            r#""contactsState":"q-ada@example.org""#,
             r#""plainUnlessSaid":true"#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
         let json = round_trip(&result());
-        for part in [r#""offers":{"calendars":true,"contacts":true}"#, r#""moreEvents":[{"#, r#""authRefused":true"#, r#""busyFor":30"#] {
+        for part in [
+            r#""offers":{"calendars":true,"contacts":true}"#,
+            r#""moreEvents":[{"#,
+            r#""books":{"account":3"#,
+            r#""contacts":{"account":3"#,
+            r#""contactsState":"a1b2c3d4""#,
+            r#""authRefused":true"#,
+            r#""busyFor":30"#,
+        ] {
             assert!(json.contains(part), "{part} in {json}");
         }
         // What is not said reads as nothing, and nothing writes next to nothing.
@@ -301,17 +402,19 @@ mod tests {
     fn a_jmap_pim_request_prints_counts_only() {
         let (request, result) = (request(), result());
         for shown in [format!("{request:?}"), format!("{request:#?}"), format!("{result:?}"), format!("{result:#?}")] {
-            for secret in ["@", "example.org", "jmap/session", "Ada", "Bob", "Budget", "Room", "Team", "Zurich", "C-", "V1"] {
+            for secret in
+                ["@", "example.org", "jmap/session", "Ada", "Bob", "Budget", "Room", "Team", "Zurich", "C-", "V1", "Grace", "neoffice", "q-", "a1b2"]
+            {
                 assert!(!shown.contains(secret), "{secret} in {shown}");
             }
         }
         assert_eq!(
             format!("{request:?}"),
-            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, plain_unless_said: true }"
+            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, contacts: true, contacts_state: true, plain_unless_said: true }"
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true }"
+            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true }"
         );
     }
 
@@ -330,6 +433,22 @@ mod tests {
         hostile.more_events = (0..2 * MAX_REMOTE_CALENDARS).map(|n| EventsDownload { calendar: format!("C{n}"), ..Default::default() }).collect();
         hostile.errors = (0..200).map(|n| format!("line {n}\r\nwith\u{0}control  and   blanks")).chain([String::new(), "\n\t".into()]).collect();
         hostile.busy_for = Some(u32::MAX);
+        // A book said twice and two main ones, a card with a name of many lines and an address that is none, more cards
+        // than a download holds, and a state that can't be one.
+        if let Some(books) = &mut hostile.books {
+            books.books.push(RemoteBook { id: "neoffice".into(), name: "Again".into(), ..Default::default() });
+            books.books.push(RemoteBook { id: "shared".into(), main: true, ..Default::default() });
+        }
+        if let Some(download) = &mut hostile.contacts {
+            download.contacts.push(RemoteContact {
+                id: "Cy".into(),
+                first: "Cy\nril".into(),
+                emails: vec![Labeled::new("", "not an address")],
+                ..Default::default()
+            });
+            download.contacts.extend((0..MAX_CONTACTS).map(|n| RemoteContact { id: format!("c{n}"), first: "N".into(), ..Default::default() }));
+        }
+        hostile.contacts_state = Some("two words".into());
         hostile.tidy();
         let list = hostile.calendars.as_ref().unwrap();
         assert_eq!(list.calendars.iter().filter(|c| c.main).count(), 1, "one main calendar at most");
@@ -341,6 +460,13 @@ mod tests {
         assert_eq!(hostile.errors.len(), MAX_PIM_ERRORS);
         assert_eq!(hostile.errors[0], "line 0 with control and blanks");
         assert_eq!(hostile.busy_for, Some(3_600));
+        let books = hostile.books.as_ref().unwrap();
+        assert_eq!(books.books.iter().map(|b| (b.id.as_str(), b.main)).collect::<Vec<_>>(), [("neoffice", true), ("shared", false)]);
+        let contacts = &hostile.contacts.as_ref().unwrap().contacts;
+        assert_eq!(contacts.len(), MAX_CONTACTS);
+        let cy = contacts.iter().find(|c| c.id == "Cy").unwrap();
+        assert!(cy.first == "Cy ril" && cy.emails.is_empty(), "{cy:?}");
+        assert_eq!(hostile.contacts_state, None, "a state that can't be one is none");
         // Tidied once is tidied: it reads and writes as it is.
         let once = hostile.clone();
         hostile.tidy();
@@ -361,6 +487,18 @@ mod tests {
         assert!(round_trip(&RemoteCalendar { plain: true, ..listed }).contains(r#""plain":true"#));
     }
 
+    #[test]
+    fn the_state_of_the_contacts_is_asked_about_while_it_is_less_than_an_hour_old() {
+        let held = request();
+        assert_eq!(held.contacts_state_to_ask(), Some("q-ada@example.org"));
+        let at = |read: i64| JmapPimRequest { contacts_read: read, ..request() };
+        assert_eq!(at(held.now - CONTACTS_STATE_FOR + 1).contacts_state_to_ask(), Some("q-ada@example.org"));
+        assert_eq!(at(held.now - CONTACTS_STATE_FOR).contacts_state_to_ask(), None, "an hour old: read through");
+        assert_eq!(at(held.now + 60).contacts_state_to_ask(), None, "from after the job: not believed");
+        assert_eq!(at(0).contacts_state_to_ask(), None, "never read");
+        assert_eq!(JmapPimRequest { contacts_state: String::new(), ..request() }.contacts_state_to_ask(), None);
+    }
+
     proptest! {
         #[test]
         fn hostile_pim_results_never_panic(text in any::<String>(), n in any::<i64>(), m in any::<i64>(), busy in any::<u32>()) {
@@ -373,6 +511,12 @@ mod tests {
                 }),
                 events: Some(EventsDownload { calendar: text.clone(), from: n, to: m, events: vec![event.clone()], gone: vec![text.clone()], ..Default::default() }),
                 more_events: vec![EventsDownload { events: vec![event], ..Default::default() }],
+                books: Some(BooksDownload { books: vec![RemoteBook { id: text.clone(), name: text.clone(), main: true, ..Default::default() }], ..Default::default() }),
+                contacts: Some(ContactsDownload {
+                    contacts: vec![RemoteContact { id: text.clone(), book: text.clone(), first: text.clone(), emails: vec![Labeled::new(&text, &text)], ..Default::default() }],
+                    ..Default::default()
+                }),
+                contacts_state: Some(text.clone()),
                 errors: vec![text.clone(), text],
                 busy_for: Some(busy),
                 ..Default::default()

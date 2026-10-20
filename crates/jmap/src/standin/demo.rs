@@ -11,13 +11,34 @@
 //!   to five weeks after; around the end of October it crosses the night summer time ends, and stays at nine.
 //! - **Grace's calendar**, a colleague's she may only read: her days off and a review.
 //!
+//! And two address books, whose cards are named as a server that calls a card by its contact's name names them:
+//!
+//! - **Neoffice**, the team's, the default, which she may write: [`DEMO_CARDS`] cards, the people who wrote to her among
+//!   them, a company of its own with no person's name (a joinery), people with a job title and a company, mobile and
+//!   office numbers, a second address.
+//! - **Partners**, which she may only read: a few people of other firms.
+//!
 //! Everything is placed by the Monday of the week of the day given, so that a window opened on that day shows it. For
-//! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar.
+//! a look at what many events cost a window, [`crowd`] adds as many short ones as asked to her calendar, and
+//! [`crowd_cards`] as many cards as asked to the team's book.
 
 use mailcraft_time::{Date, DateTime, format_iso_utc, format_rfc5322};
 use serde_json::json;
 
-use super::{Calendar, Event, Pim, StandIn};
+use super::{Book, Calendar, Card, Event, Pim, StandIn};
+
+/// How many cards the team's book of the demo holds.
+pub const DEMO_CARDS: usize = 300;
+/// First and last names the demo's people are made of (twenty by fifteen: three hundred of them, at most).
+const FIRST_NAMES: [&str; 20] = [
+    "Alba", "Bruno", "Chiara", "Dario", "Elif", "Farid", "Greta", "Hugo", "Ines", "Jonas", "Kenji", "Lina", "Marco", "Nadia", "Oskar", "Paula",
+    "Quentin", "Rosa", "Samir", "Tilda",
+];
+const LAST_NAMES: [&str; 15] = [
+    "Ambrosi", "Berger", "Castell", "Dumont", "Eriksen", "Ferrand", "Gallo", "Huber", "Imhof", "Jaquet", "Keller", "Lorenz", "Meier", "Novak",
+    "Oberli",
+];
+const TITLES: [&str; 5] = ["Project manager", "Accountant", "Site foreman", "Architect", "Sales"];
 
 /// The person the demo is for: the address a hosting page hands the window for it.
 pub const DEMO_PERSON: &str = "ada@example.org";
@@ -107,8 +128,67 @@ pub fn demo(today: Date) -> StandIn {
         // Grace's own, which Ada may only read.
         pim.add_event(Event::whole_days("grace-off", "grace", "Grace away", &day(7), 3));
         pim.add_event(Event::timed("grace-review", "grace", "Design review", &at(3, "15:00"), zurich, "PT1H"));
+        // The address books: the team's, and the partners', which Ada may only read.
+        pim.add_book(Book { default: true, ..Book::new("neoffice", "Neoffice", true) });
+        pim.add_book(Book::new("partners", "Partners", false));
+        for card in team_cards() {
+            pim.add_card(card);
+        }
+        let partners = [
+            ("Ivo Schmid", "Ivo", "Schmid", "ivo.schmid@example.org", "Schmid Roofing"),
+            ("Mei Tanaka", "Mei", "Tanaka", "mei.tanaka@example.org", "Tanaka Glass"),
+            ("Pierre Lenoir", "Pierre", "Lenoir", "pierre.lenoir@example.org", "Lenoir Scaffolds"),
+            ("Sofia Rossi", "Sofia", "Rossi", "sofia.rossi@example.org", "Rossi Tiles"),
+        ];
+        for (name, first, last, email, firm) in partners {
+            pim.add_card(Card::person(name, "partners", first, last, email).working("Partner", firm));
+        }
     });
     stand_in
+}
+
+/// The cards of the team's book: the people who wrote to Ada, a joinery that is a contact of its own, and as many more
+/// people as make [`DEMO_CARDS`].
+fn team_cards() -> Vec<Card> {
+    let mut cards = vec![
+        Card::person("Grace Okafor", "neoffice", "Grace", "Okafor", "grace@example.org")
+            .working("Structural engineer", "")
+            .with_phone("+41 79 555 01 01", true),
+        Card::person("Bob Lindqvist", "neoffice", "Bob", "Lindqvist", "bob@example.org")
+            .working("Accountant", "")
+            .with_phone("+41 44 555 02 02", false),
+        Card::person("Carol Duval", "neoffice", "Carol", "Duval", "carol@example.org").with_email("carol.duval@example.org"),
+        Card::person("Dan Moreau", "neoffice", "Dan", "Moreau", "dan@example.org"),
+        Card::company("Lindqvist Joinery", "neoffice", "Lindqvist Joinery", "joinery@example.org").with_phone("+41 44 555 03 03", false),
+    ];
+    let mut made = 0usize;
+    'names: for last in LAST_NAMES {
+        for first in FIRST_NAMES {
+            if cards.len() >= DEMO_CARDS {
+                break 'names;
+            }
+            let email = format!("{}.{}@example.org", first.to_lowercase(), last.to_lowercase());
+            let mut card = Card::person(&format!("{first} {last}"), "neoffice", first, last, &email);
+            if made.is_multiple_of(5) {
+                card = card.working(TITLES.get((made / 5) % TITLES.len()).copied().unwrap_or_default(), "");
+            }
+            if made.is_multiple_of(3) {
+                card = card.with_phone(&format!("+41 79 555 {:02} {:02}", made / 100, made % 100), true);
+            }
+            cards.push(card);
+            made += 1;
+        }
+    }
+    cards
+}
+
+/// Add `count` cards to the team's book of a [`demo`], for a look at what many contacts cost a window.
+pub fn crowd_cards(stand_in: &StandIn, count: usize) {
+    stand_in.with(|d| {
+        for n in 0..count {
+            d.pim.add_card(Card::person(&format!("Crowd {n:05}"), "neoffice", "Crowd", &format!("{n:05}"), &format!("crowd{n}@example.org")));
+        }
+    });
 }
 
 /// Add `count` events of half an hour to Ada's calendar of a [`demo`] around `today`, spread over the days a window

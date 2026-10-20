@@ -10,7 +10,7 @@ use mailcraft_model::sync::{JmapMailRequest, JmapPimRequest, JmapScope};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
-use super::super::{DEMO_PERSON, Pim, SESSION, crowd, demo};
+use super::super::{DEMO_CARDS, DEMO_PERSON, Pim, SESSION, crowd, crowd_cards, demo};
 use super::*;
 use crate::{Auth, Client, sync_mail, sync_pim};
 
@@ -121,10 +121,24 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
         to: now + 366 * 86_400,
         lists: true,
         asks: asks.to_vec(),
+        contacts: true,
         ..Default::default()
     };
     let result = block_on(sync_pim(&client, &request, &AtomicBool::new(false)));
     assert!(result.errors.is_empty(), "{:?}", result.errors);
+    // The two address books: the team's, with its cards, and the partners', which she may only read.
+    let books = result.books.as_ref().unwrap();
+    assert_eq!(books.books.iter().map(|b| (b.name.as_str(), b.main)).collect::<Vec<_>>(), [("Neoffice", true), ("Partners", false)]);
+    let cards = result.contacts.as_ref().unwrap();
+    assert!(cards.complete && result.contacts_state.is_some());
+    assert_eq!(cards.contacts.iter().filter(|c| c.book == "neoffice").count(), DEMO_CARDS);
+    assert_eq!(cards.contacts.iter().filter(|c| c.book == "partners").count(), 4);
+    let joinery = cards.contacts.iter().find(|c| c.company == "Lindqvist Joinery" && c.first.is_empty()).unwrap();
+    assert_eq!(joinery.display_name, "Lindqvist Joinery", "a company of its own reads as its company");
+    // Each person who wrote to her is among them, as the To field will find them.
+    for who in ["grace@example.org", "bob@example.org", "carol@example.org", "dan@example.org"] {
+        assert!(cards.contacts.iter().any(|c| c.emails.first().is_some_and(|e| e.value == who)), "{who}");
+    }
     let list = result.calendars.as_ref().unwrap();
     assert_eq!(list.calendars.iter().filter(|c| c.main).map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Ada Marlow"]);
     assert_eq!(list.calendars.len(), 3);
@@ -150,8 +164,10 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
     assert_eq!(grace.events.len(), 2);
     // A crowd for a look at what many events cost: all of them read, in pages.
     crowd(&stand_in, today(), 600);
+    crowd_cards(&stand_in, 2_000);
     let crowded = block_on(sync_pim(&client, &request, &AtomicBool::new(false)));
     assert_eq!(crowded.events.as_ref().map(|d| (d.events.len(), d.complete)), Some((609, true)));
+    assert_eq!(crowded.contacts.as_ref().map(|d| (d.contacts.len(), d.complete)), Some((DEMO_CARDS + 4 + 2_000, true)));
     // And the mail is there for a mail run.
     let mail = JmapMailRequest {
         account: 1,
@@ -179,8 +195,10 @@ fn serve_the_stand_in_on_loopback() {
     let stand_in = demo(today);
     let more = std::env::var("MAILCRAFT_STANDIN_EVENTS").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(20_000);
     crowd(&stand_in, today, more);
+    let cards = std::env::var("MAILCRAFT_STANDIN_CARDS").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(20_000);
+    crowd_cards(&stand_in, cards);
     println!(
-        "the stand-in, with the demo around {} and {more} more events, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
+        "the stand-in, with the demo around {}, {more} more events and {cards} more cards, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
         today.iso()
     );
     serve(&stand_in, port).unwrap();

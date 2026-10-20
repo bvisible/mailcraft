@@ -1,21 +1,29 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! Keeping a JMAP account's calendars current (JMAP for Calendars), by a job of their own beside its Send/Receive.
+//! Keeping a JMAP account's calendars (JMAP for Calendars) and address books (JMAP for Contacts) current, by a job of
+//! their own beside its Send/Receive.
 //!
 //! The window works the job out from the engine's public functions, as it does for Microsoft Graph's calendar
 //! ([`crate::calendar_sync`]): the calendars to read (the main one, the others that are ticked, all of them on the wide
-//! stretch, and any that holds something sent and not yet seen) and the stretch; the host does the talking
-//! ([`crate::Services::jmap_pim`]: `fetch` in the browser) and answers once, with what the engine takes in through
-//! `sync.applyCalendars` and `sync.applyEvents`. Nothing new is asked of the engine.
+//! stretch, and any that holds something sent and not yet seen), the stretch, and whether to bring the contacts; the
+//! host does the talking ([`crate::Services::jmap_pim`]: `fetch` in the browser) and answers once, with what the engine
+//! takes in through `sync.applyCalendars`, `sync.applyBooks`, `sync.applyEvents` and `sync.applyContacts`. Nothing new
+//! is asked of the engine.
 //!
-//! **When.** An account is asked for its list of calendars and the wide stretch (a month back, a year ahead) at its
-//! first job and every ten minutes after; for the days on screen and a week either side every two minutes while the
-//! calendar or People is in front, and every ten minutes otherwise; at once when the window comes back to the front
-//! or the owner switches to the calendar or to People, when other days come into view or a calendar is ticked that
-//! the last job didn't read, and after the owner's Send/Receive of the account. A job that came to nothing is followed by a wait of half a minute, twice as long
-//! after each one more, ten minutes at the most. (The cadences are the server's to bear: a server of the kind that
+//! **When.** An account is asked for its list of calendars, its address books and the contacts in them, and the wide
+//! stretch (a month back, a year ahead) at its first job and every ten minutes after; for the days on screen and a week
+//! either side every two minutes while the calendar or People is in front, and every ten minutes otherwise; at once
+//! when the window comes back to the front or the owner switches to the calendar or to People (People brings the
+//! contacts too), when other days come into view or a calendar is ticked that the last job didn't read, and after the
+//! owner's Send/Receive of the account. A job that came to nothing is followed by a wait of half a minute, twice as
+//! long after each one more, ten minutes at the most. (The cadences are the server's to bear: a server of the kind that
 //! answers from a layer over another store pays for each read.)
+//!
+//! **The contacts cost one question when nothing changed.** The window keeps, in memory, the state the server said of
+//! an account's contacts at the last job that brought them all, and hands it back with the next job: the host then asks
+//! for that state alone, and reads them all only when it changed or is an hour old. A job that brought no state (any
+//! trouble with the contacts) makes the window forget the one it had: the next reads them all.
 //!
 //! **Which accounts.** A JMAP account the window can ask without asking the owner anything: the host holds its
 //! credential, or a password is at hand; not one whose server turned the secret down (until the owner asks, as for
@@ -26,13 +34,13 @@
 //! went up must never be taken in after it. A job not answered in two minutes is given up (its `cancel` is set and
 //! its answer, should it come, is never read), and counts as one that came to nothing.
 //!
-//! **The answer** is taken in in this order: the list of calendars, then the main calendar's events, then the
-//! others'. A download of a calendar the mailbox doesn't have is not taken in (the engine would make the calendar
-//! for it). What the host says went wrong goes to the Send/Receive problems report and the log; what the engine says
-//! of an event (which names it) to the report alone. A server that turned the secret down stops the account's jobs
-//! and its mail runs alike; one that is busy is left alone as long as it asked.
+//! **The answer** is taken in in this order: the list of calendars, the address books, the main calendar's events,
+//! the others', and the contacts. A download of a calendar the mailbox doesn't have is not taken in (the engine would
+//! make the calendar for it). What the host says went wrong goes to the Send/Receive problems report and the log; what
+//! the engine says of an event (which names it) to the report alone. A server that turned the secret down stops the
+//! account's jobs and its mail runs alike; one that is busy is left alone as long as it asked.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -91,6 +99,10 @@ struct InFlight {
     /// When it started (milliseconds), and whether it was for the list and the wide stretch.
     started: f64,
     wide: bool,
+    /// Whether it asked for the contacts, and when it was asked for by the session's clock (Unix seconds): what a
+    /// state of the contacts it brings back is kept with.
+    contacts: bool,
+    now: Timestamp,
     cancel: Arc<AtomicBool>,
     rx: Receiver<JmapPimResult>,
 }
@@ -110,14 +122,20 @@ pub(crate) struct JmapPim {
     mains: HashMap<Id, String>,
     /// Ask at once: the window came back to the front, or the owner switched to the calendar or to People.
     pub(crate) due: bool,
-    /// Whether the window had the focus, and the calendar or People was in front, at the last look.
+    /// Whether the window had the focus, the calendar or People was in front, and People was, at the last look.
     focused: bool,
     in_front: bool,
+    people: bool,
     /// The stretch of each account's calendar that was last asked for, and the calendars (by their names on the server).
     shown: HashMap<Id, (Timestamp, Timestamp)>,
     asked: HashMap<Id, Vec<String>>,
     /// The account asked for last: the next look starts after it, so that accounts take turns.
     last: Option<Id>,
+    /// The state the server said of each account's contacts at the last job that brought them all, and when that job
+    /// was asked for (Unix seconds, by the session's clock).
+    contacts: HashMap<Id, (String, Timestamp)>,
+    /// Accounts whose next job brings the contacts though it is not the wide one: People came to the front.
+    contacts_due: HashSet<Id>,
 }
 
 impl MailApp {
@@ -172,18 +190,24 @@ impl MailApp {
     /// was started. (Public for a host's tests, which have no window.)
     pub fn jmap_pim_tick_at(&mut self, focused: bool, now: f64) -> bool {
         let in_front = matches!(self.session.view.module, Module::Calendar | Module::People) && !self.ui.backstage;
-        let came_back = (focused && !self.jmap_pim.focused) || (in_front && !self.jmap_pim.in_front);
+        let came_back = (focused && !self.jmap_pim.focused) || (in_front && !self.jmap_pim.in_front) || self.people_came_to_the_front();
         (self.jmap_pim.focused, self.jmap_pim.in_front) = (focused, in_front);
+        self.jmap_pim.people = self.session.view.module == Module::People && !self.ui.backstage;
         if came_back && focused && in_front {
             self.jmap_pim.due = true;
+            // People in front: the contacts come with the next job of each account.
+            if self.jmap_pim.people {
+                let accounts = self.jmap_pim_accounts();
+                self.jmap_pim.contacts_due.extend(accounts);
+            }
         }
         // A job that took too long is given up: its answer, should it come, is never read.
         if let Some(job) = self.jmap_pim.rx.as_ref().filter(|job| now - job.started >= DEADLINE_MS) {
             log::warn!("calendar, account {}: the server didn't answer within two minutes; the job was given up", job.account);
             job.cancel.store(true, Ordering::Relaxed);
-            let (account, wide) = (job.account, job.wide);
+            let (account, wide, contacts) = (job.account, job.wide, job.contacts);
             self.jmap_pim.rx = None;
-            self.pim_failed(account, now, wide);
+            self.pim_failed(account, now, wide, contacts);
         }
         if !self.auto_sync || self.services.jmap_pim.is_none() {
             return false;
@@ -249,6 +273,12 @@ impl MailApp {
         }
         let me: Vec<String> =
             self.session.mailbox.accounts.iter().map(|a| a.email.trim().to_string()).filter(|e| e.contains('@')).take(MAX_PIM_ADDRESSES).collect();
+        // The contacts with the wide stretch, and when People came to the front; never for the days around an invitation,
+        // nor of an account whose session said it has none.
+        let offered = self.jmap_pim.offers.get(&account).is_none_or(|offers| offers.contacts);
+        let contacts = around.is_none() && offered && (wide || self.jmap_pim.contacts_due.contains(&account));
+        let (contacts_state, contacts_read) =
+            if contacts { self.jmap_pim.contacts.get(&account).cloned().unwrap_or_default() } else { Default::default() };
         let request = JmapPimRequest {
             account,
             email: owner.email.trim().to_string(),
@@ -262,6 +292,9 @@ impl MailApp {
             lists: wide || main.is_empty() || !has_main,
             main,
             asks,
+            contacts,
+            contacts_state,
+            contacts_read,
             plain_unless_said: false,
         };
         let cancel = Arc::new(AtomicBool::new(false));
@@ -269,8 +302,11 @@ impl MailApp {
         let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });
         self.jmap_pim.asked.insert(account, names);
-        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), cancel, rx });
+        self.jmap_pim.rx = Some(InFlight { account, started: now, wide: wide && around.is_none(), contacts, now: today, cancel, rx });
         self.jmap_pim.last = Some(account);
+        if contacts {
+            self.jmap_pim.contacts_due.remove(&account);
+        }
         if around.is_none() {
             self.jmap_pim.checked.insert(account, now);
             if wide {
@@ -280,6 +316,11 @@ impl MailApp {
             self.jmap_pim.due = false;
         }
         true
+    }
+
+    /// Whether the owner has just switched to People (from the calendar, which is in front too).
+    fn people_came_to_the_front(&self) -> bool {
+        self.session.view.module == Module::People && !self.ui.backstage && !self.jmap_pim.people
     }
 
     /// Whether a calendar of `account` is ticked here that the last job didn't ask for (by its name on the server).
@@ -328,23 +369,24 @@ impl MailApp {
     /// The calendar job answered: take in what it brought, in order. (Public for a host's tests.)
     pub fn poll_jmap_pim(&mut self) {
         let Some(job) = &self.jmap_pim.rx else { return };
-        let (account, started, wide) = (job.account, job.started, job.wide);
+        let (account, started, wide, contacts, asked_at) = (job.account, job.started, job.wide, job.contacts, job.now);
         let result = match job.rx.try_recv() {
             Ok(result) => result,
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
                 log::warn!("calendar, account {account}: the job ended without an answer (its task ended early)");
                 self.jmap_pim.rx = None;
-                self.pim_failed(account, started, wide);
+                self.pim_failed(account, started, wide, contacts);
                 return;
             }
         };
         self.jmap_pim.rx = None;
-        self.take_in_pim(account, (started, wide), result);
+        self.take_in_pim(account, Taken { started, wide, contacts, asked_at }, result);
     }
 
     /// What one job brought, for `account` whatever it names (the engine still checks the address it carries).
-    fn take_in_pim(&mut self, account: Id, (started, wide): (f64, bool), mut result: JmapPimResult) {
+    fn take_in_pim(&mut self, account: Id, job: Taken, mut result: JmapPimResult) {
+        let Taken { started, wide, contacts, asked_at } = job;
         result.account = account;
         result.tidy();
         if let Some(offers) = result.offers {
@@ -362,6 +404,14 @@ impl MailApp {
         }
         let mut errors = std::mem::take(&mut result.errors);
         self.take_in_calendar_list(account, result.calendars.as_ref(), None, false, &mut errors);
+        // The address books next, so that the contacts that come last find theirs.
+        let mut contacts_taken = true;
+        if let Some(books) = &result.books
+            && let Err(e) = mailcraft_engine::cmd::remote_contacts::apply_books(&mut self.session, books)
+        {
+            errors.push(format!("{}: {e}", tl!("The contacts couldn't be taken in")));
+            contacts_taken = false;
+        }
         // A download of a calendar the mailbox doesn't have is not taken in: the engine would make it.
         let here = |app: &MailApp, download: &EventsDownload| {
             let kept = app.session.mailbox.calendars.iter().any(|c| c.origin.account == account && c.origin.id == download.calendar);
@@ -374,26 +424,72 @@ impl MailApp {
         self.take_in_calendar(account, None, main.as_ref(), &mut errors);
         let more: Vec<EventsDownload> = std::mem::take(&mut result.more_events).into_iter().filter(|download| here(self, download)).collect();
         self.take_in_more_calendars(&more, &mut errors);
+        // The contacts last.
+        if let Some(download) = &result.contacts
+            && let Err(e) = mailcraft_engine::cmd::remote::apply_contacts(&mut self.session, download)
+        {
+            errors.push(format!("{}: {e}", tl!("The contacts couldn't be taken in")));
+            contacts_taken = false;
+        }
+        if contacts {
+            self.keep_contacts_state(account, &result, contacts_taken, asked_at);
+        }
         let well = result.offers.is_some() && errors.is_empty() && !result.auth_refused && result.busy_for.is_none() && !result.stopped;
         if well {
             self.jmap_pim.failures.remove(&account);
         } else {
-            self.pim_failed(account, started, wide);
+            self.pim_failed(account, started, wide, contacts);
         }
         self.note_sync_problems(account, &errors, false);
     }
 
+    /// What is kept of the state of `account`'s contacts after a job that asked for them (at `asked_at`, by the
+    /// session's clock): the state they were all read at, from then; the one held, while the host says it still holds,
+    /// or when the job ended before the contacts (stopped, refused, a busy server: nothing was learned of them); and
+    /// nothing otherwise (no state came, or what came couldn't be taken in): the next job reads them all.
+    fn keep_contacts_state(&mut self, account: Id, result: &JmapPimResult, taken: bool, asked_at: Timestamp) {
+        let held = self.jmap_pim.contacts.get(&account).map(|(state, _)| state.as_str());
+        let ended_early = result.stopped || result.auth_refused || result.busy_for.is_some();
+        match (&result.contacts_state, &result.contacts) {
+            (Some(state), Some(_)) if taken => {
+                self.jmap_pim.contacts.insert(account, (state.clone(), asked_at));
+            }
+            (Some(state), None) if taken && held == Some(state.as_str()) => {}
+            (None, None) if taken && ended_early => {}
+            _ => {
+                self.jmap_pim.contacts.remove(&account);
+            }
+        }
+    }
+
     /// A job of `account` came to nothing (`at`: when it started, or when it was given up): the next one waits longer
     /// each time, and is due once it has waited, not at the next look the cadence would make (the wide one again, when
-    /// this one was `wide`).
-    fn pim_failed(&mut self, account: Id, at: f64, wide: bool) {
+    /// this one was `wide`; one that brings the contacts again, when this one was to bring them).
+    fn pim_failed(&mut self, account: Id, at: f64, wide: bool, contacts: bool) {
         let earlier = self.jmap_pim.failures.get(&account).map_or(0, |(n, _)| *n);
         self.jmap_pim.failures.insert(account, (earlier.saturating_add(1), at));
         self.jmap_pim.checked.remove(&account);
         if wide {
             self.jmap_pim.wide.remove(&account);
         }
+        if contacts {
+            self.jmap_pim.contacts_due.insert(account);
+        }
     }
+
+    /// The state of `account`'s contacts that the window holds, and when the job that read them all was asked for.
+    /// (Public for a host's tests.)
+    pub fn jmap_contacts_state(&self, account: Id) -> Option<(String, Timestamp)> {
+        self.jmap_pim.contacts.get(&account).cloned()
+    }
+}
+
+/// What the window remembers of a job while its answer is taken in.
+struct Taken {
+    started: f64,
+    wide: bool,
+    contacts: bool,
+    asked_at: Timestamp,
 }
 
 #[cfg(test)]

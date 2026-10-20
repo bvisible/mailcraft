@@ -26,8 +26,22 @@
 //!   one with its start and end in UTC worked out (`utcStart`, `utcEnd`: the clock of its zone, or of the person's for
 //!   one that names none, then its length, the days on the clock and the hours after them); `properties` keeps those
 //!   named (and the id).
+//! - **`AddressBook/get`** lists every address book (`ids: null`) or those named, each with the rights a server that
+//!   keeps only the basics says (`myRights`: `mayWrite` for its cards, and `mayRemoveItems`, which narrows a book whose
+//!   cards may be written to one whose cards may not be deleted).
+//! - **`ContactCard/query`** lists every card, by its id (a server that names a card by its contact's name lists them
+//!   by name), or those of one book (`{inAddressBook: id}`, the only filter); no sort, no anchor; from a `position` that
+//!   may be negative, as many as [`Pim::card_limit`] at a time (the limit said back when it set it), with the total when
+//!   asked, and with the state of the cards (`queryState`, which changes when a card is added, changed or removed),
+//!   unless [`Pim::says_state`] is off.
+//! - **`ContactCard/get`** reads the cards named, or every one while there are no more than a `get` takes
+//!   (`requestTooLarge` otherwise), as such a server writes them: the names as components of a `full` name, the
+//!   addresses with the primary one preferred, the numbers with the primary mobile one's feature and the others as
+//!   voice, one organization, one title; `properties` keeps those it knows of the ones named (and the id). A card's id
+//!   is what the store calls the contact ([`Card::id`]), which need not be of the JMAP alphabet: a name with spaces in it.
 //! - **Trouble on demand**, besides the mail part's (`refuse_next`, `drop_token_after`, `lost_answers`, method errors
-//!   through `faults`): events whose `get` fails ([`Pim::broken_events`]).
+//!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
+//!   deleted between a query and a `get` ([`Pim::vanishing`]).
 
 use std::collections::BTreeSet;
 
@@ -63,6 +77,10 @@ pub const WRITABLE_CARD: [&str; 5] = ["emails", "name", "organizations", "phones
 /// The longest stretch a query takes, in seconds, and most events it lists at a time.
 const MAX_STRETCH: i64 = 500 * 86_400;
 const MAX_LISTED: usize = 5_000;
+/// Most cards a query lists at a time.
+pub const MAX_CARDS: usize = 5_000;
+/// What a card is served with, at most (and the id, always).
+const CARD_PROPERTIES: [&str; 8] = ["id", "uid", "addressBookIds", "name", "emails", "phones", "organizations", "titles"];
 /// Most calendars a query may name, and most steps of a rule that are walked.
 const MAX_NAMED: usize = 500;
 const MAX_STEPS: usize = 20_000;
@@ -147,6 +165,96 @@ impl Event {
     }
 }
 
+/// An address book the stand-in has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Book {
+    /// Its id in the API (a server that keeps one book calls it by a word: `neoffice`).
+    pub id: String,
+    pub name: String,
+    /// The account may write its cards; and delete them.
+    pub may_write: bool,
+    pub may_remove: bool,
+    /// It is the account's default book.
+    pub default: bool,
+}
+
+impl Book {
+    /// A book whose cards the account may write and delete, or (`writable: false`) only read.
+    pub fn new(id: &str, name: &str, writable: bool) -> Book {
+        Book { id: id.into(), name: name.into(), may_write: writable, may_remove: writable, default: false }
+    }
+}
+
+/// A card the stand-in has: a contact as a server that keeps only the basics has one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Card {
+    /// What the store calls the contact, which is its id in the API too: `Grace Okafor`, as such a server names one.
+    pub id: String,
+    /// The books it is in, by their ids.
+    pub books: Vec<String>,
+    pub first: String,
+    pub last: String,
+    /// Its full name, when that is not its first and last name: a company's contact is called by its company.
+    pub full: String,
+    pub company: String,
+    pub title: String,
+    /// Its addresses, the primary one first.
+    pub emails: Vec<String>,
+    /// Its numbers, each with whether it is the primary mobile one.
+    pub phones: Vec<(String, bool)>,
+}
+
+impl Card {
+    /// Somebody in `book`, with one address.
+    pub fn person(id: &str, book: &str, first: &str, last: &str, email: &str) -> Card {
+        Card {
+            id: id.into(),
+            books: vec![book.into()],
+            first: first.into(),
+            last: last.into(),
+            full: String::new(),
+            company: String::new(),
+            title: String::new(),
+            emails: vec![email.into()],
+            phones: Vec::new(),
+        }
+    }
+
+    /// A company of its own in `book`, with one address and no person's name: it is called by its company.
+    pub fn company(id: &str, book: &str, company: &str, email: &str) -> Card {
+        Card { full: company.into(), company: company.into(), ..Card::person(id, book, "", "", email) }
+    }
+
+    /// The same, with `title` as its job title (and `company` as its company, when not empty).
+    pub fn working(mut self, title: &str, company: &str) -> Card {
+        self.title = title.into();
+        if !company.is_empty() {
+            self.company = company.into();
+        }
+        self
+    }
+
+    /// The same, with one more number (the primary mobile one, when `mobile`).
+    pub fn with_phone(mut self, number: &str, mobile: bool) -> Card {
+        self.phones.push((number.into(), mobile));
+        self
+    }
+
+    /// The same, with one more address.
+    pub fn with_email(mut self, email: &str) -> Card {
+        self.emails.push(email.into());
+        self
+    }
+
+    /// The name a server that keeps only the basics serves as `full`.
+    fn full_name(&self) -> String {
+        if !self.full.is_empty() {
+            return self.full.clone();
+        }
+        [self.first.as_str(), self.last.as_str()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<&str>>().join(" ")
+    }
+}
+
 /// What the stand-in offers besides mail. Nothing, at first: a stand-in for mail stays one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pim {
@@ -165,6 +273,17 @@ pub struct Pim {
     pub events: Vec<Event>,
     /// Events (their ids in the API) whose `CalendarEvent/get` fails as a whole with `serverFail`.
     pub broken_events: BTreeSet<String>,
+    /// The address books, and the cards in them.
+    pub books: Vec<Book>,
+    pub cards: Vec<Card>,
+    /// Cards (their ids) whose `ContactCard/get` fails as a whole with `serverFail`.
+    pub broken_cards: BTreeSet<String>,
+    /// Cards (their ids) a query lists and a `get` then no longer finds, as when they are deleted in between.
+    pub vanishing: BTreeSet<String>,
+    /// Most cards a query lists at a time: 5,000, as such a server, unless a test asks for fewer.
+    pub card_limit: usize,
+    /// A query of the cards says their state (`queryState`).
+    pub says_state: bool,
 }
 
 impl Default for Pim {
@@ -178,6 +297,12 @@ impl Default for Pim {
             calendar_list: Vec::new(),
             events: Vec::new(),
             broken_events: BTreeSet::new(),
+            books: Vec::new(),
+            cards: Vec::new(),
+            broken_cards: BTreeSet::new(),
+            vanishing: BTreeSet::new(),
+            card_limit: MAX_CARDS,
+            says_state: true,
         }
     }
 }
@@ -579,6 +704,215 @@ impl Pim {
         let occurrence = self.occurrences(event, before).into_iter().find(|o| o.recurrence.as_deref() == Some(start.as_str()))?;
         Some(self.served(event, Some(&occurrence)))
     }
+
+    /// Add an address book; its id in the API.
+    pub fn add_book(&mut self, book: Book) -> String {
+        let id = book.id.clone();
+        self.books.push(book);
+        id
+    }
+
+    /// Add a card; its id in the API.
+    pub fn add_card(&mut self, card: Card) -> String {
+        let id = card.id.clone();
+        self.cards.push(card);
+        id
+    }
+
+    /// The state of the cards: it changes when one is added, changed or removed.
+    pub fn cards_state(&self) -> String {
+        // FNV-1a over what the cards are, in order.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in format!("{:?}", self.cards).bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        format!("{hash:016x}")
+    }
+
+    /// `AddressBook/get`.
+    pub(super) fn address_book_get(&self, args: &Map<String, Value>) -> Outcome<Value> {
+        allow_only(args, &["accountId", "ids", "properties"])?;
+        account(args)?;
+        let wanted: Option<Vec<String>> = match args.get("ids") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(ids)) if ids.len() > MAX_NAMED => return Err(refuse("requestTooLarge", "too many ids")),
+            Some(Value::Array(ids)) => Some(ids.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+            Some(_) => return Err(invalid("ids is a list, or null")),
+        };
+        let list: Vec<Value> = self
+            .books
+            .iter()
+            .filter(|book| wanted.as_ref().is_none_or(|wanted| wanted.contains(&book.id)))
+            .map(|book| {
+                json!({
+                    "id": book.id,
+                    "name": book.name,
+                    "description": null,
+                    "sortOrder": 0,
+                    "isDefault": book.default,
+                    "isSubscribed": true,
+                    "shareWith": null,
+                    "myRights": {
+                        "mayRead": true,
+                        "mayWrite": book.may_write,
+                        "mayShare": false,
+                        "mayDelete": false,
+                        "mayRemoveItems": book.may_write && book.may_remove,
+                    },
+                })
+            })
+            .collect();
+        let not_found: Vec<&String> = wanted.iter().flatten().filter(|id| !self.books.iter().any(|book| &book.id == *id)).collect();
+        Ok(json!({"accountId": ACCOUNT, "state": "0", "list": list, "notFound": not_found}))
+    }
+
+    /// `ContactCard/query`.
+    pub(super) fn card_query(&self, args: &Map<String, Value>) -> Outcome<Value> {
+        allow_only(args, &["accountId", "filter", "sort", "position", "anchor", "anchorOffset", "limit", "calculateTotal"])?;
+        account(args)?;
+        if !matches!(args.get("anchor"), None | Some(Value::Null)) || !matches!(args.get("anchorOffset"), None | Some(Value::Null)) {
+            return Err(invalid("anchor"));
+        }
+        let book: Option<&str> = match args.get("filter") {
+            None | Some(Value::Null) => None,
+            Some(Value::Object(filter)) if filter.is_empty() => None,
+            Some(Value::Object(filter)) if filter.len() == 1 => match filter.get("inAddressBook").and_then(Value::as_str) {
+                Some(id) if self.books.iter().any(|book| book.id == id) => Some(id),
+                _ => return Err(refuse("unsupportedFilter", "Only inAddressBook is supported.")),
+            },
+            Some(_) => return Err(refuse("unsupportedFilter", "Only inAddressBook is supported.")),
+        };
+        match args.get("sort") {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(sort)) if sort.is_empty() => {}
+            Some(_) => return Err(refuse("unsupportedSort", "The cards come by name.")),
+        }
+        let number = |key: &str| -> Outcome<Option<i64>> {
+            match args.get(key) {
+                None | Some(Value::Null) => Ok(None),
+                Some(value) => value.as_i64().map(Some).ok_or_else(|| invalid(key.to_string())),
+            }
+        };
+        let position = number("position")?.unwrap_or(0);
+        let asked = number("limit")?;
+        if asked.is_some_and(|limit| limit < 0) {
+            return Err(invalid("limit"));
+        }
+        let most = self.card_limit.min(MAX_CARDS);
+        let limit = asked.map_or(most, |limit| usize::try_from(limit).unwrap_or(usize::MAX).min(most));
+        let mut found: Vec<&str> =
+            self.cards.iter().filter(|card| book.is_none_or(|book| card.books.iter().any(|b| b == book))).map(|card| card.id.as_str()).collect();
+        found.sort_unstable();
+        let count = found.len();
+        let position = if position < 0 {
+            count.saturating_sub(usize::try_from(position.unsigned_abs()).unwrap_or(usize::MAX))
+        } else {
+            usize::try_from(position).unwrap_or(usize::MAX)
+        };
+        let ids: Vec<&str> = found.into_iter().skip(position).take(limit).collect();
+        let mut out = json!({"accountId": ACCOUNT, "canCalculateChanges": false, "position": position, "ids": ids});
+        if self.says_state {
+            out["queryState"] = json!(self.cards_state());
+        }
+        if args.get("calculateTotal").and_then(Value::as_bool) == Some(true) {
+            out["total"] = json!(count);
+        }
+        if asked.is_none_or(|asked| usize::try_from(asked).unwrap_or(usize::MAX) > most) {
+            out["limit"] = json!(most);
+        }
+        Ok(out)
+    }
+
+    /// `ContactCard/get`, the ids at most `most`.
+    pub(super) fn card_get(&self, args: &Map<String, Value>, most: usize) -> Outcome<Value> {
+        allow_only(args, &["accountId", "ids", "properties"])?;
+        account(args)?;
+        let ids: Vec<String> = match args.get("ids") {
+            None | Some(Value::Null) if self.cards.len() > most => {
+                return Err(refuse("requestTooLarge", "Ask for the cards by id (ContactCard/query)."));
+            }
+            None | Some(Value::Null) => self.cards.iter().map(|card| card.id.clone()).collect(),
+            Some(Value::Array(ids)) if ids.len() > most => return Err(refuse("requestTooLarge", "too many ids")),
+            Some(Value::Array(ids)) => ids.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+            Some(_) => return Err(invalid("ids is a list, or null")),
+        };
+        let wanted: Option<Vec<String>> = match args.get("properties") {
+            None | Some(Value::Null) => None,
+            Some(Value::Array(names)) => {
+                let names: Option<Vec<String>> = names.iter().map(|n| n.as_str().map(str::to_string)).collect();
+                Some(names.ok_or_else(|| invalid("properties"))?)
+            }
+            Some(_) => return Err(invalid("properties")),
+        };
+        if ids.iter().any(|id| self.broken_cards.contains(id)) {
+            return Err(refuse("serverFail", "a card can't be read just now"));
+        }
+        let (mut list, mut not_found) = (Vec::new(), Vec::new());
+        for id in &ids {
+            match self.cards.iter().find(|card| &card.id == id && !self.vanishing.contains(id)) {
+                Some(card) => {
+                    let mut served = served_card(card);
+                    if let (Some(wanted), Value::Object(map)) = (&wanted, &mut served) {
+                        // What it knows of what was named, and the id; what it doesn't know is not an error.
+                        map.retain(|key, _| {
+                            key == "id" || key == "@type" || key == "version" || (wanted.contains(key) && CARD_PROPERTIES.contains(&key.as_str()))
+                        });
+                    }
+                    list.push(served);
+                }
+                None => not_found.push(id.clone()),
+            }
+        }
+        Ok(json!({"accountId": ACCOUNT, "state": self.cards_state(), "list": list, "notFound": not_found}))
+    }
+}
+
+/// A card as a server that keeps only the basics serves it (JSContact, RFC 9553).
+fn served_card(card: &Card) -> Value {
+    let components: Vec<Value> = [("given", &card.first), ("surname", &card.last)]
+        .into_iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(kind, value)| json!({"@type": "NameComponent", "kind": kind, "value": value}))
+        .collect();
+    let books: Map<String, Value> = card.books.iter().map(|book| (book.clone(), Value::Bool(true))).collect();
+    let emails: Map<String, Value> = card
+        .emails
+        .iter()
+        .enumerate()
+        .map(|(n, address)| {
+            let mut entry = json!({"@type": "EmailAddress", "address": address});
+            if n == 0 {
+                entry["pref"] = json!(1);
+            }
+            (format!("e{}", n + 1), entry)
+        })
+        .collect();
+    let phones: Map<String, Value> = card
+        .phones
+        .iter()
+        .enumerate()
+        .map(|(n, (number, mobile))| {
+            let features = if *mobile { json!({"mobile": true}) } else { json!({"voice": true}) };
+            (format!("p{}", n + 1), json!({"@type": "Phone", "number": number, "features": features}))
+        })
+        .collect();
+    let mut out = json!({
+        "@type": "Card",
+        "version": "1.0",
+        "id": card.id,
+        "uid": card.id,
+        "addressBookIds": books,
+        "name": {"@type": "Name", "full": card.full_name(), "components": components},
+        "emails": emails,
+        "phones": phones,
+    });
+    if !card.company.is_empty() {
+        out["organizations"] = json!({"o1": {"@type": "Organization", "name": card.company}});
+    }
+    if !card.title.is_empty() {
+        out["titles"] = json!({"t1": {"@type": "Title", "name": card.title, "kind": "title"}});
+    }
+    out
 }
 
 /// A colour as the store keeps it, as `#rrggbb`: `#rgb`, `#rrggbb` and a few names; `None` for anything else.

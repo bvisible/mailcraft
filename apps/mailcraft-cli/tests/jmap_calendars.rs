@@ -65,7 +65,7 @@ impl Rig {
             lists,
             main: self.main.clone(),
             asks: asks.iter().map(|calendar| CalendarAsk { calendar: calendar.to_string(), series: Vec::new() }).collect(),
-            plain_unless_said: false,
+            ..Default::default()
         }
     }
 

@@ -2,35 +2,180 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! An account's calendars over JMAP (JMAP for Calendars, the IETF's draft on RFC 8620; events as JSCalendar,
-//! RFC 8984), and later its address books (RFC 9610), read for the engine: [`sync_pim`].
+//! RFC 8984) and its address books (JMAP for Contacts, RFC 9610; cards as JSContact, RFC 9553), read for the
+//! engine: [`sync_pim`].
 //!
-//! A calendar job is one of its own beside a Send/Receive: the window asks for it on a clock of its own,
-//! and what it reads comes back in one answer ([`JmapPimResult`](mailcraft_model::sync::JmapPimResult)), made
-//! of the downloads the engine already takes in for Microsoft Graph's calendar
-//! ([`CalendarsDownload`](mailcraft_model::remote::CalendarsDownload),
-//! [`EventsDownload`](mailcraft_model::remote::EventsDownload)). What is read and how is in [`calendars`];
-//! how an event in JSCalendar becomes the engine's is in `jscalendar.rs`.
+//! A job is one of its own beside a Send/Receive: the window asks for it on a clock of its own, and what it reads
+//! comes back in one answer ([`JmapPimResult`]), made of the downloads the engine already takes in for Microsoft
+//! Graph's calendar and contacts ([`CalendarsDownload`](mailcraft_model::remote::CalendarsDownload),
+//! [`EventsDownload`](mailcraft_model::remote::EventsDownload),
+//! [`ContactsDownload`](mailcraft_model::remote::ContactsDownload)) and of the address books
+//! ([`BooksDownload`](mailcraft_model::book::BooksDownload)). What is read and how is in [`calendars`] and
+//! [`contacts`]; how an event in JSCalendar and a card in JSContact become the engine's is in `jscalendar.rs` and
+//! `jscontact.rs`.
 //!
 //! This module holds what the readers share: ISO 8601 durations, the UTC and local times of JSCalendar,
-//! the paging of a `/query` ([`query_all`]) and the bounds of what is read.
+//! the paging of a `/query` ([`query_all`]), the bounds of what is read, and how trouble ends a job and is said.
 //!
 //! **Nothing is written yet.** Until events go back to the server, every calendar is handed over as one the
 //! account may only read ([`WRITE_EVENTS`]): the engine's own lock and its reason then keep the owner from
 //! making, here, what would go nowhere. [`WRITE_CONTACTS`] is the same door for address books.
 
 pub mod calendars;
+pub mod contacts;
 pub(crate) mod jscalendar;
+pub(crate) mod jscontact;
 #[cfg(test)]
 mod tests;
 
 use std::collections::HashSet;
+use std::sync::atomic::AtomicBool;
 
+use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, PimOffers};
 use mailcraft_time::{DateTime, Timestamp, format_iso_utc, parse_iso};
 use serde_json::{Map, Value};
 
-use crate::{Client, Http, Result, valid_id};
+use crate::{Client, Error, Http, Result, Secrets, valid_id};
 
-pub use calendars::{failed_pim, sync_pim};
+/// How long a busy server is left alone when it does not say, in seconds.
+pub(crate) const BUSY_FOR: u32 = 30;
+/// Longest line of `errors`, in characters, and the length from which an account id is hidden in one.
+const MAX_LINE: usize = 300;
+const SECRET_ID: usize = 8;
+
+/// Read what `request` asks of the account it is for, the calendars first and then the address books, and say what
+/// was read in one answer: see [`calendars`] and [`contacts`]. `client` is signed in already ([`Client::connect`]); a
+/// caller whose sign-in failed answers with [`failed_pim`]. `cancel` is read before every request. What the session
+/// does not offer is not asked for, and the answer says what it offers. The server refusing the credentials, saying
+/// it is busy, or a stop ends the job there: the address books are not asked for after that.
+pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, cancel: &AtomicBool) -> JmapPimResult {
+    let offers = PimOffers { calendars: client.offers_calendars(), contacts: client.offers_contacts() };
+    let mut out = JmapPimResult { account: request.account, email: request.email.clone(), offers: Some(offers), ..Default::default() };
+    let mut going = true;
+    match client.calendars_account() {
+        Some(account) => going = calendars::read(client, request, account, cancel, &mut out).await,
+        None => log::debug!("jmap pim: the session offers no calendars"),
+    }
+    if going
+        && request.contacts
+        && let Some(account) = client.contacts_account()
+    {
+        contacts::read(client, request, account, cancel, &mut out).await;
+    }
+    log::debug!(
+        "jmap pim: {} calendar(s) listed, {} download(s), {} event(s), {} book(s), {} contact(s) (state {}), {} line(s); stopped: {}, busy: {}, refused: {}",
+        out.calendars.as_ref().map_or(0, |list| list.calendars.len()),
+        usize::from(out.events.is_some()) + out.more_events.len(),
+        out.event_count(),
+        out.books.as_ref().map_or(0, |list| list.books.len()),
+        out.contacts.as_ref().map_or(0, |download| download.contacts.len()),
+        if out.contacts_state.is_some() { "known" } else { "unknown" },
+        out.errors.len(),
+        out.stopped,
+        out.busy_for.is_some(),
+        out.auth_refused
+    );
+    out
+}
+
+/// The answer to a job that could not begin: signing in to the server (`Client::connect`) failed with `error`. What
+/// [`sync_pim`] would have said of the same trouble: the sign-in refused, the server busy, or a line.
+pub fn failed_pim(request: &JmapPimRequest, error: &Error) -> JmapPimResult {
+    let secrets = secrets_of(request, &Secrets::default(), "");
+    let mut result = JmapPimResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    match error {
+        Error::Auth(_) => result.auth_refused = true,
+        Error::Busy { retry_after, .. } => {
+            result.busy_for = Some(retry_after.unwrap_or(BUSY_FOR));
+            result.errors.push(format!("Couldn't reach the server of the calendars and contacts: {}", said(&secrets, error)));
+        }
+        other => result.errors.push(format!("Couldn't reach the server of the calendars and contacts: {}", said(&secrets, other))),
+    }
+    result
+}
+
+/// Why a part of a job cannot go on.
+pub(crate) enum Stop {
+    /// The owner stopped the job.
+    Cancelled,
+    /// The server refused the credentials.
+    Auth,
+    /// The server is busy: for this many seconds, and what it said.
+    Busy(u32, String),
+    /// A request failed, or the server answered a query with an error.
+    Failed(Error),
+}
+
+impl Stop {
+    /// Why a request failed as a whole: the credentials refused and a busy server end the job, anything else ends the
+    /// reading of that part with a line.
+    pub(crate) fn of(error: Error, secrets: &Secrets) -> Stop {
+        match error {
+            Error::Auth(_) => Stop::Auth,
+            Error::Busy { retry_after, .. } => Stop::Busy(retry_after.unwrap_or(BUSY_FOR), said(secrets, &error)),
+            other => Stop::Failed(other),
+        }
+    }
+}
+
+/// What must not show in a line: what the client hides, the account's address, the address of the session (with the
+/// addresses in its query), and the account's id when it is long enough to be one of those.
+pub(crate) fn secrets_of(request: &JmapPimRequest, client: &Secrets, account_id: &str) -> Secrets {
+    let mut secrets = client.clone();
+    secrets.add(&request.email);
+    secrets.add_address(&request.session);
+    for address in &request.me {
+        secrets.add(address);
+    }
+    if account_id.len() >= SECRET_ID {
+        secrets.add(account_id);
+    }
+    secrets
+}
+
+/// `error` as a line of at most [`MAX_LINE`] characters, the secrets hidden before it is cut, and any word that holds
+/// an `@` (or the `%40` it is written as in an address) hidden after.
+pub(crate) fn said(secrets: &Secrets, error: &Error) -> String {
+    let cut = crate::tidy(&secrets.hide(&error.to_string()), MAX_LINE);
+    cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
+}
+
+/// "1 contact", "3 contacts".
+pub(crate) fn counted(n: usize, one: &str, many: &str) -> String {
+    if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
+}
+
+/// The longest name of a card a server may give that is not an id of the JMAP alphabet ([`card_id`]), in bytes.
+const MAX_CARD_NAME: usize = 700;
+/// What starts the engine's name of a card that a server names outside the JMAP alphabet ([`card_key`]).
+const CARD_KEY: char = '~';
+
+/// Whether `id` is what a server may call a card: an id of the JMAP alphabet ([`valid_id`]), or, from a server that
+/// names its cards otherwise (one that calls a card by the name of its contact, `Grace Okafor-1`), a name of one line:
+/// [`MAX_CARD_NAME`] bytes at most, no control characters, nothing blank at either end. Such a name only ever goes
+/// back to the server as a JSON string, never into a path or an address.
+pub fn card_id(id: &str) -> bool {
+    valid_id(id) || (!id.is_empty() && id.len() <= MAX_CARD_NAME && id.trim() == id && !id.chars().any(char::is_control))
+}
+
+/// What the engine calls a card that the server calls `id` ([`card_id`]): the id itself when it is one of the JMAP
+/// alphabet, else `~` and the name in URL-safe base64, which names it as surely and holds nothing a line or a word ends
+/// at (the engine keeps no other kind of name: `RemoteContact::tidy`).
+pub fn card_key(id: &str) -> String {
+    use base64::Engine as _;
+    if valid_id(id) { id.to_string() } else { format!("{CARD_KEY}{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(id)) }
+}
+
+/// What the server calls the card the engine calls `key` ([`card_key`] the other way): what a change goes back by.
+/// `None` for a key that names no card of a server.
+pub fn server_card_id(key: &str) -> Option<String> {
+    use base64::Engine as _;
+    let id = match key.strip_prefix(CARD_KEY) {
+        Some(coded) => String::from_utf8(base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(coded).ok()?).ok()?,
+        None => key.to_string(),
+    };
+    (card_id(&id) && card_key(&id) == key).then_some(id)
+}
 
 /// Whether what is changed here in a server's calendar is written back to it. Not yet: every calendar
 /// read is handed over as read-only, so that nothing is made here that would never reach the server.
@@ -212,7 +357,8 @@ pub struct Queried {
 /// server stated, when it set one lower than asked, else the one asked). The paging ends, whole, at a page that is
 /// short of that limit or empty, or when the total the server said is reached; and, not whole, at `cap` ids, at a page
 /// that brings nothing new (a server that ignores `position`), at a page that says another position than was asked,
-/// at a page whose list is not one, and after [`MAX_PAGES`]. An id that is no id is left out, and makes it not whole.
+/// at a page whose list is not one, and after [`MAX_PAGES`]. An id that is no id is left out, and makes it not whole:
+/// one of the JMAP alphabet ([`valid_id`]), unless the pager takes what a server may call a card too ([`Pager::cards`]).
 #[derive(Clone, Debug)]
 pub struct Pager {
     ids: Vec<String>,
@@ -224,6 +370,8 @@ pub struct Pager {
     pages: usize,
     flawed: bool,
     end: Option<bool>,
+    /// What an id must be.
+    fits: fn(&str) -> bool,
 }
 
 impl Pager {
@@ -239,7 +387,13 @@ impl Pager {
             pages: 0,
             flawed: false,
             end: (cap == 0).then_some(false),
+            fits: valid_id,
         }
+    }
+
+    /// The same, for a query of cards: what a server may call a card is an id ([`card_id`]).
+    pub fn cards(self) -> Pager {
+        Pager { fits: card_id, ..self }
     }
 
     /// Where the next page starts.
@@ -279,7 +433,7 @@ impl Pager {
             if self.ids.len() >= self.cap {
                 break;
             }
-            match id.as_str().filter(|id| valid_id(id)) {
+            match id.as_str().filter(|id| (self.fits)(id)) {
                 Some(id) if self.seen.insert(id.to_string()) => {
                     self.ids.push(id.to_string());
                     new.push(id.to_string());

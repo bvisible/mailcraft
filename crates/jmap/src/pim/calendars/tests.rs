@@ -11,6 +11,7 @@ use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, PimOffers};
 use serde_json::json;
 
 use super::*;
+use crate::pim::{failed_pim, sync_pim};
 use crate::standin::{Calendar, Event, Pim, SESSION, StandIn, TOKEN};
 use crate::{Auth, block_on};
 
@@ -56,7 +57,7 @@ fn request() -> JmapPimRequest {
         lists: true,
         main: String::new(),
         asks: vec![ask("")],
-        plain_unless_said: false,
+        ..Default::default()
     }
 }
 

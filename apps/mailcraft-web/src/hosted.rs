@@ -4,7 +4,7 @@
 // that it is tested natively.
 
 //! What makes a browser tab a hosting page's (host.rs, web.rs): its mailboxes are read by runners that take the page's
-//! credentials, their calendars by a calendar job beside their mail ([`mailcraft_ui_egui::Services::jmap_pim`]), and
+//! credentials, their calendars and address books by a job beside their mail ([`mailcraft_ui_egui::Services::jmap_pim`]), and
 //! nothing of them is kept between visits: no mailbox in the browser's storage, no autosave, and a session that keeps
 //! nothing of its own ([`mailcraft_engine::Session::keeps_local`]).
 // Outside the browser only the tests use it.

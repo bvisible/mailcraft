@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! An account's calendars and the events of a stretch of them, read for the engine: [`sync_pim`].
+//! An account's calendars and the events of a stretch of them, read for the engine: [`read`], the first part of a job
+//! ([`super::sync_pim`]).
 //!
 //! **What is asked of the server**, in as few requests as it takes:
 //!
@@ -55,12 +56,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteEvent};
-use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, MAX_PIM_ASKS, PimOffers};
+use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, MAX_PIM_ASKS};
 use mailcraft_time::{Timestamp, Zone};
 use serde_json::{Value, json};
 
 use super::jscalendar::{self, Listed};
-use super::{ITEMS_BYTES, Pager, WRITE_EVENTS, utc_text};
+use super::{ITEMS_BYTES, Pager, Stop, WRITE_EVENTS, counted, said, secrets_of, utc_text};
 use crate::{CALENDARS, CORE, Client, Error, Http, Secrets, result_of, valid_id};
 
 /// Events asked for whole in one request: a description may be long.
@@ -69,11 +70,6 @@ const PAGE: usize = 200;
 pub const MAX_EVENTS: usize = 5_000;
 /// The most a list of calendars may be, in bytes.
 const LIST_BYTES: usize = 1 << 20;
-/// How long a busy server is left alone when it does not say, in seconds.
-const BUSY_FOR: u32 = 30;
-/// Longest line of `errors`, in characters, and the length from which an account id is hidden in one.
-const MAX_LINE: usize = 300;
-const SECRET_ID: usize = 8;
 /// Most times in a job that a `get` is halved to find the event that breaks it.
 const MAX_SPLITS: usize = 32;
 /// What every request names in `using`.
@@ -105,20 +101,14 @@ const EVENT_PROPERTIES: [&str; 23] = [
     "sequence",
 ];
 
-/// Read the calendars of the account `request` is for, as it says (see the module documentation), and say what was
-/// read in one answer. `client` is signed in already ([`Client::connect`]); a caller whose sign-in failed answers with
-/// [`failed_pim`]. `cancel` is read before every request. A session that offers no calendars is asked nothing: the
-/// answer says what it offers.
-pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, cancel: &AtomicBool) -> JmapPimResult {
-    let offers = PimOffers { calendars: client.offers_calendars(), contacts: client.offers_contacts() };
-    let mut out = JmapPimResult { account: request.account, email: request.email.clone(), offers: Some(offers), ..Default::default() };
-    let Some(account) = client.calendars_account() else {
-        log::debug!("jmap pim: the session offers no calendars");
-        return out;
-    };
+/// Read the calendars of the account `request` is for, as it says (see the module documentation), into `out`; the
+/// calendars are in the account `account` of the session. Whether the job may go on: not after a stop, a refusal of
+/// the credentials or a busy server, which `out` then says.
+pub(super) async fn read<H: Http>(client: &Client<H>, request: &JmapPimRequest, account: &str, cancel: &AtomicBool, out: &mut JmapPimResult) -> bool {
     let job = Job::new(client, request, account, cancel);
     let mut got = Gathered::new();
     let stop = job.run(&mut got).await.err();
+    let going = matches!(stop, None | Some(Stop::Failed(_)));
     match stop {
         None => {}
         Some(Stop::Cancelled) => out.stopped = true,
@@ -129,46 +119,8 @@ pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, can
         }
         Some(Stop::Failed(error)) => got.halted = Some(job.said(&error)),
     }
-    job.finish(got, &mut out);
-    log::debug!(
-        "jmap pim: {} calendar(s) listed, {} download(s), {} event(s), {} line(s); stopped: {}, busy: {}, refused: {}",
-        out.calendars.as_ref().map_or(0, |list| list.calendars.len()),
-        usize::from(out.events.is_some()) + out.more_events.len(),
-        out.event_count(),
-        out.errors.len(),
-        out.stopped,
-        out.busy_for.is_some(),
-        out.auth_refused
-    );
-    out
-}
-
-/// The answer to a job that could not begin: signing in to the server (`Client::connect`) failed with `error`. What
-/// [`sync_pim`] would have said of the same trouble: the sign-in refused, the server busy, or a line.
-pub fn failed_pim(request: &JmapPimRequest, error: &Error) -> JmapPimResult {
-    let secrets = secrets_of(request, &Secrets::default(), "");
-    let mut result = JmapPimResult { account: request.account, email: request.email.clone(), ..Default::default() };
-    match error {
-        Error::Auth(_) => result.auth_refused = true,
-        Error::Busy { retry_after, .. } => {
-            result.busy_for = Some(retry_after.unwrap_or(BUSY_FOR));
-            result.errors.push(format!("Couldn't reach the calendar server: {}", said(&secrets, error)));
-        }
-        other => result.errors.push(format!("Couldn't reach the calendar server: {}", said(&secrets, other))),
-    }
-    result
-}
-
-/// Why the reading cannot go on.
-enum Stop {
-    /// The owner stopped the job.
-    Cancelled,
-    /// The server refused the credentials.
-    Auth,
-    /// The server is busy: for this many seconds, and what it said.
-    Busy(u32, String),
-    /// A request failed, or the server answered the query with an error.
-    Failed(Error),
+    job.finish(got, out);
+    going
 }
 
 /// A calendar asked for: what the window calls it (empty for the main one) and its name on the server when known.
@@ -280,11 +232,7 @@ impl<'a, H: Http> Job<'a, H> {
     /// Why a request failed as a whole: the credentials refused and a busy server end the job, anything else ends the
     /// reading with a line.
     fn call_stop(&self, error: Error) -> Stop {
-        match error {
-            Error::Auth(_) => Stop::Auth,
-            Error::Busy { retry_after, .. } => Stop::Busy(retry_after.unwrap_or(BUSY_FOR), self.said(&error)),
-            other => Stop::Failed(other),
-        }
+        Stop::of(error, &self.secrets)
     }
 
     /// The whole job: the list and the first page, then the other pages.
@@ -545,7 +493,6 @@ fn stretch(from: Timestamp, to: Timestamp, now: Timestamp, span: i64) -> (Timest
 
 /// The lines of trouble worth telling the owner.
 fn lines(got: &Gathered) -> Vec<String> {
-    let plural = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {one}") } else { format!("{n} {many}") };
     let mut lines = Vec::new();
     if let Some(why) = &got.listing {
         lines.push(format!("Couldn't list the calendars on the server: {why}"));
@@ -554,38 +501,16 @@ fn lines(got: &Gathered) -> Vec<String> {
         lines.push(format!("Couldn't bring the calendar down from the server: {why}"));
     }
     if let (n @ 1.., Some(why)) = (got.unread.0, &got.unread.1) {
-        lines.push(format!("Couldn't read {} of the calendar: {why}", plural(n, "event", "events")));
+        lines.push(format!("Couldn't read {} of the calendar: {why}", counted(n, "event", "events")));
     }
     if got.passed_over > 0 {
         lines.push(format!(
             "{} from the server couldn't be read and {} left out.",
-            plural(got.passed_over, "event", "events"),
+            counted(got.passed_over, "event", "events"),
             if got.passed_over == 1 { "was" } else { "were" }
         ));
     }
     lines
-}
-
-/// What must not show in a line: what the client hides, the account's address, the address of the session (with the
-/// addresses in its query), and the account's id when it is long enough to be one of those.
-fn secrets_of(request: &JmapPimRequest, client: &Secrets, account_id: &str) -> Secrets {
-    let mut secrets = client.clone();
-    secrets.add(&request.email);
-    secrets.add_address(&request.session);
-    for address in &request.me {
-        secrets.add(address);
-    }
-    if account_id.len() >= SECRET_ID {
-        secrets.add(account_id);
-    }
-    secrets
-}
-
-/// `error` as a line of at most [`MAX_LINE`] characters, the secrets hidden before it is cut, and any word that holds
-/// an `@` (or the `%40` it is written as in an address) hidden after.
-fn said(secrets: &Secrets, error: &Error) -> String {
-    let cut = crate::tidy(&secrets.hide(&error.to_string()), MAX_LINE);
-    cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
 }
 
 #[cfg(test)]

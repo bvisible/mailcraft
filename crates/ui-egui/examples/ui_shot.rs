@@ -624,7 +624,7 @@ fn pim_job(app: &mut MailApp, how: &str) {
             "down" => Some(JmapPimResult {
                 account: request.account,
                 email: request.email.clone(),
-                errors: vec!["Couldn't reach the calendar server: network: the server can't be reached".into()],
+                errors: vec!["Couldn't reach the server of the calendars and contacts: network: the server can't be reached".into()],
                 ..Default::default()
             }),
             _ => None,
