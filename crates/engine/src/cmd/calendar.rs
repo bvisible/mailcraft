@@ -267,10 +267,14 @@ pub(crate) fn fits_plain(s: &Session, e: &Event, before: Option<&Event>) -> Resu
     let was = before.cloned().unwrap_or_default();
     let more = (e.categories != was.categories && !e.categories.is_empty())
         || (e.importance != was.importance && e.importance != mailcraft_model::Importance::Normal)
-        || (e.response_options != was.response_options && e.response_options != mailcraft_model::ResponseOptions::default())
-        || (e.online.is_some() && was.online.is_none());
+        || (e.response_options != was.response_options && e.response_options != mailcraft_model::ResponseOptions::default());
     if more {
         return Err(fail(PLAIN_KEEPS_NO));
+    }
+    // //// Neoffice — an online meeting, where its server makes none of its own: refused as the toggle refuses it.
+    let no_online = s.mailbox.calendar(e.calendar).is_none_or(|c| c.online_service() != Some(mailcraft_model::OnlineProvider::Other));
+    if e.online.is_some() && was.online.is_none() && no_online {
+        return Err(fail(meeting::NO_ONLINE));
     }
     let shows = |show_as: ShowAs| matches!(show_as, ShowAs::Free | ShowAs::Busy);
     if !shows(e.show_as) && (before.is_none() || e.show_as != was.show_as) {
@@ -483,6 +487,8 @@ fn create(s: &mut Session, v: &Value, meeting: bool) -> CmdResult {
     if kept_here {
         e.online = None;
     }
+    // //// Neoffice — a meeting made online here takes its calendar's service (a JMAP server's own, not Teams).
+    meeting::online_here(s, &mut e);
     meeting::online_fits(s, &e, None)?;
     let id = s.mailbox.add_event(e)?;
     // In a calendar that a server keeps: the server is to have it too.
@@ -662,6 +668,8 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     let id = before.id;
     let one = part(s, &before, v)?;
     let mut e = edited(s, &before, v, one)?;
+    // //// Neoffice — a meeting made online here takes its calendar's service (a JMAP server's own, not Teams).
+    meeting::online_here(s, &mut e);
     if e.title.is_empty() {
         return Err(fail("an event needs a title"));
     }

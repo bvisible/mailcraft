@@ -2001,8 +2001,18 @@ fn settle_online(event: &mut Event, outcome: &EventOutcome, applied: &mut Events
         return;
     }
     if outcome.online == Some(false) {
+        // //// Neoffice — one held by its server's own service (a JMAP server's) is no Teams meeting: said so.
+        let own_service = outcome.op.fields.online == Some(mailcraft_model::OnlineProvider::Other);
         event.online = None;
         let name = called(Some(event));
+        // //// Neoffice — (said of an online meeting of the server's own, not of a Teams one)
+        if own_service {
+            applied.say(format!(
+                "{name} couldn't be made an online meeting: the account's server wouldn't have it{}. The meeting itself is saved, without a link to join.",
+                because(&outcome.error)
+            ));
+            return;
+        }
         applied.say(format!(
             "{name} couldn't be made a Teams meeting: the account's server wouldn't have it{}. The meeting itself is saved, without a link to join.",
             because(&outcome.error)

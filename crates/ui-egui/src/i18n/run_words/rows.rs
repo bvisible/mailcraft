@@ -31,6 +31,9 @@ const MAILBOX: &str = "crates/model/src/mailbox.rs";
 const SERVER: &str = "crates/model/src/jmap_server.rs";
 const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
+const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
+const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
+const PUSH: &str = "crates/jmap/src/pim/push.rs";
 
 /// Every row, family by family.
 pub(super) static ROWS: &[Row] = &[
@@ -218,6 +221,27 @@ pub(super) static ROWS: &[Row] = &[
     row(CONTACTS, Line, run_word!("The server's mailbox is full: {name} waits here and goes as soon as there is room."), &[]),
     row(CONTACTS, Line, run_word!("The server's mailbox is full: the change to {name} waits here and goes as soon as there is room."), &[]),
     row(CONTACTS, Line, run_word!("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room."), &[]),
+    // An online meeting in a JMAP account's calendar: a command's refusals (`calendar::meeting`), and what became of one
+    // its server was asked to make (`remote::settle_online`, round why: the server's words, or the job's own).
+    row(MEETING, Line, run_word!("This calendar's account can't make online meetings."), &[]),
+    row(MEETING, Line, run_word!("The account's server has made this an online meeting, and it stays one: that can't be taken back from here."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made an online meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join."
+        ),
+        &[("why", Why)],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join."
+        ),
+        &[],
+    ),
+    row(PUSH, Why, run_word!("an online meeting is the whole series': make the series one"), &[]),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

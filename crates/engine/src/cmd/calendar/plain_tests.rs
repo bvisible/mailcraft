@@ -81,7 +81,6 @@ fn a_plain_calendar_refuses_categories_importance_options_teams_and_proposals_wi
     for (command, params) in [
         ("calendar.categorize", json!({"id": mine, "category": "Red"})),
         ("calendar.importance", json!({"id": mine, "value": "high"})),
-        ("calendar.teamsMeeting", json!({"id": mine, "value": true})),
         ("calendar.edit", json!({"id": mine, "categories": ["Red"]})),
         ("calendar.edit", json!({"id": mine, "importance": "low"})),
         ("calendar.new", json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00", "categories": ["Red"]})),
@@ -94,6 +93,8 @@ fn a_plain_calendar_refuses_categories_importance_options_teams_and_proposals_wi
     ] {
         assert_eq!(refused(&mut s, command, params.clone()), PLAIN_KEEPS_NO, "{command} {params}");
     }
+    // An online meeting, where its server makes none: refused with that reason.
+    assert_eq!(refused(&mut s, "calendar.teamsMeeting", json!({"id": mine, "value": true})), super::meeting::NO_ONLINE);
     assert!(s.mailbox.event_changes.is_empty(), "nothing noted for the server");
     // What it keeps goes as before.
     s.run("calendar.edit", &json!({"id": mine, "title": "Budget review (moved)", "location": "Room 5"})).unwrap();
@@ -144,7 +145,7 @@ fn one_occurrence_of_a_series_is_refused_up_front_what_the_whole_series_would_be
         (json!({"categories": ["Red"]}), PLAIN_KEEPS_NO),
         (json!({"importance": "high"}), PLAIN_KEEPS_NO),
         (json!({"requestResponses": false}), PLAIN_KEEPS_NO),
-        (json!({"online": true}), PLAIN_KEEPS_NO),
+        (json!({"online": true}), super::meeting::NO_ONLINE),
         (json!({"showAs": "outOfOffice"}), PLAIN_FREE_BUSY),
     ] {
         assert_eq!(refused(&mut s, "calendar.edit", one(more.clone())), why, "{more}");
@@ -275,4 +276,119 @@ fn a_change_of_who_is_invited_says_who_was_invited_before_it() {
     let (mut s, mine, _) = session(true);
     s.run("calendar.edit", &json!({"id": mine, "title": "Budget review (moved)"})).unwrap();
     assert_eq!(event_upload(&s, account).unwrap().ops[0].invited_before, None);
+}
+
+// An online meeting, where the server makes them of its own service (`online_providers: [Other]`).
+
+/// The session of [`session`] (a plain calendar), its server making online meetings (`services`: its own) or none.
+fn served_online(services: Vec<mailcraft_model::OnlineProvider>) -> (Session, Id, Id) {
+    let (mut s, mine, theirs) = session(true);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    let list = CalendarsDownload {
+        account,
+        email: "ada@example.org".into(),
+        complete: true,
+        calendars: vec![RemoteCalendar {
+            id: "C1".into(),
+            name: "Ada".into(),
+            main: true,
+            plain: true,
+            online_providers: Some(services),
+            ..Default::default()
+        }],
+    };
+    apply_calendars(&mut s, &list).unwrap();
+    (s, mine, theirs)
+}
+
+#[test]
+fn a_plain_calendar_whose_server_makes_online_meetings_takes_the_toggle() {
+    let (mut s, mine, _) = served_online(vec![mailcraft_model::OnlineProvider::Other]);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    s.run("calendar.teamsMeeting", &json!({"id": mine, "value": true})).unwrap();
+    let online = s.mailbox.event(mine).and_then(|e| e.online.clone()).unwrap();
+    assert_eq!((online.provider, online.join_url.as_str()), (mailcraft_model::OnlineProvider::Other, ""));
+    let ops = event_upload(&s, account).unwrap().ops;
+    assert_eq!(ops[0].fields.online, Some(mailcraft_model::OnlineProvider::Other), "asked of the server, by its own service");
+}
+
+#[test]
+fn a_plain_calendar_without_them_refuses_it_with_the_reason() {
+    for services in [Vec::new(), vec![mailcraft_model::OnlineProvider::Teams]] {
+        let (mut s, mine, _) = served_online(services.clone());
+        assert_eq!(refused(&mut s, "calendar.teamsMeeting", json!({"id": mine, "value": true})), super::meeting::NO_ONLINE, "{services:?}");
+        let made = json!({"title": "Lunch", "start": "2026-10-23T12:00", "end": "2026-10-23T13:00", "online": true});
+        assert_eq!(refused(&mut s, "calendar.new", made), super::meeting::NO_ONLINE);
+        assert!(s.mailbox.event_changes.is_empty());
+    }
+}
+
+#[test]
+fn a_meeting_made_online_there_is_held_with_its_service_not_teams() {
+    let (mut s, _, _) = served_online(vec![mailcraft_model::OnlineProvider::Other]);
+    let made = s
+        .run(
+            "calendar.newMeeting",
+            &json!({"title": "Kick-off", "start": "2026-10-22T09:00", "attendees": "cy@example.org", "online": true, "send": true}),
+        )
+        .unwrap();
+    let id = made["id"].as_u64().unwrap();
+    assert_eq!(s.mailbox.event(id).and_then(|e| e.online.as_ref().map(|o| o.provider)), Some(mailcraft_model::OnlineProvider::Other));
+    // And an appointment made online by Edit.
+    let lunch =
+        s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-23T12:00", "end": "2026-10-23T13:00"})).unwrap()["id"].as_u64().unwrap();
+    s.run("calendar.edit", &json!({"id": lunch, "online": true})).unwrap();
+    assert_eq!(s.mailbox.event(lunch).and_then(|e| e.online.as_ref().map(|o| o.provider)), Some(mailcraft_model::OnlineProvider::Other));
+}
+
+#[test]
+fn a_jmap_calendars_refusal_names_no_teams() {
+    let (s, _, _) = served_online(Vec::new());
+    let calendar = s.mailbox.calendars.iter().find(|c| c.name == "Ada" && c.origin.account != 0).map(|c| c.id).unwrap();
+    assert_eq!(super::teams_refusal(&s, calendar).as_deref(), Some(super::meeting::NO_ONLINE));
+    let (s, _, _) = served_online(vec![mailcraft_model::OnlineProvider::Other]);
+    assert_eq!(super::teams_refusal(&s, calendar), None);
+}
+
+#[test]
+fn the_link_that_comes_back_settles_the_meeting_and_a_refusal_says_online_meeting() {
+    use mailcraft_model::remote::{EventOutcome, EventResult, EventsUploaded};
+    let (mut s, mine, _) = served_online(vec![mailcraft_model::OnlineProvider::Other]);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    let take = |s: &mut Session, online: Option<bool>, join_url: &str, error: &str| {
+        let upload = event_upload(s, account).unwrap();
+        let outcomes = upload
+            .ops
+            .iter()
+            .map(|op| EventOutcome {
+                op: op.clone(),
+                result: EventResult::Done,
+                remote: if op.kind == EventChangeKind::Create { format!("V-{}", op.token) } else { op.remote.clone() },
+                online,
+                join_url: join_url.into(),
+                error: error.into(),
+                ..Default::default()
+            })
+            .collect();
+        crate::cmd::remote::apply_event_outcomes(s, &EventsUploaded { account, email: upload.email.clone(), outcomes, ..Default::default() }).unwrap()
+    };
+    s.run("calendar.teamsMeeting", &json!({"id": mine, "value": true})).unwrap();
+    take(&mut s, Some(true), "https://meet.example.org/meet/abcd-efgh-ijkl", "");
+    assert_eq!(
+        s.mailbox.event(mine).and_then(|e| e.join_link().map(str::to_string)).as_deref(),
+        Some("https://meet.example.org/meet/abcd-efgh-ijkl")
+    );
+    // Made by the server, it stays one, and says so without naming Teams.
+    assert_eq!(refused(&mut s, "calendar.teamsMeeting", json!({"id": mine, "value": false})), super::meeting::ONLINE_STAYS);
+    // Another one, which the server wouldn't make: saved without, and said so without naming Teams.
+    let lunch = s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-23T12:00", "end": "2026-10-23T13:00", "online": true})).unwrap();
+    let lunch = lunch["id"].as_u64().unwrap();
+    let applied = take(&mut s, Some(false), "", "No more rooms can be made just now");
+    assert_eq!(
+        applied.messages,
+        [
+            "\"Lunch\" couldn't be made an online meeting: the account's server wouldn't have it (No more rooms can be made just now). The meeting itself is saved, without a link to join."
+        ]
+    );
+    assert!(s.mailbox.event(lunch).is_some_and(|e| e.online.is_none()));
 }

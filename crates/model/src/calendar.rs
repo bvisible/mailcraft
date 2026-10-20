@@ -64,6 +64,18 @@ impl Calendar {
         self.online_providers.as_ref().is_none_or(|allowed| allowed.contains(&OnlineProvider::Teams))
     }
 
+    // //// Neoffice — the service a meeting in it is held online with: Teams where that is allowed, else one of the
+    // server's own that it names (a JMAP server that makes online meetings), else none.
+    /// The service a meeting in this calendar may be held online with: Teams, where that is allowed
+    /// ([`Calendar::allows_teams`]); else a service of its server's own, when the server names one ([`OnlineProvider::Other`]);
+    /// else none.
+    pub fn online_service(&self) -> Option<OnlineProvider> {
+        if self.allows_teams() {
+            return Some(OnlineProvider::Teams);
+        }
+        self.online_providers.as_ref().filter(|allowed| allowed.contains(&OnlineProvider::Other)).map(|_| OnlineProvider::Other)
+    }
+
     /// The colour it is shown in: the one chosen here when there is one, else its own.
     pub fn shown_color(&self) -> Rgb {
         self.own_color.unwrap_or(self.color)
@@ -741,6 +753,12 @@ mod tests {
             assert_eq!(OnlineProvider::parse(provider.code()), Some(provider));
         }
         assert_eq!(OnlineProvider::parse("somethingNew"), None);
+        // //// Neoffice — the service a meeting in it is held online with.
+        assert_eq!(calendar(None).online_service(), Some(OnlineProvider::Teams));
+        assert_eq!(calendar(Some(vec![OnlineProvider::Teams, OnlineProvider::Other])).online_service(), Some(OnlineProvider::Teams));
+        assert_eq!(calendar(Some(vec![OnlineProvider::Other])).online_service(), Some(OnlineProvider::Other));
+        assert_eq!(calendar(Some(Vec::new())).online_service(), None);
+        assert_eq!(calendar(Some(vec![OnlineProvider::Skype])).online_service(), None);
     }
 
     #[test]

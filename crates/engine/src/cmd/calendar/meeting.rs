@@ -20,7 +20,8 @@
 //! never followed here.
 
 use mailcraft_model::remote::{EventTime, MAX_FORWARD, forward_recipients};
-use mailcraft_model::{Address, Event, Id, Importance, OnlineMeeting, Response};
+// //// Neoffice — `OnlineProvider`: a meeting held online by its server's own service (a JMAP server's).
+use mailcraft_model::{Address, Event, Id, Importance, OnlineMeeting, OnlineProvider, Response};
 use mailcraft_time::DateTime;
 use serde_json::{Value, json};
 
@@ -82,8 +83,31 @@ pub fn teams_refusal(s: &Session, calendar: Id) -> Option<String> {
         return Some("A Teams meeting is made by an account's server, and this calendar is kept on this computer only.".into());
     }
     match s.mailbox.calendar(calendar) {
+        // //// Neoffice — a JMAP account's calendar makes an online meeting when its server makes them, of its own service
+        // (`Calendar::online_service`); one whose server makes none says so without naming Teams.
+        Some(c) if jmap(s, c) => (c.online_service() != Some(OnlineProvider::Other)).then(|| NO_ONLINE.to_string()),
         Some(c) if !c.allows_teams() => Some(format!("The account of the calendar \"{}\" can't make Teams meetings.", c.name)),
         _ => None,
+    }
+}
+
+// //// Neoffice — what a JMAP account's calendar whose server makes no online meetings says, and what one makes.
+/// Why a calendar of a JMAP account whose server makes no online meetings can't hold one.
+pub const NO_ONLINE: &str = "This calendar's account can't make online meetings.";
+/// Why an online meeting its server made of its own service stays one.
+pub const ONLINE_STAYS: &str = "The account's server has made this an online meeting, and it stays one: that can't be taken back from here.";
+
+/// Whether `calendar` is one a JMAP account's server keeps.
+fn jmap(s: &Session, calendar: &mailcraft_model::Calendar) -> bool {
+    remote::keeper(&s.mailbox, &calendar.origin).is_some_and(|account| account.kind == mailcraft_model::AccountKind::Jmap)
+}
+
+/// A meeting to be held online that its server is yet to make (no link to join by yet) is held with the service of the
+/// calendar it is in, when that is a JMAP account's: the service of its server's own, not Teams.
+pub(super) fn online_here(s: &Session, e: &mut Event) {
+    let service = s.mailbox.calendar(e.calendar).filter(|c| jmap(s, c)).and_then(mailcraft_model::Calendar::online_service);
+    if let (Some(online), Some(service)) = (e.online.as_mut().filter(|online| online.join_url.is_empty()), service) {
+        online.provider = service;
     }
 }
 
@@ -107,6 +131,12 @@ pub(super) fn online_fits(s: &Session, e: &Event, before: Option<&Event>) -> Res
                 Some(why) => Err(fail(why)),
                 None => Ok(()),
             }
+        }
+        // //// Neoffice — (one held by its server's own service is no Teams meeting: said so)
+        (None, Some(was))
+            if was.provider == OnlineProvider::Other && before.is_some_and(|before| kept_by(s, before).is_some() && !before.origin.id.is_empty()) =>
+        {
+            Err(fail(ONLINE_STAYS))
         }
         (None, Some(_)) if before.is_some_and(|before| kept_by(s, before).is_some() && !before.origin.id.is_empty()) => {
             Err(fail("The account's server has made this a Teams meeting, and it stays one: that can't be taken back from here."))
@@ -187,7 +217,9 @@ pub(super) fn as_changed(before: &Event, id: &str, v: &Value) -> Result<Event, C
 /// Make the one change `command` is about, as `calendar.edit` would make it.
 fn change(s: &mut Session, v: &Value, command: &str) -> Result<Event, CmdError> {
     let before = changing(s, v)?;
-    let e = as_changed(&before, command, v)?;
+    // //// Neoffice — a meeting made online here takes its calendar's service (`online_here`).
+    let mut e = as_changed(&before, command, v)?;
+    online_here(s, &mut e);
     online_fits(s, &e, Some(&before))?;
     let send = may_change(s, v, &before, &e)?;
     *s.mailbox.event_mut(before.id)? = e.clone();

@@ -997,6 +997,18 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
         "a contacts job's, as above: the engine's tests make it, and run_words' read it in French",
     ),
     ("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room.", "as above"),
+    // A calendar's lines, not a Send/Receive's: the calendar's flows make them and read them in French.
+    ("This calendar's account can't make online meetings.", "a calendar's: `jmap_pim_flow_tests` makes it and reads it in French"),
+    ("The account's server has made this an online meeting, and it stays one: that can't be taken back from here.", "a calendar's: as above"),
+    (
+        "{name} couldn't be made an online meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join.",
+        "a calendar's: as above",
+    ),
+    (
+        "{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.",
+        "a calendar's: the engine's words for a server that gives no reason, which the stand-in always gives (the engine's tests make it)",
+    ),
+    ("an online meeting is the whole series': make the series one", "a calendar's: as the first"),
 ];
 
 // ---------------------------------------------------------------------------------------------

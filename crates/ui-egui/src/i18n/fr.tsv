@@ -675,6 +675,11 @@
 	Propose New Time…	Proposer une nouvelle heure…
 	Join {service} Meeting	Rejoindre la réunion {service}
 	Online	en ligne
+	This calendar's account can't make online meetings.	Le compte de ce calendrier ne peut pas créer de réunions en ligne.
+	The account's server has made this an online meeting, and it stays one: that can't be taken back from here.	Le serveur du compte en a fait une réunion en ligne, et elle le reste : ce choix ne peut pas être annulé d’ici.
+	{name} couldn't be made an online meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté ({why}). La réunion elle-même est enregistrée, sans lien pour la rejoindre.
+	{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
+	an online meeting is the whole series': make the series one	une réunion en ligne vaut pour toute la série : faites-en une de la série
 	Forward…	Transférer…
 	Move to Calendar	Déplacer vers le calendrier
 	Show As	Afficher comme
