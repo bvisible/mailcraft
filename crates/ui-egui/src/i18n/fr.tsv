@@ -54,6 +54,8 @@
 # File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
 	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
 	Change them on the site	Modifier les signatures sur le site
+# The sentences of a JMAP Send/Receive and of the engine, read back where they are drawn (crates/ui-egui/src/i18n/run_words.rs and run_words/rows.rs): kept together, near the top.
+	(address)	(adresse)
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.
