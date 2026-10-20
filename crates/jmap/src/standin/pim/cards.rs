@@ -13,12 +13,16 @@
 //!   written."). A card is in one book: `addressBookIds` names one the account has, or is left out (its default book).
 //! - **A name** is its parts (`given`, `surname`); a name with no parts is read from its full form, cut at the first
 //!   space; a name emptied by a change is not written (a contact keeps one), nor one whose full form is the contact's
-//!   own. **Addresses** are those with an `@`, each once, the one that was the primary staying the primary while it is
-//!   there; **numbers** keep what they were, and only the primary mobile number says it is one; the **company** and the
-//!   **job title** are the first organization and the first title that have a name.
-//! - **A new card** needs a name or an address (one with no name is named from its address: `jeanne.muster@…` is
-//!   Jeanne Muster); it is called by its contact's name, which is its id (`Gus Hale`, then `Gus Hale-1`), and known
-//!   again by the `uid` it was made with: made again, it is that card.
+//!   own. **Addresses** are those with an `@`, each once; the one the card prefers (`pref` 1) is the primary, else the
+//!   one that was stays while it is there. **Numbers** keep what they were, and only the primary mobile number says it
+//!   is one; the **company** and the **job title** are the first organization and the first title that have a name.
+//!   A text longer than [`MAX_FIELD`] characters is refused (`invalidProperties`), never cut.
+//! - **A new card** needs a name, an address or a company (one with no name is named from its address:
+//!   `jeanne.muster@…` is Jeanne Muster; else by its company); it is called by its contact's name, which is its id
+//!   (`Gus Hale`, then `Gus Hale-1`), and known again by the `uid` it was made with: made again, it is that card, with
+//!   what was sent this time written to it.
+//! - **Every card says** when it was made and last changed (`created`, `updated`): a card made under the name of one
+//!   that was deleted is told apart from it so.
 //! - **Rights** are the book's: making or changing a card in a book the account may only read is `forbidden` ("Your
 //!   rights do not allow it."), and so is deleting one where it may not delete; a card it doesn't have is `notFound`.
 //!   A card a document names is not deleted: `forbidden`, with the words of the store ([`Pim::linked_cards`]).
@@ -32,8 +36,10 @@ use super::{Card, Pim, WRITABLE_CARD};
 
 /// What such a server sets or keeps for itself: a client may send it.
 const IGNORED: [&str; 5] = ["@type", "version", "addressBookIds", "uid", "kind"];
-/// The longest text kept of a field, in characters, and of the words of a refusal.
+/// The longest text a field takes, in characters (a full name with no parts: twice that and a space), and the
+/// longest words of a refusal.
 const MAX_FIELD: usize = 140;
+const MAX_FULL: usize = 281;
 const MAX_WORDS: usize = 200;
 /// The longest `uid` kept, and most changes kept as they came.
 const MAX_UID: usize = 255;
@@ -57,14 +63,18 @@ fn invalid_properties(description: &str) -> Value {
 }
 
 /// A value as such a server reads text: a string as it is, a number or a truth as it is written, nothing as empty;
-/// trimmed and cut to `max` characters.
-fn text(value: Option<&Value>, max: usize) -> String {
+/// trimmed. Longer than `max` characters: refused.
+fn text(value: Option<&Value>, max: usize) -> Result<String, Value> {
     let raw = match value {
         None | Some(Value::Null) => String::new(),
         Some(Value::String(text)) => text.clone(),
         Some(other) => other.to_string(),
     };
-    raw.trim().chars().take(max).collect::<String>().trim().to_string()
+    let text = raw.trim();
+    if text.chars().count() > max {
+        return Err(invalid_properties(&format!("A text is longer than {max} characters.")));
+    }
+    Ok(text.to_string())
 }
 
 /// The entries of a map property of a card (`emails`, `phones`…): its values that are objects; `null` is none.
@@ -83,6 +93,8 @@ struct Fields {
     name: Option<(String, String)>,
     full: Option<String>,
     emails: Option<Vec<String>>,
+    /// The address the card prefers (`pref` 1), when one is.
+    preferred: Option<String>,
     phones: Option<Vec<(String, bool)>>,
     company: Option<String>,
     title: Option<String>,
@@ -111,21 +123,19 @@ fn fields(card: &Map<String, Value>, books: &[String]) -> Result<Fields, Value> 
             Some(Value::Array(list)) => list.clone(),
             Some(_) => return Err(invalid_properties("name.components must be a list.")),
         };
-        let part = |kind: &str| {
-            components
-                .iter()
-                .filter_map(Value::as_object)
-                .filter(|part| part.get("kind").and_then(Value::as_str) == Some(kind))
-                .map(|part| text(part.get("value"), MAX_FIELD))
-                .next_back()
-                .unwrap_or_default()
+        let part = |kind: &str| -> Result<String, Value> {
+            let named = components.iter().filter_map(Value::as_object).filter(|part| part.get("kind").and_then(Value::as_str) == Some(kind));
+            Ok(named.map(|part| text(part.get("value"), MAX_FIELD)).collect::<Result<Vec<String>, Value>>()?.pop().unwrap_or_default())
         };
-        let (mut first, mut last) = (part("given"), part("surname"));
+        let (mut first, mut last) = (part("given")?, part("surname")?);
         if first.is_empty() && last.is_empty() {
             // Only the full name (a client that keeps no parts of it).
-            let full = text(name.get("full"), 281);
+            let full = text(name.get("full"), MAX_FULL)?;
             let (a, b) = full.split_once(' ').unwrap_or((full.as_str(), ""));
-            (first, last) = (a.chars().take(MAX_FIELD).collect(), b.trim().chars().take(MAX_FIELD).collect());
+            if a.chars().count() > MAX_FIELD || b.trim().chars().count() > MAX_FIELD {
+                return Err(invalid_properties(&format!("A text is longer than {MAX_FIELD} characters.")));
+            }
+            (first, last) = (a.to_string(), b.trim().to_string());
             out.full = Some(full);
         }
         out.name = Some((first, last));
@@ -134,27 +144,31 @@ fn fields(card: &Map<String, Value>, books: &[String]) -> Result<Fields, Value> 
         let mut seen: Vec<String> = Vec::new();
         let mut addresses = Vec::new();
         for entry in entries(card, "emails")? {
-            let address = text(entry.get("address"), MAX_FIELD);
+            let address = text(entry.get("address"), MAX_FIELD)?;
             if address.contains('@') && !seen.contains(&address.to_lowercase()) {
                 seen.push(address.to_lowercase());
+                if entry.get("pref").and_then(Value::as_u64) == Some(1) && out.preferred.is_none() {
+                    out.preferred = Some(address.clone());
+                }
                 addresses.push(address);
             }
         }
         out.emails = Some(addresses);
     }
     if card.contains_key("phones") {
-        let numbers = entries(card, "phones")?
-            .into_iter()
-            .map(|entry| {
-                let mobile = entry.get("features").and_then(|features| features.get("mobile")).is_some_and(|on| on.as_bool() == Some(true));
-                (text(entry.get("number"), MAX_FIELD), mobile)
-            })
-            .filter(|(number, _)| !number.is_empty())
-            .collect();
+        let mut numbers = Vec::new();
+        for entry in entries(card, "phones")? {
+            let mobile = entry.get("features").and_then(|features| features.get("mobile")).is_some_and(|on| on.as_bool() == Some(true));
+            let number = text(entry.get("number"), MAX_FIELD)?;
+            if !number.is_empty() {
+                numbers.push((number, mobile));
+            }
+        }
         out.phones = Some(numbers);
     }
     let first_name = |key: &str| -> Result<String, Value> {
-        Ok(entries(card, key)?.into_iter().map(|entry| text(entry.get("name"), MAX_FIELD)).find(|name| !name.is_empty()).unwrap_or_default())
+        let names = entries(card, key)?.into_iter().map(|entry| text(entry.get("name"), MAX_FIELD)).collect::<Result<Vec<String>, Value>>()?;
+        Ok(names.into_iter().find(|name| !name.is_empty()).unwrap_or_default())
     };
     if card.contains_key("organizations") {
         out.company = Some(first_name("organizations")?);
@@ -182,6 +196,19 @@ fn numbers(new: Vec<(String, bool)>, old: &[(String, bool)], fresh: bool) -> Vec
         }
     }
     rows
+}
+
+/// Addresses as such a server keeps them: the one the card prefers first; without one, the one that was the primary
+/// (`old`) stays it while it is there.
+fn addresses(mut new: Vec<String>, preferred: Option<String>, old: Option<&String>) -> Vec<String> {
+    let primary = preferred.or_else(|| old.cloned());
+    if let Some(primary) = primary
+        && let Some(at) = new.iter().position(|address| *address == primary)
+    {
+        let first = new.remove(at);
+        new.insert(0, first);
+    }
+    new
 }
 
 impl Pim {
@@ -301,40 +328,58 @@ impl Pim {
             }
             return Err(refusal);
         }
-        // A card sent again after its answer was lost: the one made the first time.
-        if let Some(made) = self.made_cards.get(&uid).filter(|id| !uid.is_empty() && self.cards.iter().any(|card| &card.id == *id)) {
-            return Ok(made.clone());
+        // A card sent again after its answer was lost: the one made the first time, with what was sent this time.
+        if let Some(made) = self.made_cards.get(&uid).filter(|id| !uid.is_empty() && self.cards.iter().any(|card| &card.id == *id)).cloned() {
+            if let Some(at) = self.cards.iter().position(|card| card.id == made) {
+                self.write_fields(at, fields);
+            }
+            self.wrote(&made, Value::Object(card.clone()));
+            return Ok(made);
         }
-        let addresses = fields.emails.unwrap_or_default();
-        let (mut first, mut last) = fields.name.unwrap_or_default();
+        let company = fields.company.clone().unwrap_or_default();
+        let addresses = addresses(fields.emails.clone().unwrap_or_default(), fields.preferred.clone(), None);
+        let (mut first, mut last) = fields.name.clone().unwrap_or_default();
+        let mut full = String::new();
         if first.is_empty() && last.is_empty() {
-            // Named from its address when no name is given.
-            let Some(address) = addresses.first() else { return Err(invalid_properties("A contact needs a name or an address.")) };
-            let local = address.split('@').next().unwrap_or_default();
-            let words: Vec<String> = local
-                .split(['.', '_', '-'])
-                .filter(|word| !word.is_empty())
-                .map(|word| {
-                    let mut chars = word.chars();
-                    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
-                })
-                .collect();
-            first = if words.is_empty() { address.chars().take(MAX_FIELD).collect() } else { words.join(" ").chars().take(MAX_FIELD).collect() };
-            last = String::new();
+            // Named from its address when no name is given, else by its company.
+            match addresses.first() {
+                Some(address) => {
+                    let local = address.split('@').next().unwrap_or_default();
+                    let words: Vec<String> = local
+                        .split(['.', '_', '-'])
+                        .filter(|word| !word.is_empty())
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
+                        })
+                        .collect();
+                    first = if words.is_empty() { address.clone() } else { words.join(" ").chars().take(MAX_FIELD).collect() };
+                    last = String::new();
+                }
+                None if !company.is_empty() => full.clone_from(&company),
+                None => return Err(invalid_properties("A contact needs a name, an address or a company.")),
+            }
         }
-        let name = [first.as_str(), last.as_str()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<&str>>().join(" ");
+        let name = if full.is_empty() {
+            [first.as_str(), last.as_str()].into_iter().filter(|part| !part.is_empty()).collect::<Vec<&str>>().join(" ")
+        } else {
+            full.clone()
+        };
         let id = self.free_id(&name);
         let phones = numbers(fields.phones.unwrap_or_default(), &[], true);
+        let now = self.tick();
         self.cards.push(Card {
             id: id.clone(),
             books: vec![book],
             first,
             last,
-            full: String::new(),
-            company: fields.company.unwrap_or_default(),
+            full,
+            company,
             title: fields.title.unwrap_or_default(),
             emails: addresses,
             phones,
+            created: now,
+            updated: now,
         });
         if !uid.is_empty() {
             self.made_cards.insert(uid, id.clone());
@@ -357,11 +402,19 @@ impl Pim {
             return Err(invalid_properties("Only name, emails, phones, organizations and titles can be written."));
         };
         let fields = fields(patch, &self.book_ids())?;
-        let card = self.cards.get(at).cloned().ok_or_else(not_found)?;
+        let card = self.cards.get(at).ok_or_else(not_found)?;
         if !card.books.iter().any(|book| self.books.iter().any(|b| &b.id == book && b.may_write)) {
             return Err(forbidden());
         }
-        let mut card = card;
+        self.write_fields(at, fields);
+        self.wrote(id, Value::Object(patch.clone()));
+        Ok(())
+    }
+
+    /// Write what a change (or a card sent again) names to the card at `at`, as such a server writes it.
+    fn write_fields(&mut self, at: usize, fields: Fields) {
+        let now = self.tick();
+        let Some(card) = self.cards.get_mut(at) else { return };
         if let Some((first, last)) = fields.name {
             // A name emptied is not written; nor is the full name as the contact has it.
             let own = fields.full.as_ref().is_some_and(|full| *full == card.full_name());
@@ -375,24 +428,13 @@ impl Pim {
         if let Some(title) = fields.title {
             card.title = title;
         }
-        if let Some(mut addresses) = fields.emails {
-            // The primary stays the one it was while it is there.
-            if let Some(primary) = card.emails.first()
-                && let Some(still) = addresses.iter().position(|address| address == primary)
-            {
-                let kept = addresses.remove(still);
-                addresses.insert(0, kept);
-            }
-            card.emails = addresses;
+        if let Some(new) = fields.emails {
+            card.emails = addresses(new, fields.preferred, card.emails.first());
         }
         if let Some(phones) = fields.phones {
             card.phones = numbers(phones, &card.phones, false);
         }
-        if let Some(slot) = self.cards.get_mut(at) {
-            *slot = card;
-        }
-        self.wrote(id, Value::Object(patch.clone()));
-        Ok(())
+        card.updated = now;
     }
 
     fn destroy_card(&mut self, id: &str) -> Result<(), Value> {

@@ -44,8 +44,9 @@ use crate::valid_id;
 /// components.
 const MAX_ENTRIES: usize = 100;
 /// The longest text taken of a name, an address or a number, in characters (what the model keeps, and a little more
-/// for the tidying to cut).
+/// for the tidying to cut), and of the time a card was made.
 const MAX_LINE: usize = 1_000;
+const MAX_MARK: usize = 64;
 
 /// What a card of a server's answer was passed over for lacking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -196,8 +197,11 @@ pub fn card_of(value: &Value, writable: &HashSet<String>) -> Result<RemoteContac
     // The mark it was made with, when it is not its id (a server that names a card by its uid has said nothing more).
     let uid = text(value, "uid").trim();
     let uid = if uid == id || !valid_id(uid) { String::new() } else { uid.to_string() };
+    // When the server made it: what tells the contact behind a name from another a server gave the same name later.
+    let created = bounded(text(value, "created").trim(), MAX_MARK);
     let contact = RemoteContact {
         id: card_key(id),
+        change_key: created,
         book,
         uid,
         display_name,
@@ -319,6 +323,70 @@ pub fn card_json(op: &ContactOp) -> Value {
         card.insert("titles".into(), one_named("t", fields.title.as_deref().unwrap_or_default(), "Title"));
     }
     Value::Object(card)
+}
+
+/// What a change of a contact (`op`) writes to the server's card as it is now (`card`, as read just before): only what
+/// was changed here (`op.base` is what the parts it names were before), so that what someone else changed there
+/// meanwhile stays. A name, a company and a job title are the ones set here; of the addresses and the numbers, those
+/// taken out here go, those added here are added, and those the server has besides stay, the one made the first here
+/// first. Without `op.base`, the parts named are written as they are ([`card_json`]).
+pub fn merged_json(op: &ContactOp, card: &Value) -> Value {
+    let Some(base) = &op.base else { return card_json(op) };
+    let fields = &op.fields;
+    let mut out = match card_json(op) {
+        Value::Object(map) => map,
+        _ => Map::new(),
+    };
+    if let Some(now) = &fields.emails {
+        let server: Vec<Labeled> = entries(card, "emails", MAX_ENTRIES)
+            .into_iter()
+            .map(|entry| Labeled::new(context(entry), bounded(entry.get("address").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE)))
+            .collect();
+        let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
+        out.insert("emails".into(), emails_json(&merged(&server, base.emails.as_deref().unwrap_or_default(), now, &same)));
+    }
+    if let Some(now) = &fields.phones {
+        let server: Vec<Labeled> = entries(card, "phones", MAX_ENTRIES)
+            .into_iter()
+            .map(|entry| {
+                let label = if says(entry, "features", "mobile") { "mobile" } else { context(entry) };
+                Labeled::new(label, bounded(entry.get("number").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE))
+            })
+            .collect();
+        let same = |a: &str, b: &str| a.trim() == b.trim();
+        out.insert("phones".into(), phones_json(&merged(&server, base.phones.as_deref().unwrap_or_default(), now, &same)));
+    }
+    Value::Object(out)
+}
+
+/// A list of the server's (`server`) with what was done to it here (`was` → `now`) made to it: what was taken out here
+/// goes, what was added here is added, a label changed here is that, and the first here first when it was made so.
+fn merged(server: &[Labeled], was: &[Labeled], now: &[Labeled], same: &dyn Fn(&str, &str) -> bool) -> Vec<Labeled> {
+    let had = |list: &[Labeled], value: &str| list.iter().find(|entry| same(&entry.value, value)).cloned();
+    let mut out: Vec<Labeled> = server.iter().filter(|entry| had(was, &entry.value).is_none() || had(now, &entry.value).is_some()).cloned().collect();
+    for entry in now {
+        let before = had(was, &entry.value);
+        match out.iter_mut().find(|kept| same(&kept.value, &entry.value)) {
+            // A label changed here.
+            Some(kept) => {
+                if before.as_ref().is_none_or(|before| before.label != entry.label) {
+                    kept.label.clone_from(&entry.label);
+                }
+            }
+            // Added here (one that was there before and isn't any more was taken out elsewhere: it stays out).
+            None if before.is_none() => out.push(entry.clone()),
+            None => {}
+        }
+    }
+    // The first here, when it was made the first here.
+    if let Some(first) = now.first()
+        && was.first().is_none_or(|before| !same(&before.value, &first.value))
+        && let Some(at) = out.iter().position(|entry| same(&entry.value, &first.value))
+    {
+        let entry = out.remove(at);
+        out.insert(0, entry);
+    }
+    out
 }
 
 #[cfg(test)]

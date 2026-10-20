@@ -95,7 +95,10 @@ const MAX_LISTED: usize = 5_000;
 /// Most cards a query lists at a time.
 pub const MAX_CARDS: usize = 5_000;
 /// What a card is served with, at most (and the id, always).
-const CARD_PROPERTIES: [&str; 8] = ["id", "uid", "addressBookIds", "name", "emails", "phones", "organizations", "titles"];
+const CARD_PROPERTIES: [&str; 10] = ["id", "uid", "addressBookIds", "name", "emails", "phones", "organizations", "titles", "created", "updated"];
+/// When the store's clock of its cards starts (2026-09-21, UTC): each card made or changed is one second later than
+/// the last.
+const CARDS_CLOCK: Timestamp = 1_790_000_000;
 /// Most calendars a query may name, and most steps of a rule that are walked.
 const MAX_NAMED: usize = 500;
 const MAX_STEPS: usize = 20_000;
@@ -237,6 +240,9 @@ pub struct Card {
     pub emails: Vec<String>,
     /// Its numbers, each with whether it is the primary mobile one.
     pub phones: Vec<(String, bool)>,
+    /// When it was made in the store, and last changed there (UTC; 0 until the stand-in has it: it gives one).
+    pub created: Timestamp,
+    pub updated: Timestamp,
 }
 
 impl Card {
@@ -252,6 +258,8 @@ impl Card {
             title: String::new(),
             emails: vec![email.into()],
             phones: Vec::new(),
+            created: 0,
+            updated: 0,
         }
     }
 
@@ -348,6 +356,8 @@ pub struct Pim {
     pub card_writes: Vec<(String, Value)>,
     /// The cards made, by the `uid` they were made with: one made again is that one.
     made_cards: BTreeMap<String, String>,
+    /// The store's clock of its cards: when the last was made or changed.
+    cards_clock: Timestamp,
 }
 
 impl Default for Pim {
@@ -380,6 +390,7 @@ impl Default for Pim {
             refused_cards: BTreeMap::new(),
             card_writes: Vec::new(),
             made_cards: BTreeMap::new(),
+            cards_clock: CARDS_CLOCK,
         }
     }
 }
@@ -834,10 +845,20 @@ impl Pim {
     }
 
     /// Add a card; its id in the API.
-    pub fn add_card(&mut self, card: Card) -> String {
+    pub fn add_card(&mut self, mut card: Card) -> String {
         let id = card.id.clone();
+        if card.created == 0 {
+            card.created = self.tick();
+        }
+        card.updated = card.updated.max(card.created);
         self.cards.push(card);
         id
+    }
+
+    /// The store's clock, one second on: when what is made or changed now is.
+    pub(super) fn tick(&mut self) -> Timestamp {
+        self.cards_clock = self.cards_clock.saturating_add(1);
+        self.cards_clock
     }
 
     /// The state of the cards: it changes when one is added, changed or removed.
@@ -1032,6 +1053,10 @@ fn served_card(card: &Card) -> Value {
     }
     if !card.title.is_empty() {
         out["titles"] = json!({"t1": {"@type": "Title", "name": card.title, "kind": "title"}});
+    }
+    if card.created != 0 {
+        out["created"] = json!(utc_text(card.created));
+        out["updated"] = json!(utc_text(card.updated.max(card.created)));
     }
     out
 }

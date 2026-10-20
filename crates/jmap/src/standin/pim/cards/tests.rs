@@ -68,9 +68,12 @@ fn a_card_is_made_named_by_its_contact_and_known_again_by_its_uid() {
     );
     assert_eq!((full["created"]["a"]["id"].as_str(), full["created"]["b"]["id"].as_str()), (Some("Dee Van Dyke"), Some("Jeanne Muster")));
     assert_eq!((card(&pim, "Dee Van Dyke").first.as_str(), card(&pim, "Dee Van Dyke").last.as_str()), ("Dee", "Van Dyke"));
-    // Neither a name nor an address: refused, with its words.
-    let none = set(&mut pim, json!({"create": {"c": {"organizations": {"o1": {"name": "Muster AG"}}}}}));
-    assert_eq!(none["notCreated"]["c"], json!({"type": "invalidProperties", "description": "A contact needs a name or an address."}));
+    // A company alone: named by its company. Nothing at all: refused, with its words.
+    let company =
+        set(&mut pim, json!({"create": {"c": {"organizations": {"o1": {"name": "Muster AG"}}}, "d": {"titles": {"t1": {"name": "Joiner"}}}}}));
+    assert_eq!(company["created"]["c"]["id"], "Muster AG");
+    assert_eq!((card(&pim, "Muster AG").full_name(), card(&pim, "Muster AG").company.as_str()), ("Muster AG".to_string(), "Muster AG"));
+    assert_eq!(company["notCreated"]["d"], json!({"type": "invalidProperties", "description": "A contact needs a name, an address or a company."}));
 }
 
 #[test]
@@ -190,4 +193,66 @@ fn hostile_calls_never_panic() {
         call.insert("accountId".into(), json!(ACCOUNT));
         let _ = pim.card_set(&call, 500);
     }
+}
+
+#[test]
+fn a_card_sent_again_has_what_was_sent_this_time() {
+    let mut pim = pim();
+    let first = json!({"uid": "t-1", "name": {"components": [{"kind": "given", "value": "Gus"}, {"kind": "surname", "value": "Hale"}]}});
+    set(&mut pim, json!({"create": {"k0": first}}));
+    let made = card(&pim, "Gus Hale").clone();
+    // Its answer was lost; meanwhile a number was added: the card made the first time has it.
+    let again = json!({
+        "uid": "t-1",
+        "name": {"components": [{"kind": "given", "value": "Gus"}, {"kind": "surname", "value": "Hale"}]},
+        "phones": {"p1": {"number": "+41 79 555 02 02", "features": {"mobile": true}}},
+    });
+    assert_eq!(set(&mut pim, json!({"create": {"k0": again}}))["created"]["k0"]["id"], "Gus Hale");
+    let gus = card(&pim, "Gus Hale");
+    assert_eq!(gus.phones, [("+41 79 555 02 02".to_string(), true)]);
+    assert!(gus.created == made.created && gus.updated > made.updated, "the same card, changed");
+    assert_eq!(pim.cards.iter().filter(|card| card.first == "Gus").count(), 1);
+}
+
+#[test]
+fn the_preferred_address_is_the_primary_and_a_long_text_is_refused() {
+    let mut pim = pim();
+    let answer = set(
+        &mut pim,
+        json!({"update": {"Grace Okafor": {"emails": {"e1": {"address": "grace.okafor@example.org", "pref": 1}, "e2": {"address": "grace@example.org"}}}}}),
+    );
+    assert_eq!(answer["updated"], json!({"Grace Okafor": null}));
+    assert_eq!(card(&pim, "Grace Okafor").emails, ["grace.okafor@example.org", "grace@example.org"]);
+    // Longer than 140 characters: refused, and nothing of it written.
+    let long = "x".repeat(141);
+    for patch in [
+        json!({"titles": {"t1": {"name": long}}}),
+        json!({"name": {"components": [{"kind": "given", "value": long}]}}),
+        json!({"emails": {"e1": {"address": format!("{long}@example.org")}}}),
+    ] {
+        let answer = set(&mut pim, json!({"update": {"Grace Okafor": patch}}));
+        assert_eq!(
+            answer["notUpdated"]["Grace Okafor"],
+            json!({"type": "invalidProperties", "description": "A text is longer than 140 characters."})
+        );
+    }
+    assert_eq!(card(&pim, "Grace Okafor").title, "");
+    let fits = "y".repeat(140);
+    assert_eq!(set(&mut pim, json!({"update": {"Grace Okafor": {"titles": {"t1": {"name": fits}}}}}))["updated"], json!({"Grace Okafor": null}));
+}
+
+#[test]
+fn every_card_says_when_it_was_made_and_last_changed() {
+    let mut pim = pim();
+    let served = |pim: &Pim, id: &str| super::super::served_card(card(pim, id));
+    let grace = served(&pim, "Grace Okafor");
+    let (made, changed) = (grace["created"].clone(), grace["updated"].clone());
+    assert!(made.as_str().is_some_and(|t| t.ends_with('Z')) && made == changed, "{grace}");
+    set(&mut pim, json!({"update": {"Grace Okafor": {"titles": {"t1": {"name": "Engineer"}}}}}));
+    let grace = served(&pim, "Grace Okafor");
+    assert!(grace["created"] == made && grace["updated"] != changed);
+    // A card made under the name of one that was deleted is told apart from it.
+    set(&mut pim, json!({"destroy": ["Grace Okafor"]}));
+    set(&mut pim, json!({"create": {"k": {"name": {"components": [{"kind": "given", "value": "Grace"}, {"kind": "surname", "value": "Okafor"}]}}}}));
+    assert_ne!(served(&pim, "Grace Okafor")["created"], made);
 }

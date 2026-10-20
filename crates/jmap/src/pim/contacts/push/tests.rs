@@ -124,8 +124,8 @@ fn a_new_card_is_written_whole_with_its_uid_and_book() {
     assert_eq!(sent["name"]["full"], "Gus Hale");
     // Nothing is read that wasn't asked for.
     assert!(result.contacts.is_none() && result.errors.is_empty(), "{result:?}");
-    // A card that says nothing of a name goes without one, and its server names it from its address; one that has
-    // neither is refused with the server's words.
+    // A card that says nothing of a name goes without one, and its server names it from its address, else by its
+    // company.
     let result = run(
         &server,
         &request(vec![
@@ -138,7 +138,11 @@ fn a_new_card_is_written_whole_with_its_uid_and_book() {
     );
     let done = outcomes(&result);
     assert_eq!(server_card_id(&done[0].remote).as_deref(), Some("Jeanne Muster"));
-    assert_eq!((done[1].result, done[1].error.as_str()), (EventResult::Refused, "A contact needs a name or an address."));
+    assert_eq!((done[1].result, server_card_id(&done[1].remote).as_deref()), (EventResult::Done, Some("Muster AG")));
+    // A text longer than such a server takes is refused with its words, not cut.
+    let long = create("t-4", ContactFields { name: name("Gus", &"Hale".repeat(40)), ..Default::default() });
+    let done = outcomes(&run(&server, &request(vec![long])));
+    assert_eq!((done[0].result, done[0].error.as_str()), (EventResult::Refused, "A text is longer than 140 characters."));
     assert!(writes(&server).iter().all(|(_, sent)| sent.get("name").is_none_or(|name| name["full"] != "")), "no empty name is sent");
 }
 
@@ -211,7 +215,7 @@ fn emails_keep_their_primary_first_and_only_the_primary_mobile_keeps_its_kind() 
     assert_eq!(sent["phones"]["p2"]["features"], json!({"mobile": true}));
     assert_eq!(sent["phones"]["p1"]["features"], json!({"voice": true}));
     let bob = card(&server, "Bob Lindqvist").unwrap();
-    assert_eq!(bob.emails, ["bob@example.org", "bob@lindqvist.example.org"], "the server keeps its primary first");
+    assert_eq!(bob.emails, ["bob@lindqvist.example.org", "bob@example.org"], "the one preferred is the primary there");
     assert_eq!(
         bob.phones,
         [("+41 44 555 01 03".to_string(), false), ("+41 79 555 01 02".to_string(), true), ("+41 79 555 09 09".to_string(), false)],
@@ -254,11 +258,14 @@ fn a_patch_key_with_a_slash_is_never_sent() {
 fn a_create_answered_already_exists_with_an_existing_id_is_that_card() {
     let server = server();
     run(&server, &request(vec![create("t-gus", gus())]));
-    // A stricter server answers a card made again with the one it has.
+    // A stricter server answers a card made again with the one it has: what was sent this time (a number added since)
+    // is written to that one.
     server.with(|d| d.pim.refused_cards.insert("t-gus".into(), "alreadyExists"));
-    let done = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
+    let with_number = ContactFields { phones: Some(vec![Labeled::new("work", "+41 44 555 07 07")]), ..gus() };
+    let done = outcomes(&run(&server, &request(vec![create("t-gus", with_number)])));
     assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
     assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+    assert_eq!(card(&server, "Gus Hale").map(|c| c.phones), Some(vec![("+41 44 555 07 07".to_string(), false)]));
     // And one that knows it again by its uid answers that one (no second card).
     server.with(|d| d.pim.refused_cards.clear());
     let done = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
@@ -269,9 +276,16 @@ fn a_create_answered_already_exists_with_an_existing_id_is_that_card() {
 #[test]
 fn not_found_of_an_update_or_a_destroy_is_gone() {
     let server = server();
-    let ops = vec![update("Nobody Here", ContactFields { title: Some("x".into()), ..Default::default() }), destroy("Nobody Here")];
-    let done = outcomes(&run(&server, &request(ops)));
-    assert_eq!(done.iter().map(|o| o.result).collect::<Vec<_>>(), [EventResult::Gone, EventResult::Gone]);
+    let done = outcomes(&run(&server, &request(vec![update("Nobody Here", ContactFields { title: Some("x".into()), ..Default::default() })])));
+    assert_eq!(done.iter().map(|o| o.result).collect::<Vec<_>>(), [EventResult::Gone]);
+    let done = outcomes(&run(&server, &request(vec![destroy("Nobody Here")])));
+    assert_eq!(done.iter().map(|o| o.result).collect::<Vec<_>>(), [EventResult::Gone]);
+    // Two changes of one card in one job: the second waits for the next, with no answer (it is made to what the first
+    // leaves).
+    let title = |t: &str| ContactFields { title: Some(t.into()), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![update("Grace Okafor", title("Lead")), update("Grace Okafor", title("Head"))])));
+    assert_eq!(done.iter().map(|o| o.result).collect::<Vec<_>>(), [EventResult::Done]);
+    assert_eq!(card(&server, "Grace Okafor").map(|c| c.title), Some("Lead".to_string()));
     // A key that names no card of a server is refused before anything is sent.
     let odd = ContactOp { remote: "~!!".into(), ..destroy("x") };
     let done = outcomes(&run(&server, &request(vec![odd])));
@@ -293,11 +307,10 @@ fn forbidden_with_a_documents_words_is_refused_and_said_cut_at_200_characters() 
     assert!(done[0].error.chars().count() <= MAX_WORDS + 1);
     assert!(card(&server, "Grace Okafor").is_some());
     // A card of a book the account may only read: its rights, in its words.
-    let done = outcomes(&run(
-        &server,
-        &request(vec![update("Carol Duval", ContactFields { title: Some("x".into()), ..Default::default() }), destroy("Carol Duval")]),
-    ));
-    assert_eq!(done.iter().map(|o| (o.result, o.error.as_str())).collect::<Vec<_>>(), [(EventResult::Refused, "Your rights do not allow it."); 2]);
+    for op in [update("Carol Duval", ContactFields { title: Some("x".into()), ..Default::default() }), destroy("Carol Duval")] {
+        let done = outcomes(&run(&server, &request(vec![op])));
+        assert_eq!(done.iter().map(|o| (o.result, o.error.as_str())).collect::<Vec<_>>(), [(EventResult::Refused, "Your rights do not allow it.")]);
+    }
     // Markup is taken out of the server's words.
     let line = super::strip_tags("Cannot delete <strong>Contact</strong> <a href=\"/app/contact/x\">x</a>");
     assert_eq!(line, "Cannot delete Contact x");
@@ -305,16 +318,143 @@ fn forbidden_with_a_documents_words_is_refused_and_said_cut_at_200_characters() 
 
 #[test]
 fn request_too_large_halves_the_chunk_the_next_time() {
+    // Said by the method (`requestTooLarge`), or by the server for the request as a whole (400, `limit`): it didn't run,
+    // and goes again in halves.
+    for effect in [Effect::MethodError("requestTooLarge"), Effect::OverLimit] {
+        let server = server();
+        server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", effect)));
+        let ops: Vec<ContactOp> =
+            (0..4).map(|n| create(&format!("t-{n}"), ContactFields { name: name("Crowd", &format!("{n:02}")), ..Default::default() })).collect();
+        let before = server.calls().len();
+        let done = outcomes(&run(&server, &request(ops)));
+        assert!(done.iter().all(|o| o.result == EventResult::Done), "{effect:?}: {done:?}");
+        let sets = server.calls().into_iter().skip(before).filter(|c| c == "ContactCard/set").count();
+        assert_eq!(sets, if effect == Effect::OverLimit { 2 } else { 3 }, "{effect:?}: the whole once (when it was looked at), then two halves");
+        assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Crowd").count()), 4);
+    }
+    // One change alone too large: given up as lasting, not split for ever.
     let server = server();
-    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::MethodError("requestTooLarge"))));
-    let ops: Vec<ContactOp> =
-        (0..4).map(|n| create(&format!("t-{n}"), ContactFields { name: name("Crowd", &format!("{n:02}")), ..Default::default() })).collect();
+    server.with(|d| {
+        for _ in 0..3 {
+            d.faults.push_back(Fault::on("ContactCard/set", Effect::MethodError("requestTooLarge")));
+        }
+    });
+    let done = outcomes(&run(&server, &request(vec![create("t-1", gus())])));
+    assert_eq!((done[0].result, done[0].lasting), (EventResult::Failed, true));
+}
+
+#[test]
+fn an_answer_too_large_to_take_is_not_taken_for_a_call_that_never_ran() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::Oversize)));
+    let added = || ContactFields {
+        emails: Some(vec![
+            Labeled::new("", "bob@example.org"),
+            Labeled::new("", "bob@lindqvist.example.org"),
+            Labeled::new("", "robert@example.org"),
+        ]),
+        ..Default::default()
+    };
+    let base = ContactFields {
+        emails: Some(vec![Labeled::new("", "bob@example.org"), Labeled::new("", "bob@lindqvist.example.org")]),
+        ..Default::default()
+    };
+    let change = || ContactOp { base: Some(base.clone()), ..update("Bob Lindqvist", added()) };
     let before = server.calls().len();
-    let done = outcomes(&run(&server, &request(ops)));
+    let done = outcomes(&run(&server, &request(vec![change(), create("t-gus", gus())])));
+    assert!(done.iter().all(|o| o.result == EventResult::Failed && !o.lasting), "not known whether it went: it goes again: {done:?}");
+    assert_eq!(server.calls().into_iter().skip(before).filter(|c| c == "ContactCard/set").count(), 1, "not split: it ran");
+    assert!(card(&server, "Gus Hale").is_some() && card(&server, "Bob Lindqvist").is_some_and(|b| b.emails.len() == 3), "the server did it");
+    // Again: the change made anew to the card as it is (no address twice), the card made again the same one.
+    let done = outcomes(&run(&server, &request(vec![change(), create("t-gus", gus())])));
     assert!(done.iter().all(|o| o.result == EventResult::Done), "{done:?}");
-    let sets = server.calls().into_iter().skip(before).filter(|c| c == "ContactCard/set").count();
-    assert_eq!(sets, 3, "the whole once, then two halves");
-    assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Crowd").count()), 4);
+    assert_eq!(card(&server, "Bob Lindqvist").map(|b| b.emails.len()), Some(3));
+    assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+}
+
+#[test]
+fn a_change_is_made_to_the_servers_card_as_it_is_now() {
+    let server = server();
+    // Someone added an address in the desk while a number of Bob's, changed here, waited to go.
+    server.with(|d| {
+        if let Some(bob) = d.pim.cards.iter_mut().find(|card| card.id == "Bob Lindqvist") {
+            bob.emails.push("robert@example.org".into());
+        }
+    });
+    let was = ContactFields {
+        emails: Some(vec![Labeled::new("", "bob@example.org"), Labeled::new("", "bob@lindqvist.example.org")]),
+        phones: Some(vec![Labeled::new("mobile", "+41 79 555 01 02"), Labeled::new("", "+41 44 555 01 03")]),
+        ..Default::default()
+    };
+    let now = ContactFields {
+        // The office number taken out, a new mobile one in; and an address taken out, another added.
+        emails: Some(vec![Labeled::new("", "bob@example.org"), Labeled::new("work", "bob@joinery.example.org")]),
+        phones: Some(vec![Labeled::new("mobile", "+41 79 555 01 02"), Labeled::new("mobile", "+41 79 555 01 09")]),
+        ..Default::default()
+    };
+    let op = ContactOp { base: Some(was), ..update("Bob Lindqvist", now) };
+    let done = outcomes(&run(&server, &request(vec![op])));
+    assert_eq!(done[0].result, EventResult::Done, "{done:?}");
+    let bob = card(&server, "Bob Lindqvist").unwrap();
+    assert_eq!(bob.emails, ["bob@example.org", "robert@example.org", "bob@joinery.example.org"], "what the desk added stays");
+    assert_eq!(bob.phones.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["+41 79 555 01 02", "+41 79 555 01 09"]);
+    // It was read just before.
+    let calls = server.calls();
+    let at = calls.iter().rposition(|c| c == "ContactCard/set").unwrap();
+    assert_eq!(calls.get(at - 1).map(String::as_str), Some("ContactCard/get"));
+}
+
+#[test]
+fn a_name_another_contact_has_now_is_never_written_to() {
+    let server = server();
+    // Grace was deleted in the desk, and a new Grace Okafor took her name.
+    let mark =
+        server.with(|d| d.pim.cards.iter().find(|card| card.id == "Grace Okafor").map(|card| mailcraft_time::format_iso_utc(card.created))).unwrap();
+    server.with(|d| {
+        d.pim.cards.retain(|card| card.id != "Grace Okafor");
+        let newcomer = Card::person("Grace Okafor", "neoffice", "Grace", "Okafor", "g.okafor@example.org");
+        d.pim.add_card(newcomer);
+    });
+    let title = ContactFields { title: Some("Engineer".into()), ..Default::default() };
+    let ops = vec![ContactOp { mark: mark.clone(), ..update("Grace Okafor", title) }];
+    let done = outcomes(&run(&server, &request(ops)));
+    assert_eq!((done[0].result, done[0].error.as_str()), (EventResult::Gone, "the server has another contact under its name now"));
+    let done = outcomes(&run(&server, &request(vec![ContactOp { mark, ..destroy("Grace Okafor") }])));
+    assert_eq!(done[0].result, EventResult::Gone);
+    assert!(writes(&server).is_empty(), "nothing written to the newcomer");
+    assert!(card(&server, "Grace Okafor").is_some_and(|c| c.title.is_empty()));
+    // The very card it is about takes the change.
+    let mark =
+        server.with(|d| d.pim.cards.iter().find(|card| card.id == "Grace Okafor").map(|card| mailcraft_time::format_iso_utc(card.created))).unwrap();
+    let ops = vec![ContactOp { mark, ..update("Grace Okafor", ContactFields { title: Some("Engineer".into()), ..Default::default() }) }];
+    assert_eq!(outcomes(&run(&server, &request(ops)))[0].result, EventResult::Done);
+}
+
+#[test]
+fn a_busy_server_answers_what_was_tried_and_leaves_the_rest_without_an_answer() {
+    let server = server();
+    server.with(|d| {
+        d.max_set = 1;
+        d.faults.push_back(Fault::later("ContactCard/set", 1, Effect::RefuseWith(503)));
+    });
+    let title = |t: &str| ContactFields { title: Some(t.into()), ..Default::default() };
+    let ops = vec![update("Grace Okafor", title("Lead")), update("Bob Lindqvist", title("Joiner")), create("t-gus", gus())];
+    let result = run(&server, &request(ops));
+    let done: Vec<(EventResult, bool)> = outcomes(&result).iter().map(|o| (o.result, o.lasting)).collect();
+    assert_eq!(done, [(EventResult::Done, false), (EventResult::Failed, false)], "the third was never tried: it waits, with no answer");
+    assert!(result.busy_for.is_some());
+}
+
+#[test]
+fn what_the_server_fails_with_for_this_change_says_it_is_likely_to_last() {
+    let server = server();
+    server.with(|d| {
+        d.pim.refused_cards.insert("Grace Okafor".into(), "serverFail");
+        d.pim.refused_cards.insert("Bob Lindqvist".into(), "rateLimit");
+    });
+    let title = || ContactFields { title: Some("x".into()), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![update("Grace Okafor", title()), update("Bob Lindqvist", title())])));
+    assert_eq!(done.iter().map(|o| (o.result, o.lasting)).collect::<Vec<_>>(), [(EventResult::Failed, true), (EventResult::Failed, false)]);
 }
 
 #[test]
@@ -342,15 +482,21 @@ fn a_lost_answer_to_a_create_heals_at_the_following_read() {
     server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
     let first = outcomes(&run(&server, &request(vec![create("t-gus", gus())])));
     assert_eq!(first[0].result, EventResult::Failed, "whether it went is not known: it goes again");
-    assert!(card(&server, "Gus Hale").is_some(), "the server made it");
-    // Sent again with its mark, it is the same card, and the next read brings that one alone.
-    let mut again = request(vec![create("t-gus", gus())]);
+    assert!(card(&server, "Gus Hale").is_some_and(|c| c.phones.len() == 2), "the server made it");
+    // A number taken out here before the next try: sent again with its mark, it is the same card, which has what was
+    // sent this time; and the next read brings that one alone.
+    let fewer = ContactFields { phones: Some(vec![Labeled::new("mobile", "+41 79 555 02 02")]), ..gus() };
+    let mut again = request(vec![create("t-gus", fewer)]);
     again.contacts = true;
     let result = run(&server, &again);
     let done = outcomes(&result);
     assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
     let read = result.contacts.as_ref().unwrap();
     assert_eq!(read.contacts.iter().filter(|c| c.first == "Gus").count(), 1);
+    assert_eq!(card(&server, "Gus Hale").map(|c| c.phones.len()), Some(1), "what was sent this time");
+    // The card read says no mark of its own (the server's uid is its name): a contact made here finds it by the answer.
+    // It says when it was made, which a change of it carries.
+    assert!(read.contacts.iter().all(|c| c.uid.is_empty() && c.change_key.ends_with('Z')), "{:?}", read.contacts);
 }
 
 #[test]

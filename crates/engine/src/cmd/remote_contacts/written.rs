@@ -8,21 +8,32 @@
 //! carries it out, and `sync.applyContactChanges` ([`apply_contact_outcomes`]) takes in what the server said.
 //!
 //! - **What goes** is what a server's card holds of a contact ([`ContactFields`]): a new contact whole, a changed one
-//!   as what differs from what the server has (the note's `base`), so that several changes before the server hears of
-//!   any are one, and a change taken back is none. A new contact goes with a mark of its own (its card's `uid`): sent
-//!   twice, it makes one card, and a download that has it before the answer came finds it again ([`before_merge`]).
+//!   as what differs from what the server has (the note's `base`), with what the parts it names were then (so that a
+//!   host makes only that change to the server's card as it is now, and what someone else added there stays) and the
+//!   server's mark of the contact (when it was made there: another contact a server gave the same name is never
+//!   written to). Several changes before the server hears of any are one, and a change taken back is none. A new
+//!   contact goes with a mark of its own (its card's `uid`): sent twice, it makes one card, and a download that has it
+//!   before the answer came finds it again ([`before_merge`]).
 //! - **Until the server was told**, a download leaves a contact whose change or deletion waits as it is here, and does
 //!   not bring back one deleted here.
 //! - **What the server said.** Done: a new contact has the server's name for it, and the note goes (what was changed
 //!   since is noted afresh). Gone: a change has nothing to change there, and the contact goes here too; a deletion is
 //!   done. Refused: a change is put back as the server has it, a deleted contact comes back, a new one is kept on this
 //!   computer only, or (in a session that keeps nothing of its own) taken away; each says so, once. Denied: tried once
-//!   more, then refused. Failed: it waits, longer after every failure in a row.
+//!   more, then refused. Failed: it waits, longer after every failure in a row; one the server keeps failing with (a
+//!   few times in a row, with this very change), or a new contact it keeps making without saying what it calls it, is
+//!   given up with a word, and the contact follows the server again.
+//! - **A copy.** A read that came before the answer to a new contact (one lost on the way) brings its card as a contact
+//!   of its own. Once every answer of the job is in, the copy goes when nothing of it waits (what it changed went to
+//!   the card), a deletion of it is not sent (it would delete the contact made here), and a contact made here whose
+//!   card was deleted with its copy is made anew ([`apply_contact_outcomes`]).
 //! - **An answer about a change that is no longer noted** (it was undone while it was on its way): the server did what
-//!   the mailbox no longer says, so the opposite is noted.
+//!   the mailbox no longer says, so the opposite is noted; for a deletion, which can't be undone there, the contact goes
+//!   here too, with a word.
 //! - **Nothing is dropped without a word.** A note that no longer fits the mailbox (its contact is gone, its book may
 //!   not be changed any more, another note about the same contact waits before it) is given up when the next upload is
-//!   worked out, or when an answer is taken in ([`settle_contact_changes`]), and what it changed is put back.
+//!   worked out, or when an answer is taken in ([`settle_contact_changes`]), and what it changed is put back (not a
+//!   deletion, whose answer may have been lost after the server did it: the next read says).
 //!
 //! Like mail that arrives, taking an answer in is not an undo step; and once a server was told anything, the undo
 //! history is forgotten, as it is for events.
@@ -58,8 +69,9 @@ const STILL_HERE: &str = "the contact it deletes is still in the contacts";
 const READ_ONLY: &str = "the contact's address book can't be changed any more";
 const SAID_TWICE: &str = "another change about the same contact waits before it";
 const TOO_MANY: &str = "too many changes were waiting";
-/// And why one that was sent is: the server no longer has the contact.
+/// And why one that was sent is: the server no longer has the contact; or it kept failing with it.
 const GONE_THERE: &str = "the server no longer has the contact";
+const STUCK: &str = "the server kept failing with it";
 /// Why another change can't be noted.
 const NO_ROOM: &str = "Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first.";
 
@@ -265,6 +277,17 @@ fn put_fields(contact: &mut Contact, fields: &ContactFields) {
     }
 }
 
+/// Of `all`, the parts `named` names: what they were before the change that names them.
+fn as_named(all: &ContactFields, named: &ContactFields) -> ContactFields {
+    ContactFields {
+        name: all.name.clone().filter(|_| named.name.is_some()),
+        company: all.company.clone().filter(|_| named.company.is_some()),
+        title: all.title.clone().filter(|_| named.title.is_some()),
+        emails: all.emails.clone().filter(|_| named.emails.is_some()),
+        phones: all.phones.clone().filter(|_| named.phones.is_some()),
+    }
+}
+
 /// What the server calls the book `contact` is in, here; empty for none.
 fn book_name(mailbox: &Mailbox, contact: &Contact) -> String {
     mailbox
@@ -308,17 +331,37 @@ pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdErr
             continue;
         }
         let contact = mailbox.contact(change.contact);
-        let (fields, book) = match (change.kind, contact, change.base.as_deref()) {
-            (ContactChangeKind::Create, Some(contact), _) => (contact_fields(contact), book_name(mailbox, contact)),
-            (ContactChangeKind::Update, Some(contact), Some(base)) => (changed_fields(base, contact), book_name(mailbox, contact)),
-            (ContactChangeKind::Delete, _, base) => (ContactFields::default(), base.map(|base| book_name(mailbox, base)).unwrap_or_default()),
+        let base = change.base.as_deref();
+        let (fields, book, was) = match (change.kind, contact, base) {
+            (ContactChangeKind::Create, Some(contact), _) => (contact_fields(contact), book_name(mailbox, contact), None),
+            (ContactChangeKind::Update, Some(contact), Some(base)) => {
+                let fields = changed_fields(base, contact);
+                let was = as_named(&contact_fields(base), &fields);
+                (fields, book_name(mailbox, contact), Some(was))
+            }
+            (ContactChangeKind::Delete, _, base) => (ContactFields::default(), base.map(|base| book_name(mailbox, base)).unwrap_or_default(), None),
             _ => continue,
         };
         // Changed and changed back: nothing to say.
         if change.kind == ContactChangeKind::Update && fields.is_empty() {
             continue;
         }
-        ops.push(ContactOp { kind: change.kind, contact: change.contact, remote: change.remote.clone(), token: change.token.clone(), book, fields });
+        // The server's mark of the contact the change is about, as the last read had it.
+        let mark = if change.kind == ContactChangeKind::Create {
+            String::new()
+        } else {
+            base.map(|base| base.origin.change_key.clone()).unwrap_or_default()
+        };
+        ops.push(ContactOp {
+            kind: change.kind,
+            contact: change.contact,
+            remote: change.remote.clone(),
+            token: change.token.clone(),
+            book,
+            fields,
+            base: was,
+            mark,
+        });
     }
     Ok(ContactsUpload { ops, ..Default::default() }.for_account(owner))
 }
@@ -398,11 +441,13 @@ fn tidy_contact_changes(mailbox: &mut Mailbox, keeps_local: bool) -> Vec<Contact
     if mailbox.contact_changes.is_empty() {
         return Vec::new();
     }
-    /// A new contact is known by its id here, anything else by what the server calls it.
+    /// A new contact is known by its id here, a deletion by what the server calls it, a change by both (a copy of a
+    /// card made here, which a read brought before the answer, may wait with a change of its own).
     fn about(change: &ContactChange) -> (Id, &str, Id) {
         match change.kind {
             ContactChangeKind::Create => (change.account, "", change.contact),
-            _ => (change.account, change.remote.as_str(), 0),
+            ContactChangeKind::Update => (change.account, change.remote.as_str(), change.contact),
+            ContactChangeKind::Delete => (change.account, change.remote.as_str(), 0),
         }
     }
     let mut kept: Vec<ContactChange> = Vec::new();
@@ -486,11 +531,12 @@ fn give_up(mailbox: &mut Mailbox, change: &ContactChange, reason: &'static str, 
                 format!("{name} was not sent to the server: its address book can't be changed any more. It was removed here.")
             }
         }
+        // (Not put back here: a deletion whose answer was lost may have been done there. The next read brings it back
+        // if the server still has it.)
         (READ_ONLY, ContactChangeKind::Delete) => {
-            if let Some(base) = change.base.as_deref() {
-                put_back(mailbox, change.contact, base);
-            }
-            format!("{name}: its address book can't be changed any more, so it was not deleted there and is back in the contacts.")
+            format!(
+                "{name}: its address book can't be changed any more, so it was not deleted there. It comes back with the next read if the server still has it."
+            )
         }
         (NO_CONTACT, _) => format!("A change to {} was not sent: it is no longer in the contacts.", called(change.base.as_deref())),
         _ => "A contact change that was waiting to be sent no longer matched the contacts. It was not sent.".to_string(),
@@ -512,6 +558,12 @@ pub fn settle_contact_changes(s: &mut Session) -> Vec<ContactDropped> {
 }
 
 // ---- what the server said ----
+
+/// How many times in a row the server may fail with one change in a way asking again is unlikely to get past
+/// ([`ContactOutcome::lasting`]) before it is given up, with a word; and how many times it may say it made a new
+/// contact without saying what it calls it.
+const MAX_STUCK: u32 = 3;
+const MAX_NAMELESS: u32 = 2;
 
 /// What taking in the answers to a [`ContactsUpload`] came to.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -552,19 +604,35 @@ impl ContactsApplied {
     }
 }
 
-/// Note that a change couldn't be sent, or may not be: it waits, longer after each failure. `true` when it has been
-/// denied before and is now to be given up.
-fn held_back(change: &mut ContactChange, outcome: &ContactOutcome, now: Timestamp) -> bool {
+/// What a change that couldn't be sent, or may not be, comes to ([`held_back`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Held {
+    /// It waits, longer after each failure.
+    Waits,
+    /// The account was denied it a second time: refused.
+    Denied,
+    /// The server failed with it too many times in a row: given up.
+    Stuck,
+}
+
+/// Note that a change couldn't be sent, or may not be: it waits, longer after each failure ([`Held`]).
+fn held_back(change: &mut ContactChange, outcome: &ContactOutcome, now: Timestamp) -> Held {
     if outcome.result == EventResult::Denied {
         if change.denied {
-            return true;
+            return Held::Denied;
         }
         change.denied = true;
     }
     change.failures = change.failures.saturating_add(1);
     change.retry_at = now.saturating_add(wait_after(change.failures, outcome.retry_after));
     change.error.clone_from(&outcome.error);
-    false
+    if outcome.lasting {
+        change.stuck = change.stuck.saturating_add(1);
+        if change.stuck >= MAX_STUCK {
+            return Held::Stuck;
+        }
+    }
+    Held::Waits
 }
 
 /// What the answers are taken in with.
@@ -578,6 +646,11 @@ struct Taking<'a> {
     told: bool,
     /// For a new mark: what is mixed into it.
     salt: u64,
+    /// The contacts made here that the server said it made, with what it calls them: a copy of the same card a read
+    /// brought before the answer is settled once every answer was taken in ([`Taking::settle_copies`]).
+    made: Vec<(Id, String)>,
+    /// What the server calls the cards it deleted in this answer.
+    destroyed: HashSet<String>,
 }
 
 /// Take in what a server said to a [`ContactsUpload`] ([`ContactsUploaded`]): see the module.
@@ -585,7 +658,17 @@ pub fn apply_contact_outcomes(s: &mut Session, uploaded: &ContactsUploaded) -> R
     let account = owner(&s.mailbox, uploaded.account, &uploaded.email)?.id;
     let (now, keeps_local, salt) = (s.now(), s.keeps_local, s.rev());
     let (changes, contacts) = (s.mailbox.contact_changes.clone(), s.mailbox.contacts.clone());
-    let mut taking = Taking { mailbox: &mut s.mailbox, account, now, keeps_local, applied: ContactsApplied::default(), told: false, salt };
+    let mut taking = Taking {
+        mailbox: &mut s.mailbox,
+        account,
+        now,
+        keeps_local,
+        applied: ContactsApplied::default(),
+        told: false,
+        salt,
+        made: Vec::new(),
+        destroyed: HashSet::new(),
+    };
     for outcome in uploaded.outcomes.iter().take(MAX_OUTCOMES) {
         let mut outcome = outcome.clone();
         outcome.tidy();
@@ -595,6 +678,8 @@ pub fn apply_contact_outcomes(s: &mut Session, uploaded: &ContactsUploaded) -> R
             ContactChangeKind::Delete => taking.deleted(&outcome),
         }
     }
+    // Only once every answer is in: one about a copy of a contact made here may be among them.
+    taking.settle_copies();
     let Taking { mut applied, told, .. } = taking;
     for dropped in tidy_contact_changes(&mut s.mailbox, keeps_local) {
         applied.say(dropped.message.clone());
@@ -611,9 +696,56 @@ pub fn apply_contact_outcomes(s: &mut Session, uploaded: &ContactsUploaded) -> R
 }
 
 impl Taking<'_> {
-    /// The contact here the server calls `remote`.
+    /// The contact here the server calls `remote`, when one alone is.
     fn by_remote(&self, remote: &str) -> Option<Id> {
-        self.mailbox.contacts.values().find(|c| c.origin.account == self.account && c.origin.id == remote).map(|c| c.id)
+        let mut found = self.mailbox.contacts.values().filter(|c| c.origin.account == self.account && c.origin.id == remote).map(|c| c.id);
+        let first = found.next();
+        if found.next().is_some() { None } else { first }
+    }
+
+    /// The contact a note at `at` is about, while it is here; else the one the server calls `remote`.
+    fn contact_of(&self, at: Option<usize>, remote: &str) -> Option<Id> {
+        let noted = at.and_then(|at| self.mailbox.contact_changes.get(at)).map(|change| change.contact);
+        noted.filter(|id| self.mailbox.contact(*id).is_some_and(|c| c.origin.id == remote)).or_else(|| self.by_remote(remote))
+    }
+
+    /// The server failed with the change at `at` too many times in a row ([`MAX_STUCK`]): it is given up, what it
+    /// changed here put back where that can be told, and the owner told, once. The contact follows the server again.
+    fn give_up_stuck(&mut self, at: usize, outcome: &ContactOutcome) {
+        if at >= self.mailbox.contact_changes.len() {
+            return;
+        }
+        let change = self.mailbox.contact_changes.remove(at);
+        self.applied.refused += 1;
+        let why = because(&outcome.error);
+        let message = match change.kind {
+            ContactChangeKind::Create => {
+                let name = called_first(self.mailbox.contact(change.contact));
+                if keep_here(self.mailbox, change.contact, self.keeps_local) {
+                    format!("{name} could not be sent to the server, which keeps failing with it{why}. It is kept on this computer only.")
+                } else {
+                    format!("{name} could not be sent to the server, which keeps failing with it{why}. It was removed here.")
+                }
+            }
+            ContactChangeKind::Update => {
+                let name = called(self.mailbox.contact(change.contact).or(change.base.as_deref()));
+                if let Some(base) = change.base.as_deref()
+                    && self.mailbox.contact(change.contact).is_some_and(|c| c.origin.id == change.remote)
+                {
+                    put_back(self.mailbox, change.contact, base);
+                }
+                format!("The change to {name} could not be sent: the server keeps failing with it{why}. It was put back as the server has it.")
+            }
+            ContactChangeKind::Delete => {
+                let name = called(change.base.as_deref());
+                format!(
+                    "Deleting {name} could not be sent: the server keeps failing with it{why}. It comes back with the next read if the server still has it."
+                )
+            }
+        };
+        log::warn!("contacts: a change the server kept failing with was given up ({:?})", change.kind);
+        self.applied.say(message.clone());
+        self.applied.dropped.push(ContactDropped { account: self.account, kind: change.kind, reason: STUCK, message });
     }
 
     /// The answer to making a contact.
@@ -627,10 +759,24 @@ impl Taking<'_> {
             at.and_then(|at| self.mailbox.contact_changes.get(at)).map(|change| change.contact).filter(|id| self.mailbox.contact(*id).is_some());
         match outcome.result {
             EventResult::Done if outcome.remote.is_empty() => {
-                // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one).
-                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
+                // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one). A
+                // server that says so again is not asked for ever: what it made comes with the next read.
+                let Some(at) = at else { return };
+                let nameless = self.mailbox.contact_changes.get_mut(at).map(|change| {
                     change.failures = change.failures.saturating_add(1);
+                    change.stuck = change.stuck.saturating_add(1);
                     change.retry_at = now.saturating_add(wait_after(change.failures, None));
+                    change.stuck
+                });
+                if nameless.is_some_and(|n| n >= MAX_NAMELESS) {
+                    self.mailbox.contact_changes.remove(at);
+                    let name = called_first(contact.and_then(|id| self.mailbox.contact(id)));
+                    if let Some(id) = contact {
+                        let _ = self.mailbox.remove_contact(id);
+                    }
+                    self.applied.say(format!(
+                        "{name} was made on the server, which doesn't say what it calls it: it comes with the next read, as the server has it."
+                    ));
                 }
                 self.applied.failed += 1;
             }
@@ -640,7 +786,8 @@ impl Taking<'_> {
                 let (Some(at), Some(id)) = (at, contact) else {
                     // Undone, or deleted again, while it was on its way: the server is to delete it.
                     let about = |change: &ContactChange| change.account == account && change.remote == outcome.remote;
-                    if !self.mailbox.contact_changes.iter().any(about) && self.by_remote(&outcome.remote).is_none() {
+                    let here = self.mailbox.contacts.values().any(|c| c.origin.account == account && c.origin.id == outcome.remote);
+                    if !self.mailbox.contact_changes.iter().any(about) && !here {
                         self.mailbox.contact_changes.push(ContactChange {
                             account,
                             kind: ContactChangeKind::Delete,
@@ -650,12 +797,6 @@ impl Taking<'_> {
                     }
                     return;
                 };
-                // A download that came before the answer (one lost on the way) brought the card as a contact of its
-                // own: it is this one.
-                if let Some(twin) = self.by_remote(&outcome.remote).filter(|twin| *twin != id) {
-                    let _ = self.mailbox.remove_contact(twin);
-                    self.mailbox.contact_changes.retain(|change| change.contact != twin);
-                }
                 let Ok(contact) = self.mailbox.contact_mut(id) else { return };
                 contact.origin.id.clone_from(&outcome.remote);
                 // What the server has is what was sent; what was changed here since is still to go.
@@ -673,20 +814,24 @@ impl Taking<'_> {
                         ..Default::default()
                     });
                 }
+                self.made.push((id, outcome.remote.clone()));
             }
             EventResult::Failed => {
-                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
-                    held_back(change, outcome, now);
-                    self.applied.failed += 1;
+                let Some(at) = at else { return };
+                let held = self.mailbox.contact_changes.get_mut(at).map(|change| held_back(change, outcome, now));
+                self.applied.failed += 1;
+                if held == Some(Held::Stuck) {
+                    self.applied.failed -= 1;
+                    self.give_up_stuck(at, outcome);
                 }
             }
             EventResult::Denied | EventResult::Refused | EventResult::Gone => {
                 let Some(at) = at else { return };
-                let give_up = match self.mailbox.contact_changes.get_mut(at) {
+                let held = match self.mailbox.contact_changes.get_mut(at) {
                     Some(change) if outcome.result == EventResult::Denied => held_back(change, outcome, now),
-                    _ => true,
+                    _ => Held::Denied,
                 };
-                if !give_up {
+                if held == Held::Waits {
                     self.applied.denied = true;
                     self.applied.failed += 1;
                     return;
@@ -708,9 +853,11 @@ impl Taking<'_> {
         if op.remote.is_empty() {
             return;
         }
-        let about = |change: &ContactChange| change.account == account && change.remote == op.remote && change.kind != ContactChangeKind::Create;
+        let about = |change: &ContactChange| {
+            change.account == account && change.remote == op.remote && change.kind != ContactChangeKind::Create && change.contact == op.contact
+        };
         let at = self.mailbox.contact_changes.iter().position(about);
-        let contact = self.by_remote(&op.remote);
+        let contact = self.contact_of(at, &op.remote);
         match outcome.result {
             EventResult::Done => {
                 self.told = true;
@@ -726,6 +873,7 @@ impl Taking<'_> {
                                 put_fields(base, &op.fields);
                             }
                             change.failures = 0;
+                            change.stuck = 0;
                             change.retry_at = 0;
                             change.denied = false;
                             change.error.clear();
@@ -759,7 +907,8 @@ impl Taking<'_> {
                 }
             }
             EventResult::Gone => {
-                // The server no longer has it: there is nothing to change, here either.
+                // The server no longer has it (or has another contact under its name now): there is nothing to change,
+                // here either.
                 let Some(at) = at else { return };
                 let deleting = self.mailbox.contact_changes.get(at).is_some_and(|change| change.kind == ContactChangeKind::Delete);
                 self.mailbox.contact_changes.remove(at);
@@ -775,17 +924,25 @@ impl Taking<'_> {
                 }
             }
             EventResult::Failed => {
-                if let Some(change) =
-                    at.and_then(|at| self.mailbox.contact_changes.get_mut(at)).filter(|change| change.kind == ContactChangeKind::Update)
-                {
-                    held_back(change, outcome, now);
+                let Some(at) = at else { return };
+                let held = self
+                    .mailbox
+                    .contact_changes
+                    .get_mut(at)
+                    .filter(|change| change.kind == ContactChangeKind::Update)
+                    .map(|change| held_back(change, outcome, now));
+                if held.is_some() {
                     self.applied.failed += 1;
+                }
+                if held == Some(Held::Stuck) {
+                    self.applied.failed -= 1;
+                    self.give_up_stuck(at, outcome);
                 }
             }
             EventResult::Denied | EventResult::Refused => {
                 let Some(at) = at else { return };
                 let Some(change) = self.mailbox.contact_changes.get_mut(at).filter(|change| change.kind == ContactChangeKind::Update) else { return };
-                if outcome.result == EventResult::Denied && !held_back(change, outcome, now) {
+                if outcome.result == EventResult::Denied && held_back(change, outcome, now) == Held::Waits {
                     self.applied.denied = true;
                     self.applied.failed += 1;
                     return;
@@ -813,45 +970,38 @@ impl Taking<'_> {
             EventResult::Done | EventResult::Gone => {
                 self.told |= outcome.result == EventResult::Done;
                 self.applied.done += 1;
+                self.destroyed.insert(op.remote.clone());
                 if let Some(at) = at {
                     self.mailbox.contact_changes.remove(at);
                     return;
                 }
-                // Undone while it was on its way: the contact is here again and the server no longer has it. It is
-                // made anew there, where its book still takes it; else it goes here too.
+                // Undone while it was on its way: the contact is here again and the server no longer has it. It is not
+                // made anew there (it would be a new card, not the one that was deleted): it goes here too, with a word.
+                // (A contact made here that the server said is this card is settled with the other answers.)
+                if self.made.iter().any(|(_, remote)| *remote == op.remote) {
+                    return;
+                }
                 self.mailbox.contact_changes.retain(|change| !(change.account == account && change.remote == op.remote));
                 let Some(id) = self.by_remote(&op.remote) else { return };
-                let again = self.mailbox.contact(id).is_some_and(|contact| writable_book_of(self.mailbox, contact).is_some());
-                if again && self.mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
-                    // The mark is new: the one card the server had under the old one is gone.
-                    let token = new_token(id, self.salt ^ now.unsigned_abs());
-                    if let Ok(contact) = self.mailbox.contact_mut(id) {
-                        contact.origin = Origin { account, ..Default::default() };
-                    }
-                    self.mailbox.contact_changes.push(ContactChange {
-                        account,
-                        kind: ContactChangeKind::Create,
-                        contact: id,
-                        token,
-                        ..Default::default()
-                    });
-                } else {
-                    let name = called_first(self.mailbox.contact(id));
-                    let _ = self.mailbox.remove_contact(id);
-                    self.applied
-                        .say(format!("{name} was already deleted on the server when the deletion was undone here; it couldn't be brought back."));
-                }
+                let name = called_first(self.mailbox.contact(id));
+                let _ = self.mailbox.remove_contact(id);
+                self.applied.say(format!(
+                    "{name} was already deleted on the server when the deletion was undone here, so it is gone here too. The server may keep a copy of what was deleted."
+                ));
             }
             EventResult::Failed => {
-                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
-                    held_back(change, outcome, now);
-                    self.applied.failed += 1;
+                let Some(at) = at else { return };
+                let held = self.mailbox.contact_changes.get_mut(at).map(|change| held_back(change, outcome, now));
+                self.applied.failed += 1;
+                if held == Some(Held::Stuck) {
+                    self.applied.failed -= 1;
+                    self.give_up_stuck(at, outcome);
                 }
             }
             EventResult::Denied | EventResult::Refused => {
                 let Some(at) = at else { return };
                 let Some(change) = self.mailbox.contact_changes.get_mut(at) else { return };
-                if outcome.result == EventResult::Denied && !held_back(change, outcome, now) {
+                if outcome.result == EventResult::Denied && held_back(change, outcome, now) == Held::Waits {
                     self.applied.denied = true;
                     self.applied.failed += 1;
                     return;
@@ -859,13 +1009,73 @@ impl Taking<'_> {
                 let change = self.mailbox.contact_changes.remove(at);
                 self.applied.refused += 1;
                 let name = called(change.base.as_deref());
-                // Back in the contacts, under the id it had when that is still free.
+                // Back in the contacts, under the id it had when that is still free: the server still has it.
                 let back = change.base.as_deref().is_some_and(|base| {
                     put_back(self.mailbox, change.contact, base);
                     true
                 });
                 let then = if back { " It is back in the contacts." } else { "" };
                 self.applied.say(format!("The server wouldn't delete {name}{}.{then}", because(&outcome.error)));
+            }
+        }
+    }
+
+    /// Once every answer is in: a contact made here that the server said it made, whose card a read brought before the
+    /// answer (one lost on the way) as a contact of its own, is that card.
+    ///
+    /// - The card was deleted there in this very answer, as that copy was deleted here: this contact, which the owner
+    ///   kept, is made anew (a new card, under a new mark).
+    /// - A deletion of the copy that still waits is not sent: it would delete this contact's card.
+    /// - The copy goes, once nothing of it waits to be told (what it changed was taken there in this answer, and
+    ///   comes back with the read that follows); what is kept here only (its categories, whether it is a favourite)
+    ///   goes to this contact. A copy whose change still waits stays, with its note, until a read settles them.
+    fn settle_copies(&mut self) {
+        let account = self.account;
+        for (id, remote) in std::mem::take(&mut self.made) {
+            if self.mailbox.contact(id).is_none_or(|c| c.origin.id != remote) {
+                continue;
+            }
+            if self.destroyed.contains(&remote) {
+                let writable = self.mailbox.contact(id).is_some_and(|contact| writable_book_of(self.mailbox, contact).is_some());
+                if writable && self.mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
+                    let token = new_token(id, self.salt ^ self.now.unsigned_abs());
+                    if let Ok(contact) = self.mailbox.contact_mut(id) {
+                        contact.origin = Origin { account, ..Default::default() };
+                    }
+                    self.mailbox.contact_changes.retain(|change| !(change.contact == id && change.remote == remote));
+                    self.mailbox.contact_changes.push(ContactChange {
+                        account,
+                        kind: ContactChangeKind::Create,
+                        contact: id,
+                        token,
+                        ..Default::default()
+                    });
+                    log::debug!("contacts: a contact made here whose card was deleted with its copy is made anew");
+                }
+                continue;
+            }
+            let copy_deleted =
+                |change: &ContactChange| change.account == account && change.kind == ContactChangeKind::Delete && change.remote == remote;
+            if self.mailbox.contact_changes.iter().any(copy_deleted) {
+                self.mailbox.contact_changes.retain(|change| !copy_deleted(change));
+                log::debug!("contacts: the deletion of a copy of a contact made here was not sent");
+            }
+            let copies: Vec<Id> =
+                self.mailbox.contacts.values().filter(|c| c.id != id && c.origin.account == account && c.origin.id == remote).map(|c| c.id).collect();
+            for copy in copies {
+                if self.mailbox.contact_changes.iter().any(|change| change.contact == copy) {
+                    continue;
+                }
+                let kept = self.mailbox.contact(copy).map(|c| (c.categories.clone(), c.favorite));
+                let _ = self.mailbox.remove_contact(copy);
+                if let (Some((categories, favorite)), Ok(contact)) = (kept, self.mailbox.contact_mut(id)) {
+                    contact.favorite |= favorite;
+                    for category in categories {
+                        if !contact.categories.contains(&category) {
+                            contact.categories.push(category);
+                        }
+                    }
+                }
             }
         }
     }

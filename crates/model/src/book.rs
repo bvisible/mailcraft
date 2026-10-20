@@ -212,6 +212,10 @@ pub struct ContactChange {
     /// Why it didn't go through the last time, for the owner to read.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
+    /// How many times in a row the server failed with it in a way that asking again is unlikely to get past (it
+    /// failed with this very change, or said nothing of it): given up after a few, with a word.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub stuck: u32,
 }
 
 /// A contact's name as a server's card holds it: one whole, sent together ([`ContactFields::name`]).
@@ -304,6 +308,16 @@ pub struct ContactOp {
     pub book: String,
     /// A new contact whole, or what changed of one the server has; nothing for a deletion.
     pub fields: ContactFields,
+    /// For a change: what the parts it names were as the server had them when they were changed here, so that only
+    /// what was changed here (an address added, a number taken out) is made to the server's card as it is now, and
+    /// what someone else added there meanwhile stays. `None`: the parts named are written as they are.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<ContactFields>,
+    /// For a change or a deletion: the server's mark of the contact the change is about (when it was made there,
+    /// [`crate::Origin::change_key`]). A card that has another is another contact, which a server gave the same name
+    /// once this one was gone: it is never written to. Empty when unknown.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub mark: String,
 }
 
 impl ContactOp {
@@ -313,6 +327,10 @@ impl ContactOp {
         self.token = clean_key(&self.token).chars().take(MAX_CONTACT_TOKEN).collect();
         self.book = clean_key(&self.book);
         self.fields.tidy();
+        if let Some(base) = &mut self.base {
+            base.tidy();
+        }
+        self.mark = clean_key(&self.mark);
     }
 }
 
@@ -353,6 +371,10 @@ pub struct ContactOutcome {
     /// How many seconds the server asked to be left alone, when it did.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_after: Option<u32>,
+    /// For a change that failed: the server answered, and failed with this very change (or said nothing of it), which
+    /// asking again is unlikely to get past; not for a server that was busy or a connection that broke.
+    #[serde(skip_serializing_if = "is_false")]
+    pub lasting: bool,
 }
 
 impl ContactOutcome {
@@ -669,8 +691,11 @@ mod tests {
                 emails: Some(vec![Labeled::new("work", "grace@example.org"), Labeled::new("", "not an address"), Labeled::new("x\ny", "  ")]),
                 phones: Some((0..200).map(|n| Labeled::new("mobile", format!("+41 79 555 {n:02}"))).collect()),
             },
+            base: Some(ContactFields { company: Some("Okafor\nJoinery".into()), ..Default::default() }),
+            mark: "2026-10-01T08:00:00Z\n".into(),
         };
         op.tidy();
+        assert_eq!((op.base.as_ref().and_then(|b| b.company.as_deref()), op.mark.as_str()), (Some("Okafor Joinery"), "2026-10-01T08:00:00Z"));
         assert!(op.remote.is_empty() && op.token.len() == MAX_CONTACT_TOKEN && op.book == "neoffice");
         let name = op.fields.name.as_ref().unwrap();
         assert!(name.first == "Gr ace" && name.last.chars().count() == MAX_LINE);
@@ -685,6 +710,7 @@ mod tests {
             remote: "c\u{0}x".into(),
             error: "no\n".repeat(1_000),
             retry_after: Some(5),
+            lasting: true,
         };
         outcome.tidy();
         assert!(outcome.remote.is_empty() && !outcome.error.contains('\n') && outcome.error.chars().count() <= MAX_WHY);

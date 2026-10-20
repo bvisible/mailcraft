@@ -73,6 +73,7 @@ fn target(s: &Session, v: &Value) -> Result<Id, CmdError> {
 /// [`target`] for a command that changes or deletes the contact. A contact that an account's
 /// server keeps is refused: changes are not sent back yet, and the next download would undo
 /// them. (Its categories and whether it is a favourite are kept here, so those don't ask.)
+// //// Neoffice — except a contact of a server's address book the account may change: that change goes to its server (`remote_contacts::written`); one of a book it may only read is refused with that reason.
 fn own_target(s: &Session, v: &Value) -> Result<Id, CmdError> {
     let id = target(s, v)?;
     if let Some(c) = s.mailbox.contact(id) {

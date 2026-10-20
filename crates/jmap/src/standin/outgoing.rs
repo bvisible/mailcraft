@@ -105,18 +105,29 @@ pub enum Effect {
     Status(u16),
     /// The request runs, and the answer is not JMAP at all.
     Garbage,
+    /// The request runs, and its answer is larger than a client takes: whatever it did is done.
+    Oversize,
+    /// The request is not run at all: the server says it is over a limit of its own (400, `limit`).
+    OverLimit,
 }
 
-/// A failure lined up for the next call of the method `on`, or the next `upload`; it happens once.
+/// A failure lined up for the next call of the method `on`, or the next `upload`; it happens once. `skip`: how many
+/// of those calls go through first.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fault {
     pub on: &'static str,
     pub effect: Effect,
+    pub skip: usize,
 }
 
 impl Fault {
     pub fn on(on: &'static str, effect: Effect) -> Fault {
-        Fault { on, effect }
+        Fault { on, effect, skip: 0 }
+    }
+
+    /// The same, once `skip` calls of `on` went through.
+    pub fn later(on: &'static str, skip: usize, effect: Effect) -> Fault {
+        Fault { on, effect, skip }
     }
 }
 
@@ -215,6 +226,11 @@ impl Data {
     /// Take the first fault lined up for `on` that `fits`, if there is one.
     pub(super) fn take_fault(&mut self, on: &str, fits: impl Fn(&Effect) -> bool) -> Option<Effect> {
         let at = self.faults.iter().position(|fault| fault.on == on && fits(&fault.effect))?;
+        // (One that lets some calls through first counts this one.)
+        if let Some(fault) = self.faults.get_mut(at).filter(|fault| fault.skip > 0) {
+            fault.skip -= 1;
+            return None;
+        }
         self.faults.remove(at).map(|fault| fault.effect)
     }
 
@@ -471,6 +487,12 @@ pub(super) fn answer_after(effect: Option<Effect>, status: u16, body: Vec<u8>) -
         Some(Effect::LoseAnswer) => Err(Error::Io("the connection was lost".into())),
         Some(Effect::Status(status)) => Ok((status, serde_json::to_vec(&problem(status, "about:blank", "the gateway gave up")).unwrap_or_default())),
         Some(Effect::Garbage) => Ok((200, b"<html><body>Bad gateway</body></html>".to_vec())),
+        // (JSON with blanks after it: larger than a client takes of the answer to a write or a read of items.)
+        Some(Effect::Oversize) => {
+            let mut body = body;
+            body.resize(body.len().saturating_add(9 << 20), b' ');
+            Ok((status, body))
+        }
         _ => Ok((status, body)),
     }
 }

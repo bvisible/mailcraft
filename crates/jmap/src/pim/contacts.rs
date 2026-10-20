@@ -70,7 +70,7 @@ const MAX_STATE: usize = 256;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CONTACTS];
 /// What a card is read for.
-const CARD_PROPERTIES: [&str; 9] = ["id", "uid", "addressBookIds", "kind", "name", "emails", "phones", "organizations", "titles"];
+const CARD_PROPERTIES: [&str; 10] = ["id", "uid", "addressBookIds", "kind", "name", "emails", "phones", "organizations", "titles", "created"];
 /// What a card keeps when a server keeps only the basics of one: a session that says it writes no more is one.
 const BASICS: [&str; 5] = ["emails", "name", "organizations", "phones", "titles"];
 

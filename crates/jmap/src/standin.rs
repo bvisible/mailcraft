@@ -616,8 +616,12 @@ impl Data {
         }
         // A request a server is down for, or too busy to take, is not run at all.
         let wanted: Vec<&str> = parsed.iter().map(|(name, ..)| *name).collect();
-        if let Some(Effect::RefuseWith(status)) = self.request_fault(&wanted, |effect| matches!(effect, Effect::RefuseWith(_))) {
-            return (status, problem(status, "about:blank", "the server can't take this request just now"), Vec::new());
+        match self.request_fault(&wanted, |effect| matches!(effect, Effect::RefuseWith(_) | Effect::OverLimit)) {
+            Some(Effect::RefuseWith(status)) => {
+                return (status, problem(status, "about:blank", "the server can't take this request just now"), Vec::new());
+            }
+            Some(Effect::OverLimit) => return limit("maxSizeRequest", "the request is too large"),
+            _ => {}
         }
         let (mut done, mut responses, mut names) = (Vec::new(), Vec::new(), Vec::new());
         for (name, args, id) in parsed {
@@ -634,7 +638,9 @@ impl Data {
             done.push(Done { id: id.to_string(), name: name.to_string(), result });
         }
         // The work is done; what the answer is may be a fault's to say.
-        if let Some(effect) = self.request_fault(&wanted, |effect| matches!(effect, Effect::LoseAnswer | Effect::Status(_) | Effect::Garbage)) {
+        if let Some(effect) =
+            self.request_fault(&wanted, |effect| matches!(effect, Effect::LoseAnswer | Effect::Status(_) | Effect::Garbage | Effect::Oversize))
+        {
             self.after = Some(effect);
         }
         (200, json!({"methodResponses": responses, "sessionState": self.state()}), names)
@@ -643,6 +649,11 @@ impl Data {
     /// The first fault lined up for one of `methods` that `fits`, taken.
     fn request_fault(&mut self, methods: &[&str], fits: impl Fn(&Effect) -> bool) -> Option<Effect> {
         let at = self.faults.iter().position(|fault| methods.contains(&fault.on) && fits(&fault.effect))?;
+        // (One that lets some requests through first counts this one.)
+        if let Some(fault) = self.faults.get_mut(at).filter(|fault| fault.skip > 0) {
+            fault.skip -= 1;
+            return None;
+        }
         self.faults.remove(at).map(|fault| fault.effect)
     }
 
