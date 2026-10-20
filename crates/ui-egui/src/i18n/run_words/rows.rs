@@ -34,6 +34,7 @@ const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
 const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
 const NOTES: &str = "crates/engine/src/cmd/notes/words.rs";
+const NOTES_JOB: &str = "crates/jmap/src/pim/notes.rs";
 
 /// Every row, family by family.
 pub(super) static ROWS: &[Row] = &[
@@ -294,6 +295,12 @@ pub(super) static ROWS: &[Row] = &[
         run_word!("The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept."),
         &[],
     ),
+    // What a job's notes say went wrong (`jmap::pim::notes`): they name no note.
+    row(NOTES_JOB, Line, run_word!("Couldn't send the note changes: {why}"), &[("why", Why)]),
+    row(NOTES_JOB, Line, run_word!("Couldn't read the notes: {why}"), &[("why", Why)]),
+    row(NOTES_JOB, Line, run_word!("1 note couldn't be read: {why}"), &[("why", Why)]),
+    row(NOTES_JOB, Line, run_word!("{n} notes couldn't be read: {why}"), &[("why", Why)]),
+    row(NOTES_JOB, Why, run_word!("their text is more than one job reads"), &[]),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

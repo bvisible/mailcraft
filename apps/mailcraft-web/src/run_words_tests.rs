@@ -1046,6 +1046,11 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("{title} was already deleted on the server when its deletion was undone here: it is made there anew.", "as above"),
     ("The server no longer keeps notes here: the notes that waited to go are kept on this computer.", "as above"),
     ("The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.", "as above"),
+    ("Couldn't send the note changes: {why}", "a notes job's trouble, as above"),
+    ("Couldn't read the notes: {why}", "as above"),
+    ("1 note couldn't be read: {why}", "as above"),
+    ("{n} notes couldn't be read: {why}", "as above"),
+    ("their text is more than one job reads", "as above"),
 ];
 
 // ---------------------------------------------------------------------------------------------

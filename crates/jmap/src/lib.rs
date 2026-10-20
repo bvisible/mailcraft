@@ -626,6 +626,11 @@ pub struct Client<H> {
     /// What the session says the server writes of an event and of a card, when it says.
     calendars_writable: Option<Vec<String>>,
     contacts_writable: Option<Vec<String>>,
+    /// The account that holds the person's notes, when the session offers them ([`pim::notes::NOTES`]); what it says
+    /// it writes of a note; the longest title and text it takes.
+    notes: Option<String>,
+    notes_writable: Option<Vec<String>>,
+    notes_limits: (usize, usize),
 }
 
 /// What may be shown of a client: sizes, never an address or a credential.
@@ -638,6 +643,7 @@ impl<H> fmt::Debug for Client<H> {
             .field("max_calls_in_request", &self.max_calls)
             .field("contacts", &self.contacts.is_some())
             .field("calendars", &self.calendars.is_some())
+            .field("notes", &self.notes.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -729,6 +735,8 @@ impl<H: Http> Client<H> {
         let calendars = primary_account(doc, capabilities, CALENDARS);
         let of_calendars = account_capability(doc, calendars.as_deref(), CALENDARS);
         let of_contacts = account_capability(doc, contacts.as_deref(), CONTACTS);
+        let notes = primary_account(doc, capabilities, pim::notes::NOTES);
+        let of_notes = account_capability(doc, notes.as_deref(), pim::notes::NOTES);
         Ok(Client {
             api: address("apiUrl")?,
             download: address("downloadUrl")?,
@@ -744,6 +752,9 @@ impl<H: Http> Client<H> {
             calendars_writable: writable_properties(of_calendars),
             contacts_writable: writable_properties(of_contacts),
             contacts,
+            notes_writable: writable_properties(of_notes),
+            notes_limits: pim::notes::limits(of_notes),
+            notes,
             calendars,
             auth,
             secrets,
@@ -818,6 +829,27 @@ impl<H: Http> Client<H> {
     /// Likewise for a contact card.
     pub fn contacts_writable(&self) -> Option<&[String]> {
         self.contacts_writable.as_deref()
+    }
+
+    /// Whether the session offers the person's notes ([`pim::notes::NOTES`]), in an account it names.
+    pub fn offers_notes(&self) -> bool {
+        self.notes.is_some()
+    }
+
+    /// The id of the account that holds the notes, when the session offers them.
+    pub fn notes_account(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
+
+    /// What the server says it writes of a note, when it says.
+    pub fn notes_writable(&self) -> Option<&[String]> {
+        self.notes_writable.as_deref()
+    }
+
+    /// The longest title and text of a note the server takes, in characters, as its session says them
+    /// ([`pim::notes::limits`]).
+    pub fn notes_limits(&self) -> (usize, usize) {
+        self.notes_limits
     }
 
     /// Whether the path of the session's API address ends with `suffix`: for a host that knows a server by where its

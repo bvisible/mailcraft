@@ -91,7 +91,7 @@ mod set;
 
 pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
 pub use facade::Profile;
-pub use notes::{Notes, StoredNote, WRITABLE_NOTE, crowd_notes};
+pub use notes::{Notes, StoredNote, WRITABLE_NOTE, crowd_notes, version as notes_version};
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 pub use pim::{
     Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, MEET_ROOMS, ONLINE_MEETING_REQUEST, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT,

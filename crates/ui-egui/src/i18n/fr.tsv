@@ -94,6 +94,11 @@
 	{title} was already deleted on the server when its deletion was undone here: it is made there anew.	La note {title} était déjà supprimée sur le serveur quand sa suppression a été annulée ici : elle y est recréée.
 	The server no longer keeps notes here: the notes that waited to go are kept on this computer.	Le serveur ne conserve plus les notes ici : les notes en attente d’envoi sont conservées sur cet ordinateur.
 	The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.	Le serveur ne conserve plus les notes ici, et cette page ne garde rien de son côté : les notes en attente d’envoi n’ont pas été conservées.
+	Couldn't send the note changes: {why}	Impossible d’envoyer les modifications des notes : {why}
+	Couldn't read the notes: {why}	Impossible de lire les notes : {why}
+	1 note couldn't be read: {why}	1 note n’a pas pu être lue : {why}
+	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
+	their text is more than one job reads	leur texte dépasse ce qu’une seule synchronisation peut lire
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange

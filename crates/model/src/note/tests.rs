@@ -227,3 +227,14 @@ proptest! {
         prop_assert!(mailbox.notes.items.iter().all(|(key, note)| *key == note.id));
     }
 }
+
+#[test]
+fn the_state_of_the_notes_is_asked_about_while_it_is_less_than_an_hour_old() {
+    let now = 1_791_993_600;
+    let ask = |state: &str, ago: i64| NotesAsk { read: true, state: state.into(), read_at: now - ago, ..Default::default() };
+    assert_eq!(ask("s1", 60).state_to_ask(now), Some("s1"));
+    assert_eq!(ask("s1", NOTES_STATE_FOR - 1).state_to_ask(now), Some("s1"));
+    for (state, ago) in [("s1", NOTES_STATE_FOR), ("s1", -60), ("", 60), ("s1", now)] {
+        assert_eq!(ask(state, ago).state_to_ask(now), None, "{state:?} {ago}");
+    }
+}

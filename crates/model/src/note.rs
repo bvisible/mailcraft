@@ -693,6 +693,19 @@ pub struct NotesAsk {
     pub changes: Option<NotesUpload>,
 }
 
+/// How long the state of a whole read of the notes is trusted, in seconds: after that they are read again in full,
+/// whatever the server says of them (as the contacts' are: [`crate::sync::CONTACTS_STATE_FOR`]).
+pub const NOTES_STATE_FOR: i64 = 3_600;
+
+impl NotesAsk {
+    /// The state of the notes a host may ask about instead of reading them all: the one held, while it is less than
+    /// [`NOTES_STATE_FOR`] old by `now` (and not from after it).
+    pub fn state_to_ask(&self, now: Timestamp) -> Option<&str> {
+        let age = now.saturating_sub(self.read_at);
+        (!self.state.is_empty() && self.read_at > 0 && (0..NOTES_STATE_FOR).contains(&age)).then_some(self.state.as_str())
+    }
+}
+
 impl std::fmt::Debug for NotesAsk {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("NotesAsk")

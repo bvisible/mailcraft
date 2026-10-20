@@ -386,6 +386,7 @@ impl MailApp {
             plain_unless_said: false,
             changes: changes.clone(),
             contact_changes: cards.clone(),
+            notes: None,
         };
         let cancel = Arc::new(AtomicBool::new(false));
         if self.services.jmap_pim.is_none() {

@@ -418,6 +418,7 @@ const CENSUS: &[&str] = &[
     "crates/engine/src/undo.rs",
     "crates/model/src/jmap_server.rs",
     "crates/engine/src/cmd/notes/words.rs",
+    "crates/jmap/src/pim/notes.rs",
 ];
 
 /// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.
@@ -453,6 +454,7 @@ const NOT_READ: &[(&str, &str)] = &[
         "a move out of an account is a Microsoft account's: one out of a JMAP account is refused",
     ),
     ("{} messages were moved out of their account and the server's copies removed: that can't be undone here.", "as above"),
+    ("the server's answer said nothing of it", "a note change's words, which a line about the note shows as they came"),
 ];
 
 /// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text

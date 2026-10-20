@@ -123,6 +123,10 @@ pub struct JmapPimRequest {
     /// to be told, oldest first: written before the contacts are read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contact_changes: Option<ContactsUpload>,
+    /// The person's notes, when the session offers them: read them (or ask whether the state held is still theirs),
+    /// after writing what was changed of them here ([`crate::note::NotesAsk`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<crate::note::NotesAsk>,
 }
 
 impl JmapPimRequest {
@@ -211,6 +215,10 @@ pub struct JmapPimResult {
     /// What the server made of the changes of contacts the request carried, as [`JmapPimResult::uploaded`] for events.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub contacts_uploaded: Option<ContactsUploaded>,
+    /// What came of the person's notes, when they were asked for and the session offers them: what the server made of
+    /// the changes, and the notes read ([`crate::note::NotesAnswer`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes: Option<crate::note::NotesAnswer>,
 }
 
 impl JmapPimResult {
@@ -259,6 +267,9 @@ impl JmapPimResult {
             uploaded.outcomes.truncate(MAX_CONTACT_OPS);
             uploaded.outcomes.iter_mut().for_each(crate::book::ContactOutcome::tidy);
         }
+        if let Some(notes) = &mut self.notes {
+            notes.tidy();
+        }
     }
 
     /// How many events came, in every download.
@@ -294,6 +305,7 @@ impl std::fmt::Debug for JmapPimRequest {
             .field("plain_unless_said", &self.plain_unless_said)
             .field("changes", &self.changes.as_ref().map(|changes| changes.ops.len()))
             .field("contact_changes", &self.contact_changes.as_ref().map(|changes| changes.ops.len()))
+            .field("notes", &self.notes)
             .finish()
     }
 }
@@ -317,6 +329,7 @@ impl std::fmt::Debug for JmapPimResult {
             .field("uploaded", &self.uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()))
             .field("identities", &self.identities.as_ref().map(Vec::len))
             .field("contacts_uploaded", &self.contacts_uploaded.as_ref().map(|uploaded| uploaded.outcomes.len()))
+            .field("notes", &self.notes)
             .finish()
     }
 }
@@ -327,6 +340,7 @@ mod tests {
 
     use super::*;
     use crate::book::{ContactChangeKind, ContactFields, ContactName, ContactOp, ContactOutcome, RemoteBook};
+    use crate::note::{NoteFields, NoteOp, NoteOutcome, NotesAnswer, NotesAsk, NotesDownload, NotesUpload, NotesUploaded, RemoteNote};
     use crate::remote::{EventChangeKind, EventFields, EventOp, EventOutcome, EventResult, RemoteCalendar, RemoteContact, RemoteEvent};
     use crate::{Address, Attendee, Labeled};
 
@@ -384,6 +398,21 @@ mod tests {
                     },
                     ..Default::default()
                 }],
+            }),
+            notes: Some(NotesAsk {
+                read: true,
+                state: "q-notes".into(),
+                read_at: 1_791_993_600 - 60,
+                changes: Some(NotesUpload {
+                    account: 3,
+                    email: ME.into(),
+                    ops: vec![NoteOp {
+                        note: 4,
+                        token: "t-1".into(),
+                        fields: NoteFields { title: Some(format!("Budget for {ME}")), ..Default::default() },
+                        ..Default::default()
+                    }],
+                }),
             }),
         }
     }
@@ -458,6 +487,22 @@ mod tests {
                 outcomes: vec![ContactOutcome { result: EventResult::Refused, error: format!("Grace is linked for {ME}"), ..Default::default() }],
                 token_refused: true,
             }),
+            notes: Some(NotesAnswer {
+                uploaded: Some(NotesUploaded {
+                    account: 3,
+                    email: ME.into(),
+                    outcomes: vec![NoteOutcome { error: format!("Not saved for {ME}"), ..Default::default() }],
+                    ..Default::default()
+                }),
+                download: Some(NotesDownload {
+                    account: 3,
+                    email: ME.into(),
+                    offered: true,
+                    notes: vec![RemoteNote { id: "VN-1".into(), title: format!("Budget for {ME}"), ..Default::default() }],
+                    ..Default::default()
+                }),
+                state: Some("a1b2-notes".into()),
+            }),
         }
     }
 
@@ -473,6 +518,7 @@ mod tests {
             r#""plainUnlessSaid":true"#,
             r#""changes":{"account":3"#,
             r#""contactChanges":{"account":3"#,
+            r#""notes":{"read":true,"state":"q-notes""#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
@@ -487,6 +533,7 @@ mod tests {
             r#""busyFor":30"#,
             r#""uploaded":{"account":3"#,
             r#""contactsUploaded":{"account":3"#,
+            r#""notes":{"uploaded":{"account":3"#,
         ] {
             assert!(json.contains(part), "{part} in {json}");
         }
@@ -510,11 +557,11 @@ mod tests {
         }
         assert_eq!(
             format!("{request:?}"),
-            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, contacts: true, contacts_state: true, plain_unless_said: true, changes: Some(1), contact_changes: Some(1) }"
+            "JmapPimRequest { account: 3, bearer: true, me: 2, zone: true, days: 397, lists: true, main: true, asks: 2, series: 1, contacts: true, contacts_state: true, plain_unless_said: true, changes: Some(1), contact_changes: Some(1), notes: Some(NotesAsk { read: true, state: true, changes: Some(1) }) }"
         );
         assert_eq!(
             format!("{result:?}"),
-            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1), identities: None, contacts_uploaded: Some(1) }"
+            "JmapPimResult { account: 3, offers: Some(PimOffers { calendars: true, contacts: true }), calendars: Some(2), downloads: 2, events: 2, books: Some(1), contacts: Some(1), contacts_state: true, errors: 1, busy_for: Some(30), auth_refused: true, stopped: true, uploaded: Some(1), identities: None, contacts_uploaded: Some(1), notes: Some(NotesAnswer { uploaded: Some(1), download: Some(1), state: true }) }"
         );
         // The person's identities are counted, never shown.
         let known = JmapPimResult { identities: Some(vec!["hello@example.org".into()]), ..JmapPimResult::default() };

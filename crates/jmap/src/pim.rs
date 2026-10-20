@@ -87,6 +87,10 @@ pub async fn sync_pim<H: Http>(client: &Client<H>, request: &JmapPimRequest, can
             contacts::read(client, request, account, cancel, &mut out).await;
         }
     }
+    // The person's notes, last, unless the job ended before (`notes.rs`).
+    if going && !out.auth_refused && !out.stopped && out.busy_for.is_none() {
+        notes::sync(client, request, cancel, &mut out).await;
+    }
     log::debug!(
         "jmap pim: {} calendar(s) listed, {} download(s), {} event(s), {} book(s), {} contact(s) (state {}), {} line(s); stopped: {}, busy: {}, refused: {}",
         out.calendars.as_ref().map_or(0, |list| list.calendars.len()),
