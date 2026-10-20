@@ -12,11 +12,15 @@ use mailcraft_time::Timestamp;
 mod drafts;
 // //// Neoffice — the request and answer of a JMAP account, beside Graph's.
 mod jmap;
+// //// Neoffice — and of a JMAP account's calendars, a job of its own beside its Send/Receive.
+mod jmap_pim;
 mod progress;
 mod search;
 pub use drafts::*;
 // //// Neoffice — see `jmap`.
 pub use jmap::*;
+// //// Neoffice — see `jmap_pim`.
+pub use jmap_pim::*;
 pub use progress::*;
 pub use search::*;
 

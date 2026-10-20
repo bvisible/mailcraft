@@ -20,6 +20,8 @@
 //! - Sending and drafts (RFC 8621 §7 and §4.8) are part of a run ([`mail`]): a message of the Outbox is
 //!   uploaded, filed in the Sent mailbox and submitted, and a draft is filed in Drafts in place of the
 //!   copy an earlier save made (`send`).
+//! - An account's calendars (JMAP for Calendars) and address books (RFC 9610), when the session offers
+//!   them, are a job of their own beside a Send/Receive ([`pim`]).
 //!
 //! Everything a server sends is hostile: answers are capped ([`MAX_JSON`]), ids are held to
 //! [`valid_id`], numbers are clamped, and nothing here indexes into what came over the wire. The
@@ -39,6 +41,7 @@ use serde_json::Value;
 
 pub mod fetch;
 pub mod mail;
+pub mod pim;
 mod send;
 #[cfg(any(test, feature = "stand-in"))]
 pub mod standin;
@@ -53,6 +56,10 @@ pub const CORE: &str = "urn:ietf:params:jmap:core";
 pub const MAIL: &str = "urn:ietf:params:jmap:mail";
 /// The capability of sending mail (RFC 8621 §1.3.2): identities and submissions.
 pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
+/// The capability of address books and contact cards (RFC 9610).
+pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
+/// The capability of calendars and their events (JMAP for Calendars, the IETF's draft on RFC 8620).
+pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
 /// The kind of a problem that names a limit of the request that was exceeded (RFC 8620 §3.6.1).
 const LIMIT_PROBLEM: &str = "urn:ietf:params:jmap:error:limit";
 
@@ -98,6 +105,15 @@ const MAX_ERROR_TEXT: usize = 300;
 const MAX_PROBLEM: usize = 64 * 1024;
 /// Longest wait, in seconds, that a server can ask for.
 const MAX_RETRY_AFTER: u32 = 3600;
+/// The longest stretch a server is believed to expand repeating events over in one query
+/// (`maxExpandedQueryDuration`), in seconds: what it says, held between a day and two years; 500 days
+/// when it says nothing that can be read.
+const DEFAULT_SPAN: i64 = 500 * 86_400;
+const MIN_SPAN: i64 = 86_400;
+const MAX_SPAN: i64 = 2 * 365 * 86_400;
+/// Most properties a session is believed to say a server writes, and the longest name of one.
+const MAX_WRITABLE: usize = 64;
+const MAX_PROPERTY_NAME: usize = 64;
 
 /// What can go wrong, in the categories the callers act on.
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
@@ -599,6 +615,14 @@ pub struct Client<H> {
     max_set: usize,
     max_calls: usize,
     max_upload: usize,
+    /// The accounts that hold the address books and the calendars, when the session offers them.
+    contacts: Option<String>,
+    calendars: Option<String>,
+    /// The longest stretch the server expands repeating events over in one query, in seconds.
+    span: i64,
+    /// What the session says the server writes of an event and of a card, when it says.
+    calendars_writable: Option<Vec<String>>,
+    contacts_writable: Option<Vec<String>>,
 }
 
 /// What may be shown of a client: sizes, never an address or a credential.
@@ -609,8 +633,43 @@ impl<H> fmt::Debug for Client<H> {
             .field("max_objects_in_get", &self.max_get)
             .field("max_objects_in_set", &self.max_set)
             .field("max_calls_in_request", &self.max_calls)
+            .field("contacts", &self.contacts.is_some())
+            .field("calendars", &self.calendars.is_some())
             .finish_non_exhaustive()
     }
+}
+
+/// The account of a capability besides mail: the session's primary account for it, when the session names
+/// the capability and an id that is one. (Absent, or not an id: not offered.)
+fn primary_account(doc: &Value, capabilities: &serde_json::Map<String, Value>, capability: &str) -> Option<String> {
+    if !capabilities.contains_key(capability) {
+        return None;
+    }
+    doc.get("primaryAccounts").and_then(|p| p.get(capability)).and_then(Value::as_str).filter(|id| valid_id(id)).map(str::to_string)
+}
+
+/// What the session says of `account` for `capability` (its `accountCapabilities`).
+fn account_capability<'a>(doc: &'a Value, account: Option<&str>, capability: &str) -> Option<&'a Value> {
+    doc.get("accounts")?.get(account?)?.get("accountCapabilities")?.get(capability)
+}
+
+/// The longest stretch a server expands repeating events over, from its `maxExpandedQueryDuration` (an ISO 8601
+/// duration such as `P500D`), in seconds: held between a day and two years, and [`DEFAULT_SPAN`] when it says nothing
+/// that can be read.
+fn expanded_span(capability: Option<&Value>) -> i64 {
+    let said = capability.and_then(|c| c.get("maxExpandedQueryDuration")).and_then(Value::as_str).and_then(pim::span_seconds);
+    said.map_or(DEFAULT_SPAN, |seconds| seconds.clamp(MIN_SPAN, MAX_SPAN))
+}
+
+/// The properties a session says a server writes (`writableProperties`, which a server may add to an account's
+/// capability), when it says: names of one word, [`MAX_WRITABLE`] at most. `None` when it says nothing, or nothing
+/// that is a list.
+fn writable_properties(capability: Option<&Value>) -> Option<Vec<String>> {
+    let listed = capability?.get("writableProperties")?.as_array()?;
+    fn name(value: &Value) -> Option<&str> {
+        value.as_str().filter(|name| (1..=MAX_PROPERTY_NAME).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_graphic()))
+    }
+    Some(listed.iter().take(MAX_WRITABLE).filter_map(name).map(str::to_string).collect())
 }
 
 impl<H: Http> Client<H> {
@@ -661,6 +720,12 @@ impl<H: Http> Client<H> {
             resolve(base, raw, key)
         };
         let core = capabilities.get(CORE);
+        // Calendars and address books, when the session offers them: each in an account of its own name (often the
+        // mail's), with what the server says of it there.
+        let contacts = primary_account(doc, capabilities, CONTACTS);
+        let calendars = primary_account(doc, capabilities, CALENDARS);
+        let of_calendars = account_capability(doc, calendars.as_deref(), CALENDARS);
+        let of_contacts = account_capability(doc, contacts.as_deref(), CONTACTS);
         Ok(Client {
             api: address("apiUrl")?,
             download: address("downloadUrl")?,
@@ -672,6 +737,11 @@ impl<H: Http> Client<H> {
             max_set: limit(core, "maxObjectsInSet", DEFAULT_OBJECTS_IN_SET, MAX_OBJECTS_IN_SET),
             max_calls: limit(core, "maxCallsInRequest", DEFAULT_CALLS_IN_REQUEST, MAX_CALLS_IN_REQUEST),
             max_upload: limit(core, "maxSizeUpload", DEFAULT_SIZE_UPLOAD, MAX_SIZE_UPLOAD),
+            span: expanded_span(of_calendars),
+            calendars_writable: writable_properties(of_calendars),
+            contacts_writable: writable_properties(of_contacts),
+            contacts,
+            calendars,
             auth,
             secrets,
             http,
@@ -708,6 +778,49 @@ impl<H: Http> Client<H> {
     /// Whether the session names a capability (`urn:ietf:params:jmap:submission`…).
     pub fn has_capability(&self, uri: &str) -> bool {
         self.capabilities.iter().any(|c| c == uri)
+    }
+
+    /// Whether the session offers address books ([`CONTACTS`]), in an account it names.
+    pub fn offers_contacts(&self) -> bool {
+        self.contacts.is_some()
+    }
+
+    /// Whether the session offers calendars ([`CALENDARS`]), in an account it names.
+    pub fn offers_calendars(&self) -> bool {
+        self.calendars.is_some()
+    }
+
+    /// The id of the account that holds the address books, when the session offers them.
+    pub fn contacts_account(&self) -> Option<&str> {
+        self.contacts.as_deref()
+    }
+
+    /// The id of the account that holds the calendars, when the session offers them.
+    pub fn calendars_account(&self) -> Option<&str> {
+        self.calendars.as_deref()
+    }
+
+    /// The longest stretch, in seconds, that the server expands repeating events over in one query: what its
+    /// session says (`maxExpandedQueryDuration`), held between a day and two years; 500 days when it says nothing.
+    pub fn calendars_span(&self) -> i64 {
+        self.span
+    }
+
+    /// What the server says it writes of an event (`writableProperties` of the calendars' account), when it says:
+    /// a client offers nothing else rather than learn it from a refusal.
+    pub fn calendars_writable(&self) -> Option<&[String]> {
+        self.calendars_writable.as_deref()
+    }
+
+    /// Likewise for a contact card.
+    pub fn contacts_writable(&self) -> Option<&[String]> {
+        self.contacts_writable.as_deref()
+    }
+
+    /// Whether the path of the session's API address ends with `suffix`: for a host that knows a server by where its
+    /// API is. The address itself is not handed out (it is the server's, and a host has no need of it).
+    pub fn api_path_ends_with(&self, suffix: &str) -> bool {
+        Url::parse(&self.api).is_ok_and(|url| url.path.split('?').next().is_some_and(|path| path.ends_with(suffix)))
     }
 
     /// The address a blob is downloaded from: the session's template with the account, the blob (an

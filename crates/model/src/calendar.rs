@@ -46,6 +46,13 @@ pub struct Calendar {
     /// the server's refusal is what says no).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub online_providers: Option<Vec<OnlineProvider>>,
+    // //// Neoffice — a calendar whose server keeps only the basics of an event (a JMAP server such as Neoffice's): what the engine and the window offer for it is that.
+    /// For a calendar that a server keeps: that server keeps only the basics of an event (its title,
+    /// place, description, time, how it repeats, who is invited, Free or Busy, whether it is private
+    /// and its reminder), and no categories, importance, response options, online meetings or
+    /// proposed times. A calendar written before there was this reads as one whose server keeps all.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub plain: bool,
 }
 
 impl Calendar {

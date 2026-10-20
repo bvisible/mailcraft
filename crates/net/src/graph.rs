@@ -1813,6 +1813,8 @@ fn calendar_of(entry: &Value, group: &str) -> Option<RemoteCalendar> {
             .get("allowedOnlineMeetingProviders")
             .and_then(Value::as_array)
             .map(|allowed| allowed.iter().take(8).filter_map(Value::as_str).filter_map(OnlineProvider::parse).collect()),
+        // //// Neoffice — a Microsoft calendar keeps everything of an event (the flag is for a JMAP server that keeps only the basics).
+        plain: false,
     })
 }
 

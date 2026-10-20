@@ -1016,6 +1016,10 @@ pub struct RemoteCalendar {
     /// The services a meeting in it may be held online with, when the server said.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub online_providers: Option<Vec<OnlineProvider>>,
+    // //// Neoffice — what a JMAP server says it keeps of an event: only the basics ([`crate::Calendar::plain`]).
+    /// Its server keeps only the basics of an event ([`crate::Calendar::plain`]).
+    #[serde(skip_serializing_if = "is_false")]
+    pub plain: bool,
 }
 
 /// An account's calendars, as its server lists them.

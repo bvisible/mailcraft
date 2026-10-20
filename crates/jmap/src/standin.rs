@@ -77,10 +77,12 @@ use crate::{CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url,
 
 mod facade;
 mod outgoing;
+mod pim;
 mod set;
 
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
+pub use pim::{Pim, WRITABLE_CARD, WRITABLE_EVENT};
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";
@@ -269,6 +271,8 @@ pub struct Data {
     /// The next this many requests to the API are run, and then their answer is lost: the client gets a
     /// network error, as when a connection drops after the server did its work.
     pub lost_answers: usize,
+    /// What it offers besides mail: calendars and address books ([`Pim`], `standin/pim.rs`). Nothing at first.
+    pub pim: Pim,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -308,6 +312,7 @@ impl Data {
             refused_sets: BTreeMap::new(),
             refused_moves: BTreeMap::new(),
             lost_answers: 0,
+            pim: Pim::default(),
             next: 0,
             version: 0,
             retry_after: None,
@@ -559,6 +564,8 @@ impl Data {
             session["accounts"][ACCOUNT]["accountCapabilities"][SUBMISSION] = json!({"maxDelayedSend": 0, "submissionExtensions": {}});
             session["primaryAccounts"][SUBMISSION] = json!(ACCOUNT);
         }
+        // Calendars and address books, when a test turns them on (`standin/pim.rs`).
+        self.pim.add_to(&mut session, ACCOUNT);
         session
     }
 
@@ -574,7 +581,9 @@ impl Data {
         let (Some(using), Some(calls)) = (using, request.get("methodCalls").and_then(Value::as_array)) else {
             return rejected("notRequest", "a request has `using` (a list of names) and `methodCalls`");
         };
-        if using.iter().any(|capability| !(matches!(*capability, CORE | MAIL) || (*capability == SUBMISSION && self.submission))) {
+        let known =
+            |capability: &str| matches!(capability, CORE | MAIL) || (capability == SUBMISSION && self.submission) || self.pim.knows(capability);
+        if using.iter().any(|capability| !known(capability)) {
             return rejected("unknownCapability", "a capability this server doesn't have is in `using`");
         }
         if calls.len() > self.max_calls {
