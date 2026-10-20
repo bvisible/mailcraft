@@ -329,7 +329,8 @@ fn scan(source: &str) -> Scan {
             _ => continue,
         };
         match word.as_str() {
-            "tl" => {
+            // (`run_word!` marks a sentence of the engine's that the window reads back: a lookup like any other.)
+            "tl" | "run_word" => {
                 let (Some(bang), Some(open)) = (tokens.get(k + 1), tokens.get(k + 2)) else { continue };
                 if bang.tok != Tok::Punct('!') || !matches!(open.tok, Tok::Punct('(' | '[' | '{')) {
                     continue;
@@ -342,6 +343,57 @@ fn scan(source: &str) -> Scan {
         }
     }
     scan
+}
+
+/// A string literal of a source file, as [`literals_of`] reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Literal {
+    /// Its text, as the compiler reads it.
+    pub text: String,
+    /// Where it starts, from 1.
+    pub line: usize,
+    /// Whether it is an argument of a `log::…!` call: words for the log, not for a person.
+    pub logged: bool,
+}
+
+/// The string literals of Rust source that the program can show (the census of the sentences that `run_words` reads back
+/// holds them to its rows): every literal but those of a `#[cfg(test)]` module written inline, which are the tests'.
+pub fn literals_of(source: &str) -> Vec<Literal> {
+    let tokens = lex(source);
+    let mut out = Vec::new();
+    let mut k = 0;
+    // Where the arguments of a `log::…!` call end (the literals before are logged).
+    let mut logged_until = 0;
+    while let Some(token) = tokens.get(k) {
+        let is = |n: usize, tok: Tok| tokens.get(k + n).is_some_and(|t| t.tok == tok);
+        let ident = |n: usize, name: &str| is(n, Tok::Ident(name.into()));
+        if is(0, Tok::Punct('#')) && is(1, Tok::Punct('[')) && ident(2, "cfg") && is(3, Tok::Punct('(')) && ident(4, "test") && is(5, Tok::Punct(')'))
+        {
+            // `#[cfg(test)] mod name { … }` is skipped whole; `#[cfg(test)] mod name;` names a file of its own.
+            if ident(7, "mod")
+                && is(9, Tok::Punct('{'))
+                && let Some(close) = closing(&tokens, k + 9)
+            {
+                k = close + 1;
+                continue;
+            }
+        }
+        if ident(0, "log")
+            && is(1, Tok::Punct(':'))
+            && is(2, Tok::Punct(':'))
+            && is(4, Tok::Punct('!'))
+            && let Some(close) = closing(&tokens, k + 5)
+        {
+            logged_until = logged_until.max(close);
+        }
+        if let Tok::Str(text) = &token.tok
+            && !text.is_empty()
+        {
+            out.push(Literal { text: text.clone(), line: token.line, logged: k < logged_until });
+        }
+        k += 1;
+    }
+    out
 }
 
 /// What the argument of a `tl!` call looks up.
@@ -559,6 +611,60 @@ fn f<'a>(x: &'a str) {
                 ("CONTINUED".into(), "Line one continues".into(), 6)
             ]
         );
+    }
+
+    #[test]
+    fn the_scan_reads_run_word_like_tl() {
+        let source = r####"const ROWS: [&str; 2] = [run_word!("Couldn't reach the server: {why}"), run_word!(
+    "network: {text}"
+)];
+let a = run_word!["Brackets"];
+let b = my_run_word!("not ours") + run_words!("nor this") + run_word("this is a function");
+// run_word!("a comment")
+let c = "run_word!(\"inside a string\")";
+"####;
+        assert_eq!(
+            lookups(source),
+            [text("Couldn't reach the server: {why}", 1), text("network: {text}", 2), text("Brackets", 4)],
+            "a row of run_words is a lookup, as a `tl!` is, so every catalog must have it"
+        );
+    }
+
+    #[test]
+    fn the_literals_of_a_source_are_those_it_can_show() {
+        let source = r####"#[error("network: {0}")]
+fn f() {
+    log::warn!("stays in the log: {e}", e = "and this");
+    let said = format!("Couldn't reach the server: {why}");
+    log::debug!(
+        "over two lines"
+    );
+}
+#[cfg(test)]
+mod tests {
+    fn g() { let _ = "a test's own words"; }
+}
+#[cfg(test)]
+#[path = "x_tests.rs"]
+mod named;
+const AFTER: &str = "after the tests";
+"####;
+        let seen: Vec<(String, usize, bool)> = literals_of(source).into_iter().map(|l| (l.text, l.line, l.logged)).collect();
+        assert_eq!(
+            seen,
+            [
+                ("network: {0}".to_string(), 1, false),
+                ("stays in the log: {e}".to_string(), 3, true),
+                ("and this".to_string(), 3, true),
+                ("Couldn't reach the server: {why}".to_string(), 4, false),
+                ("over two lines".to_string(), 6, true),
+                ("x_tests.rs".to_string(), 14, false),
+                ("after the tests".to_string(), 16, false),
+            ]
+        );
+        for junk in ["", "#[cfg(test)]", "#[cfg(test)] mod tests {", "log::warn!(", "log::", "\"unfinished"] {
+            let _ = literals_of(junk);
+        }
     }
 
     #[test]

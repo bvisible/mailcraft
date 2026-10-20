@@ -16,6 +16,17 @@ macro_rules! tl {
     };
 }
 
+// //// Neoffice — a sentence that the engine or a JMAP run writes in English and that the window reads back in the interface's language
+// (`i18n::run_words`): the literal itself, written so that the scan of the interface's strings takes it as a lookup, as it takes `tl!`.
+/// An English sentence of the engine's or of a server's run, as a row of `i18n::run_words` holds it: the literal itself, which
+/// every catalog must translate.
+#[macro_export]
+macro_rules! run_word {
+    ($s:literal) => {
+        $s
+    };
+}
+
 mod account_setup;
 pub mod agent_gate;
 pub mod alerts;

@@ -189,8 +189,16 @@ pub fn current() -> Lang {
 
 /// `s` in the interface language.
 pub fn t(s: &str) -> &str {
+    // //// Neoffice — the lookup of `t_in`, in the current language.
+    t_in(current(), s)
+}
+
+// //// Neoffice — `t` in a language that is given, so that what reads the engine's sentences (run_words) can be asked for any language
+// without changing the process's.
+/// `s` in `lang`.
+pub fn t_in(lang: Lang, s: &str) -> &str {
     // //// Neoffice — under the product's name a host gives, when it gives one (`set_product_name`).
-    renamed(match current() {
+    renamed(match lang {
         Lang::English => s,
         Lang::Pseudo => pseudo(s),
         // //// Neoffice — the catalog's translation; the English without one.
@@ -324,11 +332,27 @@ fn pseudo(s: &str) -> &'static str {
 }
 
 /// Fill `{name}` placeholders in a (translated) template.
+// //// Neoffice — one pass over the template: a value is never read again, so a value that holds `{name}` (a subject, a server's words) is
+// shown as it is instead of being filled by the next argument. A placeholder with no argument stays as it is written, as before.
 pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
-    let mut out = template.to_string();
-    for (k, v) in args {
-        out = out.replace(&format!("{{{k}}}"), v);
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some((head, tail)) = rest.split_once('{') {
+        out.push_str(head);
+        let filled = tail.split_once('}').and_then(|(name, after)| args.iter().find(|(k, _)| *k == name).map(|(_, v)| (*v, after)));
+        match filled {
+            Some((value, after)) => {
+                out.push_str(value);
+                rest = after;
+            }
+            None => {
+                out.push('{');
+                rest = tail;
+            }
+        }
     }
+    // //// Neoffice — as above: the text after the last placeholder.
+    out.push_str(rest);
     out
 }
 
@@ -353,6 +377,45 @@ mod tests {
         assert_eq!(Lang::from_pref("PSEUDO"), Lang::Pseudo);
         assert_eq!(Lang::from_pref("klingon"), Lang::English);
         assert_eq!(location("Home › Respond"), "Home › Respond");
+    }
+
+    // //// Neoffice — `fmt` fills a template in one pass (run_words hands it subjects and a server's words).
+    #[test]
+    fn fmt_fills_each_placeholder_once_and_never_inside_a_value() {
+        // A value that holds a placeholder is shown as it is, whichever argument comes next.
+        assert_eq!(fmt("{subject}: {why}", &[("subject", "Re: {why}"), ("why", "gone")]), "Re: {why}: gone");
+        assert_eq!(fmt("{a}{b}", &[("a", "{b}"), ("b", "{a}")]), "{b}{a}");
+        // A placeholder written twice is filled twice; one with no argument stays as it is written.
+        assert_eq!(fmt("{n} and {n} of {total}", &[("n", "3")]), "3 and 3 of {total}");
+        // Braces that make no placeholder are text, as they were.
+        assert_eq!(fmt("{{n}} {n", &[("n", "3")]), "{3} {n");
+        assert_eq!(fmt("}{ {} {}", &[("", "empty")]), "}{ empty empty");
+        assert_eq!(fmt("", &[("n", "3")]), "");
+        assert_eq!(fmt("no placeholder", &[]), "no placeholder");
+        // Text outside ASCII on either side of a placeholder.
+        assert_eq!(fmt("« {subject} » — {n} ☃", &[("subject", "Été"), ("n", "1")]), "« Été » — 1 ☃");
+        // A long hostile value is copied once, not read.
+        let flood = "{why}".repeat(20_000);
+        assert_eq!(fmt("{subject}{why}", &[("subject", &flood), ("why", "x")]).len(), flood.len() + 1);
+    }
+
+    // //// Neoffice — `t_in`: a lookup in a language that is given.
+    #[test]
+    fn t_in_gives_the_language_asked_for_and_t_is_t_in_current() {
+        let french = Lang::from_tag("fr").unwrap();
+        assert_eq!(t_in(french, "Reply"), "Répondre");
+        assert_eq!(t_in(Lang::Pseudo, "Reply"), "Réply");
+        assert_eq!(t_in(Lang::English, "Reply"), "Reply");
+        let stranger = "A string that no catalog will ever hold ☃";
+        assert!(std::ptr::eq(t_in(french, stranger), stranger));
+        // The current language is not changed by asking for another.
+        assert_eq!(current(), Lang::English);
+        assert_eq!(t("Reply"), "Reply");
+        for lang in Lang::choices().chain([Lang::Pseudo]) {
+            set_current(lang);
+            assert_eq!(t("Reply"), t_in(lang, "Reply"), "{lang:?}");
+        }
+        set_current(Lang::English);
     }
 
     // //// Neoffice — the setting that picks the language, and the system's language it can follow.
