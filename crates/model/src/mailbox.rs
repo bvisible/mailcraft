@@ -750,6 +750,11 @@ pub struct Mailbox {
     /// first ([`crate::book::ContactChange`]).
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
     pub contact_changes: Vec<crate::book::ContactChange>,
+    // //// Neoffice — notes, the mailbox's own and its servers', with what waits to be told to those (`note.rs`).
+    /// Notes: the mailbox's own and those of the servers that keep notes, and what waits to be told to those
+    /// ([`crate::note::Notes`]). Nothing is written of them while there are none.
+    #[serde(skip_serializing_if = "crate::note::Notes::is_empty", deserialize_with = "crate::note::lenient")]
+    pub notes: crate::note::Notes,
     /// The Favorites of the accounts whose server has a list of them ([`ServerFavorites`]), one
     /// entry an account at most ([`Mailbox::server_favorites`]). Nothing is written of it until
     /// a server's list has been taken in.
@@ -801,6 +806,8 @@ impl Default for Mailbox {
             event_checks: Vec::new(),
             // //// Neoffice — see `contact_changes`.
             contact_changes: Vec::new(),
+            // //// Neoffice — see `notes`.
+            notes: crate::note::Notes::default(),
             favorites_from_server: Vec::new(),
             queued: Vec::new(),
             outlook_categories: Vec::new(),
@@ -933,6 +940,8 @@ impl Mailbox {
         self.event_checks.retain(|check| !going.contains(&check.account));
         self.queued.retain(|queued| !going.contains(&queued.account()));
         self.favorites_from_server.retain(|list| !going.contains(&list.account));
+        // //// Neoffice — and the notes of their servers, with what waited for those (`note.rs`).
+        crate::note::forget_accounts(self, &going);
         Ok(())
     }
 
@@ -2069,8 +2078,9 @@ impl Mailbox {
             .chain(self.accounts.iter().map(|a| a.id))
             .chain(self.folders.iter().map(|f| f.id))
             .chain(self.calendars.iter().map(|c| c.id))
-            // //// Neoffice — the address books' ids are given from the same count.
+            // //// Neoffice — the address books' ids are given from the same count, and the notes'.
             .chain(self.address_books.iter().map(|b| b.id))
+            .chain(self.notes.ids().copied())
             .chain(self.rules.iter().map(|r| r.id))
             .filter(sane)
             .max()
@@ -2235,6 +2245,8 @@ impl Mailbox {
         }
         // //// Neoffice — the address books hang together too: each once, of an account here, and a contact in one of its own account's or none (`book::repair`).
         fixed.extend(crate::book::repair(self, &sane));
+        // //// Neoffice — and the notes (`note::repair`).
+        fixed.extend(crate::note::repair(self, &sane));
         // The Favorites a server listed: one list an account, of folders that account has.
         let stated = std::mem::take(&mut self.favorites_from_server);
         let before: usize = stated.iter().map(|list| list.folders.len().saturating_add(1)).sum();

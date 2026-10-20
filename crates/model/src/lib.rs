@@ -16,6 +16,8 @@ mod contact;
 mod jmap_server;
 mod mailbox;
 mod message;
+// //// Neoffice — notes: the mailbox's own and those of a server that keeps them (a Notes module).
+pub mod note;
 mod offline;
 pub mod provider;
 pub mod remote;
@@ -48,6 +50,8 @@ pub use mailbox::{
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES};
 pub use mailcraft_time as time;
 pub use message::{Answers, Attachment, Body, ContentRef, FlagStatus, Importance, KeptBody, Message, normalize_subject, size_label, text_hash};
+// //// Neoffice — see `note`.
+pub use note::Note;
 pub use offline::{KeepOffline, OfflineWindow};
 pub use remote::Origin;
 pub use rich::{RichBody, RichText};
