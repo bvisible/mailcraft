@@ -365,6 +365,42 @@ fn nobody_is_written_to_without_the_persons_yes_whoever_the_servers_copy_invites
 }
 
 #[test]
+fn a_change_that_writes_to_people_whose_answer_was_lost_is_not_written_and_mailed_twice() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("CalendarEvent/set", Effect::LoseAnswer)));
+    let invite = |name: &str, email: &str| mailcraft_model::Attendee { address: Address::new(name, email), ..Default::default() };
+    let before = vec![invite("Bob", "bob@example.org"), invite("Carol", "carol@example.org")];
+    let fields = EventFields {
+        title: Some("Budget review (final)".into()),
+        location: Some("Room 5".into()),
+        description: Some("Bring the figures.".into()),
+        time: Some(EventTime { start: utc(19, 8, 0), end: utc(19, 9, 0), all_day: false }),
+        zones: zones(),
+        show_as: Some(ShowAs::Free),
+        private: Some(true),
+        reminder: Some(EventReminder { on: true, minutes: 30 }),
+        attendees: Some([before.clone(), vec![invite("Dan", "dan@example.org")]].concat()),
+        ..Default::default()
+    };
+    let op = EventOp { send: true, invited_before: Some(before), ..update(&Pim::event_id("budget"), fields) };
+    // The server did it, and wrote to the people; the answer was lost on the way.
+    let first = run(&server, &job(vec![op.clone()]));
+    assert_eq!(outcomes(&first)[0].0, EventResult::Failed);
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1);
+    // Sent again: the server's copy says it all already. Done, nothing written, nobody written to a second time.
+    let before_again = server.asked().len();
+    let again = run(&server, &job(vec![op]));
+    let done = &again.uploaded.as_ref().unwrap().outcomes[0];
+    assert_eq!((done.result, done.remote.as_str()), (EventResult::Done, Pim::event_id("budget").as_str()), "{done:?}");
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1);
+    assert!(server.asked().into_iter().skip(before_again).all(|a| a.method != "CalendarEvent/set"));
+    // A change the copy doesn't say yet still goes.
+    let other = EventOp { send: true, ..update(&Pim::event_id("budget"), title("Budget review (final, really)")) };
+    assert_eq!(outcomes(&run(&server, &job(vec![other])))[0].0, EventResult::Done);
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 2);
+}
+
+#[test]
 fn categories_importance_response_options_proposals_and_online_are_never_sent_and_an_op_with_nothing_else_is_refused() {
     let server = server();
     let only = EventFields {

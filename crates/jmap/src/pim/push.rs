@@ -22,7 +22,9 @@
 //!    person organizes, a change the people of one would see, its deletion when it is called off, and an answer the
 //!    person asked to be sent, each only with the person's yes to that mail (`EventOp::send`, which the engine notes
 //!    when it asks), whoever the server's copy says is invited. So one refusal never mails anybody about another
-//!    change. At most [`MAX_PER_CALL`] events in a call, and as many as the session takes in a `set`.
+//!    change. A change that writes to people and that the server's copy says already (one sent again after its answer
+//!    was lost) is done without being written: nobody is written to about it twice. At most [`MAX_PER_CALL`] events in
+//!    a call, and as many as the session takes in a `set`.
 //! 4. **What such a server doesn't keep is not written** ([`write`](super::write)): a change of nothing else, a
 //!    forward, and another time proposed with an answer, are refused with the reason.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
@@ -50,11 +52,17 @@ const PAGE: usize = 200;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CALENDARS];
 /// What the server's copy of an event is read for.
-const COPY_PROPERTIES: [&str; 17] = [
+/// (Everything a change writes is among them, so that one that writes to people is told from one the copy says already.)
+const COPY_PROPERTIES: [&str; 22] = [
     "id",
     "uid",
     "calendarIds",
     "alerts",
+    "title",
+    "description",
+    "freeBusyStatus",
+    "privacy",
+    "recurrenceRule",
     "start",
     "timeZone",
     "duration",
@@ -425,6 +433,12 @@ impl<H: Http> Writer<'_, H> {
                 }
             },
         };
+        // A change that writes to people and that the server's copy says already (its answer was lost on the way, and
+        // it is sent again): done, without writing it, so that nobody is written to about it twice.
+        if ready.scheduling && ready.body.as_ref().is_some_and(|body| says_already(&copy, body)) {
+            self.done(at, ready.target, String::new(), ready.zone);
+            return Ok(None);
+        }
         Ok(Some(ready))
     }
 
@@ -658,6 +672,12 @@ fn named_occurrence(id: &str) -> Option<(String, String)> {
 /// The id such a server gives an event of its store's `raw` id: `V` and that id, in URL-safe base64 without padding.
 fn event_id_of(raw: &str) -> String {
     format!("V{}", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw))
+}
+
+/// Whether the server's copy of an event says everything `body` would write of it: each property as it is there (one
+/// it doesn't have is one that is null).
+fn says_already(copy: &Copy, body: &Value) -> bool {
+    body.as_object().is_some_and(|body| !body.is_empty() && body.iter().all(|(key, value)| copy.get(key).unwrap_or(&Value::Null) == value))
 }
 
 /// Whether a server's refusal is one that asking again later may get past.
