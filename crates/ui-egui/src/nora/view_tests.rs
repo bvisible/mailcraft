@@ -8,7 +8,7 @@ use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use serde_json::json;
 
 use super::testing::*;
-use super::{About, PROOFREAD};
+use super::{About, GENERATE_EMAIL, PROOFREAD, TRANSLATE};
 use crate::MailApp;
 
 type Window = egui_kittest::Harness<'static, MailApp>;
@@ -196,6 +196,168 @@ fn a_hostile_line_in_the_band_lays_out() {
     }
 }
 
+/// The sample in a window that reaches Nora, the plain-text message of [`PLAIN`] in the reading pane.
+fn reading(size: (f32, f32)) -> (Window, Calls, mailcraft_model::Id) {
+    let (app, calls, id) = sample(PLAIN);
+    let harness = window(app, size);
+    (harness, calls, id)
+}
+
+/// Run frames until one hands something to the clipboard, a few at most.
+fn copied_within(harness: &mut Window, frames: usize) -> Option<String> {
+    for _ in 0..frames {
+        harness.step();
+        let copied = harness.output().platform_output.commands.iter().rev().find_map(|c| match c {
+            egui::OutputCommand::CopyText(text) => Some(text.replace("\r\n", "\n")),
+            _ => None,
+        });
+        if copied.is_some() {
+            return copied;
+        }
+    }
+    None
+}
+
+/// The whole body of the message in the reading pane, as a copy of it gives it.
+fn body_shown(harness: &mut Window) -> Option<String> {
+    harness.state_mut().execute("ui.selectAllInMessage", json!({"pane": true})).ok()?;
+    harness.state_mut().execute("ui.copySelection", json!({"pane": true})).ok()?;
+    copied_within(harness, 4)
+}
+
+const TRANSLATION: &str = "Avery,\n\nLa revue de la feuille de route passe à jeudi.";
+
+#[test]
+fn the_button_is_in_the_pane_header_only() {
+    let (mut harness, _calls, id) = reading((1440.0, 900.0));
+    let button = harness.state().hit.rect("nora", id).expect("her button in the pane's header");
+    assert!(button.height() >= 20.0 && button.width() > 40.0);
+    assert!(harness.query_all_by_label("Nora").next().is_some());
+    // No reading pane, no button.
+    run(&mut harness, "view.readingPane", json!({"value": "off"}));
+    assert!(harness.state().hit.rect("nora", id).is_none());
+    // Nor without a host.
+    let mut app = quiet(MailApp::new(mailcraft_engine::Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0), crate::Services::default()));
+    app.execute("mail.select", json!({"id": id})).unwrap();
+    let harness = window(app, (1440.0, 900.0));
+    assert!(harness.state().hit.rect("nora", id).is_none());
+}
+
+#[test]
+fn the_menu_lists_reply_reply_all_and_three_languages() {
+    let (mut harness, calls, id) = reading((1440.0, 900.0));
+    let at = harness.state().hit.rect("nora", id).unwrap().center();
+    click_at(&mut harness, at);
+    assert!(egui::Popup::is_any_open(&harness.ctx));
+    for label in ["Reply with Nora", "Reply all with Nora", "Translate"] {
+        assert!(harness.query_all_by_label_contains(label).next().is_some(), "{label}");
+    }
+    assert!(harness.query_all_by_label_contains("Show the original").next().is_none(), "nothing is translated yet");
+    harness.query_all_by_label_contains("Translate").next().unwrap().click();
+    harness.run_steps(3);
+    for language in ["French", "German", "English"] {
+        assert!(harness.query_all_by_label_contains(language).next().is_some(), "{language}");
+    }
+    harness.query_all_by_label_contains("German").next().unwrap().click();
+    harness.run_steps(3);
+    assert_eq!(calls.count(), 1);
+    assert_eq!((calls.last().method, calls.last().args["target_language"].as_str()), (TRANSLATE, Some("de")));
+    // Reply with Nora from the menu: the reply opens, and she is asked.
+    calls.answer(200, json!({"message": {"translated_text": TRANSLATION, "has_changes": true}}));
+    harness.run_steps(3);
+    let at = harness.state().hit.rect("nora", id).unwrap().center();
+    click_at(&mut harness, at);
+    assert!(harness.query_all_by_label_contains("Show the original").next().is_some(), "now there is a way back in the menu too");
+    harness.query_all_by_label_contains("Reply all with Nora").next().unwrap().click();
+    harness.run_steps(3);
+    assert_eq!(calls.count(), 2);
+    assert_eq!(calls.last().method, GENERATE_EMAIL);
+    assert_eq!(harness.state().session.compose.as_ref().map(|c| c.mode), Some(mailcraft_engine::ComposeMode::ReplyAll));
+}
+
+#[test]
+fn a_translation_replaces_the_body_and_the_bar_has_the_way_back() {
+    let (mut harness, calls, id) = reading((1440.0, 900.0));
+    let original = body_shown(&mut harness).unwrap();
+    assert!(original.starts_with("Avery,\n\nThe roadmap review is moving"), "{original:?}");
+    run(&mut harness, "ui.noraTranslate", json!({"language": "fr"}));
+    assert!(harness.query_all_by_label_contains("Nora is translating the message").next().is_some(), "the strip says she is at it");
+    assert!(harness.state().hit.rect("noraOriginal", id).is_none());
+    calls.answer(200, json!({"message": {"translated_text": TRANSLATION, "source_language": "en", "has_changes": true}}));
+    harness.run_steps(4);
+    assert!(harness.query_all_by_label_contains("Translated by Nora into French").next().is_some());
+    let back = harness.state().hit.rect("noraOriginal", id).expect("the way back to the original");
+    // Her text is the body: selected and copied as any body is; the header is the message's own.
+    assert_eq!(body_shown(&mut harness).as_deref(), Some(TRANSLATION));
+    assert!(harness.query_all_by_label(PLAIN).next().is_some(), "the subject is the message's own");
+    let kept = harness.state().session.mailbox.messages.get(&id).map(|m| m.body.text.clone()).unwrap_or_default();
+    assert!(kept.starts_with("Avery,\n\nThe roadmap review is moving"), "the message itself is unchanged");
+    // The way back.
+    click_at(&mut harness, back.center());
+    assert!(harness.state().nora.translation.is_none());
+    assert!(harness.state().hit.rect("noraOriginal", id).is_none());
+    assert_eq!(body_shown(&mut harness), Some(original));
+}
+
+#[test]
+fn what_came_of_asking_shows_in_the_strip() {
+    let (mut harness, calls, id) = reading((1440.0, 900.0));
+    run(&mut harness, "ui.noraTranslate", json!({"language": "de"}));
+    calls.answer(417, refusal(REFUSED));
+    harness.run_steps(3);
+    assert!(harness.query_all_by_label_contains("Nora couldn't translate the message").next().is_some());
+    assert!(harness.state().nora.translation.is_none() && harness.state().hit.rect("noraOriginal", id).is_none());
+    run(&mut harness, "ui.noraTranslate", json!({"language": "en"}));
+    calls.answer(200, json!({"message": {"translated_text": "Avery,", "source_language": "en", "has_changes": false}}));
+    harness.run_steps(3);
+    assert!(harness.query_all_by_label_contains("The message is already in English.").next().is_some());
+    // Another message has nothing of it.
+    let other = harness.state().session.mailbox.messages.values().find(|m| m.subject == "Release checklist").map(|m| m.id).unwrap();
+    run(&mut harness, "mail.select", json!({"id": other}));
+    assert!(harness.query_all_by_label_contains("The message is already in English.").next().is_none());
+}
+
+#[test]
+fn a_hostile_translation_lays_out() {
+    let rtl = "مرحبا بكم في نورا، هذه ترجمة ".repeat(600);
+    let word = "x".repeat(19_000);
+    let mixed = format!("{}\u{202e}{}\u{0}\u{1b}[2J\r\n\t\u{feff}\u{200b}{}", "🧪".repeat(2_000), "abc ".repeat(2_000), "\n".repeat(3_000));
+    for text in [rtl, word, mixed] {
+        let (mut harness, calls, id) = reading((900.0, 700.0));
+        run(&mut harness, "ui.noraTranslate", json!({"language": "de"}));
+        calls.answer(200, json!({"message": {"translated_text": text, "has_changes": true}}));
+        harness.run_steps(40);
+        let shown = harness.state().nora.translation.as_ref().map(|t| t.shown.body.text.clone()).unwrap();
+        assert!(!shown.chars().any(|c| c.is_control() && !matches!(c, '\n' | '\t')), "no control characters but line breaks and tabs");
+        assert!(harness.state().hit.rect("noraOriginal", id).is_some());
+    }
+    // More than she is taken at: said, and nothing shown.
+    let (mut harness, calls, id) = reading((900.0, 700.0));
+    run(&mut harness, "ui.noraTranslate", json!({"language": "de"}));
+    calls.answer(200, json!({"message": {"translated_text": "y".repeat(1_000_000), "has_changes": true}}));
+    harness.run_steps(3);
+    assert!(harness.state().nora.translation.is_none() && harness.state().hit.rect("noraOriginal", id).is_none());
+    assert_eq!(said(harness.state()).map(|s| s.0), Some("Nora couldn't translate the message: the answer is too long".to_string()));
+}
+
+#[test]
+fn a_translation_is_not_shown_in_the_quote_or_the_preview() {
+    let (mut app, calls, id) = sample(PLAIN);
+    app.run("ui.noraTranslate", json!({"language": "fr"})).unwrap();
+    calls.answer(200, json!({"message": {"translated_text": TRANSLATION, "has_changes": true}}));
+    app.poll_nora();
+    let m = app.session.mailbox.messages.get(&id).cloned().unwrap();
+    for place in [crate::reading::Place::Quote, crate::reading::Place::Preview] {
+        assert!(std::sync::Arc::ptr_eq(&super::pane::shown(&app, &m, place), &m), "{place:?}");
+    }
+    for place in [crate::reading::Place::Pane, crate::reading::Place::Window(3)] {
+        let shown = super::pane::shown(&app, &m, place);
+        assert_eq!((shown.id, shown.body.text.as_str(), shown.body.html.is_none()), (id, TRANSLATION, true), "{place:?}");
+    }
+    let other = app.session.mailbox.messages.values().find(|m| m.subject == "Release checklist").cloned().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&super::pane::shown(&app, &other, crate::reading::Place::Pane), &other));
+}
+
 /// Nora in the window, in light and dark, wide and narrow, as PNG files to look at:
 /// `MAILCRAFT_SHOTS_DIR=<dir> cargo test -p mailcraft-ui-egui shots_of_nora -- --ignored`
 #[test]
@@ -251,6 +413,21 @@ fn shots_of_nora() {
                 refusal("Nora refused to process this message: it contains instructions aimed at the assistant, or could not be verified."),
             );
             shot(&mut harness, "band-4-refused");
+            // The reading pane: her button, its menu, a translation and the way back.
+            run(&mut harness, "compose.discard", json!({}));
+            let e1 = id_of(harness.state(), "E1");
+            run(&mut harness, "mail.select", json!({"id": e1}));
+            shot(&mut harness, "pane-1-button");
+            let at = harness.state().hit.rect("nora", e1).unwrap().center();
+            click_at(&mut harness, at);
+            harness.query_all_by_label_contains("Translate").next().unwrap().click();
+            shot(&mut harness, "pane-2-menu");
+            harness.key_press(egui::Key::Escape);
+            harness.run_steps(2);
+            run(&mut harness, "ui.noraTranslate", json!({"message": e1, "language": "fr"}));
+            shot(&mut harness, "pane-3-translating");
+            calls.answer(200, json!({"message": {"translated_text": "Bonjour Ada,\n\nLe bon à tirer est-il prêt ?\n\nGrace", "has_changes": true}}));
+            shot(&mut harness, "pane-4-translated");
         }
     }
 }

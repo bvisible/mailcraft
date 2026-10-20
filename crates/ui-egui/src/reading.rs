@@ -116,10 +116,13 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
     }
     remote::tick(app, &ctx);
     select::begin(app, ui, m, place);
-    let doc = view::doc_where(&ctx, m, place, remote::available(app));
-    let access = if doc.remote.is_empty() { Access::Blocked } else { remote::access(app, m) };
+    // //// Neoffice — a message Nora translated shows her translation, as plain text, for its body (nora/pane.rs); its header, files and meeting stay its own.
+    let body = crate::nora::pane::shown(app, m, place);
+    let doc = view::doc_where(&ctx, &body, place, remote::available(app));
+    let access = if doc.remote.is_empty() { Access::Blocked } else { remote::access(app, &body) };
     // Asked for: what has not come yet is sent for, while the message is on screen.
-    let progress = if access == Access::Allowed { remote::want(app, &ctx, m, &doc) } else { remote::Progress::default() };
+    // //// Neoffice — of the body shown (above).
+    let progress = if access == Access::Allowed { remote::want(app, &ctx, &body, &doc) } else { remote::Progress::default() };
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
     header(app, ui, m, place, |app, ui, t| {
         remote::line(app, ui, m, &doc, access, progress, place, t);
@@ -127,6 +130,8 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
     });
     // A meeting that came with the message: what it is, and the ways to answer it.
     invitation::bar(app, ui, m, place);
+    // //// Neoffice — Nora's strip: she is translating the message, or her translation is shown, with the way back to the original (nora/pane.rs).
+    crate::nora::pane::strip(app, ui, m, place);
     // Only its headers and a preview are here yet (R3.2): say so, and why.
     if m.unfetched {
         let t = Tokens::get(ui.ctx());
@@ -169,7 +174,8 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
         // Sideways too: a data table is never squeezed below its words, so a wide one scrolls.
         egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("body", m.id)).show(ui, |ui| {
             egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 20, top: 12, bottom: 24 }).show(ui, |ui| {
-                view::show(app, ui, m, place, access);
+                // //// Neoffice — the body, or Nora's translation for it (above).
+                view::show(app, ui, &body, place, access);
             });
         });
     });
@@ -301,6 +307,8 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
                             let _ = app.run(id, json!({}));
                         }
                     }
+                    // //// Neoffice — Nora's button beside the actions, when a host reaches her: reply with her, or have her translate the message (nora/pane.rs).
+                    crate::nora::pane::button(app, ui, m);
                 }
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
                     fields.add(ui, select::Field::Subject, egui::Label::new(egui::RichText::new(subject).font(semibold(17.0)).color(t.text)).wrap());

@@ -28,6 +28,7 @@ mod band;
 mod flow;
 mod look;
 mod own_text;
+pub(crate) mod pane;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]

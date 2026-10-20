@@ -74,8 +74,6 @@ pub(crate) fn orb(painter: &Painter, rect: Rect, color: Color32) {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Mark {
     /// Her sphere: Nora herself.
-    // The reading pane's button (the next step).
-    #[allow(dead_code)]
     Orb,
     /// Two ticks: the spelling checked.
     Check,

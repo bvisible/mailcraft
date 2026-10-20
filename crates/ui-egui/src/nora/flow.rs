@@ -147,8 +147,6 @@ struct Wanted {
 
 /// A message as Nora translated it, shown in place of its body (the header, the files and the rest
 /// are the message's own).
-// The reading pane shows it (the next step).
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Translation {
     pub(crate) message: Id,
     pub(crate) language: &'static str,
@@ -205,8 +203,6 @@ impl Nora {
     }
 
     /// The message being translated, when one is.
-    // The reading pane shows it (the next step).
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn translating(&self) -> Option<Id> {
         self.flights.iter().find_map(|f| match f.what {
             What::Translation { message, .. } => Some(message),
@@ -642,6 +638,8 @@ fn put_over_own_text(app: &mut MailApp, sent: &OwnText, (mode, source): (Compose
 fn show_translation(app: &mut MailApp, message: Id, language: &'static str, text: String) {
     let Some(original) = app.session.mailbox.messages.get(&message) else { return };
     let mut shown = Message::clone(original);
+    // Shown as plain text: line breaks and tabs, no other control characters.
+    let text = text.replace("\r\n", "\n").chars().filter(|c| !c.is_control() || matches!(c, '\n' | '\t')).collect();
     shown.body = Body { text, html: None };
     // Its body is the translation, whole: nothing of it waits on disk.
     shown.kept = None;
