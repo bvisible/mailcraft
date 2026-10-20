@@ -31,6 +31,20 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   with a run's part of it in `mail/outgoing`), and an in-process server for the tests of the crates that sit on it
   (the `stand-in` feature). A crate with no upstream equivalent, written so that it can be offered upstream: nothing
   in it names this fork's products.
+- Nora, the assistant of the Neoffice server, when a page that hosts the browser build reaches her (nothing of her
+  anywhere else): `crates/ui-egui/src/nora.rs` and `nora/` (her answers read as a stranger's bytes, what she is given,
+  seven window commands `ui.nora*` that agents may never run, her band under the subject of a message being written,
+  her button in the reading pane and her translation in place of a message's body, her place in the ribbon), and
+  the browser's way to her in `apps/mailcraft-web/src/nora.rs` and `nora_origin.rs`. The marked hunks are in
+  `crates/ui-egui/src/lib.rs` (the module, the host's field of `Services`, the commands, the window's state, the poll
+  once a frame), `reading.rs`, `compose.rs`, `ribbon.rs`, `icons.rs`, `crates/engine/src/agent.rs`,
+  `apps/mailcraft-web/src/main.rs` and `web.rs`; her French lines are a block near the top of `fr.tsv`. The rules:
+  only the six methods Neodesk's shell lets through are called; a message of a mailbox the page handed over goes by
+  its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; the origin of
+  her calls never comes from the address, but for a loopback page naming a loopback origin (the workshop's stand-in
+  server), and the page's CSRF token goes to the page's own origin only; a hosting page that makes the calls itself
+  offers `window.mailcraftNoraCall`; every call ends (195 s in the browser, 200 s in the window); what she writes
+  goes into the composer as one step Undo takes back, and nothing she writes is sent.
 - `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`
   and `fetch` against that in-process server, end to end; the last holds the sending of a message and the filing of a
   draft to both kinds of server the stand-in can be.
