@@ -269,3 +269,32 @@ fn a_change_the_server_did_not_take_has_the_notes_read_again_soon() {
     let ask = last(&asked).notes.unwrap();
     assert!(ask.read && ask.state.is_empty(), "{ask:?}");
 }
+
+#[test]
+fn a_change_waiting_for_its_version_has_the_notes_read_whole_whatever_state_is_held() {
+    let (mut app, _, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    // An answer that didn't say the note's words left it no version; she edits it.
+    if let Some(note) = app.session.mailbox.notes.note_mut(groceries) {
+        note.version.clear();
+    }
+    app.execute("notes.edit", json!({"id": groceries, "text": "Mine"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND), "a job, for the version");
+    let ask = last(&asked).notes.unwrap();
+    assert!(ask.read && ask.state.is_empty(), "read whole: {ask:?}");
+    assert!(ask.changes.is_none(), "the change waits for the version, without a failure");
+}
+
+#[test]
+fn a_hosting_tab_keeps_notes_a_server_stopped_keeping_and_asks_before_it_is_left() {
+    let (mut app, id, asked) = read_once();
+    app.session.keeps_local = false;
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    assert!(app.jmap_pim_tick_at(true, T0 + 11.0 * MINUTE));
+    let gone = NotesDownload { account: id, email: ME.into(), offered: false, ..Default::default() };
+    answer(&mut app, &asked, id, Some(NotesAnswer { download: Some(gone), ..Default::default() }));
+    assert!(app.session.mailbox.notes.items.values().any(|note| note.title == "Lunch" && note.origin.is_local()));
+    assert!(app.session.mailbox.notes.changes.is_empty());
+    assert!(app.notes_unsent(), "on this page alone: leaving it asks");
+}

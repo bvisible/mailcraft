@@ -263,3 +263,25 @@ fn a_note_whose_answer_was_lost_is_one_note() {
     assert_eq!(here, [lunch], "the one made here, with the server's name");
     assert!(flow.app.session.mailbox.notes.changes.is_empty());
 }
+
+#[test]
+fn more_typed_after_a_lost_answer_is_no_conflict_with_herself() {
+    let mut flow = start(false, true);
+    let groceries = flow.note_id("Groceries");
+    flow.app.execute("notes.edit", json!({"id": groceries, "text": "Milk"})).unwrap();
+    // The server writes it, and its answer is lost on the way.
+    flow.server.with(|d| d.faults.push_back(Fault::on("Note/set", Effect::LoseAnswer)));
+    assert!(flow.push_notes());
+    assert_eq!(flow.server_note("Groceries").map(|note| note.text), Some("Milk".into()));
+    assert!(!flow.app.session.mailbox.notes.changes.is_empty(), "no answer: it waits");
+    // She types more before it goes again.
+    flow.app.execute("notes.edit", json!({"id": groceries, "text": "Milk\nEggs"})).unwrap();
+    flow.app.session.clock.now = Some(NOW + 5 * 60);
+    for _ in 0..4 {
+        flow.push_notes();
+        flow.look(MINUTE);
+    }
+    assert_eq!(flow.server_note("Groceries").map(|note| note.text), Some("Milk\nEggs".into()));
+    assert!(flow.note("Groceries (2)").is_none(), "no copy of her own words: {:?}", flow.app.sync_problems_of(flow.account));
+    assert!(flow.app.session.mailbox.notes.changes.is_empty());
+}

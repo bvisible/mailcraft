@@ -480,3 +480,40 @@ fn a_note_that_says_nothing_of_the_rights_allows_a_shared_one_nothing() {
     assert!(changed_of("VN-2", &json!({"updated": "2026-10-20T08:00:00.123Z"})).is_none());
     assert!(changed_of("VN-2", &json!({"updated": "2026-10-20T08:00:00.123Z", "title": "T", "text": ""})).is_some());
 }
+
+#[test]
+fn a_change_without_a_version_has_the_notes_read_whole_even_with_a_state_held() {
+    let server = server();
+    let state = answer(&run(&server, &request(read()))).state.clone().unwrap();
+    let words = update("VN-2", NoteFields { text: Some("Mine".into()), ..Default::default() }, "");
+    let ask = NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops: vec![words] }), ..holding(&state, 60) };
+    let result = run(&server, &request(ask));
+    assert!(answer(&result).download.as_ref().is_some_and(|read| read.complete), "read whole, for the version: {result:?}");
+}
+
+#[test]
+fn more_typed_after_a_lost_answer_goes_over_the_servers_copy_of_her_own_write() {
+    let server = server();
+    let read = version_of(&server, "VN-2");
+    let only = |op: NoteOp| NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops: vec![op] }), ..Default::default() };
+    // "Milk" goes; the server writes it and its answer is lost.
+    server.with(|d| d.lost_answers = 1);
+    run(&server, &request(only(update("VN-2", NoteFields { text: Some("Milk".into()), ..Default::default() }, &read))));
+    // She types more meanwhile: the change now carries "Milk\nEggs", and what went before.
+    let more = NoteOp {
+        earlier: Some(NoteFields { text: Some("Milk".into()), ..Default::default() }),
+        ..update("VN-2", NoteFields { text: Some("Milk\nEggs".into()), ..Default::default() }, &read)
+    };
+    let again = run(&server, &request(only(more)));
+    let said = answer(&again).uploaded.as_ref().and_then(|uploaded| uploaded.outcomes.first()).cloned().unwrap();
+    assert_eq!(said.result, NoteResult::Done, "her own write is no conflict: {said:?}");
+    assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk\nEggs".into()));
+    // Something else there (another device) still is one.
+    server.with(|d| d.notes.change("VN-2", |note| note.text = "Phone".into()));
+    let other = NoteOp {
+        earlier: Some(NoteFields { text: Some("Milk".into()), ..Default::default() }),
+        ..update("VN-2", NoteFields { text: Some("Milk\nEggs\nBread".into()), ..Default::default() }, &read)
+    };
+    let refused = run(&server, &request(only(other)));
+    assert_eq!(outcomes(&refused)[0].0, NoteResult::Stale);
+}

@@ -851,3 +851,11 @@ fn a_meeting_held_online_by_a_service_of_its_own_is_joined_in_french_as_one_onli
     let service = t_in(french(), mailcraft_model::OnlineProvider::Other.label());
     assert_eq!(fmt(t_in(french(), "Join {service} Meeting"), &[("service", service)]), "Rejoindre la réunion en ligne");
 }
+
+#[test]
+fn a_notes_limit_reads_with_the_thousands_as_the_language_writes_them() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain_status(french(), text, &mb).map(|r| r.text);
+    assert_eq!(fr("A note holds 100,000 characters at most").as_deref(), Some("Une note contient au plus 100'000 caractères"));
+    assert_eq!(fr("A note's title holds 140 characters at most").as_deref(), Some("Le titre d’une note contient au plus 140 caractères"));
+}

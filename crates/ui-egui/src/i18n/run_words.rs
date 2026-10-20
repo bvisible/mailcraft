@@ -147,11 +147,33 @@ impl Kind {
     /// Whether `value` may be what a placeholder of this kind holds.
     fn fits(self, value: &str) -> bool {
         match self {
-            Kind::Number => !value.is_empty() && value.len() <= 20 && value.bytes().all(|b| b.is_ascii_digit()),
+            // Digits, or digits in groups of three as English writes a large number (`100,000`).
+            Kind::Number => !value.is_empty() && value.len() <= 20 && grouped(value),
             Kind::Token => !value.is_empty() && value.len() <= 40 && value.bytes().all(|b| b.is_ascii_alphanumeric()),
             _ => !value.is_empty() && !value.chars().any(char::is_control),
         }
     }
+}
+
+/// A thousand as English writes it: a catalog writes it as its language does (`1'000`), which says how its thousands
+/// are set apart.
+const THOUSANDS: &str = "1,000";
+
+/// Whether `value` is digits, or groups of three digits after one to three, set apart by commas.
+fn grouped(value: &str) -> bool {
+    let mut parts = value.split(',');
+    let first = parts.next().unwrap_or_default();
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    if !value.contains(',') {
+        return digits(value);
+    }
+    digits(first) && first.len() <= 3 && parts.all(|part| digits(part) && part.len() == 3)
+}
+
+/// What sets thousands apart in `lang`, as its catalog writes [`THOUSANDS`].
+fn thousands(lang: Lang) -> String {
+    let written = t_in(lang, THOUSANDS);
+    written.chars().nth(1).filter(|c| !c.is_ascii_digit()).map_or_else(|| ",".to_string(), |c| c.to_string())
 }
 
 /// A row and its template's parts.
@@ -383,7 +405,9 @@ impl Reader<'_> {
                 Some(Kind::Subject | Kind::Addresses) => value.replace(ADDRESS, t_in(self.lang, ADDRESS)),
                 Some(Kind::Folder) => standard_folder_name(self.mb, value, self.lang).unwrap_or_else(|| value.to_string()),
                 Some(Kind::Text) if value == NO_REASON => t_in(self.lang, NO_REASON).to_string(),
-                Some(Kind::Number | Kind::Token | Kind::Text) | None => value.to_string(),
+                // (A large number with its thousands as the reader's language writes them.)
+                Some(Kind::Number) => value.replace(',', &thousands(self.lang)),
+                Some(Kind::Token | Kind::Text) | None => value.to_string(),
             };
             args.push((name, shown));
         }

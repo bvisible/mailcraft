@@ -355,3 +355,70 @@ fn words_typed_into_a_note_that_turned_rich_or_read_only_are_kept() {
         assert_eq!(titled(&window, "Groceries (2)").map(|copy| copy.text), Some("Milk and eggs".into()), "rich {rich}, read only {read_only}");
     }
 }
+
+#[test]
+fn a_title_the_server_made_from_the_first_line_is_no_change_underneath() {
+    let mut window = window(false, "view.mail");
+    let account = with_server(&mut window);
+    window.state_mut().execute("view.notes", json!({})).unwrap();
+    let id = window.state_mut().execute("notes.new", json!({"text": "Lake walk\nIdeas"})).unwrap()["id"].as_u64().unwrap();
+    window.run_steps(3);
+    let op = mailcraft_engine::cmd::notes::server::note_upload(&window.state().session, account).unwrap().ops[0].clone();
+    click_into(&mut window, "noteTitle", id);
+    text(&mut window, "Offsite");
+    // The create is answered meanwhile: the server named the note from its first line.
+    let made = mailcraft_model::note::RemoteNote {
+        id: "VN-9".into(),
+        title: "Lake walk".into(),
+        text: "Lake walk\nIdeas".into(),
+        version: "v1".into(),
+        ..Default::default()
+    };
+    let done = mailcraft_model::note::NoteOutcome { op, result: mailcraft_model::note::NoteResult::Done, note: Some(made), ..Default::default() };
+    let uploaded = mailcraft_model::note::NotesUploaded { account, email: "ada@example.org".into(), outcomes: vec![done], ..Default::default() };
+    mailcraft_engine::cmd::notes::server::apply_note_outcomes(&mut window.state_mut().session, &uploaded).unwrap();
+    key(&mut window, Key::Escape);
+    window.run_steps(3);
+    assert_eq!(note(&window, id).title, "Offsite", "her title, over the one the server made");
+    assert!(titled(&window, "Offsite (2)").is_none() && titled(&window, "Lake walk (2)").is_none(), "no copy: nobody else changed it");
+}
+
+#[test]
+fn closing_saves_what_was_typed_and_asks_about_what_can_not_be_saved_yet() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    assert!(window.state_mut().close_requested(), "saved, and closed");
+    assert_eq!(note(&window, id).text, "Milk and eggs");
+    // Words over what the server takes can't be saved yet: closing asks, as for a message being written.
+    let mut window = self::window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    if let Some(server) = window.state_mut().session.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
+        server.max_text = 6;
+    }
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    assert!(!window.state_mut().close_requested(), "held: the words would be lost");
+    assert!(window.state().dialog.is_some());
+    window.state_mut().execute("ui.dropNoteDrafts", json!({"then": "quit"})).unwrap();
+    assert!(window.state().quit_requested && !window.state().notes_unsent());
+}
+
+#[test]
+fn words_kept_for_a_note_gone_keep_a_title_too_long_for_the_server_whole() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    if let Some(server) = window.state_mut().session.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
+        server.max_title = 12;
+    }
+    click_into(&mut window, "noteTitle", id);
+    text(&mut window, " for the week");
+    window.state_mut().session.mailbox.notes.items.remove(&id);
+    window.run_steps(3);
+    let kept = window.state().session.mailbox.notes.items.values().next().cloned().expect("kept");
+    assert_eq!(kept.title.chars().count(), 12);
+    assert_eq!(kept.text, "Groceries for the week\nMilk", "her whole title first, then her words");
+}

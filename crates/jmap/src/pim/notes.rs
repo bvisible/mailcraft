@@ -121,6 +121,10 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
             other => other,
         };
         read_again = !kept || read;
+        // A change waits for the version of its words: the state held says nothing of it, and the notes are read whole.
+        if read {
+            held = None;
+        }
         answer.uploaded = Some(uploaded);
         stop = stopped;
     }
@@ -294,6 +298,22 @@ fn changed_of(id: &str, value: &Value) -> Option<RemoteNote> {
     }
     said.insert("id".into(), json!(id));
     note_of(&Value::Object(said))
+}
+
+/// Whether `note` (the server's) has exactly what an earlier sending of `op` carried, and every part `op` names went
+/// then: its version is her own write, not someone else's.
+fn ours(op: &NoteOp, note: &RemoteNote) -> bool {
+    let Some(earlier) = &op.earlier else { return false };
+    let fields = &op.fields;
+    let named = (fields.title.is_none() || earlier.title.is_some())
+        && (fields.text.is_none() || earlier.text.is_some())
+        && (fields.pinned.is_none() || earlier.pinned.is_some())
+        && (fields.archived.is_none() || earlier.archived.is_some());
+    named
+        && earlier.title.as_ref().is_none_or(|title| *title == note.title)
+        && earlier.text.as_ref().is_none_or(|text| *text == note.text)
+        && earlier.pinned.is_none_or(|pinned| pinned == note.pinned)
+        && earlier.archived.is_none_or(|archived| archived == note.archived)
 }
 
 /// Text from a server with its markup taken out.
@@ -535,8 +555,29 @@ impl<H: Http> Job<'_, H> {
             if same && let Some(slot) = w.outcomes.get_mut(at) {
                 *slot = None;
                 w.answer(at, NoteResult::Done, Some(note.clone()), "", None);
+                continue;
+            }
+            // The note there has exactly what an earlier sending of it carried (its answer lost) and every part this
+            // one names went then: the server's newer version is her own write. What she typed since goes over it.
+            if ours(&op, note) {
+                self.send_again(at, &op, &note.version, w).await;
             }
         }
+    }
+
+    /// The change at `at` sent again over the version `version`, the server's copy of her own earlier write: done when
+    /// the server takes it; stale as before otherwise.
+    async fn send_again(&self, at: usize, op: &NoteOp, version: &str, w: &mut Writes) {
+        let again = NoteOp { version: version.to_string(), ..op.clone() };
+        let args = json!({"accountId": self.account, "update": {op.remote.clone(): note_json(&again)}});
+        let Ok(mut answers) = self.client.call_within(&USING, vec![("Note/set", args)], ITEMS_BYTES).await else { return };
+        let Ok(answer) = answers.take(0) else { return };
+        w.states(&answer);
+        let Some(said) = answer.get("updated").and_then(|updated| updated.get(&op.remote)) else { return };
+        if let Some(slot) = w.outcomes.get_mut(at) {
+            *slot = None;
+        }
+        w.answer(at, NoteResult::Done, changed_of(&op.remote, said), "", None);
     }
 
     /// Read the notes into `got` (see the module): only whether the server still says `held`, when there is one.

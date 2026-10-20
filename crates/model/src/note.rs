@@ -330,6 +330,10 @@ pub struct NoteChange {
     /// Why it didn't go through the last time.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
+    /// What of it was last sent and not answered (the answer was lost, or never came): what the server may have
+    /// written already, so that its own write is never taken for someone else's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sent: Option<NoteFields>,
 }
 
 impl std::fmt::Debug for NoteChange {
@@ -405,6 +409,9 @@ pub struct NoteOp {
     /// For a change of its words: the version it was made from; empty otherwise (a pin or an archive carries none).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub version: String,
+    /// What an earlier sending of this change carried that no answer came for: what the server may hold already.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub earlier: Option<NoteFields>,
 }
 
 impl NoteOp {
@@ -414,6 +421,9 @@ impl NoteOp {
         self.token = clean_token(&self.token);
         self.fields.tidy();
         self.version = clean_version(&self.version);
+        if let Some(earlier) = &mut self.earlier {
+            earlier.tidy();
+        }
     }
 }
 

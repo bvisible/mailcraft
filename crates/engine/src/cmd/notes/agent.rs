@@ -23,6 +23,8 @@ pub fn access(id: &str) -> Option<Access> {
         "sync.applyNotes" | "sync.noteChanges" | "sync.applyNoteChanges" => Access::Never,
         // The window's: a note's link opened in the system's browser, as a meeting's is (Send).
         "ui.openNote" => Access::Owner(Class::Send),
+        // The window's: what was typed into notes and can't be saved, given up on the way out: the owner's click alone.
+        "ui.dropNoteDrafts" => Access::Never,
         _ => return None,
     })
 }

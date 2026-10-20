@@ -40,10 +40,25 @@ pub const NO_ROOM_FOR_COPY: &str =
 pub const NOT_DELETED: &str = "The server wouldn't delete {title}, which is back in the notes: {said}";
 pub const MADE_ANEW: &str = "{title} was already deleted on the server when its deletion was undone here: it is made there anew.";
 /// A server that no longer keeps notes: what waited to go to it is kept on this computer, or (a session that keeps
-/// nothing of its own) not at all.
+/// nothing of its own) on this page, unsent, until it is left (it asks before).
 pub const NO_LONGER_KEPT: &str = "The server no longer keeps notes here: the notes that waited to go are kept on this computer.";
-pub const NO_LONGER_KEPT_LOST: &str =
-    "The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.";
+pub const NO_LONGER_KEPT_PAGE: &str =
+    "The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left.";
+/// Words typed into a note shared with the person that is no longer shared with her: they are a note of her own.
+pub const KEPT_WHEN_UNSHARED: &str = "{title} is no longer shared with you: your version is kept as a note of its own.";
+
+/// `n` with its thousands grouped, as English writes it (`100,000`); the window writes it in its own language's way.
+pub fn grouped(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
 
 /// `template` with each `{name}` filled with its value, in one pass.
 pub fn fill(template: &str, values: &[(&str, &str)]) -> String {

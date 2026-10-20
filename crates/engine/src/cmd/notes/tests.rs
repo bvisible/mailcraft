@@ -132,8 +132,8 @@ fn a_title_is_one_line_and_a_title_or_text_over_the_limit_is_refused() {
     assert_eq!(title(&s, id), "Two lines");
     assert_eq!(refused(&mut s, "notes.edit", json!({"title": "t".repeat(500)})), "A note's title holds 140 characters at most");
     assert_eq!(title(&s, id), "Two lines", "never cut");
-    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100000 characters at most");
-    assert_eq!(refused(&mut s, "notes.new", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100000 characters at most");
+    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100,000 characters at most");
+    assert_eq!(refused(&mut s, "notes.new", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100,000 characters at most");
     // A server that takes shorter ones refuses beyond its limit, and says its limit.
     let (mut s, account) = with_server();
     if let Some(server) = s.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {

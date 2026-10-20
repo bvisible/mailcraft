@@ -163,13 +163,14 @@ fn a_server_that_no_longer_offers_notes_takes_them_away_with_a_word() {
     assert!(s.mailbox.notes.servers.is_empty() && s.mailbox.notes.changes.is_empty());
     assert_eq!(s.mailbox.notes.items.len(), 1, "the one that waited is kept, as the mailbox's own");
     assert!(s.mailbox.notes.note(waiting).is_some_and(|note| note.origin.is_local()));
-    // In a session that keeps nothing of its own, it is not kept, and that is said.
+    // In a session that keeps nothing of its own, it stays on the page, unsent, until the page is left (it asks first).
     let (mut s, account) = session();
     s.keeps_local = false;
     run(&mut s, "notes.new", json!({"title": "Not sent yet"}));
     let said = run(&mut s, "sync.applyNotes", json!({"download": NotesDownload { account, email: ME.into(), ..Default::default() }}));
-    assert_eq!(said["messages"], json!([super::super::words::NO_LONGER_KEPT_LOST]));
-    assert!(s.mailbox.notes.items.is_empty());
+    assert_eq!(said["messages"], json!([super::super::words::NO_LONGER_KEPT_PAGE]));
+    assert!(s.mailbox.notes.items.values().all(|note| note.origin.is_local() && note.title == "Not sent yet"));
+    assert!(super::super::offered(&s), "and shown");
 }
 
 #[test]
@@ -563,4 +564,90 @@ fn an_answer_that_brings_another_devices_words_of_a_part_not_changed_here_settle
     answer(&mut s, account, NoteResult::Done, "", Some(said));
     assert_eq!((note(&s, groceries).text.as_str(), note(&s, groceries).version.as_str()), ("Milk\nCoffee", "v3"));
     assert!(s.mailbox.notes.changes.is_empty(), "nothing waits: the note here is the server's");
+}
+
+#[test]
+fn a_refused_new_note_stays_when_the_server_stops_offering_notes() {
+    for keeps_local in [true, false] {
+        let (mut s, account) = session();
+        s.keeps_local = keeps_local;
+        let id = run(&mut s, "notes.new", json!({"title": "Lunch", "text": "Friday"}))["id"].as_u64().unwrap();
+        answer(&mut s, account, NoteResult::Refused, "Not permitted", None);
+        assert!(s.mailbox.notes.changes.is_empty(), "refused: nothing waits, the note is here with why");
+        let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+        let said = run(&mut s, "sync.applyNotes", json!({"download": gone}));
+        assert!(s.mailbox.notes.note(id).is_some_and(|note| note.origin.is_local() && note.text == "Friday"), "kept: {keeps_local}");
+        assert_eq!(said["messages"].as_array().map(Vec::len), Some(1), "and said: {said}");
+    }
+}
+
+#[test]
+fn a_copy_whose_title_had_to_be_cut_has_the_whole_title_as_its_first_line() {
+    let (mut s, account) = session();
+    let offsite = by_remote(&s, "VN-1");
+    let long = "T".repeat(140);
+    run(&mut s, "notes.edit", json!({"id": offsite, "title": long, "text": "Mine"}));
+    answer(&mut s, account, NoteResult::Stale, "changed elsewhere", None);
+    let copy = s.mailbox.notes.items.values().find(|note| note.title.ends_with(" (2)")).cloned().expect("a copy");
+    assert_eq!(copy.title.chars().count(), 140);
+    assert_eq!(copy.text, format!("{long}\nMine"), "nothing of her title lost");
+}
+
+#[test]
+fn an_answer_to_a_change_without_its_words_leaves_no_version_and_the_notes_are_read() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    answer(&mut s, account, NoteResult::Done, "", None);
+    assert_eq!(note(&s, groceries).version, "", "a version is never kept for words it isn't of");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
+    assert!(ops(&mut s, account).is_empty(), "not sent without a version");
+    assert!(super::notes_need_read(&s, account), "the notes are read for it");
+    // The read gives it the version of the words it was made over.
+    let read = RemoteNote { text: "Milk".into(), ..remote("VN-2", "Groceries", "v5") };
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z"), read])}));
+    let going = ops(&mut s, account);
+    assert_eq!((going.len(), going[0].version.as_str()), (1, "v5"));
+    assert!(!super::notes_need_read(&s, account));
+}
+
+#[test]
+fn words_kept_when_a_note_is_no_longer_shared_with_her_say_so() {
+    let (mut s, account) = session();
+    let mut shared = remote("VN-3", "Codes", "v1");
+    (shared.shared, shared.owner_name) = (true, "Grace Okafor".into());
+    run(
+        &mut s,
+        "sync.applyNotes",
+        json!({"download": download(account, vec![remote("VN-1", "Offsite", "v"), remote("VN-2", "Groceries", "v"), shared])}),
+    );
+    let codes = by_remote(&s, "VN-3");
+    run(&mut s, "notes.edit", json!({"id": codes, "text": "4711 and 0815"}));
+    let said = answer(&mut s, account, NoteResult::Gone, "", None);
+    assert_eq!(said["messages"], json!(["\"Codes\" is no longer shared with you: your version is kept as a note of its own."]));
+    let mine = note(&s, codes);
+    assert!(!mine.shared && mine.owner_name.is_empty() && mine.rights.delete && mine.origin.id.is_empty(), "{mine:?}");
+}
+
+#[test]
+fn what_was_sent_of_a_change_goes_with_it_until_an_answer_comes() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    let first = note_upload_now(&mut s, account);
+    super::notes_sending(&mut s, &first);
+    // Its answer was lost; she types more.
+    answer(&mut s, account, NoteResult::Failed, "network: the connection broke", None);
+    s.clock.now = s.clock.now.map(|now| now + 600);
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
+    let going = ops(&mut s, account);
+    assert_eq!(going[0].earlier.as_ref().and_then(|earlier| earlier.text.as_deref()), Some("Milk"), "what may be on the server already");
+    // An answer settles it.
+    let said = RemoteNote { text: "Milk\nEggs".into(), ..remote("VN-2", "Groceries", "v9") };
+    answer(&mut s, account, NoteResult::Done, "", Some(said));
+    assert!(s.mailbox.notes.changes.iter().all(|change| change.sent.is_none()));
+}
+
+fn note_upload_now(s: &mut Session, account: u64) -> mailcraft_model::note::NotesUpload {
+    serde_json::from_value(run(s, "sync.noteChanges", json!({"account": account}))).unwrap()
 }

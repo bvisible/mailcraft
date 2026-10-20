@@ -21,7 +21,9 @@
 use std::collections::HashMap;
 
 use mailcraft_engine::Module;
-use mailcraft_engine::cmd::notes::server::{apply_note_outcomes, merge_notes, note_upload, notes_waiting, settle_note_changes};
+use mailcraft_engine::cmd::notes::server::{
+    apply_note_outcomes, merge_notes, note_upload, notes_need_read, notes_sending, notes_waiting, settle_note_changes,
+};
 use mailcraft_model::Id;
 use mailcraft_model::note::{NoteResult, NotesAsk, NotesUpload};
 use mailcraft_model::sync::JmapPimResult;
@@ -119,7 +121,8 @@ impl MailApp {
         let job = self.jmap_pim.notes.accounts.get(&account);
         let kept = self.session.mailbox.notes.server(account).is_some();
         let every = self.jmap_pim.notes.in_front && job.and_then(|job| job.read).is_none_or(|at| now - at >= IN_FRONT_MS);
-        kept && (job.is_some_and(|job| job.due) || every)
+        // (A change of words waits for the version a read brings.)
+        kept && (job.is_some_and(|job| job.due) || every || notes_need_read(&self.session, account))
     }
 
     /// Whether a job of `account` is wanted for its notes alone: a change to send, or a read that is due.
@@ -139,14 +142,20 @@ impl MailApp {
             return None;
         }
         let read = wide || self.notes_read_due(account, now);
+        // A change waiting for the version of its words: the notes are read whole, the state held says nothing of it.
+        let need = notes_need_read(&self.session, account);
         let changes = self.notes_push(account, now);
+        // What goes is on its way: kept with each change until an answer comes (what the server may write already).
+        if let Some(changes) = &changes {
+            notes_sending(&mut self.session, changes);
+        }
         if !read && changes.is_none() {
             return None;
         }
         let asked_at = self.session.now();
         let job = self.jmap_pim.notes.accounts.entry(account).or_default();
         // (The state goes with changes alone too: the host keeps it when the server took them from that very state.)
-        let (state, read_at) = job.state.clone().unwrap_or_default();
+        let (state, read_at) = if need { Default::default() } else { job.state.clone().unwrap_or_default() };
         if read {
             (job.read, job.due) = (Some(now), false);
         }
@@ -229,9 +238,10 @@ impl MailApp {
     /// a change of a note waits to go to its server, or words typed into a note are not in it yet. A hosting page asks
     /// before it is left while there is one.
     pub fn notes_unsent(&self) -> bool {
-        // (A new note the server refused waits nowhere: it is here alone, with why.)
+        // (A new note the server refused waits nowhere: it is here alone, with why; and in such a tab, a note of the
+        // page's own is one a server stopped keeping.)
         let refused_new =
-            self.session.mailbox.notes.items.values().any(|note| note.origin.is_remote() && note.origin.id.is_empty() && !note.error.is_empty());
+            self.session.mailbox.notes.items.values().any(|note| note.origin.is_local() || (note.origin.id.is_empty() && !note.error.is_empty()));
         !self.session.keeps_local
             && (!self.session.mailbox.notes.changes.is_empty() || refused_new || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
     }

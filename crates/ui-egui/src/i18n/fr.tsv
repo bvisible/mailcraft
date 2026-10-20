@@ -86,20 +86,26 @@
 	Apply Downloaded Notes	Appliquer les notes téléchargées
 	Note Changes to Send	Modifications de notes à envoyer
 	Apply Sent Note Changes	Appliquer les modifications de notes envoyées
-	{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.	{title} a été modifiée ailleurs entre-temps : votre version est conservée comme une note à part, {copy}.
-	{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.	{title} a été supprimée ailleurs entre-temps : votre version est conservée comme une note à part.
+	{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.	La note {title} a été modifiée ailleurs entre-temps : votre version est conservée sous forme de note distincte, {copy}.
+	{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.	La note {title} a été supprimée ailleurs entre-temps : votre version est conservée sous forme de note distincte.
 	{title} couldn't be saved on the server: {said}	{title} n’a pas pu être enregistrée sur le serveur : {said}
 	The change to {title} was put back as the server has it: {said}	Le serveur a refusé la modification de {title} et la note est revenue à la version qu’il conserve : {said}
 	The server wouldn't delete {title}, which is back in the notes: {said}	Le serveur a refusé de supprimer {title}, qui est de nouveau dans les notes : {said}
 	{title} was already deleted on the server when its deletion was undone here: it is made there anew.	{title} avait déjà été supprimée sur le serveur quand sa suppression a été annulée ici : elle y est recréée.
 	The server no longer keeps notes here: the notes that waited to go are kept on this computer.	Le serveur ne conserve plus les notes ici : les notes en attente d’envoi sont conservées sur cet ordinateur.
-	The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.	Le serveur ne conserve plus les notes ici, et cette page ne garde rien de son côté : les notes en attente d’envoi n’ont pas été conservées.
+	The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left.	Le serveur ne conserve plus de notes ici : les notes en attente d’envoi restent sur cette page, non envoyées, jusqu’à ce que la page soit quittée.
 	Couldn't send the note changes: {why}	Impossible d’envoyer les modifications des notes : {why}
 	Couldn't read the notes: {why}	Impossible de lire les notes : {why}
 	1 note couldn't be read: {why}	1 note n’a pas pu être lue : {why}
 	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
-	the notes hold more text than one reading takes, and these are not shown	Les notes contiennent plus de texte qu’une lecture ne peut en prendre, et celles-ci ne sont pas affichées
+	the notes hold more text than one reading takes, and these are not shown	les notes contiennent plus de texte qu’une lecture ne peut en absorber, et ce texte n’est pas affiché
 	The notes couldn't be taken in	Les notes n’ont pas pu être prises en compte
+	{title} is no longer shared with you: your version is kept as a note of its own.	La note {title} n’est plus partagée avec vous : votre version est conservée sous forme de note distincte.
+	Unsaved Note	Note non enregistrée
+	A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.	Une note contient des mots qui ne peuvent pas encore être enregistrés : ils dépassent la longueur acceptée par son serveur. En fermant maintenant, ils seront perdus.
+	Close Anyway	Fermer quand même
+	1,000	1'000
+	Discard Unsaved Note Words	Abandonner les mots non enregistrés de la note
 	A note's title holds {max} characters at most	Le titre d’une note contient au plus {max} caractères
 	The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}.	Le serveur n’a pas accepté la modification de {title} : {said}. Votre version est conservée comme une note à part, {copy}.
 	{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}.	{title} ne peut plus être modifiée ici ({why}) : votre version est conservée comme une note à part, {copy}.

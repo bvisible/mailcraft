@@ -525,7 +525,11 @@ fn save(app: &mut MailApp, draft: &mut Draft, now: f64) -> bool {
         draft.typed = None;
         return true;
     }
-    let underneath = (wants_title && note.title != draft.from_title) || (wants_text && note.text != draft.from_text);
+    // (A title the server gave a note sent without one, from its first line, is nobody's change of it.)
+    let most_title = notes::limits(&app.session, if note.origin.is_remote() { note.origin.account } else { 0 }).0;
+    let derived = draft.from_title.is_empty() && note.title == notes::derived_title(&note.text, most_title);
+    let title_moved = note.title != draft.from_title && !derived;
+    let underneath = (wants_title && title_moved) || (wants_text && note.text != draft.from_text);
     if underneath {
         return keep_copy(app, draft, Kept::Underneath);
     }
@@ -587,11 +591,16 @@ fn keep_copy(app: &mut MailApp, draft: &mut Draft, why: Kept) -> bool {
     } else {
         draft.title.trim().to_string()
     };
-    let title: String = match why {
-        Kept::Gone => heading.chars().take(max_title).collect(),
+    let (title, cut) = match why {
+        Kept::Gone => (heading.chars().take(max_title).collect::<String>(), heading.chars().count() > max_title),
         _ => notes::server::copy_title(&app.session.mailbox, &heading, max_title),
     };
-    let mut params = json!({"title": title, "text": draft.text});
+    // A title that had to be cut goes whole as the first line of the text (one from the text is in it already).
+    let text = if cut && !draft.title.trim().is_empty() { format!("{}\n{}", draft.title.trim(), draft.text) } else { draft.text.clone() };
+    if text.chars().count() > max_text {
+        return false;
+    }
+    let mut params = json!({"title": title, "text": text});
     if to != 0 {
         params["account"] = json!(to);
     }
@@ -632,6 +641,27 @@ pub(crate) fn flush(app: &mut MailApp, ctx: &egui::Context, always: bool) {
     keep_drafts(ctx, kept);
 }
 
+/// The window is asked to close: what was typed into notes goes into them first, and what still can't be saved (more
+/// than its server takes) holds the close with a question, as a message being written does. Whether it holds it.
+pub(crate) fn hold_quit(app: &mut MailApp) -> bool {
+    let Some(ctx) = app.ctx.clone() else { return false };
+    flush(app, &ctx, true);
+    let Some(first) = drafts(&ctx).values().find(|draft| draft.typed.is_some()).map(|draft| draft.note) else { return false };
+    // The note in front, for the owner to see what can't be saved; and the question.
+    let _ = app.run("view.notes", json!({}));
+    let _ = app.run("notes.select", json!({"id": first}));
+    let ask = crate::dialogs::Question {
+        title: tl!("Unsaved Note").to_string(),
+        text: tl!("A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.").to_string(),
+        action: tl!("Close Anyway").to_string(),
+        with: Value::Null,
+        more: Vec::new(),
+        note: None,
+    };
+    app.dialog = Some(crate::dialogs::Dialog::Confirm { command: "ui.dropNoteDrafts".into(), params: json!({"then": "quit"}), ask });
+    true
+}
+
 /// Whether words typed into a note are not in it yet.
 pub(crate) fn typed(ctx: &egui::Context) -> bool {
     ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).values().any(|draft| draft.typed.is_some()))
@@ -641,6 +671,16 @@ pub(crate) fn typed(ctx: &egui::Context) -> bool {
 /// followed only because the owner asked, only when it is an `https` address, and by the rules a link in a message is
 /// followed by.
 pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+    if id == "ui.dropNoteDrafts" {
+        // What was typed into notes and can't be saved, given up (the owner's answer to closing): then the close.
+        if let Some(ctx) = app.ctx.clone() {
+            keep_drafts(&ctx, Drafts::new());
+        }
+        if p.get("then").and_then(Value::as_str) == Some("quit") {
+            app.quit_requested = true;
+        }
+        return Some(Ok(json!({"dropped": true})));
+    }
     if id != "ui.openNote" {
         return None;
     }

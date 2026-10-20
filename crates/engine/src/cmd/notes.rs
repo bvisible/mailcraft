@@ -55,7 +55,8 @@ const EDIT: &str = r#"{"id"?: number, "title"?: string, "text"?: string}"#;
 
 /// Whether notes are offered: where they are kept, on this computer or by a server that keeps notes.
 pub fn offered(s: &Session) -> bool {
-    s.keeps_local || !s.mailbox.notes.servers.is_empty()
+    // (Notes still here, a page's unsent ones, are shown whatever keeps them.)
+    s.keeps_local || !s.mailbox.notes.servers.is_empty() || !s.mailbox.notes.items.is_empty()
 }
 
 /// Why notes are not offered, when they aren't.
@@ -201,6 +202,12 @@ fn target_account(s: &Session, v: &Value) -> Result<Id, CmdError> {
     }
 }
 
+/// The title a server gives a note made without one: the first line of its text that has words, trimmed, as long as it
+/// takes titles (as the hosting page's server does).
+pub fn derived_title(text: &str, most: usize) -> String {
+    text.split('\n').map(str::trim).find(|line| !line.is_empty()).unwrap_or_default().chars().take(most).collect()
+}
+
 /// The longest title and text a note of `account` takes: its server's, or what this computer keeps.
 pub fn limits(s: &Session, account: Id) -> (usize, usize) {
     s.mailbox.notes.server(account).filter(|_| account != 0).map_or((MAX_NOTE_TITLE, MAX_NOTE_TEXT), |server| (server.max_title, server.max_text))
@@ -212,7 +219,7 @@ fn text_of(s: &Session, v: &Value, account: Id) -> Result<Option<String>, CmdErr
     let most = limits(s, account).1;
     let (text, cut) = clean_text(text);
     if cut || text.chars().count() > most {
-        return Err(fail(words::fill(NOTE_TOO_LONG, &[("max", &most.to_string())])));
+        return Err(fail(words::fill(NOTE_TOO_LONG, &[("max", &words::grouped(most))])));
     }
     Ok(Some(text))
 }
@@ -224,7 +231,7 @@ fn title_of(s: &Session, v: &Value, account: Id) -> Result<Option<String>, CmdEr
     let one_line = title.split(['\n', '\r']).map(str::trim).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ");
     let (title, cut) = clean_title(&one_line);
     if cut || title.chars().count() > most {
-        return Err(fail(words::fill(NOTE_TITLE_TOO_LONG, &[("max", &most.to_string())])));
+        return Err(fail(words::fill(NOTE_TITLE_TOO_LONG, &[("max", &words::grouped(most))])));
     }
     Ok(Some(title))
 }

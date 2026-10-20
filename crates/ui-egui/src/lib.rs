@@ -974,6 +974,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Meeting › Teams Meeting",
         r#"{"event"?: number (default: the selected item)} — opens the link to join an online meeting by in the system's browser. The link comes from the meeting's server: only an https address is opened, and only on this command"#,
     ),
+    // //// Neoffice — what was typed into notes and can't be saved, given up when the window closes anyway (notes_view.rs).
+    (
+        "ui.dropNoteDrafts",
+        "Discard Unsaved Note Words",
+        "Notes",
+        r#"{"then"?: "quit"} — gives up what was typed into notes and can't be saved yet (more than their server takes), then closes when asked to. The owner's answer to closing; never an agent's"#,
+    ),
     // //// Neoffice — a note opened on the web, in the system's browser, on the owner's click (notes_view.rs).
     (
         "ui.openNote",
@@ -3409,6 +3416,10 @@ impl MailApp {
         let (ready, anyway) = (std::mem::take(&mut self.close_ready), std::mem::take(&mut self.close_anyway));
         if self.session.compose.as_ref().is_some_and(|c| c.dirty) {
             self.dialog = dialogs::Dialog::open("discardDraft", self, &json!({"then": "quit"}));
+            return false;
+        }
+        // //// Neoffice — what was typed into a note goes into it first; words that still can't be saved ask, as a message being written does (notes_view.rs).
+        if notes_view::hold_quit(self) {
             return false;
         }
         // An appointment window with unsaved changes asks about them first.

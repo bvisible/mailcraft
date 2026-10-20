@@ -285,6 +285,7 @@ pub(super) static ROWS: &[Row] = &[
     // What became of a change of a note a server was told (`notes/server.rs`, in the words of `notes/words.rs`).
     row(NOTES, Line, run_word!("{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}."), &[]),
     row(NOTES, Line, run_word!("{title} was deleted elsewhere meanwhile: your version is kept as a note of its own."), &[]),
+    row(NOTES, Line, run_word!("{title} is no longer shared with you: your version is kept as a note of its own."), &[]),
     row(NOTES, Line, run_word!("{title} couldn't be saved on the server: {said}"), &[]),
     row(NOTES, Line, run_word!("The change to {title} was put back as the server has it: {said}"), &[]),
     row(NOTES, Line, run_word!("The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}."), &[]),
@@ -306,7 +307,7 @@ pub(super) static ROWS: &[Row] = &[
     row(
         NOTES,
         Line,
-        run_word!("The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept."),
+        run_word!("The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left."),
         &[],
     ),
     // What a job's notes say went wrong (`jmap::pim::notes`): they name no note.
