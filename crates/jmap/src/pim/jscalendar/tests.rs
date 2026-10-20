@@ -221,6 +221,10 @@ fn the_first_alert_before_the_start_is_the_reminder() {
     assert_eq!(alerted(json!({"a": offset("PT10M"), "b": {"trigger": {"offset": "-PT30M"}}, "c": offset("-PT5M")})), Some(30));
     assert_eq!(alerted(json!({"a": "soon", "b": {"trigger": "soon"}})), None);
     assert_eq!(alerted(json!(null)), None);
+    // One that mails rather than shows itself is no reminder.
+    let mailed = json!({"@type": "Alert", "trigger": {"offset": "-PT1H"}, "action": "email"});
+    assert_eq!(alerted(json!({"a": mailed, "b": offset("-PT20M")})), Some(20));
+    assert_eq!(alerted(json!({"a": mailed})), None);
 }
 
 #[test]

@@ -19,8 +19,8 @@
 //!   whether the owner organizes it (`None` when nobody does).
 //! - **The rest.** Free or Busy from `freeBusyStatus`, Tentative from a `status` of `tentative`; private when its
 //!   `privacy` is `private` or `secret`; cancelled from its `status`; the reminder is the first alert (in the order of
-//!   their names) with an offset before the start; the place is the first location with a name; a description the
-//!   server says is HTML loses its tags.
+//!   their names) that shows itself, with an offset before the start ([`reminder_alert`]); the place is the first
+//!   location with a name; a description the server says is HTML loses its tags.
 //! - **Series.** A series itself (an event with a rule and no `recurrenceId`, read by its own id) is the engine's
 //!   series: its rule as the mailbox says rules ([`rule_of`]: `recurrenceRule`, or the one entry of the newer
 //!   `recurrenceRules`), the day it counts from (the date of its `start`), and the times of its first occurrence. A
@@ -458,10 +458,20 @@ fn description(value: &Value) -> String {
     plain.split_whitespace().collect::<Vec<&str>>().join(" ")
 }
 
-/// The minutes before the start of the first alert (by the order of their names) whose trigger is an offset from the
-/// start that is not after it.
+/// The minutes before the start of the reminder ([`reminder_alert`]).
 fn reminder(value: &Value) -> Option<u32> {
-    entries(value, "alerts", MAX_ENTRIES).find_map(|alert| {
+    value.get("alerts").and_then(Value::as_object).and_then(reminder_alert).map(|(_, minutes)| minutes)
+}
+
+/// The alert of an event's `alerts` that is its reminder, its name and the minutes before the start: the first (by the
+/// order of their names, of the first [`MAX_ENTRIES`] that are alerts at all) that shows itself (its `action` is
+/// `display`, or says nothing) and whose trigger is an offset from the start that is not after it. The writer changes
+/// that one alone ([`super::write`]).
+pub fn reminder_alert(alerts: &Map<String, Value>) -> Option<(&String, u32)> {
+    alerts.iter().filter_map(|(key, alert)| alert.as_object().map(|alert| (key, alert))).take(MAX_ENTRIES).find_map(|(key, alert)| {
+        if alert.get("action").and_then(Value::as_str).unwrap_or("display") != "display" {
+            return None;
+        }
         let trigger = alert.get("trigger")?.as_object()?;
         let kind = trigger.get("@type").and_then(Value::as_str).unwrap_or("OffsetTrigger");
         let from = trigger.get("relativeTo").and_then(Value::as_str).unwrap_or("start");
@@ -469,7 +479,7 @@ fn reminder(value: &Value) -> Option<u32> {
             return None;
         }
         let offset = signed_seconds(trigger.get("offset").and_then(Value::as_str).unwrap_or_default())?;
-        (offset <= 0).then(|| u32::try_from(offset.unsigned_abs() / 60).unwrap_or(u32::MAX))
+        (offset <= 0).then(|| (key, u32::try_from(offset.unsigned_abs() / 60).unwrap_or(u32::MAX)))
     })
 }
 

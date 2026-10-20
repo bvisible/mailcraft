@@ -13,11 +13,11 @@
 //!   don't add up. A start in the hour the clocks show twice, the night they go back, cannot be told on that clock:
 //!   such an event is written in UTC, and loses its own zone. One occurrence of a series keeps its series' zone: its
 //!   start is on that clock, and no zone goes with it ([`Clock::Series`]).
-//! - **Places and people** are written whole, as the server takes them: the server's own map, read just before
+//! - **Places, people and alerts** are written whole, as the server takes them: the server's own map, read just before
 //!   ([`Copy`]), with the person's change made to it, so that what somebody else changed there meanwhile stays. A
 //!   change of who is invited is who came and who went since the event it was made to (`EventOp::invited_before`):
 //!   anybody else of the server's stays as the server has them. A copy of more than [`MAX_COPY_PEOPLE`] is not
-//!   rewritten.
+//!   rewritten. A reminder is the one alert the reader takes for it, set or taken away; the other alerts stay.
 //! - **What a server that keeps only the basics doesn't keep** (categories, importance, response options, online
 //!   meetings) is not written: it would refuse the whole event, and the person's other changes with it. A change of
 //!   nothing else is none ([`patch`] says so).
@@ -27,7 +27,7 @@ use mailcraft_model::{Attendee, Freq, Recurrence, Response, ShowAs};
 use mailcraft_time::{Date, DateTime, Timestamp, Zone};
 use serde_json::{Map, Value, json};
 
-use super::{Span, duration_text, local_text, mailto, mine};
+use super::{Span, duration_text, jscalendar, local_text, mailto, mine};
 
 /// The zone a time is written in that can't be told on its own clock.
 pub const UTC_ZONE: &str = "Etc/UTC";
@@ -179,13 +179,34 @@ pub fn rule_json(rule: &Recurrence, first: Date) -> Value {
     Value::Object(out)
 }
 
-/// A reminder as the server keeps one: an alert that many minutes before the start; none when it is off.
-fn alerts(on: bool, minutes: u32) -> Value {
-    if !on {
-        return json!({});
-    }
+/// The trigger of a reminder that many minutes before the start.
+fn trigger(minutes: u32) -> Value {
     let offset = if minutes == 0 { "PT0S".to_string() } else { format!("-{}", duration_text(Span { days: 0, seconds: i64::from(minutes) * 60 })) };
-    json!({"a1": {"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": offset, "relativeTo": "start"}, "action": "display"}})
+    json!({"@type": "OffsetTrigger", "offset": offset, "relativeTo": "start"})
+}
+
+/// The server's alerts (of `copy`; none for a new event) with the reminder as the person has it: the alert that is the
+/// reminder as it is read ([`jscalendar::reminder_alert`]) set to that many minutes before the start, or taken away
+/// when it is off, or a new one when there is none; every other alert as the server has it.
+fn alerts(copy: Option<&Copy>, on: bool, minutes: u32) -> Value {
+    let mut map: Map<String, Value> = copy.and_then(|copy| copy.get("alerts")).and_then(Value::as_object).cloned().unwrap_or_default();
+    let reminder = jscalendar::reminder_alert(&map).map(|(key, _)| key.clone());
+    match (reminder, on) {
+        (Some(key), false) => {
+            map.remove(&key);
+        }
+        (Some(key), true) => {
+            if let Some(Value::Object(alert)) = map.get_mut(&key) {
+                alert.insert("trigger".into(), trigger(minutes));
+            }
+        }
+        (None, true) => {
+            let key = free_key(&map, "a");
+            map.insert(key, json!({"@type": "Alert", "trigger": trigger(minutes), "action": "display"}));
+        }
+        (None, false) => {}
+    }
+    Value::Object(map)
 }
 
 /// One person invited, as such a server takes a participant who is to answer.
@@ -327,7 +348,7 @@ pub fn create(op: &EventOp, clock: Clock) -> Option<(Value, bool, String)> {
     out.insert("freeBusyStatus".into(), json!(free_busy(fields.show_as.unwrap_or_default())));
     out.insert("privacy".into(), json!(if fields.private == Some(true) { "private" } else { "public" }));
     let reminder = fields.reminder.unwrap_or_default();
-    out.insert("alerts".into(), alerts(reminder.on, reminder.minutes));
+    out.insert("alerts".into(), alerts(None, reminder.on, reminder.minutes));
     if let Some(rule) = fields.repeat.as_ref().and_then(|repeat| repeat.rule.as_ref().map(|rule| (rule, repeat.first))) {
         out.insert("recurrenceRule".into(), rule_json(rule.0, rule.1));
     }
@@ -371,7 +392,7 @@ pub fn patch(op: &EventOp, copy: Option<&Copy>, clock: Clock, me: &[String]) -> 
         out.insert("privacy".into(), json!(if private { "private" } else { "public" }));
     }
     if let Some(reminder) = fields.reminder {
-        out.insert("alerts".into(), alerts(reminder.on, reminder.minutes));
+        out.insert("alerts".into(), alerts(copy, reminder.on, reminder.minutes));
     }
     if let Some(repeat) = &fields.repeat
         && !matches!(clock, Clock::Series(..))

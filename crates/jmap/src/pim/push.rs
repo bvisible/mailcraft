@@ -46,10 +46,11 @@ const PAGE: usize = 200;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CALENDARS];
 /// What the server's copy of an event is read for.
-const COPY_PROPERTIES: [&str; 16] = [
+const COPY_PROPERTIES: [&str; 17] = [
     "id",
     "uid",
     "calendarIds",
+    "alerts",
     "start",
     "timeZone",
     "duration",

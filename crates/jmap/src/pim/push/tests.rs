@@ -533,6 +533,30 @@ fn free_busy_privacy_and_a_reminder_are_written_and_read_back() {
 }
 
 #[test]
+fn a_reminder_set_here_leaves_the_other_alerts_of_the_server_as_they_are() {
+    let server = server();
+    let alerts = json!({
+        "a1": {"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": "-PT15M", "relativeTo": "start"}, "action": "display"},
+        "a2": {"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": "-P1D", "relativeTo": "start"}, "action": "email"},
+        "a3": {"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": "-PT2H", "relativeTo": "start"}, "action": "display"},
+    });
+    server.with(|d| {
+        let lunch = d.pim.events.iter_mut().find(|e| e.raw == "lunch").unwrap();
+        lunch.props.insert("alerts".into(), alerts.clone());
+    });
+    let reminder =
+        |on: bool, minutes: u32| update(&Pim::event_id("lunch"), EventFields { reminder: Some(EventReminder { on, minutes }), ..Default::default() });
+    assert_eq!(outcomes(&run(&server, &job(vec![reminder(true, 45)])))[0].0, EventResult::Done);
+    let kept = stored(&server, "lunch").unwrap().props["alerts"].clone();
+    assert_eq!(kept["a1"]["trigger"]["offset"], "-PT45M");
+    assert_eq!((kept["a2"].clone(), kept["a3"].clone()), (alerts["a2"].clone(), alerts["a3"].clone()));
+    // Off: the reminder alone goes.
+    assert_eq!(outcomes(&run(&server, &job(vec![reminder(false, 0)])))[0].0, EventResult::Done);
+    let left = stored(&server, "lunch").unwrap().props["alerts"].clone();
+    assert_eq!(left, json!({"a2": alerts["a2"], "a3": alerts["a3"]}));
+}
+
+#[test]
 fn a_series_is_changed_by_its_master_and_keeps_its_zone_and_clock() {
     let server = server();
     // An hour later, on its clock: ten from the first Monday on.

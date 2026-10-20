@@ -363,6 +363,43 @@ fn a_copy_with_more_people_than_are_read_is_told_apart() {
 }
 
 #[test]
+fn a_reminder_changes_only_the_alert_that_is_the_reminder_and_keeps_the_others() {
+    let offset = |offset: &str, action: &str| json!({"@type": "Alert", "trigger": {"@type": "OffsetTrigger", "offset": offset, "relativeTo": "start"}, "action": action});
+    let mut alerted = copy();
+    alerted.insert(
+        "alerts".into(),
+        json!({
+            "a1": offset("-PT1H", "email"),
+            "a2": offset("-PT15M", "display"),
+            "a3": offset("-PT5M", "display"),
+            "x": {"@type": "Alert", "trigger": {"@type": "AbsoluteTrigger", "when": "2026-10-19T06:00:00Z"}, "action": "display"},
+        }),
+    );
+    let reminded = |copy: &Copy, on: bool, minutes: u32| {
+        let op = change(EventFields { reminder: Some(EventReminder { on, minutes }), ..Default::default() });
+        patch(&op, Some(copy), Clock::Own(zurich()), &[ME.to_string()]).unwrap().0["alerts"].clone()
+    };
+    // Half an hour before: the first display alert before the start is the reminder, and it alone changes.
+    let half = reminded(&alerted, true, 30);
+    assert_eq!(half["a2"]["trigger"]["offset"], "-PT30M");
+    for kept in ["a1", "a3", "x"] {
+        assert_eq!(half[kept], alerted["alerts"][kept], "{kept} as the server has it");
+    }
+    // Off: that one goes, the others stay.
+    let off = reminded(&alerted, false, 0);
+    let mut keys: Vec<&String> = off.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["a1", "a3", "x"]);
+    // None of them a reminder: one more, beside them.
+    alerted.insert("alerts".into(), json!({"a1": offset("-PT1H", "email")}));
+    let added = reminded(&alerted, true, 10);
+    assert_eq!((added["a1"].clone(), added["a2"]["trigger"]["offset"].clone()), (alerted["alerts"]["a1"].clone(), json!("-PT10M")));
+    // And read back, it is the reminder.
+    let read = crate::pim::jscalendar::reminder_alert(added.as_object().unwrap()).map(|(key, minutes)| (key.clone(), minutes));
+    assert_eq!(read, Some(("a2".to_string(), 10)));
+}
+
+#[test]
 fn an_occurrence_is_written_on_its_series_clock_with_no_zone() {
     // An occurrence of a series in New York, moved to 14:00 there, the calendar shown in Zurich.
     let ny = Zone::named("America/New_York").unwrap();
