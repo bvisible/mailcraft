@@ -23,15 +23,19 @@
 //! which the server can't read, the message's sender, subject and text; and for the band, the
 //! person's own text, above the signature and the quoted original ([`own_text`]).
 
-// The answers and the person's own text wait for the window's commands that use them (the next step).
-#![cfg_attr(not(test), allow(dead_code))]
-
 mod answer;
+mod flow;
 mod own_text;
 #[cfg(test)]
 mod tests;
 
+use std::sync::mpsc::Receiver;
+
 use serde_json::Value;
+
+pub(crate) use flow::{Nora, enabled, ui_command};
+
+use crate::MailApp;
 
 /// The server method that drafts the reply to a message of a mailbox of the server, which it reads
 /// itself by the message's id (the webmail's Reply with Nora).
@@ -50,6 +54,11 @@ pub const SCAN_STYLE: &str = "nora.api.nora_webmail.scan_style";
 /// waits for a release of Neodesk.
 pub const METHODS: [&str; 6] = [QUICK_REPLY, GENERATE_EMAIL, TRANSLATE, PROOFREAD, IMPROVE, SCAN_STYLE];
 
+/// The longest wait for an answer, in milliseconds: above the 180 s after which Neodesk's shell
+/// answers by itself that Nora could not be reached (each of the server's model calls may take a
+/// minute, and a reply or a translation makes up to three), below the point where the person has
+/// given up.
+pub(crate) const DEADLINE_MS: f64 = 200_000.0;
 /// The longest own text sent to be rewritten, in characters: the server cuts at 10 000 and sends
 /// the cut text back with a mark, which would then replace the whole of the person's text.
 pub(crate) const MAX_OWN_TEXT: usize = 8_000;
@@ -85,6 +94,25 @@ pub struct NoraAnswer {
     pub id: u64,
     pub status: u16,
     pub body: String,
+}
+
+/// A host that reaches Nora ([`crate::Services::nora`]).
+pub struct Host {
+    /// Make one call. Its answer comes through the channel, and the host wakes the window when it
+    /// does: a sender dropped before an answer reads as a connection that stopped, and no answer
+    /// within [`DEADLINE_MS`] as one that took too long. Called for the person's own clicks only.
+    pub call: Box<dyn Fn(NoraCall) -> Receiver<NoraAnswer>>,
+    /// The addresses of the mailboxes the hosting page handed over (in any case): a message of one
+    /// of them is named to Nora by its id on the server, and only their style can be learnt there.
+    pub mailboxes: Vec<String>,
+}
+
+impl MailApp {
+    /// Nora's answers that came, the reply that waits for its message, and the calls that took too
+    /// long: once a frame ([`flow`]).
+    pub(crate) fn poll_nora(&mut self) {
+        flow::poll(self);
+    }
 }
 
 /// One of [`LANGUAGES`], by its code (`fr`, `de`, `en`); `None` for anything else.

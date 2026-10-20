@@ -138,6 +138,11 @@ pub struct Services {
     /// itself): the owner is never asked for a password for a JMAP account, no job carries a secret
     /// ([`jmap_job::JmapJob::secret`]), and a Send/Receive that starts by itself can always go ahead.
     pub jmap_host_credentials: bool,
+    // //// Neoffice — Nora, the assistant of the Neoffice server, reached through the hosting page (nora.rs).
+    /// Web, in a Neoffice page: reach Nora, the assistant of the Neoffice server, which drafts a reply,
+    /// translates a message and rewrites the owner's text when the owner asks ([`nora`]). Absent
+    /// everywhere else: no Nora is offered.
+    pub nora: Option<nora::Host>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
@@ -664,6 +669,44 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "File › Options",
         r#"{"value": "auto" (the system's)|"en"|"pseudo"|the code of a language with a catalog, as "fr"}"#,
     ),
+    // //// Neoffice — Nora, the assistant of the Neoffice server, when the hosting page reaches her (nora.rs): the owner's clicks only.
+    (
+        "ui.noraReply",
+        "Reply with Nora",
+        "Home › Respond",
+        r#"{"message"?: number (default: the selected message), "all"?: bool (Reply All)} — opens the reply (once the message is downloaded whole, when it has to be, as Reply does) and has Nora write its draft into it, above the signature and the original, as one step Undo takes back; nothing is sent to anybody. A message of a mailbox the hosting page handed over goes to the server by its id there, never its text; one of the sample mailbox by its sender, subject and text; any other mailbox is refused. Answers {"composing": true, "asked": number, "method": string} or {"pending": "download", "message": number}"#,
+    ),
+    (
+        "ui.noraTranslate",
+        "Translate with Nora",
+        "Message › Nora",
+        r#"{"message"?: number (default: the selected message), "language": "fr"|"de"|"en"} — has Nora translate the message, sent by its id or its text as for a reply; her translation shows in place of its body, as plain text, until Show the Original. Not while a message is being written. Answers {"asked": number, "message": number, "language": string}"#,
+    ),
+    (
+        "ui.noraOriginal",
+        "Show the Original",
+        "Message › Nora",
+        r#"{"message"?: number (default: the one translated)} — the message as it came, in place of Nora's translation"#,
+    ),
+    (
+        "ui.noraCorrect",
+        "Correct with Nora",
+        "Message › Nora",
+        r#"{} — the spelling and grammar of the owner's own text in the message being written (what is above its signature and the original, 8,000 characters at most): Nora's version goes over that text, as one step Undo takes back, if it is still what was sent when her version comes. Answers {"asked": number, "method": string}"#,
+    ),
+    ("ui.noraImprove", "Improve with Nora", "Message › Nora", "{} — a clearer version of the owner's own text, as ui.noraCorrect"),
+    (
+        "ui.noraTranslateDraft",
+        "Translate Your Text with Nora",
+        "Message › Nora",
+        r#"{"language": "fr"|"de"|"en"} — the owner's own text in that language, as ui.noraCorrect"#,
+    ),
+    (
+        "ui.noraLearnStyle",
+        "Learn My Writing Style",
+        "Message › Nora",
+        r#"{} — has Nora learn, on the server and in the background (about a minute), the writing style of the mailbox the message being written goes from, from its sent mail; only for a mailbox the hosting page handed over. Answers {"asked": number}"#,
+    ),
     ("ui.focusSearch", "Search", "Search", "{}"),
     (
         "ui.sync",
@@ -1018,6 +1061,8 @@ pub struct MailApp {
     // //// Neoffice — JMAP servers that asked to be left alone.
     /// For a JMAP account whose server said it was busy: when (in ms) a run may start by itself for what waits to go.
     jmap_calm: std::collections::HashMap<Id, f64>,
+    // //// Neoffice — what the window knows of Nora while it runs: her calls in flight, a translation shown, the last word on what she did (nora.rs).
+    pub(crate) nora: nora::Nora,
     control_rx: Option<Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -1191,6 +1236,8 @@ impl MailApp {
             // //// Neoffice — see the fields.
             jmap_sent: Default::default(),
             jmap_calm: Default::default(),
+            // //// Neoffice — nothing asked of Nora yet.
+            nora: Default::default(),
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),
@@ -1308,6 +1355,8 @@ impl MailApp {
             None if id == "ui.moreResultsOnServer" => {
                 matches!(self.server_link(), server_search::Link::Ask | server_search::Link::NotConnected { retry: true })
             }
+            // //// Neoffice — Nora's commands, when a host reaches her and what each needs is there (nora/flow.rs).
+            None if id.starts_with("ui.nora") => nora::enabled(self, id),
             None if id == "ui.copySelection" => self.text_selection.any(),
             None => UI_COMMANDS.iter().any(|c| c.0 == id),
         }
@@ -1698,6 +1747,8 @@ impl MailApp {
             _ => {
                 return windows::ui_command(self, id, p)
                     .or_else(|| reading::remote::ui_command(self, id, p))
+                    // //// Neoffice — Nora's commands (nora/flow.rs).
+                    .or_else(|| nora::ui_command(self, id, p))
                     .or_else(|| calendar_view::ui_command(self, id, p))
                     .or_else(|| meeting_dialogs::ui_command(self, id, p))
                     .or_else(|| favorites_sync::ui_command(self, id, p))
@@ -2851,6 +2902,8 @@ impl MailApp {
         self.poll_graph();
         // //// Neoffice — the pieces of a JMAP run, a few a frame.
         self.poll_jmap();
+        // //// Neoffice — Nora's answers, before a download lands a reply that waits for her (nora/flow.rs).
+        self.poll_nora();
         self.drive_fetch();
         self.offline_tick();
         self.drive_server_search();

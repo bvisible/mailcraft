@@ -14,6 +14,27 @@
 	Your text is too long for Nora: {n} characters at most.	Votre texte est trop long pour Nora : {n} caractères au maximum.
 	the answer is too long	la réponse est trop longue
 	the server cut the text short	le serveur a tronqué le texte
+	Nora is already writing a reply.	Nora rédige déjà une réponse.
+	Nora is writing the reply…	Nora rédige la réponse…
+	The reply was closed before Nora's draft came back.	La réponse a été fermée avant l’arrivée du brouillon de Nora.
+	Nora's draft is in the reply: read it before sending.	Le brouillon de Nora est dans la réponse : relisez-le avant de l’envoyer.
+	Nora is already translating a message.	Nora traduit déjà un message.
+	Nora is translating the message…	Nora traduit le message…
+	The message is already in {language}.	Le message est déjà dans la langue : {language}.
+	Translated by Nora into {language}	Traduit par Nora : {language}
+	Nora is already rewriting the text.	Nora réécrit déjà le texte.
+	Nora is rewriting the text…	Nora réécrit le texte…
+	Nora found nothing to change.	Nora n’a rien trouvé à modifier.
+	The message was closed before Nora's version came back.	Le message a été fermé avant le retour de la version de Nora.
+	Your text changed meanwhile: Nora's version wasn't put in.	Votre texte a changé entre-temps : la version de Nora n’a pas été insérée.
+	Nora's version is in the message: Undo takes it back.	La version de Nora est dans le message : Annuler permet de la retirer.
+	Starting style analysis…	Démarrage de l’analyse du style…
+	Nora is learning your writing style from your sent emails. This takes a minute.	Nora apprend votre style d’écriture à partir de vos e-mails envoyés. Cela prend une minute.
+	Nora is already learning your writing style.	Nora apprend déjà votre style d’écriture.
+	Nora couldn't find this message on the server: refresh the list and try again.	Nora n’a pas trouvé ce message sur le serveur : actualisez la liste et réessayez.
+	Nora works on the mailboxes of your Neoffice account only.	Nora travaille uniquement sur les boîtes aux lettres de votre compte Neoffice.
+	the connection stopped before Nora answered	la connexion s’est interrompue avant la réponse de Nora
+	Your reply starts with its signature: leave a line above it for Nora's draft, and ask her again.	Votre réponse commence par sa signature : laissez une ligne au-dessus pour le brouillon de Nora, et demandez-lui à nouveau.
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

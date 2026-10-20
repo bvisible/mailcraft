@@ -387,6 +387,14 @@ const NEVER: &[&str] = &[
     "sync.applyJmap",
     "sync.jmapFetchRequest",
     "sync.applyJmapFetch",
+    // //// Neoffice — Nora spends the owner's calls to the Neoffice server's model on the owner's mail and text: the owner's own click only.
+    "ui.noraReply",
+    "ui.noraTranslate",
+    "ui.noraOriginal",
+    "ui.noraCorrect",
+    "ui.noraImprove",
+    "ui.noraTranslateDraft",
+    "ui.noraLearnStyle",
     // A search of the server goes only on the owner's own click (R6.2).
     "sync.graphSearchRequest",
     "sync.applyGraphSearch",
