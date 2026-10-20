@@ -56,7 +56,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   once a frame), `reading.rs`, `compose.rs`, `ribbon.rs`, `icons.rs`, `crates/engine/src/agent.rs`,
   `apps/mailcraft-web/src/main.rs` and `web.rs`; her French lines are a block near the top of `fr.tsv`. The rules:
   only the six methods Neodesk's shell lets through are called; a message of a mailbox the page handed over goes by
-  its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; the origin of
+  its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; a mailbox of
+  the page is named by the name of the server's account for it (the page's `account`, else the `account` of its
+  session's address, else its address), which is not its address once that changed; the origin of
   her calls never comes from the address, but for a loopback page naming a loopback origin (the workshop's stand-in
   server), and the page's CSRF token goes to the page's own origin only; a hosting page that makes the calls itself
   offers `window.mailcraftNoraCall`; every call ends (195 s in the browser, 200 s in the window); what she writes

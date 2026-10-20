@@ -236,20 +236,27 @@ impl Nora {
 /// Where a message goes to Nora.
 enum Route {
     /// A mailbox the hosting page handed over: the message goes by its id on the server, which reads
-    /// it itself; the mailbox by its address, which is the name of the server's account for it.
+    /// it itself; the mailbox by the name of the server's account for it ([`page_mailbox`]).
     Server { mailbox: String, id: String },
     /// The sample mailbox (any account kept on this computer only): the server can't read it, so its
     /// text goes along.
     Text,
 }
 
-/// The address of the page's mailbox `account` is, as the page named it; `None` for any other account.
+/// The name of the server's account for the page's mailbox `account` is, as the page named it (the
+/// account's address when the page didn't say); `None` for any other account. A mailbox is the page's
+/// by its address; the server knows it by that name only, which stays the address it was made with when
+/// its address changes.
 pub(crate) fn page_mailbox(app: &MailApp, account: Id) -> Option<String> {
     let host = app.services.nora.as_ref()?;
     let a = app.session.mailbox.account(account)?;
     let email = a.email.trim();
-    let handed = host.mailboxes.iter().any(|m| m.trim().eq_ignore_ascii_case(email));
-    (a.kind == AccountKind::Jmap && !email.is_empty() && handed).then(|| email.to_string())
+    if a.kind != AccountKind::Jmap || email.is_empty() {
+        return None;
+    }
+    let handed = host.mailboxes.iter().find(|m| m.address.trim().eq_ignore_ascii_case(email))?;
+    let name = handed.name.trim();
+    Some(if name.is_empty() { email } else { name }.to_string())
 }
 
 /// An id a server gave a message, as JMAP writes them, within what is taken.

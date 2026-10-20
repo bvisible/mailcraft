@@ -16,7 +16,7 @@ use mailcraft_model::sync::{FolderListing, GraphFolder, GraphMessage, JmapMailRe
 use mailcraft_model::{Address, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
 
-use super::{About, Host, METHODS, NoraAnswer, NoraCall};
+use super::{About, Host, METHODS, NoraAnswer, NoraCall, PageMailbox};
 use crate::{MailApp, Services};
 
 /// Wednesday 2026-10-14 16:00 UTC.
@@ -76,8 +76,9 @@ impl Calls {
     }
 }
 
-/// The host of a window that reaches Nora, for the mailboxes the page handed over.
-pub(crate) fn host(app: &mut MailApp, mailboxes: &[&str]) -> Calls {
+/// The host of a window that reaches Nora, for the mailboxes the page handed over: each one's address
+/// and the name of the server's account for it (empty: the page didn't say).
+pub(crate) fn host(app: &mut MailApp, mailboxes: &[(&str, &str)]) -> Calls {
     let calls = Calls::default();
     let kept = calls.0.clone();
     app.services.nora = Some(Host {
@@ -86,7 +87,7 @@ pub(crate) fn host(app: &mut MailApp, mailboxes: &[&str]) -> Calls {
             kept.borrow_mut().push((call, Some(tx)));
             rx
         }),
-        mailboxes: mailboxes.iter().map(|m| (*m).to_string()).collect(),
+        mailboxes: mailboxes.iter().map(|(address, name)| PageMailbox { address: (*address).to_string(), name: (*name).to_string() }).collect(),
     });
     calls
 }
@@ -120,8 +121,14 @@ pub(crate) fn server_mail(id: &str) -> GraphMessage {
 }
 
 /// A hosting page's window: the mailbox it handed over (a JMAP account) with `E1` to `E3` in its
-/// Inbox, downloaded whole when `whole`, `E1` selected; a host that reaches Nora for it.
+/// Inbox, downloaded whole when `whole`, `E1` selected; a host that reaches Nora for it. The page
+/// doesn't say the name of the server's account for it.
 pub(crate) fn page(whole: bool) -> (MailApp, Calls, Id) {
+    page_named(whole, "")
+}
+
+/// [`page`], the page saying `name` is the name of the server's account for its mailbox.
+pub(crate) fn page_named(whole: bool, name: &str) -> (MailApp, Calls, Id) {
     let mut app = quiet(MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default()));
     app.services.jmap_host_credentials = true;
     let added = app.execute("account.add", json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
@@ -141,7 +148,7 @@ pub(crate) fn page(whole: bool) -> (MailApp, Calls, Id) {
     // The background's downloads are held back, as after Stop: only what a test makes happen happens.
     app.session.sync_progress.full_paused = true;
     // The page names its mailbox in its own case.
-    let calls = host(&mut app, &["Ada@Example.org"]);
+    let calls = host(&mut app, &[("Ada@Example.org", name)]);
     let first = id_of(&app, "E1");
     app.execute("mail.select", json!({"id": first})).unwrap();
     (app, calls, account)

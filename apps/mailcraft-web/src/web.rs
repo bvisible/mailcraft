@@ -263,9 +263,9 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     services.signatures_home = crate::host::signatures();
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
     let gate = crate::jmap_services::Gate::default();
-    // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs).
+    // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs); each mailbox by the name of the server's account for it, which is not its address once that changed.
     if let Some(nora) = &mut services.nora {
-        nora.mailboxes = accounts.iter().map(|a| a.email.clone()).collect();
+        nora.mailboxes = accounts.iter().map(|a| crate::nora::handed_mailbox(&a.email, &a.account, &a.session)).collect();
     }
     // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).
     let runners = crate::hosted::Runners {

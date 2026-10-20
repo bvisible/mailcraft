@@ -20,7 +20,7 @@
 //! comes back from the server is read as warily as anything from outside ([`answer`]).
 //!
 //! What leaves the window: for a message of a mailbox the hosting page handed over, its id on the
-//! server and the mailbox's address, never its text (the server reads it itself, and runs its guard
+//! server and the name of the server's account for the mailbox ([`PageMailbox`]), never its text (the server reads it itself, and runs its guard
 //! against instructions aimed at the assistant before any model does); for the sample mailbox,
 //! which the server can't read, the message's sender, subject and text; and for the band, the
 //! person's own text, above the signature and the quoted original ([`own_text`]).
@@ -113,9 +113,20 @@ pub struct Host {
     /// does: a sender dropped before an answer reads as a connection that stopped, and no answer
     /// within [`DEADLINE_MS`] as one that took too long. Called for the person's own clicks only.
     pub call: Box<dyn Fn(NoraCall) -> Receiver<NoraAnswer>>,
-    /// The addresses of the mailboxes the hosting page handed over (in any case): a message of one
-    /// of them is named to Nora by its id on the server, and only their style can be learnt there.
-    pub mailboxes: Vec<String>,
+    /// The mailboxes the hosting page handed over: a message of one of them is named to Nora by its
+    /// id on the server, and only their style can be learnt there.
+    pub mailboxes: Vec<PageMailbox>,
+}
+
+/// A mailbox the hosting page handed over, as the server knows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageMailbox {
+    /// Its address, in any case: the window's account of that address is this mailbox.
+    pub address: String,
+    /// The name of the server's account for it, which every call names the mailbox by (its style is
+    /// kept under it too): the address it was made with, which stays its name when the address changes.
+    /// Empty when the page didn't say: the address is then taken for it.
+    pub name: String,
 }
 
 impl MailApp {

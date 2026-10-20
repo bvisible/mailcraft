@@ -12,6 +12,8 @@
 //!   email: "jane@example.com",   // the mailbox, MailCraft's account key
 //!   name: "Jane Doe",            // the name on sent mail
 //!   session: "https://…",        // its JMAP session URL
+//!   account: "jane@example.com", // optional: the name of the server's account for it, which Nora names it by;
+//!                                // else the `account` of the session URL's query, else `email` (nora.rs)
 //!   username: "jane@example.com",
 //!   secret: "<token>",           // kept in this tab's memory only, never stored
 //!   scheme: "bearer",            // or "basic"
@@ -74,6 +76,8 @@ pub struct HostAccount {
     pub email: String,
     pub name: String,
     pub session: String,
+    /// The name of the server's account for it, when the page says one (Nora names the mailbox by it: nora.rs).
+    pub account: String,
     pub username: String,
     pub secret: String,
     pub bearer: bool,
@@ -243,6 +247,7 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
             email: text(&item, "email"),
             name: text(&item, "name"),
             session: text(&item, "session"),
+            account: text(&item, "account"),
             username: text(&item, "username"),
             secret: text(&item, "secret"),
             bearer: text(&item, "scheme").eq_ignore_ascii_case("bearer"),

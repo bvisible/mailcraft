@@ -17,7 +17,7 @@ use mailcraft_model::{AccountKind, Id, RichBody, RichText};
 use serde_json::{Value, json};
 
 use super::super::testing::*;
-use super::super::{DEADLINE_MS, GENERATE_EMAIL, NoraAnswer, PROOFREAD, QUICK_REPLY, SCAN_STYLE, TRANSLATE};
+use super::super::{DEADLINE_MS, GENERATE_EMAIL, NoraAnswer, PROOFREAD, PageMailbox, QUICK_REPLY, SCAN_STYLE, TRANSLATE};
 use super::{About, Kind};
 use crate::jmap_job::JmapFetchJob;
 use crate::{MailApp, Services};
@@ -60,7 +60,8 @@ fn reply_for_the_sample_sends_the_text_as_context() {
 fn another_account_than_the_pages_is_refused() {
     // A JMAP mailbox the page didn't hand over (the person added it in the page).
     let (mut app, calls, _) = page(true);
-    app.services.nora.as_mut().unwrap().mailboxes = vec!["someone.else@example.org".into()];
+    // A mailbox is the page's by its address: one the page named as this one's name is not this one.
+    app.services.nora.as_mut().unwrap().mailboxes = vec![PageMailbox { address: "someone.else@example.org".into(), name: ME.into() }];
     let said = app.run("ui.noraReply", json!({})).unwrap_err();
     assert_eq!(said, "Nora works on the mailboxes of your Neoffice account only.");
     assert!(app.execute("ui.noraTranslate", json!({"language": "fr"})).is_err());
@@ -447,6 +448,38 @@ fn translate_by_the_servers_id_sends_no_text() {
     app.run("ui.noraTranslate", json!({"language": "de"})).unwrap();
     assert_eq!(calls.last().method, TRANSLATE);
     assert_eq!(calls.last().args, json!({"target_language": "de", "account_name": ME, "email_id": "E1"}), "the id, nothing of the text");
+}
+
+/// The server knows a mailbox by the name of its account there, which is the address it was made with: once its
+/// address changed, a call that named it by its address would find no such account, and its style would never be used.
+#[test]
+fn a_mailbox_whose_name_on_the_server_is_not_its_address_is_named_by_that_name_in_every_call() {
+    const NAME: &str = "ada.former@example.org";
+    let (mut app, calls, _) = page_named(true, NAME);
+    app.run("ui.noraTranslate", json!({"language": "de"})).unwrap();
+    assert_eq!((calls.last().method, calls.last().args), (TRANSLATE, json!({"target_language": "de", "account_name": NAME, "email_id": "E1"})));
+    calls.answer(200, json!({"message": {"translated_text": "Hallo Ada", "has_changes": true}}));
+    app.poll_nora();
+    app.run("ui.noraOriginal", json!({})).unwrap();
+    app.run("ui.noraReply", json!({})).unwrap();
+    assert_eq!((calls.last().method, calls.last().args), (QUICK_REPLY, json!({"account_name": NAME, "email_id": "E1"})));
+    calls.answer(200, json!({"message": {"draft_text": "Hello Grace,\n\nYes."}}));
+    app.poll_nora();
+    for (command, params, method) in [
+        ("ui.noraCorrect", json!({}), PROOFREAD),
+        ("ui.noraImprove", json!({}), super::super::IMPROVE),
+        ("ui.noraTranslateDraft", json!({"language": "fr"}), TRANSLATE),
+    ] {
+        app.run(command, params).unwrap();
+        assert_eq!((calls.last().method, calls.last().args["account_name"].as_str()), (method, Some(NAME)), "{command}");
+        calls.answer(200, json!({"message": {"has_changes": false}}));
+        app.poll_nora();
+    }
+    app.run("ui.noraLearnStyle", json!({})).unwrap();
+    assert_eq!((calls.last().method, calls.last().args), (SCAN_STYLE, json!({"account_name": NAME})));
+    assert_eq!(calls.count(), 6);
+    assert!(calls.0.borrow().iter().all(|(call, _)| !call.args.to_string().to_lowercase().contains(ME)), "never by its address");
+    calls.all_fit();
 }
 
 #[test]
