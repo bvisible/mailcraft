@@ -64,8 +64,7 @@ fn no_send_receive_is_made_of_a_jmap_account_yet() {
     assert_eq!(s.run("sync.request", &json!({})).unwrap()["account"]["id"].as_u64(), Some(imap));
     // Named, it is refused with its reason: no IMAP request is made of settings it doesn't have.
     let why = s.run("sync.request", &json!({"account": jmap})).unwrap_err().to_string();
-    // //// Neoffice — (said of a build that has no way to reach a JMAP server)
-    assert_eq!(why, "ada@jmap.example is a JMAP account, and this build has no way to send and receive with one");
+    assert_eq!(why, "ada@jmap.example is a JMAP account, and this version doesn't send and receive with one yet");
     assert!(crate::cmd::account::sync_request(&s, jmap).is_err());
     // As the only account with a server, it is refused for the same reason.
     s.run("account.remove", &json!({"id": imap})).unwrap();

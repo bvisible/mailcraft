@@ -349,10 +349,8 @@ pub fn sync_request(s: &Session, account: Id) -> Result<SyncRequest, CmdError> {
     }
     // A JMAP account is kept in step over JMAP alone, and no run of it is made here yet: nothing
     // is asked of IMAP or SMTP servers it doesn't have.
-    // //// Neoffice — said of a build that can't reach a JMAP server: where the host can, its run is a JMAP one
-    // (`sync.jmapRequest`, which `sync.request` hands it to).
     if a.kind == AccountKind::Jmap {
-        return Err(fail(format!("{} is a JMAP account, and this build has no way to send and receive with one", a.name)));
+        return Err(fail(format!("{} is a JMAP account, and this version doesn't send and receive with one yet", a.name)));
     }
     if a.kind != AccountKind::Imap {
         return Err(fail(format!("{} isn't connected to a mail server", a.name)));

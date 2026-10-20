@@ -680,8 +680,7 @@ mod tests {
         std::fs::write(&path, &bytes).unwrap();
         let refusal = |args: &[&str]| run(&strings(args)).unwrap_err().to_string();
         let (alone, named) = (refusal(&["sync", &path]), refusal(&["sync", &path, "--account", "ada@jmap.example"]));
-        // //// Neoffice — (said of a build that has no way to reach a JMAP server, as the command line is)
-        let reason = "ada@jmap.example is a JMAP account, and this build has no way to send and receive with one";
+        let reason = "ada@jmap.example is a JMAP account, and this version doesn't send and receive with one yet";
         assert!(alone.contains(reason) && named.contains(reason), "{alone} / {named}");
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         let _ = std::fs::remove_dir_all(&dir);
