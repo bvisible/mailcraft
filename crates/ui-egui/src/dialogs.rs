@@ -232,8 +232,11 @@ pub(crate) fn open_dialog(app: &mut MailApp, name: &str, params: &Value) -> Opti
 pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question> {
     let mb = &app.session.mailbox;
     let folder = |key: &str| params.get(key).and_then(Value::as_u64).or(Some(app.session.view.folder)).and_then(|f| mb.folder(f));
-    // //// Neoffice — a JMAP account's deletions don't reach its server yet (they are built after reading), so nothing is said of the server for it; widen this when they do.
-    let on_server = |account: u64| mb.account(account).is_some_and(|a| a.kind.has_server() && a.kind != mailcraft_model::AccountKind::Jmap);
+    // //// Neoffice — a JMAP account's deletions for good reach its server where the window runs its Send/Receive (its run
+    // destroys them there, `cmd/jmap_up.rs`): said so there, and nothing of the server where it can't reach one.
+    let jmap_runs = app.services.can_run(mailcraft_model::AccountKind::Jmap);
+    let on_server =
+        |account: u64| mb.account(account).is_some_and(|a| a.kind.has_server() && (a.kind != mailcraft_model::AccountKind::Jmap || jmap_runs));
     let server_too = |yes: bool| if yes { format!(" {}", tl!("They are removed from the mail server too.")) } else { String::new() };
     let question = |title: &str, text: String, action: &str| Some(Question::new(title, text, action, Value::Null));
     match id {

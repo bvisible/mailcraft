@@ -966,3 +966,20 @@ fn a_server_that_asked_to_be_left_alone_is_not_asked_for_what_is_made_meanwhile_
     app.auto_sync();
     assert_eq!(jobs(&asked), 6);
 }
+
+/// Deleting a JMAP account's message for good destroys it on the server too, where the window runs the account's
+/// Send/Receive: the question says so. A window that can't reach a JMAP server says nothing of the server.
+#[test]
+fn deleting_a_jmap_message_for_good_says_it_goes_from_the_server_too_where_the_window_runs_it() {
+    let (mut app, id, _) = window(true, true);
+    let deleted = app.session.mailbox.folder_of_kind(id, FolderKind::Deleted).unwrap();
+    let old = mailcraft_model::Message { folder: deleted, account: id, subject: "Old plans".into(), ..Default::default() };
+    let message = app.session.mailbox.add_message(old).unwrap();
+    let asked = |app: &MailApp| crate::dialogs::confirmation(app, "mail.deletePermanently", &json!({"id": message})).map(|ask| ask.text);
+    assert_eq!(
+        asked(&app).as_deref(),
+        Some("This message will be deleted for good. It is removed from the mail server too, and that can't be undone.")
+    );
+    app.services.jmap = None;
+    assert_eq!(asked(&app).as_deref(), Some("This message will be deleted for good."));
+}
