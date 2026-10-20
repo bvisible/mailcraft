@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The JMAP part of `account.add` and `account.edit`: what makes an account a JMAP account, and
 //! the server it names.

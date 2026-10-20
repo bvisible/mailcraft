@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The stand-in on this computer's loopback, for a browser to talk to: a window built for the browser, in a hosting
 //! page served from this computer, reads the demo fortnight ([`super::demo`]) from it as it would read a server's.

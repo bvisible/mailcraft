@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's mailboxes and the newest messages in them (RFC 8620, RFC 8621), read for the engine.
 //!

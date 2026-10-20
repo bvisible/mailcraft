@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! What the stand-in offers besides mail: calendars (JMAP for Calendars) and address books (RFC 9610), when a test
 //! turns them on ([`Data::pim`](super::Data::pim)), held to what a server that keeps only the basics of an event

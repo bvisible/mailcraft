@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! An email of a JMAP answer as a message: its marks, whose it is, and what the raw header fields make of it.
 //! (The header fields are read by the program's MIME reader; what these tests hold is that a server's raw

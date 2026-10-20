@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's calendar jobs in the window: a host that keeps every job for the test to answer by hand, when
 //! jobs start and what they ask, one at a time, a job given up, a sender dropped, a refused token, a busy server, and

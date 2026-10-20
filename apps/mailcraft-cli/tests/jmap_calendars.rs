@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's calendars, from end to end: a calendar job worked out by hand (as the window works it out),
 //! `mailcraft_jmap::sync_pim` over the in-process JMAP server (driven by `block_on`, as a host on one thread drives

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A mailbox kept in step over JMAP (RFC 8620 and 8621): what a run is asked to do and what it
 //! brings back.

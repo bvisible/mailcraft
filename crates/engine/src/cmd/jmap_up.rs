@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Changes of messages up to a JMAP server (RFC 8621 §4.6), as Microsoft Graph's go up
 //! ([`super::graph_up`]).

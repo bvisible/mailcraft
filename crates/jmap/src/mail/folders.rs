@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The mailboxes a server lists (`Mailbox/get`, RFC 8621 §2) as the folders the engine takes in.
 //!

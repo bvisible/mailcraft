@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! `Email/set` of the in-process server, held to the standard: the patch grammar, what a patch may make of an
 //! email, the answer of each object, and the two kinds of server.

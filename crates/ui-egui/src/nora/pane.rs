@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora in the reading pane: her button, and a message she translated.
 
 //! Nora in the reading pane: her button beside the actions on the message (Reply with Nora, Reply

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora's place in the ribbon.
 
 //! Nora's place in the ribbon, when a host reaches her, in both its layouts: a Nora button in the

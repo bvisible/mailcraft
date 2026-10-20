@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! What the calendar readers share: the session's offers, the span a server expands, durations and times, and the
 //! paging of a `/query`, over scripted answers.

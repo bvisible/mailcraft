@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! `Email/set` of the in-process server: emails updated and destroyed (RFC 8620 §5.3, RFC 8621 §4.6).
 //!

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's Outbox and drafts, as the engine works out what a run sends and files and takes in what
 //! became of each: the answers are made by hand, so that every outcome can be had. Invented people at

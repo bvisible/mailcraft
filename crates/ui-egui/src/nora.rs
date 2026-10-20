@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora, the assistant of the Neoffice server, in MailCraft.
 
 //! Nora, the assistant of the Neoffice server, in MailCraft. Reply with Nora (or Reply All) opens the

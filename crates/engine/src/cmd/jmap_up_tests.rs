@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Changes of messages of a JMAP account, as the engine works them out and takes in what became of them with
 //! results made by hand. (Against the in-process JMAP server itself: `apps/mailcraft-cli/tests/jmap_up.rs`.)

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what the hosting page's answer to a renewal of tokens means for
 // each mailbox waiting for it, apart from the page and the network so that it is tested natively.
 

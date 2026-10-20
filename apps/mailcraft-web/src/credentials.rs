@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): the credential of a JMAP account whose host holds it.
 
 //! The credential of a JMAP account whose host holds it ([`mailcraft_ui_egui::Services::jmap_host_credentials`]):

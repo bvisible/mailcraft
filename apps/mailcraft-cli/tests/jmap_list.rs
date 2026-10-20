@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's mailboxes and newest messages, from end to end: the engine's `jmap_mail_request`, then
 //! `mailcraft_jmap::sync_mail` over the in-process JMAP server (driven by `block_on`, as a host on one

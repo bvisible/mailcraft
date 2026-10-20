@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A calendar and an event as JMAP for Calendars serves them (JSCalendar, RFC 8984), into what the engine takes:
 //! [`RemoteCalendar`] and [`RemoteEvent`].

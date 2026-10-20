@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The changes of a request told to a server, over the in-process server of both kinds and over servers
 //! that say what a test has them say: what is sent and in how many calls, what each change came to, how

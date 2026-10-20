@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! What the owner changes on a JMAP account's messages goes up to its server, from end to end: the engine's
 //! `jmap_mail_request` says what differs from the server's last word (read marks, flags, moves, deletes, Deleted

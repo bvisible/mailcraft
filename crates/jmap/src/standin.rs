@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! An in-process JMAP server for tests: no socket, no thread, nothing leaves the process. A
 //! [`StandIn`] is an [`Http`], so a [`Client`](crate::Client) connects to it as it would to a real server

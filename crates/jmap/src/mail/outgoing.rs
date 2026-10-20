@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The sending part of a run: what waits in the Outbox goes first, then the drafts that wait to go up, and
 //! then the windows are read, so that the copy of a message that went is in the window of Sent.

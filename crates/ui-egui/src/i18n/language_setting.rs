@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The `language` setting in the window: its command, File › Options' choice, what a frame is
 //! drawn in, and that it is kept with the other interface settings.

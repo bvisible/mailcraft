@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Messages of a JMAP account fetched whole (RFC 8621 §4.1: an email's raw octets are its blob).
 //!

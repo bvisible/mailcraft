@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The sending part of a run, over the in-process server of either kind: what is sent and filed before a
 //! window is read, in what order and in how many pieces, what a run does when the server limits sending, goes

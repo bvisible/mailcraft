@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Sending a message and filing a draft (RFC 8620 §6.1, RFC 8621 §4.8, §6 and §7): what a run does with the
 //! Outbox and with the drafts that wait to go up.

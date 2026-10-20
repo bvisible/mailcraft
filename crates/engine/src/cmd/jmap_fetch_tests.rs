@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's messages fetched whole: which ones a host is asked for (the one opened at once, the
 //! Inbox's newest in the background), what is taken in, and what is passed over.

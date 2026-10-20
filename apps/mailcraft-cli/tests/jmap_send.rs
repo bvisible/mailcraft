@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's Outbox and drafts from end to end: the engine writes the message and says what a run should
 //! send (`jmap_mail_request`), `mailcraft_jmap::sync_mail` sends and files it over the in-process server (of

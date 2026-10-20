@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's messages fetched whole, from end to end: the engine's `jmap_fetch_request` and
 //! `apply_jmap_fetch` with `mailcraft_jmap::fetch::fetch_messages` in between, against the in-process

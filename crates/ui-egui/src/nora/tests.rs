@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what Nora's answers say, and what she is given.
 //! The answers of the server read as the person is told them, hostile ones included, and what Nora
 //! is given of a message being written and of a message of the sample mailbox. Invented people at

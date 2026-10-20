@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): the signature a hosting page gives a mailbox, its logo by its bytes.
 
 //! The signature a hosting page gives a mailbox it hands over (host.rs), set up in the session MailCraft starts

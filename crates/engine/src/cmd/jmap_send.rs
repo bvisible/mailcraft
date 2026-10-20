@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Sending and drafts of an account kept in step with a JMAP server (RFC 8621 §7 and §4.8).
 //!

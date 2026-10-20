@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what Nora is given of the person's text and of a message.
 
 //! What Nora is given: the person's own text in a message being written (what is above the signature

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! What the stand-in does for sending mail and filing drafts: the upload of a message (RFC 8620 §6.1),
 //! `Email/import` (RFC 8621 §4.8), `Identity/get` (§6.1) and `EmailSubmission/set` (§7.5), held to the

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora's band under the subject of the message being written.
 
 //! Nora's band, under the subject of the message being written: her sphere and her name, then what

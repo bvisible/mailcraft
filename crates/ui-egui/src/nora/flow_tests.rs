@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora's commands, and what becomes of her answers.
 //! Nora's commands with a host that keeps every call for the test to answer: what is sent (and what
 //! is not), where her draft and her version go, one undo step each, what the person is told, the

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): a JMAP account's Send/Receive and downloads in the browser.
 
 //! A JMAP account's Send/Receive, downloads and calendars in the browser: what stands behind

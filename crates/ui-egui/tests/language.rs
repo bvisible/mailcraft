@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The language of the interface in the program as it runs: one for every thread. (In the crate's
 //! own tests the current and the system's language are one per thread, so that tests that change

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Sending a message and filing a draft, step by step: against the in-process server, of either kind (a
 //! store of the standard kind and a server that is a layer in front of an IMAP and an SMTP server), made to

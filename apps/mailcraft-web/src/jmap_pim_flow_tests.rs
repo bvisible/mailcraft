@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): a JMAP account's calendars from the window to the server and back.
 
 //! The whole way of a JMAP account's calendars: the window's calendar job (`jmap_pim.rs`), the browser runner's core

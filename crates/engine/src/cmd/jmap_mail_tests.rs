@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account as the engine works out what a run reads and takes in what comes back: the
 //! folder list, complete and partial windows, the keywords, and messages whose id changed.

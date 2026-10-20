@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's Send/Receive in the window: a host that answers with pieces made by hand (from
 //! a channel that already holds them, or from a thread of its own), the run's request and what is

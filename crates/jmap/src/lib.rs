@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! JMAP (RFC 8620 core, RFC 8621 mail) without sockets and without browser APIs.
 //!

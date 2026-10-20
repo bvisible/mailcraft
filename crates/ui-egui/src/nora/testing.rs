@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what the tests of Nora share.
 //! What the tests of Nora share: a host that keeps every call for the test to answer, the sample
 //! mailbox in a window that reaches her, and a hosting page's window with the mailbox it handed over

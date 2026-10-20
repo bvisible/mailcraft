@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): how Nora looks in the window: her clay, her sphere, her pills.
 
 //! How Nora looks, the same in the band of a message being written, the reading pane and the ribbon:

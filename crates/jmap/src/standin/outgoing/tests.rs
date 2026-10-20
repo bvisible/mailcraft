@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The stand-in's sending, held to the standard (RFC 8620 §6, RFC 8621 §4.8, §6 and §7) and, for the server that
 //! is a layer in front of an IMAP and an SMTP server, to what it does: what it refuses, and for which reason.

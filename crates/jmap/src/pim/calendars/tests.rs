@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A calendar job against the in-process server: what is asked, in how many requests, what comes back, and what
 //! trouble comes to. Invented people at `example.org`.

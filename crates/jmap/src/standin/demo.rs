@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A believable fortnight on the stand-in, for looking at a window that reads it ([`demo`]): a mailbox with a few
 //! messages, and three calendars around a day. Invented people at `example.org`, invented words.

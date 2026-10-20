@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what Nora's answers say, read as warily as anything from outside.
 
 //! What an answer of the server says: the text Nora wrote, or the sentence that tells the person why

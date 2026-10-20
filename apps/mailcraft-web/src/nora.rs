@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): how the browser build reaches Nora, the assistant of the Neoffice server.
 
 //! How the browser build reaches Nora ([`mailcraft_ui_egui::Services::nora`]).

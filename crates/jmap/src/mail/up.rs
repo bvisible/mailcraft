@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! The changes made to a JMAP account's messages, told to its server (RFC 8620 §5.3, RFC 8621 §4.6).
 //!

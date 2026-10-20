@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): what the person asks of Nora, and what becomes of her answers.
 
 //! The window's commands for Nora (`ui.nora*`, listed in `UI_COMMANDS`), the calls they make, and

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Whole messages: a scripted server for what is asked and how a hostile answer is read, the
 //! in-process server for the round trips, and servers made to fail for what a batch does when

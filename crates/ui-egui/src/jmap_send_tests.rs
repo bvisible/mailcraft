@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's Outbox and drafts in the window: a message written here goes with the run that starts by
 //! itself, its copy shows in Sent, a refusal holds it until the owner sends it again, an answer that was lost

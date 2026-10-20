@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! Keeping a JMAP account's calendars current (JMAP for Calendars), by a job of their own beside its Send/Receive.
 //!

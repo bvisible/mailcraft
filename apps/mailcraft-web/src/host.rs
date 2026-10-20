@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): the mailboxes a hosting page hands MailCraft (maintenance#1630).
 
 //! The mailboxes a hosting page hands MailCraft, so that it opens them without a form or a password.

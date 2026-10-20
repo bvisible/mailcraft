@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's messages fetched whole in the window: a host that answers by hand, the message the
 //! owner opens (at once), a reply that waits for its message, the Inbox's newest in the background, what the

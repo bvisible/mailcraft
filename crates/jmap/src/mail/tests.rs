@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A run over the stand-in and over scripted servers: what is asked of the server and in how many
 //! requests, the pieces it comes in, how it ends, and what a hostile server makes of it. The reading of a

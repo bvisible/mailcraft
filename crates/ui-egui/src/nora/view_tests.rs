@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora in the window, through real frames.
 //! Nora in the window, through real frames: the band under the subject of a message being written
 //! (there only with a host, its pills each its command, greyed while she works, in both themes and

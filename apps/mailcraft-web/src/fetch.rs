@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): HTTP through the browser's `fetch`, for the JMAP transport.
 
 //! HTTP through the browser's `fetch`, for the JMAP transport (`mailcraft_jmap::Http`).

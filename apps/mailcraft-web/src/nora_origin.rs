@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): where Nora's calls from the browser build may go (lifted from the editors' nora_origin.rs).
 
 //! Where Nora's calls may go, and which of them carry the page's credentials. The rules are those of
