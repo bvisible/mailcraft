@@ -21,9 +21,12 @@ mod format_tests;
 pub mod graph_down;
 pub mod graph_drafts;
 pub mod graph_mail;
+pub mod graph_place;
 pub mod graph_send;
 pub mod graph_switch;
 pub mod graph_up;
+#[cfg(test)]
+mod jmap_sending_tests;
 // //// Neoffice — an account kept in step with a JMAP server (its request, what comes down, what goes up, and its messages fetched whole).
 pub mod jmap_down;
 pub mod jmap_fetch;
@@ -32,6 +35,8 @@ pub mod jmap_send;
 // //// Neoffice — what goes up to a JMAP server (the changes made here).
 pub mod jmap_up;
 pub mod mail;
+#[cfg(test)]
+mod newer_account_tests;
 pub mod offline;
 #[cfg(test)]
 mod offline_tests;

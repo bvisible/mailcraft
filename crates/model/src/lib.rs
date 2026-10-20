@@ -13,7 +13,6 @@ mod address;
 pub mod book;
 mod calendar;
 mod contact;
-// //// Neoffice — where a JMAP account's server is (`Account::jmap`), and what its address must be.
 mod jmap_server;
 mod mailbox;
 mod message;
@@ -40,11 +39,10 @@ pub use calendar::{
     ShowAs,
 };
 pub use contact::{Contact, Labeled, PostalAddress};
-// //// Neoffice — see `jmap_server`.
 pub use jmap_server::JmapServer;
 pub use mailbox::{
-    Account, AccountKind, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderKind, GraphSwitch, IMPORTED, INTO_GRAPH, MAX_SHARED,
-    Mailbox, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server, ServerFavorites, ServerFolder,
+    Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderKind, GraphSwitch, IMPORTED, INTO_GRAPH,
+    MAX_SHARED, Mailbox, NOT_SENDING_YET, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server, ServerFavorites, ServerFolder,
 };
 // //// Neoffice — why mail isn't moved between a JMAP account and another account, nor copied to or from one, and how many deletes may wait for an id.
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES};

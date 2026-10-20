@@ -102,8 +102,43 @@ fn tile(ui: &mut Ui, icon: &str, title: &str, detail: &str, t: &Tokens) -> bool 
     resp.clicked()
 }
 
-// //// Neoffice — what a JMAP account says of its server: the name of the host alone, as the whole address may carry the account's own.
-/// A JMAP account's line about its server (also on its settings page).
+/// The line under an account's name on its card in File › Info: what kind of account it is, and
+/// for one on a mail server, its servers.
+pub(crate) fn account_detail(app: &MailApp, a: &mailcraft_model::Account) -> String {
+    let server = |s: &Option<mailcraft_model::Server>| {
+        s.as_ref().map(|s| format!("{}{}", s.host, if s.security == Security::None { tl!(" (not encrypted)") } else { "" }))
+    };
+    match a.kind {
+        AccountKind::Microsoft if a.is_shared() && app.shared_refused.contains_key(&a.id) => {
+            tl!("Shared mailbox · No access: Microsoft won't open it for you. Send/Receive tries again").to_string()
+        }
+        AccountKind::Microsoft if a.is_shared() => match app.session.mailbox.owner_of(a.id) {
+            Some(owner) => crate::i18n::fmt(tl!("Shared mailbox · opened with {owner}'s sign-in"), &[("owner", &owner.email)]),
+            None => tl!("Shared mailbox · the account it was opened through is gone: remove it").to_string(),
+        },
+        AccountKind::Local => tl!("On this device only: no mail server").to_string(),
+        AccountKind::Microsoft => tl!("Signs in with Microsoft · folders kept in step through Microsoft Graph (testing)").to_string(),
+        // A JMAP account names its server.
+        AccountKind::Jmap => jmap_line(a),
+        // Kept as its file has it: this version neither sends nor receives with it.
+        AccountKind::Unknown => tl!("Added by a newer version of MailCraft: send and receive with it there").to_string(),
+        AccountKind::Imap => {
+            let servers = format!(
+                "{} · {}",
+                server(&a.incoming).map_or(tl!("no incoming server").to_string(), |h| format!("IMAP {h}")),
+                server(&a.outgoing).map_or(tl!("no outgoing server").to_string(), |h| format!("SMTP {h}"))
+            );
+            // How the owner signs in, when it isn't with a password.
+            match &a.oauth {
+                Some(o) => format!("{} {} · {servers}", tl!("Signs in with"), o.provider.label()),
+                None => servers,
+            }
+        }
+    }
+}
+
+/// A JMAP account's line about its server (also on its settings page): the name of the host alone,
+/// as the whole address may carry the account's own.
 pub(crate) fn jmap_line(a: &mailcraft_model::Account) -> String {
     match a.jmap.as_ref().and_then(mailcraft_model::JmapServer::host) {
         Some(host) => crate::i18n::fmt(tl!("JMAP {host}"), &[("host", host)]),
@@ -117,7 +152,6 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     // (Each shared mailbox right under the account it is opened through, a little in: #70.)
     let accounts: Vec<mailcraft_model::Account> = app.session.mailbox.accounts_in_order().into_iter().cloned().collect();
     for a in &accounts {
-        let owner = app.session.mailbox.owner_of(a.id).map(|o| o.email.clone());
         let (row, _) = ui.allocate_exact_size(vec2(ui.available_width().min(560.0), 58.0), Sense::hover());
         let r = if a.is_shared() { Rect::from_min_max(pos2(row.min.x + 24.0, row.min.y), row.max) } else { row };
         ui.painter().rect(r, 6.0, t.panel, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
@@ -128,34 +162,7 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         let buttons = if a.is_shared() { 1 } else { usize::from(!a.email.is_empty()) + usize::from(accounts.len() > 1) };
         let text_w = r.width() - 70.0 - 82.0 * buttons as f32;
         crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 58.0, r.min.y + 20.0), text_w, &title, semibold(13.0), t.text);
-        let server = |s: &Option<mailcraft_model::Server>| {
-            s.as_ref().map(|s| format!("{}{}", s.host, if s.security == Security::None { tl!(" (not encrypted)") } else { "" }))
-        };
-        let detail = match a.kind {
-            AccountKind::Microsoft if a.is_shared() && app.shared_refused.contains_key(&a.id) => {
-                tl!("Shared mailbox · No access: Microsoft won't open it for you. Send/Receive tries again").to_string()
-            }
-            AccountKind::Microsoft if a.is_shared() => match &owner {
-                Some(owner) => crate::i18n::fmt(tl!("Shared mailbox · opened with {owner}'s sign-in (testing)"), &[("owner", owner)]),
-                None => tl!("Shared mailbox · the account it was opened through is gone: remove it").to_string(),
-            },
-            AccountKind::Local => tl!("On this device only: no mail server").to_string(),
-            AccountKind::Microsoft => tl!("Signs in with Microsoft · folders kept in step through Microsoft Graph (testing)").to_string(),
-            // //// Neoffice — a JMAP account names its server.
-            AccountKind::Jmap => jmap_line(a),
-            AccountKind::Imap => {
-                let servers = format!(
-                    "{} · {}",
-                    server(&a.incoming).map_or(tl!("no incoming server").to_string(), |h| format!("IMAP {h}")),
-                    server(&a.outgoing).map_or(tl!("no outgoing server").to_string(), |h| format!("SMTP {h}"))
-                );
-                // How the owner signs in, when it isn't with a password.
-                match &a.oauth {
-                    Some(o) => format!("{} {} · {servers}", tl!("Signs in with"), o.provider.label()),
-                    None => servers,
-                }
-            }
-        };
+        let detail = account_detail(app, a);
         crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 58.0, r.min.y + 39.0), text_w, &detail, regular(11.5), t.text_dim);
         // Sending, calendar and contacts through Microsoft wait for the owner's say-so.
         if app.graph_consent_needed(a.id) {
@@ -214,8 +221,8 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             ui.add_space(8.0);
         }
         // A mailbox of the organisation that the owner was given Full Access to (#70).
-        // (Not for a personal Microsoft account, which has none; only while they are being tested.)
-        if app.session.shared_mailboxes && crate::shared_mailboxes::can_open_shared(a) {
+        // (Not for a personal Microsoft account, which has none.)
+        if crate::shared_mailboxes::can_open_shared(a) {
             ui.horizontal(|ui| {
                 ui.add_space(12.0);
                 let link = ui.link(tl!("Add Shared Mailbox…")).on_hover_text(tl!(

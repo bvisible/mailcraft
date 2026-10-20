@@ -1103,8 +1103,8 @@ pub struct MailApp {
     /// What agents want that waits for the owner's yes ([`agent_gate`]).
     pub(crate) asking: agent_gate::Questions,
     styled: bool,
-    /// The interface theme setting last installed in egui ([`theme::apply`]).
-    applied_theme: Option<theme::Appearance>,
+    /// The interface theme last installed in egui ([`theme::apply`]).
+    applied_theme: Option<egui::ThemePreference>,
     fonts_frames: u32,
     pub frame_ms: f64,
     /// The window title last sent; a viewport command schedules a repaint, so only send changes.
@@ -2171,16 +2171,9 @@ impl MailApp {
     }
 
     fn server_accounts(&self) -> Vec<Id> {
-        // (A shared mailbox only while they are being tested, #70.)
-        let on = self.session.shared_mailboxes;
-        // //// Neoffice — only those this build can run: a JMAP account needs the host's JMAP runner, the others its mail connections.
-        self.session
-            .mailbox
-            .accounts
-            .iter()
-            .filter(|a| a.kind.has_server() && (on || !a.is_shared()) && self.services.can_run(a.kind))
-            .map(|a| a.id)
-            .collect()
+        // //// Neoffice — those this build can run, a JMAP account among them: it needs the host's JMAP runner (this fork
+        // runs one, where upstream makes no run of a JMAP account yet), the others their mail connections.
+        self.session.mailbox.accounts.iter().filter(|a| a.kind.has_server() && self.services.can_run(a.kind)).map(|a| a.id).collect()
     }
 
     /// How much of `account` waits to go to its server: mail in the Outbox, and changes made here
@@ -2910,9 +2903,11 @@ impl MailApp {
             ctx.options_mut(|o| o.zoom_with_keyboard = false);
             self.styled = true;
         }
-        if self.applied_theme != Some(self.ui.theme) {
-            theme::apply(ctx, self.ui.theme);
-            self.applied_theme = Some(self.ui.theme);
+        // Settled from the main window's input, so every window has the same theme.
+        let preference = self.ui.theme.preference(ctx.system_theme());
+        if self.applied_theme != Some(preference) {
+            theme::apply(ctx, preference);
+            self.applied_theme = Some(preference);
         }
         let zoom = self.ui.interface_size.zoom_factor();
         if ctx.zoom_factor() != zoom {

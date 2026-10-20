@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! Where a JMAP account's server is ([`JmapServer`], held by [`crate::Account::jmap`]), and what
 //! an address must be before anything of the owner's is sent to it.
 //!
@@ -23,7 +22,7 @@ pub struct JmapServer {
     /// whether it may be used.
     pub session: String,
     /// The secret is a bearer token. Otherwise it is the account's password, sent with the
-    /// account's login name (HTTP Basic).
+    /// account's e-mail address as its login name (HTTP Basic).
     pub bearer: bool,
 }
 

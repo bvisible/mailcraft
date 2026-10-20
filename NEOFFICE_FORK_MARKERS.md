@@ -9,13 +9,27 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `73cbee4` (upstream `main` on 2026-10-20 in the morning: SPDX lines in every Rust file and the `cargo xtask spdx` check,
-  one pinned Rust version for CI, the Scorecard and reproducible-build workflows, and the two roadmap documents), merged into
-  `version-15`. The fork's own Rust files got their SPDX lines by `cargo xtask spdx --fix` in the commit after the merge.
-- Before it: `d7db890` (0.5.2, the desktop alerts, the project's new Microsoft registration, About ▸ Testers, and the
-  governance documents), `ed2bd41` (upstream `main` on 2026-10-19 in the evening: 0.5.1, the security review fixes and the fuzz
-  targets), and `d33985a` (upstream `main` on 2026-10-19: v0.5.0 and the contributor licence agreement), where the fork
-  was created.
+- `3f9cf26` (upstream `main` on 2026-10-20 in the evening: a JMAP account in the model, M6, upstream's own shape of what
+  this fork had there (`AccountKind::Jmap`, `JmapServer`, `sync/jmap.rs`, the answered and forwarded marks of a
+  `ServerMessage`); an account of a kind this version doesn't know kept as its file has it, `AccountKind::Unknown`; shared
+  mailboxes out of testing, with moves and copies between a shared mailbox and its owner's mailbox and File › Signatures
+  listing them, #70; reminder windows on the main window's theme; a CodeQL workflow; README and roadmap documents), merged
+  into `version-15`. Where upstream now has what the fork had, the fork takes upstream's text and keeps only what it adds,
+  marked: `crates/model/src/jmap_server.rs` is upstream's whole, and `crates/model/src/sync/jmap.rs` is upstream's with the
+  sending and the drafts of a JMAP account on top (`JmapSend`, `JmapDraftUp`, `JmapDraftDone`, `unwanted`); neither is the
+  fork's own file any more. Upstream's M6 guards ("nothing is sent from a JMAP account yet", "no Send/Receive is made of a
+  JMAP account until the engine has its commands") give way where this fork has those commands: `AccountKind::sends_mail`
+  is true for a JMAP account, `sync.request` hands a JMAP account to its JMAP run (`sync.jmapRequest`), the window takes a
+  JMAP account into its Send/Receive where the host gives it a JMAP runner (`Services::can_run`), and upstream's tests of
+  those guards (`crates/engine/src/cmd/jmap_sending_tests.rs`, `cmd/calendar/invitation.rs`, `crates/ui-egui/src/tests.rs`)
+  say what this fork does instead. The guards themselves stay, for a build or a caller that can't run one (the command
+  line's `sync`, `sync_request`).
+- Before it: `73cbee4` (upstream `main` on 2026-10-20 in the morning: SPDX lines in every Rust file and the `cargo xtask spdx`
+  check, one pinned Rust version for CI, the Scorecard and reproducible-build workflows, and the two roadmap documents); the
+  fork's own Rust files got their SPDX lines by `cargo xtask spdx --fix` in the commit after that merge. Then `d7db890`
+  (0.5.2, the desktop alerts, the project's new Microsoft registration, About ▸ Testers, and the governance documents),
+  `ed2bd41` (upstream `main` on 2026-10-19 in the evening: 0.5.1, the security review fixes and the fuzz targets), and
+  `d33985a` (upstream `main` on 2026-10-19: v0.5.0 and the contributor licence agreement), where the fork was created.
 
 ## What the fork adds
 

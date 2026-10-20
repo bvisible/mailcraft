@@ -1,15 +1,14 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! A mailbox kept in step over JMAP (RFC 8620 and 8621): what a run is asked to do and what it
 //! brings back.
 //!
 //! The counterpart of [`GraphMailRequest`](super::GraphMailRequest) and
 //! [`GraphMailResult`](super::GraphMailResult), beside them rather than bent into them. Plain data,
 //! so the pieces stay apart: the engine builds a [`JmapMailRequest`] and takes in a
-//! [`JmapMailResult`] (both pure), and a host with a way to reach the server (an HTTP client on
-//! the desktop, `fetch` in the browser) does the talking in between, usually as a task that
-//! hands the answer over in pieces.
+//! [`JmapMailResult`] (both pure), and a host with a way to reach the server (`fetch` in the
+//! browser, an HTTP client where there are sockets) does the talking in between, usually as a task
+//! that hands the answer over in pieces.
 //!
 //! A JMAP account's folders and messages are known to its server by the ids the server hands out
 //! ([`crate::AccountKind::server_ids`]), as a Microsoft account's are. What carries no Graph
@@ -37,6 +36,8 @@
 
 use serde::{Deserialize, Serialize};
 
+// //// Neoffice — a message to send goes whole as a `JmapSend` (with the copy of its draft the server has), not as
+// Graph's `SendUp`: sending from a JMAP account works here (`mailcraft-jmap`'s `send`).
 use super::{FolderListing, GraphProgress, MessagePage, SendDone, is_false};
 use crate::{Id, Message};
 
@@ -44,6 +45,7 @@ use crate::{Id, Message};
 /// is held to, here and by the host.
 pub const MAX_JMAP_WINDOW: u32 = 500;
 
+// //// Neoffice — how much one run sends and files (see `JmapSend`, `JmapDraftUp`).
 /// Most messages one run sends, and most drafts it files: more go with the next run. A server may
 /// limit how many messages a person sends in a few minutes, and a run that sends a few at a time
 /// stays well under it.
@@ -64,7 +66,7 @@ pub struct JmapMailRequest {
     /// the account's address, so it is never logged.
     pub session: String,
     /// The secret that goes beside this request is a bearer token. Otherwise it is the account's
-    /// password, sent with its login name ([`crate::JmapServer::bearer`]).
+    /// password, sent with the account's address as its login name ([`crate::JmapServer::bearer`]).
     #[serde(skip_serializing_if = "is_false")]
     pub bearer: bool,
     /// How many of the newest messages of a mailbox are read at most, from 1 to [`MAX_JMAP_WINDOW`].
@@ -83,10 +85,12 @@ pub struct JmapMailRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<JmapChange>,
     /// What waits in the Outbox, sent after the changes (RFC 8621 §7). Each message goes whole.
+    // //// Neoffice — as a `JmapSend` (see the `use` above), and the drafts filed with the run.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sends: Vec<JmapSend>,
     /// The drafts saved here that the server doesn't have yet in their latest form: filed in its
     /// Drafts after the messages are sent (RFC 8621 §4.8).
+    // //// Neoffice — (see `JmapDraftUp`)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<JmapDraftUp>,
     /// Nobody is waiting for this run: it gets the share of requests background work has.
@@ -111,7 +115,7 @@ pub struct JmapFetchRequest {
     /// the account's address, so it is never logged.
     pub session: String,
     /// The secret that goes beside this request is a bearer token. Otherwise it is the account's
-    /// password, sent with its login name ([`crate::JmapServer::bearer`]).
+    /// password, sent with the account's address as its login name ([`crate::JmapServer::bearer`]).
     #[serde(skip_serializing_if = "is_false")]
     pub bearer: bool,
     /// The server ids of the emails to fetch, in the order they are wanted.
@@ -121,6 +125,8 @@ pub struct JmapFetchRequest {
     pub background: bool,
 }
 
+// //// Neoffice — a message to send, a draft to file and what became of it: sending and drafts of a JMAP account work
+// here (`mailcraft-jmap`'s `send`), where upstream has none yet.
 /// A message of a JMAP account's Outbox to send, whole (RFC 8621 §7): the host files it in the
 /// server's Sent and has the server send it to everyone it names.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -296,6 +302,7 @@ pub struct JmapMailResult {
     /// What became of the messages sent.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sent: Vec<SendDone>,
+    // //// Neoffice — what became of the drafts filed, and the copies nobody wants (see `JmapDraftUp`).
     /// What became of the drafts filed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub drafts: Vec<JmapDraftDone>,
@@ -350,6 +357,7 @@ impl JmapMailResult {
         }
         self.changes.extend(piece.changes);
         self.sent.extend(piece.sent);
+        // //// Neoffice — (the drafts and the copies nobody wants, likewise)
         self.drafts.extend(piece.drafts);
         self.unwanted.extend(piece.unwanted);
         if piece.listing.is_some() {
@@ -381,12 +389,14 @@ impl std::fmt::Debug for JmapMailRequest {
             .field("known", &known)
             .field("changes", &self.changes.len())
             .field("sends", &self.sends.len())
+            // //// Neoffice — (the drafts filed with the run)
             .field("drafts", &self.drafts.len())
             .field("background", &self.background)
             .finish()
     }
 }
 
+// //// Neoffice — the debug lines of a message to send and of a draft to file: counts only.
 /// Counts only: a message is private, even in a debug line.
 impl std::fmt::Debug for JmapSend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -431,6 +441,7 @@ impl std::fmt::Debug for JmapMailResult {
             .field("account", &self.account)
             .field("changes", &self.changes.len())
             .field("sent", &self.sent.len())
+            // //// Neoffice — (the drafts and the copies nobody wants)
             .field("drafts", &self.drafts.len())
             .field("unwanted", &self.unwanted.len())
             .field("listed", &self.listing.as_ref().map(|listing| listing.folders.len()))
@@ -482,6 +493,7 @@ mod tests {
                 JmapChange::Move { message: 5, id: "E3".into(), from: "M1".into(), to: "M2".into() },
                 JmapChange::Destroy { id: "E9".into() },
             ],
+            // //// Neoffice — a message to send and a draft to file, as this fork sends them (`JmapSend`, `JmapDraftUp`).
             sends: vec![JmapSend { message: 7, draft_copy: format!("E-draft-{ME}"), mime: Box::new(to_bob.clone()) }],
             drafts: vec![JmapDraftUp { message: 8, saves: 2, replaces: "E9".into(), mime: Box::new(to_bob) }],
             background: true,
@@ -514,6 +526,7 @@ mod tests {
                 },
             ],
             sent: vec![SendDone { message: 7, outcome: SendOutcome::Held { lost: false, why: format!("{ME} was refused") }, draft: None }],
+            // //// Neoffice — what became of a draft filed, and a copy nobody wants.
             drafts: vec![JmapDraftDone {
                 message: 8,
                 saves: 2,
@@ -540,6 +553,7 @@ mod tests {
     #[test]
     fn a_request_and_a_result_read_and_write_as_json() {
         let json = round_trip(&request());
+        // //// Neoffice — (and the message to send, the draft filed and the copy nobody wants, as this fork has them)
         for part in [
             r#""scope":{"light":{"also":["#,
             r#""known":[{"mailbox":"M1","ids":["#,
@@ -550,6 +564,7 @@ mod tests {
             assert!(json.contains(part), "{part} in {json}");
         }
         let json = round_trip(&result());
+        // //// Neoffice — (and the draft filed, and the copy nobody wants)
         for part in [
             r#""authRefused":true"#,
             r#""busyFor":30"#,
@@ -568,6 +583,7 @@ mod tests {
     fn what_is_not_said_is_empty() {
         let none: JmapMailRequest = serde_json::from_str("{}").unwrap();
         assert_eq!(none, JmapMailRequest::default());
+        // //// Neoffice — (no drafts either)
         assert_eq!(
             (none.window, none.scope.clone(), none.known.len(), none.changes.len(), none.sends.len(), none.drafts.len()),
             (0, JmapScope::All, 0, 0, 0, 0)
@@ -662,6 +678,7 @@ mod tests {
                 listing: Some(FolderListing { folders: vec![GraphFolder { id: "M1".into(), ..Default::default() }], complete: true }),
                 changes: vec![JmapChangeDone { change: JmapChange::Destroy { id: "E9".into() }, outcome: JmapOutcome::Gone }],
                 errors: vec!["One".into()],
+                // //// Neoffice — what became of a message sent, of a draft filed, and a copy nobody wants, kept in order.
                 sent: vec![SendDone { message: 7, outcome: SendOutcome::Sent, draft: None }],
                 progress: Some(GraphProgress { folder: "M1".into(), read: 0, total: 2, number: 1, folders: 2 }),
                 ..Default::default()
@@ -678,6 +695,7 @@ mod tests {
             JmapMailResult {
                 account: 3,
                 pages: vec![page("M2", &["E3"])],
+                // //// Neoffice — (as above)
                 drafts: vec![JmapDraftDone { message: 8, saves: 1, id: "E10".into(), ..Default::default() }],
                 unwanted: vec!["E12".into()],
                 errors: vec!["Two".into()],
@@ -692,7 +710,7 @@ mod tests {
         assert_eq!((whole.partial, whole.whole, whole.stopped, whole.auth_refused, whole.busy_for), (false, true, true, true, Some(30)));
         assert_eq!(whole.pages.iter().map(|p| (p.folder.as_str(), p.messages.len())).collect::<Vec<_>>(), [("M1", 2), ("M2", 1)]);
         assert_eq!((whole.changes.len(), whole.errors.join(", ").as_str(), whole.listing.map(|l| l.folders.len())), (1, "One, Two", Some(1)));
-        // What became of the messages sent and of the drafts filed is kept in the order it came.
+        // //// Neoffice — what became of the messages sent and of the drafts filed is kept in the order it came.
         assert_eq!((whole.sent.len(), whole.drafts.iter().map(|d| d.id.as_str()).collect::<Vec<_>>()), (1, vec!["E10"]));
         assert_eq!(whole.unwanted, ["E12"]);
         // The progress of the piece that had one stays until another says more.
@@ -710,16 +728,19 @@ mod tests {
                 assert!(!shown.contains(secret), "{secret} in {shown}");
             }
         }
+        // //// Neoffice — (with the drafts filed, and the copies nobody wants)
         assert_eq!(
             format!("{request:?}"),
             "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, drafts: 1, background: true }"
         );
+        // //// Neoffice — (likewise)
         assert_eq!(
             format!("{result:?}"),
             "JmapMailResult { account: 3, changes: 4, sent: 1, drafts: 1, unwanted: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
         );
     }
 
+    // //// Neoffice — a message to send and a draft to file, as this fork sends them.
     /// A message to send and a draft to file carry the whole message, and print none of it.
     #[test]
     fn a_message_to_send_and_a_draft_to_file_read_and_write_as_json_and_show_counts_only() {

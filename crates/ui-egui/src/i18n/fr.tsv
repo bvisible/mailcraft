@@ -264,7 +264,6 @@
 	Brown	Marron
 	Red	Rouge
 	On this computer	Sur cet ordinateur
-	shared mailboxes are being tested: start MailCraft with MAILCRAFT_SHARED_MAILBOXES=1 to try them	les boîtes aux lettres partagées sont en test : lancez MailCraft avec MAILCRAFT_SHARED_MAILBOXES=1 pour les essayer
 	Pinned	Épinglés
 	Date	Date
 	Unread	Non lus
@@ -487,7 +486,11 @@
 	Local mailbox	Boîte aux lettres locale
 	 (not encrypted)	 (non chiffrée)
 	Shared mailbox · No access: Microsoft won't open it for you. Send/Receive tries again	Boîte aux lettres partagée · Aucun accès : Microsoft refuse de l’ouvrir pour vous. Envoyer/Recevoir réessaie
-	Shared mailbox · opened with {owner}'s sign-in (testing)	Boîte aux lettres partagée · ouverte avec la connexion de {owner} (en test)
+	Shared mailbox · opened with {owner}'s sign-in	Boîte aux lettres partagée · ouverte avec la connexion de {owner}
+	Added by a newer version of MailCraft: send and receive with it there	Ajouté par une version plus récente de MailCraft : envoyez et recevez avec celle-ci
+	This account was added by a newer version of MailCraft. This version keeps it as it is and doesn't send or receive with it: use the newer version for that, and to change its settings.	Ce compte a été ajouté par une version plus récente de MailCraft. Cette version le conserve tel quel et n’envoie ni ne reçoit avec lui : utilisez la version plus récente pour cela, et pour modifier ses paramètres.
+	Its mail can be read here. What you change in it is kept in this mailbox, and this version tells no mail server about it.	Son courrier peut être lu ici. Ce que vous y modifiez est conservé dans cette boîte aux lettres, et cette version n’en informe aucun serveur de messagerie.
+	shared mailbox	boîte aux lettres partagée
 	Shared mailbox · the account it was opened through is gone: remove it	Boîte aux lettres partagée · le compte par lequel elle a été ouverte n’existe plus : retirez-la
 	Signs in with Microsoft · folders kept in step through Microsoft Graph (testing)	Connexion avec Microsoft · dossiers synchronisés via Microsoft Graph (en test)
 	no incoming server	aucun serveur entrant
