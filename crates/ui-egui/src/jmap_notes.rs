@@ -208,6 +208,13 @@ impl MailApp {
         !flight.carried || answered
     }
 
+    /// Whether leaving now would lose something of the notes: in a tab that keeps nothing of its own (a hosting page's),
+    /// a change of a note waits to go to its server, or words typed into a note are not in it yet. A hosting page asks
+    /// before it is left while there is one.
+    pub fn notes_unsent(&self) -> bool {
+        !self.session.keeps_local && (!self.session.mailbox.notes.changes.is_empty() || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
+    }
+
     /// The state of `account`'s notes that the window holds, and when the job that said it was asked for. (Public for a
     /// host's tests.)
     pub fn jmap_notes_state(&self, account: Id) -> Option<(String, Timestamp)> {

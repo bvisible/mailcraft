@@ -488,6 +488,11 @@ pub(crate) fn flush(app: &mut MailApp, ctx: &egui::Context, always: bool) {
     ctx.data_mut(|d| d.remove_temp::<Draft>(key));
 }
 
+/// Whether words typed into a note are not in it yet.
+pub(crate) fn typed(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<Draft>(egui::Id::new(DRAFT))).is_some_and(|draft| draft.typed.is_some())
+}
+
 /// `ui.openNote`: open a note on the web, in the system's browser. The link came from the note's server: it is
 /// followed only because the owner asked, only when it is an `https` address, and by the rules a link in a message is
 /// followed by.

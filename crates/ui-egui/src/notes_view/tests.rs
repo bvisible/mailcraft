@@ -250,3 +250,21 @@ fn the_cards_say_untitled_and_the_lists_say_when_they_are_empty() {
     assert_eq!((said.title.as_str(), said.words.as_str()), ("Lake walk", "Cooking class"), "the first line is its title");
     assert!(said.changed.starts_with("Changed "));
 }
+
+#[test]
+fn words_typed_into_a_note_in_a_hosting_tab_would_be_lost_until_they_are_in_it() {
+    let mut window = window(true, "view.mail");
+    let account = with_server(&mut window);
+    let id = server_note(&mut window, account, Note { title: "Groceries".into(), text: "Milk".into(), ..Default::default() });
+    window.state_mut().execute("view.notes", json!({})).unwrap();
+    window.state_mut().execute("notes.select", json!({"id": id})).unwrap();
+    window.run_steps(3);
+    assert!(!window.state().notes_unsent());
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    assert!(window.state().notes_unsent(), "typed, not in the note yet");
+    key(&mut window, Key::Escape);
+    window.run_steps(3);
+    assert_eq!(note(&window, id).text, "Milk and eggs");
+    assert!(window.state().notes_unsent(), "in the note, and its change waits to go");
+}

@@ -12,6 +12,10 @@
 
 use std::sync::mpsc::Receiver;
 
+/// A hosting page's tab asks before it is left while a change of a note waits (in the browser alone).
+#[cfg(target_arch = "wasm32")]
+pub mod leave;
+
 use mailcraft_engine::Session;
 use mailcraft_model::sync::{GraphFetchResult, JmapMailResult, JmapPimResult};
 use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};

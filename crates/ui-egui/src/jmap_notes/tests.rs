@@ -208,3 +208,22 @@ fn a_job_that_carried_note_changes_and_says_nothing_of_them_came_to_nothing() {
     assert_eq!(jobs(&asked), before + 1);
     assert_eq!(last(&asked).notes.and_then(|ask| ask.changes).map(|changes| changes.ops.len()), Some(2), "both go");
 }
+
+#[test]
+fn a_hosting_tab_says_a_note_change_would_be_lost_while_it_waits() {
+    let (mut app, id, asked) = read_once();
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    assert!(!app.notes_unsent(), "this computer keeps it: it goes later");
+    app.session.keeps_local = false;
+    assert!(app.notes_unsent(), "a hosting page's tab keeps nothing between visits");
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    let done = NoteOutcome { op, result: NoteResult::Done, note: Some(remote("VN-9", "Lunch")), ..Default::default() };
+    let notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![done], ..Default::default() }),
+        ..Default::default()
+    };
+    answer(&mut app, &asked, id, Some(notes));
+    assert!(!app.notes_unsent(), "the server has it");
+}

@@ -55,6 +55,8 @@ pub fn start() {
                     let mut app = if hosted.is_empty() {
                         MailApp::new(Session::new(first_mailbox()), services(inbox.clone(), cc.egui_ctx.clone()))
                     } else {
+                        // //// Neoffice — and the page asks before it is left while a note's change waits (hosted/leave.rs).
+                        crate::hosted::leave::install();
                         hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone())
                     };
                     if let Some(ui) = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
@@ -139,6 +141,8 @@ impl eframe::App for WebShell {
             });
         }
         self.app.logic(ctx);
+        // //// Neoffice — whether leaving the page now would lose a note's change (hosted/leave.rs).
+        crate::hosted::leave::set(self.app.notes_unsent());
         // Interface settings: stored when they change, checked every couple of seconds.
         let now = mailcraft_ui_egui::now_ms();
         if now - self.checked > 2000.0 {
