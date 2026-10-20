@@ -684,3 +684,38 @@ fn a_meeting_declined_here_stays_out_of_the_calendar_when_the_server_keeps_it_wi
     }
     assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
 }
+
+#[test]
+fn a_series_declined_elsewhere_leaves_the_window_whole_with_a_day_accepted_alone() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    assert_eq!(flow.when("Planning").len(), 3);
+    // On her phone: Grace's planning declined, then the 20th accepted alone.
+    flow.server.with(|d| {
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["participationStatus"] = json!("declined");
+        let mut accepted = planning.props["participants"].clone();
+        accepted["ada"]["participationStatus"] = json!("accepted");
+        planning.overrides.insert("2026-10-20T10:00:00".into(), json!({"participants": accepted}).as_object().unwrap().clone());
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.when("Planning").is_empty(), "{:?}", flow.when("Planning"));
+    assert!(flow.event("Planning").is_none(), "the series is gone whole");
+}
+
+#[test]
+fn a_day_declined_alone_elsewhere_leaves_the_window_and_the_series_stays() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    // On her phone: Grace's planning accepted, and the 20th declined alone.
+    flow.server.with(|d| {
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["participationStatus"] = json!("accepted");
+        let mut declined = planning.props["participants"].clone();
+        declined["ada"]["participationStatus"] = json!("declined");
+        planning.overrides.insert("2026-10-20T10:00:00".into(), json!({"participants": declined}).as_object().unwrap().clone());
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.when("Planning"), ["2026-10-13T10:00:00", "2026-10-27T10:00:00"]);
+    assert!(flow.event("Planning").is_some_and(|e| e.recurrence.is_some()));
+}

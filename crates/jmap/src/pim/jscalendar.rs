@@ -78,6 +78,9 @@ pub struct Read {
     /// For a series: the occurrences it changes beyond leaving them out (a time, a title, the people), by when the
     /// series has them.
     pub changed: Vec<DateTime>,
+    /// The owner's own entry ([`own_entry`](super::own_entry)) has the role of an owner of the event: they organize it,
+    /// whatever address the organizer is named by (one of theirs the request doesn't name).
+    pub owner_role: bool,
 }
 
 /// A calendar as it was read: the engine's, and whether the account may write its events.
@@ -168,7 +171,7 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
     let (start, end) = if all_day { days(value)? } else { instants(value, here)? };
     let named_zone = text(value, "timeZone").trim();
     let start_zone = if !all_day && Zone::named(named_zone).is_some() { named_zone.to_string() } else { String::new() };
-    let (organizer, attendees, response) = people(value, me);
+    let (organizer, attendees, response, owner_role) = people(value, me);
     let is_organizer = organizer.as_ref().map(|organizer| mine(me, &organizer.email));
     let status = text(value, "status").trim().to_ascii_lowercase();
     let show_as = match (status.as_str(), text(value, "freeBusyStatus").trim().to_ascii_lowercase().as_str()) {
@@ -243,7 +246,7 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
         .map(|(id, _)| id.clone())
         .collect();
     let changed = if master { changed_occurrences(value) } else { Vec::new() };
-    Ok(Read { calendars, event, recurrence_id: recurrence_id.filter(|_| occurrence), changed })
+    Ok(Read { calendars, event, recurrence_id: recurrence_id.filter(|_| occurrence), changed, owner_role })
 }
 
 /// Whether an event says how it repeats (a rule, or a list of them that is not empty).
@@ -507,13 +510,14 @@ fn answer(participant: &Map<String, Value>) -> Response {
     }
 }
 
-/// The organizer, the people invited, and what the owner answered (see the module documentation).
-fn people(value: &Value, me: &[String]) -> (Option<Address>, Vec<Attendee>, Response) {
+/// The organizer, the people invited, what the owner answered, and whether the owner's own entry is an owner's (see the
+/// module documentation).
+fn people(value: &Value, me: &[String]) -> (Option<Address>, Vec<Attendee>, Response, bool) {
     let said = mailto(text(value, "organizerCalendarAddress"));
     let mut organizer = said.contains('@').then(|| Address { name: String::new(), email: bounded(&said, MAX_LINE) });
     let mut attendees = Vec::new();
     let mut response = Response::None;
-    let mut answered = false;
+    let (mut answered, mut owner_role) = (false, false);
     for participant in entries(value, "participants", MAX_PARTICIPANTS) {
         let email = bounded(&address_of(participant), MAX_LINE);
         let name = bounded(participant.get("name").and_then(Value::as_str).map(str::trim).unwrap_or_default(), MAX_LINE);
@@ -521,6 +525,7 @@ fn people(value: &Value, me: &[String]) -> (Option<Address>, Vec<Attendee>, Resp
         // What the person answered: their first own entry's, as the server finds it when it is told an answer.
         if !answered && own_entry(me, participant) {
             response = answer(participant);
+            owner_role = has_role(participant, "owner");
             answered = true;
         }
         if owner {
@@ -537,7 +542,7 @@ fn people(value: &Value, me: &[String]) -> (Option<Address>, Vec<Attendee>, Resp
             attendees.push(Attendee { address: Address { name, email }, optional: has_role(participant, "optional"), response: answer(participant) });
         }
     }
-    (organizer, attendees, response)
+    (organizer, attendees, response, owner_role)
 }
 
 #[cfg(test)]

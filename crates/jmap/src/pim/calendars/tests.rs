@@ -510,8 +510,10 @@ fn people(organizer: &str, ada: &str) -> serde_json::Value {
 }
 
 /// A server with, in Ada's calendar: Grace's review, which Ada declined; Grace's weekly planning, which she declined
-/// whole; Bob's weekly sync (Tuesdays at eleven), which she accepted and declined on the 20th alone; and her own
-/// retro, where her own entry oddly says declined.
+/// whole; Grace's weekly board (Thursdays at two), which she declined whole and accepted on the 22nd alone; Bob's
+/// weekly sync (Tuesdays at eleven), which she accepted and declined on the 20th alone; and three where her own entry
+/// oddly says declined: her retro, a meeting she organizes under an address the job doesn't know as hers, her own
+/// entry being the owner's, and one that names no organizer.
 fn declined() -> StandIn {
     let server = server();
     server.with(|d| {
@@ -537,6 +539,25 @@ fn declined() -> StandIn {
                 .changing("2026-10-20T11:00:00", json!({"participants": one_day})),
         );
         d.pim.add_event(
+            Event::timed("board", "ada", "Board", "2026-10-15T14:00:00", zurich, "PT1H")
+                .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 3}))
+                .with("organizerCalendarAddress", json!(grace))
+                .with("participants", people("grace@example.org", "declined"))
+                .changing("2026-10-22T14:00:00", json!({"participants": people("grace@example.org", "accepted")})),
+        );
+        d.pim.add_event(
+            Event::timed("alias", "ada", "Offsite", "2026-10-22T09:00:00", zurich, "PT2H")
+                .with("organizerCalendarAddress", json!("mailto:ada.lovelace@example.org"))
+                .with(
+                    "participants",
+                    json!({"a": participant(ME, json!({"owner": true, "attendee": true}), "declined"), "b": participant("bob@example.org", json!({"attendee": true}), "accepted")}),
+                ),
+        );
+        d.pim.add_event(Event::timed("open", "ada", "Open hour", "2026-10-23T09:00:00", zurich, "PT1H").with(
+            "participants",
+            json!({"a": participant("bob@example.org", json!({"attendee": true}), "accepted"), "b": participant(ME, json!({"attendee": true}), "declined")}),
+        ));
+        d.pim.add_event(
             Event::timed("retro", "ada", "Retro", "2026-10-21T16:00:00", zurich, "PT1H")
                 .with("organizerCalendarAddress", json!(format!("mailto:{ME}")))
                 .with("participants", json!({"a": participant(ME, json!({"owner": true}), "declined"), "b": participant("bob@example.org", json!({"attendee": true}), "accepted")})),
@@ -553,9 +574,24 @@ fn a_meeting_the_person_declined_is_in_no_download_and_one_she_organizes_stays()
     let mut titles: Vec<&str> = main.events.iter().map(|e| e.title.as_str()).collect();
     titles.sort();
     titles.dedup();
-    assert!(!titles.contains(&"Design review") && !titles.contains(&"Planning"), "{titles:?}");
-    assert!(titles.contains(&"Retro"), "her own meeting, whatever her entry says: {titles:?}");
-    assert!(main.gone.is_empty(), "nothing was asked for by name");
+    assert!(!titles.contains(&"Design review") && !titles.contains(&"Planning") && !titles.contains(&"Board"), "{titles:?}");
+    // Kept unless it is known to be somebody else's: her own, whatever her entry says; one organized under another
+    // address whose owner's entry is hers; one that names no organizer.
+    for kept in ["Retro", "Offsite", "Open hour"] {
+        assert!(titles.contains(&kept), "{kept}: {titles:?}");
+    }
+    // A series she declined is gone whole, asked about by name or not.
+    let mut gone = main.gone.clone();
+    gone.sort();
+    assert_eq!(gone, [Pim::event_id("board"), Pim::event_id("planning")]);
+}
+
+#[test]
+fn a_series_the_person_declined_is_gone_whole_with_the_day_she_accepted_alone() {
+    let main = run(&declined(), &request()).events.unwrap();
+    let board = Pim::event_id("board");
+    assert!(main.events.iter().all(|e| e.id != board && e.series != board), "neither the series nor the 22nd: {:?}", main.events);
+    assert!(main.gone.contains(&board), "and the engine drops its copy");
 }
 
 #[test]
@@ -566,14 +602,21 @@ fn a_series_the_person_declined_that_was_asked_for_by_name_is_gone() {
         ..request()
     };
     let main = run(&server, &asked).events.unwrap();
-    assert_eq!(main.gone, [Pim::event_id("planning")], "the engine drops its copy; the sync she accepted stays");
+    let named = |id: &str| main.gone.iter().filter(|gone| *gone == id).count();
+    assert_eq!(
+        (named(&Pim::event_id("planning")), named(&Pim::event_id("sync"))),
+        (1, 0),
+        "the engine drops its copy, once; the sync she accepted stays"
+    );
     assert!(main.events.iter().all(|e| e.id != Pim::event_id("planning") && e.series != Pim::event_id("planning")));
     assert!(main.events.iter().any(|e| e.id == Pim::event_id("sync") && e.kind == RemoteEventKind::SeriesMaster));
 }
 
 #[test]
-fn one_day_the_person_declined_alone_is_left_out_of_a_series_she_accepted() {
+fn one_day_the_person_declined_alone_is_left_out_of_a_whole_download_of_a_series_she_accepted() {
     let main = run(&declined(), &request()).events.unwrap();
+    // A whole download that has the series and not that day: the engine skips the day (its flow test shows it).
+    assert!(main.complete && main.events.iter().any(|e| e.id == Pim::event_id("sync") && e.kind == RemoteEventKind::SeriesMaster));
     let mut days: Vec<i64> = main.events.iter().filter(|e| e.series == Pim::event_id("sync")).map(|e| e.start).collect();
     days.sort();
     let at =

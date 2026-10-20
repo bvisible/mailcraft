@@ -45,10 +45,12 @@
 //! of it would make it again. Categories, importance, response options, online meetings and proposed times are not
 //! read (`has_categories` and `has_options` are false): they stay as they are here.
 //!
-//! **A meeting the person declined** (their own answer is no, and they don't organize it) is in no download, as it is
-//! for a server that takes a meeting away on a no, where such a server keeps it with the answer: an event of its own,
-//! a series (one asked about by name is gone, so that the engine drops its copy) and one occurrence declined alone
-//! (that day is left out of a series the person accepted). Exceptions are told from the series as they came.
+//! **A meeting the person declined** (their own answer is no, and it is known to be somebody else's: its organizer is
+//! named, is none of their addresses, and their own entry is not an owner's) is in no download, as it is for a server
+//! that takes a meeting away on a no, where such a server keeps it with the answer: an event of its own; a series, gone
+//! whole with every occurrence and exception of it (one the person accepted alone too), and named in the `gone` of its
+//! calendar's download so that the engine drops its copy; and one occurrence declined alone (that day is left out of
+//! a series the person accepted). Exceptions are told from the series as they came.
 //!
 //! **The stretch** is the request's, or, when it is longer than the server expands repeating events over in one query
 //! (its `maxExpandedQueryDuration`), as much of it as fits, cut in proportion on either side of the time the window
@@ -515,12 +517,13 @@ impl<'a, H: Http> Job<'a, H> {
             }
         }
         let whole = got.pager.done() == Some(true) && got.unread.0 == 0 && got.halted.is_none() && !got.cut && !self.cancel.load(Ordering::Relaxed);
-        // The series the person declined (see `declined`): asked about by name, they are gone.
-        let declined_series: HashSet<&str> = got
+        // The series the person declined (see `declined`), with the calendars they are in: gone whole, the occurrences
+        // the person accepted alone with them.
+        let declined_series: HashMap<String, Vec<String>> = got
             .events
             .iter()
-            .filter(|read| read.event.kind == RemoteEventKind::SeriesMaster && declined(&read.event))
-            .map(|read| read.event.id.as_str())
+            .filter(|read| read.event.kind == RemoteEventKind::SeriesMaster && declined(read))
+            .map(|read| (read.event.id.clone(), read.calendars.clone()))
             .collect();
         // A calendar the list of this job no longer has gets no download: the list takes it away with its events, and a
         // download of it would make it again.
@@ -536,7 +539,7 @@ impl<'a, H: Http> Job<'a, H> {
                 .iter()
                 .filter(|ask| ask.calendar.trim() == name.as_str())
                 .flat_map(|ask| &ask.series)
-                .filter(|series| got.gone.contains(series.trim()) || declined_series.contains(series.trim()))
+                .filter(|series| got.gone.contains(series.trim()) || declined_series.contains_key(series.trim()))
                 .map(|series| series.trim().to_string())
                 .collect();
             let download = EventsDownload {
@@ -551,6 +554,16 @@ impl<'a, H: Http> Job<'a, H> {
             };
             downloads.insert(id.clone(), download);
         }
+        // A declined series is gone from the download of its calendar too, asked about by name or not: the engine drops
+        // its copy whole (it would keep it for an occurrence of it).
+        for (name, calendars) in &declined_series {
+            let home = calendars.iter().filter(|id| downloads.contains_key(id.as_str())).min().cloned();
+            if let Some(download) = home.and_then(|home| downloads.get_mut(&home))
+                && !download.gone.contains(name)
+            {
+                download.gone.push(name.clone());
+            }
+        }
         out.errors.extend(lines(&got));
         // An occurrence the series changes beyond leaving it out is an exception of its own: the series has it
         // otherwise than its rule says.
@@ -562,12 +575,14 @@ impl<'a, H: Http> Job<'a, H> {
             .collect();
         let (mut strays, mut left_out) = (0usize, 0usize);
         for read in got.events {
-            let Read { calendars, mut event, recurrence_id, .. } = read;
-            // A meeting the person declined is out of the calendar: a series, one occurrence, an event of its own.
-            if declined(&event) {
+            // A meeting the person declined is out of the calendar: an event of its own, one occurrence, and a series
+            // with every occurrence and exception of it, one the person accepted alone too.
+            let of_declined = !read.event.series.is_empty() && declined_series.contains_key(&read.event.series);
+            if declined(&read) || of_declined {
                 left_out = left_out.saturating_add(1);
                 continue;
             }
+            let Read { calendars, mut event, recurrence_id, .. } = read;
             if event.kind == RemoteEventKind::Occurrence
                 && let Some((master, changed)) = series.get(&event.series)
                 && (recurrence_id.is_some_and(|at| changed.contains(&at)) || differs(&event, master))
@@ -597,10 +612,12 @@ impl<'a, H: Http> Job<'a, H> {
     }
 }
 
-/// Whether the person declined a meeting somebody else organizes (their own answer is no, and they don't organize it):
-/// such a meeting is out of their calendar, as it is for a server that takes it away on a no.
-fn declined(event: &RemoteEvent) -> bool {
-    event.response == Response::Declined && event.is_organizer != Some(true)
+/// Whether the person declined a meeting that is known to be somebody else's: their own answer is no, its organizer is
+/// named and is none of their addresses, and their own entry is not an owner's (one they organize under an address the
+/// request doesn't name). Such a meeting is out of their calendar, as it is for a server that takes it away on a no;
+/// one whose organizer is not known stays.
+fn declined(read: &Read) -> bool {
+    read.event.response == Response::Declined && read.event.is_organizer == Some(false) && !read.owner_role
 }
 
 /// Whether an occurrence says otherwise than its series what an event is besides its time (what it is called,
