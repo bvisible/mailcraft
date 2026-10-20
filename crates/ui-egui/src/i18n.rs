@@ -103,6 +103,7 @@ impl Lang {
     /// The language for a saved setting: `auto` (the system's language, see [`set_system_language`]), `pseudo`, or the code of a
     /// language, in any case and with or without a region (`fr`, `FR`, `fr-CH`); anything unknown is English.
     pub fn from_pref(pref: &str) -> Lang {
+        // //// Neoffice — as above.
         let pref = pref.trim();
         if pref.eq_ignore_ascii_case(AUTO) {
             Lang::decode(state::system())
@@ -169,6 +170,8 @@ pub fn set_current(lang: Lang) {
     state::set_current(lang.encode());
     // //// Neoffice — the dates people read follow the language too (date_words).
     mailcraft_time::set_date_words(date_words());
+    // //// Neoffice — and so does the header written over the original a reply or a forward quotes (quote_words).
+    mailcraft_engine::cmd::compose::set_quote_words(quote_words());
 }
 
 // //// Neoffice — the day and month names of the interface's language, for the dates people read; a numeric date day first.
@@ -181,6 +184,22 @@ fn date_words() -> Option<mailcraft_time::DateWords> {
         weekdays_short: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(|day| t(day).to_string()),
         months_short: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(|month| t(month).to_string()),
         day_first: Some('.'),
+    })
+}
+
+// //// Neoffice — the words of the header over a quoted original in the interface's language (Outlook writes them in its own).
+/// The words of the header written over the original under a reply or a forward: none in English.
+fn quote_words() -> Option<mailcraft_engine::cmd::compose::QuoteWords> {
+    if current() == Lang::English {
+        return None;
+    }
+    Some(mailcraft_engine::cmd::compose::QuoteWords {
+        original: tl!("-----Original Message-----").to_string(),
+        from: tl!("From:").to_string(),
+        sent: tl!("Sent:").to_string(),
+        to: tl!("To:").to_string(),
+        cc: tl!("Cc:").to_string(),
+        subject: tl!("Subject:").to_string(),
     })
 }
 
@@ -418,6 +437,30 @@ mod tests {
             assert_eq!(t("Reply"), t_in(lang, "Reply"), "{lang:?}");
         }
         set_current(Lang::English);
+    }
+
+    // //// Neoffice — a reply quotes its original under the interface's words (quote_words).
+    #[test]
+    fn a_reply_quotes_its_original_under_the_interface_s_words() {
+        let now = 1_791_993_600;
+        let reply = |lang: Lang| {
+            set_current(lang);
+            let mut s = mailcraft_engine::Session::at(mailcraft_engine::sample::mailbox(now, 0), now, 0);
+            let plain = s.mailbox.messages.values().find(|m| m.body.html.is_none() && !m.draft && m.subject == "Release checklist").map(|m| m.id);
+            s.run("mail.reply", &serde_json::json!({"id": plain})).unwrap();
+            let text = s.compose.as_ref().map(|c| c.body.plain()).unwrap_or_default();
+            set_current(Lang::English);
+            text
+        };
+        let french = reply(Lang::from_tag("fr").unwrap());
+        assert!(french.contains("-----Message d’origine-----\nDe : "), "{french}");
+        assert!(french.contains("\nEnvoyé : ") && french.contains("\nÀ : ") && french.contains("\nObjet : Release checklist"), "{french}");
+        let english = reply(Lang::English);
+        assert!(
+            english.contains("-----Original Message-----\nFrom: ")
+                && english.contains("\nSent: ")
+                && english.contains("\nSubject: Release checklist")
+        );
     }
 
     // //// Neoffice — the setting that picks the language, and the system's language it can follow.

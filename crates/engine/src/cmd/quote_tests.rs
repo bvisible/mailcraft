@@ -10,7 +10,8 @@ use mailcraft_model::{Address, Attachment, FolderKind, Id, Message};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
-use super::compose::QUOTE_MARK;
+// //// Neoffice — the words of the header over the original (QuoteWords).
+use super::compose::{QUOTE_MARK, QuoteWords, set_quote_words};
 use crate::{BodyFormat, Compose, Session, sample};
 
 fn session() -> Session {
@@ -261,4 +262,44 @@ fn originals_of_any_shape_are_carried_without_panicking() {
         let head_end = bytes.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
         assert!(!String::from_utf8_lossy(&bytes[..head_end]).to_ascii_lowercase().contains("\r\nbcc:"), "{html:?}");
     }
+}
+
+// //// Neoffice — the header over the original in the words an interface sets (QuoteWords), with the date as it shows a
+// message's; English, the date written out, when none are set.
+#[test]
+fn the_header_over_the_original_is_in_the_words_the_interface_sets() {
+    let words = QuoteWords {
+        original: "-----The original-----".into(),
+        from: "Writer:".into(),
+        sent: "Written:".into(),
+        to: "Readers:".into(),
+        cc: "Copies:".into(),
+        subject: "Topic:".into(),
+    };
+    let mut s = session();
+    let id = newsletter(&mut s);
+    set_quote_words(Some(words));
+    run(&mut s, "mail.reply", json!({"id": id}));
+    let q = compose(&s).quote.clone().unwrap();
+    let date = mailcraft_time::header_label(1_791_000_000, s.offset_at(1_791_000_000), s.prefs.twelve_hour);
+    assert!(q.text.starts_with("\n\n-----The original-----\nWriter: "), "{:?}", q.text);
+    assert!(q.text.contains(&format!("\nWritten: {date}\nReaders: ")) && q.text.contains("\nTopic: October <arrivals>\n"), "{:?}", q.text);
+    assert!(q.html.contains("<b>Writer:</b> ") && q.html.contains(&format!("<b>Written:</b> {date}<br>")), "{}", q.html);
+    assert!(q.html.contains("<b>Readers:</b> ") && q.html.contains("<b>Topic:</b> October &lt;arrivals&gt;"), "{}", q.html);
+    // A draft of it reopens with its original in plain text found under those words.
+    let d = run(&mut s, "compose.saveDraft", json!({}))["draft"].as_u64().unwrap();
+    run(&mut s, "compose.close", json!({}));
+    run(&mut s, "mail.editDraft", json!({"id": d}));
+    assert_eq!(compose(&s).quote.as_ref().map(|q| q.text.clone()), Some(q.text.clone()));
+    set_quote_words(None);
+    // In English (none set): as it was.
+    run(&mut s, "compose.close", json!({}));
+    run(&mut s, "mail.reply", json!({"id": id}));
+    let q = compose(&s).quote.clone().unwrap();
+    assert!(
+        q.text.starts_with("\n\n-----Original Message-----\nFrom: ") && q.text.contains("\nSent: ") && q.text.contains("\nSubject: "),
+        "{:?}",
+        q.text
+    );
+    assert!(q.html.contains("<b>From:</b> ") && q.html.contains("<b>Subject:</b> "), "{}", q.html);
 }

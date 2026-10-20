@@ -150,18 +150,76 @@ fn prefixed(prefix: &str, subject: &str) -> String {
     if lower.starts_with(&format!("{}:", prefix.to_ascii_lowercase())) { subject.trim().to_string() } else { format!("{prefix}: {}", subject.trim()) }
 }
 
+// //// Neoffice — the header written over a quoted original is in the words of the interface's language (Outlook writes it in
+// its own): the window sets them (`set_quote_words`) when its language changes; English until it does, as for an agent or the
+// command line. A date in another language is written as the window writes a message's date (`mailcraft_time::header_label`).
+/// The words of the header written over the original under a reply or a forward.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QuoteWords {
+    /// The line over it all: `-----Original Message-----`.
+    pub original: String,
+    /// The labels of its lines, colon included: `From:`, `Sent:`, `To:`, `Cc:`, `Subject:`.
+    pub from: String,
+    pub sent: String,
+    pub to: String,
+    pub cc: String,
+    pub subject: String,
+}
+
+impl QuoteWords {
+    /// The words in English, which a session writes until an interface gives others.
+    pub fn english() -> QuoteWords {
+        QuoteWords {
+            original: "-----Original Message-----".into(),
+            from: "From:".into(),
+            sent: "Sent:".into(),
+            to: "To:".into(),
+            cc: "Cc:".into(),
+            subject: "Subject:".into(),
+        }
+    }
+}
+
+// //// Neoffice — as above: one set of words per thread, the one that draws the interface (tests side by side keep theirs).
+thread_local! {
+    static QUOTE_WORDS: std::cell::RefCell<Option<QuoteWords>> = const { std::cell::RefCell::new(None) };
+}
+
+// //// Neoffice — as above.
+/// Write the header over a quoted original on this thread with these words from now on, and its date as a message's date
+/// is shown ([`mailcraft_time::header_label`]); `None`: in English, with the date written out (`Sunday, October 11, 2026`).
+pub fn set_quote_words(words: Option<QuoteWords>) {
+    QUOTE_WORDS.with(|set| set.replace(words));
+}
+
+// //// Neoffice — as above.
+fn quote_words() -> Option<QuoteWords> {
+    QUOTE_WORDS.with(|set| set.borrow().clone())
+}
+
+// //// Neoffice — as above: the words, and the date of the original as they write it.
+fn quote_header(s: &Session, m: &Message) -> (QuoteWords, String) {
+    match quote_words() {
+        Some(words) => (words, mailcraft_time::header_label(m.date, s.offset_at(m.date), s.prefs.twelve_hour)),
+        None => (QuoteWords::english(), format!("{} {}", s.local(m.date).date.long(), s.local(m.date).time_short(s.prefs.twelve_hour))),
+    }
+}
+
+// //// Neoffice — as above: the lines of the header, each a label and its value: From, Sent, To and Cc when the message has them,
+// Subject.
+fn header_lines(words: &QuoteWords, m: &Message, sent: String) -> Vec<(String, String)> {
+    let to = (!m.to.is_empty()).then(|| (words.to.clone(), format_list(&m.to)));
+    let cc = (!m.cc.is_empty()).then(|| (words.cc.clone(), format_list(&m.cc)));
+    let (from, subject) = ((words.from.clone(), m.from.full()), (words.subject.clone(), m.subject.clone()));
+    [Some(from), Some((words.sent.clone(), sent)), to, cc, Some(subject)].into_iter().flatten().collect()
+}
+
 /// The original message under a reply or forward, as plain text.
 fn quoted(s: &Session, m: &Message) -> String {
-    let mut out = String::from("\n\n-----Original Message-----\n");
-    out.push_str(&format!("From: {}\n", m.from.full()));
-    out.push_str(&format!("Sent: {} {}\n", s.local(m.date).date.long(), s.local(m.date).time_short(s.prefs.twelve_hour)));
-    if !m.to.is_empty() {
-        out.push_str(&format!("To: {}\n", format_list(&m.to)));
-    }
-    if !m.cc.is_empty() {
-        out.push_str(&format!("Cc: {}\n", format_list(&m.cc)));
-    }
-    out.push_str(&format!("Subject: {}\n\n", m.subject));
+    // //// Neoffice — the header in the interface's words (QuoteWords), its lines as they were.
+    let (words, sent) = quote_header(s, m);
+    let header: String = header_lines(&words, m, sent).iter().map(|(label, value)| format!("{label} {value}\n")).collect();
+    let mut out = format!("\n\n{}\n{header}\n", words.original);
     out.push_str(m.body.text.trim_end());
     out.push('\n');
     out
@@ -179,15 +237,11 @@ fn quoted_html(s: &Session, m: &Message, html: &str) -> String {
     let e = mailcraft_html::escape;
     let mut out = String::from(QUOTE_MARK);
     out.push_str("<hr style=\"border:none;border-top:solid #E1E1E1 1.0pt\"><div>");
-    out.push_str(&format!("<b>From:</b> {}<br>", e(&m.from.full())));
-    out.push_str(&format!("<b>Sent:</b> {} {}<br>", e(&s.local(m.date).date.long()), e(&s.local(m.date).time_short(s.prefs.twelve_hour))));
-    if !m.to.is_empty() {
-        out.push_str(&format!("<b>To:</b> {}<br>", e(&format_list(&m.to))));
-    }
-    if !m.cc.is_empty() {
-        out.push_str(&format!("<b>Cc:</b> {}<br>", e(&format_list(&m.cc))));
-    }
-    out.push_str(&format!("<b>Subject:</b> {}</div><br>\r\n", e(&m.subject)));
+    // //// Neoffice — the header in the interface's words (QuoteWords), its lines as they were, every word escaped.
+    let (words, sent) = quote_header(s, m);
+    let lines: Vec<String> = header_lines(&words, m, sent).iter().map(|(label, value)| format!("<b>{}</b> {}", e(label), e(value))).collect();
+    out.push_str(&lines.join("<br>"));
+    out.push_str("</div><br>\r\n");
     out.push_str(&mailcraft_html::quotable(html));
     out.push_str("\r\n</div>");
     out
@@ -310,7 +364,10 @@ fn edit_draft(s: &mut Session, v: &Value) -> CmdResult {
         Some((html, at)) => {
             let end = html.rfind("</body>").filter(|end| *end >= at).unwrap_or(html.len());
             let quoted = mailcraft_html::quotable(html.get(at..end).unwrap_or("")).trim_end().to_string();
-            let text = m.body.text.find("\n\n-----Original Message-----").and_then(|at| m.body.text.get(at..)).unwrap_or("").to_string();
+            // //// Neoffice — the plain-text original starts at the line this thread writes over it, or at the English one.
+            let marks = [quote_words().map(|words| format!("\n\n{}", words.original)), Some("\n\n-----Original Message-----".to_string())];
+            let start = marks.iter().flatten().find_map(|mark| m.body.text.find(mark.as_str()));
+            let text = start.and_then(|at| m.body.text.get(at..)).unwrap_or("").to_string();
             let pictures = shown_pictures(&m, &quoted);
             (Some(html.get(..at).unwrap_or("").to_string()), Some(Quote { text, html: quoted, pictures }))
         }

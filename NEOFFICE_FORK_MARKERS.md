@@ -62,6 +62,12 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   census the literals of a source file. Their French lines are a block near the top of `fr.tsv`. The guard that makes
   the real runner fail over the in-process server, in every way it and a stand-in transport can, and reads every line
   in French is `apps/mailcraft-web/src/run_words_tests.rs`.
+- Three French defects of the window, fixed in upstream's files (marked): the header over the original a reply or a
+  forward quotes is written in the interface's words (`QuoteWords` in `crates/engine/src/cmd/compose.rs`, which the
+  window sets with its language in `crates/ui-egui/src/i18n.rs`; English, as before, for an agent or the command line),
+  with its date as the window writes a message's; and in `crates/ui-egui/src/calendar_view.rs` the titles of the
+  calendar's days and weeks are templates of the catalogs (« 18 – 24 octobre 2026 »), and the label of the row of
+  whole-day events wraps in its gutter when a language's words are longer than "All day".
 - This file.
 
 ## What cannot carry a comment

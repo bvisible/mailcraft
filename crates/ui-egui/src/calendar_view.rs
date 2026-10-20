@@ -509,16 +509,33 @@ pub(crate) fn range_title(view: CalView, date: Date, from: Date, to: Date) -> St
     match view {
         CalView::Month => format!("{} {}", month(date), date.year),
         // (The Day view names its day, or its days when it shows several.)
+        // //// Neoffice — each title is a template of the catalogs, so that a language puts the day, the month and the year in its
+        // own order (`18 – 24 octobre 2026`, `28 septembre – 4 octobre 2026`); in English it reads as it did.
         CalView::Day | CalView::Week | CalView::WorkWeek => {
-            if from.year != to.year {
-                format!("{} {}, {} – {} {}, {}", month(from), from.day, from.year, month(to), to.day, to.year)
-            } else if from.month != to.month {
-                format!("{} {} – {} {}, {}", month(from), from.day, month(to), to.day, to.year)
-            } else if from.day != to.day {
-                format!("{} {} – {}, {}", month(from), from.day, to.day, to.year)
-            } else {
-                format!("{} {}, {}", month(from), from.day, from.year)
-            }
+            let (from_day, to_day, from_year, to_year) = (from.day.to_string(), to.day.to_string(), from.year.to_string(), to.year.to_string());
+            let (from_month, to_month) = (month(from), month(to));
+            let (template, args): (&str, Vec<(&str, &str)>) = match (from.year == to.year, from.month == to.month, from.day == to.day) {
+                (false, ..) => (
+                    tl!("{from_month} {from}, {from_year} – {to_month} {to}, {to_year}"),
+                    vec![
+                        ("from_month", from_month),
+                        ("from", &from_day),
+                        ("from_year", &from_year),
+                        ("to_month", to_month),
+                        ("to", &to_day),
+                        ("to_year", &to_year),
+                    ],
+                ),
+                (true, false, _) => (
+                    tl!("{from_month} {from} – {to_month} {to}, {year}"),
+                    vec![("from_month", from_month), ("from", &from_day), ("to_month", to_month), ("to", &to_day), ("year", &to_year)],
+                ),
+                (true, true, false) => {
+                    (tl!("{month} {from} – {to}, {year}"), vec![("month", from_month), ("from", &from_day), ("to", &to_day), ("year", &to_year)])
+                }
+                (true, true, true) => (tl!("{month} {day}, {year}"), vec![("month", from_month), ("day", &from_day), ("year", &from_year)]),
+            };
+            crate::i18n::fmt(template, &args)
         }
     }
 }
@@ -3306,17 +3323,29 @@ fn day_headers(ui: &mut Ui, g: &Grid) -> Rect {
     r
 }
 
+// //// Neoffice — added: the label of the row of whole-day events, wrapped to the room the gutter leaves it.
+/// "All day" in the interface's language, laid out to be at most `room` wide: on more lines than one when its words
+/// don't fit on one.
+fn all_day_label(ctx: &egui::Context, room: f32, color: Color32) -> std::sync::Arc<egui::Galley> {
+    ctx.fonts_mut(|f| f.layout(tl!("All day").to_string(), regular(10.5), color, room.max(24.0)))
+}
+
 /// The row under the headers with whole-day and multi-day events as bars across their days, in
 /// every block its calendar's.
 fn all_day_row(app: &mut MailApp, ui: &mut Ui, g: &Grid, frame: &mut Frame, bars: &[Vec<Bar>], hidden: &[Vec<usize>]) {
     let t = g.t;
     let lanes = bars.iter().flatten().map(|b| b.lane + 1).max().unwrap_or(0).max(1);
-    let bars_h = lanes as f32 * (BAR_H + BAR_GAP) + 3.0;
+    // //// Neoffice — the label wraps in the gutter when a language's words are longer than "All day" (`Toute la journée`), and the
+    // row is as tall as it; a label that fits (English) is on one line, where it was.
+    let label = all_day_label(ui.ctx(), g.blocks.left() - 8.0 - ui.cursor().min.x - 4.0, t.text_dim);
+    let bars_h = (lanes as f32 * (BAR_H + BAR_GAP) + 3.0).max(label.size().y + 6.0);
     let more_h = if hidden.iter().flatten().any(|n| *n > 0) { 17.0 } else { 0.0 };
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), bars_h + more_h), Sense::hover());
     frame.zones.all_day = Some((g.blocks, r));
     let p = ui.painter().clone();
-    p.text(pos2(g.blocks.left() - 8.0, r.min.y + 3.0 + BAR_H / 2.0), Align2::RIGHT_CENTER, tl!("All day"), regular(10.5), t.text_dim);
+    // //// Neoffice — as above: its right edge where it was, its middle on the first lane's when it is one line, else from the top.
+    let top = (r.min.y + 3.0 + BAR_H / 2.0 - label.size().y / 2.0).max(r.min.y + 3.0);
+    p.galley(pos2(g.blocks.left() - 8.0 - label.size().x, top), label, t.text_dim);
     // The pick of whole days, when there is one on the days in view: a click on a day here makes
     // it, and a drag along the row picks the days it passes, in the block it began in.
     let was = load_slot(ui.ctx());
@@ -4236,6 +4265,48 @@ mod tests {
         // The ends of the calendar.
         assert_eq!(range_title(CalView::Week, d(9999, 12, 31), d(9999, 12, 26), d(9999, 12, 31)), "December 26 – 31, 9999");
         assert_eq!(range_title(CalView::Month, d(1, 1, 1), d(1, 1, 1), d(1, 2, 3)), "January 1");
+    }
+
+    // //// Neoffice — the titles in French: the day before its month, the year once at the end.
+    #[test]
+    fn range_titles_in_french_put_the_day_before_its_month() {
+        crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+        let titles = [
+            range_title(CalView::Week, d(2026, 10, 20), d(2026, 10, 18), d(2026, 10, 24)),
+            range_title(CalView::WorkWeek, d(2026, 9, 30), d(2026, 9, 28), d(2026, 10, 4)),
+            range_title(CalView::Week, d(2026, 12, 30), d(2026, 12, 27), d(2027, 1, 2)),
+            range_title(CalView::Day, d(2026, 10, 14), d(2026, 10, 14), d(2026, 10, 14)),
+            range_title(CalView::Month, d(2026, 10, 14), d(2026, 9, 27), d(2026, 10, 31)),
+        ];
+        crate::i18n::set_current(crate::i18n::Lang::English);
+        assert_eq!(
+            titles,
+            ["18 – 24 octobre 2026", "28 septembre – 4 octobre 2026", "27 décembre 2026 – 2 janvier 2027", "14 octobre 2026", "octobre 2026"]
+        );
+        // English is as it was.
+        assert_eq!(range_title(CalView::Week, d(2026, 10, 20), d(2026, 10, 18), d(2026, 10, 24)), "October 18 – 24, 2026");
+    }
+
+    // //// Neoffice — "All day" in a language whose words are longer than the gutter has room for.
+    #[test]
+    fn the_all_day_label_fits_its_gutter_in_every_language() {
+        let ctx = egui::Context::default();
+        // (One pass, for the fonts; what it would paint is nobody's.)
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        let room = GUTTER_W - 12.0;
+        let english = all_day_label(&ctx, room, Color32::WHITE);
+        let one_line = ctx.fonts_mut(|f| f.layout_no_wrap("All day".to_string(), regular(10.5), Color32::WHITE));
+        assert_eq!(english.rows.len(), 1, "English on one line");
+        assert_eq!(english.size(), one_line.size(), "where it was, as it was");
+        crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+        let french = all_day_label(&ctx, room, Color32::WHITE);
+        let unwrapped = ctx.fonts_mut(|f| f.layout_no_wrap(tl!("All day").to_string(), regular(10.5), Color32::WHITE));
+        crate::i18n::set_current(crate::i18n::Lang::English);
+        assert!(unwrapped.size().x > room, "« Toute la journée » is wider than the gutter on one line");
+        assert!(french.size().x <= room + 0.5, "{} wide in {room}", french.size().x);
+        assert!(french.rows.len() > 1, "so it wraps");
+        // The row of whole-day events is as tall as the label.
+        assert!(french.size().y + 6.0 > BAR_H + BAR_GAP + 3.0, "two lines are taller than a lane: the row grows to hold them");
     }
 
     #[test]

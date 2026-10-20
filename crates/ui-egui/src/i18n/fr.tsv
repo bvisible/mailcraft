@@ -220,6 +220,17 @@
 	Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is	Le courrier ne peut pas encore être déplacé entre un compte JMAP et un autre compte ou un dossier local : cette version ne peut pas placer un message sur un serveur JMAP, et la copie du serveur resterait où elle est
 	Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file	Le courrier ne peut être copié ni vers ni depuis un compte JMAP : son serveur garde un message dans un seul dossier. Déplacez-le, ou enregistrez-le sous forme de fichier
 	A JMAP account's folders are its server's: this version can't make, rename, move or delete them there	Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur
+# The header over the original a reply or a forward quotes (crates/engine/src/cmd/compose.rs, set by crates/ui-egui/src/i18n.rs),
+# and the titles of the calendar's days and weeks (crates/ui-egui/src/calendar_view.rs).
+	-----Original Message-----	-----Message d’origine-----
+	From:	De :
+	Sent:	Envoyé :
+	Cc:	Cc :
+	Subject:	Objet :
+	{month} {day}, {year}	{day} {month} {year}
+	{month} {from} – {to}, {year}	{from} – {to} {month} {year}
+	{from_month} {from} – {to_month} {to}, {year}	{from} {from_month} – {to} {to_month} {year}
+	{from_month} {from}, {from_year} – {to_month} {to}, {to_year}	{from} {from_month} {from_year} – {to} {to_month} {to_year}
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.
