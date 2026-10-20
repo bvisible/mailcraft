@@ -70,6 +70,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use mailcraft_model::remote::EventZones;
+// //// Neoffice — the reasons an online meeting goes without that are said in words of their own (`unmade_words`).
+use mailcraft_model::remote::OnlineUnmade;
 use mailcraft_model::remote::{
     CalendarsDownload, CategoriesDownload, ContactsDownload, EventChange, EventChangeKind, EventCheck, EventFields, EventOp, EventOutcome,
     EventReminder, EventRepeat, EventResult, EventTime, EventWall, EventsDownload, EventsUpload, EventsUploaded, FavoritesDownload, FavoritesOutcome,
@@ -2015,12 +2017,15 @@ fn settle_online(event: &mut Event, outcome: &EventOutcome, applied: &mut Events
         let own_service = outcome.op.fields.online == Some(mailcraft_model::OnlineProvider::Other);
         event.online = None;
         let name = called(Some(event));
-        // //// Neoffice — (said of an online meeting of the server's own, not of a Teams one)
+        // //// Neoffice — (said of an online meeting of the server's own, not of a Teams one; in words of their own for
+        // the reasons that have some, `unmade_words`)
         if own_service {
-            applied.say(format!(
-                "{name} couldn't be made an online meeting: the account's server wouldn't have it{}. The meeting itself is saved, without a link to join.",
-                because(&outcome.error)
-            ));
+            applied.say(unmade_words(&name, outcome).unwrap_or_else(|| {
+                format!(
+                    "{name} couldn't be made an online meeting: the account's server wouldn't have it{}. The meeting itself is saved, without a link to join.",
+                    because(&outcome.error)
+                )
+            }));
             return;
         }
         applied.say(format!(
@@ -2032,6 +2037,27 @@ fn settle_online(event: &mut Event, outcome: &EventOutcome, applied: &mut Events
     {
         online.join_url = outcome.join_url.clone();
     }
+}
+
+// //// Neoffice — the reasons an online meeting goes without that are said in words of their own, rather than in the
+// server's (which may be English, or not say what the person can do).
+/// What the person is told of the online meeting `name` went without, when the reason is one said in words of its own
+/// ([`OnlineUnmade`]: held back here, or a refusal of the room whose kind is known); `None` otherwise.
+fn unmade_words(name: &str, outcome: &EventOutcome) -> Option<String> {
+    Some(match outcome.online_unmade? {
+        OnlineUnmade::WholeSeries => {
+            format!("{name}: an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series.")
+        }
+        OnlineUnmade::NoLongerMade => format!(
+            "{name} couldn't be made an online meeting: its account's server no longer makes them. The meeting itself is saved, without a link to join."
+        ),
+        OnlineUnmade::RoomLimit => format!(
+            "{name} couldn't be made an online meeting: the account's server can't make more meeting rooms just now. The meeting itself is saved, without a link to join; turn it on again later."
+        ),
+        OnlineUnmade::RoomForbidden => format!(
+            "{name} couldn't be made an online meeting: the account's server doesn't let you make meeting rooms. The meeting itself is saved, without a link to join."
+        ),
+    })
 }
 
 /// The answer to forwarding a meeting.
@@ -2234,7 +2260,11 @@ fn one_occurrence(
                 EventChangeKind::Respond => "your answer to one occurrence of",
                 _ => "the change to one occurrence of",
             };
-            applied.say(format!("The server wouldn't take {what} {name}{}. It was put back as it was.", because(&outcome.error)));
+            // //// Neoffice — a change that was only an online meeting held back here (the whole series' is one): said so.
+            match unmade_words(&name, outcome) {
+                Some(words) => applied.say(words),
+                None => applied.say(format!("The server wouldn't take {what} {name}{}. It was put back as it was.", because(&outcome.error))),
+            }
         }
     }
 }
@@ -2443,7 +2473,11 @@ fn updated(
                 let (id, calendar) = (event.id, event.calendar);
                 *event = Event { id, calendar, ..*base };
             }
-            applied.say(format!("The server wouldn't take the change to {name}{}. It was put back as it was.", because(&outcome.error)));
+            // //// Neoffice — a change that was only an online meeting held back here (the whole series' is one): said so.
+            match unmade_words(&name, outcome) {
+                Some(words) => applied.say(words),
+                None => applied.say(format!("The server wouldn't take the change to {name}{}. It was put back as it was.", because(&outcome.error))),
+            }
         }
     }
 }

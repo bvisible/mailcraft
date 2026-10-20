@@ -911,6 +911,28 @@ pub struct EventOutcome {
     /// changed, and took the rest of the change without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub new_times: Option<bool>,
+    // //// Neoffice — why an online meeting went without, when that is a reason the person is told in words of its own
+    // (one the client held back, or a refusal of the room whose kind is known) rather than in the server's.
+    /// For an event that was to be held online and went without (`online` `Some(false)`, or a change refused for it
+    /// alone): why, when it is one of the reasons said in words of their own ([`OnlineUnmade`]); `None`: `error` says.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub online_unmade: Option<OnlineUnmade>,
+}
+
+// //// Neoffice — the reasons an online meeting goes without that the person is told in words of their own.
+/// Why an event that was to be held online went without its online meeting, of the reasons said in words of their own
+/// rather than in the server's ([`EventOutcome::online_unmade`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OnlineUnmade {
+    /// It was asked for one occurrence of a series: an online meeting is the whole series', and it was not asked for.
+    WholeSeries,
+    /// The account's server no longer makes online meetings (its session stopped saying it does): not asked for.
+    NoLongerMade,
+    /// The server makes no more meeting rooms just now (its limit of new ones).
+    RoomLimit,
+    /// The server won't make a meeting room for the person.
+    RoomForbidden,
 }
 
 impl EventOutcome {

@@ -1394,19 +1394,64 @@ fn an_online_appointment_moved_to_another_calendar_keeps_its_room_and_no_second_
 fn a_room_the_server_wont_make_leaves_the_appointment_saved_and_says_so() {
     let mut flow = Flow::start();
     flow.with_meet();
-    flow.server.with(|d| d.pim.room_refusal = Some("rateLimit"));
+    // Made where the server refuses its room: saved, without it, and said; what the refusal is, in words of ours.
+    let refused = |flow: &mut Flow, title: &str, refusal: &'static str| -> String {
+        flow.server.with(|d| d.pim.room_refusal = Some(refusal));
+        let made = flow.app.execute("calendar.new", json!({"title": title, "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
+        let id = made.unwrap()["id"].as_u64().unwrap();
+        assert!(flow.look(SECOND));
+        let event = flow.app.session.mailbox.event(id).cloned().unwrap();
+        assert!(event.online.is_none() && !event.origin.id.is_empty(), "saved, without its room: {event:?}");
+        assert!(flow.on_server(title).is_some() && flow.app.session.mailbox.event_changes.is_empty());
+        let problems = flow.app.sync_problems_of(flow.account);
+        problems.iter().find(|line| line.starts_with(&format!("\"{title}\""))).cloned().unwrap_or_else(|| panic!("{problems:?}"))
+    };
+    // No more rooms just now.
+    let said = refused(&mut flow, "Dentist", "rateLimit");
+    assert_eq!(
+        said,
+        "\"Dentist\" couldn't be made an online meeting: the account's server can't make more meeting rooms just now. The meeting itself is saved, without a link to join; turn it on again later."
+    );
+    assert_eq!(
+        in_french(&flow, &said),
+        "\"Dentist\" n’a pas pu devenir une réunion en ligne : le serveur du compte ne peut pas créer d’autres salles de réunion pour l’instant. La réunion elle-même est enregistrée, sans lien pour la rejoindre ; réactivez-la plus tard."
+    );
+    // Not for her.
+    let said = refused(&mut flow, "Physio", "forbidden");
+    assert_eq!(
+        in_french(&flow, &said),
+        "\"Physio\" n’a pas pu devenir une réunion en ligne : le serveur du compte ne vous permet pas de créer des salles de réunion. La réunion elle-même est enregistrée, sans lien pour la rejoindre."
+    );
+    // Any other refusal of the room: the server's own words.
+    let said = refused(&mut flow, "Optician", "invalidProperties");
+    assert!(said.contains("(No more rooms can be made just now: try again later.)"), "the server's words: {said}");
+    assert!(
+        in_french(&flow, &said).starts_with("\"Optician\" n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté ("),
+        "{said}"
+    );
+    assert_eq!(flow.rooms(), 0);
+}
+
+#[test]
+fn an_appointment_made_online_after_its_server_stopped_making_them_is_saved_without_and_says_so() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    // The calendar's list said it makes them; since, its server stopped (its session no longer says so).
+    flow.server.with(|d| d.pim.meet = false);
     let made = flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "online": true}));
     let id = made.unwrap()["id"].as_u64().unwrap();
     assert!(flow.look(SECOND));
     let dentist = flow.app.session.mailbox.event(id).cloned().unwrap();
-    assert!(dentist.online.is_none() && !dentist.origin.id.is_empty(), "saved, without its room: {dentist:?}");
-    assert!(flow.on_server("Dentist").is_some() && flow.app.session.mailbox.event_changes.is_empty());
+    assert!(dentist.online.is_none() && !dentist.origin.id.is_empty(), "saved, without a room: {dentist:?}");
     let problems = flow.app.sync_problems_of(flow.account);
-    let said = problems.iter().find(|line| line.contains("couldn't be made an online meeting")).unwrap_or_else(|| panic!("{problems:?}"));
-    assert!(said.contains("No more rooms can be made just now"), "the server's words: {said}");
-    assert!(
-        in_french(&flow, said).starts_with("\"Dentist\" n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté ("),
-        "{said}"
+    let said = problems.iter().find(|line| line.starts_with("\"Dentist\"")).unwrap_or_else(|| panic!("{problems:?}"));
+    assert_eq!(
+        said,
+        "\"Dentist\" couldn't be made an online meeting: its account's server no longer makes them. The meeting itself is saved, without a link to join."
+    );
+    assert_eq!(
+        in_french(&flow, said),
+        "\"Dentist\" n’a pas pu devenir une réunion en ligne : le serveur de son compte n’en crée plus. La réunion elle-même est enregistrée, sans lien pour la rejoindre."
     );
 }
 
@@ -1426,6 +1471,20 @@ fn one_day_of_a_series_made_online_goes_without_it_and_says_the_whole_series_is_
     assert_eq!(flow.site().overrides["2026-10-19T09:00:00"]["title"], "Site meeting (online)", "the rest went");
     assert_eq!(flow.rooms(), 0);
     let problems = flow.app.sync_problems_of(flow.account);
-    let said = problems.iter().find(|line| line.contains("couldn't be made an online meeting")).unwrap_or_else(|| panic!("{problems:?}"));
-    assert!(in_french(&flow, said).contains("une réunion en ligne vaut pour toute la série : faites-en une de la série"), "{said}");
+    let said = problems.iter().find(|line| line.contains("whole series")).unwrap_or_else(|| panic!("{problems:?}"));
+    assert_eq!(
+        said,
+        "\"Site meeting (online)\": an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series."
+    );
+    assert_eq!(
+        in_french(&flow, said),
+        "\"Site meeting (online)\" : une réunion en ligne vaut pour toute la série, elle n’a donc pas été créée pour ce seul jour. Activez-la pour toute la série."
+    );
+    // The meeting alone, for another day: not sent at all, the day as it was, and said the same way.
+    flow.app.execute("calendar.edit", json!({"id": site.id, "scope": "occurrence", "occurrence": "2026-10-26", "online": true})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(!flow.site().overrides.contains_key("2026-10-26T09:00:00"), "{:?}", flow.site().overrides);
+    let problems = flow.app.sync_problems_of(flow.account);
+    assert!(problems.iter().any(|line| line.starts_with("\"Site meeting\": an online meeting is the whole series'")), "{problems:?}");
+    assert_eq!(flow.rooms(), 0);
 }

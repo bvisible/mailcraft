@@ -33,7 +33,6 @@ const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
 const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
-const PUSH: &str = "crates/jmap/src/pim/push.rs";
 
 /// Every row, family by family.
 pub(super) static ROWS: &[Row] = &[
@@ -222,7 +221,7 @@ pub(super) static ROWS: &[Row] = &[
     row(CONTACTS, Line, run_word!("The server's mailbox is full: the change to {name} waits here and goes as soon as there is room."), &[]),
     row(CONTACTS, Line, run_word!("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room."), &[]),
     // An online meeting in a JMAP account's calendar: a command's refusals (`calendar::meeting`), and what became of one
-    // its server was asked to make (`remote::settle_online`, round why: the server's words, or the job's own).
+    // its server was asked to make (`remote::settle_online`, round why: the server's words).
     row(MEETING, Line, run_word!("This calendar's account can't make online meetings."), &[]),
     row(MEETING, Line, run_word!("The account's server has made this an online meeting, and it stays one: that can't be taken back from here."), &[]),
     row(
@@ -241,7 +240,37 @@ pub(super) static ROWS: &[Row] = &[
         ),
         &[],
     ),
-    row(PUSH, Why, run_word!("an online meeting is the whole series': make the series one"), &[]),
+    // (Its reasons said in words of their own: `remote::unmade_words`.)
+    row(
+        REMOTE,
+        Line,
+        run_word!("{name}: an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series."),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made an online meeting: its account's server no longer makes them. The meeting itself is saved, without a link to join."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made an online meeting: the account's server can't make more meeting rooms just now. The meeting itself is saved, without a link to join; turn it on again later."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made an online meeting: the account's server doesn't let you make meeting rooms. The meeting itself is saved, without a link to join."
+        ),
+        &[],
+    ),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

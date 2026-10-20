@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 
 use mailcraft_model::remote::{
     CalendarAsk, EventChangeKind, EventFields, EventOp, EventOutcome, EventReminder, EventRepeat, EventResult, EventTime, EventWall, EventZones,
-    EventsUpload,
+    EventsUpload, OnlineUnmade,
 };
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
 use mailcraft_model::{Address, Freq, Recurrence, Response, ShowAs};
@@ -983,6 +983,7 @@ fn a_create_refused_for_its_online_meeting_is_made_again_without_it_and_says_so(
     let said = outcome(&result);
     assert_eq!((said.result, said.online, said.join_url.as_str()), (EventResult::Done, Some(false), ""), "{said:?}");
     assert!(said.error.contains("No more rooms"), "the server's words: {said:?}");
+    assert_eq!(said.online_unmade, Some(OnlineUnmade::RoomForbidden), "a room the server won't make for her");
     let made: Vec<_> = server.with(|d| d.pim.events.iter().filter(|e| e.props.get("uid") == Some(&json!("mc-refused"))).cloned().collect());
     assert_eq!(made.len(), 1, "made once, without its room");
     assert!(made[0].props.get("links").is_none());
@@ -996,6 +997,14 @@ fn a_room_limit_reached_makes_the_event_without_its_room() {
     server.with(|d| d.pim.room_refusal = Some("rateLimit"));
     let result = run(&server, &job(vec![online(create("mc-limit", "Kick-off", utc(22, 9, 0)))]));
     assert_eq!((outcome(&result).result, outcome(&result).online), (EventResult::Done, Some(false)));
+    assert_eq!(outcome(&result).online_unmade, Some(OnlineUnmade::RoomLimit), "no more rooms just now");
+    // A refusal of the room of another kind: the server's words say why.
+    server.with(|d| d.pim.room_refusal = Some("invalidProperties"));
+    let other = run(&server, &job(vec![online(create("mc-other", "Kick-off", utc(22, 9, 0)))]));
+    let said = outcome(&other);
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), None), "{said:?}");
+    assert!(said.error.contains("No more rooms"), "{said:?}");
+    server.with(|d| d.pim.room_refusal = Some("rateLimit"));
     // Only a meeting asked for, of an event that is there: done, nothing more written, and not a meeting held online.
     let only = run(&server, &job(vec![online(update(&Pim::event_id("lunch"), EventFields::default()))]));
     assert_eq!((outcome(&only).result, outcome(&only).online), (EventResult::Done, Some(false)), "{:?}", outcome(&only));
@@ -1068,14 +1077,33 @@ fn a_change_of_one_occurrence_goes_without_the_marker_and_says_why() {
     let server = with_meet();
     let result = run(&server, &job(vec![online(of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)")))]));
     let said = outcome(&result);
-    assert_eq!((said.result, said.online), (EventResult::Done, Some(false)), "{said:?}");
-    assert!(said.error.contains("whole series"), "{said:?}");
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), Some(OnlineUnmade::WholeSeries)), "{said:?}");
     let (_, patch) = server.with(|d| d.pim.written.last().cloned()).unwrap();
     assert_eq!(patch, json!({"title": "Site meeting (room B)"}), "the rest goes");
     // Nothing but the meeting, for one occurrence: refused, with that reason.
     let only = run(&server, &job(vec![online(of_site(EventChangeKind::Update, 26, 8, EventFields::default()))]));
-    assert_eq!(outcome(&only).result, EventResult::Refused);
-    assert!(outcome(&only).error.contains("whole series"));
+    assert_eq!((outcome(&only).result, outcome(&only).online_unmade), (EventResult::Refused, Some(OnlineUnmade::WholeSeries)));
+}
+
+#[test]
+fn a_meeting_asked_for_of_a_server_that_no_longer_makes_them_goes_without_and_says_so() {
+    // The list said the server makes them; its session no longer does (it writes no virtual locations).
+    let server = server();
+    let made = run(&server, &job(vec![online(create("mc-late", "Kick-off", utc(22, 9, 0)))]));
+    let said = outcome(&made);
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), Some(OnlineUnmade::NoLongerMade)), "{said:?}");
+    // A change: the rest goes, without it.
+    let lunch = Pim::event_id("lunch");
+    let changed = run(&server, &job(vec![online(update(&lunch, title("Lunch (online)")))]));
+    let said = outcome(&changed);
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), Some(OnlineUnmade::NoLongerMade)), "{said:?}");
+    assert_eq!(server.with(|d| d.pim.written.last().cloned()).map(|(_, patch)| patch), Some(json!({"title": "Lunch (online)"})));
+    // The toggle alone: done, nothing written.
+    let before = server.with(|d| d.pim.written.len());
+    let only = run(&server, &job(vec![online(update(&lunch, EventFields::default()))]));
+    let said = outcome(&only);
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), Some(OnlineUnmade::NoLongerMade)), "{said:?}");
+    assert_eq!(server.with(|d| d.pim.written.len()), before);
 }
 
 #[test]

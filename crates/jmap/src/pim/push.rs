@@ -33,8 +33,11 @@
 //!    names nothing) is sent once more in the same job without it, writing to people only when what is left is seen by
 //!    them, and done as an event that is no online meeting, with the server's words; a limit of the server's on writing
 //!    events that names nothing is the change's, which waits. One asked for one occurrence of a series is not asked for
-//!    (the whole series' is one), and said so. The copy of an appointment moved from another calendar keeps the online
-//!    meeting it has, by its link ([`write::kept_online`]): no second one is asked for.
+//!    (the whole series' is one), nor one of a server that no longer makes them (its list said it did), and said so.
+//!    The outcome says which of those reasons, and of a room refused for no more just now or for the person, it is
+//!    (`online_unmade`), for the person to be told in words of their own. The copy of an appointment moved from
+//!    another calendar keeps the online meeting it has, by its link ([`write::kept_online`]): no second one is asked
+//!    for.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
 //!    uid; one occurrence with its own id, which names it from now on), gone, refused with the server's words, or
 //!    failed with when to try again (a busy server, a server that failed, a connection that broke, a change not
@@ -44,7 +47,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine as _;
-use mailcraft_model::remote::{EventChangeKind, EventFields, EventOp, EventOutcome, EventResult, EventsUploaded, MAX_EVENT_OPS};
+use mailcraft_model::remote::{EventChangeKind, EventFields, EventOp, EventOutcome, EventResult, EventsUploaded, MAX_EVENT_OPS, OnlineUnmade};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
 use mailcraft_time::{DateTime, Timestamp, Zone};
 use serde_json::{Map, Value, json};
@@ -96,8 +99,12 @@ const MAX_WORDS: usize = 300;
 const NO_SERIES: &str = "the server says the event is one occurrence of a series, and doesn't say of which";
 /// Why a change of one occurrence that a crowded answer didn't hold waits.
 const CROWDED: &str = "the server has too many events around that time to find the occurrence among them just now";
-/// Why an online meeting asked for one occurrence of a series is not made.
-const WHOLE_SERIES: &str = "an online meeting is the whole series': make the series one";
+/// Why an online meeting asked for one occurrence of a series is not asked for (for the record: the person is told in
+/// words of their own, [`OnlineUnmade::WholeSeries`]).
+const WHOLE_SERIES: &str = "an online meeting is the whole series': it is not asked for one occurrence";
+/// Why an online meeting asked of a server that no longer makes them is not asked for (likewise:
+/// [`OnlineUnmade::NoLongerMade`]).
+const NO_LONGER_MADE: &str = "the server no longer makes online meetings";
 /// Why a change of who is invited to an event with more people than are read is not written.
 const TOO_MANY_PEOPLE: &str = "the server has more than 1,000 people for this event, more than are rewritten from here";
 
@@ -164,8 +171,28 @@ struct Ready {
     /// The event asks for an online meeting in it ([`write::online_request`]).
     marker: bool,
     /// Why the online meeting it asked for is not asked for, or was refused: it goes without, done as an event that
-    /// is not one (an occurrence: the whole series' is; or sent again without it).
-    unmade: Option<String>,
+    /// is not one (an occurrence: the whole series' is; a server that no longer makes them; or sent again without it).
+    unmade: Option<Unmade>,
+}
+
+/// Why an online meeting goes without: the words (the server's, or the job's own), and which of the reasons said in
+/// words of their own it is, when it is one.
+#[derive(Clone, Debug)]
+struct Unmade {
+    why: String,
+    kind: Option<OnlineUnmade>,
+}
+
+impl Unmade {
+    /// Not asked for one occurrence of a series: the whole series' is one, or none.
+    fn whole_series() -> Unmade {
+        Unmade { why: WHOLE_SERIES.into(), kind: Some(OnlineUnmade::WholeSeries) }
+    }
+
+    /// Not asked of a server that no longer makes them.
+    fn no_longer_made() -> Unmade {
+        Unmade { why: NO_LONGER_MADE.into(), kind: Some(OnlineUnmade::NoLongerMade) }
+    }
 }
 
 /// The writes of one job.
@@ -382,6 +409,8 @@ impl<H: Http> Writer<'_, H> {
                 return Ok(None);
             };
             let marker = self.ask_online(&mut body, &op, Clock::Own(self.shown));
+            // Asked of a server that no longer makes them (its list said it did): made without, and said so.
+            let unmade = (op.fields.online.is_some() && !self.online).then(Unmade::no_longer_made);
             // The copy of an appointment moved here from another calendar keeps its online meeting, by its link.
             if !op.join_url.is_empty()
                 && self.online
@@ -391,7 +420,7 @@ impl<H: Http> Writer<'_, H> {
             }
             // (Invitations only with the person's yes: `op.send`.)
             let scheduling = invites && op.send;
-            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, unmade: None }));
+            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, unmade }));
         }
         // The event on the server, and (for an occurrence) its series.
         let (target, copy, series) = if op.of_occurrence() {
@@ -464,8 +493,14 @@ impl<H: Http> Writer<'_, H> {
             marker: false,
             unmade: None,
         };
-        // An online meeting asked for one occurrence: the whole series' is one, or none.
-        let unmade = (self.online && op.fields.online.is_some() && matches!(clock, Clock::Series(..))).then(|| WHOLE_SERIES.to_string());
+        // An online meeting not asked for: of a server that no longer makes them, or for one occurrence (the whole
+        // series' is one, or none).
+        let unmade = match (op.fields.online.is_some(), self.online, matches!(clock, Clock::Series(..))) {
+            (false, ..) => None,
+            (true, false, _) => Some(Unmade::no_longer_made()),
+            (true, true, true) => Some(Unmade::whole_series()),
+            (true, true, false) => None,
+        };
         let ready = match op.kind {
             EventChangeKind::Delete => plain(None, op.cancel && meeting, String::new()),
             EventChangeKind::Respond => match write::answer(&copy, op.response, &self.me) {
@@ -482,7 +517,21 @@ impl<H: Http> Writer<'_, H> {
                     // Nothing but an online meeting: asked for by itself, where the server makes them.
                     None if self.online && write::online_request(&op, clock).is_some() => (json!({}), String::new()),
                     None => {
-                        self.answer(at, EventResult::Refused, unmade.as_deref().unwrap_or(KEEPS_NO), None);
+                        let only_online = EventFields { online: None, ..op.fields.clone() }.is_empty();
+                        match unmade.filter(|_| only_online) {
+                            // Nothing but an online meeting not asked for, of an event of its own: done, as an event
+                            // that is no online meeting.
+                            Some(unmade) if matches!(clock, Clock::Own(_)) => {
+                                self.done(at, target.clone(), String::new(), String::new());
+                                self.held_online(at, Some(false), String::new(), Some(&unmade));
+                            }
+                            // (One occurrence's is refused, with the reason.)
+                            Some(unmade) => {
+                                self.answer(at, EventResult::Refused, &unmade.why, None);
+                                self.unmade_kind(at, unmade.kind);
+                            }
+                            None => self.answer(at, EventResult::Refused, KEEPS_NO, None),
+                        }
                         return Ok(None);
                     }
                 };
@@ -496,7 +545,7 @@ impl<H: Http> Writer<'_, H> {
             self.done(at, ready.target, String::new(), ready.zone);
             // (The online meeting it asked for is the one the copy has.)
             if let Some(link) = copy.get(write::ONLINE).and_then(write::join_link).filter(|_| ready.marker) {
-                self.held_online(at, Some(true), link, "");
+                self.held_online(at, Some(true), link, None);
             }
             return Ok(None);
         }
@@ -662,12 +711,12 @@ impl<H: Http> Writer<'_, H> {
                     if one.marker {
                         if let Some(places) = done.get(write::ONLINE) {
                             match write::join_link(places) {
-                                Some(link) => self.held_online(one.at, Some(true), link, ""),
-                                None => self.held_online(one.at, Some(false), String::new(), ""),
+                                Some(link) => self.held_online(one.at, Some(true), link, None),
+                                None => self.held_online(one.at, Some(false), String::new(), None),
                             }
                         }
-                    } else if let Some(why) = &one.unmade {
-                        self.held_online(one.at, Some(false), String::new(), why);
+                    } else if one.unmade.is_some() {
+                        self.held_online(one.at, Some(false), String::new(), one.unmade.as_ref());
                     }
                 }
                 // Refused for the online meeting it asked for: once more without it, which the server may take. (Any
@@ -681,10 +730,11 @@ impl<H: Http> Writer<'_, H> {
                         // Nothing else to write: done, without the meeting.
                         Some(0) => {
                             self.done(one.at, one.target.clone(), String::new(), one.zone.clone());
-                            self.held_online(one.at, Some(false), String::new(), &self.set_error_words(&error));
+                            let unmade = self.room_refused(&error);
+                            self.held_online(one.at, Some(false), String::new(), Some(&unmade));
                         }
                         Some(_) => {
-                            one.unmade = Some(self.set_error_words(&error));
+                            one.unmade = Some(self.room_refused(&error));
                             one.marker = false;
                             // What is left may be nothing the people of a meeting see (a reminder): then it writes to
                             // nobody.
@@ -705,15 +755,38 @@ impl<H: Http> Writer<'_, H> {
 
     /// The online meeting of the change at `at`, done: whether the server made it (`None`: it didn't say), its link,
     /// and why it isn't one.
-    fn held_online(&mut self, at: usize, online: Option<bool>, join_url: String, why: &str) {
+    fn held_online(&mut self, at: usize, online: Option<bool>, join_url: String, unmade: Option<&Unmade>) {
         if let Some(Some(outcome)) = self.outcomes.get_mut(at).filter(|slot| slot.as_ref().is_some_and(|outcome| outcome.result == EventResult::Done))
         {
             outcome.online = online;
             outcome.join_url = mailcraft_model::OnlineMeeting::clean_link(&join_url).unwrap_or_default();
-            if !why.is_empty() {
-                outcome.error = crate::tidy(why, MAX_WORDS);
+            if let Some(unmade) = unmade {
+                if !unmade.why.is_empty() {
+                    outcome.error = crate::tidy(&unmade.why, MAX_WORDS);
+                }
+                outcome.online_unmade = unmade.kind;
             }
         }
+    }
+
+    /// Which of the reasons said in words of their own a change at `at` that was answered already went without its
+    /// online meeting for.
+    fn unmade_kind(&mut self, at: usize, kind: Option<OnlineUnmade>) {
+        if let Some(Some(outcome)) = self.outcomes.get_mut(at) {
+            outcome.online_unmade = kind;
+        }
+    }
+
+    /// Why the server refused the online meeting a change asked for (`error`, its SetError): its words, and the reason
+    /// said in words of their own when its kind and what it names tell which (no more rooms just now; none for the
+    /// person).
+    fn room_refused(&self, error: &Value) -> Unmade {
+        let kind = match error.get("type").and_then(Value::as_str) {
+            Some("rateLimit") if names_the_meeting(error) => Some(OnlineUnmade::RoomLimit),
+            Some("forbidden") if names_the_meeting(error) => Some(OnlineUnmade::RoomForbidden),
+            _ => None,
+        };
+        Unmade { why: self.set_error_words(error), kind }
     }
 
     /// The words of a SetError: its description without markup, the session's secrets hidden; else its type.
@@ -832,14 +905,25 @@ fn says_already(copy: &Copy, body: &Value) -> bool {
 /// the meeting with it.
 fn refuses_the_meeting(error: &Value) -> bool {
     let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
-    let properties: Vec<&str> = error.get("properties").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
-    let names_it = properties.iter().any(|property| property.split('/').next() == Some(write::ONLINE));
+    let names_nothing = error.get("properties").and_then(Value::as_array).is_none_or(Vec::is_empty);
     match kind {
         "notFound" | "alreadyExists" => false,
-        _ if names_it => true,
-        "forbidden" | "invalidProperties" => properties.is_empty(),
+        _ if names_the_meeting(error) => true,
+        "forbidden" | "invalidProperties" => names_nothing,
         _ => false,
     }
+}
+
+/// Whether a SetError names the property of the online meeting (`virtualLocations`, or a part of it) among those it is
+/// about.
+fn names_the_meeting(error: &Value) -> bool {
+    error
+        .get("properties")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|property| property.split('/').next() == Some(write::ONLINE))
 }
 
 /// Whether a server's refusal is one that asking again later may get past.

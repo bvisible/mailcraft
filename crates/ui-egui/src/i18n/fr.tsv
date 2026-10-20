@@ -679,7 +679,10 @@
 	The account's server has made this an online meeting, and it stays one: that can't be taken back from here.	Le serveur du compte en a fait une réunion en ligne, et elle le reste : ce choix ne peut pas être annulé d’ici.
 	{name} couldn't be made an online meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté ({why}). La réunion elle-même est enregistrée, sans lien pour la rejoindre.
 	{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne l’a pas accepté. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
-	an online meeting is the whole series': make the series one	une réunion en ligne vaut pour toute la série : faites-en une de la série
+	{name}: an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series.	{name} : une réunion en ligne vaut pour toute la série, elle n’a donc pas été créée pour ce seul jour. Activez-la pour toute la série.
+	{name} couldn't be made an online meeting: its account's server no longer makes them. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur de son compte n’en crée plus. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
+	{name} couldn't be made an online meeting: the account's server can't make more meeting rooms just now. The meeting itself is saved, without a link to join; turn it on again later.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne peut pas créer d’autres salles de réunion pour l’instant. La réunion elle-même est enregistrée, sans lien pour la rejoindre ; réactivez-la plus tard.
+	{name} couldn't be made an online meeting: the account's server doesn't let you make meeting rooms. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion en ligne : le serveur du compte ne vous permet pas de créer des salles de réunion. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
 	Forward…	Transférer…
 	Move to Calendar	Déplacer vers le calendrier
 	Show As	Afficher comme
