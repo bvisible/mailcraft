@@ -1620,3 +1620,20 @@ folder	Outbox	Boîte d’envoi
 	Receiving {folder}: {done} of {total} · folder {number} of {folders}	Réception de {folder} : {done} sur {total} · dossier {number} sur {folders}
 	Receiving {folder} · folder {number} of {folders}	Réception de {folder} · dossier {number} sur {folders}
 	Goes to {host}	Mène à {host}
+	Desktop alerts can't be shown: this copy of MailCraft wasn't installed with its installer (.msi), so Windows doesn't know it.	Les alertes sur le bureau ne peuvent pas être affichées : cette installation de MailCraft n’a pas été faite avec son programme d’installation (.msi), donc Windows ne la reconnaît pas.
+	Desktop alerts can't be shown: this copy doesn't run from the MailCraft app.	Les alertes sur le bureau ne peuvent pas être affichées : cette installation ne s’exécute pas depuis l’application MailCraft.
+	Desktop alerts are turned off for MailCraft in System Settings.	Les alertes sur le bureau sont désactivées pour MailCraft dans Réglages Système.
+	Desktop alerts can't be shown: no notification service answers on this desktop.	Les alertes sur le bureau ne peuvent pas être affichées : aucun service de notification ne répond dans cet environnement de bureau.
+	{n} new messages	{n} nouveaux messages
+	{n} reminders are due	{n} rappels sont arrivés à échéance
+	Show a desktop alert when new mail arrives	Afficher une alerte sur le bureau à l’arrivée de nouveaux messages
+	Only while MailCraft isn't the window in front, and only for the Inboxes of your own accounts.	Uniquement lorsque MailCraft n’est pas la fenêtre au premier plan, et uniquement pour les boîtes de réception de vos propres comptes.
+	Show a desktop alert for reminders	Afficher une alerte sur le bureau pour les rappels
+	Desktop alerts	Alertes sur le bureau
+	MailCraft is tested on real mail, by people who use it every day and tell us what goes wrong. Thank you.	MailCraft est testé sur du vrai courrier, par des personnes qui l’utilisent chaque jour et qui nous signalent ce qui ne fonctionne pas. Merci.
+	No testers credited yet.	Aucun testeur n’est encore mentionné.
+	Want to be one? Sign up in #11	Envie de devenir testeur ? Inscrivez-vous dans #11
+	@{login}, testing since {since}	@{login}, testeur depuis {since}
+	Testers are credited when they say so; see docs/contributors.md.	Les testeurs sont mentionnés s’ils le souhaitent ; voir docs/contributors.md.
+	Say which: `newMail`, `reminders` (true or false)	Indiquez lequel : `newMail`, `reminders` (true ou false)
+	`newMail` and `reminders` are true or false	`newMail` et `reminders` valent true ou false
