@@ -45,7 +45,7 @@ pub mod written;
 pub(crate) use written::before_merge;
 pub use written::{
     ContactDropped, ContactsApplied, apply_contact_outcomes, changed_fields, contact_dropped_json, contact_fields, contact_upload, contacts_waiting,
-    settle_contact_changes,
+    note_sending, settle_contact_changes,
 };
 
 /// Why the owner may not make a contact here: there is no address book this one could go to that keeps it.

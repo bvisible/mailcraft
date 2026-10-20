@@ -746,10 +746,14 @@ fn a_new_contact_the_server_keeps_making_without_a_name_is_left_to_the_next_read
     assert_eq!((said["failed"].as_u64(), kinds(&s)), (Some(1), vec![ContactChangeKind::Create]), "once: it goes again");
     s.clock.now = s.clock.now.map(|now| now + 120);
     let said = answer(&mut s, account, EventResult::Done, "", "");
-    assert!(s.mailbox.contact_changes.is_empty() && s.mailbox.contact(id).is_none(), "not asked for ever");
+    assert!(s.mailbox.contact_changes.is_empty(), "not asked for ever");
+    // He is never taken away: kept here, and the server's card comes with the next read too.
+    assert!(s.mailbox.contact(id).is_some_and(|c| c.book == 0 && c.origin.is_local()));
     assert_eq!(
         said["messages"],
-        json!(["\"Gus\" was made on the server, which doesn't say what it calls it: it comes with the next read, as the server has it."])
+        json!([
+            "\"Gus\" was made on the server, which doesn't say what it calls it: it is kept on this computer, and the next read brings the server's card too."
+        ])
     );
 }
 
@@ -1124,4 +1128,79 @@ fn a_new_contact_whose_answers_keep_being_lost_holds_back_only_the_deletion_of_w
         .map(|op| (op["kind"].as_str().unwrap_or_default().to_string(), op["remote"].as_str().unwrap_or_default().to_string()))
         .collect();
     assert_eq!(going, [("delete".to_string(), "c-bob".to_string())]);
+}
+
+#[test]
+fn a_new_contact_whose_look_found_none_and_that_was_sent_whole_again_is_what_it_was_sent_with_then() {
+    let (mut s, account) = session();
+    let id = run(&mut s, "people.new", json!({"first": "Gus", "emails": [{"label": "", "value": "a@example.org"}]}))["id"].as_u64().unwrap();
+    // Sent with a: the connection lost (nothing was made, as it turns out).
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "the connection was lost", "made": "perhaps"}));
+    // b added here; the next job's look finds no card of his, he is sent whole (a and b), and a gateway's 502 comes
+    // back after the server made him.
+    let both = json!({"id": id, "emails": [{"label": "", "value": "a@example.org"}, {"label": "", "value": "b@example.org"}]});
+    run(&mut s, "people.edit", both);
+    answer_with(&mut s, account, "create", json!({"result": "failed", "error": "HTTP 502", "made": "perhaps", "noneBefore": true}));
+    // What the card made of him has is what was sent this time: a and b.
+    let base = |s: &mut Session| -> Vec<String> {
+        let op = ops(s, account).into_iter().find(|op| op["kind"] == "create").expect("he goes again");
+        op["base"]["emails"].as_array().into_iter().flatten().filter_map(|e| e["value"].as_str().map(str::to_string)).collect()
+    };
+    s.clock.now = s.clock.now.map(|now| now + 10_000);
+    assert_eq!(base(&mut s), ["a@example.org", "b@example.org"]);
+    // b taken out here: sent again, that is a change of the card found.
+    run(&mut s, "people.edit", json!({"id": id, "emails": [{"label": "", "value": "a@example.org"}]}));
+    assert_eq!(base(&mut s), ["a@example.org", "b@example.org"], "and it differs from the card");
+}
+
+#[test]
+fn a_new_contact_is_noted_as_perhaps_sent_before_it_goes_and_unsent_again_when_nothing_ran() {
+    let (mut s, account) = session();
+    run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));
+    // Asked for, it goes now: if this computer stops before the answer comes, the next try looks for its card first.
+    let first = upload(&mut s, account);
+    assert!(first["ops"][0].get("base").is_none(), "sent the first time as it is");
+    assert!(s.mailbox.contact_changes.iter().all(|change| change.base.is_some()), "noted as perhaps sent");
+    assert!(ops(&mut s, account)[0].get("base").is_some(), "after a stop, it is looked for first");
+    // A request refused before anything ran: nothing of it is anywhere, and nothing waits for it.
+    answer_to(&mut s, account, &first, EventResult::Failed, "", "HTTP 400");
+    assert!(s.mailbox.contact_changes.iter().all(|change| change.base.is_none()));
+}
+
+#[test]
+fn a_change_or_a_deletion_the_server_has_no_room_for_waits_and_is_said_once() {
+    let (mut s, account) = session();
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Joiner"}));
+    let full = json!({"result": "failed", "error": "overQuota", "full": true});
+    let said = answer_with(&mut s, account, "update", full.clone());
+    assert_eq!(said["messages"], json!(["The server's mailbox is full: the change to \"Bob\" waits here and goes as soon as there is room."]));
+    for _ in 0..5 {
+        s.clock.now = s.clock.now.map(|now| now + 1_000);
+        let said = answer_with(&mut s, account, "update", full.clone());
+        assert_eq!(said["messages"], json!([]));
+    }
+    assert_eq!(kinds_of(&s), [ContactChangeKind::Update], "never given up for it");
+    assert_eq!(s.mailbox.contact(bob.id).map(|c| c.title.as_str()), Some("Joiner"));
+    // A deletion likewise.
+    s.clock.now = s.clock.now.map(|now| now + 1_000);
+    answer_with(&mut s, account, "update", json!({"result": "done"}));
+    run(&mut s, "people.delete", json!({"id": bob.id}));
+    let said = answer_with(&mut s, account, "delete", full.clone());
+    assert_eq!(said["messages"], json!(["The server's mailbox is full: deleting \"Bob\" waits here and goes as soon as there is room."]));
+    for _ in 0..5 {
+        s.clock.now = s.clock.now.map(|now| now + 1_000);
+        answer_with(&mut s, account, "delete", full.clone());
+    }
+    assert_eq!(kinds_of(&s), [ContactChangeKind::Delete]);
+}
+
+#[test]
+fn a_deletion_may_be_of_a_new_contacts_card_by_its_name_an_address_a_number_or_its_company() {
+    let sent = Contact { first: "Gus".into(), phones: vec![Labeled::new("mobile", "+41 79 555 02 02")], ..Default::default() };
+    let copy = |c: Contact| super::may_be(&sent, Some(&c));
+    assert!(copy(Contact { display_name: "G. Hale".into(), phones: vec![Labeled::new("", "+41 (79) 555-02-02")], ..Default::default() }));
+    let firm = Contact { company: "Hale & Sons".into(), ..Default::default() };
+    assert!(super::may_be(&firm, Some(&Contact { display_name: "Somebody".into(), company: "hale & sons".into(), ..Default::default() })));
+    assert!(!copy(Contact { first: "Bob".into(), phones: vec![Labeled::new("", "+41 44 555 01 03")], ..Default::default() }));
 }

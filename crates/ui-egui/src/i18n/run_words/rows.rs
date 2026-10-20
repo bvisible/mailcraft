@@ -213,8 +213,11 @@ pub(super) static ROWS: &[Row] = &[
         &[],
     ),
     row(FOLDER, Line, run_word!("A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"), &[]),
-    // A new contact the server has no room for (`remote_contacts::written`): it waits, and the owner is told once.
+    // A new contact, a change or a deletion the server has no room for (`remote_contacts::written`): it waits, and the
+    // owner is told once.
     row(CONTACTS, Line, run_word!("The server's mailbox is full: {name} waits here and goes as soon as there is room."), &[]),
+    row(CONTACTS, Line, run_word!("The server's mailbox is full: the change to {name} waits here and goes as soon as there is room."), &[]),
+    row(CONTACTS, Line, run_word!("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room."), &[]),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

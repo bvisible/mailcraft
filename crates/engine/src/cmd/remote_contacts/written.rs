@@ -23,9 +23,11 @@
 //!   never taken away because a server wouldn't have it); one sent again as a change of the card the server made of
 //!   it the first time is that card, put back as it was sent then; each says so, once. Denied: tried once more, then
 //!   refused. Failed: it waits, longer after every failure in a row; a new contact the server may have made (it may
-//!   have run what it was sent) keeps what it was sent with, so that sending it again makes only what was changed since
-//!   to that card, and one it refused to make, having made none of it, keeps nothing of the kind. One the server has
-//!   no room for (the account over its quota) waits however long it takes, and the owner is told once. One the server
+//!   have run what it was sent; it is noted so as it goes, [`note_sending`]) keeps what it was sent with (what it was
+//!   sent with this time, when nothing of it was there before), so that sending it again makes only what was changed
+//!   since to that card, and one it refused to make, having made none of it, keeps nothing of the kind. A new contact,
+//!   a change or a deletion the server has no room for (the account over its quota) waits however long it takes, and
+//!   the owner is told once. One the server
 //!   keeps failing with (a few times in a row, with this very change), or a new contact it keeps making without saying
 //!   what it calls it (counted apart), is given up with a word, and the contact follows the server again (a new one is
 //!   kept here, as a refused one is); another answer, or a new change here, starts the count again.
@@ -352,16 +354,20 @@ fn due_at(change: &ContactChange, holders: &[(Timestamp, u32, &Contact)]) -> Tim
 }
 
 /// Whether the card a deletion is of (`deleted`: the contact as the server had it) may be the one a new contact was
-/// made as (`sent`: what it was sent with): the same name, or an address of both. Unknown: it may be.
+/// made as (`sent`: what it was sent with): the same name or company, or an address or a number of both (its digits).
+/// Unknown: it may be.
 fn may_be(sent: &Contact, deleted: Option<&Contact>) -> bool {
     let Some(deleted) = deleted else { return true };
-    let name = sent.name();
-    let same_name = !name.trim().is_empty() && name.trim().eq_ignore_ascii_case(deleted.name().trim());
-    same_name
-        || sent
-            .emails
-            .iter()
-            .any(|a| deleted.emails.iter().any(|b| !a.value.trim().is_empty() && a.value.trim().eq_ignore_ascii_case(b.value.trim())))
+    let same = |a: &str, b: &str| !a.trim().is_empty() && a.trim().eq_ignore_ascii_case(b.trim());
+    let digits = |number: &str| number.chars().filter(char::is_ascii_digit).collect::<String>();
+    let same_number = |a: &str, b: &str| {
+        let a = digits(a);
+        !a.is_empty() && a == digits(b)
+    };
+    same(&sent.name(), &deleted.name())
+        || same(&sent.company, &deleted.company)
+        || sent.emails.iter().any(|a| deleted.emails.iter().any(|b| same(&a.value, &b.value)))
+        || sent.phones.iter().any(|a| deleted.phones.iter().any(|b| same_number(&a.value, &b.value)))
 }
 
 /// How much of an account's contacts waits to go to its server: due now, all of them, and when the next held back is
@@ -438,6 +444,27 @@ pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdErr
         });
     }
     Ok(ContactsUpload { ops, ..Default::default() }.for_account(owner))
+}
+
+/// The changes of `upload` are on their way to the server: a new contact among them may be made there from now on (its
+/// answer lost, or this computer stopped before it came), so it is noted with what it is sent with, as one that may be
+/// there: the next try looks for its card first ([`ContactChange::base`]). What the answer says settles it.
+pub fn note_sending(s: &mut Session, upload: &ContactsUpload) {
+    let mut noted = false;
+    for op in upload.ops.iter().filter(|op| op.kind == ContactChangeKind::Create && op.base.is_none()) {
+        let Some(mut sent) = s.mailbox.contact(op.contact).cloned() else { continue };
+        put_fields(&mut sent, &op.fields);
+        let making = |change: &&mut ContactChange| {
+            change.kind == ContactChangeKind::Create && change.account == upload.account && change.token == op.token && change.base.is_none()
+        };
+        if let Some(change) = s.mailbox.contact_changes.iter_mut().find(making) {
+            change.base = Some(Box::new(sent));
+            noted = true;
+        }
+    }
+    if noted {
+        s.mailbox_changed();
+    }
 }
 
 // ---- what no longer fits ----
@@ -828,6 +855,15 @@ impl Taking<'_> {
         self.applied.dropped.push(ContactDropped { account: self.account, kind: change.kind, reason: STUCK, message });
     }
 
+    /// Note whether the server has no room for the change at `at` (`outcome`): whether that is new, for the owner to be
+    /// told once while it lasts.
+    fn first_full(&mut self, at: usize, outcome: &ContactOutcome) -> bool {
+        let Some(change) = self.mailbox.contact_changes.get_mut(at) else { return false };
+        let first = outcome.full && !change.full;
+        change.full = outcome.full;
+        first
+    }
+
     /// The contact `contact` as it was sent to be made (`op`): what the card made of it has.
     fn sent_as(&self, contact: Option<Id>, op: &ContactOp) -> Option<Box<Contact>> {
         contact.and_then(|id| self.mailbox.contact(id)).map(|here| {
@@ -850,13 +886,11 @@ impl Taking<'_> {
             EventResult::Done if outcome.remote.is_empty() => {
                 // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one, and
                 // with what it was sent with, which the card made of it has). A server that says so again is not asked
-                // for ever: what it made comes with the next read.
+                // for ever: the contact is kept here, and what the server made comes with the next read.
                 let Some(at) = at else { return };
                 let sent = self.sent_as(contact, op);
                 let nameless = self.mailbox.contact_changes.get_mut(at).map(|change| {
-                    if change.base.is_none() {
-                        change.base = sent;
-                    }
+                    change.base = sent;
                     change.failures = change.failures.saturating_add(1);
                     (change.nameless, change.stuck) = (change.nameless.saturating_add(1), 0);
                     change.retry_at = now.saturating_add(wait_after(change.failures, None));
@@ -866,10 +900,10 @@ impl Taking<'_> {
                     self.mailbox.contact_changes.remove(at);
                     let name = called_first(contact.and_then(|id| self.mailbox.contact(id)));
                     if let Some(id) = contact {
-                        let _ = self.mailbox.remove_contact(id);
+                        keep_here(self.mailbox, id, self.keeps_local);
                     }
                     self.applied.say(format!(
-                        "{name} was made on the server, which doesn't say what it calls it: it comes with the next read, as the server has it."
+                        "{name} was made on the server, which doesn't say what it calls it: it is kept on this computer, and the next read brings the server's card too."
                     ));
                 }
                 self.applied.failed += 1;
@@ -916,19 +950,21 @@ impl Taking<'_> {
                 // time is kept, so that sending it again makes only what was changed here since to the card made of
                 // it. One it refused to make, and made none of before, may not be anywhere there: nothing of it is.
                 let sent = self.sent_as(contact, op);
-                let mut told = true;
+                // (Nothing of it was on the server before this try: it was never sent before, or its look found none.
+                // A card made of it now has what was sent this time.)
+                let fresh = op.base.is_none() || outcome.none_before;
+                let first = self.first_full(at, outcome);
                 let held = self.mailbox.contact_changes.get_mut(at).map(|change| {
                     match outcome.made {
-                        CardMade::Perhaps if change.base.is_none() => change.base = sent,
+                        CardMade::Perhaps if fresh || change.base.is_none() => change.base = sent,
                         CardMade::No => change.base = None,
+                        CardMade::Unsaid if fresh => change.base = None,
                         _ => {}
                     }
-                    // No room for it on the server: said once while it lasts.
-                    told = change.full || !outcome.full;
-                    change.full = outcome.full;
                     held_back(change, outcome, now)
                 });
-                if !told {
+                // No room for it on the server: said once while it lasts.
+                if first {
                     let name = called(contact.and_then(|id| self.mailbox.contact(id)));
                     self.applied.say(format!("The server's mailbox is full: {name} waits here and goes as soon as there is room."));
                 }
@@ -1054,6 +1090,7 @@ impl Taking<'_> {
             }
             EventResult::Failed => {
                 let Some(at) = at else { return };
+                let first = self.first_full(at, outcome);
                 let held = self
                     .mailbox
                     .contact_changes
@@ -1062,6 +1099,10 @@ impl Taking<'_> {
                     .map(|change| held_back(change, outcome, now));
                 if held.is_some() {
                     self.applied.failed += 1;
+                }
+                if first && held.is_some() {
+                    let name = called(contact.and_then(|id| self.mailbox.contact(id)));
+                    self.applied.say(format!("The server's mailbox is full: the change to {name} waits here and goes as soon as there is room."));
                 }
                 if held == Some(Held::Stuck) {
                     self.applied.failed -= 1;
@@ -1120,6 +1161,10 @@ impl Taking<'_> {
             }
             EventResult::Failed => {
                 let Some(at) = at else { return };
+                if self.first_full(at, outcome) {
+                    let name = called(self.mailbox.contact_changes.get(at).and_then(|change| change.base.as_deref()));
+                    self.applied.say(format!("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room."));
+                }
                 let held = self.mailbox.contact_changes.get_mut(at).map(|change| held_back(change, outcome, now));
                 self.applied.failed += 1;
                 if held == Some(Held::Stuck) {
@@ -1291,6 +1336,7 @@ pub(super) fn contact_changes_command(s: &mut Session, v: &Value) -> CmdResult {
     // What can't be sent any more is given up first, and said: none of it goes without a word.
     let dropped = settle_contact_changes(s);
     let upload = contact_upload(s, account)?;
+    note_sending(s, &upload);
     let mut answer = serde_json::to_value(upload).map_err(|e| fail(e.to_string()))?;
     if let Some(answer) = answer.as_object_mut() {
         answer.insert("dropped".into(), contact_dropped_json(&dropped));

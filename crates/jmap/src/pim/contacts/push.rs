@@ -111,6 +111,7 @@ pub(in crate::pim) async fn push<H: Http>(
         made: HashSet::new(),
     };
     let stop = writer.run().await.err();
+    writer.say_none_before();
     let token_refused = matches!(stop, Some(Stop::Auth));
     let going = matches!(stop, None | Some(Stop::Failed(_)));
     match stop {
@@ -637,9 +638,13 @@ impl<H: Http> Writer<'_, H> {
                     Error::Refused { .. } => (EventResult::Refused, None, false),
                     _ => (EventResult::Failed, Some(RETRY), true),
                 };
+                let full = matches!(&error, Error::Refused { kind, .. } if kind == "overQuota");
                 for one in call {
                     let remote = if result == EventResult::Refused { self.card_named(one) } else { String::new() };
                     self.answer(one.at, result, remote, &words, retry, false);
+                    if full && let Some(Some(outcome)) = self.outcomes.get_mut(one.at) {
+                        outcome.full = true;
+                    }
                     match (one.target.is_empty(), ran) {
                         (true, true) => self.made_is(one.at, CardMade::Perhaps),
                         (true, false) => self.not_made(one.at),
@@ -748,6 +753,16 @@ impl<H: Http> Writer<'_, H> {
     fn not_made(&mut self, at: usize) {
         if self.ops.get(at).is_some_and(|op| op.base.is_none()) || self.none_made.contains(&at) {
             self.made_is(at, CardMade::No);
+        }
+    }
+
+    /// The new cards sent again whole because their look found none made before: their answers say so (a card made of
+    /// one now has what was sent this time alone).
+    fn say_none_before(&mut self) {
+        for at in self.none_made.clone() {
+            if let Some(Some(outcome)) = self.outcomes.get_mut(at) {
+                outcome.none_before = true;
+            }
         }
     }
 

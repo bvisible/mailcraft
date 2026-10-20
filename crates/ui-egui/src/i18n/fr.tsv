@@ -228,8 +228,10 @@
 	Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is	Le courrier ne peut pas encore être déplacé entre un compte JMAP et un autre compte ou un dossier local : cette version ne peut pas placer un message sur un serveur JMAP, et la copie du serveur resterait où elle est
 	Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file	Le courrier ne peut être copié ni vers ni depuis un compte JMAP : son serveur garde un message dans un seul dossier. Déplacez-le, ou enregistrez-le sous forme de fichier
 	A JMAP account's folders are its server's: this version can't make, rename, move or delete them there	Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur
-# run_words, a new contact the server has no room for (crates/engine/src/cmd/remote_contacts/written.rs).
+# run_words, a new contact, a change or a deletion the server has no room for (crates/engine/src/cmd/remote_contacts/written.rs).
 	The server's mailbox is full: {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : {name} attend ici et partira dès qu’il y aura de la place.
+	The server's mailbox is full: the change to {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : la modification de {name} attend ici et partira dès qu’il y aura de la place.
+	The server's mailbox is full: deleting {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : la suppression de {name} attend ici et partira dès qu’il y aura de la place.
 # The header over the original a reply or a forward quotes (crates/engine/src/cmd/compose.rs, set by crates/ui-egui/src/i18n.rs),
 # and the titles of the calendar's days and weeks (crates/ui-egui/src/calendar_view.rs).
 	-----Original Message-----	-----Message d’origine-----

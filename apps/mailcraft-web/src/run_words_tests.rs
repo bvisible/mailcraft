@@ -992,6 +992,11 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
         "a contacts job's, not a mail run's: the contacts flow over the same in-process server makes it and reads it in French \
          (`jmap_pim_flow_tests`, a new contact the server has no room for)",
     ),
+    (
+        "The server's mailbox is full: the change to {name} waits here and goes as soon as there is room.",
+        "a contacts job's, as above: the engine's tests make it, and run_words' read it in French",
+    ),
+    ("The server's mailbox is full: deleting {name} waits here and goes as soon as there is room.", "as above"),
 ];
 
 // ---------------------------------------------------------------------------------------------

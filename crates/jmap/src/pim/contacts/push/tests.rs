@@ -840,3 +840,32 @@ fn a_new_card_sent_again_whose_set_ran_nothing_after_its_look_found_none_holds_n
         [(ContactChangeKind::Create, EventResult::Refused, "no".to_string()), (ContactChangeKind::Delete, EventResult::Done, String::new())]
     );
 }
+
+#[test]
+fn a_new_card_sent_again_whole_after_its_look_found_none_says_so() {
+    // Its look finds none (nothing was made the first time); sent whole, a gateway's 502 comes back after the server
+    // made it: the card made of it has what was sent this time alone.
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::Status(502))));
+    let hal = ContactFields { name: name("Hal", "Berg"), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-hal", hal.clone(), hal)])));
+    assert_eq!((made(&done[0]), says(&done[0], "noneBefore")), ("perhaps".to_string(), true), "{done:?}");
+    // One whose look was not possible says nothing of the kind.
+    let server = self::server();
+    server.with(|d| {
+        d.pim.finds_by_uid = false;
+        d.faults.push_back(Fault::on("ContactCard/set", Effect::Status(502)));
+    });
+    let hal = ContactFields { name: name("Hal", "Berg"), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-hal", hal.clone(), hal)])));
+    assert_eq!((made(&done[0]), says(&done[0], "noneBefore")), ("perhaps".to_string(), false));
+}
+
+#[test]
+fn a_set_the_server_refuses_for_its_quota_as_a_whole_says_it_has_no_room() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::MethodError("overQuota"))));
+    let title = ContactFields { title: Some("Lead".into()), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![update("Grace Okafor", title), create("t-gus", gus())])));
+    assert!(done.iter().all(|o| o.result == EventResult::Failed && !o.lasting && says(o, "full")), "{done:?}");
+}

@@ -386,6 +386,13 @@ impl MailApp {
             contact_changes: cards.clone(),
         };
         let cancel = Arc::new(AtomicBool::new(false));
+        if self.services.jmap_pim.is_none() {
+            return false;
+        }
+        // A new contact on its way may be made there from now on, whatever comes of the job: the next try looks for it.
+        if let Some(cards) = &cards {
+            remote_contacts::note_sending(&mut self.session, cards);
+        }
         let Some(start) = &self.services.jmap_pim else { return false };
         let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });

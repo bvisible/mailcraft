@@ -390,6 +390,15 @@ fn a_new_contact_the_server_has_no_room_for_reads_in_french() {
     let line = "The server's mailbox is full: \"Gus Hale\" waits here and goes as soon as there is room.";
     let read = super::explain(french(), Family::Line, line, &mailbox()).map(|reading| reading.text);
     assert_eq!(read.as_deref(), Some("L’espace du serveur est plein : \"Gus Hale\" attend ici et partira dès qu’il y aura de la place."));
+    // And a change or a deletion of one the server has.
+    for line in [
+        "The server's mailbox is full: the change to \"Gus Hale\" waits here and goes as soon as there is room.",
+        "The server's mailbox is full: deleting \"Gus Hale\" waits here and goes as soon as there is room.",
+    ] {
+        let read = super::explain(french(), Family::Line, line, &mailbox()).expect("read");
+        assert!(read.text.starts_with("L’espace du serveur est plein") && read.text.contains("\"Gus Hale\""), "{}", read.text);
+        assert!(!read.text.contains("the change to") && !read.text.contains("deleting"), "read whole, by a row of its own: {}", read.text);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

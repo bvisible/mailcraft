@@ -394,6 +394,10 @@ pub struct ContactOutcome {
     /// long it takes: room may be made.
     #[serde(skip_serializing_if = "is_false")]
     pub full: bool,
+    /// For a new contact sent again: the server found no card made of it before (its look found none), so that a card
+    /// made of it now has what was sent this time, and nothing else.
+    #[serde(skip_serializing_if = "is_false")]
+    pub none_before: bool,
 }
 
 /// What is known of a card made of a new contact that failed ([`ContactOutcome::made`]).
@@ -752,6 +756,7 @@ mod tests {
             lasting: true,
             made: CardMade::Perhaps,
             full: true,
+            none_before: true,
         };
         outcome.tidy();
         assert!(outcome.remote.is_empty() && !outcome.error.contains('\n') && outcome.error.chars().count() <= MAX_WHY);

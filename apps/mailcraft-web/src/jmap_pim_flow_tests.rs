@@ -1218,3 +1218,31 @@ fn a_new_contact_the_server_has_no_room_for_waits_and_goes_once_there_is_room() 
     assert_eq!(flow.contact("Gus").map(|c| (c.id, mailcraft_jmap::pim::server_card_id(&c.origin.id))), Some((gus, Some("Gus Hale".to_string()))));
     assert!(flow.app.session.mailbox.contact_changes.is_empty());
 }
+
+#[test]
+fn an_address_taken_out_after_a_new_contact_was_sent_whole_again_goes_from_its_card() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    // Sent with a: the request fails before the server ran it (nothing is made).
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::RefuseWith(500))));
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "a@example.org"})).unwrap();
+    let gus = flow.contact("Gus").map(|c| c.id).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.card("Gus Hale").is_none());
+    // b added; the next try finds no card of his and sends him whole, and a gateway's 502 comes back after the server
+    // made him.
+    let both = json!({"id": gus, "emails": [{"label": "", "value": "a@example.org"}, {"label": "", "value": "b@example.org"}]});
+    flow.app.execute("people.edit", both).unwrap();
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::Status(502))));
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 1_000);
+    assert!(flow.look(5.0 * MINUTE));
+    assert_eq!(flow.card("Gus Hale").map(|card| card.emails), Some(vec!["a@example.org".to_string(), "b@example.org".to_string()]));
+    // b taken out here: the next try finds his card, and b goes from it.
+    let one = json!({"id": gus, "emails": [{"label": "", "value": "a@example.org"}]});
+    flow.app.execute("people.edit", one).unwrap();
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 1_000);
+    assert!(flow.look(10.0 * MINUTE));
+    assert_eq!(flow.card("Gus Hale").map(|card| card.emails), Some(vec!["a@example.org".to_string()]), "nothing comes back");
+    assert!(flow.app.session.mailbox.contact_changes.is_empty(), "{:?}", flow.app.session.mailbox.contact_changes);
+    assert_eq!(flow.contact("Gus").map(|c| c.emails.len()), Some(1));
+}
