@@ -1,12 +1,13 @@
 // //// Neoffice — added file (no upstream equivalent)
 //! An account's calendars over JMAP (JMAP for Calendars, the IETF's draft on RFC 8620; events as JSCalendar,
-//! RFC 8984), and later its address books (RFC 9610), read for the engine.
+//! RFC 8984), and later its address books (RFC 9610), read for the engine: [`sync_pim`].
 //!
 //! A calendar job is one of its own beside a Send/Receive: the window asks for it on a clock of its own,
 //! and what it reads comes back in one answer ([`JmapPimResult`](mailcraft_model::sync::JmapPimResult)), made
 //! of the downloads the engine already takes in for Microsoft Graph's calendar
 //! ([`CalendarsDownload`](mailcraft_model::remote::CalendarsDownload),
-//! [`EventsDownload`](mailcraft_model::remote::EventsDownload)).
+//! [`EventsDownload`](mailcraft_model::remote::EventsDownload)). What is read and how is in [`calendars`];
+//! how an event in JSCalendar becomes the engine's is in `jscalendar.rs`.
 //!
 //! This module holds what the readers share: ISO 8601 durations, the UTC and local times of JSCalendar,
 //! the paging of a `/query` ([`query_all`]) and the bounds of what is read.
@@ -15,6 +16,8 @@
 //! account may only read ([`WRITE_EVENTS`]): the engine's own lock and its reason then keep the owner from
 //! making, here, what would go nowhere. [`WRITE_CONTACTS`] is the same door for address books.
 
+pub mod calendars;
+pub(crate) mod jscalendar;
 #[cfg(test)]
 mod tests;
 
@@ -24,6 +27,8 @@ use mailcraft_time::{DateTime, Timestamp, format_iso_utc, parse_iso};
 use serde_json::{Map, Value};
 
 use crate::{Client, Http, Result, valid_id};
+
+pub use calendars::{failed_pim, sync_pim};
 
 /// Whether what is changed here in a server's calendar is written back to it. Not yet: every calendar
 /// read is handed over as read-only, so that nothing is made here that would never reach the server.

@@ -3421,6 +3421,11 @@ pub fn apply_calendars(s: &mut Session, download: &CalendarsDownload) -> CmdResu
                 calendar.online_providers = remote.online_providers.clone();
                 updated += usize::from(same);
             }
+            // //// Neoffice — whether its server keeps only the basics of an event, as the list says (a JMAP server that does: Calendar::plain).
+            if calendar.plain != remote.plain {
+                calendar.plain = remote.plain;
+                updated += usize::from(same);
+            }
         } else if mailbox.calendars.len() < MAX_CALENDARS {
             let color = remote.color.unwrap_or_else(|| super::calendar::next_color(mailbox));
             let id = mailbox.alloc_id();
@@ -3435,6 +3440,8 @@ pub fn apply_calendars(s: &mut Session, download: &CalendarsDownload) -> CmdResu
                 read_only: remote.read_only,
                 group: remote.group.clone(),
                 online_providers: remote.online_providers.clone(),
+                // //// Neoffice — see above: what its server keeps of an event.
+                plain: remote.plain,
                 ..Default::default()
             });
             added += 1;

@@ -8,7 +8,8 @@
 //! sent, this one holds a client to the standard (RFC 8620, 8621) as a real server does, for the part
 //! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get`, `Email/set` and the download of a blob;
 //! and, so that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Identity/get`
-//! and `EmailSubmission/set` (`outgoing.rs`).
+//! and `EmailSubmission/set` (`outgoing.rs`); and, when a test turns them on, calendars: `Calendar/get`,
+//! `CalendarEvent/query` and `CalendarEvent/get` (`standin/pim.rs`, [`Pim`]).
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -73,7 +74,7 @@ use base64::Engine as _;
 use mailcraft_model::{Address, Message};
 use serde_json::{Map, Value, json};
 
-use crate::{CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
+use crate::{CALENDARS, CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
 
 mod facade;
 mod outgoing;
@@ -82,7 +83,7 @@ mod set;
 
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
-pub use pim::{Pim, WRITABLE_CARD, WRITABLE_EVENT};
+pub use pim::{Calendar, Event, Pim, WRITABLE_CARD, WRITABLE_EVENT};
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";
@@ -632,15 +633,17 @@ impl Data {
     }
 
     fn method(&mut self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
-        // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2).
-        let served = match name {
-            "Mailbox/get" | "Email/query" | "Email/get" | "Email/import" | "Email/set" => true,
-            "Mailbox/set" => self.profile.fixed_mailboxes,
-            // Sending is a capability of its own, in the session and in the request.
-            "Identity/get" | "EmailSubmission/set" => self.submission && using.contains(&SUBMISSION),
-            _ => false,
+        // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2): the mail's for
+        // mail and sending (sending is a capability of its own too, in the session and in the request), the calendars'
+        // for calendars, when the session offers them (`standin/pim.rs`).
+        let needs = match name {
+            "Mailbox/get" | "Email/query" | "Email/get" | "Email/import" | "Email/set" => Some(MAIL),
+            "Mailbox/set" if self.profile.fixed_mailboxes => Some(MAIL),
+            "Identity/get" | "EmailSubmission/set" if self.submission && using.contains(&SUBMISSION) => Some(MAIL),
+            "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" if self.pim.calendars => Some(CALENDARS),
+            _ => None,
         };
-        if !served || !using.contains(&MAIL) {
+        if needs.is_none_or(|capability| !using.contains(&capability)) {
             return Err(refuse("unknownMethod", format!("no method {}", name.chars().take(40).collect::<String>())));
         }
         if let Some(Effect::MethodError(kind)) = self.take_fault(name, |effect| matches!(effect, Effect::MethodError(_))) {
@@ -655,6 +658,9 @@ impl Data {
             "Email/set" => self.email_set(&args),
             "Identity/get" => self.identity_get(&args),
             "EmailSubmission/set" => self.submission_set(&args),
+            "Calendar/get" => self.pim.calendar_get(&args),
+            "CalendarEvent/query" => self.pim.event_query(&args),
+            "CalendarEvent/get" => self.pim.event_get(&args, self.max_get),
             _ => self.email_get(&args),
         }
     }

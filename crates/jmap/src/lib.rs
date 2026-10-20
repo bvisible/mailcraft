@@ -20,8 +20,8 @@
 //! - Sending and drafts (RFC 8621 §7 and §4.8) are part of a run ([`mail`]): a message of the Outbox is
 //!   uploaded, filed in the Sent mailbox and submitted, and a draft is filed in Drafts in place of the
 //!   copy an earlier save made (`send`).
-//! - An account's calendars (JMAP for Calendars) and address books (RFC 9610), when the session offers
-//!   them, are a job of their own beside a Send/Receive ([`pim`]).
+//! - [`sync_pim`] reads an account's calendars (JMAP for Calendars) for the engine, when the session
+//!   offers them, as a job of its own beside a Send/Receive ([`pim`]).
 //!
 //! Everything a server sends is hostile: answers are capped ([`MAX_JSON`]), ids are held to
 //! [`valid_id`], numbers are clamped, and nothing here indexes into what came over the wire. The
@@ -48,6 +48,7 @@ pub mod standin;
 pub mod url;
 
 pub use mail::{failed_run, sync_mail};
+pub use pim::{failed_pim, sync_pim};
 pub use url::{Url, pct, pct_decode};
 
 /// The capability every session has (RFC 8620 §2).

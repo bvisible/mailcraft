@@ -47,3 +47,177 @@ fn the_stand_in_offers_calendars_and_address_books_only_when_asked() {
     let client = connect(&stand_in);
     assert_eq!((client.calendars_writable(), client.contacts_writable(), client.calendars_span()), (None, None, 90 * 86_400));
 }
+
+/// What one call of calendars answered: its result, or the `type` of its error.
+fn one(stand_in: &StandIn, name: &str, args: Value) -> Result<Value, String> {
+    let (status, body) = raw(stand_in, json!([CORE, CALENDARS]), json!([[name, args, "c0"]]));
+    assert_eq!(status, 200, "{body}");
+    let answer = body["methodResponses"][0].clone();
+    if answer[0] == "error" { Err(answer[1]["type"].as_str().unwrap_or_default().to_string()) } else { Ok(answer[1].clone()) }
+}
+
+/// A stand-in with the server's own fixtures: a weekly series of three in Zurich, a summer morning, a day off, and
+/// the night summer time ends.
+fn fixtures() -> StandIn {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| {
+        d.pim = Pim::offered();
+        d.pim.add_calendar(Calendar { flagged: true, ..Calendar::new("own", "Ada", true) });
+        d.pim.add_event(
+            Event::timed("weekly", "own", "Site meeting", "2030-01-14T09:00:00", Some("Europe/Zurich"), "PT1H30M")
+                .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 3})),
+        );
+        d.pim.add_event(Event::timed("summer", "own", "Summer café", "2030-07-15T09:00:00", Some("Europe/Zurich"), "PT1H"));
+        d.pim.add_event(Event::whole_days("day", "own", "Closed", "2030-01-20", 1));
+        d.pim.add_event(Event::timed("dst", "own", "Night", "2030-10-27T01:00:00", Some("Europe/Zurich"), "PT3H"));
+    });
+    stand_in
+}
+
+fn window(after: &str, before: &str) -> Value {
+    json!({"accountId": ACCOUNT, "filter": {"after": after, "before": before}, "expandRecurrences": true})
+}
+
+const JANUARY: (&str, &str) = ("2030-01-01T00:00:00Z", "2030-02-01T00:00:00Z");
+
+#[test]
+fn each_occurrence_comes_apart_with_its_utc_times() {
+    let stand_in = fixtures();
+    let found = one(&stand_in, "CalendarEvent/query", window(JANUARY.0, JANUARY.1)).unwrap();
+    let ids: Vec<String> = found["ids"].as_array().unwrap().iter().map(|id| id.as_str().unwrap().to_string()).collect();
+    assert_eq!(ids.len(), 4, "three occurrences and the day off: {found}");
+    let got = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": ids})).unwrap();
+    let list = got["list"].as_array().unwrap();
+    let weekly: Vec<&Value> = list.iter().filter(|e| e["title"] == "Site meeting").collect();
+    let starts: Vec<&str> = weekly.iter().map(|e| e["utcStart"].as_str().unwrap()).collect();
+    assert_eq!(starts, ["2030-01-14T08:00:00Z", "2030-01-21T08:00:00Z", "2030-01-28T08:00:00Z"]);
+    assert_eq!(weekly[0]["utcEnd"], "2030-01-14T09:30:00Z", "an hour and a half, winter time");
+    // An occurrence is named by its series and its start; its series by its own id.
+    assert_eq!(weekly[0]["id"], json!(Pim::occurrence_id("weekly", "2030-01-14T09:00:00")));
+    assert_eq!(weekly[0]["baseEventId"], json!(Pim::event_id("weekly")));
+    assert_eq!(weekly[0]["recurrenceId"], "2030-01-14T09:00:00");
+    assert!(weekly.iter().all(|e| e.get("recurrenceRule").is_none()));
+    let day = list.iter().find(|e| e["title"] == "Closed").unwrap();
+    assert!(day["showWithoutTime"] == true && day.get("utcStart").is_none(), "a day keeps its days");
+    // The night summer time ends: three hours as they pass, from 01:00 summer time.
+    let night = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": [Pim::event_id("dst")]})).unwrap();
+    assert_eq!(
+        (night["list"][0]["utcStart"].as_str(), night["list"][0]["utcEnd"].as_str()),
+        (Some("2030-10-26T23:00:00Z"), Some("2030-10-27T02:00:00Z"))
+    );
+    // Without expanding, the series is one event, read with its rule.
+    let unexpanded =
+        one(&stand_in, "CalendarEvent/query", json!({"accountId": ACCOUNT, "filter": {"after": JANUARY.0, "before": JANUARY.1}})).unwrap();
+    assert!(unexpanded["ids"].as_array().unwrap().contains(&json!(Pim::event_id("weekly"))));
+    let master = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": [Pim::event_id("weekly")]})).unwrap();
+    assert_eq!(master["list"][0]["recurrenceRule"]["count"], 3);
+}
+
+#[test]
+fn a_query_requires_a_window_of_500_days_at_most_and_no_other_filter() {
+    let stand_in = fixtures();
+    for filter in [
+        json!({}),
+        json!({"after": JANUARY.0}),
+        json!({"after": "2030-01-01T00:00:00Z", "before": "2032-01-01T00:00:00Z"}),
+        json!({"text": "x", "after": JANUARY.0, "before": JANUARY.1}),
+        json!("all"),
+    ] {
+        assert_eq!(
+            one(&stand_in, "CalendarEvent/query", json!({"accountId": ACCOUNT, "filter": filter})),
+            Err("unsupportedFilter".into()),
+            "{filter}"
+        );
+    }
+    let refused = |extra: Value| {
+        let mut args = window(JANUARY.0, JANUARY.1);
+        args.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        one(&stand_in, "CalendarEvent/query", args).err()
+    };
+    assert_eq!(refused(json!({"anchor": "V1"})), Some("invalidArguments".into()));
+    assert_eq!(refused(json!({"sort": [{"property": "start"}]})), Some("unsupportedSort".into()));
+    assert_eq!(refused(json!({"limit": -1})), Some("invalidArguments".into()));
+    assert_eq!(refused(json!({"position": "1"})), Some("invalidArguments".into()));
+    assert_eq!(refused(json!({"collapseThreads": true})), Some("invalidArguments".into()));
+    assert_eq!(
+        one(&stand_in, "CalendarEvent/query", json!({"accountId": ACCOUNT, "filter": {"after": "soon", "before": JANUARY.1}})),
+        Err("invalidArguments".into())
+    );
+    // Its limit is said back when it set it, and a position from the end counts from the end.
+    let all = one(&stand_in, "CalendarEvent/query", window(JANUARY.0, JANUARY.1)).unwrap();
+    assert_eq!((all["limit"].as_u64(), all["canCalculateChanges"].as_bool()), (Some(5_000), Some(false)));
+    let mut last = window(JANUARY.0, JANUARY.1);
+    last["position"] = json!(-1);
+    last["calculateTotal"] = json!(true);
+    let last = one(&stand_in, "CalendarEvent/query", last).unwrap();
+    assert_eq!((last["ids"].as_array().map(Vec::len), last["total"].as_u64()), (Some(1), Some(4)));
+    assert_eq!(last["ids"][0], all["ids"][3]);
+    // A calendar it doesn't have finds nothing; one it has, its events.
+    let mut named = window(JANUARY.0, JANUARY.1);
+    named["filter"]["inCalendars"] = json!([Pim::calendar_id("nobody's")]);
+    assert_eq!(one(&stand_in, "CalendarEvent/query", named.clone()).unwrap()["ids"], json!([]));
+    named["filter"]["inCalendars"] = json!([Pim::calendar_id("own")]);
+    assert_eq!(one(&stand_in, "CalendarEvent/query", named).unwrap()["ids"].as_array().map(Vec::len), Some(4));
+}
+
+#[test]
+fn a_get_of_every_event_is_refused_and_properties_are_kept() {
+    let stand_in = fixtures();
+    assert_eq!(one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": null})), Err("requestTooLarge".into()));
+    let ids: Vec<String> = (0..501).map(|n| format!("V{n}")).collect();
+    assert_eq!(one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": ids})), Err("requestTooLarge".into()));
+    assert_eq!(one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": ["V1"], "properties": [7]})), Err("invalidArguments".into()));
+    let got = one(
+        &stand_in,
+        "CalendarEvent/get",
+        json!({"accountId": ACCOUNT, "ids": [Pim::event_id("summer"), "Vnobody", "Oxx"], "properties": ["title"]}),
+    )
+    .unwrap();
+    assert_eq!(got["list"][0].as_object().unwrap().keys().collect::<Vec<_>>(), ["@type", "id", "title"]);
+    assert_eq!(got["notFound"], json!(["Vnobody", "Oxx"]));
+    // An occurrence the series doesn't have, or leaves out, is not found.
+    stand_in.with(|d| d.pim.events[0].excluded.push("2030-01-21T09:00:00".into()));
+    let ids = [
+        Pim::occurrence_id("weekly", "2030-01-21T09:00:00"),
+        Pim::occurrence_id("weekly", "2030-01-22T09:00:00"),
+        Pim::occurrence_id("weekly", "2030-01-28T09:00:00"),
+    ];
+    let got = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": ids})).unwrap();
+    assert_eq!(got["list"].as_array().map(Vec::len), Some(1));
+    let master = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": [Pim::event_id("weekly")]})).unwrap();
+    assert_eq!(master["list"][0]["recurrenceOverrides"], json!({"2030-01-21T09:00:00": {"excluded": true}}));
+    // And events it can't read now fail the whole call.
+    stand_in.with(|d| {
+        d.pim.broken_events.insert(Pim::event_id("summer"));
+    });
+    assert_eq!(one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": [Pim::event_id("summer")]})), Err("serverFail".into()));
+}
+
+#[test]
+fn one_calendar_is_the_default_and_colours_are_rrggbb() {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| {
+        d.pim = Pim::offered();
+        d.pim.add_calendar(Calendar { flagged: true, color: Some("#F80".into()), ..Calendar::new("holidays", "Holidays", false) });
+        d.pim.add_calendar(Calendar { flagged: true, color: Some("rgb(1,2,3)".into()), ..Calendar::new("work", "Work", true) });
+        d.pim.add_calendar(Calendar { flagged: true, color: Some("Navy".into()), ..Calendar::new("home", "Home", true) });
+    });
+    let listed = one(&stand_in, "Calendar/get", json!({"accountId": ACCOUNT, "ids": null})).unwrap();
+    let list = listed["list"].as_array().unwrap();
+    let defaults: Vec<&str> = list.iter().filter(|c| c["isDefault"] == true).map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(defaults, ["Work"], "the first flagged of those whose events may be written");
+    assert_eq!(list.iter().map(|c| c["color"].clone()).collect::<Vec<_>>(), [json!("#ff8800"), json!(null), json!("#000080")]);
+    assert_eq!(list[0]["myRights"].as_object().map(|r| r.len()), Some(8), "the eight rights of the draft");
+    assert_eq!((list[0]["myRights"]["mayWriteAll"].as_bool(), list[1]["myRights"]["mayWriteAll"].as_bool()), (Some(false), Some(true)));
+    let some = one(&stand_in, "Calendar/get", json!({"accountId": ACCOUNT, "ids": [Pim::calendar_id("home"), "Cnone"]})).unwrap();
+    assert_eq!((some["list"].as_array().map(Vec::len), some["notFound"].clone()), (Some(1), json!(["Cnone"])));
+    assert_eq!(one(&stand_in, "Calendar/get", json!({"accountId": "A2"})), Err("accountNotFound".into()));
+}
+
+#[test]
+fn the_methods_of_calendars_are_unknown_where_none_are_offered() {
+    let stand_in = StandIn::new();
+    stand_in.with(|d| d.pim = Pim { calendars: false, ..Pim::offered() });
+    let (status, body) = raw(&stand_in, json!([CORE, MAIL]), json!([["Calendar/get", {"accountId": ACCOUNT}, "c0"]]));
+    assert_eq!((status, body["methodResponses"][0][1]["type"].as_str()), (200, Some("unknownMethod")));
+}
