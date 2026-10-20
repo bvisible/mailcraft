@@ -12,6 +12,13 @@ name: Neoffice CI
 
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        # A contribution branch (one of a PR to upstream, based on upstream's main): checked by the same gate on a
+        # runner before it is pushed where the PR reads it. Empty: the branch the run was started on.
+        description: "Another branch or commit of this fork to check (empty: the one dispatched)"
+        required: false
+        default: ""
   push:
     branches: [version-15]
     paths: ["crates/**", "apps/**", "xtask/**", "assets/**", "Cargo.toml", "Cargo.lock", "deny.toml", "ATTRIBUTION.md", ".github/workflows/neoffice-ci.yml"]
@@ -20,7 +27,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: neoffice-ci-${{ github.ref }}
+  group: neoffice-ci-${{ github.ref }}-${{ inputs.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -34,6 +41,8 @@ jobs:
       RUST_BACKTRACE: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
       - name: Linux build dependencies (upstream's list, .github/workflows/ci.yml)
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libgtk-3-dev
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
