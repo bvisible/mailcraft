@@ -855,6 +855,78 @@ fn refused_changes() -> Vec<Scenario> {
     out
 }
 
+/// The engine's refusals: a piece of a run for another account, the address of a JMAP server wrong in each way the
+/// model checks, a move or a copy between a JMAP account and another place, a JMAP account's folder renamed.
+fn refusals_of_the_engine() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    let refused = |rig: &Rig, name: &'static str, said: std::result::Result<Value, mailcraft_engine::CmdError>| {
+        let shown = Shown { lines: said.err().map(|e| e.to_string()).into_iter().collect(), ..Default::default() };
+        Scenario::new(name, rig, shown, &[])
+    };
+    // (The mailbox was replaced while the run was under way: its piece names another account's address.)
+    let mut rig = Rig::listed();
+    let piece = mailcraft_model::sync::JmapMailResult { account: rig.account, email: "eve@example.org".into(), ..Default::default() };
+    let said = apply_jmap_mail(&mut rig.s, piece);
+    out.push(refused(&rig, "a piece for another account", said));
+    let long = format!("https://jmap.example.org/{}", "a".repeat(2_048));
+    for address in [
+        "",
+        long.as_str(),
+        "https://jmap.example.org/a b",
+        "https://jmap.example.org\\x",
+        "ftp://jmap.example.org",
+        "https://",
+        "https://ada:pw@jmap.example.org",
+        "https://jmap.example.org:99999",
+        "http://jmap.example.org",
+        "https://jmap_example!.org",
+    ] {
+        let mut rig = Rig::new();
+        let account = rig.account;
+        if let Some(server) = rig.s.mailbox.accounts.iter_mut().find(|a| a.id == account).and_then(|a| a.jmap.as_mut()) {
+            server.session = address.to_string();
+        }
+        let said = jmap_mail_request(&rig.s, account, true, &[], false).map(|_| Value::Null);
+        out.push(refused(&rig, "a JMAP server's address", said));
+    }
+    // Between a JMAP account and a folder on this computer, and a copy; a JMAP folder renamed.
+    let mut rig = Rig::listed();
+    // (An account kept on this computer.)
+    let mine = rig.s.mailbox.add_account(mailcraft_model::Account { name: "Mine".into(), email: "mine@example.org".into(), ..Default::default() });
+    let local = rig.s.mailbox.folder_of_kind(mine, FolderKind::Inbox);
+    let trash = rig.s.mailbox.folder_of_kind(rig.account, FolderKind::Deleted);
+    let ids = rig.mine();
+    let said = rig.s.run("mail.move", &json!({"folder": local, "ids": ids}));
+    out.push(refused(&rig, "a move to this computer", said));
+    let said = rig.s.run("mail.copy", &json!({"folder": trash, "ids": ids}));
+    out.push(refused(&rig, "a copy", said));
+    let said = rig.s.run("folder.rename", &json!({"id": trash, "name": "Bin"}));
+    out.push(refused(&rig, "a folder renamed", said));
+    out
+}
+
+/// What Undo can't take back of a JMAP account: a message the server has, deleted for good (one, then two), and a
+/// message sent.
+fn undone() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    for n in [1, 2] {
+        let mut rig = Rig::listed();
+        rig.deliver(1);
+        rig.run(true);
+        let ids: Vec<Id> = rig.mine().into_iter().take(n).collect();
+        rig.s.run("mail.deletePermanently", &json!({"ids": ids})).unwrap();
+        rig.s.run("edit.undo", &json!({})).unwrap();
+        let shown = Shown { status: rig.s.sync_status.clone(), ..Default::default() };
+        out.push(Scenario::new("a delete for good undone", &rig, shown, &[]));
+    }
+    let mut rig = Rig::listed();
+    rig.send("bob@example.org", "Plans");
+    rig.s.run("edit.undo", &json!({})).unwrap();
+    let shown = Shown { status: rig.s.sync_status.clone(), ..Default::default() };
+    out.push(Scenario::new("a send undone", &rig, shown, &[]));
+    out
+}
+
 /// Every scenario.
 fn scenarios() -> Vec<Scenario> {
     let mut all = vec![
@@ -884,6 +956,8 @@ fn scenarios() -> Vec<Scenario> {
         drafts_refused(),
         vec![no_sent()],
         refused_changes(),
+        refusals_of_the_engine(),
+        undone(),
     ] {
         all.extend(more);
     }
@@ -901,6 +975,18 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("the message has no sender", "defensive: a message written here is from its account"),
     ("\"{address}\" isn't an address mail can be sent from", "defensive: an account's address is checked when the account is added"),
     ("the server wouldn't take it", "defensive: the engine's word for a host that gives no reason, and the crate always gives one"),
+    (
+        "Sending {n} messages can't be undone.",
+        "a step of the window sends one message: an undo never meets several (the engine has the words all the same)",
+    ),
+    ("no account with id {id}", "defensive: the window asks for a run, or takes one in, for an account it has"),
+    ("{account} isn't kept in step with a JMAP server", "defensive: as above, an account of that kind"),
+    ("{account} has no JMAP server", "defensive: as above, an account with a server"),
+    ("no message with id {id} in {account}", "defensive: a download of a message the window has"),
+    (
+        "these messages were for another account, not for {account}",
+        "defensive: a download for an account replaced meanwhile, which the window ends first",
+    ),
 ];
 
 // ---------------------------------------------------------------------------------------------

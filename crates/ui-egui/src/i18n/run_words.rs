@@ -221,6 +221,15 @@ pub(crate) fn line<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
     in_language(current(), Family::Line, text, mb)
 }
 
+/// A command's refusal, in the interface's language.
+pub(crate) fn refusal<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    // (The engine's refusal of received mail for a Microsoft account is an interface string of its own.)
+    if text == mailcraft_model::STAYS_LOCAL {
+        return Cow::Borrowed(tl!(mailcraft_model::STAYS_LOCAL));
+    }
+    line(text, mb)
+}
+
 /// What a message held in the Outbox says of itself, in the interface's language: the mailbox keeps it in English.
 pub(crate) fn held<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
     in_language(current(), Family::Banner, text, mb)

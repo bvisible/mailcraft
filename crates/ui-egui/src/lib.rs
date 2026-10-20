@@ -1447,7 +1447,8 @@ impl MailApp {
         match &r {
             Err(e) => {
                 // (The engine's refusal of received mail for a Microsoft account, in the interface's language.)
-                let said = if e == mailcraft_model::STAYS_LOCAL { tl!(mailcraft_model::STAYS_LOCAL).to_string() } else { e.clone() };
+                // //// Neoffice — and the engine's other sentences the window reads back, a JMAP account's refusals among them (run_words).
+                let said = i18n::run_words::refusal(e, &self.session.mailbox).into_owned();
                 // What the owner has just done by hand and was refused at once is said in a
                 // message box too, as Outlook does (#152).
                 if self.by_hand && refusal_worth_a_box(id, e) {

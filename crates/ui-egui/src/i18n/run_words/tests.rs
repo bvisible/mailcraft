@@ -387,7 +387,7 @@ fn the_crates_lines_read_in_french() {
 // ---------------------------------------------------------------------------------------------
 // The census: the table against the crates' source
 
-/// The files whose every sentence a person can be shown has a row (or is on [`NOT_SHOWN`]).
+/// The files whose every sentence a person can be shown has a row (or is on [`NOT_READ`]).
 const CENSUS: &[&str] = &[
     "crates/jmap/src/lib.rs",
     "crates/jmap/src/mail.rs",
@@ -398,10 +398,12 @@ const CENSUS: &[&str] = &[
     "crates/jmap/src/mail/outgoing.rs",
     "crates/engine/src/cmd/jmap_send.rs",
     "crates/engine/src/cmd/jmap_up.rs",
+    "crates/engine/src/undo.rs",
+    "crates/model/src/jmap_server.rs",
 ];
 
-/// Sentences of those files that are no line a person is shown, and why.
-const NOT_SHOWN: &[(&str, &str)] = &[
+/// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.
+const NOT_READ: &[(&str, &str)] = &[
     ("sign-in failed: {0}", "a refused sign-in ends the run as `auth_refused`, with no line (the engine says STA1)"),
     ("the user name, password or access token has a character that can't be sent", "an `Error::Auth`, as above"),
     ("the user name, password or access token is too long to be sent", "an `Error::Auth`, as above"),
@@ -423,6 +425,16 @@ const NOT_SHOWN: &[(&str, &str)] = &[
     ("a copy filed in Sent for a message that was not sent", "words for the log, of what `destroy_unwanted` couldn't destroy"),
     ("the draft a message was written as", "as above"),
     ("the earlier copy of a draft", "as above"),
+    (
+        "The folder '{}' was deleted for good: that can't be undone here.",
+        "a folder deleted for good is a Microsoft account's: a JMAP account's folders are its server's",
+    ),
+    ("{} folders were deleted for good: that can't be undone here.", "as above"),
+    (
+        "'{}' was moved out of its account and the server's copy removed: that can't be undone here.",
+        "a move out of an account is a Microsoft account's: one out of a JMAP account is refused",
+    ),
+    ("{} messages were moved out of their account and the server's copies removed: that can't be undone here.", "as above"),
 ];
 
 /// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text
@@ -508,20 +520,20 @@ fn every_sentence_of_the_census_has_a_row() {
             if super::WORDS.contains(&text) {
                 continue;
             }
-            if NOT_SHOWN.iter().any(|(sentence, _)| *sentence == text) {
+            if NOT_READ.iter().any(|(sentence, _)| *sentence == text) {
                 not_shown_seen.insert(text.to_string());
                 continue;
             }
             let pieces = fragments(text);
             assert!(
                 super::rows().iter().any(|row| has_in_order(row.english, &pieces)),
-                "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_SHOWN why nobody sees it",
+                "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_READ why no row reads it",
                 literal.line
             );
         }
     }
-    for (sentence, _) in NOT_SHOWN {
-        assert!(not_shown_seen.contains(*sentence), "{sentence:?} is in NOT_SHOWN and in none of the census's files any more");
+    for (sentence, _) in NOT_READ {
+        assert!(not_shown_seen.contains(*sentence), "{sentence:?} is in NOT_READ and in none of the census's files any more");
     }
 }
 
@@ -751,4 +763,63 @@ fn how_far_a_run_has_got_names_a_standard_folder_as_a_refused_move_does() {
         assert_eq!(super::standard_folder_name(&mb, "Projects", lang), None);
     }
     super::super::set_current(Lang::English);
+}
+
+#[test]
+fn a_refused_move_or_copy_says_why_in_french_in_the_status_and_the_box() {
+    let (mut app, account) = window();
+    let inbox = app.session.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap();
+    let server = mailcraft_model::sync::ServerMessage { id: "M1".into(), folder: "Mi".into(), ..Default::default() };
+    let message = mailcraft_model::Message { account, folder: inbox, subject: "Plans".into(), server: Some(server), ..Default::default() };
+    let id = app.session.mailbox.add_message(message).unwrap();
+    // (An account kept on this computer.)
+    let mine =
+        app.session.mailbox.add_account(mailcraft_model::Account { name: "Mine".into(), email: "mine@example.org".into(), ..Default::default() });
+    let local = app.session.mailbox.folder_of_kind(mine, FolderKind::Inbox);
+    let trash = app.session.mailbox.folder_of_kind(account, FolderKind::Deleted);
+    super::super::set_current(french());
+    app.by_hand = true;
+    for (command, folder, french) in [
+        (
+            "mail.move",
+            local,
+            "Le courrier ne peut pas encore être déplacé entre un compte JMAP et un autre compte ou un dossier local : cette version ne peut pas placer un message sur un serveur JMAP, et la copie du serveur resterait où elle est",
+        ),
+        (
+            "mail.copy",
+            trash,
+            "Le courrier ne peut être copié ni vers ni depuis un compte JMAP : son serveur garde un message dans un seul dossier. Déplacez-le, ou enregistrez-le sous forme de fichier",
+        ),
+    ] {
+        assert!(app.run(command, serde_json::json!({"folder": folder, "ids": [id]})).is_err(), "{command}");
+        assert_eq!(app.status_msg.as_ref().map(|(said, _)| said.as_str()), Some(french), "{command}: the status");
+        assert_eq!(app.refused.take().as_deref(), Some(french), "{command}: the box");
+    }
+    // The engine's refusal of received mail for a Microsoft account reads as it did.
+    assert_eq!(super::refusal(mailcraft_model::STAYS_LOCAL, &app.session.mailbox), t_in(french(), mailcraft_model::STAYS_LOCAL));
+    super::super::set_current(Lang::English);
+}
+
+#[test]
+fn what_undo_and_the_engine_refuse_reads_in_french() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain_status(french(), text, &mb).map(|r| r.text);
+    let cases = [
+        (
+            "'Plans' was deleted for good: that can't be undone here.",
+            "« Plans » a été supprimé définitivement : cette action ne peut pas être annulée ici.",
+        ),
+        ("Sending 2 messages can't be undone.", "L’envoi de 2 messages ne peut pas être annulé."),
+        (
+            "Ada's JMAP server can't be reached: is a plain http:// address to a server that isn't on this computer: use https://",
+            "Le serveur JMAP du compte Ada est injoignable : est en http:// en clair pour un serveur qui n’est pas sur cet ordinateur : utilisez https://",
+        ),
+        (
+            "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there",
+            "Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur",
+        ),
+    ];
+    for (english, french) in cases {
+        assert_eq!(fr(english).as_deref(), Some(french), "{english:?}");
+    }
 }

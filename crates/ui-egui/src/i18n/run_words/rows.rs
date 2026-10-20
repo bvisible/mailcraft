@@ -6,7 +6,7 @@
 //! line in `fr.tsv`, found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
 //! that lacks one fails its test. The tests hold the rows to the files they name (a census of their sentences).
 
-use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Why};
+use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Server, Why};
 use super::{Family, Row};
 
 /// A row: the file that writes the sentence, its family, the sentence, and the family each reason in it is read with.
@@ -23,6 +23,12 @@ const SEND: &str = "crates/jmap/src/send.rs";
 const ENGINE: &str = "crates/engine/src/cmd/jmap_mail.rs";
 const SENDING: &str = "crates/engine/src/cmd/jmap_send.rs";
 const CHANGES: &str = "crates/engine/src/cmd/jmap_up.rs";
+const FETCH: &str = "crates/engine/src/cmd/jmap_fetch.rs";
+const FOLDER: &str = "crates/engine/src/cmd/folder.rs";
+const GRAPH_MAIL: &str = "crates/engine/src/cmd/graph_mail.rs";
+const UNDO: &str = "crates/engine/src/undo.rs";
+const MAILBOX: &str = "crates/model/src/mailbox.rs";
+const SERVER: &str = "crates/model/src/jmap_server.rs";
 const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 
 /// Every row, family by family.
@@ -185,4 +191,44 @@ pub(super) static ROWS: &[Row] = &[
     row(CHANGES, Cause, run_word!("this account may not change them"), &[]),
     row(CHANGES, Cause, run_word!("the mailbox is full"), &[]),
     row(CHANGES, Cause, run_word!("it can't make that change"), &[]),
+    // What Undo couldn't take back (`undo::Said::lines`), shown in the status bar.
+    row(UNDO, Line, run_word!("'{subject}' was deleted for good: that can't be undone here."), &[]),
+    row(UNDO, Line, run_word!("{n} messages were deleted for good: that can't be undone here."), &[]),
+    row(UNDO, Line, run_word!("Sending '{subject}' can't be undone."), &[]),
+    row(UNDO, Line, run_word!("Sending {n} messages can't be undone."), &[]),
+    // A command's refusals for a JMAP account.
+    row(
+        MAILBOX,
+        Line,
+        run_word!(
+            "Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is"
+        ),
+        &[],
+    ),
+    row(
+        MAILBOX,
+        Line,
+        run_word!("Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file"),
+        &[],
+    ),
+    row(FOLDER, Line, run_word!("A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"), &[]),
+    // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
+    // wrong with the address of a JMAP server (`JmapServer::problem`).
+    row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),
+    row(ENGINE, Line, run_word!("no account with id {id}"), &[]),
+    row(ENGINE, Line, run_word!("{account} isn't kept in step with a JMAP server"), &[]),
+    row(ENGINE, Line, run_word!("{account} has no JMAP server"), &[]),
+    row(ENGINE, Line, run_word!("{account}'s JMAP server can't be reached: {why}"), &[("why", Server)]),
+    row(FETCH, Line, run_word!("no message with id {id} in {account}"), &[]),
+    row(GRAPH_MAIL, Line, run_word!("these messages were for another account, not for {account}"), &[]),
+    row(SERVER, Server, run_word!("is empty"), &[]),
+    row(SERVER, Server, run_word!("is longer than 2048 characters"), &[]),
+    row(SERVER, Server, run_word!("has a control character or a space in it"), &[]),
+    row(SERVER, Server, run_word!("has a backslash in it"), &[]),
+    row(SERVER, Server, run_word!("isn't an https:// address"), &[]),
+    row(SERVER, Server, run_word!("names no server"), &[]),
+    row(SERVER, Server, run_word!("carries a user name or a password: the secret is given apart from the address"), &[]),
+    row(SERVER, Server, run_word!("has a port that isn't a number from 1 to 65535"), &[]),
+    row(SERVER, Server, run_word!("is a plain http:// address to a server that isn't on this computer: use https://"), &[]),
+    row(SERVER, Server, run_word!("names a server that isn't letters, digits, dots and dashes, or an IP address"), &[]),
 ];

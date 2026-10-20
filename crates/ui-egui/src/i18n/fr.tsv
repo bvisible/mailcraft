@@ -193,6 +193,33 @@
 	this account may not change them	ce compte n’est pas autorisé à les modifier
 	the mailbox is full	la boîte aux lettres est pleine
 	it can't make that change	il ne peut pas faire cette modification
+# run_words, the engine's refusals of a run, and what is wrong with a JMAP server's address (crates/engine/src/cmd/, crates/model/src/jmap_server.rs).
+	this Send/Receive was for another account, not for {account}	cet Envoyer/Recevoir concernait un autre compte, et non {account}
+	no account with id {id}	aucun compte ayant l’identifiant {id}
+	{account} isn't kept in step with a JMAP server	{account} n’est pas synchronisé avec un serveur JMAP
+	{account} has no JMAP server	{account} n’a pas de serveur JMAP
+	{account}'s JMAP server can't be reached: {why}	Le serveur JMAP du compte {account} est injoignable : {why}
+	is empty	est vide
+	is longer than 2048 characters	est plus longue que 2048 caractères
+	has a control character or a space in it	contient un caractère de contrôle ou un espace
+	has a backslash in it	contient une barre oblique inverse
+	isn't an https:// address	n’est pas en https://
+	names no server	ne désigne aucun serveur
+	carries a user name or a password: the secret is given apart from the address	contient un nom d’utilisateur ou un mot de passe : le secret se saisit séparément de l’adresse
+	has a port that isn't a number from 1 to 65535	a un port qui n’est pas un nombre de 1 à 65535
+	is a plain http:// address to a server that isn't on this computer: use https://	est en http:// en clair pour un serveur qui n’est pas sur cet ordinateur : utilisez https://
+	names a server that isn't letters, digits, dots and dashes, or an IP address	désigne un serveur qui n’est ni composé de lettres, de chiffres, de points et de tirets, ni une adresse IP
+	no message with id {id} in {account}	aucun message d’identifiant {id} dans le compte {account}
+	these messages were for another account, not for {account}	ces messages concernaient un autre compte, et non {account}
+# run_words, what Undo couldn't take back (crates/engine/src/undo.rs).
+	'{subject}' was deleted for good: that can't be undone here.	« {subject} » a été supprimé définitivement : cette action ne peut pas être annulée ici.
+	{n} messages were deleted for good: that can't be undone here.	{n} messages ont été supprimés définitivement : cette action ne peut pas être annulée ici.
+	Sending '{subject}' can't be undone.	L’envoi de « {subject} » ne peut pas être annulé.
+	Sending {n} messages can't be undone.	L’envoi de {n} messages ne peut pas être annulé.
+# run_words, a command's refusals for a JMAP account (crates/model/src/mailbox.rs, crates/engine/src/cmd/folder.rs).
+	Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is	Le courrier ne peut pas encore être déplacé entre un compte JMAP et un autre compte ou un dossier local : cette version ne peut pas placer un message sur un serveur JMAP, et la copie du serveur resterait où elle est
+	Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file	Le courrier ne peut être copié ni vers ni depuis un compte JMAP : son serveur garde un message dans un seul dossier. Déplacez-le, ou enregistrez-le sous forme de fichier
+	A JMAP account's folders are its server's: this version can't make, rename, move or delete them there	Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.
