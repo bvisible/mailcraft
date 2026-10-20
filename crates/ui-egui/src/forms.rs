@@ -1144,12 +1144,12 @@ mod event {
     use crate::theme::{Tokens, c32, semibold};
 
     // //// Neoffice — an online meeting of a calendar whose server holds them of its own service (a JMAP account's).
-    /// Whether the online meetings of `calendar` are its server's own (a JMAP account's calendar, or one whose server names
-    /// a service of its own: [`mailcraft_model::Calendar::online_service`]) rather than Teams.
+    /// Whether the online meetings of `calendar` are its server's own (a JMAP account's calendar) rather than Teams. A
+    /// Microsoft account's stays Teams whatever services its server allows: the engine says of it that it can't make
+    /// Teams meetings, where it can't.
     fn online_own(s: &Session, calendar: Id) -> bool {
         s.mailbox.calendar(calendar).is_some_and(|c| {
-            let jmap = mailcraft_engine::cmd::remote::keeper(&s.mailbox, &c.origin).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Jmap);
-            jmap || c.online_service() == Some(mailcraft_model::OnlineProvider::Other)
+            mailcraft_engine::cmd::remote::keeper(&s.mailbox, &c.origin).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Jmap)
         })
     }
 
@@ -3613,6 +3613,18 @@ mod event {
             // A calendar of this computer's, or a Microsoft account's: Teams, as before.
             let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
             let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": own}), true);
+            assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
+            // (Also one whose server allows only a service it doesn't name: the engine says it can't make Teams meetings.)
+            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
+            let microsoft = added.unwrap()["id"].as_u64().unwrap();
+            let list = mailcraft_model::remote::CalendarsDownload {
+                account: microsoft,
+                email: "bo@example.org".into(),
+                ..list(vec![mailcraft_model::OnlineProvider::Other])
+            };
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
+            let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
+            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": theirs}), true);
             assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
         }
 

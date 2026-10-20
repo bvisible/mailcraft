@@ -1935,6 +1935,25 @@ fn one_day_of_a_series_or_all_of_it_is_changed_on_the_server() {
     assert_eq!(ops(&s, account).iter().map(|op| (op.kind, op.remote.as_str())).collect::<Vec<_>>(), [(EventChangeKind::Delete, "made-0")]);
 }
 
+// //// Neoffice — what an answer says of an online meeting is taken for one occurrence of a JMAP account's series only
+// (`one_occurrence`): one of a Microsoft account's is as it was before.
+#[test]
+fn an_answer_for_one_day_of_a_microsoft_series_leaves_its_online_meeting_as_it_was() {
+    let (mut s, account) = session();
+    apply_events(&mut s, &october(account, standup(&STANDUP_DAYS))).unwrap();
+    let series = event_called(&s, account, "s-1");
+    let changed = json!({"id": series.id, "title": "Stand-up (Teams)", "online": true, "scope": "occurrence", "occurrence": "2026-10-14"});
+    let one = run(&mut s, "calendar.edit", changed)["id"].as_u64().unwrap();
+    let upload = event_upload(&s, account).unwrap();
+    assert!(upload.ops[0].fields.online.is_some(), "{:?}", upload.ops[0]);
+    let mut done = all_done(&upload);
+    done.outcomes[0].remote = "x-14".into();
+    done.outcomes[0].online = Some(false);
+    let applied = apply_event_outcomes(&mut s, &done).unwrap();
+    assert!(s.mailbox.event(one).is_some_and(|e| e.online.is_some() && e.origin.id == "x-14"), "{:?}", s.mailbox.event(one));
+    assert!(applied.messages.is_empty(), "{:?}", applied.messages);
+}
+
 #[test]
 fn one_day_of_a_series_on_this_computer_becomes_an_event_of_its_own() {
     let (mut s, account) = session();

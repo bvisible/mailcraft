@@ -2126,6 +2126,8 @@ fn one_occurrence(
         return;
     };
     let changing = op.kind == EventChangeKind::Update;
+    // //// Neoffice — whether it is a JMAP account's (what its answer says of an online meeting is read: `settle_online`).
+    let jmap_account = mailbox.account(account).is_some_and(|owner| owner.kind == mailcraft_model::AccountKind::Jmap);
     let series = mailbox.events.values().find(|event| event.origin.account == account && event.origin.id == op.series).map(|event| event.id);
     // The event the occurrence is here, for one that was changed.
     let one = mailbox
@@ -2165,8 +2167,11 @@ fn one_occurrence(
             // The occurrence is an event of its own on the server now, under a name of its own.
             event.origin.id = outcome.remote.clone();
             event.origin.change_key = outcome.change_key.clone();
-            // //// Neoffice — and what became of the online meeting it asked for (the whole series' is one: not made, said so).
-            settle_online(event, outcome, applied);
+            // //// Neoffice — and, for a JMAP account's, what became of the online meeting it asked for (the whole series'
+            // is one: not made, said so). A Microsoft account's is as it was.
+            if jmap_account {
+                settle_online(event, outcome, applied);
+            }
             let here = event.clone();
             if !seen_again(&op.fields).is_empty() {
                 expect(
