@@ -3752,6 +3752,21 @@ mod event {
         }
 
         #[test]
+        fn the_two_lines_of_an_online_meeting_still_to_be_made_read_alike_in_french() {
+            let french = crate::i18n::Lang::from_tag("fr").unwrap();
+            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
+            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
+            assert_eq!(
+                crate::i18n::t_in(french, meeting),
+                "Le serveur du compte la crée à l’envoi de la réunion ; le lien pour la rejoindre revient avec elle."
+            );
+            assert_eq!(
+                crate::i18n::t_in(french, appointment),
+                "Le serveur du compte la crée à l’enregistrement du rendez-vous ; le lien pour la rejoindre revient avec elle."
+            );
+        }
+
+        #[test]
         fn a_teams_meeting_turned_into_an_appointment_and_back_is_still_held_online() {
             let (s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
             let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
