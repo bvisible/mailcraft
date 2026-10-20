@@ -50,6 +50,18 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`
   and `fetch` against that in-process server, end to end; the last holds the sending of a message and the filing of a
   draft to both kinds of server the stand-in can be.
+- The sentences a JMAP Send/Receive and the engine write in English, read back in the interface's language where they
+  are drawn (the status bar and its tooltip, Send/Receive Progress and Copy problems, the banner of a message held in
+  the Outbox, a command's refusal, what Undo couldn't take back): `crates/ui-egui/src/i18n/run_words.rs` and
+  `run_words/` (the matcher, the table of the crates' sentences, written with `run_word!` so that every catalog must
+  have them, and its tests, among them a census of the files that write them). The crates and the engine are not
+  changed: what they write stays English in the mailbox file, the log and the control channel. The marked hunks are in
+  `crates/ui-egui/src/i18n.rs` (`t_in`, a `fmt` that fills in one pass, the module), `lib.rs` (`run_word!`, Copy
+  problems, the refusals of `run`), `chrome.rs` (the status), `sync_panel.rs` (the lines of the panel) and
+  `reading.rs` (the banner); `i18n/interface_strings.rs`, the fork's own, reads `run_word!` as a lookup and hands the
+  census the literals of a source file. Their French lines are a block near the top of `fr.tsv`. The guard that makes
+  the real runner fail over the in-process server, in every way it and a stand-in transport can, and reads every line
+  in French is `apps/mailcraft-web/src/run_words_tests.rs`.
 - This file.
 
 ## What cannot carry a comment

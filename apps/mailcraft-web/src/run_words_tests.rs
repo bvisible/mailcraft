@@ -1026,6 +1026,28 @@ fn what_waits_to_go_says_why_in_french() {
     assert!(french.iter().any(|l| l.starts_with("Le serveur ne peut pas classer le courrier pour l’instant")), "{french:#?}");
 }
 
+#[test]
+fn in_the_pseudo_language_nothing_of_ours_is_left_in_english() {
+    // (The pseudo-language changes every letter of our words, and none of a server's: a line read in it is never the
+    // line as it came, and holds what the scenario said is a server's, as it came.)
+    for scenario in scenarios() {
+        let shown = scenario.shown.lines.iter().chain(&scenario.shown.held).chain(std::iter::once(&scenario.shown.status));
+        for english in shown.filter(|text| !text.is_empty()) {
+            let family = if scenario.shown.held.contains(english) { Family::Banner } else { Family::Line };
+            let reading = if english == &scenario.shown.status {
+                explain_status(Lang::Pseudo, english, &scenario.mb)
+            } else {
+                explain(Lang::Pseudo, family, english, &scenario.mb)
+            };
+            let reading = reading.unwrap_or_else(|| panic!("{}: {english:?} isn't read", scenario.name));
+            assert_ne!(&reading.text, english, "{}", scenario.name);
+            for theirs in &scenario.theirs {
+                assert_eq!(reading.text.matches(theirs.as_str()).count(), english.matches(theirs.as_str()).count(), "{}: {english:?}", scenario.name);
+            }
+        }
+    }
+}
+
 /// Prints what each scenario showed, in English and in French. Run it on its own, with the output shown:
 /// `cargo test -p mailcraft-web print_the_scenarios -- --ignored --nocapture`.
 #[test]
