@@ -463,9 +463,15 @@ fn a_lost_answer_to_a_create_heals_at_the_following_read() {
     // A number added to the copy, and a job title to Gus himself, before the next try.
     flow.app.execute("people.edit", json!({"id": copy, "phones": [{"label": "mobile", "value": "+41 79 555 02 02"}]})).unwrap();
     flow.app.execute("people.edit", json!({"id": gus, "title": "Joiner"})).unwrap();
-    // A minute on (as the server asked), it goes again with its mark: the same card, with both, and one Gus here.
+    // A minute on (as the server asked), it goes again with its mark: the same card. The copy's change waits for its
+    // answer (it is made to the card as it is once the server said which card it made), and goes at the next look:
+    // the card has both, and one Gus is left here.
     flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
     assert!(flow.look(MINUTE));
+    let waiting: Vec<(mailcraft_model::book::ContactChangeKind, u64)> =
+        flow.app.session.mailbox.contact_changes.iter().map(|change| (change.kind, change.contact)).collect();
+    assert_eq!(waiting, [(mailcraft_model::book::ContactChangeKind::Update, copy)], "the copy's change, still to go");
+    assert!(flow.look(SECOND));
     let card = flow.card("Gus Hale").unwrap();
     assert_eq!((card.title.as_str(), card.phones.len()), ("Joiner", 1), "nothing made here was lost: {card:?}");
     assert_eq!(flow.server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
@@ -1075,4 +1081,47 @@ fn a_server_that_knows_no_participant_identities_is_read_and_written_as_before()
     flow.look(2.0 * MINUTE + SECOND);
     assert!(flow.event("Dentist").is_some_and(|e| !e.origin.guest));
     assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
+fn what_is_taken_out_of_a_new_contact_before_it_goes_again_is_taken_out_there() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::LoseAnswer)));
+    let made = json!({"first": "Gus", "last": "Hale", "email": "gus@example.org", "phone": "+41 79 555 02 02", "company": "Hale & Sons"});
+    flow.app.execute("people.new", made).unwrap();
+    let gus = flow.contact("Gus").map(|c| c.id).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.card("Gus Hale").is_some_and(|card| card.phones.len() == 1 && card.company == "Hale & Sons"), "the server made him");
+    // His number and his company taken out here before the next try: they go from the card made the first time.
+    flow.app.execute("people.edit", json!({"id": gus, "phones": [], "company": ""})).unwrap();
+    flow.app.session.clock.now = flow.app.session.clock.now.map(|now| now + 120);
+    assert!(flow.look(MINUTE));
+    let card = flow.card("Gus Hale").unwrap();
+    assert!(card.phones.is_empty() && card.company.is_empty(), "{card:?}");
+    assert!(flow.app.session.mailbox.contact_changes.is_empty());
+    let here: Vec<mailcraft_model::Contact> =
+        flow.app.session.mailbox.contacts.values().filter(|c| c.first == "Gus").map(|c| c.as_ref().clone()).collect();
+    assert_eq!(here.len(), 1, "one Gus");
+    assert!(here[0].phones.is_empty() && here[0].company.is_empty(), "and the read after it doesn't bring them back");
+}
+
+#[test]
+fn a_copy_deleted_while_a_new_contact_waited_to_go_again_deletes_nothing_there() {
+    let mut flow = Flow::start();
+    flow.with_books();
+    flow.server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", mailcraft_jmap::standin::Effect::LoseAnswer)));
+    flow.app.execute("people.new", json!({"first": "Gus", "last": "Hale", "email": "gus@example.org"})).unwrap();
+    let gus = flow.contact("Gus").map(|c| c.id).unwrap();
+    assert!(flow.look(SECOND));
+    let made = flow.card("Gus Hale").expect("the server made him");
+    // The read brought his card as a contact of its own, which is deleted here before Gus went again.
+    let copy = flow.app.session.mailbox.contacts.values().find(|c| c.first == "Gus" && c.id != gus).map(|c| c.id).expect("the copy");
+    flow.app.execute("people.delete", json!({"id": copy})).unwrap();
+    // (A minute on the page's clock; on the engine's, Gus is not due again yet.)
+    assert!(flow.look(MINUTE), "the deletion is due, and Gus goes with it");
+    assert!(flow.server.with(|d| d.pim.card_writes.iter().all(|(_, sent)| sent != "destroy")), "his card was never deleted");
+    assert_eq!(flow.card("Gus Hale").map(|card| card.created), Some(made.created), "the card made the first time");
+    assert_eq!(flow.contact("Gus").map(|c| (c.id, mailcraft_jmap::pim::server_card_id(&c.origin.id))), Some((gus, Some("Gus Hale".to_string()))));
+    assert!(flow.app.session.mailbox.contact_changes.is_empty(), "{:?}", flow.app.session.mailbox.contact_changes);
 }

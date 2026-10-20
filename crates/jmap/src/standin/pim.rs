@@ -39,7 +39,8 @@
 //!   by name), or those of one book (`{inAddressBook: id}`, the only filter); no sort, no anchor; from a `position` that
 //!   may be negative, as many as [`Pim::card_limit`] at a time (the limit said back when it set it), with the total when
 //!   asked, and with the state of the cards (`queryState`, which changes when a card is added, changed or removed),
-//!   unless [`Pim::says_state`] is off.
+//!   unless [`Pim::says_state`] is off. With [`Pim::finds_by_uid`] on, `{uid: mark}` lists the card made with that
+//!   mark too.
 //! - **`ContactCard/get`** reads the cards named, or every one while there are no more than a `get` takes
 //!   (`requestTooLarge` otherwise), as such a server writes them: the names as components of a `full` name, the
 //!   addresses with the primary one preferred, the numbers with the primary mobile one's feature and the others as
@@ -50,7 +51,8 @@
 //!   being the one made, and a card a document names not deleted ([`Pim::linked_cards`]).
 //! - **Trouble on demand**, besides the mail part's (`refuse_next`, `drop_token_after`, `lost_answers`, method errors
 //!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
-//!   deleted between a query and a `get` ([`Pim::vanishing`]); a change of an event refused with a SetError
+//!   deleted between a query and a `get` ([`Pim::vanishing`]), and cards a `get` says nothing of
+//!   ([`Pim::unsaid_cards`]); a change of an event refused with a SetError
 //!   ([`Pim::refused_events`]), and of a card ([`Pim::refused_cards`]); a server that says it took a time and keeps
 //!   the old one ([`Pim::keeps_old_times`]).
 
@@ -358,6 +360,11 @@ pub struct Pim {
     made_cards: BTreeMap<String, String>,
     /// The store's clock of its cards: when the last was made or changed.
     cards_clock: Timestamp,
+    /// A query of the cards may look for one by the `uid` it was made with (`{uid: mark}`); off, as for a server
+    /// whose only filter is the book.
+    pub finds_by_uid: bool,
+    /// Cards (their ids) a `get` says nothing of: neither listed nor not found.
+    pub unsaid_cards: BTreeSet<String>,
 }
 
 impl Default for Pim {
@@ -391,6 +398,8 @@ impl Default for Pim {
             card_writes: Vec::new(),
             made_cards: BTreeMap::new(),
             cards_clock: CARDS_CLOCK,
+            finds_by_uid: false,
+            unsaid_cards: BTreeSet::new(),
         }
     }
 }
@@ -918,6 +927,12 @@ impl Pim {
         let book: Option<&str> = match args.get("filter") {
             None | Some(Value::Null) => None,
             Some(Value::Object(filter)) if filter.is_empty() => None,
+            // The card made with a mark, while it is there.
+            Some(Value::Object(filter)) if self.finds_by_uid && filter.len() == 1 && filter.contains_key("uid") => {
+                let uid = filter.get("uid").and_then(Value::as_str).unwrap_or_default();
+                let made = self.made_cards.get(uid).filter(|id| !uid.is_empty() && self.cards.iter().any(|card| &card.id == *id));
+                return Ok(json!({"accountId": ACCOUNT, "canCalculateChanges": false, "position": 0, "ids": made.into_iter().collect::<Vec<_>>()}));
+            }
             Some(Value::Object(filter)) if filter.len() == 1 => match filter.get("inAddressBook").and_then(Value::as_str) {
                 Some(id) if self.books.iter().any(|book| book.id == id) => Some(id),
                 _ => return Err(refuse("unsupportedFilter", "Only inAddressBook is supported.")),
@@ -990,7 +1005,7 @@ impl Pim {
             return Err(refuse("serverFail", "a card can't be read just now"));
         }
         let (mut list, mut not_found) = (Vec::new(), Vec::new());
-        for id in &ids {
+        for id in ids.iter().filter(|id| !self.unsaid_cards.contains(*id)) {
             match self.cards.iter().find(|card| &card.id == id && !self.vanishing.contains(id)) {
                 Some(card) => {
                     let mut served = served_card(card);

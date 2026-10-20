@@ -707,7 +707,13 @@ pub(crate) fn overstep(before: &Mailbox, after: &Mailbox, allow: &[Class]) -> Op
     }
     // //// Neoffice — and a change to a server's address book noted for its server: a contact made or changed there is written for everyone who reads it, one deleted there deleted for them (D8).
     let noted = |kind: ContactChangeKind| after.contact_changes.iter().any(|change| change.kind == kind && !before.contact_changes.contains(change));
-    if !allow.contains(&Class::Send) && (noted(ContactChangeKind::Create) || noted(ContactChangeKind::Update)) {
+    // //// Neoffice — and a contact whose change waits, changed again: what goes is the contact as it is when it goes, so a change that rides on a note already there goes too (D8).
+    let rides = after.contact_changes.iter().filter(|change| change.kind != ContactChangeKind::Delete).any(|change| {
+        let sent = |mailbox: &Mailbox| mailbox.contact(change.contact).map(|c| (crate::cmd::remote_contacts::written::contact_fields(c), c.book));
+        sent(before) != sent(after)
+    });
+    // //// Neoffice — see `rides` above.
+    if !allow.contains(&Class::Send) && (noted(ContactChangeKind::Create) || noted(ContactChangeKind::Update) || rides) {
         return Some(Class::Send);
     }
     if !allow.contains(&Class::Delete) && noted(ContactChangeKind::Delete) {

@@ -196,7 +196,9 @@ pub struct ContactChange {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub token: String,
     /// For a change or a deletion: the contact as the server has it. What is sent is what differs from this, and this
-    /// is what is put back when the server refuses for good.
+    /// is what is put back when the server refuses for good. For a new contact that was sent and may have been made
+    /// there (no answer came that said): what was sent the first time, so that sending it again makes only what was
+    /// changed here since to the card the server has.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base: Option<Box<Contact>>,
     /// How many times in a row the server couldn't be told.
@@ -213,9 +215,13 @@ pub struct ContactChange {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
     /// How many times in a row the server failed with it in a way that asking again is unlikely to get past (it
-    /// failed with this very change, or said nothing of it): given up after a few, with a word.
+    /// failed with this very change, or said nothing of it): given up after a few, with a word. Another answer, or a
+    /// new change of the contact here, starts the count again.
     #[serde(skip_serializing_if = "is_zero")]
     pub stuck: u32,
+    /// For a new contact: how many times in a row the server said it made it without saying what it calls it.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub nameless: u32,
 }
 
 /// A contact's name as a server's card holds it: one whole, sent together ([`ContactFields::name`]).
@@ -310,7 +316,9 @@ pub struct ContactOp {
     pub fields: ContactFields,
     /// For a change: what the parts it names were as the server had them when they were changed here, so that only
     /// what was changed here (an address added, a number taken out) is made to the server's card as it is now, and
-    /// what someone else added there meanwhile stays. `None`: the parts named are written as they are.
+    /// what someone else added there meanwhile stays. For a new contact sent before, which the server may have made
+    /// (its answer didn't come): what was sent then, so that the card the server has gets only what was changed
+    /// since. `None`: the parts named are written as they are; a new contact that was not sent before.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base: Option<ContactFields>,
     /// For a change or a deletion: the server's mark of the contact the change is about (when it was made there,

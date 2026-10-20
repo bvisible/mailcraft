@@ -20,13 +20,16 @@
 //!   since is noted afresh). Gone: a change has nothing to change there, and the contact goes here too; a deletion is
 //!   done. Refused: a change is put back as the server has it, a deleted contact comes back, a new one is kept on this
 //!   computer only, or (in a session that keeps nothing of its own) taken away; each says so, once. Denied: tried once
-//!   more, then refused. Failed: it waits, longer after every failure in a row; one the server keeps failing with (a
-//!   few times in a row, with this very change), or a new contact it keeps making without saying what it calls it, is
-//!   given up with a word, and the contact follows the server again.
+//!   more, then refused. Failed: it waits, longer after every failure in a row; a new contact keeps what it was sent
+//!   with (the server may have made it), so that sending it again makes only what was changed since to that card. One
+//!   the server keeps failing with (a few times in a row, with this very change), or a new contact it keeps making
+//!   without saying what it calls it (counted apart), is given up with a word, and the contact follows the server
+//!   again; another answer, or a new change here, starts the count again.
 //! - **A copy.** A read that came before the answer to a new contact (one lost on the way) brings its card as a contact
-//!   of its own. Once every answer of the job is in, the copy goes when nothing of it waits (what it changed went to
-//!   the card), a deletion of it is not sent (it would delete the contact made here), and a contact made here whose
-//!   card was deleted with its copy is made anew ([`apply_contact_outcomes`]).
+//!   of its own. A note is that contact's own (a change of one of the two is never the other's), and deleting one of
+//!   two contacts with one card deletes nothing there. Once every answer of the job is in, a copy goes when nothing of
+//!   it waits (what it changed went to the card), a deletion of it is not sent (it would delete the contact made
+//!   here), and a contact made here whose card was deleted with its copy is made anew ([`apply_contact_outcomes`]).
 //! - **An answer about a change that is no longer noted** (it was undone while it was on its way): the server did what
 //!   the mailbox no longer says, so the opposite is noted; for a deletion, which can't be undone there, the contact goes
 //!   here too, with a word.
@@ -148,19 +151,27 @@ pub(crate) fn note_contact_created(s: &mut Session, id: Id) -> Result<(), CmdErr
 }
 
 /// A contact was changed here; `before` is what it was. When it is in a server's book, the server is to be told what
-/// differs from its own copy: `before`, or what it was before an earlier change that is still waiting. A change that
-/// takes everything back to that leaves nothing to tell.
+/// differs from its own copy: `before`, or what it was before an earlier change of this contact that is still waiting.
+/// A change that takes everything back to that leaves nothing to tell. Something new to say doesn't wait out what the
+/// last try earned, and starts the count of the server's failures with it again.
 pub(crate) fn note_contact_changed(mailbox: &mut Mailbox, before: &Contact) -> Result<(), CmdError> {
     let Some(now) = mailbox.contact(before.id).cloned() else { return Ok(()) };
     if writable_book_of(mailbox, &now).is_none() {
         return Ok(());
     }
+    let account = now.origin.account;
     // One the server doesn't have yet is sent as it is when it goes.
     if now.origin.id.is_empty() {
+        let making = |change: &&mut ContactChange| change.kind == ContactChangeKind::Create && change.account == account && change.contact == now.id;
+        if let Some(change) = mailbox.contact_changes.iter_mut().find(making) {
+            (change.retry_at, change.stuck) = (0, 0);
+        }
         return Ok(());
     }
-    let account = now.origin.account;
-    let waiting = |change: &ContactChange| change.kind == ContactChangeKind::Update && change.account == account && change.remote == now.origin.id;
+    // (This contact's own: another here may have the same card, a copy a read brought of one made here.)
+    let waiting = |change: &ContactChange| {
+        change.kind == ContactChangeKind::Update && change.account == account && change.remote == now.origin.id && change.contact == now.id
+    };
     match mailbox.contact_changes.iter().position(waiting) {
         Some(at) => {
             let back =
@@ -168,9 +179,7 @@ pub(crate) fn note_contact_changed(mailbox: &mut Mailbox, before: &Contact) -> R
             if back {
                 mailbox.contact_changes.remove(at);
             } else if let Some(change) = mailbox.contact_changes.get_mut(at) {
-                // Something new to say: it doesn't wait out what the last try earned.
-                change.contact = now.id;
-                change.retry_at = 0;
+                (change.retry_at, change.stuck) = (0, 0);
             }
         }
         None if changed_fields(before, &now).is_empty() => {}
@@ -190,7 +199,8 @@ pub(crate) fn note_contact_changed(mailbox: &mut Mailbox, before: &Contact) -> R
 }
 
 /// A contact was deleted here; `before` is what it was. When it is in a server's book, the server is to delete it too;
-/// one the server never had needs no telling (its note to make it goes).
+/// one the server never had needs no telling (its note to make it goes), nor one whose card another contact here has
+/// (a copy a read brought of one made here): the card stays, for that one, and only what waited of this one goes.
 pub(crate) fn note_contact_deleted(mailbox: &mut Mailbox, before: &Contact) -> Result<(), CmdError> {
     if before.book == 0 || keeper(mailbox, &before.origin).is_none() {
         return Ok(());
@@ -201,8 +211,16 @@ pub(crate) fn note_contact_deleted(mailbox: &mut Mailbox, before: &Contact) -> R
         return Ok(());
     }
     let remote = before.origin.id.clone();
+    let twin = mailbox.contacts.values().any(|c| c.id != before.id && c.origin.account == account && c.origin.id == remote);
+    if twin {
+        mailbox.contact_changes.retain(|change| !(change.account == account && change.contact == before.id));
+        log::debug!("contacts: a contact whose card another here has was deleted here only");
+        return Ok(());
+    }
     // A change that was waiting is overtaken; what the server has is still what it was before it.
-    let waiting = |change: &ContactChange| change.kind == ContactChangeKind::Update && change.account == account && change.remote == remote;
+    let waiting = |change: &ContactChange| {
+        change.kind == ContactChangeKind::Update && change.account == account && change.remote == remote && change.contact == before.id
+    };
     let base = match mailbox.contact_changes.iter().position(waiting) {
         Some(at) => mailbox.contact_changes.remove(at).base,
         None => {
@@ -317,13 +335,18 @@ pub fn contacts_waiting(s: &Session, account: Id) -> EventsWaiting {
 }
 
 /// What the server of `account` is to be told now of the contacts made, changed and deleted here in its books: the
-/// changes that are due, oldest first, [`MAX_CONTACT_OPS`] at most.
+/// changes that are due, oldest first, [`MAX_CONTACT_OPS`] at most. A new contact sent before, whose answer didn't come,
+/// goes with anything else that does: a copy of its card a read brought, changed or deleted here, is then written only
+/// once the server said which card it made (a host sends the new ones first).
 pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdError> {
     let owner = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
     let (mailbox, now) = (&s.mailbox, s.now());
     let here = contacts_here(mailbox);
+    let sent_before = |change: &ContactChange| change.kind == ContactChangeKind::Create && change.base.is_some();
+    let others_due = mailbox.contact_changes.iter().any(|change| change.account == account && change.retry_at <= now && !sent_before(change));
+    let due = |change: &&ContactChange| change.account == account && (change.retry_at <= now || (others_due && sent_before(change)));
     let mut ops = Vec::new();
-    for change in mailbox.contact_changes.iter().filter(|change| change.account == account && change.retry_at <= now) {
+    for change in mailbox.contact_changes.iter().filter(due) {
         if ops.len() >= MAX_CONTACT_OPS {
             break;
         }
@@ -333,7 +356,8 @@ pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdErr
         let contact = mailbox.contact(change.contact);
         let base = change.base.as_deref();
         let (fields, book, was) = match (change.kind, contact, base) {
-            (ContactChangeKind::Create, Some(contact), _) => (contact_fields(contact), book_name(mailbox, contact), None),
+            // (What it was sent with before, when it was: the card the server may have made of it has that.)
+            (ContactChangeKind::Create, Some(contact), base) => (contact_fields(contact), book_name(mailbox, contact), base.map(contact_fields)),
             (ContactChangeKind::Update, Some(contact), Some(base)) => {
                 let fields = changed_fields(base, contact);
                 let was = as_named(&contact_fields(base), &fields);
@@ -626,13 +650,14 @@ fn held_back(change: &mut ContactChange, outcome: &ContactOutcome, now: Timestam
     change.failures = change.failures.saturating_add(1);
     change.retry_at = now.saturating_add(wait_after(change.failures, outcome.retry_after));
     change.error.clone_from(&outcome.error);
-    if outcome.lasting {
-        change.stuck = change.stuck.saturating_add(1);
-        if change.stuck >= MAX_STUCK {
-            return Held::Stuck;
-        }
+    // (In a row: another answer starts the count again.)
+    change.nameless = 0;
+    if !outcome.lasting {
+        change.stuck = 0;
+        return Held::Waits;
     }
-    Held::Waits
+    change.stuck = change.stuck.saturating_add(1);
+    if change.stuck >= MAX_STUCK { Held::Stuck } else { Held::Waits }
 }
 
 /// What the answers are taken in with.
@@ -646,9 +671,11 @@ struct Taking<'a> {
     told: bool,
     /// For a new mark: what is mixed into it.
     salt: u64,
-    /// The contacts made here that the server said it made, with what it calls them: a copy of the same card a read
-    /// brought before the answer is settled once every answer was taken in ([`Taking::settle_copies`]).
+    /// The contacts made here that the server said it made, with what it calls them; and what it calls the cards whose
+    /// change it took: a copy of the same card a read brought before an answer is settled once every answer was taken
+    /// in ([`Taking::settle_copies`]).
     made: Vec<(Id, String)>,
+    changed: Vec<String>,
     /// What the server calls the cards it deleted in this answer.
     destroyed: HashSet<String>,
 }
@@ -667,6 +694,7 @@ pub fn apply_contact_outcomes(s: &mut Session, uploaded: &ContactsUploaded) -> R
         told: false,
         salt,
         made: Vec::new(),
+        changed: Vec::new(),
         destroyed: HashSet::new(),
     };
     for outcome in uploaded.outcomes.iter().take(MAX_OUTCOMES) {
@@ -764,9 +792,9 @@ impl Taking<'_> {
                 let Some(at) = at else { return };
                 let nameless = self.mailbox.contact_changes.get_mut(at).map(|change| {
                     change.failures = change.failures.saturating_add(1);
-                    change.stuck = change.stuck.saturating_add(1);
+                    (change.nameless, change.stuck) = (change.nameless.saturating_add(1), 0);
                     change.retry_at = now.saturating_add(wait_after(change.failures, None));
-                    change.stuck
+                    change.nameless
                 });
                 if nameless.is_some_and(|n| n >= MAX_NAMELESS) {
                     self.mailbox.contact_changes.remove(at);
@@ -818,7 +846,19 @@ impl Taking<'_> {
             }
             EventResult::Failed => {
                 let Some(at) = at else { return };
-                let held = self.mailbox.contact_changes.get_mut(at).map(|change| held_back(change, outcome, now));
+                // The server may have made it (no answer came that says it didn't): what was sent the first time is
+                // kept, so that sending it again makes only what was changed here since to the card made of it.
+                let sent = contact.and_then(|id| self.mailbox.contact(id)).map(|here| {
+                    let mut sent = here.clone();
+                    put_fields(&mut sent, &op.fields);
+                    Box::new(sent)
+                });
+                let held = self.mailbox.contact_changes.get_mut(at).map(|change| {
+                    if change.base.is_none() {
+                        change.base = sent;
+                    }
+                    held_back(change, outcome, now)
+                });
                 self.applied.failed += 1;
                 if held == Some(Held::Stuck) {
                     self.applied.failed -= 1;
@@ -862,6 +902,7 @@ impl Taking<'_> {
             EventResult::Done => {
                 self.told = true;
                 self.applied.done += 1;
+                self.changed.push(op.remote.clone());
                 let here = contact.and_then(|id| self.mailbox.contact(id)).cloned();
                 match at {
                     // The server has what was sent now; what was changed here since is still to go (and what is to be
@@ -1023,30 +1064,30 @@ impl Taking<'_> {
     /// Once every answer is in: a contact made here that the server said it made, whose card a read brought before the
     /// answer (one lost on the way) as a contact of its own, is that card.
     ///
-    /// - The card was deleted there in this very answer, as that copy was deleted here: this contact, which the owner
-    ///   kept, is made anew (a new card, under a new mark).
+    /// - The card was deleted there in this very answer, as that copy was deleted here (a host that sent both at once):
+    ///   this contact, which the owner kept, is made anew (a new card, under a new mark).
     /// - A deletion of the copy that still waits is not sent: it would delete this contact's card.
-    /// - The copy goes, once nothing of it waits to be told (what it changed was taken there in this answer, and
-    ///   comes back with the read that follows); what is kept here only (its categories, whether it is a favourite)
-    ///   goes to this contact. A copy whose change still waits stays, with its note, until a read settles them.
+    /// - Of the contacts here with one card ([`Taking::settle_twins`]), the one made here stays, and a copy goes once
+    ///   nothing of it waits to be told (what it changed was taken there, and comes back with the read that follows).
     fn settle_copies(&mut self) {
         let account = self.account;
-        for (id, remote) in std::mem::take(&mut self.made) {
-            if self.mailbox.contact(id).is_none_or(|c| c.origin.id != remote) {
+        let made = std::mem::take(&mut self.made);
+        for (id, remote) in &made {
+            if self.mailbox.contact(*id).is_none_or(|c| c.origin.id != *remote) {
                 continue;
             }
-            if self.destroyed.contains(&remote) {
-                let writable = self.mailbox.contact(id).is_some_and(|contact| writable_book_of(self.mailbox, contact).is_some());
+            if self.destroyed.contains(remote) {
+                let writable = self.mailbox.contact(*id).is_some_and(|contact| writable_book_of(self.mailbox, contact).is_some());
                 if writable && self.mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
-                    let token = new_token(id, self.salt ^ self.now.unsigned_abs());
-                    if let Ok(contact) = self.mailbox.contact_mut(id) {
+                    let token = new_token(*id, self.salt ^ self.now.unsigned_abs());
+                    if let Ok(contact) = self.mailbox.contact_mut(*id) {
                         contact.origin = Origin { account, ..Default::default() };
                     }
-                    self.mailbox.contact_changes.retain(|change| !(change.contact == id && change.remote == remote));
+                    self.mailbox.contact_changes.retain(|change| !(change.contact == *id && change.remote == *remote));
                     self.mailbox.contact_changes.push(ContactChange {
                         account,
                         kind: ContactChangeKind::Create,
-                        contact: id,
+                        contact: *id,
                         token,
                         ..Default::default()
                     });
@@ -1055,28 +1096,40 @@ impl Taking<'_> {
                 continue;
             }
             let copy_deleted =
-                |change: &ContactChange| change.account == account && change.kind == ContactChangeKind::Delete && change.remote == remote;
+                |change: &ContactChange| change.account == account && change.kind == ContactChangeKind::Delete && change.remote == *remote;
             if self.mailbox.contact_changes.iter().any(copy_deleted) {
                 self.mailbox.contact_changes.retain(|change| !copy_deleted(change));
                 log::debug!("contacts: the deletion of a copy of a contact made here was not sent");
             }
-            let copies: Vec<Id> =
-                self.mailbox.contacts.values().filter(|c| c.id != id && c.origin.account == account && c.origin.id == remote).map(|c| c.id).collect();
-            for copy in copies {
-                if self.mailbox.contact_changes.iter().any(|change| change.contact == copy) {
-                    continue;
-                }
-                let kept = self.mailbox.contact(copy).map(|c| (c.categories.clone(), c.favorite));
-                let _ = self.mailbox.remove_contact(copy);
-                if let (Some((categories, favorite)), Ok(contact)) = (kept, self.mailbox.contact_mut(id)) {
-                    contact.favorite |= favorite;
-                    for category in categories {
-                        if !contact.categories.contains(&category) {
-                            contact.categories.push(category);
-                        }
+            self.settle_twins(remote, Some(*id));
+        }
+        for remote in std::mem::take(&mut self.changed) {
+            self.settle_twins(&remote, None);
+        }
+    }
+
+    /// The contacts here that have the card `remote`: one stays (`keep`, the one made here; else the first), and so
+    /// does every one a change of which waits, until it went. What the others kept here only (their categories,
+    /// whether a favourite) goes to the one that stays.
+    fn settle_twins(&mut self, remote: &str, keep: Option<Id>) {
+        let account = self.account;
+        let twins: Vec<Id> = self.mailbox.contacts.values().filter(|c| c.origin.account == account && c.origin.id == remote).map(|c| c.id).collect();
+        let Some(keeper) = keep.filter(|id| twins.contains(id)).or_else(|| twins.first().copied()) else { return };
+        for twin in twins.into_iter().filter(|twin| *twin != keeper) {
+            if self.mailbox.contact_changes.iter().any(|change| change.contact == twin) {
+                continue;
+            }
+            let kept = self.mailbox.contact(twin).map(|c| (c.categories.clone(), c.favorite));
+            let _ = self.mailbox.remove_contact(twin);
+            if let (Some((categories, favorite)), Ok(contact)) = (kept, self.mailbox.contact_mut(keeper)) {
+                contact.favorite |= favorite;
+                for category in categories {
+                    if !contact.categories.contains(&category) {
+                        contact.categories.push(category);
                     }
                 }
             }
+            log::debug!("contacts: a copy of a card another contact here has went, nothing of it waiting");
         }
     }
 }

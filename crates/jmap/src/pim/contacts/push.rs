@@ -4,32 +4,42 @@
 //! What was made, changed and deleted here of the contacts of an account's address books, written to its server: the
 //! part of a job before its contacts are read ([`push`]), so that what is read shows it.
 //!
-//! 1. **The server's card first.** Every card a change or a deletion is about is read (a `ContactCard/get` of their
-//!    names). One the server no longer has is gone; one it made after the card the change is about (`created` is
-//!    another than the change's mark: a server gave a new contact the name of one that was deleted) is another contact,
-//!    and is never written to: the change is gone too.
-//! 2. **The calls.** Each change is a create of a card whole, in its book and with the mark it was made with as its
-//!    `uid` (sent again, it makes no second card); an update of the whole properties it names, made to the server's
-//!    card as it is now ([`merged_json`]: the addresses and numbers added or taken out here, and those someone else
-//!    added there meanwhile kept), a name always with its parts and its full form, never a part of a property (a
-//!    server that keeps only the basics refuses `emails/e1`); or a destroy. As many in a call as the session takes in
-//!    a `set`, [`MAX_PER_CALL`] at most; a card two changes are about takes the first, and the second waits for the
-//!    next job. A call the server refuses for its size, before running it, is sent again in halves.
-//! 3. **Outcomes**, one for each change tried, in the order they came: done (a new card with what the server calls it,
+//! 1. **A new card sent before** whose answer didn't come may be on the server already: the card made of it is looked
+//!    for by the mark it was made with (`ContactCard/query` by `uid`, RFC 9610 §3.3), and found, it is a change of
+//!    that card, of what was changed here since it was sent ([`merged_json`]). A server that can't look for it there
+//!    (it filters on no `uid`) has it sent as a new card again: its `uid` makes no second one where the server knows
+//!    it.
+//! 2. **The server's card first.** Every card a change or a deletion is about is read (a `ContactCard/get` of their
+//!    names). One the server no longer has is gone; one it made at another time than the card the change is about
+//!    (`created`, compared as instants: a server gave a new contact the name of one that was deleted) is another
+//!    contact, and is never written to: the change is gone too.
+//! 3. **The calls.** Each change is a create of a card whole, every property it says named (an empty one as empty), in
+//!    its book and with the mark it was made with as its `uid`; an update of the whole properties it names, made to
+//!    the server's card as it is now ([`merged_json`]: the addresses and numbers added or taken out here, and those
+//!    someone else has there kept as they are), a name always with its parts and its full form, never a part of a
+//!    property (a server that keeps only the basics refuses `emails/e1`); or a destroy. As many in a call as the
+//!    session takes in a `set`, [`MAX_PER_CALL`] at most; a card two changes are about takes the first, and the second
+//!    waits for the next job. A call the server refuses for its size, before running it (a 4xx that says so, or a
+//!    413), is sent again in halves. In a job that sends a new card again, the new cards go first, and a change of the
+//!    card one of them is answered with waits for the next job (a copy of it a read brought, changed or deleted here,
+//!    is made to the card as it is then, and never deletes it).
+//! 4. **Outcomes**, one for each change tried, in the order they came: done (a new card with what the server calls it,
 //!    as the engine names a card: [`card_key`](super::super::card_key)), gone, refused with the server's words (its
 //!    markup taken out, [`MAX_WORDS`] characters at most), or failed with when to try again (a busy server, one that
 //!    failed, a connection that broke, an answer too large to take, a change not reached). A failure that asking again
 //!    is unlikely to get past (the server failed with this very card, said nothing of it, or a change alone is too
 //!    large for it) says so ([`ContactOutcome::lasting`]). A card the server says is there already (`alreadyExists`
-//!    with its id) is that card, and what was sent of it is written to it. A server that refuses the credentials, or is
-//!    busy, ends the job: what was not tried waits as it was, with no outcome.
+//!    with its id) is that card: it is read, and what was changed here since it was sent before is made to it. A
+//!    server that refuses the credentials, or is busy, ends the job: what was not tried waits as it was, with no
+//!    outcome.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mailcraft_model::book::{ContactChangeKind, ContactOp, ContactOutcome, ContactsUploaded, MAX_CONTACT_OPS};
+use mailcraft_model::book::{ContactChangeKind, ContactFields, ContactOp, ContactOutcome, ContactsUploaded, MAX_CONTACT_OPS};
 use mailcraft_model::remote::EventResult;
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
+use mailcraft_time::parse_iso;
 use serde_json::{Map, Value, json};
 
 use super::super::jscontact::{card_json, merged_json};
@@ -45,6 +55,8 @@ pub const MAX_WORDS: usize = 200;
 const RETRY: u32 = 60;
 /// Most times in a job that a call is halved for being too large.
 const MAX_SPLITS: usize = 16;
+/// Most cards sent again that are looked for in one request.
+const MAX_FINDS: usize = 16;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CONTACTS];
 /// What the server's card is read for before a change or a deletion: what a change writes, and when the card was
@@ -52,6 +64,8 @@ const USING: [&str; 2] = [CORE, CONTACTS];
 const CARD_PROPERTIES: [&str; 8] = ["id", "name", "emails", "phones", "organizations", "titles", "created", "updated"];
 /// Why a change is not written: the card is another contact's now.
 const ANOTHER: &str = "the server has another contact under its name now";
+/// Why a card the server's `get` said nothing of is not written to now: asking again is unlikely to get past it.
+const UNSAID: &str = "the server's answer did not have it";
 
 /// Write what `request.contact_changes` says to the account's address books (in `account` of the session) and put what
 /// came of each change into `out.contacts_uploaded`. Whether the job may go on to read: not after a stop, a refusal of
@@ -82,10 +96,12 @@ pub(in crate::pim) async fn push<H: Http>(
         outcomes: vec![None; ops.len()],
         ops,
         splits: 0,
+        found: HashMap::new(),
         copies: HashMap::new(),
         gone: HashSet::new(),
         unread: HashMap::new(),
         again: Vec::new(),
+        made: HashSet::new(),
     };
     let stop = writer.run().await.err();
     let token_refused = matches!(stop, Some(Stop::Auth));
@@ -122,12 +138,18 @@ struct Writer<'a, H> {
     outcomes: Vec<Option<ContactOutcome>>,
     /// How many times a call was halved.
     splits: usize,
-    /// The server's cards read, by their names; the names it said it doesn't have; and why others couldn't be read.
+    /// New cards sent before that the server has, by their places: what it calls them.
+    found: HashMap<usize, String>,
+    /// The server's cards read, by their names; the names it said it doesn't have; and why others couldn't be read
+    /// (and whether asking again is unlikely to get past it).
     copies: HashMap<String, Value>,
     gone: HashSet<String>,
-    unread: HashMap<String, String>,
-    /// New cards the server says it had already (`alreadyExists`): what was sent of them is written to the card it has.
-    again: Vec<Ready>,
+    unread: HashMap<String, (String, bool)>,
+    /// New cards the server says it had already (`alreadyExists`), by their places, with what it calls them: read,
+    /// and what was changed here since they were sent written to them.
+    again: Vec<(usize, String)>,
+    /// What the server calls the cards it answered the new ones with, in this job.
+    made: HashSet<String>,
 }
 
 /// What the server calls the card a change is about, for a change or a deletion: `None` for a key that names none.
@@ -135,11 +157,48 @@ fn target(op: &ContactOp) -> Option<String> {
     server_card_id(&op.remote).filter(|id| card_id(id))
 }
 
+/// The instant a card's `created` names, to the second: a date and a time with its offset (`Z` for UTC); `None` for
+/// one without an offset, or for no time.
+fn instant(text: &str) -> Option<i64> {
+    let text = text.trim();
+    if !text.contains(['T', 't']) {
+        return None;
+    }
+    let (time, offset) = parse_iso(text)?;
+    Some(time.civil_seconds().saturating_sub(i64::from(offset?).saturating_mul(60)))
+}
+
 /// Whether the server's `card` is another contact than the one `op` is about: it was made at another time than the one
-/// the change knows (a server gave a new contact the name of one that was deleted). Unknown either side: not another.
+/// the change knows (a server gave a new contact the name of one that was deleted), compared as instants (the same
+/// time may be written another way: in another zone, with a fraction of a second), else as they are written. Unknown
+/// either side: not another.
 fn another(op: &ContactOp, card: &Value) -> bool {
     let made = card.get("created").and_then(Value::as_str).map(str::trim).unwrap_or_default();
-    !op.mark.is_empty() && !made.is_empty() && made != op.mark
+    if op.mark.is_empty() || made.is_empty() {
+        return false;
+    }
+    match (instant(&op.mark), instant(made)) {
+        (Some(known), Some(now)) => known != now,
+        _ => made != op.mark,
+    }
+}
+
+/// A new card sent again, as a change of the card the server made of it: of what it was sent with before (`op.base`),
+/// only what was changed here since, made to the card as it is now; all of it, when what it was sent with is not known.
+fn resent(op: &ContactOp) -> ContactOp {
+    let mut again = op.clone();
+    again.kind = ContactChangeKind::Update;
+    if let Some(sent) = &op.base {
+        let fields = &op.fields;
+        again.fields = ContactFields {
+            name: fields.name.clone().filter(|now| sent.name.as_ref() != Some(now)),
+            company: fields.company.clone().filter(|now| sent.company.as_ref() != Some(now)),
+            title: fields.title.clone().filter(|now| sent.title.as_ref() != Some(now)),
+            emails: fields.emails.clone().filter(|now| sent.emails.as_ref() != Some(now)),
+            phones: fields.phones.clone().filter(|now| sent.phones.as_ref() != Some(now)),
+        };
+    }
+    again
 }
 
 impl<H: Http> Writer<'_, H> {
@@ -184,9 +243,8 @@ impl<H: Http> Writer<'_, H> {
     }
 
     async fn run(&mut self) -> Result<(), Stop> {
-        // What can't be written as it is said; and a card a change before it in this job writes to already.
-        let mut ready: Vec<usize> = Vec::new();
-        let mut written: HashSet<String> = HashSet::new();
+        // What can't be written as it is said.
+        let mut tried: Vec<usize> = Vec::new();
         for at in 0..self.ops.len() {
             let Some(op) = self.ops.get(at) else { continue };
             let refusal = match op.kind {
@@ -196,35 +254,124 @@ impl<H: Http> Writer<'_, H> {
                 ContactChangeKind::Update if op.fields.is_empty() => Some("the change says nothing that could be sent"),
                 _ => None,
             };
-            if let Some(why) = refusal {
-                self.answer(at, EventResult::Refused, String::new(), why, None, false);
-                continue;
+            match refusal {
+                Some(why) => self.answer(at, EventResult::Refused, String::new(), why, None, false),
+                None => tried.push(at),
             }
-            // (The second waits for the next job, with no outcome: it is made to what the first leaves.)
-            if let Some(card) = target(op).filter(|_| op.kind != ContactChangeKind::Create)
-                && !written.insert(card)
+        }
+        // New cards sent before: the cards the server made of them, where it can say.
+        self.find_made(&tried).await?;
+        // One change of a card in a job, a new card sent again that was found first; a second waits for the next job,
+        // with no outcome (it is made to what the first leaves).
+        let mut claimed: HashSet<String> = HashSet::new();
+        let mut found: Vec<(usize, String)> = self.found.iter().map(|(at, card)| (*at, card.clone())).collect();
+        found.sort_unstable();
+        for (at, card) in found {
+            if !claimed.insert(card) {
+                self.found.remove(&at);
+            }
+        }
+        let (mut creates, mut others): (Vec<usize>, Vec<usize>) = (Vec::new(), Vec::new());
+        for at in tried {
+            let Some(op) = self.ops.get(at) else { continue };
+            if self.found.contains_key(&at) {
+                others.push(at);
+            } else if op.kind == ContactChangeKind::Create {
+                creates.push(at);
+            } else if let Some(card) = target(op)
+                && claimed.insert(card)
             {
-                continue;
+                others.push(at);
             }
-            ready.push(at);
         }
-        // The server's cards the changes and deletions are about.
-        let wanted: Vec<String> =
-            ready.iter().filter_map(|at| self.ops.get(*at)).filter(|op| op.kind != ContactChangeKind::Create).filter_map(target).collect();
+        // The server's cards the changes are about, as they are now.
+        let wanted: Vec<String> = others.iter().filter_map(|at| self.card_at(*at)).collect();
         self.read_cards(wanted).await?;
-        // Each change made ready, or answered.
-        let mut prepared: Vec<Ready> = Vec::new();
-        for at in ready {
-            if let Some(one) = self.prepare(at) {
-                prepared.push(one);
+        let resending = creates.iter().any(|at| self.ops.get(*at).is_some_and(|op| op.base.is_some()));
+        let creates: Vec<Ready> = creates.into_iter().filter_map(|at| self.prepare(at)).collect();
+        let others: Vec<Ready> = others.into_iter().filter_map(|at| self.prepare(at)).collect();
+        let size = MAX_PER_CALL.min(self.client.max_objects_in_set().max(1));
+        if resending {
+            // A new card sent again may be one the server made the first time, that another change here is about (a
+            // copy of it that a read brought): the new cards first; a change of the card one of them is answered with
+            // waits for the next job, when it is made to the card as it is then.
+            self.write(creates, size).await?;
+            self.write_again(size).await?;
+            let others: Vec<Ready> = others.into_iter().filter(|one| !self.made.contains(&one.target)).collect();
+            self.write(others, size).await?;
+        } else {
+            let mut all: Vec<Ready> = creates.into_iter().chain(others).collect();
+            all.sort_by_key(|one| one.at);
+            self.write(all, size).await?;
+            self.write_again(size).await?;
+        }
+        Ok(())
+    }
+
+    /// The card the change at `at` writes to: the one found of a new card sent again, else the one it names.
+    fn card_at(&self, at: usize) -> Option<String> {
+        match self.found.get(&at) {
+            Some(card) => Some(card.clone()),
+            None => self.ops.get(at).filter(|op| op.kind != ContactChangeKind::Create).and_then(target),
+        }
+    }
+
+    /// The new cards at `tried` that were sent before (whose answer didn't come) looked for by the mark they were made
+    /// with ([`Writer::found`]). A server that can't look for them so, or whose answer can't be read, finds none: they
+    /// are sent as new cards again.
+    async fn find_made(&mut self, tried: &[usize]) -> Result<(), Stop> {
+        let sent_before: Vec<usize> = tried
+            .iter()
+            .copied()
+            .filter(|at| self.ops.get(*at).is_some_and(|op| op.kind == ContactChangeKind::Create && op.base.is_some()))
+            .collect();
+        let per = self.client.max_calls_in_request().clamp(1, MAX_FINDS);
+        for chunk in sent_before.chunks(per) {
+            self.check()?;
+            let calls: Vec<(&str, Value)> = chunk
+                .iter()
+                .filter_map(|at| self.ops.get(*at))
+                .map(|op| ("ContactCard/query", json!({"accountId": self.account, "filter": {"uid": op.token}, "limit": 2})))
+                .collect();
+            let mut answers = match self.client.call_within(&USING, calls, IDS_BYTES).await {
+                Ok(answers) => answers,
+                Err(error) => {
+                    let words = said(&self.secrets, &error);
+                    return match Stop::of(error, &self.secrets) {
+                        Stop::Failed(_) => Ok(()),
+                        Stop::Busy(seconds, why) => {
+                            for at in chunk {
+                                self.failed(*at, &words, Some(seconds), false);
+                            }
+                            Err(Stop::Busy(seconds, why))
+                        }
+                        stop => Err(stop),
+                    };
+                }
+            };
+            let mut can = true;
+            for (n, at) in chunk.iter().enumerate() {
+                match answers.take(n) {
+                    Ok(answer) => {
+                        let ids: Vec<&str> =
+                            answer.get("ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).take(3).collect();
+                        // (Two cards made with one mark: neither is taken for it.)
+                        if let [one] = ids.as_slice()
+                            && card_id(one)
+                        {
+                            self.found.insert(*at, (*one).to_string());
+                        }
+                    }
+                    // (A server that filters on no `uid`: not asked again in this job.)
+                    Err(_) => can = false,
+                }
+            }
+            if !can {
+                break;
             }
         }
-        let size = MAX_PER_CALL.min(self.client.max_objects_in_set().max(1));
-        self.write(prepared, size).await?;
-        // New cards the server had already: what was sent of them, written to the card it has.
-        let again = std::mem::take(&mut self.again);
-        if !again.is_empty() {
-            self.write(again, size).await?;
+        if !self.found.is_empty() {
+            log::debug!("jmap pim: {} new card(s) sent before found on the server by their mark", self.found.len());
         }
         Ok(())
     }
@@ -247,7 +394,7 @@ impl<H: Http> Writer<'_, H> {
                     let affected = self.waiting_on(chunk);
                     let words = said(&self.secrets, &error);
                     self.request_failed(error, &affected)?;
-                    self.unread.extend(chunk.iter().map(|id| (id.clone(), words.clone())));
+                    self.unread.extend(chunk.iter().map(|id| (id.clone(), (words.clone(), false))));
                     continue;
                 }
             };
@@ -266,13 +413,14 @@ impl<H: Http> Writer<'_, H> {
                         if gone.contains(id.as_str()) && !self.copies.contains_key(id) {
                             self.gone.insert(id.clone());
                         } else if !self.copies.contains_key(id) {
-                            self.unread.insert(id.clone(), "the server's answer did not have it".into());
+                            // (Neither there nor not found: a server that says so of a card says so again.)
+                            self.unread.insert(id.clone(), (UNSAID.into(), true));
                         }
                     }
                 }
                 Err(error) => {
                     let words = said(&self.secrets, &error);
-                    self.unread.extend(chunk.iter().map(|id| (id.clone(), words.clone())));
+                    self.unread.extend(chunk.iter().map(|id| (id.clone(), (words.clone(), false))));
                 }
             }
         }
@@ -283,39 +431,85 @@ impl<H: Http> Writer<'_, H> {
     fn waiting_on(&self, ids: &[String]) -> Vec<usize> {
         (0..self.ops.len())
             .filter(|at| self.outcomes.get(*at).is_some_and(Option::is_none))
-            .filter(|at| self.ops.get(*at).and_then(target).is_some_and(|card| ids.contains(&card)))
+            .filter(|at| self.card_at(*at).is_some_and(|card| ids.contains(&card)))
             .collect()
     }
 
     /// The change at `at` made ready for a call, or answered (`None`).
     fn prepare(&mut self, at: usize) -> Option<Ready> {
         let op = self.ops.get(at)?.clone();
-        if op.kind == ContactChangeKind::Create {
+        let found = self.found.get(&at).cloned();
+        if op.kind == ContactChangeKind::Create && found.is_none() {
             return Some(Ready { at, target: String::new(), body: Some(card_json(&op)) });
         }
-        let card = target(&op)?;
+        let card = self.card_at(at)?;
         if self.gone.contains(&card) {
+            if found.is_some() {
+                // Made the first time and deleted there since: made anew.
+                return Some(Ready { at, target: String::new(), body: Some(card_json(&op)) });
+            }
             self.answer(at, EventResult::Gone, String::new(), "the server no longer has the contact", None, false);
             return None;
         }
+        self.made_to(at, &op, card)
+    }
+
+    /// The change at `at` (`op`) made to the server's card `card` as it was read; answered (`None`) when it can't be,
+    /// or when nothing is left to write to it.
+    fn made_to(&mut self, at: usize, op: &ContactOp, card: String) -> Option<Ready> {
         let Some(copy) = self.copies.get(&card).cloned() else {
             // Not read now: it waits, and goes once the server's card is known.
-            let why = self.unread.get(&card).cloned().unwrap_or_else(|| "the server's card couldn't be read".into());
+            let (why, lasting) = self.unread.get(&card).cloned().unwrap_or_else(|| ("the server's card couldn't be read".into(), false));
             if self.outcomes.get(at).is_some_and(Option::is_none) {
-                self.failed(at, &why, None, false);
+                self.failed(at, &why, None, lasting);
             }
             return None;
         };
-        if another(&op, &copy) {
+        if another(op, &copy) {
             log::info!("jmap pim: a change of a contact was not written: {ANOTHER}");
             self.answer(at, EventResult::Gone, String::new(), ANOTHER, None, false);
             return None;
         }
         let body = match op.kind {
             ContactChangeKind::Delete => None,
-            _ => Some(merged_json(&op, &copy)),
+            ContactChangeKind::Update => Some(merged_json(op, &copy)),
+            ContactChangeKind::Create => {
+                let again = resent(op);
+                if again.fields.is_empty() {
+                    // The card has what was sent, and nothing was changed here since.
+                    self.answer(at, EventResult::Done, card_key(&card), "", None, false);
+                    return None;
+                }
+                Some(merged_json(&again, &copy))
+            }
         };
         Some(Ready { at, target: card, body })
+    }
+
+    /// New cards the server said it had already: each read, and what was changed here since it was sent made to it.
+    async fn write_again(&mut self, size: usize) -> Result<(), Stop> {
+        let again = std::mem::take(&mut self.again);
+        if again.is_empty() {
+            return Ok(());
+        }
+        for (_, card) in &again {
+            self.copies.remove(card);
+            self.unread.remove(card);
+            self.gone.remove(card);
+        }
+        self.read_cards(again.iter().map(|(_, card)| card.clone()).collect()).await?;
+        let mut ready: Vec<Ready> = Vec::new();
+        for (at, card) in again {
+            let Some(op) = self.ops.get(at).cloned() else { continue };
+            if self.gone.contains(&card) {
+                self.failed(at, "the card the server said it had is gone", None, false);
+                continue;
+            }
+            if let Some(one) = self.made_to(at, &op, card) {
+                ready.push(one);
+            }
+        }
+        self.write(ready, size).await
     }
 
     /// The changes `ready` in calls of at most `size`, none writing twice to one card; a call the server refuses for
@@ -345,6 +539,9 @@ impl<H: Http> Writer<'_, H> {
     /// One `ContactCard/set` of `call`, and its outcomes. `true` when the server refused it for its size before running
     /// it, and nothing of it was answered.
     async fn set(&mut self, call: &[Ready]) -> Result<bool, Stop> {
+        if call.is_empty() {
+            return Ok(false);
+        }
         let (mut create, mut update, mut destroy) = (Map::new(), Map::new(), Vec::new());
         for one in call {
             match (self.ops.get(one.at).map(|op| op.kind), &one.body) {
@@ -372,8 +569,10 @@ impl<H: Http> Writer<'_, H> {
         let (status, answers) = self.client.call_with_status(&USING, vec![("ContactCard/set", args)], IDS_BYTES).await;
         let mut answers = match answers {
             Ok(answers) => answers,
-            // Refused as a whole for its size, before it ran (a 4xx): smaller calls may go.
+            // Refused as a whole for its size, before it ran (a 4xx that says so; a 413, which a proxy before the server
+            // says with no more): smaller calls may go.
             Err(Error::TooLarge(_)) if status.is_some_and(|status| (400..500).contains(&status)) => return Ok(true),
+            Err(_) if status == Some(413) => return Ok(true),
             // Anything else (an answer too large to take, a connection lost): whether it went is not known. It goes
             // again: a new card with its mark, which makes no second one; a change made again to the card read anew;
             // a deletion of a card that is gone, which is done.
@@ -413,9 +612,13 @@ impl<H: Http> Writer<'_, H> {
                 (Some(done), _) => {
                     let remote = if made {
                         // (One the server named outside what it may call a card: the engine finds it at the next read.)
-                        done.get("id").and_then(Value::as_str).filter(|id| card_id(id)).map(card_key).unwrap_or_default()
+                        let id = done.get("id").and_then(Value::as_str).filter(|id| card_id(id));
+                        if let Some(id) = id {
+                            self.made.insert(id.to_string());
+                        }
+                        id.map(card_key).unwrap_or_default()
                     } else if op.kind == ContactChangeKind::Create {
-                        // A new card the server had already, now written as it was sent.
+                        // A new card the server had already, now with what was changed here since.
                         card_key(&one.target)
                     } else {
                         op.remote.clone()
@@ -435,18 +638,22 @@ impl<H: Http> Writer<'_, H> {
         let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
         let words = error.get("description").and_then(Value::as_str).map(strip_tags).unwrap_or_default();
         let words = if words.trim().is_empty() { kind.to_string() } else { self.secrets.hide(&words) };
-        // A card that is there already (a server that says so of one made before): that one, with what was sent
-        // written to it.
-        if op.kind == ContactChangeKind::Create
-            && one.target.is_empty()
-            && kind == "alreadyExists"
-            && let Some(existing) = error.get("existingId").and_then(Value::as_str).filter(|id| card_id(id))
-        {
-            let mut again = op.clone();
-            again.kind = ContactChangeKind::Update;
-            again.base = None;
-            self.again.push(Ready { at, target: existing.to_string(), body: Some(card_json(&again)) });
-            return;
+        if op.kind == ContactChangeKind::Create {
+            // A card that is there already (a server that says so of one made before): that one, read, with what was
+            // changed here since it was sent made to it.
+            if one.target.is_empty()
+                && kind == "alreadyExists"
+                && let Some(existing) = error.get("existingId").and_then(Value::as_str).filter(|id| card_id(id))
+            {
+                self.made.insert(existing.to_string());
+                self.again.push((at, existing.to_string()));
+                return;
+            }
+            // The card made the first time, gone since it was found: made anew the next time.
+            if !one.target.is_empty() && kind == "notFound" {
+                self.failed(at, "the server no longer has the card it made of it", None, false);
+                return;
+            }
         }
         let retry = error.get("retryAfter").and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
         match kind {

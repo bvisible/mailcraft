@@ -182,12 +182,14 @@ fn the_company_and_the_title_are_the_first_organization_and_title() {
     assert_eq!(sent["titles"], json!({}), "an empty title is none");
     let grace = card(&server, "Grace Okafor").unwrap();
     assert_eq!((grace.company.as_str(), grace.title.as_str()), ("Okafor & Partners", ""));
-    // A new card with neither says nothing of them.
+    // A new card with neither says so, as it says of everything it names (sent again, it is the card made the first
+    // time, and what was taken out here since goes there too); what it doesn't name, it says nothing of.
     let made = card_json(&create(
         "t",
         ContactFields { name: name("Hal", ""), company: Some(String::new()), title: Some(String::new()), ..Default::default() },
     ));
-    assert!(made.get("organizations").is_none() && made.get("titles").is_none() && made.get("emails").is_none(), "{made}");
+    assert_eq!((&made["organizations"], &made["titles"]), (&json!({}), &json!({})), "{made}");
+    assert!(made.get("emails").is_none() && made.get("phones").is_none(), "{made}");
     let titled = card_json(&create("t", ContactFields { title: Some("Joiner".into()), ..Default::default() }));
     assert_eq!(titled["titles"], json!({"t1": {"@type": "Title", "name": "Joiner", "kind": "title"}}));
 }
@@ -534,4 +536,134 @@ fn a_refused_token_ends_the_job_and_what_was_not_answered_waits() {
     let client = block_on(Client::connect(server.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
     let stopped = block_on(sync_pim(&client, &request, &AtomicBool::new(true)));
     assert!(stopped.stopped && outcomes(&stopped).is_empty());
+}
+
+/// A new card sent before whose answer didn't come, made with the mark `token`: `fields` now, and what it was sent
+/// with then (`sent`).
+fn resend(token: &str, fields: ContactFields, sent: ContactFields) -> ContactOp {
+    ContactOp { base: Some(sent), ..create(token, fields) }
+}
+
+#[test]
+fn a_new_card_sent_again_takes_out_there_what_was_taken_out_here() {
+    let server = server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer)));
+    run(&server, &request(vec![create("t-gus", gus())]));
+    assert!(card(&server, "Gus Hale").is_some_and(|c| c.phones.len() == 2 && !c.company.is_empty()), "the server made it");
+    // His numbers and his company taken out here before the next try. Sent again (the server finds no card by its
+    // mark: it filters on none), it names them empty, and the card made the first time has none.
+    let cleared = ContactFields { phones: Some(Vec::new()), company: Some(String::new()), ..gus() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", cleared, gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+    let made = card(&server, "Gus Hale").unwrap();
+    assert!(made.phones.is_empty() && made.company.is_empty(), "{made:?}");
+    let (_, sent) = writes(&server).pop().unwrap();
+    assert_eq!((&sent["phones"], &sent["organizations"]), (&json!({}), &json!({})));
+    assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+}
+
+#[test]
+fn a_new_card_sent_again_that_the_server_finds_by_its_mark_gets_only_what_was_changed_here_since() {
+    let server = server();
+    server.with(|d| {
+        d.pim.finds_by_uid = true;
+        d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer));
+    });
+    run(&server, &request(vec![create("t-gus", gus())]));
+    // Meanwhile the desk gives him another address and a new job title; here, a number is added.
+    server.with(|d| {
+        if let Some(card) = d.pim.cards.iter_mut().find(|card| card.id == "Gus Hale") {
+            card.emails.push("gus@joinery.example.org".into());
+            card.title = "Master joiner".into();
+        }
+    });
+    let mut more = gus();
+    more.phones.get_or_insert_with(Vec::new).push(Labeled::new("", "+41 44 555 02 09"));
+    let before = writes(&server).len();
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", more, gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+    let made = card(&server, "Gus Hale").unwrap();
+    assert_eq!(made.emails, ["gus@example.org", "gus.hale@example.org", "gus@joinery.example.org"], "the desk's address stays");
+    assert_eq!((made.title.as_str(), made.phones.len()), ("Master joiner", 3), "and its title; the number went");
+    let sent: Vec<(String, Value)> = writes(&server).into_iter().skip(before).collect();
+    let keys: Vec<&str> = sent.iter().flat_map(|(_, what)| what.as_object().into_iter().flat_map(|map| map.keys().map(String::as_str))).collect();
+    assert_eq!((sent.len(), sent[0].0.as_str(), keys), (1, "Gus Hale", vec!["phones"]), "a change of that card, of what changed here alone");
+    assert_eq!(server.with(|d| d.pim.cards.iter().filter(|card| card.first == "Gus").count()), 1);
+    // Nothing changed here since it was sent: nothing is written, and it is that card.
+    let before = writes(&server).len();
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", gus(), gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+    assert_eq!(writes(&server).len(), before);
+    // A server that says the card is there already: it is read first, and gets only what was changed here since too.
+    let server = self::server();
+    run(&server, &request(vec![create("t-gus", gus())]));
+    server.with(|d| {
+        if let Some(card) = d.pim.cards.iter_mut().find(|card| card.id == "Gus Hale") {
+            card.emails.push("gus@joinery.example.org".into());
+        }
+        d.pim.refused_cards.insert("t-gus".into(), "alreadyExists");
+    });
+    let titled = ContactFields { title: Some("Master joiner".into()), ..gus() };
+    let done = outcomes(&run(&server, &request(vec![resend("t-gus", titled, gus())])));
+    assert_eq!((done[0].result, server_card_id(&done[0].remote).as_deref()), (EventResult::Done, Some("Gus Hale")));
+    let made = card(&server, "Gus Hale").unwrap();
+    assert_eq!((made.emails.len(), made.title.as_str()), (3, "Master joiner"), "{made:?}");
+    let (_, sent) = writes(&server).pop().unwrap();
+    assert_eq!(sent.as_object().map(|map| map.keys().cloned().collect::<Vec<String>>()), Some(vec!["titles".to_string()]));
+}
+
+#[test]
+fn in_a_job_that_sends_a_new_card_again_a_change_of_the_card_it_is_answered_with_waits() {
+    for finds in [false, true] {
+        let server = server();
+        server.with(|d| {
+            d.pim.finds_by_uid = finds;
+            d.faults.push_back(Fault::on("ContactCard/set", Effect::LoseAnswer));
+        });
+        run(&server, &request(vec![create("t-gus", gus())]));
+        // A read brought his card as a contact of its own, which was deleted here (and another such copy changed): in
+        // the job that sends Gus again, neither goes before the server said which card it made of him.
+        let title = ContactFields { title: Some("Joiner".into()), ..Default::default() };
+        let ops = vec![resend("t-gus", gus(), gus()), destroy("Gus Hale"), update("Gus Hale", title)];
+        let done = outcomes(&run(&server, &request(ops)));
+        let answered: Vec<(EventResult, ContactChangeKind)> = done.iter().map(|o| (o.result, o.op.kind)).collect();
+        assert_eq!(answered, [(EventResult::Done, ContactChangeKind::Create)], "found by its mark: {finds}");
+        assert_eq!(server_card_id(&done[0].remote).as_deref(), Some("Gus Hale"));
+        assert!(card(&server, "Gus Hale").is_some(), "never deleted: {finds}");
+        assert!(writes(&server).iter().all(|(_, sent)| sent != "destroy"));
+    }
+}
+
+#[test]
+fn a_card_the_server_says_nothing_of_is_not_asked_for_for_ever_and_a_413_halves_the_call() {
+    // A `get` that neither lists the card nor says it is not there: asking again is unlikely to get past it.
+    let server = server();
+    server.with(|d| d.pim.unsaid_cards.insert("Bob Lindqvist".into()));
+    let title = |t: &str| ContactFields { title: Some(t.into()), ..Default::default() };
+    let done = outcomes(&run(&server, &request(vec![update("Bob Lindqvist", title("Joiner"))])));
+    assert_eq!((done[0].result, done[0].lasting, done[0].error.as_str()), (EventResult::Failed, true, "the server's answer did not have it"));
+    // A proxy before the server that refuses a request for its size says so with a 413, and no more: it went nowhere,
+    // and goes again in halves.
+    let server = self::server();
+    server.with(|d| d.faults.push_back(Fault::on("ContactCard/set", Effect::RefuseWith(413))));
+    let done = outcomes(&run(&server, &request(vec![update("Grace Okafor", title("Lead")), update("Bob Lindqvist", title("Joiner"))])));
+    assert!(done.iter().all(|o| o.result == EventResult::Done), "{done:?}");
+    assert_eq!(writes(&server).len(), 2);
+}
+
+#[test]
+fn a_cards_time_of_making_is_compared_as_an_instant() {
+    let op = |mark: &str| ContactOp { mark: mark.into(), ..update("Grace Okafor", ContactFields::default()) };
+    for (mark, now, another) in [
+        ("2026-10-14T16:00:00Z", "2026-10-14T18:00:00+02:00", false),
+        ("2026-10-14T16:00:00Z", "2026-10-14T16:00:00.250Z", false),
+        ("2026-10-14T16:00:00Z", "2026-10-14T16:00:01Z", true),
+        ("2026-10-14T16:00:00Z", "2026-10-14T16:00:00+01:00", true),
+        ("v1", "v1", false),
+        ("v1", "v2", true),
+        ("", "2026-10-14T16:00:01Z", false),
+        ("2026-10-14T16:00:00Z", "", false),
+    ] {
+        assert_eq!(super::another(&op(mark), &json!({"id": "Grace Okafor", "created": now})), another, "{mark} / {now}");
+    }
 }

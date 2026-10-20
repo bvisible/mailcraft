@@ -44,7 +44,8 @@ use crate::valid_id;
 /// components.
 const MAX_ENTRIES: usize = 100;
 /// The longest text taken of a name, an address or a number, in characters (what the model keeps, and a little more
-/// for the tidying to cut), and of the time a card was made.
+/// for the tidying to cut); and the longest time a card was made that is kept (a longer one is not kept at all: a
+/// part of it would tell nothing apart).
 const MAX_LINE: usize = 1_000;
 const MAX_MARK: usize = 64;
 
@@ -171,17 +172,8 @@ pub fn card_of(value: &Value, writable: &HashSet<String>) -> Result<RemoteContac
     let full = bounded(name.map(|name| text(name, "full")).unwrap_or_default().trim(), MAX_LINE);
     let parts = [first.as_str(), last.as_str()].into_iter().filter(|p| !p.is_empty()).collect::<Vec<&str>>().join(" ");
     let display_name = if full == parts { String::new() } else { full };
-    let emails: Vec<Labeled> = entries(value, "emails", MAX_ENTRIES)
-        .into_iter()
-        .map(|entry| Labeled::new(context(entry), bounded(entry.get("address").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE)))
-        .collect();
-    let phones: Vec<Labeled> = entries(value, "phones", MAX_ENTRIES)
-        .into_iter()
-        .map(|entry| {
-            let label = if says(entry, "features", "mobile") { "mobile" } else { context(entry) };
-            Labeled::new(label, bounded(entry.get("number").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE))
-        })
-        .collect();
+    let emails: Vec<Labeled> = entries(value, "emails", MAX_ENTRIES).into_iter().map(email_of).collect();
+    let phones: Vec<Labeled> = entries(value, "phones", MAX_ENTRIES).into_iter().map(phone_of).collect();
     // The books it is in, in the order of their ids; the first the account may write is its own.
     let books: Vec<&str> = value
         .get("addressBookIds")
@@ -198,7 +190,9 @@ pub fn card_of(value: &Value, writable: &HashSet<String>) -> Result<RemoteContac
     let uid = text(value, "uid").trim();
     let uid = if uid == id || !valid_id(uid) { String::new() } else { uid.to_string() };
     // When the server made it: what tells the contact behind a name from another a server gave the same name later.
-    let created = bounded(text(value, "created").trim(), MAX_MARK);
+    // Whole, or nothing.
+    let created = text(value, "created").trim();
+    let created = if created.chars().count() <= MAX_MARK { created.to_string() } else { String::new() };
     let contact = RemoteContact {
         id: card_key(id),
         change_key: created,
@@ -216,6 +210,17 @@ pub fn card_of(value: &Value, writable: &HashSet<String>) -> Result<RemoteContac
     let shown = [&contact.display_name, &contact.first, &contact.last, &contact.company].iter().any(|name| !name.is_empty())
         || contact.emails.iter().any(|email| email.value.contains('@'));
     if shown { Ok(contact) } else { Err(Missing::Person) }
+}
+
+/// An address of a card as the engine takes it: labelled by its contexts.
+fn email_of(entry: &Map<String, Value>) -> Labeled {
+    Labeled::new(context(entry), bounded(entry.get("address").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE))
+}
+
+/// A number of a card as the engine takes it: a mobile one says so, another is labelled by its contexts.
+fn phone_of(entry: &Map<String, Value>) -> Labeled {
+    let label = if says(entry, "features", "mobile") { "mobile" } else { context(entry) };
+    Labeled::new(label, bounded(entry.get("number").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE))
 }
 
 /// The contexts of an address or a number, by its label: `work`, or `private` for `home`.
@@ -239,40 +244,70 @@ fn name_json(name: &ContactName) -> Value {
     json!({"@type": "Name", "full": full, "components": parts})
 }
 
-/// The addresses as a card holds them, the first preferred.
-fn emails_json(emails: &[Labeled]) -> Value {
+/// An address as a card holds it.
+fn email_entry(email: &Labeled) -> Map<String, Value> {
+    let mut entry = Map::new();
+    entry.insert("@type".into(), json!("EmailAddress"));
+    entry.insert("address".into(), json!(email.value.trim()));
+    entry.insert("contexts".into(), contexts(&email.label));
+    entry
+}
+
+/// A number as a card holds it: what it is (a mobile, a fax, a pager; else a voice one), by its label.
+fn phone_entry(phone: &Labeled) -> Map<String, Value> {
+    let features = match phone.label.trim().to_ascii_lowercase().as_str() {
+        "mobile" | "cell" => json!({"mobile": true}),
+        "fax" => json!({"fax": true}),
+        "pager" => json!({"pager": true}),
+        _ => json!({"voice": true}),
+    };
+    let mut entry = Map::new();
+    entry.insert("@type".into(), json!("Phone"));
+    entry.insert("number".into(), json!(phone.value.trim()));
+    entry.insert("features".into(), features);
+    entry.insert("contexts".into(), contexts(&phone.label));
+    entry
+}
+
+/// The addresses as a card holds them, each as it is (`kept`) or made from what it is here; the first preferred, and
+/// only it.
+fn emails_map(emails: Vec<(Labeled, Option<Map<String, Value>>)>) -> Value {
     let entries: Map<String, Value> = emails
-        .iter()
-        .filter(|email| email.value.contains('@'))
+        .into_iter()
+        .filter(|(email, _)| email.value.contains('@'))
         .enumerate()
-        .map(|(n, email)| {
-            let mut entry = json!({"@type": "EmailAddress", "address": email.value.trim(), "contexts": contexts(&email.label)});
+        .map(|(n, (email, kept))| {
+            let mut entry = kept.unwrap_or_else(|| email_entry(&email));
             if n == 0 {
-                entry["pref"] = json!(1);
+                entry.insert("pref".into(), json!(1));
+            } else if entry.get("pref").and_then(Value::as_u64) == Some(1) {
+                entry.remove("pref");
             }
-            (format!("e{}", n + 1), entry)
+            (format!("e{}", n + 1), Value::Object(entry))
         })
         .collect();
     Value::Object(entries)
 }
 
-/// The numbers as a card holds them: what each is (a mobile, a fax, a pager; else a voice one), by its label.
-fn phones_json(phones: &[Labeled]) -> Value {
+/// The numbers as a card holds them, each as it is (`kept`) or made from what it is here.
+fn phones_map(phones: Vec<(Labeled, Option<Map<String, Value>>)>) -> Value {
     let entries: Map<String, Value> = phones
-        .iter()
-        .filter(|phone| !phone.value.trim().is_empty())
+        .into_iter()
+        .filter(|(phone, _)| !phone.value.trim().is_empty())
         .enumerate()
-        .map(|(n, phone)| {
-            let features = match phone.label.trim().to_ascii_lowercase().as_str() {
-                "mobile" | "cell" => json!({"mobile": true}),
-                "fax" => json!({"fax": true}),
-                "pager" => json!({"pager": true}),
-                _ => json!({"voice": true}),
-            };
-            (format!("p{}", n + 1), json!({"@type": "Phone", "number": phone.value.trim(), "features": features, "contexts": contexts(&phone.label)}))
-        })
+        .map(|(n, (phone, kept))| (format!("p{}", n + 1), Value::Object(kept.unwrap_or_else(|| phone_entry(&phone)))))
         .collect();
     Value::Object(entries)
+}
+
+/// The addresses as a card holds them, the first preferred.
+fn emails_json(emails: &[Labeled]) -> Value {
+    emails_map(emails.iter().map(|email| (email.clone(), None)).collect())
+}
+
+/// The numbers as a card holds them.
+fn phones_json(phones: &[Labeled]) -> Value {
+    phones_map(phones.iter().map(|phone| (phone.clone(), None)).collect())
 }
 
 /// One named entry of `key` (`o1` of `organizations`, `t1` of `titles`), or none for an empty name.
@@ -288,10 +323,14 @@ fn one_named(letter: &str, name: &str, kind: &str) -> Value {
     json!({ format!("{letter}1"): entry })
 }
 
-/// What a change of a contact (`op`) writes, as JSContact (RFC 9553): for a new card the card whole (what it says
-/// nothing of left out: a card with no name is named by its server from its address), in its book (`op.book`, when it
-/// names one) and with the mark it was made with as its `uid`; for a change, the whole properties it names, never a
-/// part of one. Nothing for a deletion.
+/// What a change of a contact (`op`) writes, as JSContact (RFC 9553): for a new card the card whole, in its book
+/// (`op.book`, when it names one) and with the mark it was made with as its `uid`; for a change, the whole properties
+/// it names, never a part of one. Nothing for a deletion.
+///
+/// A new card names every property it says, an empty one as empty (`emails: {}`): sent again after its answer was
+/// lost, it is the card made the first time, and what was taken out here since (a number, the company) goes there
+/// too. Only a name with nothing in it is left out: a card with no name is named by its server, from its company or
+/// its address.
 pub fn card_json(op: &ContactOp) -> Value {
     let fields = &op.fields;
     let create = op.kind == ContactChangeKind::Create;
@@ -304,32 +343,32 @@ pub fn card_json(op: &ContactOp) -> Value {
             card.insert("addressBookIds".into(), json!({ op.book.clone(): true }));
         }
     }
-    let said = |text: &Option<String>| text.as_deref().is_some_and(|text| !create || !text.trim().is_empty());
     if let Some(name) = &fields.name
         && (!create || [&name.first, &name.last, &name.display].iter().any(|part| !part.trim().is_empty()))
     {
         card.insert("name".into(), name_json(name));
     }
-    if let Some(emails) = fields.emails.as_ref().filter(|emails| !create || !emails.is_empty()) {
+    if let Some(emails) = &fields.emails {
         card.insert("emails".into(), emails_json(emails));
     }
-    if let Some(phones) = fields.phones.as_ref().filter(|phones| !create || !phones.is_empty()) {
+    if let Some(phones) = &fields.phones {
         card.insert("phones".into(), phones_json(phones));
     }
-    if said(&fields.company) {
-        card.insert("organizations".into(), one_named("o", fields.company.as_deref().unwrap_or_default(), "Organization"));
+    if let Some(company) = &fields.company {
+        card.insert("organizations".into(), one_named("o", company, "Organization"));
     }
-    if said(&fields.title) {
-        card.insert("titles".into(), one_named("t", fields.title.as_deref().unwrap_or_default(), "Title"));
+    if let Some(title) = &fields.title {
+        card.insert("titles".into(), one_named("t", title, "Title"));
     }
     Value::Object(card)
 }
 
 /// What a change of a contact (`op`) writes to the server's card as it is now (`card`, as read just before): only what
 /// was changed here (`op.base` is what the parts it names were before), so that what someone else changed there
-/// meanwhile stays. A name, a company and a job title are the ones set here; of the addresses and the numbers, those
-/// taken out here go, those added here are added, and those the server has besides stay, the one made the first here
-/// first. Without `op.base`, the parts named are written as they are ([`card_json`]).
+/// meanwhile stays. A name, a company and a job title are the ones set here. Of the addresses and the numbers, those
+/// taken out here go, those added here are added, a label changed here is that, and the others stay as the server
+/// has them (a fax, a pager, their contexts and labels); the first is the one made the first here, when the order was
+/// changed here. Without `op.base`, the parts named are written as they are ([`card_json`]).
 pub fn merged_json(op: &ContactOp, card: &Value) -> Value {
     let Some(base) = &op.base else { return card_json(op) };
     let fields = &op.fields;
@@ -338,50 +377,53 @@ pub fn merged_json(op: &ContactOp, card: &Value) -> Value {
         _ => Map::new(),
     };
     if let Some(now) = &fields.emails {
-        let server: Vec<Labeled> = entries(card, "emails", MAX_ENTRIES)
-            .into_iter()
-            .map(|entry| Labeled::new(context(entry), bounded(entry.get("address").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE)))
-            .collect();
+        let server = entries(card, "emails", MAX_ENTRIES).into_iter().map(|entry| (email_of(entry), entry.clone())).collect();
         let same = |a: &str, b: &str| a.trim().eq_ignore_ascii_case(b.trim());
-        out.insert("emails".into(), emails_json(&merged(&server, base.emails.as_deref().unwrap_or_default(), now, &same)));
+        out.insert("emails".into(), emails_map(merged(server, base.emails.as_deref().unwrap_or_default(), now, &same)));
     }
     if let Some(now) = &fields.phones {
-        let server: Vec<Labeled> = entries(card, "phones", MAX_ENTRIES)
-            .into_iter()
-            .map(|entry| {
-                let label = if says(entry, "features", "mobile") { "mobile" } else { context(entry) };
-                Labeled::new(label, bounded(entry.get("number").and_then(Value::as_str).unwrap_or_default().trim(), MAX_LINE))
-            })
-            .collect();
+        let server = entries(card, "phones", MAX_ENTRIES).into_iter().map(|entry| (phone_of(entry), entry.clone())).collect();
         let same = |a: &str, b: &str| a.trim() == b.trim();
-        out.insert("phones".into(), phones_json(&merged(&server, base.phones.as_deref().unwrap_or_default(), now, &same)));
+        out.insert("phones".into(), phones_map(merged(server, base.phones.as_deref().unwrap_or_default(), now, &same)));
     }
     Value::Object(out)
 }
 
-/// A list of the server's (`server`) with what was done to it here (`was` → `now`) made to it: what was taken out here
-/// goes, what was added here is added, a label changed here is that, and the first here first when it was made so.
-fn merged(server: &[Labeled], was: &[Labeled], now: &[Labeled], same: &dyn Fn(&str, &str) -> bool) -> Vec<Labeled> {
+/// A list of the server's (`server`: each entry as the engine takes it, and as the server has it) with what was done
+/// to it here (`was` → `now`) made to it: what was taken out here goes, what was added here is added, a label changed
+/// here is that (the entry made anew), and the others stay as they are. The first here goes first only when the order
+/// was changed here: the first of `was` that is still there is another (taking out the first is no new order).
+fn merged(
+    server: Vec<(Labeled, Map<String, Value>)>,
+    was: &[Labeled],
+    now: &[Labeled],
+    same: &dyn Fn(&str, &str) -> bool,
+) -> Vec<(Labeled, Option<Map<String, Value>>)> {
     let had = |list: &[Labeled], value: &str| list.iter().find(|entry| same(&entry.value, value)).cloned();
-    let mut out: Vec<Labeled> = server.iter().filter(|entry| had(was, &entry.value).is_none() || had(now, &entry.value).is_some()).cloned().collect();
+    let mut out: Vec<(Labeled, Option<Map<String, Value>>)> = server
+        .into_iter()
+        .filter(|(entry, _)| had(was, &entry.value).is_none() || had(now, &entry.value).is_some())
+        .map(|(entry, kept)| (entry, Some(kept)))
+        .collect();
     for entry in now {
         let before = had(was, &entry.value);
-        match out.iter_mut().find(|kept| same(&kept.value, &entry.value)) {
+        match out.iter_mut().find(|(kept, _)| same(&kept.value, &entry.value)) {
             // A label changed here.
-            Some(kept) => {
-                if before.as_ref().is_none_or(|before| before.label != entry.label) {
+            Some((kept, json)) => {
+                if before.as_ref().is_none_or(|before| before.label != entry.label) && kept.label != entry.label {
                     kept.label.clone_from(&entry.label);
+                    *json = None;
                 }
             }
             // Added here (one that was there before and isn't any more was taken out elsewhere: it stays out).
-            None if before.is_none() => out.push(entry.clone()),
+            None if before.is_none() => out.push((entry.clone(), None)),
             None => {}
         }
     }
-    // The first here, when it was made the first here.
+    let first_kept = was.iter().find(|entry| had(now, &entry.value).is_some());
     if let Some(first) = now.first()
-        && was.first().is_none_or(|before| !same(&before.value, &first.value))
-        && let Some(at) = out.iter().position(|entry| same(&entry.value, &first.value))
+        && first_kept.is_some_and(|before| !same(&before.value, &first.value))
+        && let Some(at) = out.iter().position(|(entry, _)| same(&entry.value, &first.value))
     {
         let entry = out.remove(at);
         out.insert(0, entry);

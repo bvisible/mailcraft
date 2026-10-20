@@ -170,6 +170,61 @@ fn the_server_names_of_cards_and_their_keys() {
     assert!(server_card_id("").is_none() && server_card_id("~!!").is_none());
 }
 
+#[test]
+fn the_time_a_card_was_made_is_kept_whole_or_not_at_all() {
+    let mut value = card();
+    value["created"] = json!("2026-10-14T18:00:00.123456789+02:00");
+    assert_eq!(read(&value).change_key, "2026-10-14T18:00:00.123456789+02:00");
+    value["created"] = json!(format!("2026-10-14T16:00:00.{}Z", "1".repeat(60)));
+    assert_eq!(read(&value).change_key, "", "a part of it would tell nothing apart");
+}
+
+/// A change of Grace's addresses and numbers from `was` to `now`.
+fn change(was: (Vec<Labeled>, Vec<Labeled>), now: (Vec<Labeled>, Vec<Labeled>)) -> ContactOp {
+    ContactOp {
+        kind: ContactChangeKind::Update,
+        remote: card_key("Grace Okafor"),
+        fields: mailcraft_model::book::ContactFields { emails: Some(now.0), phones: Some(now.1), ..Default::default() },
+        base: Some(mailcraft_model::book::ContactFields { emails: Some(was.0), phones: Some(was.1), ..Default::default() }),
+        ..Default::default()
+    }
+}
+
+fn addresses(written: &Value) -> Vec<(String, Option<u64>)> {
+    let mut entries: Vec<(&String, &Value)> = written["emails"].as_object().unwrap().iter().collect();
+    entries.sort_by_key(|(key, _)| key.trim_start_matches('e').parse::<u32>().unwrap());
+    entries.into_iter().map(|(_, entry)| (entry["address"].as_str().unwrap().to_string(), entry["pref"].as_u64())).collect()
+}
+
+#[test]
+fn what_the_server_has_besides_stays_as_it_is_and_its_first_address_too_unless_the_order_was_changed_here() {
+    let l = |label: &str, value: &str| Labeled::new(label, value);
+    let (a, b, c) = ("a@example.org", "b@example.org", "c@example.org");
+    // Grace had A, B and C; the desk made C her primary address; here, A was taken out (B is first now, by no choice).
+    let mut server = card();
+    server["emails"] = json!({
+        "e1": {"@type": "EmailAddress", "address": c, "pref": 1},
+        "e2": {"@type": "EmailAddress", "address": a},
+        "e3": {"@type": "EmailAddress", "address": b},
+    });
+    // And she has a fax at work the desk keeps a label for, which nothing here touched; here, a mobile number is added.
+    let fax = json!({"@type": "Phone", "number": "+41 44 555 09 09", "features": {"fax": true}, "contexts": {"work": true}, "label": "front desk"});
+    server["phones"] = json!({"p1": fax.clone(), "p2": {"@type": "Phone", "number": "+41 44 555 01 01", "features": {"voice": true}}});
+    let phones_was = read(&server).phones;
+    let mut phones_now = phones_was.clone();
+    phones_now.push(l("mobile", "+41 79 555 01 09"));
+    let op = change((vec![l("", a), l("", b), l("", c)], phones_was), (vec![l("", b), l("", c)], phones_now));
+    let written = merged_json(&op, &server);
+    assert_eq!(addresses(&written), [(c.to_string(), Some(1)), (b.to_string(), None)], "the desk's primary stays first");
+    assert_eq!(written["phones"]["p1"], fax, "the fax as the server has it");
+    assert_eq!(written["phones"]["p3"]["features"], json!({"mobile": true}));
+    // B made the first here: it goes first, and only it is preferred.
+    let mut server = card();
+    server["emails"] = json!({"e1": {"@type": "EmailAddress", "address": a, "pref": 1}, "e2": {"@type": "EmailAddress", "address": b}});
+    let op = change((vec![l("", a), l("", b)], Vec::new()), (vec![l("", b), l("", a)], Vec::new()));
+    assert_eq!(addresses(&merged_json(&op, &server)), [(b.to_string(), Some(1)), (a.to_string(), None)]);
+}
+
 proptest! {
     #[test]
     fn hostile_cards_never_panic(text in any::<String>(), n in any::<i64>(), flag in any::<bool>()) {

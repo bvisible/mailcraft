@@ -261,8 +261,9 @@ fn a_graph_contact_is_refused_with_its_present_words() {
 fn two_contacts_with_one_origin_leave_one() {
     let (mut s, account) = session();
     the_two_books(&mut s, account);
+    let bob = kept(&s, account, "c-bob").id;
     // A second copy of Bob, as a create whose answer was lost would make one, under the server's own name for him.
-    let twin = s.mailbox.add_contact(Contact {
+    s.mailbox.add_contact(Contact {
         first: "Bob".into(),
         emails: vec![Labeled::new("", "bob@example.org")],
         origin: Origin { account, id: "c-bob".into(), ..Default::default() },
@@ -272,7 +273,7 @@ fn two_contacts_with_one_origin_leave_one() {
     apply_contacts(&mut s, &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace")]))
         .unwrap();
     let bobs: Vec<Id> = s.mailbox.contacts.values().filter(|c| c.origin.id == "c-bob").map(|c| c.id).collect();
-    assert_eq!(bobs, [twin], "the next whole download leaves one, the later");
+    assert_eq!(bobs, [bob], "the next whole download leaves one, the first (a contact made here, not the copy a read brought)");
     assert_eq!(book_of(&s, account, "c-bob"), "team");
 }
 

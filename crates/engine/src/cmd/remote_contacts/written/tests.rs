@@ -819,3 +819,148 @@ fn an_agents_redo_that_would_write_to_a_servers_book_needs_the_owners_yes() {
     run(&mut s, "edit.undo", json!({}));
     assert!(s.mailbox.contact_changes.is_empty());
 }
+
+#[test]
+fn an_agents_change_never_rides_on_a_change_that_waits() {
+    let (mut s, _) = session();
+    let bob = kept(&s, "c-bob");
+    // The owner changes Bob twice while the server can't be reached: one note waits, as it was after the first.
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Joiner"}));
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Master joiner"}));
+    let waiting = s.mailbox.contact_changes.clone();
+    // An agent without the yes to write for everyone takes the second back: the note is the same, and what would go
+    // to the server is not.
+    s.agent = Some(Vec::new());
+    let why = refused(&mut s, "edit.undo", json!({}));
+    assert!(why.contains("agent"), "{why}");
+    assert_eq!(s.mailbox.contact(bob.id).map(|c| c.title.as_str()), Some("Master joiner"));
+    assert_eq!(s.mailbox.contact_changes, waiting);
+    // Whatever way it would change him, or a contact made here that waits to be made there, it is the owner's to allow.
+    s.agent = None;
+    let gus = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    let before = s.mailbox.clone();
+    let mut after = before.clone();
+    after.contact_mut(bob.id).unwrap().emails.push(Labeled::new("", "robert@example.org"));
+    assert_eq!(agent::overstep(&before, &after, &[]), Some(Class::Send));
+    let mut after = before.clone();
+    after.contact_mut(gus).unwrap().phones.push(Labeled::new("mobile", "+41 79 555 02 02"));
+    assert_eq!(agent::overstep(&before, &after, &[]), Some(Class::Send));
+    assert_eq!(agent::overstep(&before, &after, &[Class::Send]), None);
+    // What is kept here only (a favourite) writes nothing there.
+    let mut after = before.clone();
+    after.contact_mut(bob.id).unwrap().favorite = true;
+    assert_eq!(agent::overstep(&before, &after, &[]), None);
+}
+
+#[test]
+fn two_contacts_with_one_card_each_keep_their_own_changes() {
+    let (mut s, account) = session();
+    let (gus, copy) = lost_then_copied(&mut s, account);
+    // A title given to the copy; Gus made again, and the server says he is the card the copy has (the copy's change
+    // waits).
+    run(&mut s, "people.edit", json!({"id": copy, "title": "Joiner"}));
+    let second = upload(&mut s, account);
+    answer_only(&mut s, account, &second, "create", EventResult::Done, "c-gus");
+    // A number given to Gus: a change of his own, beside the copy's.
+    run(&mut s, "people.edit", json!({"id": gus, "phones": [{"label": "mobile", "value": "+41 79 555 02 02"}]}));
+    let waiting = |s: &Session| s.mailbox.contact_changes.iter().map(|c| (c.kind, c.contact)).collect::<Vec<_>>();
+    assert_eq!(waiting(&s), [(ContactChangeKind::Update, copy), (ContactChangeKind::Update, gus)]);
+    // A whole read leaves both, and both changes.
+    let gus_card = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
+    apply_contacts(
+        &mut s,
+        &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus_card]),
+    )
+    .unwrap();
+    assert!(s.mailbox.contact(gus).is_some() && s.mailbox.contact(copy).is_some());
+    assert_eq!(waiting(&s).len(), 2);
+    // Deleting the copy deletes nothing there (Gus has the card), and takes only its own change along.
+    run(&mut s, "people.delete", json!({"id": copy}));
+    assert_eq!(waiting(&s), [(ContactChangeKind::Update, gus)]);
+    assert_eq!(s.mailbox.contact(gus).map(|c| c.phones.len()), Some(1));
+    // Once his change went, a whole read leaves him, as the server has him.
+    answer(&mut s, account, EventResult::Done, "", "");
+    assert!(s.mailbox.contact_changes.is_empty());
+}
+
+#[test]
+fn the_servers_failures_with_a_change_count_in_a_row() {
+    let (mut s, account) = session();
+    let bob = kept(&s, "c-bob");
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Joiner"}));
+    let failed = |s: &mut Session, lasting: bool| {
+        let upload = upload(s, account);
+        let outcomes: Vec<ContactOutcome> = upload["ops"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|op| ContactOutcome {
+                op: serde_json::from_value(op.clone()).unwrap(),
+                result: EventResult::Failed,
+                error: "serverFail".into(),
+                lasting,
+                ..Default::default()
+            })
+            .collect();
+        let uploaded = ContactsUploaded { account, email: ME.into(), outcomes, token_refused: false };
+        run(s, "sync.applyContactChanges", json!({"result": uploaded}));
+        s.clock.now = s.clock.now.map(|now| now + 1_000);
+    };
+    // Twice with this very change, then a connection that broke, then twice again: never three in a row.
+    for lasting in [true, true, false, true, true] {
+        failed(&mut s, lasting);
+    }
+    assert_eq!(kinds(&s), [ContactChangeKind::Update]);
+    // A new change here starts the count again too.
+    run(&mut s, "people.edit", json!({"id": bob.id, "title": "Master joiner"}));
+    failed(&mut s, true);
+    assert_eq!(kinds(&s), [ContactChangeKind::Update]);
+    failed(&mut s, true);
+    failed(&mut s, true);
+    assert!(s.mailbox.contact_changes.is_empty(), "three in a row");
+    // A new contact the server failed with once, then said it made without saying what it calls it: each is once.
+    let id = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    failed(&mut s, true);
+    answer(&mut s, account, EventResult::Done, "", "");
+    assert_eq!(kinds(&s), [ContactChangeKind::Create]);
+    assert!(s.mailbox.contact(id).is_some());
+}
+
+#[test]
+fn a_new_contact_whose_answer_didnt_come_goes_again_with_what_it_was_first_sent_with() {
+    let (mut s, account) = session();
+    let made = json!({"first": "Gus", "email": "gus@example.org", "phones": [{"label": "mobile", "value": "+41 79 555 02 02"}]});
+    let id = run(&mut s, "people.new", made)["id"].as_u64().unwrap();
+    assert!(ops(&mut s, account)[0].get("base").is_none(), "not sent before");
+    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    // His number taken out here: something new to say, at once.
+    run(&mut s, "people.edit", json!({"id": id, "phones": []}));
+    let fields = |op: &Value, key: &str| serde_json::from_value::<ContactFields>(op[key].clone()).unwrap();
+    let op = ops(&mut s, account).remove(0);
+    assert_eq!(fields(&op, "base").phones.map(|phones| phones.len()), Some(1), "what it was sent with the first time");
+    assert_eq!(fields(&op, "fields").phones, Some(Vec::new()));
+    // A second try lost too keeps what the first was sent with (the card, if made, was made with that).
+    answer(&mut s, account, EventResult::Failed, "", "the connection was lost");
+    s.clock.now = s.clock.now.map(|now| now + 1_000);
+    let op = ops(&mut s, account).remove(0);
+    assert_eq!(fields(&op, "base").phones.map(|phones| phones.len()), Some(1));
+}
+
+#[test]
+fn the_deletion_of_a_copy_goes_only_with_the_contact_whose_card_it_may_be() {
+    let (mut s, account) = session();
+    run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));
+    let first = upload(&mut s, account);
+    answer_to(&mut s, account, &first, EventResult::Failed, "", "the connection was lost");
+    let gus = RemoteContact { emails: vec![Labeled::new("work", "gus@example.org")], ..card("c-gus", "Gus", "gus@example.org", "team") };
+    apply_contacts(
+        &mut s,
+        &cards(account, vec![card("c-bob", "Bob", "bob@example.org", "team"), card("c-cy", "Cy", "cy@example.org", "grace"), gus]),
+    )
+    .unwrap();
+    let copy = s.mailbox.contacts.values().find(|c| c.origin.id == "c-gus").map(|c| c.id).unwrap();
+    run(&mut s, "people.delete", json!({"id": copy}));
+    // Gus is not due again yet, the deletion is: it goes with him, and a host sends him first.
+    let kinds: Vec<String> = ops(&mut s, account).iter().filter_map(|op| op["kind"].as_str().map(str::to_string)).collect();
+    assert_eq!(kinds, ["create", "delete"]);
+}

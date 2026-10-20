@@ -3286,8 +3286,15 @@ pub fn merge_contacts(mailbox: &mut Mailbox, download: &ContactsDownload) -> Res
     merged.updated += adopted;
     let mut known: HashMap<String, Id> = HashMap::new();
     let mut extra: Vec<Id> = Vec::new();
+    // //// Neoffice — of contacts with one card (a copy a read brought of one made here), the first stays (the one made here, not the copy), and none is removed while a change of it waits (`remote_contacts`).
+    let noted: HashSet<Id> = mailbox.contact_changes.iter().filter(|change| change.account == account).map(|change| change.contact).collect();
     for contact in mailbox.contacts.values().filter(|contact| contact.origin.account == account && !contact.origin.id.is_empty()) {
-        extra.extend(known.insert(contact.origin.id.clone(), contact.id));
+        // //// Neoffice — see `noted` above.
+        if !known.contains_key(&contact.origin.id) {
+            known.insert(contact.origin.id.clone(), contact.id);
+        } else if !noted.contains(&contact.id) {
+            extra.push(contact.id);
+        }
     }
     let mut seen: HashSet<String> = HashSet::new();
     for remote in download.contacts.iter().take(MAX_CONTACTS) {
