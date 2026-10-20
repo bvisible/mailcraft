@@ -2129,6 +2129,8 @@ fn one_occurrence(
             // The occurrence is an event of its own on the server now, under a name of its own.
             event.origin.id = outcome.remote.clone();
             event.origin.change_key = outcome.change_key.clone();
+            // //// Neoffice — and what became of the online meeting it asked for (the whole series' is one: not made, said so).
+            settle_online(event, outcome, applied);
             let here = event.clone();
             if !seen_again(&op.fields).is_empty() {
                 expect(

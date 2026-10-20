@@ -1143,6 +1143,16 @@ mod event {
     use crate::MailApp;
     use crate::theme::{Tokens, c32, semibold};
 
+    // //// Neoffice — an online meeting of a calendar whose server holds them of its own service (a JMAP account's).
+    /// Whether the online meetings of `calendar` are its server's own (a JMAP account's calendar, or one whose server names
+    /// a service of its own: [`mailcraft_model::Calendar::online_service`]) rather than Teams.
+    fn online_own(s: &Session, calendar: Id) -> bool {
+        s.mailbox.calendar(calendar).is_some_and(|c| {
+            let jmap = mailcraft_engine::cmd::remote::keeper(&s.mailbox, &c.origin).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Jmap);
+            jmap || c.online_service() == Some(mailcraft_model::OnlineProvider::Other)
+        })
+    }
+
     /// The reminders offered, in minutes before the start (`None`: no reminder).
     const REMINDERS: [Option<u32>; 9] = [None, Some(0), Some(5), Some(10), Some(15), Some(30), Some(60), Some(120), Some(1440)];
 
@@ -2200,6 +2210,10 @@ mod event {
         online: bool,
         /// The account's server has made it one already, which it then stays.
         online_made: bool,
+        // //// Neoffice — an online meeting of its calendar's server's own service (a JMAP account's) is no Teams meeting.
+        /// Its calendar's server holds online meetings of its own (a JMAP account's): the button and the row say "Online
+        /// Meeting", not Teams ([`online_own`]).
+        online_own: bool,
         /// The link to join it by, when its server has given one.
         join_url: String,
         /// How many of the people invited have proposed another time (a meeting the owner
@@ -2270,6 +2284,8 @@ mod event {
                 shown_zone: s.zone().id(),
                 ..Default::default()
             };
+            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`).
+            f.online_own = online_own(s, f.calendar);
             // Zones it is to have of its own: its times are then by their clocks.
             let zone = |k: &str| p.get(k).and_then(Value::as_str).and_then(Zone::named).map(Zone::id).unwrap_or_default();
             (f.start_zone, f.end_zone) = (zone("startZone"), zone("endZone"));
@@ -2318,6 +2334,8 @@ mod event {
                 shown_zone: s.zone().id(),
                 ..Default::default()
             };
+            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`).
+            f.online_own = online_own(s, f.calendar);
             let here = |instant: mailcraft_time::Timestamp| s.offset_at(instant);
             // Which of a series is meant, when that is said: one occurrence shows on its own day.
             // (The day that is said is the day the occurrence starts on here; the series names
@@ -3000,15 +3018,18 @@ mod event {
                 // A Teams meeting is made by the calendar's server: where there is none to make
                 // it, and once one is made (which it then stays), the button is there and says why
                 // it can't be pressed.
+                // //// Neoffice — said of an online meeting of its calendar's server's own service, as one, not a Teams one.
+                let (label, made) = if self.online_own {
+                    (tl!("Online Meeting"), tl!("The account's server has made this an online meeting, and it stays one"))
+                } else {
+                    (tl!("Teams Meeting"), tl!("The account's server has made this a Teams meeting, and it stays one"))
+                };
                 items.push(bar::Item {
                     checked: self.online,
                     on: !self.online_made,
-                    tip: if self.online_made {
-                        tl!("The account's server has made this a Teams meeting, and it stays one").to_string()
-                    } else {
-                        tl!("Teams Meeting").to_string()
-                    },
-                    ..item("teams", "onlineMeeting", tl!("Teams Meeting"), 4, 3)
+                    // //// Neoffice — (the label and the tip, as above)
+                    tip: if self.online_made { made.to_string() } else { label.to_string() },
+                    ..item("teams", "onlineMeeting", label, 4, 3)
                 });
                 // (Set once for most meetings, if at all: it gives way before what was in the row
                 // before it.)
@@ -3023,6 +3044,8 @@ mod event {
 
         /// The window's own bar. The key of the button that was clicked.
         fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
+            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form)
+            self.online_own = online_own(&app.session, self.calendar);
             let items = self.bar_items();
             let categories: Vec<(String, egui::Color32)> =
                 app.session.mailbox.categories.iter().map(|c| (c.name.clone(), c32(c.color))).take(200).collect();
@@ -3112,7 +3135,9 @@ mod event {
             // A Teams meeting: the link to join it by, as its server gave it. It is shown as it
             // is (where it really leads), copied on request, and followed only on a click.
             if self.online {
-                row(ui, tl!("Teams meeting"), |ui| match mailcraft_model::OnlineMeeting::clean_link(&self.join_url) {
+                // //// Neoffice — (an online meeting of its calendar's server's own service is no Teams meeting)
+                let label = if self.online_own { tl!("Online meeting") } else { tl!("Teams meeting") };
+                row(ui, label, |ui| match mailcraft_model::OnlineMeeting::clean_link(&self.join_url) {
                     Some(link) => {
                         if ui.button(tl!("Join")).on_hover_text(link.as_str()).clicked() {
                             asked = Some("join");
@@ -3553,6 +3578,42 @@ mod event {
 
         fn session() -> Session {
             Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0)
+        }
+
+        // //// Neoffice — an online meeting of a JMAP account's calendar, whose server makes them of its own service.
+        #[test]
+        fn the_toggle_says_online_meeting_in_a_calendar_whose_server_makes_them() {
+            let mut s = session();
+            let added = s.run(
+                "account.add",
+                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
+            );
+            let account = added.unwrap()["id"].as_u64().unwrap();
+            let list = |services: Vec<mailcraft_model::OnlineProvider>| mailcraft_model::remote::CalendarsDownload {
+                account,
+                email: "ada@example.org".into(),
+                complete: true,
+                calendars: vec![mailcraft_model::remote::RemoteCalendar {
+                    id: "C1".into(),
+                    name: "Ada".into(),
+                    main: true,
+                    plain: true,
+                    online_providers: Some(services),
+                    ..Default::default()
+                }],
+            };
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(vec![mailcraft_model::OnlineProvider::Other])).unwrap();
+            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
+            let teams = |f: &EventForm| f.bar_items().into_iter().find(|item| item.key == "teams").map(|item| (item.label, item.tip));
+            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), true);
+            assert_eq!(teams(&f), Some(("Online Meeting".to_string(), "Online Meeting".to_string())));
+            // Made by its server, it stays one: the button says so, as an online meeting.
+            let made = EventForm { online: true, online_made: true, ..EventForm::new(&s, &json!({"title": "Sync", "calendar": calendar}), true) };
+            assert_eq!(teams(&made).map(|(_, tip)| tip), Some("The account's server has made this an online meeting, and it stays one".to_string()));
+            // A calendar of this computer's, or a Microsoft account's: Teams, as before.
+            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
+            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": own}), true);
+            assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
         }
 
         fn day(y: i32, m: u8, d: u8) -> Date {

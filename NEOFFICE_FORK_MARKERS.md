@@ -68,6 +68,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   with its date as the window writes a message's; and in `crates/ui-egui/src/calendar_view.rs` the titles of the
   calendar's days and weeks are templates of the catalogs (« 18 – 24 octobre 2026 »), and the label of the row of
   whole-day events wraps in its gutter when a language's words are longer than "All day".
+- An online meeting in a JMAP account's calendar, made by its server (a room of its own, asked for by a virtual
+  location whose address is `urn:x-online-meeting:new`, its link read back from the event's `virtualLocations`): the
+  reading and the writing are in `crates/jmap/` (`pim/jscalendar.rs`, `pim/calendars.rs`, `pim/write.rs`,
+  `pim/push.rs`, and the stand-in's rooms in `standin/pim.rs` and `standin/pim/set.rs`); the marked hunks are in
+  `crates/model/src/calendar.rs` (`Calendar::online_service`: Teams where allowed, else the server's own), the engine's
+  `cmd/calendar.rs` (a plain calendar refuses one only where its server makes none, and a meeting made online here takes
+  its calendar's service), `cmd/calendar/meeting.rs` (`teams_refusal`, `online_fits`, `online_here`, the words of an
+  online meeting that is no Teams one), `cmd/remote.rs` (what became of one, said as an online meeting, also for one
+  occurrence) and `crates/ui-egui/src/forms.rs` (the toggle and the row say "Online Meeting"); its French lines are in
+  `fr.tsv`, and the engine's sentences have their rows in `crates/ui-egui/src/i18n/run_words/rows.rs`.
 - This file.
 
 ## What cannot carry a comment
