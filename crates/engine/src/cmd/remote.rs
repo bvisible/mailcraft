@@ -1296,7 +1296,10 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
             calendar,
             cancel,
             response: if change.kind == EventChangeKind::Respond { change.response } else { Response::None },
-            send: (change.kind == EventChangeKind::Respond || forwards) && change.send,
+            // //// Neoffice — the owner's yes goes with every kind of change, not only with an answer or a forward: a
+            // server that writes to people only when asked to (JMAP for Calendars, `sendSchedulingMessages`) is asked
+            // only with it, whatever its own copy says of who is invited. (Graph reads it of answers and forwards only.)
+            send: change.send,
             comment: if said { change.comment.clone() } else { String::new() },
             proposed: change.proposed.filter(|_| proposes),
             to: if forwards && change.send { change.to.clone() } else { Vec::new() },

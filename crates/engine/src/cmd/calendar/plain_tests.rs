@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
 //! A calendar whose server keeps only the basics of an event (`Calendar::plain`, as a JMAP server of a hosting page
-//! says it keeps): what it refuses here, and why, and what it doesn't. Invented people at `example.org`.
+//! says it keeps): what it refuses here, and why, and what it doesn't; and the owner's yes to the mail a change makes,
+//! which goes to such a server with the change. Invented people at `example.org`.
 
-use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteCalendar, RemoteEvent};
+use mailcraft_model::remote::{CalendarsDownload, EventChangeKind, EventsDownload, RemoteCalendar, RemoteEvent};
 use mailcraft_model::{Address, Attendee, Id};
 use mailcraft_time::{Date, DateTime, Timestamp};
 use serde_json::{Value, json};
 
 use super::{PLAIN_FREE_BUSY, PLAIN_KEEPS_NO};
-use crate::cmd::remote::{apply_calendars, apply_events};
+use crate::cmd::remote::{apply_calendars, apply_events, event_upload};
 use crate::{CmdError, Session};
 
 fn at(day: u8, hour: u8) -> Timestamp {
@@ -175,4 +176,46 @@ fn one_occurrence_of_somebody_elses_meeting_is_not_answered_alone_by_mail_in_a_p
         // The whole series is answered and told as before.
         s.run("calendar.respond", &json!({"id": weekly, "response": "accept", "send": true})).unwrap();
     }
+}
+
+#[test]
+fn the_owners_yes_to_the_mail_goes_to_the_server_with_each_change_she_gave_it_for() {
+    let (mut s, mine, _) = session(true);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    // Her own meeting with Bo.
+    let review = RemoteEvent {
+        id: "V9".into(),
+        title: "Review".into(),
+        start: at(21, 9),
+        end: at(21, 10),
+        organizer: Some(Address::new("Ada", "ada@example.org")),
+        attendees: vec![Attendee { address: Address::new("Bo", "bo@example.org"), ..Default::default() }],
+        is_organizer: Some(true),
+        ..Default::default()
+    };
+    let download =
+        EventsDownload { account, email: "ada@example.org".into(), from: at(1, 0), to: at(31, 0), events: vec![review], ..Default::default() };
+    apply_events(&mut s, &download).unwrap();
+    let review = s.mailbox.events.values().find(|e| e.title == "Review").map(|e| e.id).unwrap();
+    // Her appointment moved: nobody to ask, and no yes goes with it (whoever the server's copy may invite by now).
+    s.run("calendar.move", &json!({"id": mine, "start": "2026-10-19T10:00"})).unwrap();
+    // Her meeting moved, and a new one, each with her yes to the mail.
+    s.run("calendar.move", &json!({"id": review, "start": "2026-10-21T10:00", "send": true})).unwrap();
+    s.run("calendar.newMeeting", &json!({"title": "Kick-off", "start": "2026-10-22T09:00", "attendees": "cy@example.org", "send": true})).unwrap();
+    let said = |s: &crate::Session| -> Vec<(EventChangeKind, String, bool, bool)> {
+        let mut ops: Vec<_> = event_upload(s, account).unwrap().ops.into_iter().map(|op| (op.kind, op.remote, op.send, op.cancel)).collect();
+        ops.sort_by(|a, b| a.1.cmp(&b.1));
+        ops
+    };
+    assert_eq!(
+        said(&s),
+        [
+            (EventChangeKind::Create, String::new(), true, false),
+            (EventChangeKind::Update, "V1".into(), false, false),
+            (EventChangeKind::Update, "V9".into(), true, false)
+        ]
+    );
+    // Called off with her yes: the deletion carries it.
+    s.run("calendar.delete", &json!({"id": review, "send": true})).unwrap();
+    assert!(said(&s).contains(&(EventChangeKind::Delete, "V9".into(), true, true)), "{:?}", said(&s));
 }

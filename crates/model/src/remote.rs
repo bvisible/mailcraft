@@ -766,6 +766,10 @@ pub struct EventOp {
     /// For an answer: what it is, and whether the organizer is told (with `comment`).
     #[serde(skip_serializing_if = "is_no_response")]
     pub response: Response,
+    // //// Neoffice — the owner's yes goes with every kind of change: a server that writes to people only when it is
+    // asked to (JMAP for Calendars) is asked only with it.
+    /// The owner said yes to the mail this makes the server send ([`EventChange::send`]): for an answer, to the
+    /// organizer; for a new meeting, a change of one or its deletion, to the people invited.
     #[serde(skip_serializing_if = "is_false")]
     pub send: bool,
     #[serde(skip_serializing_if = "String::is_empty")]

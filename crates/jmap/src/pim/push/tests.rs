@@ -236,8 +236,8 @@ fn a_guest_added_in_the_desk_meanwhile_is_kept_by_a_change_of_the_title_and_of_t
 fn scheduling_messages_only_for_the_organizer_of_a_meeting_and_in_calls_of_their_own() {
     let server = server();
     let ops = vec![
-        // Ada's meeting, retitled: the people invited are told.
-        update(&Pim::event_id("budget"), title("Budget review (room 5)")),
+        // Ada's meeting, retitled, and she said to tell them: the people invited are told.
+        EventOp { send: true, ..update(&Pim::event_id("budget"), title("Budget review (room 5)")) },
         // Her lunch, retitled: nobody to tell.
         update(&Pim::event_id("lunch"), title("Lunch (late)")),
         // Grace's meeting, a reminder of Ada's own: nobody told (she doesn't organize it).
@@ -256,13 +256,61 @@ fn scheduling_messages_only_for_the_organizer_of_a_meeting_and_in_calls_of_their
     run(&server, &job(vec![update(&Pim::event_id("budget"), EventFields { show_as: Some(ShowAs::Free), ..Default::default() })]));
     assert!(server.with(|d| d.pim.scheduled.is_empty()));
     // Called off: a cancellation; deleted without a word (somebody else's copy, or a meeting called off without): none.
-    let cancel = EventOp { kind: EventChangeKind::Delete, event: 200, remote: Pim::event_id("budget"), cancel: true, ..Default::default() };
+    let cancel =
+        EventOp { kind: EventChangeKind::Delete, event: 200, remote: Pim::event_id("budget"), cancel: true, send: true, ..Default::default() };
     let quiet = EventOp { kind: EventChangeKind::Delete, event: 201, remote: Pim::event_id("planning"), ..Default::default() };
     let result = run(&server, &job(vec![cancel, quiet]));
     assert!(outcomes(&result).iter().all(|(r, _)| *r == EventResult::Done), "{result:?}");
     let told = server.with(|d| d.pim.scheduled.clone());
     assert_eq!(told.iter().map(|t| (t.what, t.event.as_str())).collect::<Vec<_>>(), [("cancellation", "budget")]);
     assert!(stored(&server, "budget").is_none() && stored(&server, "planning").is_none());
+}
+
+#[test]
+fn nobody_is_written_to_without_the_persons_yes_whoever_the_servers_copy_invites() {
+    let server = server();
+    // Bob is invited to Ada's lunch from her phone, after the window read it: here it is no meeting, and nobody was asked.
+    server.with(|d| {
+        let lunch = d.pim.events.iter_mut().find(|e| e.raw == "lunch").unwrap();
+        lunch.props.insert("organizerCalendarAddress".into(), json!(format!("mailto:{ME}")));
+        lunch.props.insert(
+            "participants".into(),
+            json!({
+                "ada": person("Ada", ME, json!({"owner": true, "attendee": true}), "accepted"),
+                "bob": person("Bob", "bob@example.org", json!({"attendee": true}), "needs-action"),
+            }),
+        );
+    });
+    let moved =
+        EventFields { time: Some(EventTime { start: utc(19, 11, 0), end: utc(19, 12, 0), all_day: false }), zones: zones(), ..Default::default() };
+    let invited = |op: EventOp| EventOp {
+        fields: EventFields {
+            attendees: Some(vec![mailcraft_model::Attendee { address: Address::new("Bob", "bob@example.org"), ..Default::default() }]),
+            ..op.fields
+        },
+        ..op
+    };
+    let ops = vec![
+        // Moved here: the server's copy has Bob, and still nobody said to tell him.
+        update(&Pim::event_id("lunch"), moved),
+        // Her own meeting retitled, and a new one with Bob, neither with her yes (a mailbox file that says nothing).
+        update(&Pim::event_id("budget"), title("Budget review (draft)")),
+        invited(create("mc-quiet", "Coffee", utc(22, 9, 0))),
+    ];
+    let result = run(&server, &job(ops));
+    assert!(outcomes(&result).iter().all(|(r, _)| *r == EventResult::Done), "{result:?}");
+    assert!(server.with(|d| d.pim.scheduled.is_empty()), "nobody written to: {:?}", server.with(|d| d.pim.scheduled.clone()));
+    assert_eq!(stored(&server, "lunch").unwrap().start, "2026-10-19T13:00:00", "the change itself went");
+    let sets = server.asked().into_iter().filter(|a| a.method == "CalendarEvent/set").count();
+    assert_eq!(sets, 1, "one quiet call");
+    // With her yes, the same change of her meeting tells its people.
+    run(&server, &job(vec![EventOp { send: true, ..update(&Pim::event_id("budget"), title("Budget review (final)")) }]));
+    assert_eq!(server.with(|d| d.pim.scheduled.iter().map(|t| t.what).collect::<Vec<_>>()), ["update"]);
+    // Called off by a change that says so and not that she said yes: deleted, and nobody told.
+    let called_off = EventOp { kind: EventChangeKind::Delete, event: 200, remote: Pim::event_id("budget"), cancel: true, ..Default::default() };
+    assert_eq!(outcomes(&run(&server, &job(vec![called_off])))[0].0, EventResult::Done);
+    assert!(stored(&server, "budget").is_none());
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1, "no cancellation");
 }
 
 #[test]

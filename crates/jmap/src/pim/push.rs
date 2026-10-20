@@ -17,8 +17,9 @@
 //! 3. **The calls.** Each change is a create, an update of the whole properties it names, or a destroy. Those that
 //!    make the server write to people go in calls of their own, with `sendSchedulingMessages`: a new meeting the
 //!    person organizes, a change the people of one would see, its deletion when it is called off, and an answer the
-//!    person asked to be sent. So one refusal never mails anybody about another change. At most [`MAX_PER_CALL`]
-//!    events in a call, and as many as the session takes in a `set`.
+//!    person asked to be sent, each only with the person's yes to that mail (`EventOp::send`, which the engine notes
+//!    when it asks), whoever the server's copy says is invited. So one refusal never mails anybody about another
+//!    change. At most [`MAX_PER_CALL`] events in a call, and as many as the session takes in a `set`.
 //! 4. **What such a server doesn't keep is not written** ([`write`](super::write)): a change of nothing else, a
 //!    forward, and another time proposed with an answer, are refused with the reason.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
@@ -331,7 +332,8 @@ impl<H: Http> Writer<'_, H> {
                 self.answer(at, EventResult::Refused, "the event has no time to be made with", None);
                 return Ok(None);
             };
-            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling: invites, zone }));
+            // (Invitations only with the person's yes: `op.send`.)
+            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling: invites && op.send, zone }));
         }
         // The event on the server, and (for an occurrence) its series.
         let (target, copy, series) = if op.of_occurrence() {
@@ -373,7 +375,9 @@ impl<H: Http> Writer<'_, H> {
             }
         };
         let (organizes, others, draft) = write::meeting(series.as_ref().unwrap_or(&copy), &self.me);
-        let meeting = organizes && others && !draft;
+        // A meeting of the person's whose people are written to: only with the person's yes to that mail (`op.send`,
+        // as the engine noted it), whatever the server's copy says of who is invited now.
+        let meeting = organizes && others && !draft && op.send;
         // The clock its time is written on: an occurrence's is its series'.
         let clock = match &series {
             Some(series) => {
