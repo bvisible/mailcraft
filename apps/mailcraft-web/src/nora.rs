@@ -29,6 +29,8 @@
 use mailcraft_ui_egui::NoraCall;
 use mailcraft_ui_egui::nora::{METHODS, PageMailbox};
 
+use crate::hosted::HostAccount;
+
 /// How long a call is waited for, in milliseconds: past the 180 s after which Neodesk's shell answers
 /// by itself, and before the window gives up (200 s).
 pub const GIVE_UP_MS: i32 = 195_000;
@@ -80,19 +82,19 @@ fn decoded(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A mailbox the hosting page handed over (`email`, the `account` it says and its `session`), as Nora's server
-/// knows it: by the name of its account there, which stays the address the account was made with when its
-/// address changes. That name is the one the page says, else the `account` of the session's address (the
-/// facade's session is `…/frappe_webmail.mailcraft_jmap.session?account=<name>`, as `/neomail` and Neodesk's
-/// shell hand it over), read as the server reads it; a page that says neither has the address taken for it.
-pub fn handed_mailbox(email: &str, account: &str, session: &str) -> PageMailbox {
-    let said: String = account.trim().chars().take(MAX_PARAM).collect();
+/// A mailbox the hosting page handed over, as Nora's server knows it: by the name of its account there, which
+/// stays the address the account was made with when its address changes. That name is the `account` of its
+/// session's address (the facade's session is `…/frappe_webmail.mailcraft_jmap.session?account=<name>`, as
+/// `/neomail` and Neodesk's shell hand it over: the account the ids of its messages come from), read as the
+/// server reads it; else the one the page says (`account`); a page that says neither has the address taken for it.
+pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
     let from_session = || {
-        let query = session.split('#').next()?.split_once('?')?.1;
+        let query = handed.session.split('#').next()?.split_once('?')?.1;
         first(query, "account").map(|name| name.trim().to_string())
     };
-    let name = Some(said).filter(|n| !n.is_empty()).or_else(from_session).filter(|n| !n.is_empty());
-    PageMailbox { address: email.to_string(), name: name.unwrap_or_else(|| email.trim().to_string()) }
+    let said = || Some(handed.account.trim().chars().take(MAX_PARAM).collect::<String>());
+    let name = from_session().filter(|n| !n.is_empty()).or_else(said).filter(|n| !n.is_empty());
+    PageMailbox { address: handed.email.clone(), name: name.unwrap_or_else(|| handed.email.trim().to_string()) }
 }
 
 /// The body a call goes with, when it may go out at all: one of the six methods, a plain object of
@@ -366,36 +368,48 @@ mod tests {
         assert_eq!(origin("?sample", "https://desk.example"), None);
     }
 
-    /// The server names a mailbox by its account there, made under the address it had then: the page says that name
-    /// (`account`), or its session's address does (the facade's `…session?account=<name>`, which `/neomail` and
-    /// Neodesk's shell both hand over), and an older page that says neither has it taken for the address.
+    /// The server names a mailbox by its account there, made under the address it had then: its session's address says
+    /// that name (the facade's `…session?account=<name>`, which `/neomail` and Neodesk's shell both hand over), or else
+    /// the page does (`account`), and an older page that says neither has it taken for the address.
     #[test]
     fn a_mailbox_is_named_as_the_server_knows_it() {
         let facade = "https://desk.example/api/method/frappe_webmail.mailcraft_jmap.session?account=";
-        let named = |account: &str, session: &str| handed_mailbox("Ada@Example.org", account, session);
+        let named = |account: &str, session: &str| {
+            let handed = HostAccount { email: "Ada@Example.org".into(), account: account.into(), session: session.into(), ..Default::default() };
+            handed_mailbox(&handed)
+        };
         for (account, session, name) in [
             // The page's session, as `/neomail` writes it (`quote(name, safe="")`) and Neodesk's shell keeps it.
             ("", format!("{facade}ada.former%40example.org"), "ada.former@example.org"),
             ("", format!("{facade}Ada%20%28support%29%20%2B%20sales"), "Ada (support) + sales"),
+            // What would end the value or the query is in it, escaped, and so is a byte of a character that isn't ASCII.
+            ("", format!("{facade}Sales%20%23%201"), "Sales # 1"),
+            ("", format!("{facade}R%26D"), "R&D"),
+            ("", format!("{facade}a%3Db"), "a=b"),
+            ("", format!("{facade}100%25"), "100%"),
+            ("", format!("{facade}Zo%C3%AB"), "Zo\u{eb}"),
             // Read as the server reads a query: `+` is a space; the first `account` counts; a fragment is no part of it.
             ("", format!("{facade}Ada+Lovelace&account=other"), "Ada Lovelace"),
             ("", format!("{facade}ada.former%40example.org#account=other"), "ada.former@example.org"),
             ("", "https://desk.example/s?x=1&account=ada.former%40example.org".to_string(), "ada.former@example.org"),
-            // The name the page says itself comes first.
-            ("ada.former@example.org", format!("{facade}other"), "ada.former@example.org"),
+            // The session's name comes first: the ids of its messages are that account's. The page's is taken without it.
+            ("other@example.org", format!("{facade}ada.former%40example.org"), "ada.former@example.org"),
+            ("ada.former@example.org", "https://mail.example.org/jmap/session".to_string(), "ada.former@example.org"),
+            ("Support", facade.to_string(), "Support"),
             ("  Support  ", String::new(), "Support"),
             // An older page: no name anywhere, the address is taken for it.
             ("", "https://mail.example.org/jmap/session".to_string(), "Ada@Example.org"),
             ("", facade.to_string(), "Ada@Example.org"),
             ("", format!("{facade}%20"), "Ada@Example.org"),
-            ("", "https://desk.example/s?accounts=x&xaccount=y#?account=z".to_string(), "Ada@Example.org"),
+            ("  ", "https://desk.example/s?accounts=x&xaccount=y#?account=z".to_string(), "Ada@Example.org"),
             ("", String::new(), "Ada@Example.org"),
         ] {
             assert_eq!(named(account, &session), PageMailbox { address: "Ada@Example.org".into(), name: name.into() }, "{account:?} {session:?}");
         }
-        // However long the address makes it, the name taken is not longer than a query's value is read.
-        let long = named("", &format!("{facade}{}", "a".repeat(10_000))).name;
-        assert_eq!(long.chars().count(), MAX_PARAM);
+        // However long the address or the page makes it, the name taken is not longer than a query's value is read.
+        for (account, session) in [(String::new(), format!("{facade}{}", "a".repeat(10_000))), ("a".repeat(10_000), String::new())] {
+            assert_eq!(named(&account, &session).name.chars().count(), MAX_PARAM);
+        }
     }
 
     #[test]

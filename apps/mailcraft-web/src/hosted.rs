@@ -18,6 +18,29 @@ use mailcraft_ui_egui::jmap_job::{JmapFetchJob, JmapJob};
 use mailcraft_ui_egui::jmap_pim::JmapPimJob;
 use mailcraft_ui_egui::{MailApp, Services};
 
+/// A mailbox a hosting page handed over (host.rs reads it from the page).
+#[derive(Clone, Default)]
+pub struct HostAccount {
+    pub email: String,
+    pub name: String,
+    pub session: String,
+    /// The name of the server's account for it, when the page says one: Nora names the mailbox by it when its
+    /// session's address names none (nora.rs).
+    pub account: String,
+    pub username: String,
+    pub secret: String,
+    pub bearer: bool,
+    /// Its signature in Neoffice, as the page gives it: its HTML, its text, and a company's logo with its place.
+    pub signature: crate::page_signature::PageSignature,
+}
+
+impl std::fmt::Debug for HostAccount {
+    // Never the secret, nor the address: they go into logs.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HostAccount").field("bearer", &self.bearer).field("signature", &self.signature).finish_non_exhaustive()
+    }
+}
+
 /// The runners of a hosting page's mailboxes, made with the page's credentials and the page's one gate.
 pub struct Runners {
     pub jmap: Box<dyn Fn(JmapJob) -> Receiver<JmapMailResult>>,

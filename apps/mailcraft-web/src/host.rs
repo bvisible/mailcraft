@@ -12,8 +12,8 @@
 //!   email: "jane@example.com",   // the mailbox, MailCraft's account key
 //!   name: "Jane Doe",            // the name on sent mail
 //!   session: "https://…",        // its JMAP session URL
-//!   account: "jane@example.com", // optional: the name of the server's account for it, which Nora names it by;
-//!                                // else the `account` of the session URL's query, else `email` (nora.rs)
+//!   account: "jane@example.com", // optional: the name of the server's account for it, which Nora names it by
+//!                                // when the session URL's query has no `account`; else `email` (nora.rs)
 //!   username: "jane@example.com",
 //!   secret: "<token>",           // kept in this tab's memory only, never stored
 //!   scheme: "bearer",            // or "basic"
@@ -70,27 +70,8 @@ const MAX_AUTHOR_CHARS: usize = 128;
 const MAX_SIGNATURE_HTML: usize = 200_000;
 const MAX_SIGNATURE_TEXT: usize = 10_000;
 
-/// A mailbox the page handed over.
-#[derive(Clone, Default)]
-pub struct HostAccount {
-    pub email: String,
-    pub name: String,
-    pub session: String,
-    /// The name of the server's account for it, when the page says one (Nora names the mailbox by it: nora.rs).
-    pub account: String,
-    pub username: String,
-    pub secret: String,
-    pub bearer: bool,
-    /// Its signature in Neoffice, as the page gives it: its HTML, its text, and a company's logo with its place.
-    pub signature: crate::page_signature::PageSignature,
-}
-
-impl std::fmt::Debug for HostAccount {
-    // Never the secret, nor the address: they go into logs.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HostAccount").field("bearer", &self.bearer).field("signature", &self.signature).finish_non_exhaustive()
-    }
-}
+/// A mailbox the page handed over (hosted.rs, built everywhere so that what reads it is tested natively).
+pub use crate::hosted::HostAccount;
 
 pub(crate) fn get(target: &JsValue, key: &str) -> Option<JsValue> {
     js_sys::Reflect::get(target, &JsValue::from_str(key)).ok().filter(|value| !value.is_undefined() && !value.is_null())
