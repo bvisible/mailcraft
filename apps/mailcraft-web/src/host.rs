@@ -17,7 +17,9 @@
 //!   scheme: "bearer",            // or "basic"
 //!   signature: { html: "…", text: "…",   // optional: the mailbox's signature in Neoffice
 //!     logo: { data: "<base64>", name: "logo.png", alt: "…", width: 120 },  // a company's logo, by its bytes
-//!     layout: "pictureLeft" }            // where it goes: "pictureLeft" or "pictureAbove"
+//!     layout: "pictureLeft",             // where it goes: "pictureLeft" or "pictureAbove"
+//!     pictures: [{ data, name, alt, width, lead: true }, …] }  // or every picture in reading order, the first one
+//!                                        // beside or above the words when `lead` (then `logo` is not read)
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
 //!   signatures: "https://…" };   // where the site writes these mailboxes' signatures: File › Signatures links there
@@ -256,16 +258,31 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
 /// The signature a page gives a mailbox: its HTML and its text within their lengths, and a company's logo by its bytes
 /// with its place, as far as MailCraft takes them (page_signature.rs).
 fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
-    use crate::page_signature::{PageSignature, layout, picture};
-    let logo = get(given, "logo").and_then(|logo| {
-        let width = get(&logo, "width").and_then(|v| v.as_f64());
-        picture(&text(&logo, "data"), &text(&logo, "name"), &text(&logo, "alt"), width)
-    });
+    use crate::page_signature::{MAX_PAGE_PICTURES, PagePicture, PageSignature, layout, picture};
+    let taken = |given: &JsValue| -> Option<PagePicture> {
+        let width = get(given, "width").and_then(|v| v.as_f64());
+        picture(&text(given, "data"), &text(given, "name"), &text(given, "alt"), width)
+    };
+    let logo = get(given, "logo").and_then(|logo| taken(&logo));
+    // Every picture in the order it is read, from a page that gives them: the first one beside or above the words
+    // when it says so (`lead`).
+    let pictures: Vec<PagePicture> = get(given, "pictures")
+        .filter(js_sys::Array::is_array)
+        .map(|list| {
+            js_sys::Array::from(&list)
+                .iter()
+                .take(MAX_PAGE_PICTURES)
+                .filter_map(|item| taken(&item).map(|p| PagePicture { lead: get(&item, "lead").and_then(|v| v.as_bool()).unwrap_or(false), ..p }))
+                .collect()
+        })
+        .unwrap_or_default();
+    let placed = logo.is_some() || pictures.first().is_some_and(|p| p.lead);
     PageSignature {
         html: get(given, "html").and_then(|v| v.as_string()).filter(|h| h.len() <= MAX_SIGNATURE_HTML).unwrap_or_default(),
         text: text(given, "text").chars().take(MAX_SIGNATURE_TEXT).collect(),
-        layout: logo.as_ref().map_or_else(String::new, |_| layout(&text(given, "layout"))),
+        layout: if placed { layout(&text(given, "layout")) } else { String::new() },
         logo,
+        pictures,
     }
 }
 
