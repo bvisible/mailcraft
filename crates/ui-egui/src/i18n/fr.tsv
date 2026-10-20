@@ -51,6 +51,9 @@
 	the answer had no text	la réponse ne contenait pas de texte
 # The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
 	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
+# File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
+	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
+	Change them on the site	Modifier les signatures sur le site
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

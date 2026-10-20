@@ -46,6 +46,19 @@ pub fn session_allowed(session: &str) -> bool {
     session.starts_with("https://") || mailcraft_jmap::Url::parse(session).is_ok_and(|url| !url.https && url.is_loopback())
 }
 
+/// The longest address of the page's signatures that is taken, in bytes.
+const MAX_SIGNATURES_HOME: usize = 2_048;
+
+/// Whether File › Signatures may link to `address`, where a hosting page says its site writes the signatures of the
+/// mailboxes it hands over: an address as a session may be one ([`session_allowed`]), with nothing blank or control in
+/// it, [`MAX_SIGNATURES_HOME`] bytes at most.
+pub fn signatures_home_allowed(address: &str) -> bool {
+    !address.is_empty()
+        && address.len() <= MAX_SIGNATURES_HOME
+        && !address.chars().any(|c| c.is_whitespace() || c.is_control())
+        && session_allowed(address)
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
@@ -88,6 +101,26 @@ mod tests {
         }
         for bad in ["http://mail.example.org/jmap/session", "http://10.0.0.1/jmap", "ftp://127.0.0.1/", "", "127.0.0.1:8790", "javascript:alert(1)"] {
             assert!(!session_allowed(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_signatures_page_named_by_a_hosting_page_is_an_https_address_or_a_loopback_one() {
+        for good in ["https://erp.example.org/app/webmail?signatures=1", "http://127.0.0.1:8771/signatures.html"] {
+            assert!(signatures_home_allowed(good), "{good}");
+        }
+        let long = format!("https://erp.example.org/{}", "a".repeat(MAX_SIGNATURES_HOME));
+        for bad in [
+            "",
+            "http://erp.example.org/app/webmail",
+            "javascript:alert(1)",
+            "data:text/html,<p>x</p>",
+            "/app/webmail?signatures=1",
+            "https://erp.example.org/a b",
+            "https://erp.example.org/a\nb",
+            long.as_str(),
+        ] {
+            assert!(!signatures_home_allowed(bad), "{bad:?}");
         }
     }
 }

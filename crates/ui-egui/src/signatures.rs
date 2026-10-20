@@ -20,13 +20,18 @@ use crate::theme::{Tokens, regular, semibold};
 
 pub(crate) fn page(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     ui.label(egui::RichText::new(tl!("Signatures")).font(semibold(22.0)).color(t.text));
-    ui.label(
-        egui::RichText::new(tl!(
-            "Signatures are kept on this computer. They can't be kept in step with Outlook: on another device set them up there, or paste one from Outlook on the web (Settings › Signatures)."
-        ))
-        .font(regular(11.5))
-        .color(t.text_dim),
-    );
+    // //// Neoffice — a tab of a hosting page keeps nothing, and its mailboxes' signatures are its site's: it says so, and where they are written (hosted_signatures.rs).
+    if !app.session.keeps_local {
+        crate::hosted_signatures::note(app, ui, t);
+    } else {
+        ui.label(
+            egui::RichText::new(tl!(
+                "Signatures are kept on this computer. They can't be kept in step with Outlook: on another device set them up there, or paste one from Outlook on the web (Settings › Signatures)."
+            ))
+            .font(regular(11.5))
+            .color(t.text_dim),
+        );
+    }
     ui.add_space(6.0);
     let names: Vec<String> = app.session.mailbox.signatures.iter().map(|s| s.name.clone()).collect();
     if app.session.signature_edit.is_none()

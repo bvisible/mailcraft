@@ -19,7 +19,8 @@
 //!     logo: { data: "<base64>", name: "logo.png", alt: "…", width: 120 },  // a company's logo, by its bytes
 //!     layout: "pictureLeft" }            // where it goes: "pictureLeft" or "pictureAbove"
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
-//!   product: "NeoMail" };        // the name the person reads, shown wherever MailCraft names itself
+//!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
+//!   signatures: "https://…" };   // where the site writes these mailboxes' signatures: File › Signatures links there
 //! ```
 //!
 //! When the server refuses a token (it expired, or died with the session that asked for it), MailCraft calls
@@ -282,6 +283,12 @@ pub fn product() -> Option<String> {
 /// The language of the person the page is for (a tag such as `fr` or `de-CH`), if it says one.
 pub fn language() -> Option<String> {
     Some(text(&handed()?, "language")).filter(|tag| !tag.is_empty() && tag.len() <= 35)
+}
+
+/// Where the page's site writes the signatures of the mailboxes it hands over, if it says: File › Signatures links
+/// there (hosted.rs says which addresses are taken).
+pub fn signatures() -> Option<String> {
+    Some(text(&handed()?, "signatures")).filter(|address| crate::hosted::signatures_home_allowed(address))
 }
 
 /// What each mailbox signs in with: its address (lower case) → (secret, Bearer rather than Basic).

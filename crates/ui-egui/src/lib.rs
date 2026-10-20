@@ -55,6 +55,8 @@ pub mod scheduling;
 mod search_pills;
 pub mod server_search;
 mod shared_mailboxes;
+// //// Neoffice — File › Signatures in a tab of a hosting page: its site's signatures, and where they are written.
+mod hosted_signatures;
 mod signatures;
 mod sync_panel;
 pub mod tasks_view;
@@ -153,6 +155,11 @@ pub struct Services {
     /// translates a message and rewrites the owner's text when the owner asks ([`nora`]). Absent
     /// everywhere else: no Nora is offered.
     pub nora: Option<nora::Host>,
+    // //// Neoffice — where a hosting page's site writes the signatures of the mailboxes it handed over: File › Signatures links there (hosted_signatures.rs).
+    /// Web, in a hosting page: the address on its site where the signatures of the mailboxes it
+    /// handed over are written (they come from there, and its tab keeps nothing between visits).
+    /// Absent everywhere else.
+    pub signatures_home: Option<String>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,

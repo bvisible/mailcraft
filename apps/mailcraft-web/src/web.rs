@@ -259,6 +259,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
         session.prefs.twelve_hour = false;
     }
     let mut services = services(inbox, ctx.clone());
+    // //// Neoffice — File › Signatures links to where the page's site writes these mailboxes' signatures (hosted_signatures.rs of the window).
+    services.signatures_home = crate::host::signatures();
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
     let gate = crate::jmap_services::Gate::default();
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs).
