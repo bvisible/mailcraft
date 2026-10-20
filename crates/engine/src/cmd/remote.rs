@@ -3117,8 +3117,21 @@ pub fn merge_events(mailbox: &mut Mailbox, download: &EventsDownload, offset_at:
     // events of their own again.
     let mut going: Vec<Id> = old_way;
     for name in download.gone.iter().take(MAX_OUTCOMES).map(|name| clean_key(name)).filter(|name| !name.is_empty()) {
-        if !waiting.contains_key(&name) && !shapes.contains_key(&name) && !ruleless.contains(&name) {
-            let of_it = |event: &&std::sync::Arc<Event>| event.origin.account == account && (event.origin.id == name || event.origin.series == name);
+        // //// Neoffice — nor while a change of one of its days waits, or was sent and isn't seen yet (as for what a
+        // whole download no longer has, below): a JMAP server's read names a series the person declined elsewhere gone,
+        // and a day of it changed or answered here would be given up with it, its organizer never told.
+        let of_it = |event: &&std::sync::Arc<Event>| event.origin.account == account && (event.origin.id == name || event.origin.series == name);
+        let day_waits = waiting_days.get(&name).is_some_and(|days| !days.is_empty())
+            || mailbox.events.values().filter(of_it).any(|event| {
+                (!event.origin.id.is_empty() && waiting.contains_key(&event.origin.id))
+                    || mailbox.event_changes.iter().any(|change| {
+                        change.account == account
+                            && (change.event == event.id
+                                || (!event.origin.id.is_empty() && change.remote == event.origin.id)
+                                || change.series == name)
+                    })
+            });
+        if !waiting.contains_key(&name) && !shapes.contains_key(&name) && !ruleless.contains(&name) && !day_waits {
             going.extend(mailbox.events.values().filter(of_it).map(|event| event.id));
         }
     }

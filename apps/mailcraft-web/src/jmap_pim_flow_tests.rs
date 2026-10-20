@@ -719,3 +719,36 @@ fn a_day_declined_alone_elsewhere_leaves_the_window_and_the_series_stays() {
     assert_eq!(flow.when("Planning"), ["2026-10-13T10:00:00", "2026-10-27T10:00:00"]);
     assert!(flow.event("Planning").is_some_and(|e| e.recurrence.is_some()));
 }
+
+#[test]
+fn a_series_declined_elsewhere_stays_while_a_change_of_one_of_its_days_waits_and_goes_after_it() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let planning = flow.event("Planning").unwrap();
+    // A reminder of her own on the 20th, here; the server can't take it just now.
+    let twentieth = Pim::occurrence_id("planning", "2026-10-20T10:00:00");
+    flow.server.with(|d| {
+        d.pim.refused_events.insert(twentieth.clone(), "serverFail");
+    });
+    flow.app.execute("calendar.edit", json!({"id": planning.id, "scope": "occurrence", "occurrence": "2026-10-20", "reminder": 30})).unwrap();
+    // Meanwhile, on her phone, Grace's planning is declined.
+    flow.server.with(|d| {
+        let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+        planning.props["participants"]["ada"]["participationStatus"] = json!("declined");
+    });
+    assert!(flow.look(SECOND));
+    // The change waits, and so does the series: neither is thrown away under it.
+    assert_eq!(flow.app.session.mailbox.event_changes.len(), 1, "{:?}", flow.app.sync_problems_of(flow.account));
+    assert!(flow.event("Planning").is_some_and(|e| e.recurrence.is_some()), "the series stays while its day's change waits");
+    // The server takes it the next time: then the series goes, whole.
+    flow.server.with(|d| d.pim.refused_events.clear());
+    flow.app.session.clock.now = Some(NOW + 10 * 60);
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(
+        flow.server.with(|d| d.pim.events.iter().find(|e| e.raw == "planning").unwrap().overrides.contains_key("2026-10-20T10:00:00")),
+        "the change went"
+    );
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.event("Planning").is_none() && flow.when("Planning").is_empty(), "{:?}", flow.when("Planning"));
+}
