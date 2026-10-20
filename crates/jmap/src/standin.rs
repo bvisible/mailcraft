@@ -76,11 +76,15 @@ use serde_json::{Map, Value, json};
 
 use crate::{CALENDARS, CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
 
+mod demo;
 mod facade;
+#[cfg(test)]
+mod loopback;
 mod outgoing;
 mod pim;
 mod set;
 
+pub use demo::{DEMO_PERSON, demo};
 pub use facade::Profile;
 pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
 pub use pim::{Calendar, Event, Pim, WRITABLE_CARD, WRITABLE_EVENT};
