@@ -1035,11 +1035,15 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("Your rights do not let you change this note", "as above"),
     ("Only its owner deletes a note: this one was shared with you", "as above"),
     ("This note's text is changed where it was written: open it on the web", "as above"),
-    ("A note holds 100,000 characters at most", "as above"),
+    ("A note holds {max} characters at most", "as above"),
+    ("A note's title holds {max} characters at most", "as above"),
     ("This note has no web address", "as above"),
     ("Too many note changes are waiting to be sent. Let them get through first.", "as above"),
     ("{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.", "a notes job's line, as above"),
     ("{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.", "as above"),
+    ("The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}.", "as above"),
+    ("{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}.", "the Notes view's, as above"),
+    ("{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent.", "as above"),
     ("{title} couldn't be saved on the server: {said}", "as above"),
     ("The change to {title} was put back as the server has it: {said}", "as above"),
     ("The server wouldn't delete {title}, which is back in the notes: {said}", "as above"),
@@ -1050,7 +1054,7 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("Couldn't read the notes: {why}", "as above"),
     ("1 note couldn't be read: {why}", "as above"),
     ("{n} notes couldn't be read: {why}", "as above"),
-    ("their text is more than one job reads", "as above"),
+    ("the notes hold more text than one reading takes, and these are not shown", "as above"),
 ];
 
 // ---------------------------------------------------------------------------------------------

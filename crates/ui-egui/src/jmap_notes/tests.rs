@@ -166,8 +166,9 @@ fn the_answer_takes_the_outcomes_then_the_notes_and_keeps_the_state() {
     };
     answer(&mut app, &asked, id, Some(notes));
     let said = app.status_msg.clone().map(|(text, _)| text).unwrap_or_default();
-    assert!(said.contains("put back"), "{said}");
+    assert!(said.contains("kept as a note of its own"), "{said}");
     assert_eq!(app.session.mailbox.notes.note(groceries).map(|note| note.title.as_str()), Some("Groceries"));
+    assert!(app.session.mailbox.notes.items.values().any(|note| note.title == "Shopping (2)"), "her title, kept");
     assert_eq!(app.jmap_notes_state(id), None, "a job that brought no state forgets the one held");
 }
 
@@ -226,4 +227,45 @@ fn a_hosting_tab_says_a_note_change_would_be_lost_while_it_waits() {
     };
     answer(&mut app, &asked, id, Some(notes));
     assert!(!app.notes_unsent(), "the server has it");
+}
+
+#[test]
+fn a_new_note_the_server_refused_would_be_lost_with_a_hosting_page() {
+    let (mut app, id, asked) = read_once();
+    app.session.keeps_local = false;
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    let refused = NoteOutcome { op, result: NoteResult::Refused, error: "Not permitted".into(), ..Default::default() };
+    let notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![refused], ..Default::default() }),
+        ..Default::default()
+    };
+    answer(&mut app, &asked, id, Some(notes));
+    assert!(app.session.mailbox.notes.changes.is_empty());
+    assert!(app.notes_unsent(), "kept here with why, and nowhere else");
+}
+
+#[test]
+fn a_change_the_server_did_not_take_has_the_notes_read_again_soon() {
+    let (mut app, id, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    app.execute("notes.edit", json!({"id": groceries, "text": "Mine"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    let stale = NoteOutcome { op, result: NoteResult::Stale, error: "changed elsewhere".into(), ..Default::default() };
+    let mut notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![stale], ..Default::default() }),
+        ..Default::default()
+    };
+    notes.state = Some("s2".into());
+    answer(&mut app, &asked, id, Some(notes));
+    assert_eq!(app.jmap_notes_state(id), None, "the state held is the server's no longer");
+    // The copy of her words goes, and the notes are read with it, whole.
+    app.notes_look(true, T0 + 6.0 * SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 10.0 * SECOND));
+    let ask = last(&asked).notes.unwrap();
+    assert!(ask.read && ask.state.is_empty(), "{ask:?}");
 }

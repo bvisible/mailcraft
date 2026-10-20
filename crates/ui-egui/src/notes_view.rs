@@ -19,9 +19,9 @@
 //! (`ui.openNote`), and only when it is an https address a message's link would be followed to.
 
 use egui::{Align2, Rect, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
-use mailcraft_engine::cmd::notes::{self, NOTE_NO_LINK, NOTE_NOT_YOURS, NOTE_READ_ONLY};
+use mailcraft_engine::cmd::notes::{self, NOTE_NO_LINK, NOTE_NOT_YOURS, NOTE_READ_ONLY, NOTE_TEXT_ELSEWHERE, words};
 use mailcraft_model::Id;
-use mailcraft_model::note::{MAX_NOTE_TEXT, MAX_NOTE_TITLE, Note};
+use mailcraft_model::note::Note;
 use serde_json::{Value, json};
 
 use crate::theme::{Tokens, paint_clipped, regular, semibold};
@@ -49,21 +49,38 @@ struct Filter {
     query: String,
 }
 
-/// What is typed into a note and not saved yet.
+/// What is typed into a note and not saved yet, and the note's words it was typed over.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Draft {
     note: Id,
+    /// The note's account (0: this computer's): where its words go when the note is gone.
+    account: Id,
     title: String,
     text: String,
+    /// The note's title and text when the typing began (or since the last save): what the words typed are made over.
+    from_title: String,
+    from_text: String,
     /// When the last key was typed (the window's time, seconds); `None`: nothing typed since it was saved.
     typed: Option<f64>,
 }
 
 impl Draft {
     fn of(note: &Note) -> Draft {
-        Draft { note: note.id, title: note.title.clone(), text: note.text.clone(), typed: None }
+        Draft {
+            note: note.id,
+            account: note.origin.account,
+            title: note.title.clone(),
+            text: note.text.clone(),
+            from_title: note.title.clone(),
+            from_text: note.text.clone(),
+            typed: None,
+        }
     }
 }
+
+/// The drafts of the notes typed into and not saved yet, by note: one that can't be saved now (too long for its server)
+/// stays while another note is shown.
+type Drafts = std::collections::HashMap<Id, Draft>;
 
 /// What a card says of a note.
 #[derive(Clone, Debug, PartialEq)]
@@ -108,7 +125,10 @@ pub(crate) fn card_text(app: &MailApp, note: &Note) -> CardText {
     if note.rich || note.cut {
         badges.push(tl!("Formatted").to_string());
     }
-    if !notes::saved(&app.session, note) || !note.error.is_empty() {
+    let typed_here = app.ctx.as_ref().is_some_and(|ctx| {
+        ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).get(&note.id).is_some_and(|draft| draft.typed.is_some()))
+    });
+    if !notes::saved(&app.session, note) || !note.error.is_empty() || typed_here {
         badges.push(tl!("Not saved").to_string());
     }
     if several_places(app) {
@@ -338,26 +358,24 @@ fn card(app: &mut MailApp, ui: &mut Ui, id: Id, rect: Rect) {
 fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
     let t = Tokens::get(ui.ctx());
     let now = ui.input(|i| i.time);
-    let key = egui::Id::new(DRAFT);
-    let mut draft: Draft = ui.data(|d| d.get_temp(key)).unwrap_or_else(|| Draft::of(note));
-    // Another note chosen: what was typed into the last one is saved first.
-    if draft.note != note.id {
-        save(app, &mut draft);
-        draft = Draft::of(note);
+    let mut all = drafts(ui.ctx());
+    // What was typed into other notes is saved first (another note was chosen); what can't be yet stays.
+    let others: Vec<Id> = all.iter().filter(|(id, draft)| **id != note.id && draft.typed.is_some()).map(|(id, _)| *id).collect();
+    for id in others {
+        if let Some(mut other) = all.remove(&id)
+            && !save(app, &mut other, now)
+        {
+            all.insert(id, other);
+        }
     }
+    let mut draft: Draft = all.remove(&note.id).unwrap_or_else(|| Draft::of(note));
     // Nothing typed: the note as it is now (a server's read may have changed it).
     if draft.typed.is_none() {
         draft = Draft::of(note);
     }
     let (write, write_text) = (note.rights.write, note.rights.write && note.text_writable());
-    // No more than the note's server takes (or this computer keeps): what is typed is never refused for its length.
-    let (max_title, max_text) = app
-        .session
-        .mailbox
-        .notes
-        .server(note.origin.account)
-        .filter(|_| note.origin.is_remote())
-        .map_or((MAX_NOTE_TITLE, MAX_NOTE_TEXT), |server| (server.max_title, server.max_text));
+    // What its server takes (or this computer keeps): more is said, never cut.
+    let (max_title, max_text) = notes::limits(&app.session, if note.origin.is_remote() { note.origin.account } else { 0 });
     ui.add_space(12.0);
     let mut left = false;
     ui.horizontal(|ui| {
@@ -367,7 +385,6 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
             .font(semibold(17.0))
             .frame(egui::Frame::NONE)
             .desired_width(ui.available_width() - 12.0)
-            .char_limit(max_title)
             .interactive(write);
         let resp = ui.add(title);
         app.hit.add("noteTitle", note.id, resp.rect);
@@ -379,6 +396,7 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
         }
         left |= resp.lost_focus();
     });
+    too_many(ui, draft.title.chars().count(), max_title);
     ui.add_space(4.0);
     let banner = if !write {
         Some(tl!("You may read this note, not change it."))
@@ -415,7 +433,7 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
                 None => resp,
             };
             if resp.clicked() && refused.is_none() {
-                save(app, &mut draft);
+                save(app, &mut draft, now);
                 let _ = app.run(command, params);
             }
         }
@@ -429,7 +447,6 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
                 .frame(egui::Frame::NONE)
                 .desired_rows(16)
                 .desired_width(ui.available_width() - 12.0)
-                .char_limit(max_text)
                 .interactive(write_text);
             let resp = ui.add(text);
             app.hit.add("noteText", note.id, resp.rect);
@@ -438,20 +455,47 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
             }
             left |= resp.lost_focus();
         });
+        too_many(ui, draft.text.chars().count(), max_text);
     });
     let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
     let quiet = draft.typed.is_some_and(|typed| now - typed >= SAVE_AFTER);
     if draft.typed.is_some() && (left || escape || quiet) {
-        save(app, &mut draft);
+        save(app, &mut draft, now);
     }
     if draft.typed.is_some() {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
     }
-    // (The selection may have gone: a delete.)
+    // (The selection may have gone: a delete. What is typed stays whatever happens.)
     if app.session.sel.note == Some(note.id) || draft.typed.is_some() {
-        ui.data_mut(|d| d.insert_temp(key, draft));
+        all.insert(note.id, draft);
+    }
+    keep_drafts(ui.ctx(), all);
+}
+
+/// Under a field: how many characters are more than the note's server takes, when any (they are kept, never cut).
+fn too_many(ui: &mut Ui, count: usize, most: usize) {
+    if count <= most {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    let n = count - most;
+    let said =
+        if n == 1 { tl!("1 character too many").to_string() } else { crate::i18n::fmt(tl!("{n} characters too many"), &[("n", &n.to_string())]) };
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        ui.label(RichText::new(said).size(11.5).color(t.red));
+    });
+}
+
+fn drafts(ctx: &egui::Context) -> Drafts {
+    ctx.data(|d| d.get_temp::<Drafts>(egui::Id::new(DRAFT))).unwrap_or_default()
+}
+
+fn keep_drafts(ctx: &egui::Context, all: Drafts) {
+    if all.is_empty() {
+        ctx.data_mut(|d| d.remove_temp::<Drafts>(egui::Id::new(DRAFT)));
     } else {
-        ui.data_mut(|d| d.remove_temp::<Draft>(key));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new(DRAFT), all));
     }
 }
 
@@ -464,43 +508,133 @@ fn hit_kind(command: &str) -> &'static str {
     }
 }
 
-/// Save what was typed into `draft`'s note (one undo step), when anything: the title and the text that differ from the
-/// note's.
-fn save(app: &mut MailApp, draft: &mut Draft) {
-    if draft.typed.take().is_none() {
-        return;
+/// Save what was typed into `draft`'s note (one undo step): the parts typed into, over the words they were typed over.
+/// Never over other words: when the note's words were changed underneath (a read brought another device's), when it is
+/// gone, or when it can no longer be changed so (it is read only now, or its text is changed where it was written), the
+/// words typed are kept as a note of their own and the person is told. `false` while they can't be saved yet (more than
+/// the note's server takes, or the engine refused them): the draft stays, and is tried again.
+fn save(app: &mut MailApp, draft: &mut Draft, now: f64) -> bool {
+    if draft.typed.is_none() {
+        return true;
     }
-    let Some(note) = app.session.mailbox.notes.note(draft.note).cloned() else { return };
+    let (wants_title, wants_text) = (draft.title != draft.from_title, draft.text != draft.from_text);
+    let Some(note) = app.session.mailbox.notes.note(draft.note).cloned() else {
+        return keep_copy(app, draft, Kept::Gone);
+    };
+    if !wants_title && !wants_text {
+        draft.typed = None;
+        return true;
+    }
+    let underneath = (wants_title && note.title != draft.from_title) || (wants_text && note.text != draft.from_text);
+    if underneath {
+        return keep_copy(app, draft, Kept::Underneath);
+    }
+    let refused = if wants_title && !note.rights.write {
+        Some(NOTE_READ_ONLY)
+    } else if wants_text && !(note.rights.write && note.text_writable()) {
+        Some(if note.rights.write { NOTE_TEXT_ELSEWHERE } else { NOTE_READ_ONLY })
+    } else {
+        None
+    };
+    if let Some(why) = refused {
+        return keep_copy(app, draft, Kept::Refused(why));
+    }
+    let (max_title, max_text) = notes::limits(&app.session, if note.origin.is_remote() { note.origin.account } else { 0 });
+    if draft.title.chars().count() > max_title || draft.text.chars().count() > max_text {
+        return false;
+    }
     let mut params = json!({"id": note.id});
-    if draft.title != note.title {
+    if wants_title {
         params["title"] = json!(draft.title);
     }
-    if draft.text != note.text && note.text_writable() {
+    if wants_text {
         params["text"] = json!(draft.text);
     }
-    if params.as_object().is_some_and(|fields| fields.len() > 1) {
-        let _ = app.run("notes.edit", params);
+    if app.run("notes.edit", params).is_err() {
+        // (Said by the engine; tried again in a moment, the words kept.)
+        draft.typed = Some(now);
+        return false;
     }
+    if let Some(saved) = app.session.mailbox.notes.note(draft.note) {
+        (draft.from_title, draft.from_text) = (saved.title.clone(), saved.text.clone());
+        (draft.title, draft.text) = (saved.title.clone(), saved.text.clone());
+    }
+    draft.typed = None;
+    true
 }
 
-/// What was typed into a note and not saved yet is saved when Notes isn't in front (`always`: whatever is in front).
-/// Called every frame, so that leaving Notes never leaves words behind.
+/// Why words typed are kept as a note of their own.
+enum Kept {
+    /// The note was changed underneath them.
+    Underneath,
+    /// It is gone.
+    Gone,
+    /// It can't be changed so any more.
+    Refused(&'static str),
+}
+
+/// Keep the words of `draft` as a note of their own, in the note's account (where its server still keeps notes), and say
+/// so. `false` when that can't be done now either: the draft stays.
+fn keep_copy(app: &mut MailApp, draft: &mut Draft, why: Kept) -> bool {
+    let account = draft.account;
+    let to = if account != 0 && app.session.mailbox.notes.server(account).is_some() { account } else { 0 };
+    let (max_title, max_text) = notes::limits(&app.session, to);
+    if draft.text.chars().count() > max_text {
+        return false;
+    }
+    let heading = if draft.title.trim().is_empty() {
+        draft.text.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default().to_string()
+    } else {
+        draft.title.trim().to_string()
+    };
+    let title: String = match why {
+        Kept::Gone => heading.chars().take(max_title).collect(),
+        _ => notes::server::copy_title(&app.session.mailbox, &heading, max_title),
+    };
+    let mut params = json!({"title": title, "text": draft.text});
+    if to != 0 {
+        params["account"] = json!(to);
+    }
+    if app.run("notes.new", params).is_err() {
+        return false;
+    }
+    let named = |words: &str| if words.trim().is_empty() { "\"\u{2026}\"".to_string() } else { format!("\"{}\"", words.trim()) };
+    let was = named(if draft.from_title.trim().is_empty() { &heading } else { &draft.from_title });
+    let said = match why {
+        Kept::Underneath => words::fill(words::KEPT_AS_COPY, &[("title", &was), ("copy", &named(&title))]),
+        Kept::Gone => words::fill(words::KEPT_WHEN_GONE, &[("title", &was)]),
+        Kept::Refused(reason) => words::fill(words::KEPT_NOT_WRITABLE, &[("title", &was), ("why", reason), ("copy", &named(&title))]),
+    };
+    app.status(said.clone());
+    app.keep_sync_problems(account, std::slice::from_ref(&said));
+    draft.typed = None;
+    true
+}
+
+/// What was typed into notes and not saved yet is saved when Notes isn't in front (`always`: whatever is in front).
+/// Called every frame, so that leaving Notes never leaves words behind; what can't be saved yet stays.
 pub(crate) fn flush(app: &mut MailApp, ctx: &egui::Context, always: bool) {
     let in_front = app.session.view.module == mailcraft_engine::Module::Notes && !app.ui.backstage;
     if in_front && !always {
         return;
     }
-    let key = egui::Id::new(DRAFT);
-    let Some(mut draft) = ctx.data(|d| d.get_temp::<Draft>(key)) else { return };
-    if draft.typed.is_some() {
-        save(app, &mut draft);
+    let all = drafts(ctx);
+    if all.is_empty() {
+        return;
     }
-    ctx.data_mut(|d| d.remove_temp::<Draft>(key));
+    let now = ctx.input(|i| i.time);
+    let mut kept = Drafts::new();
+    for (id, mut draft) in all {
+        if draft.typed.is_some() && !save(app, &mut draft, now) {
+            kept.insert(id, draft);
+        }
+    }
+    keep_drafts(ctx, kept);
 }
 
 /// Whether words typed into a note are not in it yet.
 pub(crate) fn typed(ctx: &egui::Context) -> bool {
-    ctx.data(|d| d.get_temp::<Draft>(egui::Id::new(DRAFT))).is_some_and(|draft| draft.typed.is_some())
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).values().any(|draft| draft.typed.is_some()))
 }
 
 /// `ui.openNote`: open a note on the web, in the system's browser. The link came from the note's server: it is

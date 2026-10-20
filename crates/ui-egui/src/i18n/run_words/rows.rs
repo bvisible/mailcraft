@@ -278,7 +278,8 @@ pub(super) static ROWS: &[Row] = &[
     row(NOTES, Line, run_word!("Your rights do not let you change this note"), &[]),
     row(NOTES, Line, run_word!("Only its owner deletes a note: this one was shared with you"), &[]),
     row(NOTES, Line, run_word!("This note's text is changed where it was written: open it on the web"), &[]),
-    row(NOTES, Line, run_word!("A note holds 100,000 characters at most"), &[]),
+    row(NOTES, Line, run_word!("A note holds {max} characters at most"), &[]),
+    row(NOTES, Line, run_word!("A note's title holds {max} characters at most"), &[]),
     row(NOTES, Line, run_word!("This note has no web address"), &[]),
     row(NOTES, Line, run_word!("Too many note changes are waiting to be sent. Let them get through first."), &[]),
     // What became of a change of a note a server was told (`notes/server.rs`, in the words of `notes/words.rs`).
@@ -286,6 +287,19 @@ pub(super) static ROWS: &[Row] = &[
     row(NOTES, Line, run_word!("{title} was deleted elsewhere meanwhile: your version is kept as a note of its own."), &[]),
     row(NOTES, Line, run_word!("{title} couldn't be saved on the server: {said}"), &[]),
     row(NOTES, Line, run_word!("The change to {title} was put back as the server has it: {said}"), &[]),
+    row(NOTES, Line, run_word!("The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}."), &[]),
+    row(
+        NOTES,
+        Line,
+        run_word!("{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}."),
+        &[("why", Line)],
+    ),
+    row(
+        NOTES,
+        Line,
+        run_word!("{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent."),
+        &[],
+    ),
     row(NOTES, Line, run_word!("The server wouldn't delete {title}, which is back in the notes: {said}"), &[]),
     row(NOTES, Line, run_word!("{title} was already deleted on the server when its deletion was undone here: it is made there anew."), &[]),
     row(NOTES, Line, run_word!("The server no longer keeps notes here: the notes that waited to go are kept on this computer."), &[]),
@@ -300,7 +314,7 @@ pub(super) static ROWS: &[Row] = &[
     row(NOTES_JOB, Line, run_word!("Couldn't read the notes: {why}"), &[("why", Why)]),
     row(NOTES_JOB, Line, run_word!("1 note couldn't be read: {why}"), &[("why", Why)]),
     row(NOTES_JOB, Line, run_word!("{n} notes couldn't be read: {why}"), &[("why", Why)]),
-    row(NOTES_JOB, Why, run_word!("their text is more than one job reads"), &[]),
+    row(NOTES_JOB, Why, run_word!("the notes hold more text than one reading takes, and these are not shown"), &[]),
     // The engine's refusals of a Send/Receive or a download it can't make or take in (`jmap_mail`, `jmap_fetch`), and what is
     // wrong with the address of a JMAP server (`JmapServer::problem`).
     row(ENGINE, Line, run_word!("this Send/Receive was for another account, not for {account}"), &[]),

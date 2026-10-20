@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use mailcraft_engine::Module;
 use mailcraft_engine::cmd::notes::server::{apply_note_outcomes, merge_notes, note_upload, notes_waiting, settle_note_changes};
 use mailcraft_model::Id;
-use mailcraft_model::note::{NotesAsk, NotesUpload};
+use mailcraft_model::note::{NoteResult, NotesAsk, NotesUpload};
 use mailcraft_model::sync::JmapPimResult;
 use mailcraft_time::Timestamp;
 
@@ -152,8 +152,9 @@ impl MailApp {
         }
         if let Some(changes) = &changes {
             job.sent = Some((changes.clone(), now));
+            // (The state of the mailbox when they went: while it is the same, so are they.)
+            job.sent_rev = Some(self.session.rev());
         }
-        job.sent_rev = Some(self.session.rev());
         self.jmap_pim.notes.flight = Some(Flight { account, read, carried: changes.is_some(), asked_at });
         Some(NotesAsk { read, state, read_at, changes })
     }
@@ -168,8 +169,11 @@ impl MailApp {
         let mut messages: Vec<String> = Vec::new();
         let mut taken = true;
         let mut answered = false;
+        // A change the server didn't take as it was sent leaves the notes here other than the server's.
+        let mut other = false;
         if let Some(uploaded) = answer.as_ref().and_then(|answer| answer.uploaded.as_ref()) {
             answered = !uploaded.outcomes.is_empty();
+            other = uploaded.outcomes.iter().any(|outcome| matches!(outcome.result, NoteResult::Stale | NoteResult::Gone | NoteResult::Refused));
             match apply_note_outcomes(&mut self.session, uploaded) {
                 Ok(applied) => {
                     log::info!(
@@ -213,6 +217,11 @@ impl MailApp {
         if flight.read && answer.is_none() {
             job.due = true;
         }
+        // Then the state held is the server's no longer, whatever the job said, and the notes are read whole soon.
+        if other {
+            job.state = None;
+            job.due = true;
+        }
         !flight.carried || answered
     }
 
@@ -220,7 +229,11 @@ impl MailApp {
     /// a change of a note waits to go to its server, or words typed into a note are not in it yet. A hosting page asks
     /// before it is left while there is one.
     pub fn notes_unsent(&self) -> bool {
-        !self.session.keeps_local && (!self.session.mailbox.notes.changes.is_empty() || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
+        // (A new note the server refused waits nowhere: it is here alone, with why.)
+        let refused_new =
+            self.session.mailbox.notes.items.values().any(|note| note.origin.is_remote() && note.origin.id.is_empty() && !note.error.is_empty());
+        !self.session.keeps_local
+            && (!self.session.mailbox.notes.changes.is_empty() || refused_new || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
     }
 
     /// The state of `account`'s notes that the window holds, and when the job that said it was asked for. (Public for a

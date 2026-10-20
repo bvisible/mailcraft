@@ -5,7 +5,7 @@
 //! the changes of notes before it turned the credential down stays answered, and only the others go again, so that a
 //! change of a note is never sent twice.
 
-use mailcraft_model::note::{NoteOp, NoteOutcome, NotesAsk, NotesUploaded};
+use mailcraft_model::note::{NoteOp, NoteOutcome, NoteResult, NotesAsk, NotesUploaded};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
 
 /// The notes of a job that may be done more than once.
@@ -33,6 +33,15 @@ impl NotesReplay {
         if let Some(changes) = self.left.as_mut().and_then(|ask| ask.changes.as_mut()) {
             changes.ops.retain(|op| !now.iter().any(|outcome| same(&outcome.op, op)));
         }
+        // A change the server didn't take as it was sent (stale, gone, refused) leaves the window's notes other than the
+        // server's: the next try reads them whole, whatever the window asked and whatever state it held.
+        if now.iter().any(|outcome| !matches!(outcome.result, NoteResult::Done | NoteResult::Failed))
+            && let Some(ask) = self.left.as_mut()
+        {
+            ask.read = true;
+            ask.state.clear();
+            ask.read_at = 0;
+        }
         self.answered.extend(now);
     }
 
@@ -58,7 +67,7 @@ fn same(answered: &NoteOp, asked: &NoteOp) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use mailcraft_model::note::{NoteChangeKind, NoteFields, NoteResult, NotesAnswer, NotesDownload, NotesUpload};
+    use mailcraft_model::note::{NoteChangeKind, NoteFields, NotesAnswer, NotesDownload, NotesUpload};
 
     use super::*;
 
@@ -124,5 +133,24 @@ mod tests {
         // Nothing answered: the answer as it came.
         let untouched = NotesReplay::new(&JmapPimRequest::default()).give(JmapPimResult::default());
         assert!(untouched.notes.is_none());
+    }
+
+    #[test]
+    fn a_change_a_try_did_not_have_taken_as_sent_has_the_next_try_read_the_notes_whole() {
+        let ops = vec![op(NoteChangeKind::Update, 2, "VN-2"), op(NoteChangeKind::Update, 3, "VN-3")];
+        let ask = NotesAsk {
+            read: false,
+            state: "s1".into(),
+            changes: Some(NotesUpload { account: 7, email: ME.into(), ops: ops.clone() }),
+            ..Default::default()
+        };
+        let mut replay = NotesReplay::new(&JmapPimRequest { account: 7, email: ME.into(), notes: Some(ask), ..Default::default() });
+        // The first try: the server had other words (stale), then turned the credential down.
+        let mut stale = done(&ops[0]);
+        stale.result = NoteResult::Stale;
+        replay.take(&answered(vec![stale], true));
+        let next = replay.ask().unwrap();
+        assert!(next.read && next.state.is_empty(), "the notes are read whole: the window's are other than the server's");
+        assert_eq!(next.changes.map(|changes| changes.ops.len()), Some(1));
     }
 }

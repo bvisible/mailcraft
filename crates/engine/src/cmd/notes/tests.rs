@@ -126,22 +126,22 @@ fn a_local_note_is_made_edited_pinned_archived_and_deleted_and_undo_takes_each_b
 }
 
 #[test]
-fn a_title_is_one_line_and_text_is_capped() {
+fn a_title_is_one_line_and_a_title_or_text_over_the_limit_is_refused() {
     let mut s = Session::new(crate::sample::mailbox(1_791_993_600, 0));
     let id = run(&mut s, "notes.new", json!({"title": "Two\nlines"}))["id"].as_u64().unwrap();
     assert_eq!(title(&s, id), "Two lines");
-    run(&mut s, "notes.edit", json!({"title": "t".repeat(500)}));
-    assert_eq!(title(&s, id).chars().count(), 140);
-    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), NOTE_TOO_LONG);
-    assert_eq!(refused(&mut s, "notes.new", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), NOTE_TOO_LONG);
-    // A server that takes shorter ones refuses beyond its limit.
+    assert_eq!(refused(&mut s, "notes.edit", json!({"title": "t".repeat(500)})), "A note's title holds 140 characters at most");
+    assert_eq!(title(&s, id), "Two lines", "never cut");
+    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100000 characters at most");
+    assert_eq!(refused(&mut s, "notes.new", json!({"text": "x".repeat(MAX_NOTE_TEXT + 1)})), "A note holds 100000 characters at most");
+    // A server that takes shorter ones refuses beyond its limit, and says its limit.
     let (mut s, account) = with_server();
     if let Some(server) = s.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
         (server.max_title, server.max_text) = (20, 10);
     }
-    let id = run(&mut s, "notes.new", json!({"title": "A title longer than twenty"}))["id"].as_u64().unwrap();
-    assert_eq!(title(&s, id), "A title longer than");
-    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "eleven char"})), NOTE_TOO_LONG);
+    assert_eq!(refused(&mut s, "notes.new", json!({"title": "A title longer than twenty"})), "A note's title holds 20 characters at most");
+    run(&mut s, "notes.new", json!({"title": "Short"}));
+    assert_eq!(refused(&mut s, "notes.edit", json!({"text": "eleven char"})), "A note holds 10 characters at most");
 }
 
 #[test]
@@ -202,4 +202,14 @@ fn agents_read_freely_writes_to_a_servers_note_ask_and_deletes_are_delete_class(
     // The window's opening of a note's link in the system's browser is the owner's to allow, as a meeting's is.
     assert_eq!(agent::access("ui.openNote"), Some(Access::Owner(Class::Send)));
     assert!(agent::describe(&s, "ui.openNote", &json!({"id": theirs})).contains("on the web"));
+}
+
+#[test]
+fn notes_edit_asks_an_agent_as_people_edit_does() {
+    // The mailbox's own: safe, as a contact of its own is; a server's: written for the person there, Send, as a contact
+    // of a server's address book is.
+    assert_eq!(agent::access("notes.edit"), agent::access("people.edit"));
+    let (mut s, account) = with_server();
+    let theirs = server_note(&mut s, account, "VN-9", "Offsite", NoteRights::default());
+    assert_eq!(agent::classify(&s, "notes.edit", &json!({"id": theirs})), Access::Owner(Class::Send));
 }

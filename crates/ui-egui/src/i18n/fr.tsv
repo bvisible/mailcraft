@@ -78,31 +78,37 @@
 	{n} notes	{n} notes
 	Notes aren't kept here: this page's server offers none.	Les notes ne sont pas conservées ici : le serveur de cette page n’en propose aucune.
 	Your rights do not let you change this note	Vos droits ne vous permettent pas de modifier cette note
-	Only its owner deletes a note: this one was shared with you	Seul le propriétaire supprime une note : celle-ci a été partagée avec vous
+	Only its owner deletes a note: this one was shared with you	Seul son propriétaire peut supprimer une note : celle-ci a été partagée avec vous
 	This note's text is changed where it was written: open it on the web	Le texte de cette note se modifie là où elle a été écrite : ouvrez-la sur le web
-	A note holds 100,000 characters at most	Une note contient 100 000 caractères au maximum
+	A note holds {max} characters at most	Une note contient au plus {max} caractères
 	This note has no web address	Cette note n’a pas d’adresse web
 	Too many note changes are waiting to be sent. Let them get through first.	Trop de modifications de notes attendent d’être envoyées. Laissez-les d’abord passer.
 	Apply Downloaded Notes	Appliquer les notes téléchargées
 	Note Changes to Send	Modifications de notes à envoyer
 	Apply Sent Note Changes	Appliquer les modifications de notes envoyées
-	{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.	La note {title} a été modifiée ailleurs entre-temps : votre version est conservée comme une note à part, {copy}.
-	{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.	La note {title} a été supprimée ailleurs entre-temps : votre version est conservée comme une note à part.
-	{title} couldn't be saved on the server: {said}	La note {title} n’a pas pu être enregistrée sur le serveur : {said}
+	{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}.	{title} a été modifiée ailleurs entre-temps : votre version est conservée comme une note à part, {copy}.
+	{title} was deleted elsewhere meanwhile: your version is kept as a note of its own.	{title} a été supprimée ailleurs entre-temps : votre version est conservée comme une note à part.
+	{title} couldn't be saved on the server: {said}	{title} n’a pas pu être enregistrée sur le serveur : {said}
 	The change to {title} was put back as the server has it: {said}	Le serveur a refusé la modification de {title} et la note est revenue à la version qu’il conserve : {said}
 	The server wouldn't delete {title}, which is back in the notes: {said}	Le serveur a refusé de supprimer {title}, qui est de nouveau dans les notes : {said}
-	{title} was already deleted on the server when its deletion was undone here: it is made there anew.	La note {title} était déjà supprimée sur le serveur quand sa suppression a été annulée ici : elle y est recréée.
+	{title} was already deleted on the server when its deletion was undone here: it is made there anew.	{title} avait déjà été supprimée sur le serveur quand sa suppression a été annulée ici : elle y est recréée.
 	The server no longer keeps notes here: the notes that waited to go are kept on this computer.	Le serveur ne conserve plus les notes ici : les notes en attente d’envoi sont conservées sur cet ordinateur.
 	The server no longer keeps notes here, and this page keeps nothing of its own: the notes that waited to go were not kept.	Le serveur ne conserve plus les notes ici, et cette page ne garde rien de son côté : les notes en attente d’envoi n’ont pas été conservées.
 	Couldn't send the note changes: {why}	Impossible d’envoyer les modifications des notes : {why}
 	Couldn't read the notes: {why}	Impossible de lire les notes : {why}
 	1 note couldn't be read: {why}	1 note n’a pas pu être lue : {why}
 	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
-	their text is more than one job reads	leur texte dépasse ce qu’une seule synchronisation peut lire
+	the notes hold more text than one reading takes, and these are not shown	Les notes contiennent plus de texte qu’une lecture ne peut en prendre, et celles-ci ne sont pas affichées
 	The notes couldn't be taken in	Les notes n’ont pas pu être prises en compte
+	A note's title holds {max} characters at most	Le titre d’une note contient au plus {max} caractères
+	The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}.	Le serveur n’a pas accepté la modification de {title} : {said}. Votre version est conservée comme une note à part, {copy}.
+	{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}.	{title} ne peut plus être modifiée ici ({why}) : votre version est conservée comme une note à part, {copy}.
+	{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent.	{title} n’a pas pu être enregistrée sur le serveur ({said}), et il n’y a pas de place pour une note à part : votre version reste ici, non envoyée.
+	1 character too many	1 caractère de trop
+	{n} characters too many	{n} caractères de trop
 	Archived notes	Notes archivées
-	Changed {when}	Modifiée {when}
-	Formatted	Formatée
+	Changed {when}	Dernière modification : {when}
+	Formatted	Mise en forme
 	New\nNote	Nouvelle\nnote
 	No archived notes.	Aucune note archivée.
 	No note matches.	Aucune note ne correspond.

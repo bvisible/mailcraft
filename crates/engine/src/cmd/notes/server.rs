@@ -34,10 +34,36 @@ use serde_json::{Value, json};
 use super::super::remote::{EventsWaiting, new_token, owner, wait_after};
 use super::super::{bad, fail};
 use super::words::{
-    CHANGE_PUT_BACK, KEPT_AS_COPY, KEPT_WHEN_GONE, MADE_ANEW, NO_LONGER_KEPT, NO_LONGER_KEPT_LOST, NOT_DELETED, NOT_SAVED, TOO_MANY_NOTE_CHANGES,
-    fill,
+    CHANGE_PUT_BACK, KEPT_AS_COPY, KEPT_REFUSED, KEPT_WHEN_GONE, MADE_ANEW, NO_LONGER_KEPT, NO_LONGER_KEPT_LOST, NO_ROOM_FOR_COPY, NOT_DELETED,
+    NOT_SAVED, TOO_MANY_NOTE_CHANGES, fill,
 };
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
+
+/// A version older than any a server gives: what a change of words is told against when the version its words were read
+/// at isn't known, so that a server that has other words refuses it as stale rather than write over them.
+pub const OLDEST_VERSION: &str = "1970-01-01T00:00:00Z";
+
+/// The version a change made from `version` is told against: that one, or [`OLDEST_VERSION`] when none is known.
+fn older(version: &str) -> String {
+    if version.is_empty() { OLDEST_VERSION.to_string() } else { version.to_string() }
+}
+
+/// A title for a note of its own made of the person's words over `heading`'s note: "Offsite (2)", "(3)" when that one
+/// is taken, and so on, in `most` characters at most.
+pub fn copy_title(mailbox: &Mailbox, heading: &str, most: usize) -> String {
+    let heading = heading.trim();
+    let mut last = String::new();
+    for n in 2..1_000u32 {
+        let suffix = format!(" ({n})");
+        let room = most.saturating_sub(suffix.chars().count());
+        let kept: String = heading.chars().take(room).collect();
+        last = format!("{}{suffix}", kept.trim_end());
+        if !mailbox.notes.items.values().any(|note| note.title == last) {
+            break;
+        }
+    }
+    last
+}
 
 /// Most outcomes taken from one answer, and most lines said of them.
 const MAX_OUTCOMES: usize = 500;
@@ -148,7 +174,12 @@ pub(super) fn note_changed(mailbox: &mut Mailbox, before: &Note, salt: u64) {
         Some(at) => {
             let back = mailbox.notes.changes.get(at).and_then(|change| change.base.as_deref()).is_some_and(|base| changed(base, &now).is_empty());
             if back {
-                mailbox.notes.changes.remove(at);
+                let change = mailbox.notes.changes.remove(at);
+                // The note is as the server had it when it was read: so is its version (one a read brought meanwhile
+                // is of other words).
+                if let (Some(base), Some(note)) = (change.base.as_deref(), mailbox.notes.note_mut(now.id)) {
+                    note.version.clone_from(&base.version);
+                }
             } else if let Some(change) = mailbox.notes.changes.get_mut(at) {
                 change.retry_at = 0;
             }
@@ -308,10 +339,11 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
         if !had {
             return Ok(merged);
         }
+        // (A new note, and one changed here: the words that waited to go.)
         let waiting: HashSet<Id> = notes
             .changes
             .iter()
-            .filter(|change| change.account == account && change.kind == NoteChangeKind::Create)
+            .filter(|change| change.account == account && change.kind != NoteChangeKind::Delete)
             .map(|change| change.note)
             .collect();
         notes.servers.retain(|server| server.account != account);
@@ -381,10 +413,18 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             let Some(at) = s.mailbox.notes.changes.iter().position(|change| change.note == id && change.base.is_some()) else { continue };
             let Some(base) = s.mailbox.notes.changes.get(at).and_then(|change| change.base.as_deref()).cloned() else { continue };
             let mine = changed(&base, &old);
+            // Words changed here that the server changed meanwhile too were written over other words: the change keeps
+            // the version it was made from, so that the server refuses it as stale rather than take it over the
+            // others'. Otherwise what it is told against is the server's note now, version and all.
+            let moved = (mine.title.is_some() && fresh.title != base.title) || (mine.text.is_some() && fresh.text != base.text);
             let mut new_base = fresh.clone();
             put(&mut new_base, &as_was(&base, &mine));
-            new_base.version.clone_from(&base.version);
+            if moved {
+                new_base.version = older(&base.version);
+            }
             put(&mut fresh, &mine);
+            // (The note's version is the one of the words it is changed from.)
+            fresh.version.clone_from(&new_base.version);
             if let Some(change) = s.mailbox.notes.changes.get_mut(at) {
                 change.base = Some(Box::new(new_base));
             }
@@ -465,7 +505,9 @@ impl NotesApplied {
 /// A note's title for a line about it: quoted, short, and never empty.
 fn called(note: Option<&Note>) -> String {
     let title: String = note.map(Note::heading).unwrap_or_default().chars().filter(|c| !c.is_control()).take(60).collect();
-    if title.trim().is_empty() { "A note".into() } else { format!("\"{}\"", title.trim()) }
+    // (A note with no words is named by none, in any language.)
+    let title = if title.trim().is_empty() { "\u{2026}" } else { title.trim() };
+    format!("\"{title}\"")
 }
 
 /// Take in what a server said to a [`NotesUpload`] ([`NotesUploaded`]): see the module.
@@ -518,16 +560,19 @@ impl Taking<'_> {
         self.applied.failed += 1;
     }
 
-    /// A new note of this server's, here: the person's words, under `title`, to be made there.
-    fn keep_as_new(&mut self, from: &Note, title: String) -> Option<Id> {
+    /// A new note of this server's, here: the person's words of `from`, under a title of their own ([`copy_title`]), to
+    /// be made there; `None` when there is no room for one (the notes or the changes are as many as are kept).
+    fn keep_as_new(&mut self, from: &Note) -> Option<(Id, String)> {
         if self.mailbox.notes.changes.len() >= MAX_NOTE_CHANGES || self.mailbox.notes.items.len() >= MAX_NOTES {
             return None;
         }
+        let most = self.mailbox.notes.server(self.account).map_or(mailcraft_model::note::MAX_NOTE_TITLE, |server| server.max_title);
+        let title = copy_title(self.mailbox, from.heading(), most);
         let id = self.mailbox.alloc_id();
         let note = Note {
             id,
             origin: Origin { account: self.account, ..Default::default() },
-            title,
+            title: title.clone(),
             text: from.text.clone(),
             pinned: from.pinned,
             archived: from.archived,
@@ -537,7 +582,7 @@ impl Taking<'_> {
         };
         self.mailbox.notes.items.insert(id, Arc::new(note));
         note_created(self.mailbox, id, self.salt);
-        Some(id)
+        Some((id, title))
     }
 
     /// What the server's answer to a change says of the note, taken by the note here: its version, whether it is rich,
@@ -598,6 +643,12 @@ impl Taking<'_> {
                 self.mailbox.notes.changes.remove(at);
                 let Some(note) = self.mailbox.notes.note_mut(id) else { return };
                 note.origin.id.clone_from(&said.id);
+                // An answer that names the note and says nothing more of it (no version): its words stay as they are
+                // here, and the next read brings the rest.
+                if said.version.is_empty() {
+                    note.error.clear();
+                    return;
+                }
                 let here = note.clone();
                 Self::take_server_side(note, said);
                 // Nothing changed here since it went: the words are the server's (a title it gave from the first line).
@@ -662,8 +713,12 @@ impl Taking<'_> {
                     let Some(here) = self.mailbox.notes.note(op.note).filter(|note| note.origin.id == op.remote).cloned() else { return };
                     let mut sent = here.clone();
                     put(&mut sent, &op.fields);
-                    if let Some(said) = &outcome.note {
-                        sent.version.clone_from(&said.version);
+                    if let Some(said) = outcome.note.as_ref().filter(|said| !said.version.is_empty()) {
+                        // Words the server has that the note here doesn't, of a part the change didn't name: another
+                        // device's. The opposite goes with the version of the words here, to go stale there rather
+                        // than write over them.
+                        let other = (op.fields.title.is_none() && said.title != here.title) || (op.fields.text.is_none() && said.text != here.text);
+                        sent.version = if other { older(&here.version) } else { said.version.clone() };
                     }
                     if !changed(&sent, &here).is_empty() && self.mailbox.notes.changes.len() < MAX_NOTE_CHANGES {
                         self.mailbox.notes.changes.push(NoteChange {
@@ -677,70 +732,118 @@ impl Taking<'_> {
                     }
                     return;
                 };
-                let here = self.mailbox.notes.note(op.note).cloned();
-                let mut settled = false;
-                if let Some(change) = self.mailbox.notes.changes.get_mut(at) {
-                    if let Some(base) = change.base.as_deref_mut() {
-                        put(base, &op.fields);
-                        if let Some(said) = &outcome.note {
-                            Self::take_changed(base, said);
-                        }
+                let Some(here) = self.mailbox.notes.note(op.note).cloned() else {
+                    self.mailbox.notes.changes.remove(at);
+                    return;
+                };
+                let Some(change) = self.mailbox.notes.changes.get_mut(at) else { return };
+                (change.failures, change.retry_at) = (0, 0);
+                change.error.clear();
+                let Some(base) = change.base.as_deref_mut() else {
+                    self.mailbox.notes.changes.remove(at);
+                    return;
+                };
+                // What the server was told: its note as it was read, with what this change made to it.
+                let read_at = base.version.clone();
+                put(base, &op.fields);
+                let (sent_title, sent_text) = (base.title.clone(), base.text.clone());
+                // The answer says the note's version with its words: the server's note now. The words are taken with
+                // their version, never a version without its words.
+                let said = outcome.note.as_ref().filter(|said| !said.version.is_empty());
+                if let Some(said) = said {
+                    Self::take_changed(base, said);
+                    (base.title, base.text) = (said.title.clone(), said.text.clone());
+                    // Words typed here since this went, of a part the server changed meanwhile too (another device): they
+                    // were typed over other words, and go with the version they were read at, to go stale there.
+                    let over = (here.title != sent_title && said.title != sent_title) || (here.text != sent_text && said.text != sent_text);
+                    if over {
+                        base.version = older(&read_at);
                     }
-                    (change.failures, change.retry_at) = (0, 0);
-                    change.error.clear();
-                    settled = match (change.base.as_deref(), here.as_ref()) {
-                        (Some(base), Some(here)) => changed(base, here).is_empty(),
-                        _ => true,
-                    };
                 }
+                let base = base.clone();
+                if let (Some(said), Some(note)) = (said, self.mailbox.notes.note_mut(op.note)) {
+                    // Of the note here, what wasn't changed since this went is the server's now; what was stays.
+                    if note.title == sent_title {
+                        note.title.clone_from(&said.title);
+                    }
+                    if note.text == sent_text {
+                        note.text.clone_from(&said.text);
+                    }
+                    Self::take_changed(note, said);
+                    note.version.clone_from(&base.version);
+                }
+                // Nothing more to tell once the note here is the server's.
+                let settled = self.mailbox.notes.note(op.note).is_none_or(|now| changed(&base, now).is_empty());
                 if settled {
                     self.mailbox.notes.changes.remove(at);
                 }
-                if let (Some(said), Some(note)) = (&outcome.note, self.mailbox.notes.note_mut(op.note)) {
-                    Self::take_changed(note, said);
-                }
             }
             NoteResult::Failed => self.failed(at, outcome),
-            NoteResult::Stale | NoteResult::Gone => {
+            NoteResult::Stale | NoteResult::Gone | NoteResult::Refused => {
                 let Some(at) = at else { return };
                 let change = self.mailbox.notes.changes.remove(at);
                 let Some(here) = self.mailbox.notes.note(op.note).cloned() else { return };
-                let stale = outcome.result == NoteResult::Stale;
                 let title = called(Some(&here));
-                if op.fields.has_words() {
-                    // Nothing typed is lost: the person's version is a note of its own.
-                    let copy_title = if stale { format!("{} (2)", here.heading()) } else { here.heading().to_string() };
-                    let copy_title: String = copy_title.chars().take(mailcraft_model::note::MAX_NOTE_TITLE).collect();
-                    self.keep_as_new(&here, copy_title.clone());
-                    let line = if stale {
-                        fill(KEPT_AS_COPY, &[("title", &title), ("copy", &format!("\"{copy_title}\""))])
-                    } else {
-                        fill(KEPT_WHEN_GONE, &[("title", &title)])
-                    };
-                    self.applied.say(line);
-                }
-                if stale {
-                    self.applied.stale += 1;
-                    // The note itself is as the server had it, until the next read brings what it has now.
-                    if let (Some(base), Some(note)) = (change.base.as_deref(), self.mailbox.notes.note_mut(op.note)) {
-                        let (id, origin) = (note.id, note.origin.clone());
-                        *note = Note { id, origin, version: String::new(), ..base.clone() };
+                // The person's words that the server didn't take, as they are here now.
+                let words = change.base.as_deref().is_some_and(|base| changed(base, &here).has_words());
+                match outcome.result {
+                    NoteResult::Gone if words => {
+                        // Deleted there: the note here, with her words, is one of its own, to be made there anew.
+                        self.applied.done += 1;
+                        if let Some(note) = self.mailbox.notes.note_mut(op.note) {
+                            note.origin.id.clear();
+                            note.version.clear();
+                            note.error.clear();
+                        }
+                        note_created(self.mailbox, op.note, self.salt);
+                        self.applied.say(fill(KEPT_WHEN_GONE, &[("title", &title)]));
                     }
-                } else {
-                    self.applied.done += 1;
-                    self.mailbox.notes.items.remove(&op.note);
+                    NoteResult::Gone => {
+                        // Deleted there, and nothing of hers to keep: it goes here too.
+                        self.applied.done += 1;
+                        self.mailbox.notes.items.remove(&op.note);
+                    }
+                    result => {
+                        if result == NoteResult::Stale {
+                            self.applied.stale += 1;
+                        } else {
+                            self.applied.refused += 1;
+                        }
+                        // Nothing typed is lost: her words are a note of their own, and the note is put back as the
+                        // server had it, with the version of those words, until the next read brings what it has now.
+                        let copy = if words { self.keep_as_new(&here) } else { None };
+                        match (words, copy) {
+                            (true, None) => {
+                                // No room for one: the change waits, and the note keeps her words.
+                                let mut change = change;
+                                change.failures = change.failures.saturating_add(1);
+                                change.retry_at = self.now.saturating_add(wait_after(change.failures, None));
+                                change.error.clone_from(&outcome.error);
+                                self.mailbox.notes.changes.push(change);
+                                self.applied.say(fill(NO_ROOM_FOR_COPY, &[("title", &title), ("said", &outcome.error)]));
+                                return;
+                            }
+                            (_, Some((_, copy))) => {
+                                let copy = format!("\"{copy}\"");
+                                let said = outcome.error.trim().trim_end_matches('.');
+                                let line = if result == NoteResult::Stale {
+                                    fill(KEPT_AS_COPY, &[("title", &title), ("copy", &copy)])
+                                } else {
+                                    fill(KEPT_REFUSED, &[("title", &title), ("said", said), ("copy", &copy)])
+                                };
+                                self.applied.say(line);
+                            }
+                            (false, _) if result == NoteResult::Refused => {
+                                self.applied.say(fill(CHANGE_PUT_BACK, &[("title", &title), ("said", &outcome.error)]));
+                            }
+                            (false, _) => {}
+                        }
+                        if let (Some(base), Some(note)) = (change.base.as_deref(), self.mailbox.notes.note_mut(op.note)) {
+                            let (id, origin) = (note.id, note.origin.clone());
+                            *note = Note { id, origin, version: older(&base.version), ..base.clone() };
+                        }
+                    }
                 }
-            }
-            NoteResult::Refused => {
-                let Some(at) = at else { return };
-                let change = self.mailbox.notes.changes.remove(at);
-                self.applied.refused += 1;
-                let title = called(self.mailbox.notes.note(op.note));
-                if let (Some(base), Some(note)) = (change.base.as_deref(), self.mailbox.notes.note_mut(op.note)) {
-                    let (id, origin) = (note.id, note.origin.clone());
-                    *note = Note { id, origin, ..base.clone() };
-                }
-                self.applied.say(fill(CHANGE_PUT_BACK, &[("title", &title), ("said", &outcome.error)]));
             }
         }
     }

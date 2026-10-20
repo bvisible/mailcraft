@@ -17,10 +17,12 @@ pub mod server;
 pub mod words;
 
 use mailcraft_model::Id;
-use mailcraft_model::note::{MAX_NOTE_TEXT, Note, clean_text, clean_title};
+use mailcraft_model::note::{MAX_NOTE_TEXT, MAX_NOTE_TITLE, Note, clean_text, clean_title};
 use serde_json::{Value, json};
 
-pub use self::words::{NO_NOTES_HERE, NOTE_NO_LINK, NOTE_NOT_YOURS, NOTE_READ_ONLY, NOTE_TEXT_ELSEWHERE, NOTE_TOO_LONG, TOO_MANY_NOTE_CHANGES};
+pub use self::words::{
+    NO_NOTES_HERE, NOTE_NO_LINK, NOTE_NOT_YOURS, NOTE_READ_ONLY, NOTE_TEXT_ELSEWHERE, NOTE_TITLE_TOO_LONG, NOTE_TOO_LONG, TOO_MANY_NOTE_CHANGES,
+};
 use super::fail;
 use crate::{CmdError, CmdResult, CommandSpec, Module, Session, p};
 
@@ -199,22 +201,32 @@ fn target_account(s: &Session, v: &Value) -> Result<Id, CmdError> {
     }
 }
 
-/// The text a command gives, as a note keeps it; refused when it is longer than the note's server takes.
+/// The longest title and text a note of `account` takes: its server's, or what this computer keeps.
+pub fn limits(s: &Session, account: Id) -> (usize, usize) {
+    s.mailbox.notes.server(account).filter(|_| account != 0).map_or((MAX_NOTE_TITLE, MAX_NOTE_TEXT), |server| (server.max_title, server.max_text))
+}
+
+/// The text a command gives, as a note keeps it; refused when it is longer than the note's server takes (never cut).
 fn text_of(s: &Session, v: &Value, account: Id) -> Result<Option<String>, CmdError> {
     let Some(text) = p::str(v, "text") else { return Ok(None) };
-    let most = s.mailbox.notes.server(account).map_or(MAX_NOTE_TEXT, |server| server.max_text);
+    let most = limits(s, account).1;
     let (text, cut) = clean_text(text);
     if cut || text.chars().count() > most {
-        return Err(fail(NOTE_TOO_LONG));
+        return Err(fail(words::fill(NOTE_TOO_LONG, &[("max", &most.to_string())])));
     }
     Ok(Some(text))
 }
 
-/// The title a command gives, as a note keeps it: one line, as long as its server takes.
-fn title_of(s: &Session, v: &Value, account: Id) -> Option<String> {
-    let title = p::str(v, "title")?;
-    let most = s.mailbox.notes.server(account).map_or(usize::MAX, |server| server.max_title);
-    Some(clean_title(title).0.chars().take(most).collect::<String>().trim_end().to_string())
+/// The title a command gives, as a note keeps it: one line; refused when it is longer than its server takes (never cut).
+fn title_of(s: &Session, v: &Value, account: Id) -> Result<Option<String>, CmdError> {
+    let Some(title) = p::str(v, "title") else { return Ok(None) };
+    let most = limits(s, account).0;
+    let one_line = title.split(['\n', '\r']).map(str::trim).filter(|part| !part.is_empty()).collect::<Vec<_>>().join(" ");
+    let (title, cut) = clean_title(&one_line);
+    if cut || title.chars().count() > most {
+        return Err(fail(words::fill(NOTE_TITLE_TOO_LONG, &[("max", &most.to_string())])));
+    }
+    Ok(Some(title))
 }
 
 fn new(s: &mut Session, v: &Value) -> CmdResult {
@@ -222,7 +234,7 @@ fn new(s: &mut Session, v: &Value) -> CmdResult {
     if account != 0 {
         server::room(&s.mailbox)?;
     }
-    let title = title_of(s, v, account).unwrap_or_default();
+    let title = title_of(s, v, account)?.unwrap_or_default();
     let text = text_of(s, v, account)?.unwrap_or_default();
     let now = s.now();
     let id = s.mailbox.alloc_id();
@@ -240,7 +252,7 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     let id = target(s, v)?;
     let mut note = s.mailbox.notes.note(id).cloned().ok_or_else(|| fail("the note is gone"))?;
     let account = note.origin.account;
-    let title = title_of(s, v, account);
+    let title = title_of(s, v, account)?;
     let text = text_of(s, v, account)?;
     let changes_title = title.as_ref().is_some_and(|title| *title != note.title);
     let changes_text = text.as_ref().is_some_and(|text| *text != note.text);

@@ -455,6 +455,7 @@ const NOT_READ: &[(&str, &str)] = &[
     ),
     ("{} messages were moved out of their account and the server's copies removed: that can't be undone here.", "as above"),
     ("the server's answer said nothing of it", "a note change's words, which a line about the note shows as they came"),
+    ("the version its words were read at isn't known yet", "as above: a change that waits for a read"),
 ];
 
 /// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text

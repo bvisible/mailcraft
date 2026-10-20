@@ -269,22 +269,89 @@ fn words_typed_into_a_note_in_a_hosting_tab_would_be_lost_until_they_are_in_it()
     assert!(window.state().notes_unsent(), "in the note, and its change waits to go");
 }
 
-#[test]
-fn what_is_typed_into_a_note_stops_at_what_its_server_takes() {
-    let mut window = window(false, "view.notes");
-    let account = with_server(&mut window);
-    if let Some(server) = window.state_mut().session.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
-        (server.max_title, server.max_text) = (12, 10);
-    }
-    let id = server_note(&mut window, account, Note { title: "Plan".into(), text: "Steps".into(), ..Default::default() });
+/// A server's note "Groceries" ("Milk"), selected in Notes, in a window whose server keeps notes; its id.
+fn groceries(window: &mut Harness<'static, MailApp>) -> Id {
+    let account = with_server(window);
+    let id = server_note(window, account, Note { title: "Groceries".into(), text: "Milk".into(), ..Default::default() });
+    window.state_mut().execute("view.notes", json!({})).unwrap();
     window.state_mut().execute("notes.select", json!({"id": id})).unwrap();
     window.run_steps(3);
+    id
+}
+
+fn titled(window: &Harness<'static, MailApp>, title: &str) -> Option<Note> {
+    window.state().session.mailbox.notes.items.values().find(|note| note.title == title).map(|note| note.as_ref().clone())
+}
+
+#[test]
+fn words_over_what_the_server_takes_are_never_cut_and_say_how_many_too_many() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    if let Some(server) = window.state_mut().session.mailbox.notes.servers.iter_mut().find(|server| server.account == account) {
+        server.max_text = 10;
+    }
     click_into(&mut window, "noteText", id);
-    text(&mut window, " one two three four");
-    click_into(&mut window, "noteTitle", id);
-    text(&mut window, " for the whole year");
+    text(&mut window, " and a dozen eggs");
+    window.get_by_label("11 characters too many");
+    key(&mut window, Key::Escape);
+    window.run_steps(150);
+    assert_eq!(note(&window, id).text, "Milk", "nothing cut, nothing saved over the limit");
+    assert!(window.state().notes_unsent() || window.state().session.keeps_local, "the words are kept");
+    // Taken back under the limit, they go.
+    click_into(&mut window, "noteText", id);
+    for _ in 0..11 {
+        key(&mut window, Key::Backspace);
+    }
     key(&mut window, Key::Escape);
     window.run_steps(3);
-    let kept = note(&window, id);
-    assert_eq!((kept.text.as_str(), kept.title.as_str()), ("Steps one ", "Plan for the"), "as much as it takes, nothing refused");
+    assert_eq!(note(&window, id).text, "Milk and a");
+}
+
+#[test]
+fn words_typed_while_a_read_brings_other_words_are_kept_as_a_note_of_their_own() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    // Meanwhile a read brings the phone's words.
+    if let Some(note) = window.state_mut().session.mailbox.notes.note_mut(id) {
+        note.text = "Milk\nCoffee".into();
+    }
+    key(&mut window, Key::Escape);
+    window.run_steps(3);
+    assert_eq!(note(&window, id).text, "Milk\nCoffee", "the phone's words are never written over");
+    assert_eq!(titled(&window, "Groceries (2)").map(|copy| copy.text), Some("Milk and eggs".into()), "hers are a note of their own");
+}
+
+#[test]
+fn words_typed_into_a_note_deleted_meanwhile_are_kept() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    window.state_mut().session.mailbox.notes.items.remove(&id);
+    window.run_steps(3);
+    assert!(
+        window.state().session.mailbox.notes.items.values().any(|note| note.title == "Groceries" && note.text == "Milk and eggs"),
+        "the words typed are a note of their own"
+    );
+}
+
+#[test]
+fn words_typed_into_a_note_that_turned_rich_or_read_only_are_kept() {
+    for (rich, read_only) in [(true, false), (false, true)] {
+        let mut window = window(false, "view.mail");
+        let id = groceries(&mut window);
+        click_into(&mut window, "noteText", id);
+        text(&mut window, " and eggs");
+        if let Some(note) = window.state_mut().session.mailbox.notes.note_mut(id) {
+            note.rich = rich;
+            note.rights = NoteRights { write: !read_only, write_text: false, delete: true };
+        }
+        key(&mut window, Key::Escape);
+        window.run_steps(3);
+        assert_eq!(note(&window, id).text, "Milk");
+        assert_eq!(titled(&window, "Groceries (2)").map(|copy| copy.text), Some("Milk and eggs".into()), "rich {rich}, read only {read_only}");
+    }
 }

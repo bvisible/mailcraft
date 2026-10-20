@@ -72,12 +72,13 @@ fn a_download_adds_updates_removes_and_leaves_a_note_that_waits() {
     let offsite = s.mailbox.notes.note(offsite).cloned().unwrap();
     assert_eq!(offsite.title, "Offsite in May", "the change that waits is as it is here");
     assert!(offsite.pinned, "and the rest is the server's");
-    // What goes is the change made here alone, from the version it was made from.
+    // What goes is the change made here alone; the server changed no words of it meanwhile (only the pin), so it is
+    // told against the version just read.
     let going = ops(&mut s, account);
     assert_eq!(going.len(), 1);
     assert_eq!(
         (going[0].fields.title.as_deref(), going[0].fields.pinned, going[0].version.as_str()),
-        (Some("Offsite in May"), None, "2026-10-20T08:00:00.100Z")
+        (Some("Offsite in May"), None, "2026-10-20T09:00:00.000Z")
     );
     assert_eq!(s.mailbox.notes.note(by_remote(&s, "VN-2")).map(|note| note.text.as_str()), Some("Milk"));
     // A whole read without Groceries takes it away; Offsite, whose change waits, stays.
@@ -214,6 +215,7 @@ fn an_answer_to_a_change_takes_its_version_and_rights_and_leaves_the_rest_as_rea
     let said = RemoteNote {
         id: "VN-1".into(),
         title: "Offsite in May".into(),
+        text: "Offsite words".into(),
         version: "2026-10-20T10:00:00.250Z".into(),
         may_delete: false,
         ..Default::default()
@@ -237,7 +239,7 @@ fn a_change_made_while_the_first_was_on_its_way_still_goes() {
     let done = NoteOutcome {
         op: first[0].clone(),
         result: NoteResult::Done,
-        note: Some(remote("VN-1", "Offsite", "2026-10-20T11:00:00.000Z")),
+        note: Some(RemoteNote { text: "First".into(), ..remote("VN-1", "Offsite", "2026-10-20T11:00:00.000Z") }),
         ..Default::default()
     };
     run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![done], ..Default::default() }}));
@@ -257,7 +259,11 @@ fn a_stale_change_of_words_is_kept_as_a_new_note_and_said() {
     assert_eq!((copy.text.as_str(), copy.origin.account, copy.origin.id.as_str()), ("My plan", account, ""));
     assert_eq!(kinds(&s), [NoteChangeKind::Create], "it goes to the server as a note of its own");
     let note = s.mailbox.notes.note(offsite).unwrap();
-    assert_eq!((note.text.as_str(), note.version.as_str()), ("Offsite words", ""), "as the server had it, until the next read");
+    assert_eq!(
+        (note.text.as_str(), note.version.as_str()),
+        ("Offsite words", "2026-10-20T08:00:00.100Z"),
+        "as the server had it, with the version those words are from, until the next read"
+    );
 }
 
 #[test]
@@ -267,8 +273,10 @@ fn a_change_of_words_to_a_note_deleted_elsewhere_is_kept_as_a_new_note() {
     run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
     let said = answer(&mut s, account, NoteResult::Gone, "", None);
     assert_eq!(said["messages"], json!(["\"Offsite\" was deleted elsewhere meanwhile: your version is kept as a note of its own."]));
-    assert!(s.mailbox.notes.note(offsite).is_none());
-    assert!(s.mailbox.notes.items.values().any(|note| note.title == "Offsite" && note.text == "Mine" && note.origin.id.is_empty()));
+    // The note here, with her words, is one of its own now, to be made there anew.
+    assert!(s.mailbox.notes.note(offsite).is_some_and(|note| note.title == "Offsite" && note.text == "Mine" && note.origin.id.is_empty()));
+    assert_eq!(kinds(&s), [NoteChangeKind::Create]);
+    s.mailbox.notes.changes.clear();
     // A pin alone of a note gone there: it goes here too.
     let groceries = by_remote(&s, "VN-2");
     run(&mut s, "notes.pin", json!({"id": groceries}));
@@ -301,8 +309,18 @@ fn a_refused_create_stays_with_why_and_a_refused_change_is_put_back() {
     let offsite = by_remote(&s, "VN-1");
     run(&mut s, "notes.edit", json!({"id": offsite, "title": "Mine now"}));
     let said = answer(&mut s, account, NoteResult::Refused, "Not permitted", None);
-    assert_eq!(said["messages"], json!(["The change to \"Mine now\" was put back as the server has it: Not permitted"]));
-    assert_eq!(s.mailbox.notes.note(offsite).map(|note| note.title.as_str()), Some("Offsite"));
+    assert_eq!(
+        said["messages"],
+        json!(["The server wouldn't take the change to \"Mine now\": Not permitted. Your version is kept as a note of its own, \"Mine now (2)\"."])
+    );
+    assert_eq!(s.mailbox.notes.note(offsite).map(|note| note.title.as_str()), Some("Offsite"), "put back as the server has it");
+    assert!(s.mailbox.notes.items.values().any(|note| note.title == "Mine now (2)" && note.origin.id.is_empty()), "nothing typed is lost");
+    // A refused pin is put back, with the server's words.
+    s.mailbox.notes.changes.clear();
+    run(&mut s, "notes.pin", json!({"id": offsite}));
+    let said = answer(&mut s, account, NoteResult::Refused, "Not permitted", None);
+    assert_eq!(said["messages"], json!(["The change to \"Offsite\" was put back as the server has it: Not permitted"]));
+    assert!(s.mailbox.notes.note(offsite).is_some_and(|note| !note.pinned));
     // A refused deletion brings the note back.
     run(&mut s, "notes.delete", json!({"id": offsite}));
     let said = answer(&mut s, account, NoteResult::Refused, "Only its owner deletes a note.", None);
@@ -335,7 +353,8 @@ fn an_answer_for_an_undone_change_notes_the_opposite() {
     let first = ops(&mut s, account);
     assert!(s.undo());
     assert!(s.mailbox.notes.changes.is_empty());
-    let done = NoteOutcome { op: first[0].clone(), result: NoteResult::Done, note: Some(remote("VN-1", "Renamed", "v2")), ..Default::default() };
+    let said = RemoteNote { text: "Offsite words".into(), ..remote("VN-1", "Renamed", "v2") };
+    let done = NoteOutcome { op: first[0].clone(), result: NoteResult::Done, note: Some(said), ..Default::default() };
     run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![done], ..Default::default() }}));
     let going = ops(&mut s, account);
     assert_eq!((going.len(), going[0].fields.title.as_deref(), going[0].version.as_str()), (1, Some("Offsite"), "v2"));
@@ -399,4 +418,149 @@ fn an_agents_change_never_rides_on_a_change_that_waits_and_writes_ask() {
     let before = s.mailbox.clone();
     run(&mut s, "notes.delete", json!({"id": offsite}));
     assert_eq!(agent::overstep(&before, &s.mailbox, &[Class::Send]), Some(Class::Delete));
+}
+
+/// The note here `id`.
+fn note(s: &Session, id: u64) -> mailcraft_model::note::Note {
+    s.mailbox.notes.note(id).cloned().unwrap_or_else(|| panic!("no note {id}"))
+}
+
+#[test]
+fn a_pin_answered_with_words_written_elsewhere_takes_them_with_their_version() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    // Read here at the first version; the phone wrote "Milk\nCoffee" since; Ada pins it.
+    run(&mut s, "notes.pin", json!({"id": groceries}));
+    let said = RemoteNote { text: "Milk\nCoffee".into(), pinned: true, ..remote("VN-2", "Groceries", "v3") };
+    answer(&mut s, account, NoteResult::Done, "", Some(said));
+    let kept = note(&s, groceries);
+    assert_eq!((kept.text.as_str(), kept.version.as_str(), kept.pinned), ("Milk\nCoffee", "v3", true), "the version with its own words");
+    // What she types now is made over the words she sees.
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nCoffee\nEggs"}));
+    let going = ops(&mut s, account);
+    assert_eq!((going[0].fields.text.as_deref(), going[0].version.as_str()), (Some("Milk\nCoffee\nEggs"), "v3"));
+}
+
+#[test]
+fn words_typed_while_a_pin_was_on_its_way_go_stale_when_the_answer_brings_other_words() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.pin", json!({"id": groceries}));
+    let first = ops(&mut s, account);
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Groceries words\nEggs"}));
+    let said = RemoteNote { text: "Milk\nCoffee".into(), pinned: true, ..remote("VN-2", "Groceries", "v3") };
+    let done = NoteOutcome { op: first[0].clone(), result: NoteResult::Done, note: Some(said), ..Default::default() };
+    run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![done], ..Default::default() }}));
+    assert_eq!(note(&s, groceries).text, "Groceries words\nEggs", "her words stay here");
+    let going = ops(&mut s, account);
+    assert_eq!(going.len(), 1);
+    assert_eq!(
+        (going[0].fields.text.as_deref(), going[0].version.as_str()),
+        (Some("Groceries words\nEggs"), "2026-10-20T08:00:00.200Z"),
+        "made over the words she read: the server refuses it as stale, never over the phone's"
+    );
+}
+
+#[test]
+fn a_change_taken_back_after_a_read_gives_the_note_back_the_version_its_words_are_from() {
+    let (mut s, account) = session();
+    let (groceries, read_at) = (by_remote(&s, "VN-2"), "2026-10-20T08:00:00.200Z");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Mine"}));
+    // A read brings the phone's words, newer, while her change waits.
+    let phone = RemoteNote { text: "Phone".into(), ..remote("VN-2", "Groceries", "v2") };
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z"), phone])}));
+    assert_eq!((note(&s, groceries).text.as_str(), note(&s, groceries).version.as_str()), ("Mine", read_at));
+    // She types the words back as she read them: nothing to tell, and the note's version is still the one of those words.
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Groceries words"}));
+    assert!(s.mailbox.notes.changes.is_empty());
+    assert_eq!(note(&s, groceries).version, read_at);
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Again"}));
+    assert_eq!(ops(&mut s, account)[0].version, read_at, "stale at the server, never written over the phone's");
+}
+
+#[test]
+fn a_pin_that_waits_takes_the_version_a_read_brings() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.pin", json!({"id": groceries}));
+    // A read: the same words, a newer version (the desk archived something, or nothing that matters here).
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "v1"), remote("VN-2", "Groceries", "v2")])}));
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "More"}));
+    let going = ops(&mut s, account);
+    assert_eq!((going.len(), going[0].fields.pinned, going[0].version.as_str()), (1, Some(true), "v2"), "no false conflict");
+}
+
+#[test]
+fn a_conflict_with_no_room_for_a_copy_keeps_the_change_and_says_so() {
+    let (mut s, account) = session();
+    let offsite = by_remote(&s, "VN-1");
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+    while s.mailbox.notes.items.len() < mailcraft_model::note::MAX_NOTES {
+        let id = s.mailbox.alloc_id();
+        s.mailbox.notes.items.insert(id, std::sync::Arc::new(mailcraft_model::note::Note { id, ..Default::default() }));
+    }
+    let said = answer(&mut s, account, NoteResult::Stale, "The note was changed elsewhere: read it again.", None);
+    assert_eq!(
+        said["messages"],
+        json!([
+            "\"Offsite\" couldn't be saved on the server (The note was changed elsewhere: read it again.), and there is no room for a note of its own: your version stays here, unsent."
+        ])
+    );
+    assert_eq!(note(&s, offsite).text, "Mine");
+    assert_eq!(kinds(&s), [NoteChangeKind::Update], "it waits");
+}
+
+#[test]
+fn a_server_that_no_longer_offers_notes_keeps_a_waiting_change_here() {
+    let (mut s, account) = session();
+    let offsite = by_remote(&s, "VN-1");
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+    let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+    let said = run(&mut s, "sync.applyNotes", json!({"download": gone}));
+    assert_eq!(said["messages"], json!([super::super::words::NO_LONGER_KEPT]));
+    assert!(s.mailbox.notes.note(offsite).is_some_and(|note| note.origin.is_local() && note.text == "Mine"));
+}
+
+#[test]
+fn a_new_notes_answer_that_names_it_alone_leaves_its_words() {
+    let (mut s, account) = session();
+    let id = run(&mut s, "notes.new", json!({"title": "Ideas", "text": "For May"}))["id"].as_u64().unwrap();
+    answer(&mut s, account, NoteResult::Done, "", Some(RemoteNote { id: "VN-9".into(), ..Default::default() }));
+    let made = note(&s, id);
+    assert_eq!((made.origin.id.as_str(), made.title.as_str(), made.text.as_str()), ("VN-9", "Ideas", "For May"));
+}
+
+#[test]
+fn conflicts_on_one_note_number_their_copies() {
+    let (mut s, account) = session();
+    let offsite = by_remote(&s, "VN-1");
+    for words in ["One", "Two"] {
+        run(&mut s, "notes.edit", json!({"id": offsite, "text": words}));
+        answer(&mut s, account, NoteResult::Stale, "changed elsewhere", None);
+        s.mailbox.notes.changes.retain(|change| change.kind != NoteChangeKind::Create);
+    }
+    let mut copies: Vec<String> =
+        s.mailbox.notes.items.values().filter(|note| note.title.starts_with("Offsite (")).map(|note| note.title.clone()).collect();
+    copies.sort();
+    assert_eq!(copies, ["Offsite (2)", "Offsite (3)"]);
+}
+
+#[test]
+fn a_note_without_words_is_named_in_a_line_without_english_words() {
+    let (mut s, account) = session();
+    run(&mut s, "notes.new", json!({}));
+    let said = answer(&mut s, account, NoteResult::Refused, "Not permitted", None);
+    assert_eq!(said["messages"], json!(["\"…\" couldn't be saved on the server: Not permitted"]));
+}
+
+#[test]
+fn an_answer_that_brings_another_devices_words_of_a_part_not_changed_here_settles_the_change() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "title": "Shopping"}));
+    // The server took the title; the phone had changed the text meanwhile, and the answer says so.
+    let said = RemoteNote { title: "Shopping".into(), text: "Milk\nCoffee".into(), ..remote("VN-2", "Groceries", "v3") };
+    answer(&mut s, account, NoteResult::Done, "", Some(said));
+    assert_eq!((note(&s, groceries).text.as_str(), note(&s, groceries).version.as_str()), ("Milk\nCoffee", "v3"));
+    assert!(s.mailbox.notes.changes.is_empty(), "nothing waits: the note here is the server's");
 }

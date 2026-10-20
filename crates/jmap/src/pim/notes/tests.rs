@@ -187,7 +187,11 @@ fn text_beyond_the_budget_ends_the_read_incomplete() {
     let read: usize = got.notes.iter().map(|note| note.text.chars().count() + note.title.chars().count()).sum();
     assert!(read <= TEXT_BUDGET && got.notes.len() >= 75, "{} notes, {read} characters", got.notes.len());
     assert_eq!(result.errors.len(), 1);
-    assert!(result.errors[0].ends_with("notes couldn't be read: their text is more than one job reads"), "{:?}", result.errors);
+    assert!(
+        result.errors[0].ends_with("notes couldn't be read: the notes hold more text than one reading takes, and these are not shown"),
+        "{:?}",
+        result.errors
+    );
 }
 
 #[test]
@@ -246,13 +250,13 @@ fn outcomes_done_gone_stale_refused_failed_follow_the_set_errors() {
     });
     let ops = vec![
         update("VN-2", NoteFields { text: Some("Mine".into()), ..Default::default() }, &groceries),
-        update("VN-404", NoteFields { title: Some("x".into()), ..Default::default() }, ""),
-        update("VN-4", NoteFields { title: Some("Mine now".into()), ..Default::default() }, ""),
+        update("VN-404", NoteFields { title: Some("x".into()), ..Default::default() }, "2026-01-01T00:00:00Z"),
+        update("VN-4", NoteFields { title: Some("Mine now".into()), ..Default::default() }, &version_of(&server, "VN-4")),
         destroy("VN-5"),
         update("VN-1", NoteFields { pinned: Some(false), ..Default::default() }, ""),
         create(11, "Too many", "mark-full"),
         create(12, "A title too long", "mark-12"),
-        update("VN-3", NoteFields { text: Some("Plain".into()), ..Default::default() }, ""),
+        update("VN-3", NoteFields { text: Some("Plain".into()), ..Default::default() }, &version_of(&server, "VN-3")),
     ];
     let result = run(&server, &request(writing(ops)));
     let said = outcomes(&result);
@@ -434,4 +438,45 @@ fn a_job_that_only_writes_reads_when_a_change_was_not_taken_as_sent() {
     assert_eq!(outcomes(&result)[0].0, NoteResult::Stale);
     let read = download(&result);
     assert!(read.complete && read.notes.iter().any(|note| note.id == "VN-1" && note.text == "On the phone"));
+}
+
+#[test]
+fn a_change_of_words_without_a_version_is_not_sent_and_the_notes_are_read() {
+    let server = server();
+    let words = update("VN-2", NoteFields { text: Some("Mine".into()), ..Default::default() }, "");
+    let ask = NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops: vec![words] }), ..Default::default() };
+    let result = run(&server, &request(ask));
+    assert_eq!(outcomes(&result).first().map(|(result, _)| *result), Some(NoteResult::Failed), "{result:?}");
+    assert!(!server.with(|d| d.notes.written.iter().any(|(what, _)| what == "update VN-2")), "never written over whatever is there");
+    assert!(answer(&result).download.as_ref().is_some_and(|read| read.complete), "read, for the version the words are made from");
+    assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk\nBread".into()));
+}
+
+#[test]
+fn a_change_whose_answer_was_lost_is_no_conflict_with_itself() {
+    let server = server();
+    let read = version_of(&server, "VN-2");
+    let change = update("VN-2", NoteFields { text: Some("Milk".into()), ..Default::default() }, &read);
+    let only = |op: NoteOp| NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops: vec![op] }), ..Default::default() };
+    // The server writes it, and its answer is lost on the way.
+    server.with(|d| d.lost_answers = 1);
+    let first = run(&server, &request(only(change.clone())));
+    assert_eq!(outcomes(&first)[0].0, NoteResult::Failed);
+    assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk".into()));
+    // Sent again, from the version it was made from: the note there has those very words, and it is done.
+    let again = run(&server, &request(only(change)));
+    let said = answer(&again).uploaded.as_ref().and_then(|uploaded| uploaded.outcomes.first()).cloned().unwrap();
+    assert_eq!(said.result, NoteResult::Done, "{said:?}");
+    assert_eq!(said.note.map(|note| (note.text, note.version)), Some(("Milk".into(), version_of(&server, "VN-2"))));
+}
+
+#[test]
+fn a_note_that_says_nothing_of_the_rights_allows_a_shared_one_nothing() {
+    let shared = note_of(&json!({"id": "VN-1", "title": "Codes", "isShared": true})).unwrap();
+    assert!(!shared.may_write && !shared.may_write_text && !shared.may_delete);
+    let own = note_of(&json!({"id": "VN-2", "title": "Mine"})).unwrap();
+    assert!(own.may_write && own.may_write_text && own.may_delete);
+    // An answer to a change that doesn't say the note's words says nothing of it.
+    assert!(changed_of("VN-2", &json!({"updated": "2026-10-20T08:00:00.123Z"})).is_none());
+    assert!(changed_of("VN-2", &json!({"updated": "2026-10-20T08:00:00.123Z", "title": "T", "text": ""})).is_some());
 }

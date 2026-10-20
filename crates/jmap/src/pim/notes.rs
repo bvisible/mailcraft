@@ -78,6 +78,9 @@ const NOTE_PROPERTIES: [&str; 13] =
     ["id", "title", "text", "isRich", "isPinned", "isArchived", "category", "created", "updated", "isShared", "ownerName", "myRights", "webUrl"];
 /// Why a change was not done: the server's answer says nothing of it.
 const UNSAID: &str = "the server's answer said nothing of it";
+/// Why a change of words is not sent: the version its words were read at isn't known (it would be written over
+/// whatever is there). The notes are read, and it goes after.
+const VERSION_UNKNOWN: &str = "the version its words were read at isn't known yet";
 
 /// The longest title and text the session says the server takes, in characters: `maxSizeTitle` between 1 and 1,000
 /// (140 when it says nothing), `maxSizeText` between 1 and 100,000 (100,000 when it says nothing).
@@ -105,7 +108,7 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
     // other than the server's (a stale one put back, a note gone), and what the server has now is read at once.
     let mut read_again = false;
     if let Some(upload) = ask.changes.as_ref().filter(|upload| !upload.ops.is_empty()) {
-        let (uploaded, stopped, line) = job.write(upload, request).await;
+        let (uploaded, stopped, line, read) = job.write(upload, request).await;
         lines.extend(line);
         // After changes the server took, all of them, from the very state held, the window's notes are at the state it
         // said after them. A change it didn't take as it was sent (stale, gone, refused) leaves the window's notes
@@ -117,7 +120,7 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
             Some(state) if uploaded.old_state == state && !uploaded.new_state.is_empty() => Some(uploaded.new_state.clone()),
             other => other,
         };
-        read_again = !kept;
+        read_again = !kept || read;
         answer.uploaded = Some(uploaded);
         stop = stopped;
     }
@@ -179,6 +182,8 @@ struct Writes {
     splits: usize,
     /// Why a call couldn't be made, for the line.
     trouble: Option<String>,
+    /// The notes are to be read in this job, whatever was asked: a change waits for a version only a read brings.
+    read: bool,
 }
 
 impl Writes {
@@ -254,8 +259,9 @@ fn note_of(value: &Value) -> Option<RemoteNote> {
     let text = |key: &str| value.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
     let flag = |key: &str| value.get(key).and_then(Value::as_bool).unwrap_or(false);
     let rights = value.get("myRights");
-    // (What the server doesn't say of the rights, it lets: the engine's own checks still hold.)
-    let right = |key: &str| rights.and_then(|rights| rights.get(key)).and_then(Value::as_bool).unwrap_or(true);
+    // What the server doesn't say of the rights: all of them for the person's own note, none for one shared with them.
+    let shared = flag("isShared");
+    let right = |key: &str| rights.and_then(|rights| rights.get(key)).and_then(Value::as_bool).unwrap_or(!shared);
     let version = text("updated");
     Some(RemoteNote {
         id: id.to_string(),
@@ -282,6 +288,10 @@ fn note_of(value: &Value) -> Option<RemoteNote> {
 /// named `id`; `None` when it says nothing of it.
 fn changed_of(id: &str, value: &Value) -> Option<RemoteNote> {
     let mut said = value.as_object()?.clone();
+    // A version is taken with its words or not at all.
+    if !["updated", "title", "text"].iter().all(|key| said.get(*key).is_some_and(Value::is_string)) {
+        return None;
+    }
     said.insert("id".into(), json!(id));
     note_of(&Value::Object(said))
 }
@@ -323,7 +333,7 @@ impl<H: Http> Job<'_, H> {
     }
 
     /// Write the changes of `upload` (see the module): what came of each, why the job stops when it does, and a line.
-    async fn write(&self, upload: &NotesUpload, request: &JmapPimRequest) -> (NotesUploaded, Option<Stop>, Option<String>) {
+    async fn write(&self, upload: &NotesUpload, request: &JmapPimRequest) -> (NotesUploaded, Option<Stop>, Option<String>, bool) {
         let ops: Vec<NoteOp> = upload
             .ops
             .iter()
@@ -334,7 +344,8 @@ impl<H: Http> Job<'_, H> {
                 op
             })
             .collect();
-        let mut w = Writes { outcomes: vec![None; ops.len()], ops, old_state: None, new_state: None, chained: true, splits: 0, trouble: None };
+        let mut w =
+            Writes { outcomes: vec![None; ops.len()], ops, old_state: None, new_state: None, chained: true, splits: 0, trouble: None, read: false };
         let size = self.client.max_objects_in_set().clamp(1, MAX_PER_SET);
         let places: Vec<usize> = (0..w.ops.len()).collect();
         let mut work: Vec<Vec<usize>> = places.chunks(size).rev().map(<[usize]>::to_vec).collect();
@@ -366,6 +377,7 @@ impl<H: Http> Job<'_, H> {
         }
         let token_refused = matches!(stop, Some(Stop::Auth));
         let line = w.trouble.take().map(|why| format!("Couldn't send the note changes: {why}"));
+        let read = w.read;
         let new_state = if w.chained { w.new_state.clone().unwrap_or_default() } else { String::new() };
         let uploaded = NotesUploaded {
             account: request.account,
@@ -375,7 +387,7 @@ impl<H: Http> Job<'_, H> {
             new_state,
             token_refused,
         };
-        (uploaded, stop, line)
+        (uploaded, stop, line, read)
     }
 
     /// One `Note/set` of the changes at `call`, and their outcomes.
@@ -396,6 +408,13 @@ impl<H: Http> Job<'_, H> {
                     continue;
                 }
                 _ if !named.insert(op.remote.clone()) => continue,
+                // A change of words without the version they were read at would be written over whatever is there:
+                // not sent; the notes are read, and it goes after with that version.
+                NoteChangeKind::Update if op.fields.has_words() && op.version.is_empty() => {
+                    w.failed(at, VERSION_UNKNOWN, None);
+                    w.read = true;
+                    continue;
+                }
                 NoteChangeKind::Update => {
                     update.insert(op.remote.clone(), note_json(op));
                 }
@@ -456,6 +475,7 @@ impl<H: Http> Job<'_, H> {
         let (created, not_created, updated, not_updated, not_destroyed) =
             (map("created"), map("notCreated"), map("updated"), map("notUpdated"), map("notDestroyed"));
         let destroyed: HashSet<&str> = answer.get("destroyed").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+        let tried = sent.clone();
         for at in sent {
             let Some(op) = w.ops.get(at).cloned() else { continue };
             let key = format!("k{at}");
@@ -480,7 +500,43 @@ impl<H: Http> Job<'_, H> {
                 (None, None) => w.failed(at, UNSAID, None),
             }
         }
+        self.done_after_all(&tried, w).await;
         Ok(Sent::Answered)
+    }
+
+    /// Of the changes at `tried`, those refused as stale whose very words the note there has were written by an earlier
+    /// try whose answer was lost (the server wrote it, the connection broke): they are done, with the note as it is
+    /// there, never a conflict with themselves. (When the note can't be read now, they stay stale: the person's words
+    /// are kept as a note of their own.)
+    async fn done_after_all(&self, tried: &[usize], w: &mut Writes) {
+        let stale = |at: &usize| {
+            w.outcomes
+                .get(*at)
+                .and_then(Option::as_ref)
+                .is_some_and(|outcome| outcome.result == NoteResult::Stale && outcome.op.kind == NoteChangeKind::Update)
+        };
+        let stale: Vec<usize> = tried.iter().copied().filter(stale).collect();
+        if stale.is_empty() {
+            return;
+        }
+        let ids: Vec<String> = stale.iter().filter_map(|at| w.ops.get(*at).map(|op| op.remote.clone())).collect();
+        let get = json!({"accountId": self.account, "ids": ids, "properties": NOTE_PROPERTIES});
+        let Ok(mut answers) = self.client.call_within(&USING, vec![("Note/get", get)], ITEMS_BYTES).await else { return };
+        let Ok(answer) = answers.take(0) else { return };
+        let there: Vec<RemoteNote> = answer.get("list").and_then(Value::as_array).into_iter().flatten().filter_map(note_of).collect();
+        for at in stale {
+            let Some(op) = w.ops.get(at).cloned() else { continue };
+            let Some(note) = there.iter().find(|note| note.id == op.remote) else { continue };
+            let fields = &op.fields;
+            let same = fields.title.as_ref().is_none_or(|title| *title == note.title)
+                && fields.text.as_ref().is_none_or(|text| *text == note.text)
+                && fields.pinned.is_none_or(|pinned| pinned == note.pinned)
+                && fields.archived.is_none_or(|archived| archived == note.archived);
+            if same && let Some(slot) = w.outcomes.get_mut(at) {
+                *slot = None;
+                w.answer(at, NoteResult::Done, Some(note.clone()), "", None);
+            }
+        }
     }
 
     /// Read the notes into `got` (see the module): only whether the server still says `held`, when there is one.
@@ -617,7 +673,7 @@ impl<H: Http> Job<'_, H> {
 const MISSING: &str = "the server's answer did not have them";
 
 /// Why the notes after the budget are not read.
-const OVER_BUDGET: &str = "their text is more than one job reads";
+const OVER_BUDGET: &str = "the notes hold more text than one reading takes, and these are not shown";
 
 /// The state a `Note/query` says (`queryState`), when it says one.
 fn state_of(answer: &Value) -> Option<String> {

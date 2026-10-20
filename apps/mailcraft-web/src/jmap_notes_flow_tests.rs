@@ -139,8 +139,12 @@ fn a_note_changed_elsewhere_meanwhile_keeps_both_versions() {
     assert_eq!(flow.note("Groceries (2)").map(|note| note.text), Some("Milk\nBread\nEggs".into()), "Ada's, as a note of its own");
     let said = flow.app.sync_problems_of(flow.account);
     assert!(said.iter().any(|line| line.contains("kept as a note of its own")), "{said:?}");
-    // It goes to the server too.
-    assert!(flow.push_notes());
+    // The notes are read whole again soon (the state held was the server's no longer), and her copy goes too.
+    let before = flow.server.calls().len();
+    for _ in 0..3 {
+        flow.push_notes();
+    }
+    assert!(flow.server.calls().into_iter().skip(before).any(|call| call == "Note/get"), "read again");
     assert_eq!(flow.server_note("Groceries (2)").map(|note| note.text), Some("Milk\nBread\nEggs".into()));
     assert_eq!(flow.server_note("Groceries").map(|note| note.text), Some("Milk\nCoffee".into()), "the phone's never written over");
 }
@@ -201,6 +205,25 @@ fn a_token_that_dies_mid_job_sends_each_note_change_once() {
     assert_eq!(flow.server_note("Shopping").map(|note| note.id), Some("VN-2".into()));
     assert!(flow.server_note("Team offsite ideas").is_some_and(|note| !note.pinned));
     assert!(!flow.app.jmap_refused_for(flow.account));
+    // The first refused as stale (the desk renamed it meanwhile), then the token dies: the retry sends the second
+    // alone, and reads the notes whole, so that the desk's title shows here at once and hers is a note of its own.
+    let mut flow = start(false, true);
+    let (groceries, offsite) = (flow.note_id("Groceries"), flow.note_id("Team offsite ideas"));
+    flow.app.execute("notes.edit", json!({"id": groceries, "title": "Shopping"})).unwrap();
+    flow.app.execute("notes.pin", json!({"id": offsite})).unwrap();
+    flow.server.with(|d| {
+        d.notes.change("VN-2", |note| note.title = "Market".into());
+        d.max_set = 1;
+        d.faults.push_back(Fault::later("Note/set", 1, Effect::RefuseWith(401)));
+    });
+    assert!(flow.push_notes());
+    assert_eq!(*flow.page.renewals.borrow(), 1);
+    let sent: Vec<String> = flow.server.with(|d| d.notes.written.iter().map(|(what, _)| what.clone()).collect());
+    assert_eq!(sent.iter().filter(|what| *what == "update VN-2").count(), 1, "{sent:?}");
+    assert_eq!(sent.iter().filter(|what| *what == "update VN-1").count(), 1, "{sent:?}");
+    assert_eq!(flow.note("Market").map(|note| note.id), Some(groceries), "the desk's title, here at once");
+    assert!(flow.note("Shopping (2)").is_some(), "hers, as a note of its own");
+    assert_eq!(flow.server_note("Market").map(|note| note.id), Some("VN-2".into()), "never written over");
 }
 
 #[test]
