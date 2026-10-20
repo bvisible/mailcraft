@@ -201,6 +201,33 @@ fn done_gives_a_new_note_its_server_id_and_version() {
 }
 
 #[test]
+fn an_answer_to_a_change_takes_its_version_and_rights_and_leaves_the_rest_as_read() {
+    let (mut s, account) = session();
+    let mut offsite = remote("VN-1", "Offsite", "2026-10-20T09:00:00.000Z");
+    (offsite.web_url, offsite.owner_name, offsite.category) =
+        ("https://desk.example.org/app/notes?note=VN-1".into(), "Grace Okafor".into(), "Work".into());
+    offsite.shared = true;
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![offsite, remote("VN-2", "Groceries", "v")])}));
+    let id = by_remote(&s, "VN-1");
+    run(&mut s, "notes.edit", json!({"id": id, "title": "Offsite in May"}));
+    // The server's answer to a change says its version, its words and the rights, no more.
+    let said = RemoteNote {
+        id: "VN-1".into(),
+        title: "Offsite in May".into(),
+        version: "2026-10-20T10:00:00.250Z".into(),
+        may_delete: false,
+        ..Default::default()
+    };
+    answer(&mut s, account, NoteResult::Done, "", Some(said));
+    let note = s.mailbox.notes.note(id).cloned().unwrap();
+    assert_eq!((note.version.as_str(), note.rights.delete), ("2026-10-20T10:00:00.250Z", false));
+    assert_eq!(
+        (note.web_url.as_str(), note.owner_name.as_str(), note.category.as_str(), note.shared),
+        ("https://desk.example.org/app/notes?note=VN-1", "Grace Okafor", "Work", true)
+    );
+}
+
+#[test]
 fn a_change_made_while_the_first_was_on_its_way_still_goes() {
     let (mut s, account) = session();
     let offsite = by_remote(&s, "VN-1");

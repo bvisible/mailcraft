@@ -25,8 +25,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use mailcraft_model::note::{
-    MAX_NOTE_CHANGES, MAX_NOTE_OPS, MAX_NOTES, Note, NoteChange, NoteChangeKind, NoteFields, NoteOp, NoteOutcome, NoteResult, NotesDownload,
-    NotesUpload, NotesUploaded, RemoteNote,
+    MAX_NOTE_CHANGES, MAX_NOTE_OPS, MAX_NOTES, Note, NoteChange, NoteChangeKind, NoteFields, NoteOp, NoteOutcome, NoteResult, NoteRights,
+    NotesDownload, NotesUpload, NotesUploaded, RemoteNote,
 };
 use mailcraft_model::{Id, Mailbox, Origin};
 use serde_json::{Value, json};
@@ -540,7 +540,19 @@ impl Taking<'_> {
         Some(id)
     }
 
-    /// What the server says of a note it made or changed, taken by the note here (not its words).
+    /// What the server's answer to a change says of the note, taken by the note here: its version, whether it is rich,
+    /// and the person's rights (the answer says no more: the note's link, owner and category stay as they were read).
+    fn take_changed(note: &mut Note, said: &RemoteNote) {
+        let fresh = said.note(note.origin.account, note.id);
+        (note.version, note.rich) = (fresh.version, fresh.rich);
+        note.rights = NoteRights { write_text: fresh.rights.write_text && !note.cut, ..fresh.rights };
+        if fresh.updated != 0 {
+            note.updated = fresh.updated;
+        }
+        note.error.clear();
+    }
+
+    /// What the server says of a note it made, taken by the note here (not its words).
     fn take_server_side(note: &mut Note, said: &RemoteNote) {
         let fresh = said.note(note.origin.account, note.id);
         (note.version, note.rights, note.rich, note.web_url) = (fresh.version, fresh.rights, fresh.rich, fresh.web_url);
@@ -671,7 +683,7 @@ impl Taking<'_> {
                     if let Some(base) = change.base.as_deref_mut() {
                         put(base, &op.fields);
                         if let Some(said) = &outcome.note {
-                            Self::take_server_side(base, said);
+                            Self::take_changed(base, said);
                         }
                     }
                     (change.failures, change.retry_at) = (0, 0);
@@ -685,7 +697,7 @@ impl Taking<'_> {
                     self.mailbox.notes.changes.remove(at);
                 }
                 if let (Some(said), Some(note)) = (&outcome.note, self.mailbox.notes.note_mut(op.note)) {
-                    Self::take_server_side(note, said);
+                    Self::take_changed(note, said);
                 }
             }
             NoteResult::Failed => self.failed(at, outcome),
