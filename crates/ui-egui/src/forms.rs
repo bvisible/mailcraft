@@ -1153,6 +1153,13 @@ mod event {
         })
     }
 
+    // //// Neoffice — where an appointment may be held online: a JMAP account's calendar whose server makes rooms now.
+    /// Whether `calendar` is a JMAP account's whose server makes rooms of its own now (its list of services has its own:
+    /// [`mailcraft_engine::cmd::calendar::teams_refusal`] has nothing to say): an appointment may be held online there.
+    fn own_rooms(s: &Session, calendar: Id) -> bool {
+        online_own(s, calendar) && mailcraft_engine::cmd::calendar::teams_refusal(s, calendar).is_none()
+    }
+
     /// The reminders offered, in minutes before the start (`None`: no reminder).
     const REMINDERS: [Option<u32>; 9] = [None, Some(0), Some(5), Some(10), Some(15), Some(30), Some(60), Some(120), Some(1440)];
 
@@ -2214,6 +2221,9 @@ mod event {
         /// Its calendar's server holds online meetings of its own (a JMAP account's): the button and the row say "Online
         /// Meeting", not Teams ([`online_own`]).
         online_own: bool,
+        // //// Neoffice — an appointment may be held online where its calendar's server makes rooms now (`own_rooms`).
+        /// Its calendar's server makes rooms of its own now ([`own_rooms`]): an appointment may be held online there.
+        online_rooms: bool,
         /// The link to join it by, when its server has given one.
         join_url: String,
         /// How many of the people invited have proposed another time (a meeting the owner
@@ -2284,8 +2294,8 @@ mod event {
                 shown_zone: s.zone().id(),
                 ..Default::default()
             };
-            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`).
-            f.online_own = online_own(s, f.calendar);
+            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`), and whether it makes rooms now.
+            (f.online_own, f.online_rooms) = (online_own(s, f.calendar), own_rooms(s, f.calendar));
             // Zones it is to have of its own: its times are then by their clocks.
             let zone = |k: &str| p.get(k).and_then(Value::as_str).and_then(Zone::named).map(Zone::id).unwrap_or_default();
             (f.start_zone, f.end_zone) = (zone("startZone"), zone("endZone"));
@@ -2334,8 +2344,8 @@ mod event {
                 shown_zone: s.zone().id(),
                 ..Default::default()
             };
-            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`).
-            f.online_own = online_own(s, f.calendar);
+            // //// Neoffice — whose online meetings its calendar's server holds (`online_own`), and whether it makes rooms now.
+            (f.online_own, f.online_rooms) = (online_own(s, f.calendar), own_rooms(s, f.calendar));
             let here = |instant: mailcraft_time::Timestamp| s.offset_at(instant);
             // Which of a series is meant, when that is said: one occurrence shows on its own day.
             // (The day that is said is the day the occurrence starts on here; the series names
@@ -2737,7 +2747,7 @@ mod event {
                 m.insert("optional".into(), json!(""));
             }
             // //// Neoffice — an appointment of a calendar whose server makes rooms of its own may be held online too.
-            if !self.meeting && self.online_own {
+            if !self.meeting && self.online_rooms {
                 m.insert("online".into(), json!(self.online));
             }
             // The zones the times above are by, for an event that has (or had) zones of its
@@ -3019,9 +3029,9 @@ mod event {
                 ..item("importanceLow", "importanceLow", tl!("Low Importance"), 3, 8)
             });
             // //// Neoffice — the online meeting's button, for a meeting the owner organizes (as upstream) and for an
-            // appointment of a calendar whose server makes rooms of its own (`online_own`): one held online without
+            // appointment of a calendar whose server makes rooms of its own (`own_rooms`): one held online without
             // being a meeting, saved, sent to nobody.
-            if organizes || (!self.guest && self.online_own) {
+            if organizes || (!self.guest && self.online_rooms) {
                 // A Teams meeting is made by the calendar's server: where there is none to make
                 // it, and once one is made (which it then stays), the button is there and says why
                 // it can't be pressed.
@@ -3052,14 +3062,22 @@ mod event {
             items
         }
 
-        /// The window's own bar. The key of the button that was clicked.
-        fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
-            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form; an appointment
-            // that goes to a calendar without them is held online no more, as its button is gone)
-            self.online_own = online_own(&app.session, self.calendar);
-            if !self.meeting && !self.online_own && !self.online_made {
+        // //// Neoffice — what the form says of an online meeting follows the calendar it is in now.
+        /// Whose online meetings the calendar the item is in now holds (it may have been changed in the form): an
+        /// appointment that goes to a calendar without them is held online no more, as its button is gone there.
+        fn follow_calendar(&mut self, s: &Session) {
+            let had_rooms = self.online_rooms;
+            (self.online_own, self.online_rooms) = (online_own(s, self.calendar), own_rooms(s, self.calendar));
+            // (Only when that changes: a Teams meeting is a meeting's, and stays as it is.)
+            if had_rooms && !self.online_rooms && !self.meeting && !self.online_made {
                 self.online = false;
             }
+        }
+
+        /// The window's own bar. The key of the button that was clicked.
+        fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
+            // //// Neoffice — (as the calendar it is in now has them: it may have been changed in the form)
+            self.follow_calendar(&app.session);
             let items = self.bar_items();
             let categories: Vec<(String, egui::Color32)> =
                 app.session.mailbox.categories.iter().map(|c| (c.name.clone(), c32(c.color))).take(200).collect();
@@ -3701,6 +3719,85 @@ mod event {
                 assert!(keys(&f).iter().all(|(key, _)| *key != "teams"), "{calendar}");
                 assert!(f.save_command().1.get("online").is_none());
             }
+        }
+
+        // //// Neoffice — what the form says of an online meeting follows its calendar, and only where that changes it.
+        /// A JMAP account's calendar whose server makes rooms (`rooms`: its list of services), and a Microsoft
+        /// account's that allows Teams. The session and the two calendars.
+        fn jmap_and_microsoft(rooms: Option<Vec<mailcraft_model::OnlineProvider>>) -> (Session, Id, Id) {
+            let mut s = session();
+            let added = s.run(
+                "account.add",
+                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
+            );
+            let jmap = added.unwrap()["id"].as_u64().unwrap();
+            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
+            let microsoft = added.unwrap()["id"].as_u64().unwrap();
+            for (account, email, services) in
+                [(jmap, "ada@example.org", rooms), (microsoft, "bo@example.org", Some(vec![mailcraft_model::OnlineProvider::Teams]))]
+            {
+                let calendar = mailcraft_model::remote::RemoteCalendar {
+                    id: "C1".into(),
+                    name: "Main".into(),
+                    main: true,
+                    online_providers: services,
+                    ..Default::default()
+                };
+                let list = mailcraft_model::remote::CalendarsDownload { account, email: email.into(), complete: true, calendars: vec![calendar] };
+                mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
+            }
+            let of = |s: &Session, account: Id| s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
+            let (jmap, microsoft) = (of(&s, jmap), of(&s, microsoft));
+            (s, jmap, microsoft)
+        }
+
+        #[test]
+        fn a_teams_meeting_turned_into_an_appointment_and_back_is_still_held_online() {
+            let (s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
+            // Teams Meeting on, then Cancel Invitation, then Invite Attendees, a frame after each.
+            f.online = true;
+            f.follow_calendar(&s);
+            f.meeting = false;
+            f.follow_calendar(&s);
+            f.meeting = true;
+            f.follow_calendar(&s);
+            assert!(f.online);
+            assert_eq!(f.command().1["online"], true);
+        }
+
+        #[test]
+        fn a_microsoft_appointment_whose_teams_meeting_waits_shows_it() {
+            let (mut s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            // Made a Teams meeting here, the server not told yet: no id there, and nobody invited.
+            let id =
+                s.run("calendar.new", &json!({"title": "Focus", "start": "2026-10-16T15:00", "calendar": microsoft, "online": true})).unwrap()["id"]
+                    .as_u64()
+                    .unwrap();
+            assert!(s.mailbox.event(id).is_some_and(|e| e.online.is_some() && e.origin.id.is_empty() && e.attendees.is_empty()));
+            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
+            f.follow_calendar(&s);
+            assert!(f.online && !f.meeting, "its row is shown");
+        }
+
+        #[test]
+        fn an_appointment_of_a_jmap_calendar_whose_server_makes_no_rooms_has_no_online_button() {
+            for rooms in [Some(Vec::new()), None] {
+                let (s, jmap, _) = jmap_and_microsoft(rooms.clone());
+                let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": jmap}), false);
+                f.follow_calendar(&s);
+                assert!(f.bar_items().iter().all(|item| item.key != "teams"), "{rooms:?}");
+                assert!(f.save_command().1.get("online").is_none(), "{rooms:?}");
+            }
+            // Where it makes them, there is one; moved in the form to a calendar without them, it is held online no more.
+            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": jmap}), false);
+            f.follow_calendar(&s);
+            assert!(f.bar_items().iter().any(|item| item.key == "teams"));
+            f.online = true;
+            f.calendar = microsoft;
+            f.follow_calendar(&s);
+            assert!(!f.online && f.bar_items().iter().all(|item| item.key != "teams"));
         }
 
         fn day(y: i32, m: u8, d: u8) -> Date {
