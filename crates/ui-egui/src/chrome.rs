@@ -294,11 +294,8 @@ fn progress_in_language(status: &str, mb: &mailcraft_model::Mailbox) -> Option<S
         None => (head, None),
     };
     // The engine names a folder by its own name: a standard one is shown by the folder pane's.
-    let name = mb
-        .folders
-        .iter()
-        .find(|f| f.kind != mailcraft_model::FolderKind::Custom && f.name == name)
-        .map_or_else(|| name.to_string(), crate::nav::folder_name);
+    // //// Neoffice — as a line that run_words reads names one (`run_words::standard_folder_name`).
+    let name = crate::i18n::run_words::standard_folder_name(mb, name, crate::i18n::current()).unwrap_or_else(|| name.to_string());
     let (number, count) = (number.to_string(), count.to_string());
     Some(match read {
         Some((done, total)) => crate::i18n::fmt(

@@ -6,7 +6,7 @@
 //! line in `fr.tsv`, found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
 //! that lacks one fails its test. The tests hold the rows to the files they name (a census of their sentences).
 
-use super::Family::{Banner, Doubt, Hold, Inner, Line, Why};
+use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Why};
 use super::{Family, Row};
 
 /// A row: the file that writes the sentence, its family, the sentence, and the family each reason in it is read with.
@@ -22,6 +22,7 @@ const URL: &str = "crates/jmap/src/url.rs";
 const SEND: &str = "crates/jmap/src/send.rs";
 const ENGINE: &str = "crates/engine/src/cmd/jmap_mail.rs";
 const SENDING: &str = "crates/engine/src/cmd/jmap_send.rs";
+const CHANGES: &str = "crates/engine/src/cmd/jmap_up.rs";
 const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
 
 /// Every row, family by family.
@@ -157,4 +158,31 @@ pub(super) static ROWS: &[Row] = &[
     row(SEND, Doubt, run_word!("the server answered with something this program doesn't know ({kind})"), &[]),
     row(SEND, Doubt, run_word!("the server answered with something this program doesn't know ({kind}): {description}"), &[]),
     row(SENDING, Doubt, run_word!("the server's answer was lost"), &[]),
+    // The changes of messages the server refused (`jmap_up::Refusals::lines`): a frame, what the change was to do (one form for
+    // one message and one for several, so that a language can agree its words with them) and why.
+    row(CHANGES, Line, run_word!("Couldn't {doing}: the server says {why}."), &[("doing", Doing), ("why", Cause)]),
+    row(CHANGES, Line, run_word!("Couldn't {doing}: the server doesn't allow it."), &[("doing", Doing)]),
+    row(CHANGES, Doing, run_word!("mark '{subject}' as read"), &[]),
+    row(CHANGES, Doing, run_word!("mark {n} messages as read"), &[]),
+    row(CHANGES, Doing, run_word!("mark '{subject}' as unread"), &[]),
+    row(CHANGES, Doing, run_word!("mark {n} messages as unread"), &[]),
+    row(CHANGES, Doing, run_word!("change the flag of '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("change the flag of {n} messages"), &[]),
+    row(CHANGES, Doing, run_word!("change the replied or forwarded mark of '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("change the replied or forwarded mark of {n} messages"), &[]),
+    row(CHANGES, Doing, run_word!("change '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("change {n} messages"), &[]),
+    row(CHANGES, Doing, run_word!("move '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("move '{subject}' to {folder}"), &[]),
+    row(CHANGES, Doing, run_word!("move {n} messages"), &[]),
+    row(CHANGES, Doing, run_word!("move {n} messages to {folder}"), &[]),
+    row(CHANGES, Doing, run_word!("delete a message for good"), &[]),
+    row(CHANGES, Doing, run_word!("delete '{subject}' for good"), &[]),
+    row(CHANGES, Doing, run_word!("delete {n} messages for good"), &[]),
+    row(CHANGES, Cause, run_word!("it no longer exists"), &[]),
+    row(CHANGES, Cause, run_word!("they no longer exist"), &[]),
+    row(CHANGES, Cause, run_word!("this account may not change it"), &[]),
+    row(CHANGES, Cause, run_word!("this account may not change them"), &[]),
+    row(CHANGES, Cause, run_word!("the mailbox is full"), &[]),
+    row(CHANGES, Cause, run_word!("it can't make that change"), &[]),
 ];

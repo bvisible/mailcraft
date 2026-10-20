@@ -397,6 +397,7 @@ const CENSUS: &[&str] = &[
     "crates/jmap/src/send.rs",
     "crates/jmap/src/mail/outgoing.rs",
     "crates/engine/src/cmd/jmap_send.rs",
+    "crates/engine/src/cmd/jmap_up.rs",
 ];
 
 /// Sentences of those files that are no line a person is shown, and why.
@@ -454,13 +455,18 @@ fn source(path: &str) -> String {
     std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()))
 }
 
+/// What a crate writes between the pieces of a sentence: digits, spaces and punctuation.
+fn between(c: char) -> bool {
+    c.is_ascii_digit() || c.is_whitespace() || c.is_ascii_punctuation()
+}
+
 /// The longest piece of `literals` that `fragment` is made of, when it is made of them as a crate makes a sentence of
 /// pieces (`plural`, `{what}`): with the digits, spaces and punctuation it writes between them. None when it isn't.
 fn made_of(fragment: &str, literals: &[Literal]) -> Option<usize> {
     let has = |piece: &str| literals.iter().any(|l| l.text.contains(piece));
     let (mut rest, mut longest) = (fragment, 0);
     while !rest.is_empty() {
-        if let Some(after) = rest.strip_prefix(|c: char| c.is_ascii_digit() || c.is_whitespace() || c.is_ascii_punctuation()) {
+        if let Some(after) = rest.strip_prefix(between) {
             rest = after;
             continue;
         }
@@ -483,9 +489,9 @@ fn every_row_is_written_by_the_file_it_names() {
             assert!(made.is_some(), "{:?}: {} has no {fragment:?} any more, whole or in pieces (reworded, or moved?)", row.english, row.at);
             longest = longest.max(made.unwrap_or_default());
         }
-        // A sentence the file has as more than a few words that any file could have.
-        let whole = fragments(row.english).into_iter().map(|f| f.trim().chars().count()).max().unwrap_or_default();
-        assert!(longest >= whole.min(12), "{:?}: {} has only pieces of it {longest} characters long", row.english, row.at);
+        // Pieces of more than the few words any file could have (a sentence made of pieces has them as short as `messages`).
+        let whole = fragments(row.english).into_iter().map(|f| f.trim_matches(between).chars().count()).max().unwrap_or_default();
+        assert!(longest >= whole.min(8), "{:?}: {} has only pieces of it {longest} characters long", row.english, row.at);
     }
 }
 
@@ -691,5 +697,58 @@ fn the_banner_of_a_held_message_says_why_in_the_interface_s_language() {
     harness.state_mut().ui.language = "en".into();
     harness.run_steps(3);
     assert!(harness.query_by_label(held).is_some(), "the banner in English");
+    super::super::set_current(Lang::English);
+}
+
+#[test]
+fn a_refused_change_reads_in_french_with_its_words_agreed() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
+    let cases = [
+        (
+            "Couldn't mark 'Invoice 42' as read: the server says it no longer exists.",
+            "Impossible de marquer « Invoice 42 » comme lu : selon le serveur, il n’existe plus.",
+        ),
+        (
+            "Couldn't mark 3 messages as unread: the server says they no longer exist.",
+            "Impossible de marquer 3 messages comme non lus : selon le serveur, ils n’existent plus.",
+        ),
+        (
+            "Couldn't change the flag of 2 messages: the server says this account may not change them.",
+            "Impossible de modifier l’indicateur de 2 messages : selon le serveur, ce compte n’est pas autorisé à les modifier.",
+        ),
+        // A standard folder by the name the folder pane gives it.
+        (
+            "Couldn't move 'Invoice 42' to INBOX: the server says this account may not change it.",
+            "Impossible de déplacer « Invoice 42 » vers le dossier Boîte de réception : selon le serveur, ce compte n’est pas autorisé à le modifier.",
+        ),
+        (
+            "Couldn't delete 2 messages for good: the server doesn't allow it.",
+            "Impossible de supprimer définitivement 2 messages : le serveur ne l’autorise pas.",
+        ),
+        (
+            "Couldn't delete a message for good: the server says it can't make that change.",
+            "Impossible de supprimer définitivement un message : selon le serveur, il ne peut pas faire cette modification.",
+        ),
+        // A subject that holds the words that follow it is split where the rest reads.
+        (
+            "Couldn't move 'a: the server says b' to Projects: the server says the mailbox is full.",
+            "Impossible de déplacer « a: the server says b » vers le dossier Projects : selon le serveur, la boîte aux lettres est pleine.",
+        ),
+    ];
+    for (english, french) in cases {
+        assert_eq!(fr(english).as_deref(), Some(french), "{english:?}");
+    }
+}
+
+#[test]
+fn how_far_a_run_has_got_names_a_standard_folder_as_a_refused_move_does() {
+    let mb = mailbox();
+    for lang in [Lang::English, Lang::Pseudo, french()] {
+        let named = super::standard_folder_name(&mb, "INBOX", lang);
+        super::super::set_current(lang);
+        assert_eq!(named.as_deref(), Some(crate::nav::folder_name(mb.folders.iter().find(|f| f.name == "INBOX").unwrap()).as_str()), "{lang:?}");
+        assert_eq!(super::standard_folder_name(&mb, "Projects", lang), None);
+    }
     super::super::set_current(Lang::English);
 }

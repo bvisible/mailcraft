@@ -167,6 +167,32 @@
 	Couldn't save the draft '{subject}' on the server: {why}. It stays here, and goes up the next time it is saved.	Impossible d’enregistrer le brouillon « {subject} » sur le serveur : {why}. Il reste ici et sera transmis au serveur à son prochain enregistrement.
 	It wasn't sent: {why}. Change it, or send it again.	Il n’a pas été envoyé : {why}. Modifiez-le, ou renvoyez-le.
 	It may have been sent: {doubt}. Before you send it again, ask a recipient whether it arrived; the copy in Sent was filed first, so it doesn't tell.	Il a peut-être été envoyé : {doubt}. Avant de le renvoyer, demandez à un destinataire s’il l’a reçu ; la copie du dossier Envoyés a été classée avant l’envoi, elle ne permet donc pas de le savoir.
+# run_words, the changes the server refused (crates/engine/src/cmd/jmap_up.rs).
+	Couldn't {doing}: the server says {why}.	Impossible de {doing} : selon le serveur, {why}.
+	Couldn't {doing}: the server doesn't allow it.	Impossible de {doing} : le serveur ne l’autorise pas.
+	mark '{subject}' as read	marquer « {subject} » comme lu
+	mark {n} messages as read	marquer {n} messages comme lus
+	mark '{subject}' as unread	marquer « {subject} » comme non lu
+	mark {n} messages as unread	marquer {n} messages comme non lus
+	change the flag of '{subject}'	modifier l’indicateur de « {subject} »
+	change the flag of {n} messages	modifier l’indicateur de {n} messages
+	change the replied or forwarded mark of '{subject}'	modifier la marque « répondu » ou « transféré » de « {subject} »
+	change the replied or forwarded mark of {n} messages	modifier la marque « répondu » ou « transféré » de {n} messages
+	change '{subject}'	modifier « {subject} »
+	change {n} messages	modifier {n} messages
+	move '{subject}'	déplacer « {subject} »
+	move '{subject}' to {folder}	déplacer « {subject} » vers le dossier {folder}
+	move {n} messages	déplacer {n} messages
+	move {n} messages to {folder}	déplacer {n} messages vers le dossier {folder}
+	delete a message for good	supprimer définitivement un message
+	delete '{subject}' for good	supprimer définitivement « {subject} »
+	delete {n} messages for good	supprimer définitivement {n} messages
+	it no longer exists	il n’existe plus
+	they no longer exist	ils n’existent plus
+	this account may not change it	ce compte n’est pas autorisé à le modifier
+	this account may not change them	ce compte n’est pas autorisé à les modifier
+	the mailbox is full	la boîte aux lettres est pleine
+	it can't make that change	il ne peut pas faire cette modification
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

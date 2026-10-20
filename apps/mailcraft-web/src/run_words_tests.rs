@@ -776,6 +776,85 @@ fn no_sent() -> Scenario {
     Scenario::new("no Sent on the server", &rig, shown, &[])
 }
 
+/// A change made here to `n` messages that the server refuses with a SetError of type `kind`: each kind of change.
+fn refused_change(change: &'static str, n: usize, kind: &'static str) -> Scenario {
+    let mut rig = Rig::listed();
+    rig.deliver(2);
+    rig.run(true);
+    let ids: Vec<Id> = rig.mine().into_iter().take(n).collect();
+    if change == "unread" {
+        rig.s.run("mail.markRead", &json!({"ids": ids})).unwrap();
+        rig.run(false);
+    }
+    let trash = rig.s.mailbox.folder_of_kind(rig.account, FolderKind::Deleted).unwrap_or_default();
+    match change {
+        "read" => {
+            rig.s.run("mail.markRead", &json!({"ids": ids})).unwrap();
+        }
+        "unread" => {
+            rig.s.run("mail.markUnread", &json!({"ids": ids})).unwrap();
+        }
+        "flag" => {
+            rig.s.run("mail.flag", &json!({"ids": ids})).unwrap();
+        }
+        // (As a reply that went marks what it answers.)
+        "replied" => {
+            for id in &ids {
+                if let Ok(m) = rig.s.mailbox.message_mut(*id) {
+                    m.answered = true;
+                }
+            }
+        }
+        "several" => {
+            rig.s.run("mail.markRead", &json!({"ids": ids})).unwrap();
+            rig.s.run("mail.flag", &json!({"ids": ids})).unwrap();
+        }
+        "move" | "move away" => {
+            rig.s.run("mail.move", &json!({"folder": trash, "ids": ids})).unwrap();
+        }
+        _ => {
+            rig.s.run("mail.deletePermanently", &json!({"ids": ids, "confirmed": true})).unwrap();
+        }
+    }
+    let on_server: Vec<String> =
+        rig.s.mailbox.messages.values().filter(|m| ids.contains(&m.id)).filter_map(|m| m.server.as_ref().map(|s| s.id.clone())).collect();
+    let on_server = if on_server.is_empty() { rig.server.with(|d| d.emails.iter().map(|e| e.id.clone()).collect()) } else { on_server };
+    rig.server.with(|d| d.refused_sets = on_server.iter().map(|id| (id.clone(), kind)).collect());
+    let shown = if change == "move away" {
+        // (The folder the messages were moved to went meanwhile: the line names none.)
+        rig.run_meanwhile(false, move |s| s.mailbox.folders.retain(|f| f.id != trash))
+    } else {
+        rig.run(false)
+    };
+    Scenario::new("a refused change", &rig, shown, &[])
+}
+
+/// Every kind of change, for one message and for two, for each kind of refusal.
+fn refused_changes() -> Vec<Scenario> {
+    let mut out = Vec::new();
+    for change in ["read", "unread", "flag", "replied", "several", "move", "move away", "delete"] {
+        for n in [1, 2] {
+            for kind in ["notFound", "forbidden", "overQuota", "invalidPatch"] {
+                out.push(refused_change(change, n, kind));
+            }
+        }
+    }
+    // A message with no subject, deleted for good.
+    let mut rig = Rig::listed();
+    rig.server.with(|d| {
+        let inbox = d.mailboxes.iter().find(|m| m.role.as_deref() == Some("inbox")).map(|m| m.id.clone()).unwrap_or_default();
+        d.deliver(&inbox, b"From: Zoe <zoe@example.org>\r\nMessage-ID: <nosubject@example.org>\r\n\r\nHi.\r\n", &[], "2026-10-14T11:00:00Z");
+    });
+    rig.run(true);
+    let id = rig.s.mailbox.messages.values().find(|m| m.account == rig.account && m.subject.is_empty()).map(|m| m.id).unwrap_or_default();
+    let server_id = rig.s.mailbox.message(id).and_then(|m| m.server.as_ref().map(|s| s.id.clone())).unwrap_or_default();
+    rig.s.run("mail.deletePermanently", &json!({"ids": [id], "confirmed": true})).unwrap();
+    rig.server.with(|d| d.refused_sets = [(server_id, "invalidPatch")].into_iter().collect());
+    let shown = rig.run(false);
+    out.push(Scenario::new("a message with no subject deleted for good", &rig, shown, &[]));
+    out
+}
+
 /// Every scenario.
 fn scenarios() -> Vec<Scenario> {
     let mut all = vec![
@@ -804,6 +883,7 @@ fn scenarios() -> Vec<Scenario> {
         taken_out_meanwhile(),
         drafts_refused(),
         vec![no_sent()],
+        refused_changes(),
     ] {
         all.extend(more);
     }
