@@ -45,8 +45,11 @@ fn reply_for_the_sample_sends_the_text_as_context() {
     assert_eq!(call.method, GENERATE_EMAIL);
     assert_eq!(keys(&call.args), ["account_name", "prompt", "reply_context"].map(String::from).into());
     assert_eq!(call.args["account_name"], "", "the sample mailbox is no mailbox of the server");
+    // As HTML the server reads as text: written as text, the sender's address would be taken for a tag there.
     let context = call.args["reply_context"].as_str().unwrap();
-    assert!(context.starts_with(&format!("{PRIYA}\nSubject: {PLAIN}\n\nAvery,\n\nThe roadmap review is moving")), "{context}");
+    let head =
+        format!("<p>{}<br>Subject: {PLAIN}</p>\n<p>Avery,</p>\n<p>The roadmap review is moving", PRIYA.replace('<', "&lt;").replace('>', "&gt;"));
+    assert!(context.starts_with(&head), "{context}");
     assert!(call.args["prompt"].as_str().unwrap().starts_with("Write the reply to the email being replied to"));
     calls.all_fit();
 }
@@ -99,7 +102,6 @@ fn the_draft_goes_above_the_signature_and_the_quote_in_one_undo_step() {
     assert_eq!(signature(&app).as_deref(), Some("Avery Quinn\nLumen Studio"), "the signature is still the signature");
     assert_eq!(said(&app), Some(("Nora's draft is in the reply: read it before sending.".into(), false, About::Writing)));
     assert_eq!(status(&app), "Nora's draft is in the reply: read it before sending.");
-    assert!(app.body_focus_wanted, "the keyboard goes back to the text");
     assert!(!app.nora.busy());
     // One step takes it back, and it was the only one.
     app.run("compose.undo", json!({})).unwrap();
@@ -171,14 +173,73 @@ fn a_draft_for_a_reply_that_was_closed_goes_nowhere() {
     app.poll_nora();
     assert!(!body(&app).contains("Bonjour"));
     assert_eq!(said(&app).map(|s| s.0), Some("The reply was closed before Nora's draft came back.".into()));
-    // A reply closed and opened again to the same message is the one she writes for (a reply has no
-    // identity but its message).
+    // Nor is a reply to the same message that the person opened again by hand once hers was closed,
+    // if only for a frame: a draft must not go out in a reply she was no longer asked for.
+    app.execute("compose.discard", json!({})).unwrap();
     app.run("ui.noraReply", json!({"message": message})).unwrap();
     app.execute("compose.discard", json!({})).unwrap();
+    app.poll_nora();
     app.execute("mail.reply", json!({"id": message})).unwrap();
+    typed(&mut app, "My own words.");
     calls.answer(200, json!({"message": {"draft_text": "Bonjour"}}));
     app.poll_nora();
-    assert!(body(&app).starts_with("Bonjour\n"));
+    assert!(body(&app).starts_with("My own words.\n") && !body(&app).contains("Bonjour"), "{:?}", body(&app));
+    assert_eq!(said(&app).map(|s| s.0), Some("The reply was closed before Nora's draft came back.".into()));
+    // The same for her version of the person's text: a message closed for a frame is not hers any more.
+    app.run("ui.noraCorrect", json!({})).unwrap();
+    app.execute("compose.discard", json!({})).unwrap();
+    app.poll_nora();
+    app.execute("mail.reply", json!({"id": message})).unwrap();
+    typed(&mut app, "My own words.");
+    calls.answer(200, json!({"message": {"corrected_text": "Her words.", "has_changes": true}}));
+    app.poll_nora();
+    assert!(body(&app).starts_with("My own words.\n"));
+    assert_eq!(said(&app).map(|s| s.0), Some("The message was closed before Nora's version came back.".into()));
+}
+
+#[test]
+fn an_answer_to_another_call_is_no_answer() {
+    let (mut app, calls, _) = sample(PLAIN);
+    app.run("ui.noraReply", json!({})).unwrap();
+    let before = body(&app);
+    {
+        let all = calls.0.borrow();
+        let (call, to) = all.last().unwrap();
+        to.as_ref()
+            .unwrap()
+            .send(NoraAnswer { id: call.id + 1, status: 200, body: json!({"message": {"draft_text": "Not yours"}}).to_string() })
+            .unwrap();
+    }
+    app.poll_nora();
+    assert_eq!(body(&app), before);
+    assert_eq!(said(&app).map(|s| s.0), Some("Nora couldn't be reached: the connection stopped before Nora answered".into()));
+}
+
+#[test]
+fn the_keyboard_and_the_caret_stay_where_the_person_had_them() {
+    let (mut app, calls, _) = sample(PLAIN);
+    app.run("ui.noraReply", json!({})).unwrap();
+    typed(&mut app, "Merci !");
+    // The caret in the person's text, after "Merci".
+    app.execute("compose.select", json!({"from": 5})).unwrap();
+    calls.answer(200, json!({"message": {"draft_text": "Bonjour Priya,\n\nC'est noté."}}));
+    app.poll_nora();
+    let draft = "Bonjour Priya,\n\nC'est noté.\n\n";
+    assert!(body(&app).starts_with(&format!("{draft}Merci !")));
+    let at = draft.chars().count() + 5;
+    assert_eq!(app.session.compose.as_ref().map(|c| c.body.selection()), Some(mailcraft_model::rich::Selection { anchor: at, head: at }));
+    // Nobody's keyboard was in the body (no window here): it isn't taken there.
+    assert!(!app.body_focus_wanted);
+    // Her version over the person's text: a caret in it goes to its end; one past it stays past it.
+    let typed_len = "Bonjour Priya,\n\nC'est noté.\n\nMerci !".chars().count();
+    app.execute("compose.select", json!({"from": 3})).unwrap();
+    app.run("ui.noraImprove", json!({})).unwrap();
+    calls.answer(200, json!({"message": {"improved_text": "Bonjour Priya,\n\nC'est noté, merci !", "has_changes": true}}));
+    app.poll_nora();
+    let new_len = "Bonjour Priya,\n\nC'est noté, merci !".chars().count();
+    assert!(body(&app).starts_with("Bonjour Priya,\n\nC'est noté, merci !\n"));
+    assert_eq!(app.session.compose.as_ref().map(|c| c.body.selection().head), Some(new_len));
+    assert!(typed_len > new_len);
 }
 
 /// The host's downloads of whole messages, kept for the test to answer.
@@ -239,7 +300,18 @@ fn a_reply_that_waits_for_its_download_is_asked_when_it_opens() {
     app.nora.age(5_000.0);
     app.poll_nora();
     assert!(!app.nora.busy() && calls.count() == 1);
+    assert_eq!(said(&app).map(|s| s.0), Some("Nora couldn't write the reply: the message didn't download".into()), "and says so");
     assert!(app.enabled("ui.noraReply"));
+    // A download that goes on keeps the reply waiting past the window's own deadline, to the browser's.
+    app.session.compose = None;
+    let e1 = id_of(&app, "E1");
+    app.run("ui.noraReply", json!({"message": e1})).unwrap();
+    app.nora.age(250_000.0);
+    app.poll_nora();
+    assert!(app.nora.asking(Kind::Reply), "still downloading");
+    app.nora.age(100_000.0);
+    app.poll_nora();
+    assert!(!app.nora.asking(Kind::Reply), "given up at last");
 }
 
 #[test]

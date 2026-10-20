@@ -73,9 +73,15 @@ fn flag(body: &Value, field: &str) -> Option<bool> {
     body.get("message")?.get(field)?.as_bool()
 }
 
-/// A text Nora wrote, within the longest that is taken.
+/// A text Nora wrote, within the longest that is taken: line breaks and tabs, and no other control or
+/// direction-changing character (it goes into the person's mail, whose readers' programs would follow them).
 fn bounded(text: &str, task: Task) -> Result<String, String> {
-    if text.chars().nth(MAX_REPLY).is_some() { Err(task.failed(tl!("the answer is too long"))) } else { Ok(text.to_string()) }
+    if text.chars().nth(MAX_REPLY).is_some() {
+        return Err(task.failed(tl!("the answer is too long")));
+    }
+    let kept: String = text.replace("\r\n", "\n").chars().filter(|c| !unseen(*c) && (!c.is_control() || matches!(c, '\n' | '\t'))).collect();
+    let kept = kept.trim();
+    if kept.is_empty() { Err(task.failed(tl!("the answer had no text"))) } else { Ok(kept.to_string()) }
 }
 
 /// The draft of a reply an answer carries (`quick_reply`, `generate_email`), or what to tell the
@@ -140,7 +146,9 @@ pub(crate) fn reason(body: &Value, status: u16) -> String {
         let last = said.rsplit(": ").next().unwrap_or(said);
         Some(clean(last)).filter(|e| !e.is_empty())
     };
-    server_message(body).or_else(exception).unwrap_or_else(|| format!("HTTP {status}"))
+    // A good status with nothing in it (no text, a page that isn't the server's answer) is no success.
+    let fallback = || if status == 200 { tl!("the answer had no text").to_string() } else { format!("HTTP {status}") };
+    server_message(body).or_else(exception).unwrap_or_else(fallback)
 }
 
 /// The first of Frappe's `_server_messages` that has text, without its markup.
@@ -185,8 +193,13 @@ fn plain(html: &str) -> String {
 /// Text from outside, fit for one line of the window: no control or direction-changing characters
 /// (a line break becomes a space), runs of spaces as one, at most [`MAX_REASON`] characters.
 pub(crate) fn clean(text: &str) -> String {
-    let unseen = |c: char| matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
     let flat: String = text.chars().take(MAX_REASON * 4).filter(|c| !unseen(*c)).map(|c| if c.is_control() { ' ' } else { c }).collect();
     let words = flat.split_whitespace().collect::<Vec<_>>().join(" ");
     if words.chars().nth(MAX_REASON).is_some() { words.chars().take(MAX_REASON - 1).chain(['…']).collect() } else { words }
+}
+
+/// A character that changes the direction text is shown in, or marks it: left out of what Nora says
+/// and writes.
+fn unseen(c: char) -> bool {
+    matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }

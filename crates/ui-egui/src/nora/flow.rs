@@ -42,6 +42,9 @@ const MAX_FLIGHTS: usize = 4;
 /// How long a reply that waits for its message is kept once nothing is downloading it any more, in
 /// milliseconds: the reply opens in the frame its download lands.
 const WANTED_GRACE_MS: f64 = 2_000.0;
+/// How long a reply waits for its message while it is being downloaded, in milliseconds: past the
+/// five minutes after which the browser gives a download up.
+const WANTED_MAX_MS: f64 = 330_000.0;
 /// How often the window looks for answers while a call is in flight, in milliseconds.
 const LOOK_AGAIN_MS: u64 = 100;
 
@@ -131,10 +134,15 @@ impl What {
 
 /// A call the host is answering.
 struct Flight {
+    /// The call's number: an answer that says another is no answer to it.
+    id: u64,
     what: What,
     /// When it was asked (milliseconds).
     since: f64,
     answer: Receiver<NoraAnswer>,
+    /// What its answer was to go into was closed, if only for a frame: a reply or a message opened
+    /// again by hand is not hers.
+    gone: bool,
 }
 
 /// A reply whose message is being downloaded: Nora is asked for its draft when it opens.
@@ -308,7 +316,7 @@ fn send(app: &mut MailApp, method: &'static str, args: Value, what: What) -> Opt
     app.nora.last = app.nora.last.wrapping_add(1);
     let id = app.nora.last;
     let answer = (host.call)(NoraCall { id, method, args });
-    app.nora.flights.push(Flight { what, since: now_ms(), answer });
+    app.nora.flights.push(Flight { id, what, since: now_ms(), answer, gone: false });
     Some(id)
 }
 
@@ -376,7 +384,9 @@ fn reply(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     let (method, args) = match route(app, &m)? {
         Route::Server { mailbox, id } => (QUICK_REPLY, json!({"account_name": mailbox, "email_id": id})),
         Route::Text => {
-            let context = own_text::reply_context(&m.from, &m.subject, &text_of(app, &m));
+            // As HTML, which the server reads as text: written as text, what is between `<` and `>` (the
+            // sender's address, say) is taken for markup there and dropped.
+            let context = own_text::as_html(&own_text::reply_context(&m.from, &m.subject, &text_of(app, &m)));
             (GENERATE_EMAIL, json!({"prompt": INSTRUCTION, "account_name": "", "reply_context": context}))
         }
     };
@@ -510,14 +520,20 @@ pub(crate) fn poll(app: &mut MailApp) {
     wanted(app, now);
     let flights = std::mem::take(&mut app.nora.flights);
     let mut kept = Vec::with_capacity(flights.len());
-    for flight in flights {
+    let signature_open = app.session.signature_edit.is_some();
+    for mut flight in flights {
+        if !flight.gone && !still_there(app, &flight.what) {
+            flight.gone = true;
+        }
         // While a signature is open in File › Signatures, the composer's commands would write in it.
-        if flight.what.writes() && app.session.signature_edit.is_some() {
+        if flight.what.writes() && signature_open {
             kept.push(flight);
             continue;
         }
         let landed = match flight.answer.try_recv() {
-            Ok(answer) => Landed::Answer(answer),
+            Ok(answer) if answer.id == flight.id => Landed::Answer(answer),
+            // An answer to another call is no answer to this one.
+            Ok(_) => Landed::Dropped,
             Err(TryRecvError::Empty) if now - flight.since > DEADLINE_MS => Landed::TooLate,
             Err(TryRecvError::Empty) => {
                 kept.push(flight);
@@ -525,14 +541,25 @@ pub(crate) fn poll(app: &mut MailApp) {
             }
             Err(TryRecvError::Disconnected) => Landed::Dropped,
         };
-        land(app, flight.what, landed);
+        land(app, flight, landed);
     }
     kept.append(&mut app.nora.flights);
     app.nora.flights = kept;
-    if app.nora.busy()
-        && let Some(ctx) = &app.ctx
-    {
+    // Looked at again soon while something can come; what waits for a signature to be closed waits for
+    // a click, which repaints anyway.
+    let coming = app.nora.wanted.is_some() || app.nora.flights.iter().any(|f| !(f.what.writes() && signature_open));
+    if coming && let Some(ctx) = &app.ctx {
         ctx.request_repaint_after(std::time::Duration::from_millis(LOOK_AGAIN_MS));
+    }
+}
+
+/// Whether what a call's answer goes into is still there: the reply to its message, the message of
+/// the same kind and source; anything else needs nothing.
+fn still_there(app: &MailApp, what: &What) -> bool {
+    match what {
+        What::Reply { message } => replying_to(app, *message),
+        What::Rewrite { mode, source, .. } => app.session.compose.as_ref().is_some_and(|c| c.mode == *mode && c.source == *source),
+        What::Translation { .. } | What::Style => true,
     }
 }
 
@@ -549,12 +576,15 @@ fn wanted(app: &mut MailApp, now: f64) {
         return;
     }
     let downloading = app.fetching.fetching(w.message);
-    if now - w.since > DEADLINE_MS || (!downloading && now - w.since > WANTED_GRACE_MS) {
+    let age = now - w.since;
+    if (downloading && age > WANTED_MAX_MS) || (!downloading && age > WANTED_GRACE_MS) {
         app.nora.wanted = None;
+        say(app, About::Writing, Task::Reply.failed(tl!("the message didn't download")), true);
     }
 }
 
-fn land(app: &mut MailApp, what: What, landed: Landed) {
+fn land(app: &mut MailApp, flight: Flight, landed: Landed) {
+    let Flight { what, gone, .. } = flight;
     let about = what.about();
     let answer = match landed {
         Landed::Answer(answer) => answer,
@@ -563,10 +593,12 @@ fn land(app: &mut MailApp, what: What, landed: Landed) {
     };
     match what {
         What::Reply { message } => match answer::draft(&answer) {
+            Ok(_) if gone => say(app, about, tl!("The reply was closed before Nora's draft came back.").to_string(), false),
             Ok(text) => put_draft(app, message, &text),
             Err(why) => say(app, about, why, true),
         },
         What::Rewrite { how, sent, mode, source } => match answer::rewritten(&answer, how.field()) {
+            Ok(Some(_)) if gone => say(app, about, tl!("The message was closed before Nora's version came back.").to_string(), false),
             Ok(Some(text)) => put_over_own_text(app, &sent, (mode, source), &text),
             Ok(None) => {
                 let said = match how {
@@ -593,9 +625,23 @@ fn land(app: &mut MailApp, what: What, landed: Landed) {
 /// Write `text` over the first `chars` characters of the message being written (none: at its top), as
 /// one step Undo takes back.
 fn write(app: &mut MailApp, chars: usize, text: &str) -> Result<(), String> {
+    let had_keys = app.ctx.as_ref().is_some_and(crate::compose::editor::has_focus);
+    let Some((before, kept)) = app.session.compose.as_ref().map(|c| (c.body.text().len(), c.body.selection())) else {
+        return Err("no message is being written".to_string());
+    };
     app.execute("compose.select", json!({"from": 0, "to": chars}))?;
     app.execute("edit.paste", json!({"text": text}))?;
-    app.body_focus_wanted = true;
+    // The person's caret stays in their text: past what went in when it was past what it replaced,
+    // at its end when it was in it.
+    let after = app.session.compose.as_ref().map_or(0, |c| c.body.text().len());
+    let put = after.saturating_sub(before.saturating_sub(chars));
+    let moved = |at: usize| if at >= chars { at - chars + put } else { put };
+    let _ = app.execute("compose.select", json!({"from": moved(kept.anchor), "to": moved(kept.head)}));
+    // The keyboard goes back to the text only if it was there: an answer that comes while the person
+    // types in another field leaves them there.
+    if had_keys {
+        app.body_focus_wanted = true;
+    }
     Ok(())
 }
 

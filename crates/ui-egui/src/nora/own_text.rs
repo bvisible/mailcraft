@@ -11,8 +11,6 @@ use mailcraft_model::{Address, RichText};
 use super::{CONTEXT_MAX, MAX_OWN_TEXT};
 use crate::i18n::fmt;
 
-/// The line a plain-text original is quoted under in a reply or a forward (`mail.reply` writes it).
-const QUOTE_LINE: &str = "-----Original Message-----";
 /// The longest sender or subject sent along with a message, in characters (the server keeps 300).
 const MAX_LINE: usize = 300;
 
@@ -27,11 +25,13 @@ pub(crate) struct OwnText {
 }
 
 /// The text before the first of: the signature put in the message (its paragraphs are marked), a
-/// paragraph that is a signature's `-- ` (a draft opened again has no marks), the line a plain-text
-/// original is quoted under. An original in HTML is not in the body at all.
+/// paragraph that is a signature's `-- `, and what starts another's mail quoted under the person's:
+/// the line a plain-text original is quoted under, and in a draft opened again (whose HTML MailCraft
+/// didn't write, or from before it marked its quote) the ways other programs start a quote. An original
+/// in HTML that MailCraft carries is not in the body at all.
 pub(crate) fn own_text(body: &RichText) -> OwnText {
     let paragraphs = body.paragraphs();
-    let end = paragraphs.iter().position(ends_own_text).unwrap_or(paragraphs.len());
+    let end = own_end(paragraphs);
     let upto = paragraphs.iter().take(end).map(Paragraph::chars).sum::<usize>().saturating_add(end.saturating_sub(1));
     let own: String = body.text().chars().take(upto).collect();
     let own = own.trim_end();
@@ -40,12 +40,51 @@ pub(crate) fn own_text(body: &RichText) -> OwnText {
     OwnText { text: given.trim_end().to_string(), chars }
 }
 
-fn ends_own_text(p: &Paragraph) -> bool {
-    if p.signature {
-        return true;
+/// The first paragraph that isn't the person's own text, or the number of paragraphs.
+fn own_end(paragraphs: &[Paragraph]) -> usize {
+    for (i, p) in paragraphs.iter().enumerate() {
+        if p.signature {
+            return i;
+        }
+        let text = p.text();
+        if starts_another_text(&text) {
+            return i;
+        }
+        // A header block of the mail quoted: `From:`, and `Sent:` or `Date:` within the next lines
+        // (MailCraft's own, Outlook's, and theirs in other languages), as the server reads it.
+        if header(&text, &FROM) && paragraphs.iter().skip(i + 1).take(3).any(|next| header(&next.text(), &SENT)) {
+            return i;
+        }
     }
-    let text = p.text();
-    matches!(text.as_str(), "-- " | "--") || text.trim() == QUOTE_LINE
+    paragraphs.len()
+}
+
+/// The names a quoted mail's sender and date lines start with, as the server strips them from what it reads.
+const FROM: [&str; 5] = ["from", "de", "von", "da", "van"];
+const SENT: [&str; 9] = ["sent", "date", "envoyé", "envoye", "gesendet", "datum", "inviato", "data", "verzonden"];
+
+/// A line `<name>:` (spaces before the colon allowed) of one of `names`, in any case.
+fn header(text: &str, names: &[&str]) -> bool {
+    let low = text.trim().to_lowercase();
+    names.iter().any(|name| low.strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with(':')))
+}
+
+/// A paragraph that starts what isn't the person's: a signature's separator, a quoted line, a rule
+/// other programs draw over the mail they quote or forward, or the line that says who wrote it.
+fn starts_another_text(text: &str) -> bool {
+    let line = text.trim();
+    let low = line.to_lowercase();
+    let rule = |l: &str| {
+        let dashes = l.starts_with("--") && l.ends_with("--") && l.trim_matches('-').trim().chars().any(char::is_alphanumeric);
+        dashes || (l.chars().count() >= 10 && l.chars().all(|c| c == '_'))
+    };
+    matches!(text, "-- " | "--")
+        || line.starts_with('>')
+        || rule(line)
+        || low.starts_with("begin forwarded message")
+        || (low.starts_with("on ") && low.ends_with("wrote:"))
+        || (low.starts_with("le ") && (low.ends_with("a écrit :") || low.ends_with("a écrit:")))
+        || (low.starts_with("am ") && low.contains(" schrieb") && low.ends_with(':'))
 }
 
 /// The own text Nora is asked to work on, or why she isn't: there is none, or more than she takes.

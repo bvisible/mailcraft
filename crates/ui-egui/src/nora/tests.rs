@@ -44,7 +44,19 @@ fn a_refusal_says_what_the_server_said() {
     let gateway = NoraAnswer { id: 1, status: 502, body: "<html><body><h1>502 Bad Gateway</h1></body></html>".into() };
     assert_eq!(answer::draft(&gateway), Err("Nora couldn't write the reply: HTTP 502".to_string()));
     let empty = answer(200, json!({"message": {"success": true, "draft_text": "   "}}));
-    assert_eq!(answer::draft(&empty), Err("Nora couldn't write the reply: HTTP 200".to_string()), "an empty draft is no draft");
+    assert_eq!(answer::draft(&empty), Err("Nora couldn't write the reply: the answer had no text".to_string()), "an empty draft is no draft");
+    let unseen = answer(200, json!({"message": {"draft_text": "\u{202e}\u{0}\u{2066}"}}));
+    assert_eq!(
+        answer::draft(&unseen),
+        Err("Nora couldn't write the reply: the answer had no text".to_string()),
+        "nor one of characters that aren't seen"
+    );
+    let turned = answer(200, json!({"message": {"draft_text": "Bonjour\u{202e}Ada,\r\n\r\n\u{2067}Merci\u{2069}\u{7}"}}));
+    assert_eq!(
+        answer::draft(&turned),
+        Ok("BonjourAda,\n\nMerci".to_string()),
+        "no direction-changing or control character goes into the person's mail"
+    );
     let not_a_message = answer(200, json!({"message": "Bonjour"}));
     assert!(answer::draft(&not_a_message).is_err(), "a draft is in a `message` object");
     // A 200 that isn't Nora's answer at all, a page of a proxy say, is no draft either.
@@ -104,7 +116,7 @@ fn style_start_reads_already_running() {
     let refused = answer(417, refusal("Account is required"));
     assert_eq!(answer::style_started(&refused), Err("Nora couldn't learn your style: Account is required".to_string()));
     let odd = answer(200, json!({"message": {"success": "yes"}}));
-    assert_eq!(answer::style_started(&odd), Err("Nora couldn't learn your style: HTTP 200".to_string()));
+    assert_eq!(answer::style_started(&odd), Err("Nora couldn't learn your style: the answer had no text".to_string()));
 }
 
 /// Whatever comes back, the parsers say something short on one line and never panic.
@@ -267,6 +279,47 @@ fn own_text_stops_at_the_signature_the_dash_line_and_the_plain_quote() {
     let own = own_text::own_text(&listed);
     assert_eq!(own.text, "Two things:\n- the plan <https://example.org/plan>\n- the date");
     assert_eq!(own.chars, listed.len());
+}
+
+/// A draft opened again whose HTML MailCraft didn't write has another's mail in its body, without
+/// marks: what other programs start a quote with ends the person's text, as the server reads it too.
+#[test]
+fn own_text_of_a_draft_opened_again_stops_at_what_it_quotes() {
+    let from_html = |html: &str| own_text::own_text(&mailcraft_engine::mime::rich::from_html(html)).text;
+    for (program, html) in [
+        (
+            "Outlook",
+            "<p>Thanks, see you then.</p><div style=\"border-top:solid #E1E1E1 1.0pt\"><p><b>From:</b> Grace Hopper &lt;grace@example.org&gt;<br><b>Sent:</b> Monday, 12 October 2026 09:00<br><b>To:</b> Avery Quinn<br><b>Subject:</b> The proof</p></div><p>Is the proof ready?</p>",
+        ),
+        (
+            "Gmail",
+            "<div dir=\"ltr\">Thanks, see you then.</div><br><div class=\"gmail_quote\"><div class=\"gmail_attr\">On Mon, 12 Oct 2026 at 09:00, Grace Hopper &lt;grace@example.org&gt; wrote:<br></div><blockquote class=\"gmail_quote\">Is the proof ready?</blockquote></div>",
+        ),
+        (
+            "Thunderbird",
+            "<p>Thanks, see you then.</p><div class=\"moz-cite-prefix\">-------- Original Message --------</div><p>Is the proof ready?</p>",
+        ),
+        (
+            "a forward",
+            "<p>Thanks, see you then.</p><p>---------- Forwarded message ---------<br>From: Grace Hopper<br>Date: Mon, 12 Oct 2026</p><p>Is the proof ready?</p>",
+        ),
+        ("Apple Mail", "<p>Thanks, see you then.</p><p>Begin forwarded message:</p><p>Is the proof ready?</p>"),
+        (
+            "in French",
+            "<p>Thanks, see you then.</p><p>Le lun. 12 oct. 2026 à 09:00, Grace Hopper a écrit :</p><blockquote>Is the proof ready?</blockquote>",
+        ),
+        ("in German", "<p>Thanks, see you then.</p><p>Am 12.10.2026 um 09:00 schrieb Grace Hopper:</p><blockquote>Is the proof ready?</blockquote>"),
+        ("a header in French", "<p>Thanks, see you then.</p><p>De : Grace Hopper<br>Envoyé : lundi 12 octobre 2026</p><p>Is the proof ready?</p>"),
+        ("a rule", "<p>Thanks, see you then.</p><p>________________________________</p><p>Is the proof ready?</p>"),
+    ] {
+        assert_eq!(from_html(html), "Thanks, see you then.", "{program}");
+    }
+    assert_eq!(own_text::own_text(&RichText::from_plain("Thanks, see you then.\n\n> Is the proof ready?")).text, "Thanks, see you then.");
+    // What reads like a header but isn't one (a line of the person's own) is theirs.
+    assert_eq!(
+        own_text::own_text(&RichText::from_plain("Deadline: Friday\nFrom: the printer, as agreed\nDate to keep in mind")).text,
+        "Deadline: Friday\nFrom: the printer, as agreed\nDate to keep in mind"
+    );
 }
 
 #[test]

@@ -198,14 +198,19 @@ mod browser {
     /// One call made by the host (`mailcraftNoraCall(method, argsJson)`), its answer read as a `fetch`'s.
     async fn call_host(owner: &JsValue, function: &js_sys::Function, method: &str, body: &str) -> Result<(u16, String), String> {
         let promise = function.call2(owner, &JsValue::from_str(method), &JsValue::from_str(body)).map_err(|e| reason(&e))?;
-        // A host that never answers must not hold the call for good.
+        // A host that never answers must not hold the call for good; the timer goes once it has.
+        let handle = std::cell::Cell::new(None);
         let timer = js_sys::Promise::new(&mut |resolve, _| {
             if let Some(w) = web_sys::window() {
-                let _ = w.set_timeout_with_callback_and_timeout_and_arguments_1(&resolve, GIVE_UP_MS, &JsValue::from_str(TIMED_OUT));
+                handle.set(w.set_timeout_with_callback_and_timeout_and_arguments_1(&resolve, GIVE_UP_MS, &JsValue::from_str(TIMED_OUT)).ok());
             }
         });
         let raced = js_sys::Promise::race(&js_sys::Array::of2(&js_sys::Promise::resolve(&promise), &timer));
-        let answer = JsFuture::from(raced).await.map_err(|e| reason(&e))?;
+        let answer = JsFuture::from(raced).await;
+        if let (Some(w), Some(timer)) = (web_sys::window(), handle.get()) {
+            w.clear_timeout_with_handle(timer);
+        }
+        let answer = answer.map_err(|e| reason(&e))?;
         if answer.as_string().as_deref() == Some(TIMED_OUT) {
             return Err(too_late());
         }
@@ -280,6 +285,8 @@ mod browser {
         // The desk's own session to the page's own origin; nothing of it to another.
         init.set_credentials(web_sys::RequestCredentials::SameOrigin);
         init.set_cache(web_sys::RequestCache::NoStore);
+        // Not followed elsewhere with the page's token: a redirect is an error.
+        js_sys::Reflect::set(&init, &JsValue::from_str("redirect"), &JsValue::from_str("error")).map_err(|e| reason(&e))?;
         init.set_signal(Some(signal));
         let answer = JsFuture::from(window.fetch_with_str_and_init(url, &init)).await.map_err(|e| reason(&e))?;
         let response: web_sys::Response = answer.dyn_into().map_err(|_| "the answer is not a response".to_string())?;

@@ -5,7 +5,8 @@
 //! translation is shown), and her translation in place of the message's body.
 //!
 //! A translation is shown as the message it is of, with her text for its body: laid out as any
-//! plain-text body is, so nothing in it runs and no link in it is followed, and its text can be
+//! plain-text body is, so nothing in it runs, an address in it is shown as a link with its real
+//! destination and followed only on the owner's click (as in any message), and its text can be
 //! selected and copied as the message's own can. The header, the files and a meeting the message
 //! carries stay the message's own. It is shown in the reading pane and in a window of the message's
 //! own; never under a reply that quotes it, nor in File › Signatures. A strip between the header and
