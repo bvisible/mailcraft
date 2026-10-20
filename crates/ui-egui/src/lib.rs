@@ -41,6 +41,8 @@ pub mod keys;
 pub mod mail_view;
 mod meeting_dialogs;
 pub mod nav;
+// //// Neoffice — Nora, the assistant of the Neoffice server, reached through the hosting page: her answers, her commands, her band and her button.
+pub mod nora;
 pub mod people_view;
 pub mod reading;
 mod reminders;
@@ -70,6 +72,8 @@ use serde_json::{Value, json};
 pub use approval::{AdminConsentAnswer, AdminConsentRequest};
 pub use control::ControlRequest;
 pub use files::FileDialogRequest;
+// //// Neoffice — what a host that reaches Nora is handed and hands back (nora.rs).
+pub use nora::{NoraAnswer, NoraCall};
 pub use scheduling::{FreeBusyRequest, FreeBusyResult};
 
 /// Platform services injected by the host (file dialogs, downloads, servers, storage).

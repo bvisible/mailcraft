@@ -1,6 +1,20 @@
 # //// Neoffice — added file (no upstream equivalent)
 # Interface strings: French (français).
 # context<TAB>English<TAB>translation; escapes \n \t \\. Placeholders like {name} stay as they are.
+# Nora, the assistant of the Neoffice server (crates/ui-egui/src/nora.rs and nora/): kept together, near the top.
+	French	Français
+	German	Allemand
+	English	Anglais
+	Nora couldn't be reached: {reason}	Impossible de joindre Nora : {reason}
+	Nora couldn't write the reply: {reason}	Nora n’a pas pu rédiger la réponse : {reason}
+	Nora couldn't translate the message: {reason}	Nora n’a pas pu traduire le message : {reason}
+	Write your text first: Nora works on it.	Rédigez d’abord votre texte : Nora s’en occupe.
+	Nora couldn't rewrite the text: {reason}	Nora n’a pas pu réécrire le texte : {reason}
+	Nora couldn't learn your style: {reason}	Nora n’a pas pu apprendre votre style : {reason}
+	Your text is too long for Nora: {n} characters at most.	Votre texte est trop long pour Nora : {n} caractères au maximum.
+	the answer is too long	la réponse est trop longue
+	the server cut the text short	le serveur a tronqué le texte
+# The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.
 	My Calendars	Mes calendriers
