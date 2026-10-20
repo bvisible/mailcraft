@@ -1246,3 +1246,47 @@ fn an_address_taken_out_after_a_new_contact_was_sent_whole_again_goes_from_its_c
     assert!(flow.app.session.mailbox.contact_changes.is_empty(), "{:?}", flow.app.session.mailbox.contact_changes);
     assert_eq!(flow.contact("Gus").map(|c| c.emails.len()), Some(1));
 }
+
+// A meeting held online, as the server says it.
+
+/// A link to a meeting room of the stand-in's.
+fn room(name: &str) -> String {
+    format!("{}{name}", mailcraft_jmap::standin::MEET_ROOMS)
+}
+
+#[test]
+fn a_meet_room_added_in_the_desk_gives_join_its_link_wherever_join_is_offered() {
+    let mut flow = Flow::start();
+    // A room made for the budget review in the desk: the store keeps it among the event's links.
+    flow.server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget.props.insert("links".into(), json!({"meet": {"@type": "Link", "href": room("abcd-efgh-ijkl")}}));
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    let budget = flow.event("Budget review").unwrap();
+    // The card, the menu, the ribbon and the reminder all offer Join by this link (`Event::join_link`), and Join opens
+    // what `calendar.join` gives.
+    assert_eq!(budget.join_link(), Some(room("abcd-efgh-ijkl").as_str()));
+    assert_eq!(budget.online.as_ref().map(|online| online.provider), Some(mailcraft_model::OnlineProvider::Other));
+    let joined = flow.app.execute("calendar.join", json!({"id": budget.id})).unwrap();
+    assert_eq!(joined["url"], room("abcd-efgh-ijkl"));
+}
+
+#[test]
+fn a_room_taken_away_in_the_desk_takes_join_away() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget.props.insert("links".into(), json!({"meet": {"@type": "Link", "href": room("abcd-efgh-ijkl")}}));
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.event("Budget review").is_some_and(|e| e.join_link().is_some()));
+    flow.server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget.props.remove("links");
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    let budget = flow.event("Budget review").unwrap();
+    assert!(budget.online.is_none() && budget.join_link().is_none());
+    assert!(flow.app.execute("calendar.join", json!({"id": budget.id})).is_err());
+}

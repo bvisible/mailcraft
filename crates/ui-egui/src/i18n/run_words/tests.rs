@@ -840,3 +840,10 @@ fn what_undo_and_the_engine_refuse_reads_in_french() {
         assert_eq!(fr(english).as_deref(), Some(french), "{english:?}");
     }
 }
+
+#[test]
+fn a_meeting_held_online_by_a_service_of_its_own_is_joined_in_french_as_one_online() {
+    // (The card's menu: `Join {service} Meeting`, the service by its label.)
+    let service = t_in(french(), mailcraft_model::OnlineProvider::Other.label());
+    assert_eq!(fmt(t_in(french(), "Join {service} Meeting"), &[("service", service)]), "Rejoindre la réunion en ligne");
+}
