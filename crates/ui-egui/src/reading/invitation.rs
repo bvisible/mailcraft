@@ -764,7 +764,10 @@ fn day_strip(ui: &Ui, rect: Rect, info: &Info, when: &When, t: &Tokens, twelve_h
     p.rect(rect, 4.0, t.surface, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     // The day, and under it the hours from the one before the meeting.
     let head = Rect::from_min_max(rect.min, pos2(rect.max.x, rect.min.y + 20.0));
-    let day = format!("{}, {} {}", when.start.date.weekday().name(), mailcraft_time::month_name(when.start.date.month), when.start.date.day);
+    // //// Neoffice — the day in the interface's words and order (« jeudi 22 octobre »), as the calendar's titles are.
+    let date = when.start.date;
+    let (weekday, month, number) = (tl!(date.weekday().name()), tl!(mailcraft_time::month_name(date.month)), date.day.to_string());
+    let day = crate::i18n::fmt(tl!("{weekday}, {month} {day}"), &[("weekday", weekday), ("month", month), ("day", &number)]);
     paint_clipped(&p, pos2(head.min.x + 8.0, head.center().y), head.width() - 16.0, &day, semibold(11.0), t.text_dim);
     p.line_segment([pos2(rect.min.x, head.max.y), pos2(rect.max.x, head.max.y)], Stroke::new(1.0, t.border));
     let grid = Rect::from_min_max(pos2(rect.min.x, head.max.y), rect.max);

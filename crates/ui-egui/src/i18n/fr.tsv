@@ -250,6 +250,7 @@
 	Cc:	Cc :
 	Subject:	Objet :
 	{month} {day}, {year}	{day} {month} {year}
+	{weekday}, {month} {day}	{weekday} {day} {month}
 	{month} {from} – {to}, {year}	{from} – {to} {month} {year}
 	{from_month} {from} – {to_month} {to}, {year}	{from} {from_month} – {to} {to_month} {year}
 	{from_month} {from}, {from_year} – {to_month} {to}, {to_year}	{from} {from_month} {from_year} – {to} {to_month} {to_year}
@@ -292,6 +293,9 @@
 	March	mars
 	April	avril
 	May	mai
+	June	juin
+	July	juillet
+	August	août
 	Jan	janv.
 	Feb	févr.
 	Mar	mars

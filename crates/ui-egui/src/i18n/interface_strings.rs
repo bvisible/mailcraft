@@ -782,6 +782,24 @@ const AFTER: &str = "after the tests";
         }
     }
 
+    /// The names of the months and of the days of the week reach `tl!` from `mailcraft_time`, which the scan can't
+    /// follow: the calendar's titles and columns draw every one of them, full and short, and every catalog has them.
+    #[test]
+    fn every_month_and_weekday_name_the_calendar_draws_has_an_entry_in_every_catalog() {
+        let months = (1..=12).flat_map(|month| [mailcraft_time::month_name(month), mailcraft_time::month_short(month)]);
+        let days = (0..7).flat_map(|n| {
+            let day = mailcraft_time::Weekday::from_index(n);
+            [day.name(), day.short()]
+        });
+        let names: Vec<&str> = months.chain(days).collect();
+        assert_eq!(names.len(), 38);
+        for row in LANGUAGES {
+            let has: HashSet<String> = catalog::parse(row.source).entries.into_iter().map(|entry| entry.english).collect();
+            let missing: Vec<&str> = names.iter().copied().filter(|name| !has.contains(*name)).collect();
+            assert!(missing.is_empty(), "{}.tsv lacks {missing:?}", row.code);
+        }
+    }
+
     #[test]
     fn the_checks_of_a_catalog_find_what_they_are_for() {
         let is_looked_up = |s: &str| interface_strings().iter().any(|f| f.english == s);
