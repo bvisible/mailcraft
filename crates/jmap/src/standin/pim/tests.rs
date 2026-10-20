@@ -196,6 +196,38 @@ fn a_get_of_every_event_is_refused_and_properties_are_kept() {
 }
 
 #[test]
+fn a_series_changes_an_occurrence_and_keeps_its_name() {
+    let stand_in = fixtures();
+    // The second Monday moves to eleven and gets another room; the third is retitled.
+    stand_in.with(|d| {
+        let weekly = &mut d.pim.events[0];
+        weekly.overrides.insert(
+            "2030-01-21T09:00:00".into(),
+            json!({"start": "2030-01-21T11:00:00", "locations": {"l1": {"name": "Room B"}}}).as_object().unwrap().clone(),
+        );
+        weekly.overrides.insert("2030-01-28T09:00:00".into(), json!({"title": "Site meeting (last)"}).as_object().unwrap().clone());
+    });
+    let found = one(&stand_in, "CalendarEvent/query", window(JANUARY.0, JANUARY.1)).unwrap();
+    let ids: Vec<Value> = found["ids"].as_array().unwrap().clone();
+    // Named by when the series has it, as before it was changed.
+    assert!(ids.contains(&json!(Pim::occurrence_id("weekly", "2030-01-21T09:00:00"))));
+    let got = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": ids})).unwrap();
+    let list = got["list"].as_array().unwrap();
+    let moved = list.iter().find(|e| e["recurrenceId"] == "2030-01-21T09:00:00").unwrap();
+    assert_eq!(
+        (moved["start"].as_str(), moved["utcStart"].as_str(), moved["title"].as_str()),
+        (Some("2030-01-21T11:00:00"), Some("2030-01-21T10:00:00Z"), Some("Site meeting"))
+    );
+    assert_eq!(moved["locations"]["l1"]["name"], "Room B");
+    let last = list.iter().find(|e| e["recurrenceId"] == "2030-01-28T09:00:00").unwrap();
+    assert_eq!((last["title"].as_str(), last["utcStart"].as_str()), (Some("Site meeting (last)"), Some("2030-01-28T08:00:00Z")));
+    // The series says what it changes.
+    let master = one(&stand_in, "CalendarEvent/get", json!({"accountId": ACCOUNT, "ids": [Pim::event_id("weekly")]})).unwrap();
+    let overrides = master["list"][0]["recurrenceOverrides"].as_object().unwrap();
+    assert_eq!(overrides.keys().collect::<Vec<_>>(), ["2030-01-21T09:00:00", "2030-01-28T09:00:00"]);
+}
+
+#[test]
 fn one_calendar_is_the_default_and_colours_are_rrggbb() {
     let stand_in = StandIn::new();
     stand_in.with(|d| {

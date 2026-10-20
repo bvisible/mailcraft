@@ -151,9 +151,13 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
     assert_eq!((planning.is_organizer, planning.response), (Some(false), mailcraft_model::Response::None));
     assert!(main.events.iter().any(|e| e.title == "Dentist" && e.start_zone.is_empty() && e.private));
     assert!(main.events.iter().any(|e| e.title == "Book fair" && e.all_day));
-    // The weekly meeting: seven occurrences, at nine in Zurich either side of the night the clocks go back.
+    // The weekly meeting: one series of seven, read with its rule, and its seven occurrences, at nine in Zurich either
+    // side of the night the clocks go back.
     let team = result.more_events.iter().find(|d| d.calendar == Pim::calendar_id("team")).unwrap();
-    let mut starts: Vec<i64> = team.events.iter().map(|e| e.start).collect();
+    let series: Vec<_> = team.events.iter().filter(|e| e.kind == mailcraft_model::remote::RemoteEventKind::SeriesMaster).collect();
+    assert_eq!(series.len(), 1);
+    assert_eq!(series[0].recurrence.as_ref().and_then(|rule| rule.count), Some(7));
+    let mut starts: Vec<i64> = team.events.iter().filter(|e| !e.series.is_empty()).map(|e| e.start).collect();
     starts.sort();
     assert_eq!(starts.len(), 7);
     let zurich = mailcraft_time::Zone::named("Europe/Zurich").unwrap();

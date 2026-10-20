@@ -16,6 +16,13 @@
 //!    asks for neither is not made.
 //! 2. Further pages, each a query from where the last ended and the `get` of what it found, in one request, until
 //!    the query is read whole ([`Pager`](super::Pager)), up to [`MAX_EVENTS`] occurrences.
+//! 3. The series themselves: those the occurrences read belong to (their `baseEventId`), and those the window asked
+//!    about by name ([`CalendarAsk::series`](mailcraft_model::remote::CalendarAsk::series)), a `CalendarEvent/get` of
+//!    their ids, 200 a request, up to [`MAX_SERIES`]. A series is what the engine keeps as one event that repeats, by
+//!    its rule; its occurrences are told from it, and one it changes (moved, retitled, with other people) is an
+//!    exception of its own. A series asked about by name that the server says it doesn't have is gone (the
+//!    download's `gone`); one that can't be read leaves its occurrences as events of their own, and the downloads
+//!    not complete.
 //!
 //! A server that takes fewer calls in a request is asked in more requests: the list alone, then the query and its
 //! `get`, or the query alone and then the `get` of the ids it gave.
@@ -52,22 +59,23 @@
 //! and what a server says in them is scrubbed of the session's address, the account's, the credentials and any word
 //! that holds an `@`.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteEvent};
+use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteEvent, RemoteEventKind};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, MAX_PIM_ASKS};
-use mailcraft_time::{Timestamp, Zone};
+use mailcraft_time::{DateTime, Timestamp, Zone};
 use serde_json::{Value, json};
 
-use super::jscalendar::{self, Listed};
+use super::jscalendar::{self, Listed, Read};
 use super::{ITEMS_BYTES, Pager, Stop, WRITE_EVENTS, counted, said, secrets_of, utc_text};
 use crate::{CALENDARS, CORE, Client, Error, Http, Secrets, result_of, valid_id};
 
 /// Events asked for whole in one request: a description may be long.
 const PAGE: usize = 200;
-/// Most occurrences one job reads, every calendar together.
+/// Most occurrences one job reads, every calendar together, and most series.
 pub const MAX_EVENTS: usize = 5_000;
+pub const MAX_SERIES: usize = 500;
 /// The most a list of calendars may be, in bytes.
 const LIST_BYTES: usize = 1 << 20;
 /// Most times in a job that a `get` is halved to find the event that breaks it.
@@ -75,7 +83,7 @@ const MAX_SPLITS: usize = 32;
 /// What every request names in `using`.
 const USING: [&str; 2] = [CORE, CALENDARS];
 /// What an event is read for.
-const EVENT_PROPERTIES: [&str; 23] = [
+const EVENT_PROPERTIES: [&str; 28] = [
     "id",
     "uid",
     "calendarIds",
@@ -99,6 +107,11 @@ const EVENT_PROPERTIES: [&str; 23] = [
     "alerts",
     "updated",
     "sequence",
+    "recurrenceIdTimeZone",
+    "recurrenceRule",
+    "recurrenceRules",
+    "excludedRecurrenceRules",
+    "recurrenceOverrides",
 ];
 
 /// Read the calendars of the account `request` is for, as it says (see the module documentation), into `out`; the
@@ -136,9 +149,11 @@ struct Gathered {
     listed: Option<Vec<Listed>>,
     /// Why the list could not be read, when it was asked for.
     listing: Option<String>,
-    /// The events read, in the order they came, each with the calendars it is in.
-    events: Vec<(Vec<String>, RemoteEvent)>,
+    /// The events read, in the order they came, each with the calendars it is in; then the series.
+    events: Vec<Read>,
     seen: HashSet<String>,
+    /// The series the server says it doesn't have, of those asked for by name.
+    gone: HashSet<String>,
     pager: Pager,
     /// Events the query found that could not be read (a `get` that failed, or an answer that left them out), and why
     /// the first could not.
@@ -160,6 +175,7 @@ impl Gathered {
             listing: None,
             events: Vec::new(),
             seen: HashSet::new(),
+            gone: HashSet::new(),
             pager: Pager::new(PAGE, MAX_EVENTS),
             unread: (0, None),
             passed_over: 0,
@@ -251,7 +267,70 @@ impl<'a, H: Http> Job<'a, H> {
             self.page(got, first && list, events, named.as_deref()).await?;
             first = false;
         }
+        if events {
+            self.masters(got).await?;
+        }
         Ok(())
+    }
+
+    /// The series of the occurrences read and the ones asked about by name, read themselves by their ids (see the
+    /// module documentation).
+    async fn masters(&self, got: &mut Gathered) -> Result<(), Stop> {
+        let mut wanted: Vec<String> = Vec::new();
+        let named = self.request.asks.iter().flat_map(|ask| &ask.series).map(|series| series.trim());
+        let of_occurrences = got.events.iter().filter(|read| read.event.kind == RemoteEventKind::Occurrence).map(|read| read.event.series.as_str());
+        for series in of_occurrences.chain(named) {
+            if wanted.len() >= MAX_SERIES {
+                break;
+            }
+            if valid_id(series) && !got.seen.contains(series) && !wanted.iter().any(|have| have == series) {
+                wanted.push(series.to_string());
+            }
+        }
+        for chunk in wanted.chunks(PAGE) {
+            self.check()?;
+            let get = json!({"accountId": self.account, "ids": chunk, "properties": EVENT_PROPERTIES});
+            let mut answers = self.client.call_within(&USING, vec![("CalendarEvent/get", get)], ITEMS_BYTES).await.map_err(|e| self.call_stop(e))?;
+            match answers.take(0) {
+                Ok(answer) => self.take_masters(got, chunk, &answer),
+                Err(error) => self.unread(got, chunk.len(), self.said(&error)),
+            }
+        }
+        Ok(())
+    }
+
+    /// The series of a `get`'s answer, of those asked for (`ids`): each once; those the server says it doesn't have,
+    /// as gone; what it left out without saying it was gone (or what was no series), as unread.
+    fn take_masters(&self, got: &mut Gathered, ids: &[String], answer: &Value) {
+        let Some(list) = answer.get("list").and_then(Value::as_array) else {
+            self.unread(got, ids.len(), "the answer has no list of events".into());
+            return;
+        };
+        let asked: HashSet<&str> = ids.iter().map(String::as_str).collect();
+        let mut came: HashSet<String> = HashSet::new();
+        for value in list.iter().take(ids.len()) {
+            let id = value.get("id").and_then(Value::as_str).unwrap_or_default();
+            if !asked.contains(id) || came.contains(id) {
+                continue;
+            }
+            match jscalendar::event_of(value, &self.me, self.zone) {
+                Ok(read) if read.event.kind == RemoteEventKind::SeriesMaster && got.seen.insert(read.event.id.clone()) => {
+                    came.insert(id.to_string());
+                    got.events.push(read);
+                }
+                Ok(_) => log::debug!("jmap pim: what a series' id named was no series"),
+                Err(missing) => {
+                    log::debug!("jmap pim: a series of the server's answer was passed over (no {missing:?})");
+                    got.passed_over = got.passed_over.saturating_add(1);
+                }
+            }
+        }
+        let gone: HashSet<&str> = answer.get("notFound").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+        got.gone.extend(ids.iter().filter(|id| gone.contains(id.as_str()) && !came.contains(id.as_str())).cloned());
+        let left_out = ids.iter().filter(|id| !came.contains(id.as_str()) && !gone.contains(id.as_str())).count();
+        if left_out > 0 {
+            self.unread(got, left_out, "the server's answer did not have the series".into());
+        }
     }
 
     /// The arguments of the query for the next page.
@@ -353,7 +432,7 @@ impl<'a, H: Http> Job<'a, H> {
             }
             came.insert(id.to_string());
             match jscalendar::event_of(value, &self.me, self.zone) {
-                Ok(read) if got.seen.insert(read.event.id.clone()) => got.events.push((read.calendars, read.event)),
+                Ok(read) if got.seen.insert(read.event.id.clone()) => got.events.push(read),
                 Ok(_) => {}
                 Err(missing) => {
                     log::debug!("jmap pim: an event of the server's answer was passed over (no {missing:?})");
@@ -437,6 +516,16 @@ impl<'a, H: Http> Job<'a, H> {
         let mut downloads: BTreeMap<String, EventsDownload> = BTreeMap::new();
         for (name, id) in &wanted {
             let complete = whole;
+            // The series asked about in it by name that the server says it doesn't have.
+            let gone: Vec<String> = self
+                .request
+                .asks
+                .iter()
+                .filter(|ask| ask.calendar.trim() == name.as_str())
+                .flat_map(|ask| &ask.series)
+                .filter(|series| got.gone.contains(series.trim()))
+                .map(|series| series.trim().to_string())
+                .collect();
             let download = EventsDownload {
                 account: self.request.account,
                 email: self.request.email.clone(),
@@ -444,13 +533,29 @@ impl<'a, H: Http> Job<'a, H> {
                 from: self.from,
                 to: self.to,
                 complete,
+                gone,
                 ..Default::default()
             };
             downloads.insert(id.clone(), download);
         }
         out.errors.extend(lines(&got));
+        // An occurrence the series changes beyond leaving it out is an exception of its own: the series has it
+        // otherwise than its rule says.
+        let series: HashMap<String, (RemoteEvent, HashSet<DateTime>)> = got
+            .events
+            .iter()
+            .filter(|read| read.event.kind == RemoteEventKind::SeriesMaster)
+            .map(|read| (read.event.id.clone(), (read.event.clone(), read.changed.iter().copied().collect())))
+            .collect();
         let mut strays = 0usize;
-        for (calendars, event) in got.events {
+        for read in got.events {
+            let Read { calendars, mut event, recurrence_id, .. } = read;
+            if event.kind == RemoteEventKind::Occurrence
+                && let Some((master, changed)) = series.get(&event.series)
+                && (recurrence_id.is_some_and(|at| changed.contains(&at)) || differs(&event, master))
+            {
+                event.kind = RemoteEventKind::Exception;
+            }
             // The smallest id of the calendars asked for that it is in.
             let home = calendars.iter().filter(|id| downloads.contains_key(id.as_str())).min();
             match home.and_then(|id| downloads.get_mut(id.as_str())) {
@@ -469,6 +574,25 @@ impl<'a, H: Http> Job<'a, H> {
             }
         }
     }
+}
+
+/// Whether an occurrence says otherwise than its series what an event is besides its time (what it is called,
+/// where, what it says, how it shows, who comes and what the owner answered): it was changed on its own then,
+/// whatever the series' overrides say.
+fn differs(occurrence: &RemoteEvent, series: &RemoteEvent) -> bool {
+    let people = |event: &RemoteEvent| {
+        let mut people: Vec<(String, bool)> = event.attendees.iter().map(|who| (who.address.email.to_ascii_lowercase(), who.optional)).collect();
+        people.sort();
+        people
+    };
+    occurrence.title != series.title
+        || occurrence.location != series.location
+        || occurrence.description != series.description
+        || occurrence.show_as != series.show_as
+        || occurrence.private != series.private
+        || occurrence.reminder_minutes != series.reminder_minutes
+        || occurrence.response != series.response
+        || people(occurrence) != people(series)
 }
 
 /// The main calendar of a list: the one the server flags as the default, else the first the account may write, else

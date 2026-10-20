@@ -36,7 +36,15 @@ struct Rig {
 
 impl Rig {
     fn new() -> Rig {
-        let mut s = Session::at(Mailbox::with_local_account("", ""), NOW, 0);
+        Rig::with(Session::at(Mailbox::with_local_account("", ""), NOW, 0))
+    }
+
+    /// The same, with the calendar shown in Zurich.
+    fn in_zurich() -> Rig {
+        Rig::with(Session::in_zone(Mailbox::with_local_account("", ""), NOW, mailcraft_time::Zone::named("Europe/Zurich").unwrap()))
+    }
+
+    fn with(mut s: Session) -> Rig {
         let added = s.run("account.add", &json!({"email": ADDRESS, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
         let server = StandIn::new();
         server.with(|d| {
@@ -185,4 +193,141 @@ fn a_calendar_the_server_drops_goes_with_its_events() {
     assert!(!rig.s.mailbox.calendars.iter().any(|c| c.origin.id == team));
     assert!(!rig.s.mailbox.events.values().any(|e| e.title == "Team stand-up"));
     assert_eq!(rig.titles(""), ["Book fair", "Budget review"]);
+}
+
+// A series is one event with a rule here, its occurrences told from it.
+
+/// Ada's weekly site meeting on the server: Mondays at nine in Zurich, six of them from 2026-10-12, across the night
+/// summer time ends (2026-10-25), with `change` made to it first.
+fn weekly(rig: &Rig, change: impl FnOnce(Event) -> Event) {
+    let site = Event::timed("site", "ada", "Site meeting", "2026-10-12T09:00:00", Some("Europe/Zurich"), "PT1H")
+        .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 6}));
+    let site = change(site);
+    rig.server.with(|d| {
+        d.pim.add_event(site);
+    });
+}
+
+impl Rig {
+    /// A job as the window works it out: the calendars named, each with the series it expects in the stretch.
+    fn window_job(&self, lists: bool, asks: &[&str]) -> JmapPimRequest {
+        let mut job = self.job(lists, asks);
+        for ask in &mut job.asks {
+            ask.series = mailcraft_engine::cmd::remote::expected_series(&self.s, self.account, &ask.calendar, job.from, job.to);
+        }
+        job
+    }
+
+    /// When the calendar shows something called `title` between the 12th and the 27th, by its clock.
+    fn shown(&mut self, title: &str) -> Vec<String> {
+        let listed = self.s.run("calendar.list", &json!({"from": "2026-10-12", "to": "2026-10-27"})).unwrap();
+        listed["events"].as_array().unwrap().iter().filter(|e| e["title"] == title).map(|e| e["start"].as_str().unwrap().to_string()).collect()
+    }
+}
+
+#[test]
+fn a_weekly_series_reads_as_one_event_with_a_rule() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| site);
+    let result = rig.run(&rig.window_job(true, &[""]));
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    let series: Vec<_> = rig.s.mailbox.events.values().filter(|e| e.title.starts_with("Site meeting")).collect();
+    assert_eq!(series.len(), 1, "one event, not one per Monday");
+    let rule = series[0].recurrence.as_ref().unwrap();
+    assert_eq!((rule.freq, rule.count), (mailcraft_model::Freq::Weekly, Some(6)));
+    assert_eq!((series[0].origin.id.as_str(), series[0].start_zone.as_str()), (Pim::event_id("site").as_str(), "Europe/Zurich"));
+    assert!(series[0].exceptions.is_empty());
+}
+
+#[test]
+fn a_series_keeps_its_hour_either_side_of_the_night_summer_time_ends() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| site);
+    rig.run(&rig.window_job(true, &[""]));
+    let mondays = ["2026-10-12T09:00:00", "2026-10-19T09:00:00", "2026-10-26T09:00:00"];
+    assert_eq!(rig.shown("Site meeting"), mondays, "nine on both sides of the 25th");
+    // Read again, as the window reads the days on screen: still one series, still at nine.
+    rig.run(&rig.window_job(false, &[""]));
+    assert_eq!(rig.s.mailbox.events.values().filter(|e| e.title == "Site meeting").count(), 1);
+    assert_eq!(rig.shown("Site meeting"), mondays);
+}
+
+#[test]
+fn a_day_the_master_excludes_has_no_event() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| Event { excluded: vec!["2026-10-19T09:00:00".into()], ..site });
+    rig.run(&rig.window_job(true, &[""]));
+    assert_eq!(rig.shown("Site meeting"), ["2026-10-12T09:00:00", "2026-10-26T09:00:00"]);
+    let series = rig.s.mailbox.events.values().find(|e| e.recurrence.is_some()).unwrap();
+    assert_eq!(series.exceptions, [mailcraft_time::Date::new(2026, 10, 19).unwrap()]);
+}
+
+#[test]
+fn an_occurrence_moved_on_the_server_is_an_exception_here() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| site.changing("2026-10-19T09:00:00", json!({"start": "2026-10-19T11:00:00"})));
+    rig.run(&rig.window_job(true, &[""]));
+    assert_eq!(rig.shown("Site meeting"), ["2026-10-12T09:00:00", "2026-10-19T11:00:00", "2026-10-26T09:00:00"]);
+    // The moved one is an event of its own that says which Monday of which series it stands for.
+    let own: Vec<_> = rig.s.mailbox.events.values().filter(|e| e.recurrence.is_none() && e.title == "Site meeting").collect();
+    assert_eq!(own.len(), 1);
+    assert_eq!((own[0].origin.series.as_str(), own[0].origin.occurrence), (Pim::event_id("site").as_str(), mailcraft_time::Date::new(2026, 10, 19)));
+    assert_eq!(own[0].origin.id, Pim::occurrence_id("site", "2026-10-19T09:00:00"));
+}
+
+#[test]
+fn an_occurrence_the_server_cancelled_is_gone_here() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| site.changing("2026-10-26T09:00:00", json!({"title": "Site meeting (room B)"})));
+    rig.run(&rig.window_job(true, &[""]));
+    assert_eq!(rig.shown("Site meeting").len(), 2);
+    assert_eq!(rig.shown("Site meeting (room B)"), ["2026-10-26T09:00:00"]);
+    // Somebody leaves out the 19th and the changed 26th on the server: both go here at the next whole read.
+    rig.server.with(|d| {
+        let site = d.pim.events.iter_mut().find(|e| e.raw == "site").unwrap();
+        site.overrides.clear();
+        site.excluded = vec!["2026-10-19T09:00:00".into(), "2026-10-26T09:00:00".into()];
+    });
+    rig.run(&rig.window_job(false, &[""]));
+    assert_eq!(rig.shown("Site meeting"), ["2026-10-12T09:00:00"]);
+    assert!(rig.shown("Site meeting (room B)").is_empty());
+    // And the series itself, when the server deletes it: the next job asks for it by name, and it goes.
+    rig.server.with(|d| d.pim.events.retain(|e| e.raw != "site"));
+    let result = rig.run(&rig.window_job(false, &[""]));
+    assert_eq!(result.events.as_ref().unwrap().gone, [Pim::event_id("site")]);
+    assert!(!rig.s.mailbox.events.values().any(|e| e.title.starts_with("Site meeting")));
+}
+
+#[test]
+fn an_invitation_about_one_occurrence_finds_its_series() {
+    let mut rig = Rig::in_zurich();
+    weekly(&rig, |site| {
+        site.with("organizerCalendarAddress", json!("mailto:bo@example.org")).with(
+            "participants",
+            json!({
+                "bo": {"calendarAddress": "mailto:bo@example.org", "roles": {"owner": true}, "participationStatus": "accepted"},
+                "ada": {"calendarAddress": "mailto:ada@example.org", "roles": {"attendee": true}, "participationStatus": "accepted"},
+            }),
+        )
+    });
+    rig.run(&rig.window_job(true, &[""]));
+    let series = rig.s.mailbox.events.values().find(|e| e.recurrence.is_some()).map(|e| (e.id, e.origin.guest)).unwrap();
+    assert!(series.1, "Bo's meeting");
+    // Bo moves the 19th by mail: the invitation names that occurrence.
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:site@standin.example\r\nSUMMARY:Site meeting\r\n\
+               RECURRENCE-ID:20261019T070000Z\r\nDTSTART:20261019T090000Z\r\nDTEND:20261019T100000Z\r\n\
+               ORGANIZER;CN=Bo Marsh:mailto:bo@example.org\r\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:mailto:ada@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let inbox = rig.s.mailbox.folders.iter().find(|f| f.kind == mailcraft_model::FolderKind::Inbox).map(|f| f.id).unwrap();
+    let message = mailcraft_model::Message {
+        folder: inbox,
+        message_id: "moved@example.org".into(),
+        from: mailcraft_model::Address::new("Bo Marsh", "bo@example.org"),
+        to: vec![mailcraft_model::Address::new("Ada", ADDRESS)],
+        subject: "Site meeting".into(),
+        attachments: vec![mailcraft_model::Attachment::new("invite.ics", "text/calendar", ics.as_bytes().to_vec())],
+        ..Default::default()
+    };
+    let id = rig.s.mailbox.add_message(message).unwrap();
+    let said = rig.s.run("calendar.invitation", &json!({"message": id})).unwrap();
+    assert_eq!((said["event"].as_u64(), said["occurrence"].as_str()), (Some(series.0), Some("2026-10-19")), "{said}");
 }

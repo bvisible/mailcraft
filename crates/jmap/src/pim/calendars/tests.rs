@@ -376,3 +376,115 @@ fn the_cut_of_a_stretch_keeps_its_proportions_around_now() {
     assert_eq!(stretch(0, 100, 500, 50), (50, 100, true), "now after it keeps the end");
     assert_eq!(stretch(100, 0, 50, 50), (100, 0, false), "an empty stretch is left as it is");
 }
+
+/// A server with Ada's weekly site meeting (Mondays at nine in Zurich, six of them from 2026-10-12): its second
+/// Monday moved to eleven, its third retitled, its fourth left out.
+fn weekly() -> StandIn {
+    let server = server();
+    server.with(|d| {
+        let site = Event::timed("site", "ada", "Site meeting", "2026-10-12T09:00:00", Some("Europe/Zurich"), "PT1H")
+            .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 6}))
+            .changing("2026-10-19T09:00:00", json!({"start": "2026-10-19T11:00:00"}))
+            .changing("2026-10-26T09:00:00", json!({"title": "Site meeting (room B)"}));
+        d.pim.add_event(Event { excluded: vec!["2026-11-02T09:00:00".into()], ..site });
+    });
+    server
+}
+
+#[test]
+fn the_master_of_an_occurrence_is_read_by_its_base_id_in_one_request() {
+    let server = weekly();
+    let result = run(&server, &request());
+    let main = result.events.as_ref().unwrap();
+    let series: Vec<_> = main.events.iter().filter(|e| e.kind == RemoteEventKind::SeriesMaster).collect();
+    assert_eq!(series.len(), 1, "{main:?}");
+    let master = series[0];
+    assert_eq!(
+        (master.id.as_str(), master.title.as_str(), master.series_day),
+        (Pim::event_id("site").as_str(), "Site meeting", mailcraft_time::Date::new(2026, 10, 12))
+    );
+    let rule = master.recurrence.as_ref().unwrap();
+    assert_eq!((rule.freq, rule.count), (mailcraft_model::Freq::Weekly, Some(6)));
+    assert_eq!(master.start_zone, "Europe/Zurich");
+    // Its occurrences in the stretch name it.
+    let of_it: Vec<_> = main.events.iter().filter(|e| e.series == master.id).collect();
+    assert!(!of_it.is_empty() && of_it.iter().all(|e| e.id.starts_with('O')));
+    // The series is asked for by itself, once, after the stretch.
+    let asked = server.asked();
+    let last = asked.last().unwrap();
+    assert_eq!((last.method.as_str(), last.ids), ("CalendarEvent/get", Some(1)));
+    assert!(last.properties.iter().any(|p| p == "recurrenceOverrides") && last.properties.iter().any(|p| p == "recurrenceRule"));
+    assert!(main.complete && result.errors.is_empty(), "{result:?}");
+}
+
+#[test]
+fn an_override_that_moves_or_edits_makes_an_exception() {
+    // The stretch from 2026-10-07 to 2026-10-28: the first three Mondays.
+    let result = run(&weekly(), &request());
+    let main = result.events.unwrap();
+    let mut occurrences: Vec<_> =
+        main.events.iter().filter(|e| !e.series.is_empty()).map(|e| (e.start, e.kind, e.title.clone(), e.original)).collect();
+    occurrences.sort_by_key(|o| o.0);
+    let at = |day: i64, hour: i64| {
+        mailcraft_time::DateTime::at_midnight(mailcraft_time::Date::new(2026, 10, 12).unwrap()).to_timestamp(0) + day * DAY + hour * 3_600
+    };
+    assert_eq!(
+        occurrences,
+        [
+            (at(0, 7), RemoteEventKind::Occurrence, "Site meeting".to_string(), None),
+            (at(7, 9), RemoteEventKind::Exception, "Site meeting".to_string(), Some(at(7, 7))),
+            (at(14, 8), RemoteEventKind::Exception, "Site meeting (room B)".to_string(), None),
+        ],
+        "moved, and retitled (winter time from the 25th: nine is eight UTC)"
+    );
+    // The day the series leaves out has no occurrence.
+    let wide = JmapPimRequest { to: NOW + 60 * DAY, ..request() };
+    let result = run(&weekly(), &wide);
+    let starts: Vec<_> =
+        result.events.unwrap().events.iter().filter(|e| e.kind != RemoteEventKind::SeriesMaster && !e.series.is_empty()).map(|e| e.start).collect();
+    assert!(!starts.contains(&at(21, 8)), "2026-11-02 is left out");
+    assert_eq!(starts.len(), 5);
+}
+
+#[test]
+fn a_master_the_server_calls_not_found_is_named_in_gone_and_its_occurrences_are_left_alone() {
+    let server = weekly();
+    let asked = JmapPimRequest {
+        asks: vec![CalendarAsk { calendar: String::new(), series: vec![Pim::event_id("site"), Pim::event_id("deleted")] }],
+        ..request()
+    };
+    let result = run(&server, &asked);
+    let main = result.events.unwrap();
+    assert_eq!(main.gone, [Pim::event_id("deleted")], "the one the server no longer has");
+    assert!(main.complete);
+    // A series that can't be read just now: its occurrences come as they are, and nothing is taken for gone.
+    server.with(|d| {
+        d.pim.broken_events.insert(Pim::event_id("site"));
+    });
+    let result = run(&server, &asked);
+    let main = result.events.unwrap();
+    assert!(!main.complete && main.gone.is_empty(), "{main:?}");
+    assert!(main.events.iter().all(|e| e.kind != RemoteEventKind::SeriesMaster));
+    assert!(main.events.iter().filter(|e| !e.series.is_empty()).all(|e| e.kind == RemoteEventKind::Occurrence), "nothing to tell them from");
+    assert!(result.errors.iter().any(|line| line.starts_with("Couldn't read 2 events of the calendar")), "{:?}", result.errors);
+}
+
+#[test]
+fn a_series_split_over_two_pages_is_read_once() {
+    let server = server();
+    // Every day at seven for a year: more than a page in the wide stretch.
+    server.with(|d| {
+        d.pim.add_event(
+            Event::timed("daily", "ada", "Stretching", "2026-09-01T07:00:00", Some("Europe/Zurich"), "PT15M")
+                .repeating(json!({"frequency": "daily", "count": 365})),
+        );
+    });
+    let wide = JmapPimRequest { from: NOW - 31 * DAY, to: NOW + 366 * DAY, ..request() };
+    let result = run(&server, &wide);
+    let main = result.events.unwrap();
+    let daily = main.events.iter().filter(|e| e.series == Pim::event_id("daily")).count();
+    assert!(daily > 200, "{daily}");
+    assert_eq!(main.events.iter().filter(|e| e.kind == RemoteEventKind::SeriesMaster).count(), 1);
+    let gets = server.asked().into_iter().filter(|a| a.method == "CalendarEvent/get" && a.ids == Some(1)).count();
+    assert_eq!(gets, 1, "the series once");
+}

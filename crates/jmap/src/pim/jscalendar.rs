@@ -20,16 +20,24 @@
 //! - **The rest.** Free or Busy from `freeBusyStatus`, Tentative from a `status` of `tentative`; private when its
 //!   `privacy` is `private` or `secret`; cancelled from its `status`; the reminder is the first alert (in the order of
 //!   their names) with an offset before the start; the place is the first location with a name; a description the
-//!   server says is HTML loses its tags. An occurrence of a series (it has a `recurrenceId`) names the series by its
-//!   `baseEventId`, and is an occurrence the engine keeps as an event of its own while it has no series to tell it
-//!   from.
+//!   server says is HTML loses its tags.
+//! - **Series.** A series itself (an event with a rule and no `recurrenceId`, read by its own id) is the engine's
+//!   series: its rule as the mailbox says rules ([`rule_of`]: `recurrenceRule`, or the one entry of the newer
+//!   `recurrenceRules`), the day it counts from (the date of its `start`), and the times of its first occurrence. A
+//!   rule the mailbox has no way of saying (two of them, an excluding rule, a frequency of hours, days of a month
+//!   other than the start's, the nth occurrence of a set, another calendar scale) leaves the series without one: the
+//!   engine then passes it over, and its occurrences are events of their own. The occurrences it changes beyond
+//!   leaving them out (its `recurrenceOverrides`) are said with it ([`Read::changed`]). An occurrence (it has a
+//!   `recurrenceId`) names its series by its `baseEventId`, and says when the series has it: its `recurrenceId` on the
+//!   clock of its `recurrenceIdTimeZone`, else of its own zone, else of the zone the calendar is shown in
+//!   ([`RemoteEvent::original`], set when that is not when it happens).
 //!
 //! Everything is hostile: a value of the wrong type is no value, lists are looked at up to a bound, and the event is
 //! cut to size afterwards ([`RemoteEvent::tidy`]).
 
 use mailcraft_model::remote::{RemoteCalendar, RemoteEvent, RemoteEventKind};
-use mailcraft_model::{Address, Attendee, Response, Rgb, ShowAs};
-use mailcraft_time::{DateTime, Timestamp, Zone};
+use mailcraft_model::{Address, Attendee, Freq, Recurrence, Response, Rgb, ShowAs};
+use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
 use serde_json::{Map, Value};
 
 use super::{duration, local_date_time, mailto, mine, signed_seconds, utc_date};
@@ -44,6 +52,9 @@ const MAX_TEXT: usize = 100_000;
 const MAX_LINE: usize = 1_000;
 /// The longest a whole-day event is taken to last, in days.
 const MAX_DAYS: i64 = 3_660;
+/// Most changed occurrences of one series that are looked at, and most days of the week of one rule.
+const MAX_OVERRIDES: usize = 5_000;
+const MAX_RULE_DAYS: usize = 35;
 
 /// What an event of a server's answer was passed over for lacking.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +72,11 @@ pub enum Missing {
 pub struct Read {
     pub calendars: Vec<String>,
     pub event: RemoteEvent,
+    /// For an occurrence of a series: when the series has it, on the clock of the series (its `recurrenceId`).
+    pub recurrence_id: Option<DateTime>,
+    /// For a series: the occurrences it changes beyond leaving them out (a time, a title, the people), by when the
+    /// series has them.
+    pub changed: Vec<DateTime>,
 }
 
 /// A calendar as it was read: the engine's, and whether the account may write its events.
@@ -161,7 +177,21 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
     };
     let privacy = text(value, "privacy").trim().to_ascii_lowercase();
     let series = text(value, "baseEventId");
+    let recurrence_id = local_date_time(text(value, "recurrenceId"));
     let occurrence = value.get("recurrenceId").is_some_and(|at| !at.is_null()) && valid_id(series);
+    // A series itself: an event with a rule that is no occurrence of another.
+    let master = !occurrence && value.get("recurrenceId").is_none_or(Value::is_null) && has_rule(value);
+    let clock =
+        local_date_time(text(value, "start")).or_else(|| mailcraft_time::Date::parse_iso(text(value, "start").trim()).map(DateTime::at_midnight));
+    // When the series has an occurrence, as an instant: its recurrence id on the clock of the series' zone.
+    let original = recurrence_id.filter(|_| occurrence).map(|at| {
+        if all_day {
+            DateTime::at_midnight(at.date).to_timestamp(0)
+        } else {
+            let zone = Zone::named(text(value, "recurrenceIdTimeZone")).or_else(|| Zone::named(named_zone)).or(here).unwrap_or(Zone::UTC);
+            zone.instant(at)
+        }
+    });
     let updated = text(value, "updated");
     let change_key = if !updated.trim().is_empty() {
         bounded(updated.trim(), 64)
@@ -187,11 +217,18 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
         show_as,
         private: matches!(privacy.as_str(), "private" | "secret"),
         cancelled: status == "cancelled",
-        kind: if occurrence { RemoteEventKind::Occurrence } else { RemoteEventKind::Single },
+        kind: match (occurrence, master) {
+            (true, _) => RemoteEventKind::Occurrence,
+            (false, true) => RemoteEventKind::SeriesMaster,
+            (false, false) => RemoteEventKind::Single,
+        },
         series: if occurrence { series.to_string() } else { String::new() },
         reminder_minutes: reminder(value),
         modified: utc_date(updated).unwrap_or(0),
         is_organizer,
+        recurrence: clock.filter(|_| master).and_then(|clock| one_rule(value).and_then(|rule| rule_of(rule, clock, all_day))),
+        series_day: clock.filter(|_| master).map(|clock| clock.date),
+        original: original.filter(|at| *at != start),
         ..Default::default()
     };
     event.tidy();
@@ -204,7 +241,157 @@ pub fn event_of(value: &Value, me: &[String], here: Option<Zone>) -> Result<Read
         .take(MAX_ENTRIES)
         .map(|(id, _)| id.clone())
         .collect();
-    Ok(Read { calendars, event })
+    let changed = if master { changed_occurrences(value) } else { Vec::new() };
+    Ok(Read { calendars, event, recurrence_id: recurrence_id.filter(|_| occurrence), changed })
+}
+
+/// Whether an event says how it repeats (a rule, or a list of them that is not empty).
+fn has_rule(value: &Value) -> bool {
+    value.get("recurrenceRule").is_some_and(Value::is_object)
+        || value.get("recurrenceRules").and_then(Value::as_array).is_some_and(|rules| !rules.is_empty())
+}
+
+/// The one rule a series repeats by: the newer list's when it has one entry, else the older single rule. `None`
+/// when it has none, more than one, or rules that leave days out (`excludedRecurrenceRules`).
+fn one_rule(value: &Value) -> Option<&Map<String, Value>> {
+    if value.get("excludedRecurrenceRules").and_then(Value::as_array).is_some_and(|rules| !rules.is_empty()) {
+        return None;
+    }
+    match value.get("recurrenceRules") {
+        Some(Value::Array(rules)) if rules.len() == 1 => rules.first().and_then(Value::as_object),
+        Some(Value::Array(rules)) if !rules.is_empty() => None,
+        _ => value.get("recurrenceRule").and_then(Value::as_object),
+    }
+}
+
+/// The occurrences a series changes beyond leaving them out (`recurrenceOverrides` whose patch says more than
+/// `excluded`), by when the series has them; at most [`MAX_OVERRIDES`].
+fn changed_occurrences(value: &Value) -> Vec<DateTime> {
+    let Some(overrides) = value.get("recurrenceOverrides").and_then(Value::as_object) else { return Vec::new() };
+    overrides
+        .iter()
+        .take(MAX_OVERRIDES)
+        .filter_map(|(at, patch)| {
+            let patch = patch.as_object()?;
+            let left_out = patch.get("excluded").and_then(Value::as_bool) == Some(true);
+            let more = patch.keys().any(|key| key != "excluded" && key != "@type");
+            (!left_out && more).then(|| local_date_time(at)).flatten()
+        })
+        .collect()
+}
+
+/// A JSCalendar `RecurrenceRule` (RFC 8984 §4.3.3) as the mailbox says how an event repeats, for a series whose
+/// first occurrence starts at `start` on its clock (`all_day`: a whole-day one). `None` for a rule the mailbox has
+/// no way of saying: a frequency of hours, minutes or seconds; another calendar scale, or skipping otherwise than by
+/// leaving a day out; the days of a year or the weeks of it, the nth of a set, hours and minutes other than the
+/// start's; days of the month, or months, other than the start's; days of the week counted in a period they can't
+/// be counted in here (every Monday of a month, the second Monday of a year); a count and an end together; anything
+/// of the wrong shape.
+pub fn rule_of(rule: &Map<String, Value>, start: DateTime, all_day: bool) -> Option<Recurrence> {
+    let word = |key: &str| rule.get(key).filter(|value| !value.is_null()).map(|value| value.as_str().map(|text| text.trim().to_ascii_lowercase()));
+    let list = |key: &str| -> Option<Vec<Value>> {
+        match rule.get(key) {
+            None | Some(Value::Null) => Some(Vec::new()),
+            Some(Value::Array(items)) => Some(items.iter().take(MAX_RULE_DAYS + 1).cloned().collect()),
+            Some(_) => None,
+        }
+    };
+    let numbers = |key: &str| -> Option<Vec<i64>> { list(key)?.iter().map(Value::as_i64).collect() };
+    if let Some(scale) = word("rscale") {
+        scale.filter(|scale| scale == "gregorian")?;
+    }
+    if let Some(skip) = word("skip") {
+        skip.filter(|skip| skip == "omit")?;
+    }
+    for unsaid in ["byYearDay", "byWeekNo", "bySetPosition"] {
+        if !list(unsaid)?.is_empty() {
+            return None;
+        }
+    }
+    // Hours, minutes and seconds may only say the start's own.
+    for (key, own) in [("byHour", start.hour), ("byMinute", start.minute), ("bySecond", start.second)] {
+        let said = numbers(key)?;
+        if !said.is_empty() && said != [i64::from(own)] {
+            return None;
+        }
+    }
+    let freq = match word("frequency")??.as_str() {
+        "yearly" => Freq::Yearly,
+        "monthly" => Freq::Monthly,
+        "weekly" => Freq::Weekly,
+        "daily" => Freq::Daily,
+        _ => return None,
+    };
+    let interval = match rule.get("interval") {
+        None | Some(Value::Null) => 1,
+        Some(value) => u32::try_from(value.as_u64()?).ok().filter(|n| (1..=999).contains(n))?,
+    };
+    // The days of the week, each with which of them in its period is meant (none: every one).
+    let mut days: Vec<(Weekday, Option<i64>)> = Vec::new();
+    for entry in list("byDay")? {
+        let entry = entry.as_object()?;
+        let day = Weekday::from_ical(entry.get("day")?.as_str()?)?;
+        let nth = match entry.get("nthOfPeriod") {
+            None | Some(Value::Null) => None,
+            Some(value) => Some(value.as_i64()?),
+        };
+        if days.len() > MAX_RULE_DAYS {
+            return None;
+        }
+        days.push((day, nth));
+    }
+    let month_days = numbers("byMonthDay")?;
+    if !month_days.is_empty() && (matches!(freq, Freq::Daily | Freq::Weekly) || month_days != [i64::from(start.date.day)]) {
+        return None;
+    }
+    let months = list("byMonth")?;
+    let own_month = start.date.month.to_string();
+    let in_its_month =
+        months.is_empty() || (months.len() == 1 && months.first().and_then(Value::as_str).is_some_and(|month| month.trim() == own_month));
+    if !months.is_empty() && (freq != Freq::Yearly || !in_its_month) {
+        return None;
+    }
+    // A weekly rule of several days, every other week or more, counts its weeks from Monday here.
+    if let Some(first) = word("firstDayOfWeek") {
+        let monday = first.as_deref().is_none_or(|first| first == "mo");
+        if freq == Freq::Weekly && interval > 1 && days.len() > 1 && !monday {
+            return None;
+        }
+    }
+    let plain: Vec<Weekday> = days.iter().filter(|(_, nth)| nth.is_none()).map(|(day, _)| *day).collect();
+    let counted: Vec<(Weekday, i64)> = days.iter().filter_map(|(day, nth)| nth.map(|nth| (*day, nth))).collect();
+    let mut out = match (freq, plain.is_empty(), counted.as_slice()) {
+        (Freq::Daily | Freq::Weekly, _, []) => Recurrence { freq, by_day: plain, ..Default::default() },
+        (Freq::Monthly | Freq::Yearly, true, []) => Recurrence { freq, ..Default::default() },
+        // The nth weekday of the month: of the start's month, for a yearly one.
+        (Freq::Monthly | Freq::Yearly, true, [(day, nth)]) if month_days.is_empty() && matches!(*nth, 1..=5 | -1) => {
+            if freq == Freq::Yearly && months.is_empty() {
+                return None;
+            }
+            Recurrence { freq, by_day: vec![*day], nth: i8::try_from(*nth).ok(), ..Default::default() }
+        }
+        _ => return None,
+    };
+    out.interval = interval;
+    let count = match rule.get("count") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(u32::try_from(value.as_u64()?).ok().filter(|n| *n > 0)?.min(9_999)),
+    };
+    let until = match rule.get("until") {
+        None | Some(Value::Null) => None,
+        Some(value) => {
+            let text = value.as_str()?;
+            let at = local_date_time(text).or_else(|| Date::parse_iso(text.trim()).map(DateTime::at_midnight))?;
+            // The last day it may happen on: the day before, when it ends before the start's time of day on its own.
+            let early = !all_day && at.seconds_of_day() < start.seconds_of_day();
+            Some(if early { at.date.add_days(-1) } else { at.date })
+        }
+    };
+    if count.is_some() && until.is_some() {
+        return None;
+    }
+    (out.count, out.until) = (count, until);
+    Some(out)
 }
 
 /// A whole-day event's days: midnight UTC of the day of its `start`, and of the day after its last (a length that is

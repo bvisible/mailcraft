@@ -43,7 +43,7 @@
 //!   through `faults`): events whose `get` fails ([`Pim::broken_events`]), and cards ([`Pim::broken_cards`]); cards
 //!   deleted between a query and a `get` ([`Pim::vanishing`]).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use base64::Engine as _;
 use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
@@ -120,10 +120,12 @@ pub struct Event {
     pub zone: Option<String>,
     pub duration: String,
     pub all_day: bool,
-    /// For a series: its rule as JSCalendar has it (`{"frequency": "weekly", "count": 3}`), and the starts on the
-    /// clock of the occurrences it leaves out.
+    /// For a series: its rule as JSCalendar has it (`{"frequency": "weekly", "count": 3}`), the starts on the
+    /// clock of the occurrences it leaves out, and what it changes of others (by their starts on the clock: the
+    /// properties they have instead of the series', `start` among them for one that is moved).
     pub rule: Option<Value>,
     pub excluded: Vec<String>,
+    pub overrides: BTreeMap<String, Map<String, Value>>,
     /// Everything else it is served with, as it is (`uid`, `title`, `participants`, `alerts`…).
     pub props: Map<String, Value>,
 }
@@ -143,6 +145,7 @@ impl Event {
             all_day: false,
             rule: None,
             excluded: Vec::new(),
+            overrides: BTreeMap::new(),
             props,
         }
     }
@@ -161,6 +164,15 @@ impl Event {
     /// The same, as a series repeating by `rule`.
     pub fn repeating(mut self, rule: Value) -> Event {
         self.rule = Some(rule);
+        self
+    }
+
+    /// The same, with the occurrence the series has at `at` on its clock (`2026-10-19T09:00:00`) changed: `patch` is
+    /// what it has instead (`{"start": "2026-10-19T11:00:00"}` moves it).
+    pub fn changing(mut self, at: &str, patch: Value) -> Event {
+        if let Value::Object(patch) = patch {
+            self.overrides.insert(at.into(), patch);
+        }
         self
     }
 }
@@ -316,9 +328,11 @@ fn unb64(text: &str) -> Option<String> {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(text).ok().and_then(|bytes| String::from_utf8(bytes).ok())
 }
 
-/// One occurrence of an event: its start on the clock, and (for a series) the start that names it.
+/// One occurrence of an event: its start on the clock (where its series moved it, for one it changes), its length,
+/// and (for a series) the start the series has it at, which names it.
 struct Occurrence {
     start: DateTime,
+    duration: String,
     recurrence: Option<String>,
 }
 
@@ -454,8 +468,13 @@ impl Pim {
 
     /// The UTC start and end of an occurrence that starts at `start` on the clock of `event`.
     fn instants(&self, event: &Event, start: DateTime) -> (Timestamp, Timestamp) {
+        self.instants_for(event, start, &event.duration)
+    }
+
+    /// The same, for one that lasts `length`.
+    fn instants_for(&self, event: &Event, start: DateTime, length: &str) -> (Timestamp, Timestamp) {
         let zone = if event.all_day { self.person_zone() } else { event.zone.as_deref().and_then(Zone::named).unwrap_or_else(|| self.person_zone()) };
-        let span = duration(&event.duration).unwrap_or_default();
+        let span = duration(length).unwrap_or_default();
         let from = zone.instant(start);
         let to = zone.instant(start.add_days(span.days.clamp(0, 3_660))).saturating_add(span.seconds);
         (from, to.max(from))
@@ -465,7 +484,7 @@ impl Pim {
     /// of an event of its own), but the ones it leaves out.
     fn occurrences(&self, event: &Event, before: Timestamp) -> Vec<Occurrence> {
         let Some(first) = local_date_time(&event.start) else { return Vec::new() };
-        let Some(rule) = &event.rule else { return vec![Occurrence { start: first, recurrence: None }] };
+        let Some(rule) = &event.rule else { return vec![Occurrence { start: first, duration: event.duration.clone(), recurrence: None }] };
         let frequency = rule.get("frequency").and_then(Value::as_str).unwrap_or("daily");
         let interval = rule.get("interval").and_then(Value::as_i64).unwrap_or(1).clamp(1, 1_000);
         let count = rule.get("count").and_then(Value::as_u64).map(|n| usize::try_from(n).unwrap_or(usize::MAX));
@@ -515,7 +534,12 @@ impl Pim {
                 }
                 let recurrence = local_text(start);
                 if !event.excluded.contains(&recurrence) {
-                    out.push(Occurrence { start, recurrence: Some(recurrence) });
+                    // Where the series moved it, and for how long, when it changes it.
+                    let patch = event.overrides.get(&recurrence);
+                    let said = |key: &str| patch.and_then(|patch| patch.get(key)).and_then(Value::as_str);
+                    let moved = said("start").and_then(local_date_time).unwrap_or(start);
+                    let duration = said("duration").unwrap_or(&event.duration).to_string();
+                    out.push(Occurrence { start: moved, duration, recurrence: Some(recurrence) });
                 }
             }
             if past {
@@ -530,14 +554,21 @@ impl Pim {
         let mut out = event.props.clone();
         let calendars: Map<String, Value> = event.calendars.iter().map(|raw| (Pim::calendar_id(raw), Value::Bool(true))).collect();
         let start = occurrence.map_or_else(|| local_date_time(&event.start), |o| Some(o.start));
+        let length = occurrence.map_or(event.duration.as_str(), |o| o.duration.as_str());
         out.insert("@type".into(), json!("Event"));
         out.insert("calendarIds".into(), Value::Object(calendars));
         out.insert("start".into(), json!(start.map_or_else(|| event.start.clone(), local_text)));
         out.insert("timeZone".into(), json!(event.zone));
-        out.insert("duration".into(), json!(event.duration));
+        out.insert("duration".into(), json!(length));
         out.insert("showWithoutTime".into(), json!(event.all_day));
         match occurrence.and_then(|o| o.recurrence.as_deref()) {
             Some(recurrence) => {
+                // What the series changes of this one, besides its time (which `start` and `duration` say already).
+                for (key, value) in event.overrides.get(recurrence).into_iter().flatten() {
+                    if !matches!(key.as_str(), "start" | "duration" | "excluded" | "@type" | "id" | "calendarIds" | "timeZone") {
+                        out.insert(key.clone(), value.clone());
+                    }
+                }
                 out.insert("id".into(), json!(Pim::occurrence_id(&event.raw, recurrence)));
                 out.insert("recurrenceId".into(), json!(recurrence));
                 out.insert("baseEventId".into(), json!(Pim::event_id(&event.raw)));
@@ -546,15 +577,17 @@ impl Pim {
                 out.insert("id".into(), json!(Pim::event_id(&event.raw)));
                 if let Some(rule) = &event.rule {
                     out.insert("recurrenceRule".into(), rule.clone());
-                    let left_out: Map<String, Value> = event.excluded.iter().map(|at| (at.clone(), json!({"excluded": true}))).collect();
-                    out.insert("recurrenceOverrides".into(), Value::Object(left_out));
+                    let mut overrides: Map<String, Value> =
+                        event.overrides.iter().map(|(at, patch)| (at.clone(), Value::Object(patch.clone()))).collect();
+                    overrides.extend(event.excluded.iter().map(|at| (at.clone(), json!({"excluded": true}))));
+                    out.insert("recurrenceOverrides".into(), Value::Object(overrides));
                 }
             }
         }
         if !event.all_day
             && let Some(start) = start
         {
-            let (from, to) = self.instants(event, start);
+            let (from, to) = self.instants_for(event, start, length);
             out.insert("utcStart".into(), json!(utc_text(from)));
             out.insert("utcEnd".into(), json!(utc_text(to)));
         }
@@ -618,18 +651,18 @@ impl Pim {
             if named.as_ref().is_some_and(|named| !event.calendars.iter().any(|c| named.contains(c))) {
                 continue;
             }
-            let overlaps = |start: DateTime| {
-                let (from, to) = self.instants(event, start);
+            let overlaps = |o: &Occurrence| {
+                let (from, to) = self.instants_for(event, o.start, &o.duration);
                 from < before && (to > after || (to == from && from >= after))
             };
-            let mut occurrences = self.occurrences(event, before).into_iter().filter(|o| overlaps(o.start)).peekable();
+            let mut occurrences = self.occurrences(event, before).into_iter().filter(overlaps).peekable();
             if expand && event.rule.is_some() {
                 for occurrence in occurrences {
                     let id = Pim::occurrence_id(&event.raw, occurrence.recurrence.as_deref().unwrap_or_default());
-                    found.push((self.instants(event, occurrence.start).0, id));
+                    found.push((self.instants_for(event, occurrence.start, &occurrence.duration).0, id));
                 }
             } else if let Some(first) = occurrences.peek() {
-                found.push((self.instants(event, first.start).0, Pim::event_id(&event.raw)));
+                found.push((self.instants_for(event, first.start, &first.duration).0, Pim::event_id(&event.raw)));
             }
         }
         found.sort();

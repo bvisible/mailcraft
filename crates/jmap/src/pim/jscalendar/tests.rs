@@ -328,7 +328,7 @@ fn junk() -> impl Strategy<Value = Value> {
 }
 
 /// The properties an event is read by.
-const FIELDS: [&str; 21] = [
+const FIELDS: [&str; 26] = [
     "id",
     "uid",
     "title",
@@ -350,6 +350,11 @@ const FIELDS: [&str; 21] = [
     "descriptionContentType",
     "updated",
     "sequence",
+    "recurrenceRule",
+    "recurrenceRules",
+    "recurrenceOverrides",
+    "excludedRecurrenceRules",
+    "recurrenceIdTimeZone",
 ];
 
 proptest! {
@@ -363,7 +368,37 @@ proptest! {
         }
         let _ = calendar_of(&value);
     }
+
+    #[test]
+    fn hostile_rules_never_panic(rule in proptest::collection::btree_map(proptest::sample::select(RULE_FIELDS.to_vec()), junk(), 0..10)) {
+        let value = series(json!(rule));
+        if let Some(rule) = event_of(&value, &me(), Some(Zone::UTC)).ok().and_then(|read| read.event.recurrence) {
+            prop_assert!((1..=999).contains(&rule.interval));
+            prop_assert!(rule.count.is_none_or(|count| (1..=9_999).contains(&count)));
+            prop_assert!(rule.count.is_none() || rule.until.is_none());
+        }
+    }
 }
+
+/// What a rule may say (RFC 8984 §4.3.3).
+const RULE_FIELDS: [&str; 16] = [
+    "@type",
+    "frequency",
+    "interval",
+    "rscale",
+    "skip",
+    "firstDayOfWeek",
+    "byDay",
+    "byMonthDay",
+    "byMonth",
+    "byYearDay",
+    "byWeekNo",
+    "byHour",
+    "byMinute",
+    "bySetPosition",
+    "count",
+    "until",
+];
 
 #[test]
 fn hostile_events_of_every_size_never_panic() {
@@ -398,4 +433,209 @@ fn read_day(length: &str) -> mailcraft_model::remote::RemoteEvent {
         e["duration"] = json!(length);
     }))
     .event
+}
+
+/// The series itself, as a server serves it by its own id: from Monday 2026-10-19 at nine in Zurich, an hour, repeating
+/// by `rule`.
+fn series(rule: Value) -> Value {
+    event(|e| {
+        e["recurrenceRule"] = rule;
+        e["recurrenceOverrides"] = json!({});
+    })
+}
+
+fn rule(rule: Value) -> Option<mailcraft_model::Recurrence> {
+    let got = read(&series(rule));
+    assert_eq!(got.event.kind, RemoteEventKind::SeriesMaster, "{got:?}");
+    got.event.recurrence
+}
+
+fn day(month: u8, day: u8) -> mailcraft_time::Date {
+    mailcraft_time::Date::new(2026, month, day).unwrap()
+}
+
+use mailcraft_model::Freq;
+use mailcraft_time::Weekday::{Fri, Mon, Thu, Tue, Wed};
+
+#[test]
+fn a_weekly_rule_reads_with_its_days() {
+    let got = read(&series(json!({"@type": "RecurrenceRule", "frequency": "weekly", "byDay": [{"@type": "NDay", "day": "mo"}, {"day": "WE"}]})));
+    assert_eq!((got.event.kind, got.event.series_day), (RemoteEventKind::SeriesMaster, Some(day(10, 19))));
+    assert_eq!((got.event.start, got.event.start_zone.as_str()), (utc(19, 7, 0), "Europe/Zurich"), "the times of its first occurrence");
+    let weekly = got.event.recurrence.unwrap();
+    assert_eq!((weekly.freq, weekly.interval, weekly.by_day, weekly.count, weekly.until), (Freq::Weekly, 1, vec![Mon, Wed], None, None));
+    // Every other week, on the start's own day.
+    let fortnightly = rule(json!({"frequency": "weekly", "interval": 2})).unwrap();
+    assert_eq!((fortnightly.interval, fortnightly.by_day.len()), (2, 0));
+    // Every working day.
+    let days: Vec<Value> = ["mo", "tu", "we", "th", "fr"].iter().map(|d| json!({"day": d})).collect();
+    let weekdays = rule(json!({"frequency": "daily", "byDay": days})).unwrap();
+    assert_eq!((weekdays.freq, weekdays.by_day), (Freq::Daily, vec![Mon, Tue, Wed, Thu, Fri]));
+    // The start's own hour and minute said again change nothing; a week that starts on Sunday is no other week for one day.
+    let said = rule(json!({"frequency": "weekly", "byHour": [9], "byMinute": [0], "firstDayOfWeek": "su"})).unwrap();
+    assert_eq!(said.freq, Freq::Weekly);
+}
+
+#[test]
+fn a_monthly_rule_by_the_nth_weekday_reads() {
+    let third = rule(json!({"frequency": "monthly", "byDay": [{"day": "mo", "nthOfPeriod": 3}]})).unwrap();
+    assert_eq!((third.freq, third.by_day, third.nth), (Freq::Monthly, vec![Mon], Some(3)));
+    let last = rule(json!({"frequency": "monthly", "interval": 3, "byDay": [{"day": "fr", "nthOfPeriod": -1}]})).unwrap();
+    assert_eq!((last.nth, last.interval, last.by_day), (Some(-1), 3, vec![Fri]));
+    // On the day of the month it starts on, said or not.
+    for own in [json!({"frequency": "monthly"}), json!({"frequency": "monthly", "byMonthDay": [19]})] {
+        let monthly = rule(own).unwrap();
+        assert_eq!((monthly.freq, monthly.nth, monthly.by_day.len()), (Freq::Monthly, None, 0));
+    }
+}
+
+#[test]
+fn a_rule_with_a_count_or_an_until_reads() {
+    assert_eq!(rule(json!({"frequency": "weekly", "count": 3})).unwrap().count, Some(3));
+    assert_eq!(rule(json!({"frequency": "weekly", "count": 1_000_000})).unwrap().count, Some(9_999), "as many as a series has here");
+    // The last day it may happen on: that of its end, unless it ends before the start's time of day there.
+    assert_eq!(rule(json!({"frequency": "weekly", "until": "2026-11-30T09:00:00"})).unwrap().until, Some(day(11, 30)));
+    assert_eq!(rule(json!({"frequency": "weekly", "until": "2026-11-30T23:59:59"})).unwrap().until, Some(day(11, 30)));
+    assert_eq!(rule(json!({"frequency": "weekly", "until": "2026-11-30T08:00:00"})).unwrap().until, Some(day(11, 29)));
+    // Both, or a count of none, is no rule.
+    assert_eq!(rule(json!({"frequency": "weekly", "count": 3, "until": "2026-11-30T09:00:00"})), None);
+    assert_eq!(rule(json!({"frequency": "weekly", "count": 0})), None);
+    // A whole-day series ends on the day its end names.
+    let whole = read(&event(|e| {
+        e["showWithoutTime"] = json!(true);
+        e["start"] = json!("2026-10-19T00:00:00");
+        e["duration"] = json!("P1D");
+        e["recurrenceRule"] = json!({"frequency": "daily", "until": "2026-10-23T00:00:00"});
+    }));
+    assert_eq!((whole.event.recurrence.unwrap().until, whole.event.series_day), (Some(day(10, 23)), Some(day(10, 19))));
+}
+
+#[test]
+fn a_yearly_rule_reads() {
+    let yearly = rule(json!({"frequency": "yearly"})).unwrap();
+    assert_eq!((yearly.freq, yearly.nth), (Freq::Yearly, None));
+    assert_eq!(rule(json!({"frequency": "yearly", "byMonth": ["10"], "byMonthDay": [19]})).unwrap().freq, Freq::Yearly);
+    // The third Monday of October, the month it starts in.
+    let counted = rule(json!({"frequency": "yearly", "byMonth": ["10"], "byDay": [{"day": "mo", "nthOfPeriod": 3}]})).unwrap();
+    assert_eq!((counted.freq, counted.by_day, counted.nth), (Freq::Yearly, vec![Mon], Some(3)));
+}
+
+#[test]
+fn a_rule_the_model_cannot_say_leaves_the_series_ruleless_and_its_occurrences_stand_alone() {
+    for unsaid in [
+        json!({"frequency": "monthly", "byMonthDay": [1]}),
+        json!({"frequency": "monthly", "byMonthDay": [19, 20]}),
+        json!({"frequency": "monthly", "byDay": [{"day": "mo"}]}),
+        json!({"frequency": "monthly", "byDay": [{"day": "mo", "nthOfPeriod": 1}, {"day": "fr", "nthOfPeriod": 1}]}),
+        json!({"frequency": "monthly", "byDay": [{"day": "mo", "nthOfPeriod": 7}]}),
+        json!({"frequency": "monthly", "byDay": [{"day": "mo", "nthOfPeriod": 1}], "bySetPosition": [1]}),
+        json!({"frequency": "yearly", "byDay": [{"day": "mo", "nthOfPeriod": 20}]}),
+        json!({"frequency": "yearly", "byMonth": ["3"]}),
+        json!({"frequency": "yearly", "byMonth": ["10L"]}),
+        json!({"frequency": "yearly", "byYearDay": [100]}),
+        json!({"frequency": "yearly", "byWeekNo": [20]}),
+        json!({"frequency": "weekly", "byDay": [{"day": "mo", "nthOfPeriod": 2}]}),
+        json!({"frequency": "weekly", "byHour": [10]}),
+        json!({"frequency": "weekly", "byDay": [{"day": "xx"}]}),
+        json!({"frequency": "weekly", "byDay": "mo"}),
+        json!({"frequency": "weekly", "interval": 2, "byDay": [{"day": "mo"}, {"day": "we"}], "firstDayOfWeek": "su"}),
+        json!({"frequency": "weekly", "interval": 0}),
+        json!({"frequency": "weekly", "interval": "2"}),
+        json!({"frequency": "weekly", "rscale": "hebrew"}),
+        json!({"frequency": "weekly", "skip": "forward"}),
+        json!({"frequency": "hourly"}),
+        json!({"frequency": "minutely"}),
+        json!({"frequency": "secondly"}),
+        json!({"interval": 1}),
+        json!({"frequency": "weekly", "until": "next week"}),
+    ] {
+        assert_eq!(rule(unsaid.clone()), None, "{unsaid}");
+    }
+    // Two rules, and a rule that leaves days out, are no rule either.
+    let two = read(&event(|e| e["recurrenceRules"] = json!([{"frequency": "weekly"}, {"frequency": "daily"}])));
+    assert_eq!((two.event.kind, two.event.recurrence), (RemoteEventKind::SeriesMaster, None));
+    let excluding = read(&event(|e| {
+        e["recurrenceRule"] = json!({"frequency": "weekly"});
+        e["excludedRecurrenceRules"] = json!([{"frequency": "monthly"}]);
+    }));
+    assert_eq!(excluding.event.recurrence, None);
+}
+
+#[test]
+fn the_newer_list_of_rules_is_read_too() {
+    let listed = read(&event(|e| e["recurrenceRules"] = json!([{"@type": "RecurrenceRule", "frequency": "weekly", "count": 4}])));
+    assert_eq!(
+        (listed.event.kind, listed.event.recurrence.map(|r| (r.freq, r.count))),
+        (RemoteEventKind::SeriesMaster, Some((Freq::Weekly, Some(4))))
+    );
+    // An empty list, or a rule that is no object, is an event of its own.
+    for none in [json!([]), json!(null)] {
+        assert_eq!(read(&event(|e| e["recurrenceRules"] = none.clone())).event.kind, RemoteEventKind::Single);
+    }
+    assert_eq!(read(&event(|e| e["recurrenceRule"] = json!("FREQ=WEEKLY"))).event.kind, RemoteEventKind::Single);
+}
+
+#[test]
+fn an_override_that_only_excludes_is_not_an_exception() {
+    let got = read(&event(|e| {
+        e["recurrenceRule"] = json!({"frequency": "weekly", "count": 6});
+        e["recurrenceOverrides"] = json!({
+            "2026-10-26T09:00:00": {"excluded": true},
+            "2026-11-02T09:00:00": {"title": "Budget review (room B)"},
+            "2026-11-09T09:00:00": {"start": "2026-11-09T11:00:00"},
+            "2026-11-16T09:00:00": {},
+            "2026-11-23T09:00:00": {"excluded": true, "title": "ignored"},
+            "not a time": {"title": "x"},
+        });
+    }));
+    let at = |month: u8, d: u8| DateTime { date: day(month, d), hour: 9, minute: 0, second: 0 };
+    let mut changed = got.changed.clone();
+    changed.sort();
+    assert_eq!(changed, [at(11, 2), at(11, 9)]);
+    // An occurrence says nothing of the series' changes.
+    let one = read(&event(|e| {
+        e["recurrenceId"] = json!("2026-10-19T09:00:00");
+        e["baseEventId"] = json!("V9");
+        e["recurrenceOverrides"] = json!({"2026-11-02T09:00:00": {"title": "x"}});
+    }));
+    assert!(one.changed.is_empty() && one.event.kind == RemoteEventKind::Occurrence);
+}
+
+#[test]
+fn the_recurrence_id_is_read_in_its_own_zone_or_the_masters() {
+    // Monday the 26th at nine in Zurich (winter time: 08:00 UTC), moved to eleven.
+    let moved = |change: fn(&mut Value)| {
+        read(&event(|e| {
+            e["recurrenceId"] = json!("2026-10-26T09:00:00");
+            e["baseEventId"] = json!("V9");
+            e["start"] = json!("2026-10-26T11:00:00");
+            e["utcStart"] = json!("2026-10-26T10:00:00Z");
+            e["utcEnd"] = json!("2026-10-26T11:00:00Z");
+            change(e);
+        }))
+    };
+    let got = moved(|_| {});
+    assert_eq!((got.event.kind, got.event.series.as_str(), got.event.original), (RemoteEventKind::Occurrence, "V9", Some(utc(26, 8, 0))));
+    assert_eq!(got.recurrence_id, Some(DateTime { date: day(10, 26), hour: 9, minute: 0, second: 0 }));
+    // In the zone its recurrence id names; in the zone the calendar is shown in, for one of no zone.
+    assert_eq!(moved(|e| e["recurrenceIdTimeZone"] = json!("America/New_York")).event.original, Some(utc(26, 13, 0)));
+    assert_eq!(moved(|e| e["timeZone"] = Value::Null).event.original, Some(utc(26, 8, 0)));
+    // Where the series has it: no other time to say.
+    let kept = read(&event(|e| {
+        e["recurrenceId"] = json!("2026-10-19T09:00:00");
+        e["baseEventId"] = json!("V9");
+    }));
+    assert_eq!(kept.event.original, None);
+    // A whole day moved to the next is named by its own day.
+    let day_off = read(&event(|e| {
+        e["showWithoutTime"] = json!(true);
+        e["start"] = json!("2026-10-27T00:00:00");
+        e["duration"] = json!("P1D");
+        e["recurrenceId"] = json!("2026-10-26T00:00:00");
+        e["baseEventId"] = json!("V9");
+    }));
+    assert_eq!(day_off.event.original, Some(utc(26, 0, 0)));
+    // A recurrence id with no series to name is an event of its own.
+    let stray = read(&event(|e| e["recurrenceId"] = json!("2026-10-19T09:00:00")));
+    assert_eq!((stray.event.kind, stray.recurrence_id), (RemoteEventKind::Single, None));
 }
