@@ -650,3 +650,37 @@ fn a_note_with_an_answer_is_not_sent_and_the_answer_still_is() {
     assert!(!written.iter().any(|(_, patch)| patch.to_string().contains("See you there")));
     assert_eq!(flow.server.with(|d| d.pim.scheduled.len()), 1);
 }
+
+#[test]
+fn a_meeting_declined_here_stays_out_of_the_calendar_when_the_server_keeps_it_with_the_answer() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        d.pim.add_event(
+            Event::timed("review", "ada", "Design review", "2026-10-16T15:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("organizerCalendarAddress", json!("mailto:grace@example.org"))
+                .with(
+                    "participants",
+                    json!({
+                        "grace": {"calendarAddress": "mailto:grace@example.org", "roles": {"owner": true}, "participationStatus": "accepted"},
+                        "ada": {"calendarAddress": format!("mailto:{ME}"), "roles": {"attendee": true}, "participationStatus": "needs-action"},
+                    }),
+                ),
+        );
+    });
+    assert!(flow.look(2.0 * MINUTE + SECOND));
+    let review = flow.event("Design review").unwrap();
+    flow.app.execute("calendar.respond", json!({"id": review.id, "response": "decline", "send": true})).unwrap();
+    assert!(flow.event("Design review").is_none(), "out of the calendar at once");
+    assert!(flow.look(SECOND));
+    // The server keeps the meeting, with her answer, and Grace was told.
+    let kept = flow.on_server("Design review").unwrap();
+    assert_eq!(kept.props["participants"]["ada"]["participationStatus"], "declined");
+    let told = flow.server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("reply", vec!["grace@example.org".to_string()])]);
+    // Read again, and again: it stays out, and nothing waits.
+    for _ in 0..3 {
+        flow.look(2.0 * MINUTE + SECOND);
+        assert!(flow.event("Design review").is_none());
+    }
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}

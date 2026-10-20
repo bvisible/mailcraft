@@ -45,6 +45,11 @@
 //! of it would make it again. Categories, importance, response options, online meetings and proposed times are not
 //! read (`has_categories` and `has_options` are false): they stay as they are here.
 //!
+//! **A meeting the person declined** (their own answer is no, and they don't organize it) is in no download, as it is
+//! for a server that takes a meeting away on a no, where such a server keeps it with the answer: an event of its own,
+//! a series (one asked about by name is gone, so that the engine drops its copy) and one occurrence declined alone
+//! (that day is left out of a series the person accepted). Exceptions are told from the series as they came.
+//!
 //! **The stretch** is the request's, or, when it is longer than the server expands repeating events over in one query
 //! (its `maxExpandedQueryDuration`), as much of it as fits, cut in proportion on either side of the time the window
 //! asked at; a cut stretch is not read whole.
@@ -62,6 +67,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use mailcraft_model::Response;
 use mailcraft_model::remote::{CalendarsDownload, EventsDownload, RemoteEvent, RemoteEventKind};
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult, MAX_PIM_ADDRESSES, MAX_PIM_ASKS};
 use mailcraft_time::{DateTime, Timestamp, Zone};
@@ -509,6 +515,13 @@ impl<'a, H: Http> Job<'a, H> {
             }
         }
         let whole = got.pager.done() == Some(true) && got.unread.0 == 0 && got.halted.is_none() && !got.cut && !self.cancel.load(Ordering::Relaxed);
+        // The series the person declined (see `declined`): asked about by name, they are gone.
+        let declined_series: HashSet<&str> = got
+            .events
+            .iter()
+            .filter(|read| read.event.kind == RemoteEventKind::SeriesMaster && declined(&read.event))
+            .map(|read| read.event.id.as_str())
+            .collect();
         // A calendar the list of this job no longer has gets no download: the list takes it away with its events, and a
         // download of it would make it again.
         let listed: Option<HashSet<&str>> = got.listed.as_ref().map(|listed| listed.iter().map(|c| c.calendar.id.as_str()).collect());
@@ -516,14 +529,14 @@ impl<'a, H: Http> Job<'a, H> {
         let mut downloads: BTreeMap<String, EventsDownload> = BTreeMap::new();
         for (name, id) in &wanted {
             let complete = whole;
-            // The series asked about in it by name that the server says it doesn't have.
+            // The series asked about in it by name that the server says it doesn't have, or that the person declined.
             let gone: Vec<String> = self
                 .request
                 .asks
                 .iter()
                 .filter(|ask| ask.calendar.trim() == name.as_str())
                 .flat_map(|ask| &ask.series)
-                .filter(|series| got.gone.contains(series.trim()))
+                .filter(|series| got.gone.contains(series.trim()) || declined_series.contains(series.trim()))
                 .map(|series| series.trim().to_string())
                 .collect();
             let download = EventsDownload {
@@ -547,9 +560,14 @@ impl<'a, H: Http> Job<'a, H> {
             .filter(|read| read.event.kind == RemoteEventKind::SeriesMaster)
             .map(|read| (read.event.id.clone(), (read.event.clone(), read.changed.iter().copied().collect())))
             .collect();
-        let mut strays = 0usize;
+        let (mut strays, mut left_out) = (0usize, 0usize);
         for read in got.events {
             let Read { calendars, mut event, recurrence_id, .. } = read;
+            // A meeting the person declined is out of the calendar: a series, one occurrence, an event of its own.
+            if declined(&event) {
+                left_out = left_out.saturating_add(1);
+                continue;
+            }
             if event.kind == RemoteEventKind::Occurrence
                 && let Some((master, changed)) = series.get(&event.series)
                 && (recurrence_id.is_some_and(|at| changed.contains(&at)) || differs(&event, master))
@@ -566,6 +584,9 @@ impl<'a, H: Http> Job<'a, H> {
         if strays > 0 {
             log::debug!("jmap pim: {strays} event(s) in no calendar that was asked for were left out");
         }
+        if left_out > 0 {
+            log::debug!("jmap pim: {left_out} event(s) the owner declined were left out");
+        }
         for (_, download) in downloads {
             if download.calendar.is_empty() {
                 out.events = Some(download);
@@ -574,6 +595,12 @@ impl<'a, H: Http> Job<'a, H> {
             }
         }
     }
+}
+
+/// Whether the person declined a meeting somebody else organizes (their own answer is no, and they don't organize it):
+/// such a meeting is out of their calendar, as it is for a server that takes it away on a no.
+fn declined(event: &RemoteEvent) -> bool {
+    event.response == Response::Declined && event.is_organizer != Some(true)
 }
 
 /// Whether an occurrence says otherwise than its series what an event is besides its time (what it is called,
