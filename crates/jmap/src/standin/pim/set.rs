@@ -20,9 +20,10 @@
 //! - **Mail.** The server writes to the people of an event only when the call asks for it (`sendSchedulingMessages`)
 //!   and the person organizes the event and it is not a draft: invitations, updates and cancellations
 //!   ([`Pim::scheduled`]). A change that is nothing but the person's own answer to somebody else's invitation, asked
-//!   to be sent from a calendar that sends answers, is that answer: kept on the person's copy and told to the
-//!   organizer ([`Pim::tells_the_organizer`]); one occurrence of somebody else's invitation is not answered alone
-//!   (`forbidden`, "answered as a whole").
+//!   to be sent from calendars that all send answers (`mayRSVP`), is that answer: kept on the person's copy and told to
+//!   the organizer ([`Pim::tells_the_organizer`]); one occurrence of somebody else's invitation is not answered alone
+//!   (`forbidden`, "answered as a whole"). The person's own entry is the first whose calendar address, else email, is
+//!   one of theirs: one known only by where invitations go or by a scheduling id is not theirs.
 //! - **Trouble on demand.** An event (by its id, or a new one by its `uid`) answered with the SetError a test names
 //!   ([`Pim::refused_events`]); events whose time a change says it took and doesn't keep ([`Pim::keeps_old_times`]).
 
@@ -406,16 +407,21 @@ impl Pim {
     }
 
     /// The person's answer that a change gives, when it is nothing else (see the module documentation): accepted,
-    /// tentative or declined. `now` is the event (or the occurrence) as the server has it.
-    fn answer_of(&self, now: &Map<String, Value>, patch: &Map<String, Value>) -> Option<String> {
+    /// tentative or declined. `stored` is the event as the store has it (a series, for an occurrence), `now` the event
+    /// (or the occurrence) as the server has it.
+    fn answer_of(&self, stored: &Map<String, Value>, now: &Map<String, Value>, patch: &Map<String, Value>) -> Option<String> {
         if patch.keys().any(|key| key != "participants" && !SERVER_SET.contains(&key.as_str())) {
             return None;
         }
         let given = patch.get("participants")?.as_object()?;
         let kept = now.get("participants")?.as_object()?;
-        let own = self.own();
-        let first =
-            kept.iter().find(|(_, entry)| entry.as_object().is_some_and(|entry| own.contains(&participant_address(entry)))).map(|(key, _)| key)?;
+        // The person's entry as the server's answering finds it, in the event as it is stored: the first whose calendar
+        // address, else email, is one of theirs (where invitations go and a scheduling id are not looked at).
+        let first = own_entry_of(&self.own(), stored)?;
+        if !kept.contains_key(&first) {
+            return None;
+        }
+        let first = &first;
         let status = given.get(first)?.get("participationStatus")?.as_str()?.to_ascii_lowercase();
         let was = kept.get(first)?.get("participationStatus").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
         if !ANSWERS.contains(&status.as_str()) || status == was || given.len() != kept.len() {
@@ -438,10 +444,10 @@ impl Pim {
         Some(status)
     }
 
-    /// Whether the person's answers go to organizers from an event's calendars.
+    /// Whether the person's answers go to organizers from an event's calendars: every one of them says so (`mayRSVP`,
+    /// as `Calendar/get` serves it).
     fn sends_answers(&self, event: &Event) -> bool {
-        !event.calendars.is_empty()
-            && event.calendars.iter().all(|raw| self.calendar_list.iter().any(|c| &c.raw == raw && c.sends_answers && (c.write_all || c.write_own)))
+        !event.calendars.is_empty() && event.calendars.iter().all(|raw| self.calendar_list.iter().any(|c| &c.raw == raw && c.may_rsvp()))
     }
 
     /// A change of the event (or occurrence) `id`.
@@ -464,17 +470,16 @@ impl Pim {
             Some(Value::Object(now)) => now,
             _ => stored.props.clone(),
         };
-        let answer = if asked && !organizes && self.sends_answers(&stored) { self.answer_of(&now, patch) } else { None };
+        let answer = if asked && !organizes && self.sends_answers(&stored) { self.answer_of(&stored.props, &now, patch) } else { None };
         if answer.is_some() && addressed.occurrence.is_some() {
             return Err(set_error("forbidden", "An invitation is answered as a whole: answer its series."));
         }
         if let Some(answer) = answer {
-            let own = self.own();
             let organizer = address(stored.props.get("organizerCalendarAddress"));
-            if let Some(event) = self.events.get_mut(addressed.at)
+            let first = own_entry_of(&self.own(), &stored.props);
+            if let (Some(event), Some(first)) = (self.events.get_mut(addressed.at), first)
                 && let Some(Value::Object(people)) = event.props.get_mut("participants")
-                && let Some(Value::Object(entry)) =
-                    people.values_mut().find(|entry| entry.as_object().is_some_and(|entry| own.contains(&participant_address(entry))))
+                && let Some(Value::Object(entry)) = people.get_mut(&first)
             {
                 entry.insert("participationStatus".into(), json!(answer));
             }
@@ -540,6 +545,14 @@ impl Pim {
         }
         Ok(())
     }
+}
+
+/// The key of the person's entry among the participants of an event as the store has it (`props`), for `own` (their
+/// addresses, in lower case): the first, in the order of their names, whose calendar address, else email, is one of
+/// them ([`crate::pim::own_entry`]).
+fn own_entry_of(own: &[String], props: &Map<String, Value>) -> Option<String> {
+    let people = props.get("participants")?.as_object()?;
+    people.iter().find(|(_, entry)| entry.as_object().is_some_and(|entry| crate::pim::own_entry(own, entry))).map(|(key, _)| key.clone())
 }
 
 /// Put the properties a create or a change names into the store's event: its times and its rule where the store

@@ -200,6 +200,42 @@ fn an_answer_sent_is_kept_and_told_to_the_organizer_and_one_not_sent_is_kept_onl
 }
 
 #[test]
+fn the_person_is_found_by_her_calendar_address_or_her_email_and_told_only_from_calendars_that_send_answers() {
+    let stand_in = stand_in();
+    let planning = Pim::event_id("planning");
+    let entry = |known_by: Value| {
+        let mut entry = json!({"roles": {"attendee": true}, "participationStatus": "needs-action"});
+        entry.as_object_mut().unwrap().extend(known_by.as_object().unwrap().clone());
+        entry
+    };
+    let answer = |stand_in: &StandIn, known_by: Value| {
+        stand_in.with(|d| {
+            let planning = d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap();
+            planning.props["participants"]["ada"] = entry(known_by.clone());
+            d.pim.scheduled.clear();
+        });
+        let mut people = stand_in.with(|d| d.pim.events.iter().find(|e| e.raw == "planning").unwrap().props["participants"].clone());
+        people["ada"]["participationStatus"] = json!("accepted");
+        let done = set(stand_in, json!({"update": {planning.clone(): {"participants": people}}, "sendSchedulingMessages": true})).unwrap();
+        assert_eq!(done["notUpdated"], json!({}), "{known_by}");
+        stand_in.with(|d| d.pim.scheduled.iter().map(|t| t.what).collect::<Vec<_>>())
+    };
+    // Known by where invitations go, or by a scheduling id, alone: no entry of hers, so no answer of hers (her copy is
+    // changed, nobody told).
+    assert!(answer(&stand_in, json!({"sendTo": {"imip": "mailto:ada@example.org"}})).is_empty());
+    assert!(answer(&stand_in, json!({"scheduleId": "mailto:ada@example.org"})).is_empty());
+    // By her email, or her calendar address whatever its case: hers, and Grace is told.
+    assert_eq!(answer(&stand_in, json!({"email": "ada@example.org"})), ["reply"]);
+    assert_eq!(answer(&stand_in, json!({"calendarAddress": "MAILTO:Ada@Example.org"})), ["reply"]);
+    // From a calendar that doesn't send answers (no mayRSVP there): kept on her copy, nobody told.
+    stand_in.with(|d| d.pim.calendar_list.iter_mut().find(|c| c.raw == "ada").unwrap().sends_answers = false);
+    assert!(answer(&stand_in, json!({"calendarAddress": "mailto:ada@example.org"})).is_empty());
+    let status =
+        stand_in.with(|d| d.pim.events.iter().find(|e| e.raw == "planning").unwrap().props["participants"]["ada"]["participationStatus"].clone());
+    assert_eq!(status, "accepted");
+}
+
+#[test]
 fn one_occurrence_of_somebody_elses_invitation_is_not_answered_alone() {
     let stand_in = stand_in();
     // Grace's meeting repeats, weekly.

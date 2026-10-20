@@ -182,6 +182,30 @@ fn the_person_is_the_participant_with_one_of_their_addresses() {
 }
 
 #[test]
+fn the_persons_answer_is_that_of_the_first_entry_with_her_calendar_address_or_her_email() {
+    let read_with = |people: Value| {
+        read(&event(|e| {
+            e["organizerCalendarAddress"] = json!("mailto:grace@example.org");
+            e["participants"] = people.clone();
+        }))
+        .event
+        .response
+    };
+    // Hers only by where invitations go (first, by its name), then by her calendar address: the second is hers.
+    let both = json!({
+        "a0": {"sendTo": {"imip": format!("mailto:{ME}")}, "roles": {"attendee": true}, "participationStatus": "declined"},
+        "me": {"calendarAddress": format!("mailto:{ME}"), "roles": {"attendee": true}, "participationStatus": "accepted"},
+    });
+    assert_eq!(read_with(both), Response::Accepted);
+    // Her first entry says what she answered, even when it is no answer yet.
+    let twice = json!({
+        "a": {"email": ME, "roles": {"attendee": true}, "participationStatus": "needs-action"},
+        "b": {"email": ME, "roles": {"attendee": true}, "participationStatus": "declined"},
+    });
+    assert_eq!(read_with(twice), Response::None);
+}
+
+#[test]
 fn is_organizer_is_none_when_nobody_organizes() {
     let alone = read(&event(|_| {}));
     assert_eq!((alone.event.is_organizer, alone.event.organizer.clone(), alone.event.attendees.len()), (None, None, 0));

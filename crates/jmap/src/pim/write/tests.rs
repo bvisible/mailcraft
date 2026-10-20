@@ -439,6 +439,23 @@ fn an_answer_is_the_servers_people_with_the_persons_own_answer() {
 }
 
 #[test]
+fn the_persons_own_entry_is_the_first_with_her_calendar_address_or_her_email() {
+    let mut theirs = copy();
+    theirs.insert("organizerCalendarAddress".into(), json!("mailto:bob@example.org"));
+    // An entry that is hers only by where invitations go comes first, by its name: it is not hers to answer for.
+    theirs["participants"]["a0"] = json!({"@type": "Participant", "sendTo": {"imip": "mailto:ada@example.org"}, "roles": {"attendee": true}});
+    let answered = answer(&theirs, Response::Accepted, &[ME.to_string()]).unwrap();
+    assert_eq!(answered["participants"]["ada"]["participationStatus"], "accepted");
+    assert_eq!(answered["participants"]["a0"], theirs["participants"]["a0"]);
+    // Hers by her email, in another case: the same.
+    theirs["participants"]["ada"] = json!({"@type": "Participant", "email": "Ada@Example.org", "roles": {"attendee": true}});
+    assert_eq!(answer(&theirs, Response::Declined, &[ME.to_string()]).unwrap()["participants"]["ada"]["participationStatus"], "declined");
+    // Known only by where invitations go, or by a scheduling id: not among them.
+    theirs["participants"]["ada"] = json!({"@type": "Participant", "scheduleId": "mailto:ada@example.org", "roles": {"attendee": true}});
+    assert_eq!(answer(&theirs, Response::Accepted, &[ME.to_string()]), None);
+}
+
+#[test]
 fn hostile_copies_never_panic() {
     let junk = [json!(null), json!(7), json!("x"), json!([1, 2]), json!({"l1": 3}), json!({"p": {"roles": "owner", "email": 5}})];
     for value in junk {

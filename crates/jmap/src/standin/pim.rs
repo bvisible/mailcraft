@@ -116,6 +116,11 @@ impl Calendar {
     pub fn new(raw: &str, name: &str, writable: bool) -> Calendar {
         Calendar { raw: raw.into(), name: name.into(), color: None, flagged: false, write_all: writable, write_own: writable, sends_answers: true }
     }
+
+    /// Whether the person's answers go to organizers from it (`mayRSVP`): it sends them, and the person may write there.
+    pub fn may_rsvp(&self) -> bool {
+        self.sends_answers && (self.write_all || self.write_own)
+    }
 }
 
 /// An event the stand-in has: one of its own, or a series with its rule.
@@ -492,7 +497,7 @@ impl Pim {
                     "mayWriteAll": calendar.write_all,
                     "mayWriteOwn": calendar.write_own,
                     "mayUpdatePrivate": calendar.write_all,
-                    "mayRSVP": calendar.sends_answers && (calendar.write_all || calendar.write_own),
+                    "mayRSVP": calendar.may_rsvp(),
                     "mayAdmin": false,
                     "mayDelete": false,
                 },

@@ -521,6 +521,21 @@ pub fn mine(me: &[String], email: &str) -> bool {
     !email.is_empty() && me.iter().any(|own| own.trim().eq_ignore_ascii_case(email))
 }
 
+/// The address by which a server that answers for the person finds a participant: its `calendarAddress`, else its
+/// `email`, in lower case and without `mailto:`. Where invitations go to it (`sendTo`) and its scheduling id are not
+/// looked at: an entry known only by those is nobody's own.
+pub fn rsvp_address(entry: &Map<String, Value>) -> String {
+    let said = |key: &str| entry.get(key).and_then(Value::as_str).filter(|text| !text.is_empty());
+    said("calendarAddress").or_else(|| said("email")).map(|text| text.to_lowercase().replace("mailto:", "")).unwrap_or_default()
+}
+
+/// Whether a participant is one of the person's own entries (`me`: the person's addresses): its [`rsvp_address`] is one
+/// of them. The first of those, in the order of their names, is the one the person answers by, read and written.
+pub fn own_entry(me: &[String], entry: &Map<String, Value>) -> bool {
+    let address = rsvp_address(entry);
+    !address.is_empty() && me.iter().any(|own| own.trim().to_lowercase() == address)
+}
+
 /// An address of a participant or an organizer as JSCalendar writes one (`mailto:ada@example.org`): the address.
 pub fn mailto(text: &str) -> String {
     let text = text.trim();

@@ -27,7 +27,7 @@ use mailcraft_model::{Attendee, Freq, Recurrence, Response, ShowAs};
 use mailcraft_time::{Date, DateTime, Timestamp, Zone};
 use serde_json::{Map, Value, json};
 
-use super::{Span, duration_text, jscalendar, local_text, mailto, mine};
+use super::{Span, duration_text, jscalendar, local_text, mailto, mine, own_entry};
 
 /// The zone a time is written in that can't be told on its own clock.
 pub const UTC_ZONE: &str = "Etc/UTC";
@@ -413,8 +413,9 @@ pub fn seen_by_others(fields: &EventFields) -> bool {
 }
 
 /// The person's answer to somebody else's meeting, as the server takes one: the server's people, read just before,
-/// with the person's own answer set (the first of them that is one of the person's addresses). `None` when the
-/// person is not among them, or the answer is no answer.
+/// with the person's own answer set: in the first of them that is the person's own entry, found by its calendar address
+/// or its email as the server finds it ([`own_entry`]). `None` when the person is not among them, or the answer is no
+/// answer.
 pub fn answer(copy: &Copy, response: Response, me: &[String]) -> Option<Value> {
     let status = match response {
         Response::Accepted => "accepted",
@@ -423,7 +424,7 @@ pub fn answer(copy: &Copy, response: Response, me: &[String]) -> Option<Value> {
         Response::None => return None,
     };
     let mut map: Map<String, Value> = copy.get("participants").and_then(Value::as_object).cloned()?;
-    let own = map.iter().find(|(_, entry)| mine(me, &address_of(entry))).map(|(key, _)| key.clone())?;
+    let own = map.iter().find(|(_, entry)| entry.as_object().is_some_and(|entry| own_entry(me, entry))).map(|(key, _)| key.clone())?;
     if let Some(Value::Object(entry)) = map.get_mut(&own) {
         entry.insert("participationStatus".into(), json!(status));
     }

@@ -14,9 +14,10 @@
 //! - **People.** An address is, in this order, a participant's `calendarAddress`, `email`, `sendTo.imip` and
 //!   `scheduleId`, without its `mailto:`. The organizer is `organizerCalendarAddress`, named as its participant is,
 //!   else the participant whose role is `owner`; the organizer is never one of the people invited. The others are
-//!   invited when their roles say `attendee` or `optional`, or say nothing. The owner is the participant who is one of
-//!   the owner's addresses: what they answered is the event's answer, and whether the organizer is one of them says
-//!   whether the owner organizes it (`None` when nobody does).
+//!   invited when their roles say `attendee` or `optional`, or say nothing. The owner's own entry is the first
+//!   participant whose calendar address, else email, is one of the owner's addresses (as the server finds it when it is
+//!   told an answer, [`own_entry`](super::own_entry)): what it answered is the event's answer. Whether the organizer is
+//!   one of the owner's addresses says whether the owner organizes it (`None` when nobody does).
 //! - **The rest.** Free or Busy from `freeBusyStatus`, Tentative from a `status` of `tentative`; private when its
 //!   `privacy` is `private` or `secret`; cancelled from its `status`; the reminder is the first alert (in the order of
 //!   their names) that shows itself, with an offset before the start ([`reminder_alert`]); the place is the first
@@ -40,7 +41,7 @@ use mailcraft_model::{Address, Attendee, Freq, Recurrence, Response, Rgb, ShowAs
 use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
 use serde_json::{Map, Value};
 
-use super::{duration, local_date_time, mailto, mine, signed_seconds, utc_date};
+use super::{duration, local_date_time, mailto, mine, own_entry, signed_seconds, utc_date};
 use crate::valid_id;
 
 /// Most participants of one event that are looked at, and most alerts and locations.
@@ -512,12 +513,15 @@ fn people(value: &Value, me: &[String]) -> (Option<Address>, Vec<Attendee>, Resp
     let mut organizer = said.contains('@').then(|| Address { name: String::new(), email: bounded(&said, MAX_LINE) });
     let mut attendees = Vec::new();
     let mut response = Response::None;
+    let mut answered = false;
     for participant in entries(value, "participants", MAX_PARTICIPANTS) {
         let email = bounded(&address_of(participant), MAX_LINE);
         let name = bounded(participant.get("name").and_then(Value::as_str).map(str::trim).unwrap_or_default(), MAX_LINE);
         let owner = has_role(participant, "owner") || organizer.as_ref().is_some_and(|o| !email.is_empty() && o.email.eq_ignore_ascii_case(&email));
-        if response == Response::None && mine(me, &email) {
+        // What the person answered: their first own entry's, as the server finds it when it is told an answer.
+        if !answered && own_entry(me, participant) {
             response = answer(participant);
+            answered = true;
         }
         if owner {
             match &mut organizer {
