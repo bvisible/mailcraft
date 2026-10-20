@@ -295,6 +295,10 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     if let Some(new) = field(ui, tl!("Subject"), &c.subject, "", false) {
         let _ = app.execute("compose.set", json!({"subject": new}));
     }
+    // //// Neoffice — Nora's band under the subject, when a host reaches her: she corrects, improves or translates the owner's own text (nora/band.rs).
+    if app.services.nora.is_some() {
+        crate::nora::band(app, ui, 16.0 + LABEL_W);
+    }
     if bcc_link(app) {
         // A quiet way to get the Bcc line.
         let last = ui.min_rect();

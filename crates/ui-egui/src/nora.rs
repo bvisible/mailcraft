@@ -24,16 +24,23 @@
 //! person's own text, above the signature and the quoted original ([`own_text`]).
 
 mod answer;
+mod band;
 mod flow;
+mod look;
 mod own_text;
 #[cfg(test)]
+mod testing;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod view_tests;
 
 use std::sync::mpsc::Receiver;
 
 use serde_json::Value;
 
-pub(crate) use flow::{Nora, enabled, ui_command};
+pub(crate) use band::band;
+pub(crate) use flow::{About, Kind, Nora, Rewrite, enabled, ui_command};
 
 use crate::MailApp;
 

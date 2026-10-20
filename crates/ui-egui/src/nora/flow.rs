@@ -18,10 +18,6 @@
 //! and source, and both check what they go over. While a signature is open in File › Signatures those
 //! commands would write in it: what writes waits until it is closed.
 
-// What is kept here for the band under the subject and the strip above a message's body, which read it (the next
-// steps), and what they ask of it.
-#![allow(dead_code)]
-
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -151,6 +147,8 @@ struct Wanted {
 
 /// A message as Nora translated it, shown in place of its body (the header, the files and the rest
 /// are the message's own).
+// The reading pane shows it (the next step).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Translation {
     pub(crate) message: Id,
     pub(crate) language: &'static str,
@@ -207,6 +205,8 @@ impl Nora {
     }
 
     /// The message being translated, when one is.
+    // The reading pane shows it (the next step).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn translating(&self) -> Option<Id> {
         self.flights.iter().find_map(|f| match f.what {
             What::Translation { message, .. } => Some(message),
