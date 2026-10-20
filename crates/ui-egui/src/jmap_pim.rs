@@ -132,6 +132,9 @@ pub(crate) struct JmapPim {
     offers: HashMap<Id, PimOffers>,
     /// What each account's server calls its main calendar, as its last list said.
     mains: HashMap<Id, String>,
+    /// The addresses each account's server knows the person by in events (its participant identities), as its last job
+    /// said: the person's, as the accounts' addresses are.
+    identities: HashMap<Id, Vec<String>>,
     /// Ask at once: the window came back to the front, or the owner switched to the calendar or to People.
     pub(crate) due: bool,
     /// Whether the window had the focus, the calendar or People was in front, and People was, at the last look.
@@ -165,6 +168,12 @@ impl MailApp {
     /// or calendar, until the owner asks. (Public for a host's tests.)
     pub fn jmap_refused_for(&self, account: Id) -> bool {
         self.jmap_refused.contains(&account)
+    }
+
+    /// The addresses `account`'s server knows the person by in events, as its last calendar job said (none when it
+    /// didn't): the person's own, as the accounts' addresses are.
+    pub fn pim_identities(&self, account: Id) -> &[String] {
+        self.jmap_pim.identities.get(&account).map_or(&[], Vec::as_slice)
     }
 
     /// The lines the Send/Receive problems report keeps for `account`. (Public for a host's tests.)
@@ -314,8 +323,14 @@ impl MailApp {
         if !asks.iter().any(|ask| ask.calendar.is_empty()) {
             asks.insert(0, CalendarAsk { calendar: String::new(), series: Vec::new() });
         }
-        let me: Vec<String> =
+        // The person's addresses: the accounts', then those the server knows them by in events, as it last said.
+        let mut me: Vec<String> =
             self.session.mailbox.accounts.iter().map(|a| a.email.trim().to_string()).filter(|e| e.contains('@')).take(MAX_PIM_ADDRESSES).collect();
+        for identity in self.jmap_pim.identities.get(&account).into_iter().flatten() {
+            if me.len() < MAX_PIM_ADDRESSES && !me.iter().any(|have| have.eq_ignore_ascii_case(identity)) {
+                me.push(identity.clone());
+            }
+        }
         // The contacts with the wide stretch, and when People came to the front; never for the days around an invitation,
         // nor of an account whose session said it has none.
         let offered = self.jmap_pim.offers.get(&account).is_none_or(|offers| offers.contacts);
@@ -439,6 +454,9 @@ impl MailApp {
         result.tidy();
         if let Some(offers) = result.offers {
             self.jmap_pim.offers.insert(account, offers);
+        }
+        if let Some(identities) = result.identities.take() {
+            self.jmap_pim.identities.insert(account, identities);
         }
         if result.auth_refused {
             log::warn!("calendar, account {account}: the server refused the sign-in; nothing is asked of it until the owner asks");

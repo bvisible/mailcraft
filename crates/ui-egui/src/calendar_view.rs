@@ -2010,7 +2010,10 @@ fn opens(resp: &Response) -> bool {
 pub(crate) fn invitation(app: &MailApp, ev: &Event) -> (bool, Option<Reply>) {
     let own = |address: &mailcraft_model::Address| {
         let email = address.email.trim();
-        !email.is_empty() && app.session.mailbox.accounts.iter().take(50).any(|account| account.email.trim().eq_ignore_ascii_case(email))
+        // //// Neoffice — or one the event's server knows the owner by (a JMAP account's participant identity: an alias, the
+        // address what the owner makes there is organized under), which is the owner's too.
+        let known = || app.pim_identities(ev.origin.account).iter().any(|identity| identity.eq_ignore_ascii_case(email));
+        !email.is_empty() && (app.session.mailbox.accounts.iter().take(50).any(|account| account.email.trim().eq_ignore_ascii_case(email)) || known())
     };
     let invited = ev.is_meeting() && (ev.origin.guest || ev.organizer.as_ref().is_some_and(|who| !own(who)));
     (invited, ev.attendees.iter().take(500).find(|a| own(&a.address)).map(|a| a.response))

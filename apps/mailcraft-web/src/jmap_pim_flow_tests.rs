@@ -814,3 +814,36 @@ fn a_series_declined_elsewhere_goes_at_once_after_a_day_of_it_was_moved_and_sent
     assert!(flow.when("Planning").is_empty());
     assert!(flow.app.sync_problems_of(flow.account).is_empty(), "nothing to say: {:?}", flow.app.sync_problems_of(flow.account));
 }
+
+#[test]
+fn an_appointment_the_server_organizes_under_her_identity_is_hers_and_is_simply_deleted() {
+    let mut flow = Flow::start();
+    // The server organizes what she makes under its default identity of hers, an address no mailbox of the page has.
+    flow.server.with(|d| d.pim.own = vec!["hello@example.org".into(), ME.into()]);
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    let made = flow.on_server("Dentist").unwrap();
+    assert_eq!(made.props["organizerCalendarAddress"], "mailto:hello@example.org");
+    assert_eq!(flow.app.pim_identities(flow.account), ["hello@example.org".to_string(), ME.to_string()]);
+    flow.look(2.0 * MINUTE + SECOND);
+    let dentist = flow.event("Dentist").unwrap();
+    assert!(!dentist.origin.guest, "hers, not somebody else's meeting");
+    // Deleting it asks nothing of a copy of somebody's meeting, and is a plain delete.
+    let asked = mailcraft_ui_egui::dialogs::confirmation(&flow.app, "calendar.delete", &json!({"id": dentist.id}));
+    assert!(asked.as_ref().is_none_or(|question| !question.text.contains("invited")), "{:?}", asked.map(|question| question.text));
+    flow.app.execute("calendar.delete", json!({"id": dentist.id})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Dentist").is_none() && flow.event("Dentist").is_none());
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
+fn a_server_that_knows_no_participant_identities_is_read_and_written_as_before() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| d.pim.says_identities = false);
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    flow.look(2.0 * MINUTE + SECOND);
+    assert!(flow.event("Dentist").is_some_and(|e| !e.origin.guest));
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
