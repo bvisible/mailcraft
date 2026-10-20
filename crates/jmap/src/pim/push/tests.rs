@@ -1064,12 +1064,36 @@ fn the_copy_of_a_moved_appointment_keeps_its_room_by_its_link_and_none_is_made()
         .collect();
     assert_eq!(links, [room(7)], "its own link, as a link of the copy's");
     assert_eq!(meet.with(|d| d.pim.rooms), 0, "no room made");
-    // A server that writes no virtual locations is not told of it: the copy goes as it did.
+    // A server that writes no virtual locations (it makes no rooms for her) and writes links: among its links alone,
+    // where such a server keeps a room.
     let plain = server();
     let result = run(&plain, &job(vec![EventOp { token: "mc-plain".into(), ..op }]));
     assert_eq!(outcome(&result).result, EventResult::Done, "{:?}", outcome(&result));
     let copy = plain.with(|d| d.pim.events.iter().find(|e| e.props.get("uid") == Some(&json!("mc-plain"))).cloned()).unwrap();
-    assert!(copy.props.get("links").is_none(), "{:?}", copy.props);
+    assert!(copy.props.get("links").is_some_and(|links| links.to_string().contains(&room(7))), "{:?}", copy.props);
+}
+
+#[test]
+fn the_copy_of_a_moved_appointment_whose_link_the_server_wont_keep_goes_without_it_and_nothing_is_said() {
+    let server = with_meet();
+    // A link from elsewhere (an outside invitation's, another program's): not a room of the server's, which refuses it.
+    let op = EventOp { join_url: "https://elsewhere.example.org/j/123".into(), ..create("mc-elsewhere", "Dentist", utc(22, 9, 0)) };
+    let result = run(&server, &job(vec![op]));
+    let said = outcome(&result);
+    assert_eq!((said.result, said.online, said.online_unmade, said.error.as_str()), (EventResult::Done, None, None, ""), "{said:?}");
+    let copy = server.with(|d| d.pim.events.iter().find(|e| e.props.get("uid") == Some(&json!("mc-elsewhere"))).cloned()).unwrap();
+    assert!(copy.props.get("links").is_none(), "made as it was before: {:?}", copy.props);
+    assert_eq!(server.asked().into_iter().filter(|a| a.method == "CalendarEvent/set").count(), 2, "once more without the link");
+}
+
+#[test]
+fn a_room_refused_for_a_meeting_she_doesnt_organize_is_said_in_words_of_ours() {
+    let server = with_meet();
+    // Grace's meeting: the server makes no room for it from her, and names nothing.
+    let result = run(&server, &job(vec![online(update(&Pim::event_id("planning"), EventFields::default()))]));
+    let said = outcome(&result);
+    assert_eq!((said.result, said.online, said.online_unmade), (EventResult::Done, Some(false), Some(OnlineUnmade::RoomForbidden)), "{said:?}");
+    assert_eq!(server.with(|d| d.pim.rooms), 0);
 }
 
 #[test]

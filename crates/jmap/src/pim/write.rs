@@ -381,11 +381,14 @@ pub fn online_request(op: &EventOp, clock: Clock) -> Option<Value> {
 }
 
 /// The online meeting a new event keeps (the copy of one moved to another calendar), by the link to join it by: as its
-/// virtual location, and among its links when the server writes them (`links`), where a server that makes online
-/// meetings keeps the room it made: one whose links name its room keeps that room, and makes none.
-pub fn kept_online(link: &str, links: bool) -> Map<String, Value> {
+/// virtual location, for a server that writes them (`places`); and among its links, for one that writes them (`links`),
+/// where a server that makes online meetings keeps the room it made: one whose links name its room keeps that room, and
+/// makes none (also for a person it makes no new rooms for).
+pub fn kept_online(link: &str, places: bool, links: bool) -> Map<String, Value> {
     let mut out = Map::new();
-    out.insert(ONLINE.into(), json!({"online": {"@type": "VirtualLocation", "uri": link}}));
+    if places {
+        out.insert(ONLINE.into(), json!({"online": {"@type": "VirtualLocation", "uri": link}}));
+    }
     if links {
         out.insert(LINKS.into(), json!({"online": {"@type": "Link", "href": link, "contentType": "text/html"}}));
     }

@@ -1391,6 +1391,37 @@ fn an_online_appointment_moved_to_another_calendar_keeps_its_room_and_no_second_
 }
 
 #[test]
+fn an_appointment_held_online_elsewhere_moves_to_another_calendar_as_before() {
+    let mut flow = Flow::start();
+    flow.with_meet();
+    // The budget review's link to join is another service's (an outside invitation's, another program's): the server
+    // keeps it among its virtual locations, and makes no room of it.
+    flow.server.with(|d| {
+        let budget = d.pim.events.iter_mut().find(|e| e.raw == "budget").unwrap();
+        budget
+            .props
+            .insert("virtualLocations".into(), json!({"elsewhere": {"@type": "VirtualLocation", "uri": "https://elsewhere.example.org/j/123"}}));
+    });
+    flow.look(2.0 * MINUTE + SECOND);
+    let budget = flow.event("Budget review").unwrap();
+    assert_eq!(budget.join_link(), Some("https://elsewhere.example.org/j/123"));
+    // Moved: made again in the team's calendar without that link (the server keeps only a room of its own), and nothing
+    // is said of an online meeting.
+    let team = flow.calendar("Team").unwrap().id;
+    assert_eq!(flow.app.execute("calendar.edit", json!({"id": budget.id, "calendar": team})).unwrap()["moved"], true);
+    for _ in 0..3 {
+        flow.look(2.0 * MINUTE + SECOND);
+    }
+    let there: Vec<Event> =
+        flow.server.with(|d| d.pim.events.iter().filter(|e| e.props.get("title") == Some(&json!("Budget review"))).cloned().collect());
+    assert_eq!(there.iter().map(|e| e.calendars.clone()).collect::<Vec<_>>(), [vec!["team".to_string()]], "moved");
+    assert_eq!(flow.event("Budget review").map(|e| e.calendar), Some(team));
+    assert_eq!(flow.rooms(), 0);
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.session.mailbox.event_changes);
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
 fn an_appointment_edited_before_the_answer_that_made_it_came_never_makes_a_second_room() {
     let mut flow = Flow::start();
     flow.with_meet();

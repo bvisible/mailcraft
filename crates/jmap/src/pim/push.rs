@@ -37,7 +37,8 @@
 //!    The outcome says which of those reasons, and of a room refused for no more just now or for the person, it is
 //!    (`online_unmade`), for the person to be told in words of their own. The copy of an appointment moved from
 //!    another calendar keeps the online meeting it has, by its link ([`write::kept_online`]): no second one is asked
-//!    for.
+//!    for. A link the server won't keep (one of another service's, which such a server doesn't write) is refused as the
+//!    meeting is: the copy goes once more without it, as it did before, and nothing is said of a meeting.
 //! 5. **Outcomes**, one for each change tried, in the order they came: done (a new event with the server's id and
 //!    uid; one occurrence with its own id, which names it from now on), gone, refused with the server's words, or
 //!    failed with when to try again (a busy server, a server that failed, a connection that broke, a change not
@@ -170,6 +171,8 @@ struct Ready {
     zone: String,
     /// The event asks for an online meeting in it ([`write::online_request`]).
     marker: bool,
+    /// The event keeps the online meeting it has, by its link ([`write::kept_online`]).
+    kept: bool,
     /// Why the online meeting it asked for is not asked for, or was refused: it goes without, done as an event that
     /// is not one (an occurrence: the whole series' is; a server that no longer makes them; or sent again without it).
     unmade: Option<Unmade>,
@@ -411,16 +414,15 @@ impl<H: Http> Writer<'_, H> {
             let marker = self.ask_online(&mut body, &op, Clock::Own(self.shown));
             // Asked of a server that no longer makes them (its list said it did): made without, and said so.
             let unmade = (op.fields.online.is_some() && !self.online).then(Unmade::no_longer_made);
-            // The copy of an appointment moved here from another calendar keeps its online meeting, by its link.
-            if !op.join_url.is_empty()
-                && self.online
-                && let Some(body) = body.as_object_mut()
-            {
-                body.extend(write::kept_online(&op.join_url, self.links));
+            // The copy of an appointment moved here from another calendar keeps its online meeting, by its link, where
+            // the server writes virtual locations or links.
+            let kept = !op.join_url.is_empty() && (self.online || self.links);
+            if kept && let Some(body) = body.as_object_mut() {
+                body.extend(write::kept_online(&op.join_url, self.online, self.links));
             }
             // (Invitations only with the person's yes: `op.send`.)
             let scheduling = invites && op.send;
-            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, unmade }));
+            return Ok(Some(Ready { at, target: String::new(), body: Some(body), scheduling, zone, marker, kept, unmade }));
         }
         // The event on the server, and (for an occurrence) its series.
         let (target, copy, series) = if op.of_occurrence() {
@@ -491,6 +493,7 @@ impl<H: Http> Writer<'_, H> {
             scheduling,
             zone,
             marker: false,
+            kept: false,
             unmade: None,
         };
         // An online meeting not asked for: of a server that no longer makes them, or for one occurrence (the whole
@@ -746,6 +749,16 @@ impl<H: Http> Writer<'_, H> {
                         None => self.refused(one.at, &op, &error, &one.zone),
                     }
                 }
+                // The link a copy kept, refused (one of another service's, say): once more without it, as the copy went
+                // before it kept one. Nothing is said of a meeting: none was asked for.
+                (None, Some(error)) if one.kept && (refuses_the_meeting(&error) || names(&error, write::LINKS)) => {
+                    if let Some(body) = one.body.as_mut().and_then(Value::as_object_mut) {
+                        body.remove(write::ONLINE);
+                        body.remove(write::LINKS);
+                    }
+                    one.kept = false;
+                    again.push(one);
+                }
                 (None, Some(error)) => self.refused(one.at, &op, &error, &one.zone),
                 (None, None) => self.answer(one.at, EventResult::Failed, "the server's answer said nothing of it", Some(RETRY)),
             }
@@ -779,11 +792,12 @@ impl<H: Http> Writer<'_, H> {
 
     /// Why the server refused the online meeting a change asked for (`error`, its SetError): its words, and the reason
     /// said in words of their own when its kind and what it names tell which (no more rooms just now; none for the
-    /// person).
+    /// person: a `forbidden` of the meeting, also one that names nothing, which such a server answers a room asked for
+    /// a meeting the person doesn't organize).
     fn room_refused(&self, error: &Value) -> Unmade {
         let kind = match error.get("type").and_then(Value::as_str) {
             Some("rateLimit") if names_the_meeting(error) => Some(OnlineUnmade::RoomLimit),
-            Some("forbidden") if names_the_meeting(error) => Some(OnlineUnmade::RoomForbidden),
+            Some("forbidden") => Some(OnlineUnmade::RoomForbidden),
             _ => None,
         };
         Unmade { why: self.set_error_words(error), kind }
@@ -917,13 +931,18 @@ fn refuses_the_meeting(error: &Value) -> bool {
 /// Whether a SetError names the property of the online meeting (`virtualLocations`, or a part of it) among those it is
 /// about.
 fn names_the_meeting(error: &Value) -> bool {
+    names(error, write::ONLINE)
+}
+
+/// Whether a SetError names `property` (or a part of it) among those it is about.
+fn names(error: &Value, property: &str) -> bool {
     error
         .get("properties")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .any(|property| property.split('/').next() == Some(write::ONLINE))
+        .any(|named| named.split('/').next() == Some(property))
 }
 
 /// Whether a server's refusal is one that asking again later may get past.
