@@ -5,11 +5,13 @@
 
 use std::time::{Duration, Instant};
 
+use egui_kittest::kittest::Queryable as _;
 use mailcraft_model::{FolderKind, Mailbox};
 
-use super::super::fmt;
+use super::super::interface_strings::{Literal, literals_of};
+use super::super::{catalog, fmt, t_in};
 use super::pattern::{Budget, Part, Pattern};
-use super::{Family, Lang, Row, Table, read_steps, read_with};
+use super::{Family, Kind, Lang, Row, Table, read_steps, read_with};
 
 /// A table of the matcher's own, with the shapes the crates' sentences have.
 static SHAPES: &[Row] = &[
@@ -257,4 +259,363 @@ fn junk_never_makes_it_panic() {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The table of the crates' sentences
+
+/// The French catalog.
+fn french() -> Lang {
+    Lang::from_tag("fr").unwrap()
+}
+
+/// A value of the kind a placeholder holds, for a sample of its row; a reason is a sentence of its family.
+fn sample_value(row: &Row, name: &str, depth: usize) -> String {
+    match Kind::of(name) {
+        Some(Kind::Number) => "3".into(),
+        Some(Kind::Token) => "serverFail".into(),
+        Some(Kind::Subject) => "Invoice 42".into(),
+        Some(Kind::Addresses) => "bob@example.org".into(),
+        Some(Kind::Folder) => "Projects".into(),
+        Some(Kind::Text) => "it said so".into(),
+        Some(Kind::Reason) => {
+            let family = row.reason(name).unwrap_or(row.family);
+            // The family's first row that holds no reason of its own, filled in turn.
+            let inner = super::rows()
+                .iter()
+                .find(|r| r.family == family && Pattern::parse(r.english).is_ok_and(|p| p.slots().all(|s| Kind::of(s) != Some(Kind::Reason))))
+                .unwrap_or_else(|| panic!("{family:?} has a row with no reason in it"));
+            sample(inner, depth + 1)
+        }
+        None => panic!("{:?}: {name:?} is a placeholder nobody knows the kind of", row.english),
+    }
+}
+
+/// The row's sentence filled with sample values.
+fn sample(row: &Row, depth: usize) -> String {
+    let pattern = Pattern::parse(row.english).unwrap();
+    let values: Vec<(&str, String)> = pattern.slots().map(|name| (name, sample_value(row, name, depth))).collect();
+    let args: Vec<(&str, &str)> = values.iter().map(|(name, value)| (*name, value.as_str())).collect();
+    fmt(row.english, &args)
+}
+
+#[test]
+fn every_row_is_a_template_whose_placeholders_are_known() {
+    let mut seen = std::collections::HashSet::new();
+    for row in super::rows() {
+        assert!(seen.insert(row.english), "{:?} is in the table twice", row.english);
+        let pattern = Pattern::parse(row.english).unwrap_or_else(|e| panic!("{e}"));
+        let slots: Vec<&str> = pattern.slots().collect();
+        for name in &slots {
+            let kind = Kind::of(name).unwrap_or_else(|| panic!("{:?}: {name:?} is a placeholder nobody knows the kind of", row.english));
+            if kind == Kind::Reason {
+                assert!(row.reason(name).is_some(), "{:?}: {{{name}}} holds a reason, and the row doesn't say what family it is", row.english);
+            }
+        }
+        for (name, _) in row.reasons {
+            assert!(slots.contains(name), "{:?} names a reason {{{name}}} it doesn't have", row.english);
+            assert_eq!(Kind::of(name), Some(Kind::Reason), "{:?}: {{{name}}} is not a reason", row.english);
+        }
+        let mut sorted = slots.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, catalog::placeholders(row.english), "{:?}", row.english);
+        assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(row.at).is_file(), "{:?}: {} is no file", row.english, row.at);
+    }
+}
+
+#[test]
+fn every_row_reads_back_its_own_sentence_and_no_other_row_comes_first() {
+    let mb = mailbox();
+    for row in super::rows() {
+        let line = sample(row, 0);
+        let reading = super::explain(Lang::Pseudo, row.family, &line, &mb).unwrap_or_else(|| panic!("{line:?} isn't read"));
+        assert_eq!(reading.rows.first(), Some(&row.english), "{line:?} reads as another row: {:?}", reading.rows);
+        assert!(reading.unread.is_empty(), "{line:?}: {:?}", reading.unread);
+        // The pseudo-language changes every row's words: nothing of it is left in English.
+        assert_ne!(reading.text, line, "{:?}", row.english);
+        // And in English a line is itself.
+        assert_eq!(super::explain(Lang::English, row.family, &line, &mb).map(|r| r.text), Some(line.clone()));
+        // The values come back as they were.
+        for value in ["it said so", "serverFail", "Invoice 42", "bob@example.org", "Projects"] {
+            assert_eq!(reading.text.matches(value).count(), line.matches(value).count(), "{line:?} -> {:?}", reading.text);
+        }
+    }
+}
+
+#[test]
+fn every_row_has_french_of_its_own() {
+    for row in super::rows() {
+        let french = t_in(french(), row.english);
+        assert_ne!(french, row.english, "{:?} has no French line", row.english);
+        assert_eq!(catalog::placeholders(french), catalog::placeholders(row.english), "{:?}", row.english);
+    }
+    // The engine's two words too.
+    assert_eq!(t_in(french(), super::ADDRESS), "(adresse)");
+    assert_eq!(t_in(french(), super::NO_SUBJECT), "(sans objet)");
+    assert_ne!(t_in(french(), super::NO_REASON), super::NO_REASON);
+}
+
+#[test]
+fn the_crates_lines_read_in_french() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
+    assert_eq!(
+        fr("Couldn't reach the server: network: Failed to fetch (the server may not let this page reach it)").as_deref(),
+        Some("Impossible de joindre le serveur : réseau : Failed to fetch (le serveur ne permet peut-être pas à cette page de l’atteindre)")
+    );
+    assert_eq!(
+        fr("Couldn't read the mail in 3 mailboxes: the server refused: serverFail this mailbox can't be read just now").as_deref(),
+        Some("Impossible de lire le courrier de 3 dossiers : le serveur a refusé : serverFail this mailbox can't be read just now")
+    );
+    assert_eq!(
+        fr("Couldn't bring the mail down from the server: the server is busy (HTTP 503)").as_deref(),
+        Some("Impossible de récupérer le courrier du serveur : le serveur est occupé (HTTP 503)")
+    );
+    assert_eq!(
+        fr("The server failed 3 mailboxes in a row; the rest wait for the next run.").as_deref(),
+        Some("Le serveur n’a pas pu traiter 3 dossiers d’affilée ; les autres attendront le prochain Envoyer/Recevoir.")
+    );
+    // A frame of ours over a reason no row reads: the frame is translated, the reason is kept as it came.
+    assert_eq!(
+        fr("Couldn't bring the mail down from the server: the proxy said it would be back after lunch").as_deref(),
+        Some("Impossible de récupérer le courrier du serveur : the proxy said it would be back after lunch")
+    );
+    // A line no row reads stays as it came.
+    assert_eq!(fr("Receiving mail failed: the server closed the connection"), None);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The census: the table against the crates' source
+
+/// The files whose every sentence a person can be shown has a row (or is on [`NOT_SHOWN`]).
+const CENSUS: &[&str] =
+    &["crates/jmap/src/lib.rs", "crates/jmap/src/mail.rs", "crates/jmap/src/mail/up.rs", "crates/jmap/src/url.rs", "apps/mailcraft-web/src/fetch.rs"];
+
+/// Sentences of those files that are no line a person is shown, and why.
+const NOT_SHOWN: &[(&str, &str)] = &[
+    ("sign-in failed: {0}", "a refused sign-in ends the run as `auth_refused`, with no line (the engine says STA1)"),
+    ("the user name, password or access token has a character that can't be sent", "an `Error::Auth`, as above"),
+    ("the user name, password or access token is too long to be sent", "an `Error::Auth`, as above"),
+    ("there is no user name or password to sign in with", "an `Error::Auth`, as above"),
+    ("there is no access token to sign in with", "an `Error::Auth`, as above"),
+    ("the server refused the credentials", "an `Error::Auth`, as above"),
+    ("JMAP: there is no such call", "the callers take only the answers they asked for"),
+    ("JMAP: that answer was taken", "as above"),
+    ("{} method calls in one request, and the server takes {}", "every caller holds its request to the server's `maxCallsInRequest`"),
+    ("not a blob id", "a download's alone, whose problems are only logged (`graph_fetch`)"),
+    ("(not a web address)", "the `Debug` of a request"),
+    ("Answers({} of which {} failed)", "the `Debug` of the answers"),
+];
+
+/// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text
+/// of its own: what a row must have, in order, for the sentence to be its.
+fn fragments(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some((head, tail)) = rest.split_once('{') {
+        out.push(head);
+        rest = tail.split_once('}').map_or("", |(_, after)| after);
+    }
+    out.push(rest);
+    out.into_iter().filter(|fragment| fragment.chars().any(char::is_alphanumeric)).collect()
+}
+
+/// Whether `english` has every fragment, in order.
+fn has_in_order(english: &str, fragments: &[&str]) -> bool {
+    let mut rest = english;
+    fragments.iter().all(|fragment| match rest.find(fragment) {
+        Some(at) => {
+            rest = rest.get(at + fragment.len()..).unwrap_or_default();
+            true
+        }
+        None => false,
+    })
+}
+
+fn source(path: &str) -> String {
+    let file = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(path);
+    std::fs::read_to_string(&file).unwrap_or_else(|e| panic!("{}: {e}", file.display()))
+}
+
+/// The longest piece of `literals` that `fragment` is made of, when it is made of them as a crate makes a sentence of
+/// pieces (`plural`, `{what}`): with the digits, spaces and punctuation it writes between them. None when it isn't.
+fn made_of(fragment: &str, literals: &[Literal]) -> Option<usize> {
+    let has = |piece: &str| literals.iter().any(|l| l.text.contains(piece));
+    let (mut rest, mut longest) = (fragment, 0);
+    while !rest.is_empty() {
+        if let Some(after) = rest.strip_prefix(|c: char| c.is_ascii_digit() || c.is_whitespace() || c.is_ascii_punctuation()) {
+            rest = after;
+            continue;
+        }
+        // The longest start of what is left that a literal has, in whole words.
+        let whole = |end: &usize| rest.get(*end..).is_none_or(|after| !after.starts_with(char::is_alphanumeric));
+        let end = rest.char_indices().map(|(at, c)| at + c.len_utf8()).filter(whole).rfind(|end| rest.get(..*end).is_some_and(has))?;
+        longest = longest.max(rest.get(..end).map_or(0, |piece| piece.chars().count()));
+        rest = rest.get(end..).unwrap_or_default();
+    }
+    Some(longest)
+}
+
+#[test]
+fn every_row_is_written_by_the_file_it_names() {
+    for row in super::rows() {
+        let literals: Vec<Literal> = literals_of(&source(row.at)).into_iter().filter(|l| !l.logged).collect();
+        let mut longest = 0;
+        for fragment in fragments(row.english) {
+            let made = made_of(fragment, &literals);
+            assert!(made.is_some(), "{:?}: {} has no {fragment:?} any more, whole or in pieces (reworded, or moved?)", row.english, row.at);
+            longest = longest.max(made.unwrap_or_default());
+        }
+        // A sentence the file has as more than a few words that any file could have.
+        let whole = fragments(row.english).into_iter().map(|f| f.trim().chars().count()).max().unwrap_or_default();
+        assert!(longest >= whole.min(12), "{:?}: {} has only pieces of it {longest} characters long", row.english, row.at);
+    }
+}
+
+#[test]
+fn every_sentence_of_the_census_has_a_row() {
+    let mut not_shown_seen = std::collections::HashSet::new();
+    for path in CENSUS {
+        for literal in literals_of(&source(path)) {
+            let text = literal.text.as_str();
+            // A sentence for a person: three words or more, not for the log.
+            if literal.logged || text.split_whitespace().count() < 3 || !text.chars().any(char::is_alphabetic) {
+                continue;
+            }
+            if super::WORDS.contains(&text) {
+                continue;
+            }
+            if NOT_SHOWN.iter().any(|(sentence, _)| *sentence == text) {
+                not_shown_seen.insert(text.to_string());
+                continue;
+            }
+            let pieces = fragments(text);
+            assert!(
+                super::rows().iter().any(|row| has_in_order(row.english, &pieces)),
+                "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_SHOWN why nobody sees it",
+                literal.line
+            );
+        }
+    }
+    for (sentence, _) in NOT_SHOWN {
+        assert!(not_shown_seen.contains(*sentence), "{sentence:?} is in NOT_SHOWN and in none of the census's files any more");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Where the window draws them
+
+/// Wednesday 2026-10-14 16:00 UTC.
+const NOW: i64 = 1_791_993_600;
+
+/// A window with a JMAP account, whose problems the tests keep as a run would.
+fn window() -> (crate::MailApp, mailcraft_model::Id) {
+    let mut app = crate::MailApp::new(mailcraft_engine::Session::at(Mailbox::with_local_account("", ""), NOW, 0), crate::Services::default());
+    app.autosave = false;
+    app.auto_sync = false;
+    let added = app.execute(
+        "account.add",
+        serde_json::json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/jmap/session", "bearer": true}}),
+    );
+    let account = added.unwrap()["id"].as_u64().unwrap();
+    (app, account)
+}
+
+/// A failed run's lines, and their French.
+const FAILED: [(&str, &str); 3] = [
+    ("Couldn't reach the server: network: connection refused", "Impossible de joindre le serveur : réseau : connection refused"),
+    (
+        "Couldn't read the mail in 1 mailbox: the server is busy (HTTP 429)",
+        "Impossible de lire le courrier de 1 dossier : le serveur est occupé (HTTP 429)",
+    ),
+    (
+        "The server is busy. What waits to go will go with a later Send/Receive.",
+        "Le serveur est occupé. Ce qui attend d’être envoyé partira avec un Envoyer/Recevoir ultérieur.",
+    ),
+];
+
+fn problems_of(app: &crate::MailApp, account: mailcraft_model::Id) -> Vec<String> {
+    crate::sync_panel::rows(app).into_iter().find(|row| row.account == account).map(|row| row.problems).unwrap_or_default()
+}
+
+#[test]
+fn the_status_bar_and_the_panel_show_a_failed_run_in_the_interface_s_language() {
+    use crate::chrome::{SyncShown, sync_shown};
+    let (mut app, account) = window();
+    let english: Vec<String> = FAILED.iter().map(|(en, _)| (*en).to_string()).collect();
+    let french: Vec<String> = FAILED.iter().map(|(_, fr)| (*fr).to_string()).collect();
+    app.keep_sync_problems(account, &english);
+    app.session.sync_status = english[0].clone();
+    super::super::set_current(super::super::Lang::from_tag("fr").unwrap());
+    // The bar says the first problem, the panel every one, and Copy problems copies them as they are shown.
+    assert_eq!(sync_shown(&app), SyncShown::Text(french[0].clone()));
+    assert_eq!(problems_of(&app, account), french);
+    let copied = app.sync_problem_lines();
+    assert!(french.iter().all(|line| copied.contains(&format!("  {line}"))), "{copied:#?}");
+    // What is kept stays English: in English the same lines read as they came, and French again after.
+    super::super::set_current(Lang::English);
+    assert_eq!(sync_shown(&app), SyncShown::Text(english[0].clone()));
+    assert_eq!(problems_of(&app, account), english);
+    assert!(app.sync_problem_lines().iter().any(|l| l == &format!("  {}", english[0])));
+    super::super::set_current(Lang::from_tag("fr").unwrap());
+    assert_eq!(problems_of(&app, account), french);
+    // How a run ended, with the time, and what the engine adds of the messages it can't find.
+    for (status, shown) in [
+        ("Up to date — 15:05", "À jour — 15:05"),
+        ("Folders up to date — 3:05 PM", "Dossiers à jour — 3:05 PM"),
+        (
+            "Up to date. 2 moved messages can't be found on the server yet, so changes to them wait. — 15:05",
+            "À jour. 2 messages déplacés n’ont pas encore été retrouvés sur le serveur : les modifications qui les concernent attendent. — 15:05",
+        ),
+        (
+            "Couldn't reach the server: network: down. 1 moved message can't be found on the server yet, so changes to it wait. — 15:05",
+            "Impossible de joindre le serveur : réseau : down. 1 message déplacé n’a pas encore été retrouvé sur le serveur : les modifications qui le concernent attendent. — 15:05",
+        ),
+        // What isn't a time after the dash is a server's words.
+        ("Couldn't reach the server: network: closed — goodbye", "Impossible de joindre le serveur : réseau : closed — goodbye"),
+        // A line no row reads, as it came.
+        ("Receiving mail failed: the server closed the connection", "Receiving mail failed: the server closed the connection"),
+    ] {
+        app.session.sync_status = status.to_string();
+        assert_eq!(sync_shown(&app), SyncShown::Text(shown.to_string()), "{status:?}");
+    }
+    super::super::set_current(Lang::English);
+}
+
+#[test]
+fn the_panel_draws_the_lines_in_french() {
+    let (mut app, account) = window();
+    let english: Vec<String> = FAILED.iter().map(|(en, _)| (*en).to_string()).collect();
+    app.keep_sync_problems(account, &english);
+    app.sync_panel = crate::sync_panel::Panel::named("syncProblems");
+    // (The window sets the language of its setting each frame.)
+    app.ui.language = "fr".into();
+    let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
+        |ui, app: &mut crate::MailApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    harness.run_steps(3);
+    for (en, fr) in FAILED {
+        assert!(harness.query_by_label(fr).is_some(), "{fr:?} isn't drawn");
+        assert!(harness.query_by_label(en).is_none(), "{en:?} is drawn in English");
+    }
+    super::super::set_current(Lang::English);
+}
+
+#[test]
+fn in_english_a_line_is_handed_back_as_it_came() {
+    let mb = mailbox();
+    let line = "Couldn't reach the server: network: connection refused";
+    assert!(matches!(super::line(line, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, line)));
+    assert!(matches!(super::status(line, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, line)));
+    super::super::set_current(Lang::from_tag("fr").unwrap());
+    // And in French, one no row reads.
+    let other = "Receiving mail failed: the server closed the connection";
+    assert!(matches!(super::line(other, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, other)));
+    assert!(matches!(super::line(line, &mb), std::borrow::Cow::Owned(_)));
+    super::super::set_current(Lang::English);
 }

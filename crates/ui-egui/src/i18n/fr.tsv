@@ -56,6 +56,65 @@
 	Change them on the site	Modifier les signatures sur le site
 # The sentences of a JMAP Send/Receive and of the engine, read back where they are drawn (crates/ui-egui/src/i18n/run_words.rs and run_words/rows.rs): kept together, near the top.
 	(address)	(adresse)
+# run_words, the frames a run puts round what went wrong, and its own reasons (crates/jmap/src/mail.rs, mail/up.rs).
+	Couldn't reach the server: {why}	Impossible de joindre le serveur : {why}
+	Couldn't list the mailboxes on the server: {why}	Impossible d’obtenir la liste des dossiers du serveur : {why}
+	Couldn't bring the mail down from the server: {why}	Impossible de récupérer le courrier du serveur : {why}
+	Couldn't read the mail in 1 mailbox: {why}	Impossible de lire le courrier de 1 dossier : {why}
+	Couldn't read the mail in {n} mailboxes: {why}	Impossible de lire le courrier de {n} dossiers : {why}
+	Couldn't read 1 message in full: {why}	Impossible de lire 1 message en entier : {why}
+	Couldn't read {n} messages in full: {why}	Impossible de lire {n} messages en entier : {why}
+	Couldn't send 1 change to the server: {why}	Impossible d’envoyer 1 modification au serveur : {why}
+	Couldn't send {n} changes to the server: {why}	Impossible d’envoyer {n} modifications au serveur : {why}
+	The server failed {n} mailboxes in a row; the rest wait for the next run.	Le serveur n’a pas pu traiter {n} dossiers d’affilée ; les autres attendront le prochain Envoyer/Recevoir.
+	1 mailbox was not read: a run reads {max} at most.	1 dossier n’a pas été lu : un Envoyer/Recevoir en lit au plus {max}.
+	{n} mailboxes were not read: a run reads {max} at most.	{n} dossiers n’ont pas été lus : un Envoyer/Recevoir en lit au plus {max}.
+	the server's answer did not have them	la réponse du serveur ne contenait pas ce qui était demandé
+	the server did not take them	le serveur n’a rien accepté
+	the server could not make them just now ({kind})	le serveur n’a pas pu le faire pour l’instant ({kind})
+# run_words, what a failure says (crates/jmap/src/lib.rs).
+	network: {text}	réseau : {text}
+	secure connection: {text}	connexion sécurisée : {text}
+	unexpected server response: {text}	réponse inattendue du serveur : {text}
+	the server refused: {said}	le serveur a refusé : {said}
+	the server rejected the request: {said}	le serveur a rejeté la requête : {said}
+	the server is busy (HTTP {status})	le serveur est occupé (HTTP {status})
+	too large: {text}	trop volumineux : {text}
+# run_words, the words under a failure (crates/jmap/src, apps/mailcraft-web/src/fetch.rs).
+	{browser} (the server may not let this page reach it)	{browser} (le serveur ne permet peut-être pas à cette page de l’atteindre)
+	no reason given	aucun motif indiqué
+	the server took too long to answer	le serveur a mis trop de temps à répondre
+	the session address isn't https	l’adresse de la session n’est pas en https
+	the JMAP {key} isn't https	l’adresse {key} de JMAP n’est pas en https
+	the JMAP {key} isn't on the server the session is served from	l’adresse {key} de JMAP n’est pas sur le serveur qui sert la session
+	the session address is too long	l’adresse de la session est trop longue
+	the JMAP session has no capabilities	la session JMAP ne déclare aucune capacité
+	this JMAP server doesn't offer mail	ce serveur JMAP ne propose pas de courrier
+	no mail account in the JMAP session	aucun compte de messagerie dans la session JMAP
+	the JMAP session has no `{key}`	la session JMAP ne contient pas de `{key}`
+	the JMAP {key} can't be used	l’adresse {key} de JMAP ne peut pas être utilisée
+	a JMAP address is too long	une adresse JMAP est trop longue
+	not a web address	ce n’est pas une adresse web
+	JMAP: {parser}	JMAP : {parser}
+	JMAP: no methodResponses	JMAP : pas de methodResponses
+	JMAP: the answer isn't an object	JMAP : la réponse n’est pas un objet
+	JMAP: no answer to {method}	JMAP : pas de réponse à {method}
+	the answer has no list of mailboxes	la réponse ne contient pas de liste de dossiers
+	the answer lists no mailbox	la réponse ne liste aucun dossier
+	the answer has no list of ids	la réponse ne contient pas de liste d’identifiants
+	the answer has no list of emails	la réponse ne contient pas de liste de messages
+	the answer is larger than {max} bytes	la réponse dépasse {max} octets
+	the request is over the server's limit {limit}	la requête dépasse la limite du serveur {limit}
+	the request is over the server's limit	la requête dépasse la limite du serveur
+	the server takes fewer objects in a call	le serveur accepte moins d’objets par appel
+# run_words, what waits to go (crates/jmap/src/send.rs).
+	The server couldn't be reached. What waits to go will go with the next Send/Receive.	Le serveur est injoignable. Ce qui attend d’être envoyé partira avec le prochain Envoyer/Recevoir.
+	The server is busy. What waits to go will go with a later Send/Receive.	Le serveur est occupé. Ce qui attend d’être envoyé partira avec un Envoyer/Recevoir ultérieur.
+	The server limits how many messages can be sent in a short time. What waits to go will go with a later Send/Receive.	Le serveur limite le nombre de messages qui peuvent être envoyés en peu de temps. Ce qui attend d’être envoyé partira avec un Envoyer/Recevoir ultérieur.
+	The server can't file mail just now. What waits to go will go with a later Send/Receive.	Le serveur ne peut pas classer le courrier pour l’instant. Ce qui attend d’être envoyé partira avec un Envoyer/Recevoir ultérieur.
+# run_words, how a run ended (crates/engine/src/cmd/jmap_mail.rs).
+	1 moved message can't be found on the server yet, so changes to it wait.	1 message déplacé n’a pas encore été retrouvé sur le serveur : les modifications qui le concernent attendent.
+	{n} moved messages can't be found on the server yet, so changes to them wait.	{n} messages déplacés n’ont pas encore été retrouvés sur le serveur : les modifications qui les concernent attendent.
 # The rest of the interface.
 	Outlook is busy	Outlook est occupé
 	A Teams meeting is made by an account's server, and this calendar is kept on this computer only.	Une réunion Teams est créée par le serveur du compte, et ce calendrier n’est conservé que sur cet ordinateur.

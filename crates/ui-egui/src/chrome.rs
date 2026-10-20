@@ -271,28 +271,15 @@ pub(crate) fn sync_shown(app: &MailApp) -> SyncShown {
     if sync.is_empty() { SyncShown::Nothing } else { SyncShown::Text(status_in_language(sync, &app.session.mailbox)) }
 }
 
-// //// Neoffice — the engine says how a Send/Receive ended, and how far it has got, in English: its usual words are shown in the interface's language.
-/// The status of Send/Receive as the status bar shows it: the engine's usual words for how far a run has got (a
-/// standard folder by the name the folder pane gives it) and for the end of a run, in the interface's language, the
-/// time after them as it is; anything else (what a server said) as it came.
+// //// Neoffice — the engine says how a Send/Receive ended, and how far it has got, in English: its words are shown in the interface's language.
+/// The status of Send/Receive as the status bar shows it: the engine's words for how far a run has got (a standard
+/// folder by the name the folder pane gives it), for the end of a run and for its first problem, in the interface's
+/// language (`run_words`), the time after them as it is; anything else (what a server said) as it came.
 pub(crate) fn status_in_language(status: &str, mb: &mailcraft_model::Mailbox) -> String {
     if let Some(words) = progress_in_language(status, mb) {
         return words;
     }
-    let (said, at) = match status.rsplit_once(" — ") {
-        Some((said, at)) => (said, Some(at)),
-        None => (status, None),
-    };
-    let words = match said {
-        "Up to date" => tl!("Up to date"),
-        "Folders up to date" => tl!("Folders up to date"),
-        "Stopped; carries on from here next time" => tl!("Stopped; carries on from here next time"),
-        _ => return status.to_string(),
-    };
-    match at {
-        Some(at) => format!("{words} — {at}"),
-        None => words.to_string(),
-    }
+    crate::i18n::run_words::status(status, mb).into_owned()
 }
 
 // //// Neoffice — added: the words of the engine's `graph_down::progress_words`, read back in the interface's language.

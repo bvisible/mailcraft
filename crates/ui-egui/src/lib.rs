@@ -2690,7 +2690,8 @@ impl MailApp {
         let mut out = Vec::new();
         for (_, name, at, lines) in &self.sync_problems {
             out.push(format!("{name} — {at}"));
-            out.extend(lines.iter().map(|l| format!("  {l}")));
+            // //// Neoffice — as Send/Receive Progress shows them: in the interface's language (run_words).
+            out.extend(lines.iter().map(|l| format!("  {}", i18n::run_words::line(l, &self.session.mailbox))));
         }
         out
     }

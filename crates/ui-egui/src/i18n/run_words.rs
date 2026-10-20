@@ -19,12 +19,13 @@ mod rows;
 #[cfg(test)]
 mod tests;
 
+use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use mailcraft_model::{FolderKind, Mailbox};
 
 use self::pattern::{Budget, Pattern};
-use super::{Lang, catalog, fmt, t_in};
+use super::{Lang, catalog, current, fmt, t_in};
 
 /// The longest text that is read; a longer one is shown as it came.
 const MAX_TEXT: usize = 1_024;
@@ -37,6 +38,10 @@ const MAX_STEPS: usize = 10_000;
 pub const ADDRESS: &str = run_word!("(address)");
 /// The word the engine gives a message with no subject ([`Kind::Subject`]).
 pub const NO_SUBJECT: &str = run_word!("(no subject)");
+/// What the browser's runner says in place of the browser's own words when it gave none ([`Kind::Text`]).
+pub const NO_REASON: &str = run_word!("no reason given");
+/// The words of ours that a value may be, which are the interface's.
+pub const WORDS: [&str; 3] = [ADDRESS, NO_SUBJECT, NO_REASON];
 
 /// What a text is read as: a whole line, or a part of one that a placeholder of a line holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -211,6 +216,83 @@ fn read_steps(table: &Table, lang: Lang, family: Family, text: &str, mb: &Mailbo
     found.map(|found| Reading { text: found.text, unread: found.unread, rows: found.rows })
 }
 
+/// One line of the problems of a run, in the interface's language: as it came in English, or when no row reads it.
+pub(crate) fn line<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    in_language(current(), Family::Line, text, mb)
+}
+
+/// The status of Send/Receive, in the interface's language: a line (how a run ended, or its first problem), with what
+/// the engine may add to it (`1 moved message can't be found…`) and the time it ended (` — 15:05`).
+pub(crate) fn status<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    let lang = current();
+    if lang == Lang::English {
+        return Cow::Borrowed(text);
+    }
+    explain_status(lang, text, mb).map_or(Cow::Borrowed(text), |reading| Cow::Owned(reading.text))
+}
+
+fn in_language<'a>(lang: Lang, family: Family, text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    if lang == Lang::English {
+        return Cow::Borrowed(text);
+    }
+    explain(lang, family, text, mb).map_or(Cow::Borrowed(text), |reading| Cow::Owned(reading.text))
+}
+
+/// What the status of Send/Receive reads as in `lang` ([`status`]); None when it is shown as it came.
+pub fn explain_status(lang: Lang, text: &str, mb: &Mailbox) -> Option<Reading> {
+    let (said, at) = match text.rsplit_once(" — ") {
+        Some((said, at)) if is_time(at) => (said, Some(at)),
+        _ => (text, None),
+    };
+    // `{said}. {more}`, or `{said} {more}` when it ends with a full stop already: read as the two, when they are.
+    let mut reading = match moved_said(said).and_then(|(head, more)| joined(lang, head, more, mb)) {
+        Some(reading) => reading,
+        None => explain(lang, Family::Line, said, mb)?,
+    };
+    if let Some(at) = at {
+        reading.text = format!("{} — {at}", reading.text);
+    }
+    Some(reading)
+}
+
+/// A line and the sentence of the moved messages after it, each read.
+fn joined(lang: Lang, head: &str, more: &str, mb: &Mailbox) -> Option<Reading> {
+    let more = explain(lang, Family::Line, more, mb)?;
+    if head.is_empty() {
+        return Some(more);
+    }
+    let head = explain(lang, Family::Line, head, mb).or_else(|| {
+        let read = explain(lang, Family::Line, head.strip_suffix('.')?, mb)?;
+        Some(Reading { text: format!("{}.", read.text), ..read })
+    })?;
+    Some(Reading {
+        text: format!("{} {}", head.text, more.text),
+        unread: head.unread.into_iter().chain(more.unread).collect(),
+        rows: head.rows.into_iter().chain(more.rows).collect(),
+    })
+}
+
+/// Whether the end of a status is the time the engine writes after it (`15:05`, `3:05 PM`).
+fn is_time(text: &str) -> bool {
+    (4..=8).contains(&text.len())
+        && text.starts_with(|c: char| c.is_ascii_digit())
+        && text.contains(':')
+        && text.chars().all(|c| c.is_ascii_digit() || matches!(c, ':' | ' ' | 'A' | 'P' | 'M'))
+}
+
+/// A status that the engine made of a line and of the messages it can't find again (`Up to date. 3 moved messages
+/// can't be found…`): the line (with its full stop) and the sentence after it.
+fn moved_said(said: &str) -> Option<(&str, &str)> {
+    let at = said.rfind(" moved message")?;
+    let digits = said.get(..at)?.bytes().rev().take_while(u8::is_ascii_digit).count();
+    let start = at.checked_sub(digits).filter(|_| digits > 0)?;
+    let more = said.get(start..)?;
+    match start {
+        0 => Some(("", more)),
+        _ => Some((said.get(..start)?.strip_suffix(' ')?, more)),
+    }
+}
+
 /// A reading in progress: the line's language, its mailbox (for the names of folders) and what it may still cost.
 struct Reader<'a> {
     table: &'a Table,
@@ -284,6 +366,7 @@ impl Reader<'_> {
                 Some(Kind::Subject) if value == NO_SUBJECT => t_in(self.lang, NO_SUBJECT).to_string(),
                 Some(Kind::Subject | Kind::Addresses) => value.replace(ADDRESS, t_in(self.lang, ADDRESS)),
                 Some(Kind::Folder) => standard_folder_name(self.mb, value, self.lang).unwrap_or_else(|| value.to_string()),
+                Some(Kind::Text) if value == NO_REASON => t_in(self.lang, NO_REASON).to_string(),
                 Some(Kind::Number | Kind::Token | Kind::Text) | None => value.to_string(),
             };
             args.push((name, shown));
