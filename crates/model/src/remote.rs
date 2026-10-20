@@ -264,6 +264,11 @@ pub struct RemoteContact {
     /// no books.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub book: String,
+    // //// Neoffice — the mark of the card on its server (JSContact `uid`): a contact made here is known again by the mark it was made with.
+    /// The mark the server keeps the card under, when it is not its id: a card made here carries the mark it was made
+    /// with ([`crate::book::ContactChange::token`]). Empty when the server says none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub uid: String,
     pub display_name: String,
     pub first: String,
     pub middle: String,
@@ -290,8 +295,9 @@ impl RemoteContact {
     pub fn tidy(&mut self) {
         self.id = key(&self.id);
         self.change_key = key(&self.change_key);
-        // //// Neoffice — the server's name of its address book is an id like its own.
+        // //// Neoffice — the server's name of its address book is an id like its own, and so is its mark of the card.
         self.book = key(&self.book);
+        self.uid = key(&self.uid);
         for name in [
             &mut self.display_name,
             &mut self.first,

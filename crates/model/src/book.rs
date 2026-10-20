@@ -14,24 +14,50 @@
 //! model of another shape (a CardDAV server's, say) is mapped onto this one by what its server calls a collection and
 //! by its rights, and a model that takes this one's place is a change of these two files and those two fields.
 //!
+//! **Written back.** A contact made, changed or deleted here in a book whose contacts the account may change is noted
+//! for its server ([`ContactChange`], in [`crate::Mailbox::contact_changes`]), as an event is: the change is made here
+//! at once, a host tells the server ([`ContactsUpload`]) and brings back what it made of each ([`ContactsUploaded`]),
+//! and the note stays until the server took the change or refused it for good. What is sent of a contact is the part
+//! of it a server's card holds ([`ContactFields`]): its name, its company, its job title, its e-mail addresses and its
+//! phone numbers.
+//!
 //! Plain data, and lenient: a mailbox written before there were books reads as one that has none, and what a server
 //! or a file says of them is tidied before it is kept.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use mailcraft_time::Timestamp;
 use serde::{Deserialize, Serialize};
 
-use crate::remote::clean_key;
-use crate::{Account, Contact, Id, MAX_NAME, Mailbox, Origin};
+use crate::remote::{EventResult, clean_key};
+use crate::{Account, Contact, Id, Labeled, MAX_NAME, Mailbox, Origin};
 
 /// Most address books one account is taken to have; what is beyond is left out.
 pub const MAX_REMOTE_BOOKS: usize = 50;
 /// Most address books a mailbox keeps, every account together.
 pub const MAX_BOOKS: usize = 200;
+/// Most changes to contacts that may wait for servers at once ([`crate::Mailbox::contact_changes`]), and most that one
+/// [`ContactsUpload`] carries: the rest go with the next.
+pub const MAX_CONTACT_CHANGES: usize = 5_000;
+pub const MAX_CONTACT_OPS: usize = 50;
+/// Longest mark a new contact is sent with ([`ContactChange::token`]), and longest words of a server's kept.
+pub const MAX_CONTACT_TOKEN: usize = 64;
+const MAX_WHY: usize = 300;
+/// Longest one-line field of a contact that is sent, and most addresses or numbers of one.
+const MAX_LINE: usize = 500;
+const MAX_ENTRIES: usize = 50;
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
+}
+
+fn is_zero_time(t: &Timestamp) -> bool {
+    *t == 0
 }
 
 /// No book: what a contact of the mailbox's own, or of a server without books, names.
@@ -134,6 +160,224 @@ fn one_line(text: &str, max: usize) -> String {
     short.trim_end().to_string()
 }
 
+/// What is done to a contact that a server keeps in an address book.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContactChangeKind {
+    /// A contact made here that the server doesn't have yet.
+    #[default]
+    Create,
+    /// A contact the server has that was changed here.
+    Update,
+    /// A contact the server has that was deleted here.
+    Delete,
+}
+
+/// A change made here to a contact of an address book that an account's server keeps, which the server is yet to be
+/// told. The change itself is made in the mailbox already; this is the note that it is to go to the server too. A host
+/// carries it out ([`ContactsUpload`]), and it stays listed until the server has taken it, or has refused it for good
+/// ([`ContactsUploaded`]).
+///
+/// What is sent is worked out when it goes, from the contact as it is then: a new contact whole, a changed one as what
+/// differs from `base`. So several changes to one contact before the server hears of any are one change, and one that
+/// is taken back is none.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactChange {
+    pub account: Id,
+    pub kind: ContactChangeKind,
+    /// The contact in the mailbox; for a deletion, the id it had.
+    pub contact: Id,
+    /// What the server calls the contact. Empty for one it doesn't have yet.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remote: String,
+    /// For a new contact: the mark it is sent with (its card's `uid`). Sending it a second time (the answer to the first
+    /// was lost) then makes no second one, and it is known again when a download brings it before the answer.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub token: String,
+    /// For a change or a deletion: the contact as the server has it. What is sent is what differs from this, and this
+    /// is what is put back when the server refuses for good.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<Box<Contact>>,
+    /// How many times in a row the server couldn't be told.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub failures: u32,
+    /// Not to be tried again before this (Unix seconds); 0 for at once.
+    #[serde(skip_serializing_if = "is_zero_time")]
+    pub retry_at: Timestamp,
+    /// The server has said once that the account may not do this: it is tried once more, and given up when it is
+    /// refused again.
+    #[serde(skip_serializing_if = "is_false")]
+    pub denied: bool,
+    /// Why it didn't go through the last time, for the owner to read.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
+/// A contact's name as a server's card holds it: one whole, sent together ([`ContactFields::name`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactName {
+    pub first: String,
+    pub last: String,
+    /// The name it is shown by, when it is not its first and last name ([`Contact::display_name`]); empty otherwise.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub display: String,
+}
+
+/// What a server is told of a contact: everything for a new one, and for one it has only what was changed here
+/// (`None` leaves a part as the server has it: somebody else may have changed it meanwhile). The parts are those a
+/// server's card holds of a contact here: the rest of a contact is not sent.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactFields {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<ContactName>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub company: Option<String>,
+    /// The job title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// The e-mail addresses, the primary one first, with their labels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emails: Option<Vec<Labeled>>,
+    /// The phone numbers, with their labels (`mobile`, `work`…).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phones: Option<Vec<Labeled>>,
+}
+
+impl ContactFields {
+    /// Nothing is said: there is nothing to tell the server.
+    pub fn is_empty(&self) -> bool {
+        *self == ContactFields::default()
+    }
+
+    /// Which of them are said, by the names a card has for them: for a log line, which may say what kind of thing was
+    /// sent and never what it was.
+    pub fn names(&self) -> Vec<&'static str> {
+        let said = [
+            (self.name.is_some(), "name"),
+            (self.company.is_some(), "organizations"),
+            (self.title.is_some(), "titles"),
+            (self.emails.is_some(), "emails"),
+            (self.phones.is_some(), "phones"),
+        ];
+        said.into_iter().filter(|(is, _)| *is).map(|(_, name)| name).collect()
+    }
+
+    /// Cut to the size a server is sent: names one line each, empty entries gone, an e-mail address one or none,
+    /// lists capped.
+    pub fn tidy(&mut self) {
+        let line = |text: &str| one_line(text, MAX_LINE);
+        if let Some(name) = &mut self.name {
+            (name.first, name.last, name.display) = (line(&name.first), line(&name.last), line(&name.display));
+        }
+        self.company = self.company.take().map(|text| line(&text));
+        self.title = self.title.take().map(|text| line(&text));
+        let entries = |list: Vec<Labeled>, keep: &dyn Fn(&str) -> bool| -> Vec<Labeled> {
+            list.into_iter()
+                .map(|entry| Labeled { label: one_line(&entry.label, MAX_NAME), value: line(&entry.value) })
+                .filter(|entry| keep(&entry.value))
+                .take(MAX_ENTRIES)
+                .collect()
+        };
+        self.emails = self.emails.take().map(|list| entries(list, &|address| address.contains('@') && !address.contains(char::is_whitespace)));
+        self.phones = self.phones.take().map(|list| entries(list, &|number| !number.is_empty()));
+    }
+}
+
+/// One thing a server is asked to do to a contact ([`ContactsUpload`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactOp {
+    pub kind: ContactChangeKind,
+    /// The contact in the mailbox the change is about (for the answer to find it again).
+    pub contact: Id,
+    /// What the server calls the contact, for a change or a deletion.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remote: String,
+    /// The mark a new contact is made with ([`ContactChange::token`]).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub token: String,
+    /// What the server calls the address book the contact is in: the one a new contact goes into.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub book: String,
+    /// A new contact whole, or what changed of one the server has; nothing for a deletion.
+    pub fields: ContactFields,
+}
+
+impl ContactOp {
+    /// Cut to size, as everything from outside is: an id that can't be one is none.
+    pub fn tidy(&mut self) {
+        self.remote = clean_key(&self.remote);
+        self.token = clean_key(&self.token).chars().take(MAX_CONTACT_TOKEN).collect();
+        self.book = clean_key(&self.book);
+        self.fields.tidy();
+    }
+}
+
+/// The changes to the contacts of an account's address books that its server is to be told, oldest first. The engine
+/// says what they are (`sync.contactChanges`); a host carries them out and brings back a [`ContactsUploaded`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactsUpload {
+    pub account: Id,
+    /// That account's address, as in [`BooksDownload::email`].
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub email: String,
+    pub ops: Vec<ContactOp>,
+}
+
+impl ContactsUpload {
+    /// The upload as one for `account`.
+    pub fn for_account(mut self, account: &Account) -> ContactsUpload {
+        self.account = account.id;
+        self.email = account.email.trim().to_string();
+        self
+    }
+}
+
+/// What became of one [`ContactOp`], with the op itself: the mailbox may have moved on since it was asked for. The
+/// answer words are an event's ([`EventResult`]): done, gone, refused, denied, failed.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactOutcome {
+    pub op: ContactOp,
+    pub result: EventResult,
+    /// What the server calls the contact now, for one that was made.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remote: String,
+    /// Why not, in words for the owner; never anything that was sent.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+    /// How many seconds the server asked to be left alone, when it did.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after: Option<u32>,
+}
+
+impl ContactOutcome {
+    /// Cut to size, as everything from outside is.
+    pub fn tidy(&mut self) {
+        self.op.tidy();
+        self.remote = clean_key(&self.remote);
+        self.error = one_line(&self.error, MAX_WHY);
+    }
+}
+
+/// What a server made of a [`ContactsUpload`]: an outcome for every op that was tried, in order. An op without one was
+/// not tried (the server stopped taking the sign-in, or was too busy), and waits as before.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ContactsUploaded {
+    pub account: Id,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub email: String,
+    pub outcomes: Vec<ContactOutcome>,
+    /// The server stopped taking the sign-in part-way: a new one is needed for the rest.
+    #[serde(skip_serializing_if = "is_false")]
+    pub token_refused: bool,
+}
+
 impl Mailbox {
     /// The address book with the id `id`.
     pub fn address_book(&self, id: Id) -> Option<&AddressBook> {
@@ -218,6 +462,16 @@ pub(crate) fn repair(mailbox: &mut Mailbox, sane: &dyn Fn(&Id) -> bool) -> Vec<S
     }
     if cleared > 0 {
         fixed.push(format!("{cleared} contact(s) taken out of an address book of another account, or of none"));
+    }
+    // What waits to be told to a server is for an account here, and no more of it than is ever noted.
+    let waiting = mailbox.contact_changes.len();
+    mailbox.contact_changes.retain(|change| accounts.contains(&change.account));
+    mailbox.contact_changes.truncate(MAX_CONTACT_CHANGES);
+    if mailbox.contact_changes.len() < waiting {
+        fixed.push(format!(
+            "{} change(s) of contacts waiting for a server that no account here keeps dropped",
+            waiting - mailbox.contact_changes.len()
+        ));
     }
     fixed
 }
@@ -366,6 +620,77 @@ mod tests {
         assert!(mailbox.clone().repair().is_empty(), "{:?}", mailbox.clone().repair());
         assert_eq!(mailbox.book_of(mailbox.contact(in_team).unwrap()).map(|b| b.origin.id.as_str()), Some("team"));
         assert!(mailbox.address_book(0).is_none() && mailbox.address_book_on_server(account, "").is_none());
+    }
+
+    #[test]
+    fn a_change_to_a_contact_round_trips_and_what_goes_up_is_tidied() {
+        // A mailbox with nothing waiting writes nothing of it, and reads as before.
+        let (mut mailbox, account) = mailbox();
+        assert!(!serde_json::to_string(&mailbox).unwrap().contains("contactChanges"));
+        let base = Contact {
+            id: 7,
+            first: "Grace".into(),
+            book: 9,
+            origin: Origin { account, id: "c-grace".into(), ..Default::default() },
+            ..Default::default()
+        };
+        mailbox.contact_changes.push(ContactChange {
+            account,
+            kind: ContactChangeKind::Update,
+            contact: 7,
+            remote: "c-grace".into(),
+            base: Some(Box::new(base)),
+            failures: 2,
+            retry_at: 1_791_993_660,
+            error: "the server failed".into(),
+            ..Default::default()
+        });
+        let json = serde_json::to_string(&mailbox).unwrap();
+        assert!(json.contains(r#""contactChanges":[{"account":"#) && json.contains(r#""kind":"update""#), "{json}");
+        assert_eq!(serde_json::from_str::<Mailbox>(&json).unwrap(), mailbox);
+        assert_eq!(round_trip(&ContactChange::default()), r#"{"account":0,"kind":"create","contact":0}"#);
+        // A list that isn't one, or entries that aren't changes, read as nothing.
+        let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        value["contactChanges"] = json!([7, {"kind": "explode"}, {"account": account, "kind": "delete", "remote": "c-x"}]);
+        let lenient: Mailbox = serde_json::from_value(value).unwrap();
+        assert_eq!(lenient.contact_changes.iter().map(|c| c.kind).collect::<Vec<_>>(), [ContactChangeKind::Delete]);
+        // What a host is handed and brings back, from outside: names of many lines, an address that is none, ids that
+        // can't be ids, words of a thousand lines.
+        let mut op = ContactOp {
+            kind: ContactChangeKind::Create,
+            contact: 7,
+            remote: "two words".into(),
+            token: "t".repeat(500),
+            book: " neoffice ".into(),
+            fields: ContactFields {
+                name: Some(ContactName { first: "Gr\nace".into(), last: "O".repeat(2_000), display: String::new() }),
+                company: Some("Okafor\r\nJoinery".into()),
+                title: None,
+                emails: Some(vec![Labeled::new("work", "grace@example.org"), Labeled::new("", "not an address"), Labeled::new("x\ny", "  ")]),
+                phones: Some((0..200).map(|n| Labeled::new("mobile", format!("+41 79 555 {n:02}"))).collect()),
+            },
+        };
+        op.tidy();
+        assert!(op.remote.is_empty() && op.token.len() == MAX_CONTACT_TOKEN && op.book == "neoffice");
+        let name = op.fields.name.as_ref().unwrap();
+        assert!(name.first == "Gr ace" && name.last.chars().count() == MAX_LINE);
+        assert_eq!(op.fields.company.as_deref(), Some("Okafor  Joinery"));
+        assert_eq!(op.fields.emails, Some(vec![Labeled::new("work", "grace@example.org")]));
+        assert_eq!(op.fields.phones.as_ref().map(Vec::len), Some(MAX_ENTRIES));
+        assert_eq!(op.fields.names(), ["name", "organizations", "emails", "phones"]);
+        assert!(ContactFields::default().is_empty() && !op.fields.is_empty());
+        let mut outcome = ContactOutcome {
+            op: op.clone(),
+            result: EventResult::Refused,
+            remote: "c\u{0}x".into(),
+            error: "no\n".repeat(1_000),
+            retry_after: Some(5),
+        };
+        outcome.tidy();
+        assert!(outcome.remote.is_empty() && !outcome.error.contains('\n') && outcome.error.chars().count() <= MAX_WHY);
+        let uploaded = ContactsUploaded { account, email: "ada@neoffice.example.org".into(), outcomes: vec![outcome], token_refused: true };
+        assert!(round_trip(&uploaded).contains(r#""result":"refused""#));
+        round_trip(&ContactsUpload { ops: vec![op], ..Default::default() }.for_account(&mailbox.accounts[1]));
     }
 
     proptest! {

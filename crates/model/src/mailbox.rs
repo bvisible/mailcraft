@@ -634,6 +634,11 @@ pub struct Mailbox {
     /// ([`crate::remote::EventCheck`]).
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
     pub event_checks: Vec<crate::remote::EventCheck>,
+    // //// Neoffice — the contacts made, changed and deleted here in a server's address book that it is yet to be told (`book.rs`).
+    /// Changes made here to contacts of address books that a server keeps, which that server is yet to be told, oldest
+    /// first ([`crate::book::ContactChange`]).
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub contact_changes: Vec<crate::book::ContactChange>,
     /// The Favorites of the accounts whose server has a list of them ([`ServerFavorites`]), one
     /// entry an account at most ([`Mailbox::server_favorites`]). Nothing is written of it until
     /// a server's list has been taken in.
@@ -683,6 +688,8 @@ impl Default for Mailbox {
             pending: Vec::new(),
             event_changes: Vec::new(),
             event_checks: Vec::new(),
+            // //// Neoffice — see `contact_changes`.
+            contact_changes: Vec::new(),
             favorites_from_server: Vec::new(),
             queued: Vec::new(),
             outlook_categories: Vec::new(),

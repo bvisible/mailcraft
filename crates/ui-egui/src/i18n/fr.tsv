@@ -51,6 +51,12 @@
 	the answer had no text	la réponse ne contenait pas de texte
 # The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
 	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
+# Contacts made, changed and deleted here in a server's address book (crates/engine/src/cmd/remote_contacts/written.rs, crates/ui-egui/src/pim_rights.rs).
+	Address book	Carnet d’adresses
+	This page keeps no categories or favorites: they would be gone at the next visit	Cette page ne conserve ni catégories ni favoris : ils seraient perdus à la prochaine visite
+	Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers	Son carnet d’adresses ne conserve que le nom, la société, la fonction, les adresses e-mail et les numéros de téléphone d’un contact
+	Contact Changes to Send	Modifications de contacts à envoyer
+	Apply Sent Contact Changes	Appliquer les modifications de contacts envoyées
 # File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
 	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
 	Change them on the site	Modifier les signatures sur le site

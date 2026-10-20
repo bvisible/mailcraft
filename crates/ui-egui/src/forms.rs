@@ -4556,6 +4556,8 @@ mod contact {
         notes: String,
         categories: Vec<String>,
         favorite: bool,
+        // //// Neoffice — where a new contact goes, when the owner picked it (`pim_rights`): a server's address book (its id), or the mailbox's own (0).
+        book: Option<Id>,
         error: String,
         focus: bool,
         /// The fields as the form opened; OK sends what differs from them.
@@ -4653,6 +4655,10 @@ mod contact {
         /// contact, the ones that changed for an existing one.
         pub fn command(&self) -> (&'static str, Value) {
             let mut m = changes(&self.baseline, &self.fields(), &[]);
+            // //// Neoffice — see `book`.
+            if let (None, Some(book)) = (self.id, self.book) {
+                m.insert("book".into(), json!(book));
+            }
             match self.id {
                 Some(id) => {
                     m.insert("id".into(), json!(id));
@@ -4674,7 +4680,12 @@ mod contact {
         pub fn show(&mut self, app: &mut MailApp, ui: &mut Ui) -> bool {
             let mut pass = Pass::new(ui, &app.session, &mut self.focus);
             let categories = app.session.mailbox.categories.clone();
+            // //// Neoffice — what the contact's address book keeps decides the rows (`pim_rights`): what it wouldn't keep is not offered, and a new contact says where it goes.
+            let keeps = crate::pim_rights::contact_keeps(&app.session, self.id, self.book);
             body(ui, |ui| {
+                if crate::pim_rights::offers_books(&keeps) {
+                    row(ui, tl!("Address book"), |ui| crate::pim_rights::book_combo(ui, &keeps, &mut self.book));
+                }
                 row(ui, tl!("First name"), |ui| {
                     pass.text(ui, "first", &mut self.first, f32::INFINITY, "");
                 });
@@ -4684,50 +4695,68 @@ mod contact {
                 // Left empty, the name lists show is the first and last name.
                 let full = [self.first.trim(), self.last.trim()].into_iter().filter(|p| !p.is_empty()).collect::<Vec<_>>().join(" ");
                 let hint = if full.is_empty() { tl!("Shown as First Last when empty").to_string() } else { shown(&full, 80) };
-                row(ui, tl!("Display name"), |ui| {
-                    pass.text(ui, "display", &mut self.display, f32::INFINITY, &hint);
-                });
+                // //// Neoffice — see `keeps`.
+                if keeps.display {
+                    row(ui, tl!("Display name"), |ui| {
+                        pass.text(ui, "display", &mut self.display, f32::INFINITY, &hint);
+                    });
+                }
                 row(ui, tl!("Company"), |ui| {
                     pass.text(ui, "company", &mut self.company, f32::INFINITY, "");
                 });
                 row(ui, tl!("Job title"), |ui| {
                     pass.text(ui, "job", &mut self.title, f32::INFINITY, "");
                 });
-                row(ui, tl!("Department"), |ui| {
-                    pass.text(ui, "department", &mut self.department, f32::INFINITY, "");
-                });
+                // //// Neoffice — see `keeps`.
+                if keeps.everything {
+                    row(ui, tl!("Department"), |ui| {
+                        pass.text(ui, "department", &mut self.department, f32::INFINITY, "");
+                    });
+                }
                 labeled_rows(ui, &mut pass, tl!("E-mail"), "email", &mut self.emails, &EMAIL_LABELS, tl!("Add another e-mail address"));
-                labeled_rows(ui, &mut pass, tl!("Phone"), "phone", &mut self.phones, &PHONE_LABELS, tl!("Add another phone number"));
-                row(ui, tl!("Address"), |ui| label_combo(ui, "address_label", &mut self.address.label, &ADDRESS_LABELS));
-                tall_row(ui, tl!("Street"), |ui| {
-                    multiline(ui, "street", &mut self.address.street, 2);
+                // //// Neoffice — see `keeps`: the labels a phone number keeps there.
+                let phone_labels = keeps.phone_labels(&PHONE_LABELS);
+                labeled_rows(ui, &mut pass, tl!("Phone"), "phone", &mut self.phones, phone_labels, tl!("Add another phone number"));
+                // //// Neoffice — see `keeps`.
+                if keeps.everything {
+                    row(ui, tl!("Address"), |ui| label_combo(ui, "address_label", &mut self.address.label, &ADDRESS_LABELS));
+                    tall_row(ui, tl!("Street"), |ui| {
+                        multiline(ui, "street", &mut self.address.street, 2);
+                    });
+                    row(ui, tl!("City"), |ui| {
+                        pass.text(ui, "city", &mut self.address.city, f32::INFINITY, "");
+                    });
+                    row(ui, tl!("State or region"), |ui| {
+                        pass.text(ui, "region", &mut self.address.region, f32::INFINITY, "");
+                    });
+                    row(ui, tl!("Postal code"), |ui| {
+                        pass.text(ui, "postal", &mut self.address.postal_code, 140.0, "");
+                    });
+                    row(ui, tl!("Country"), |ui| {
+                        pass.text(ui, "country", &mut self.address.country, f32::INFINITY, "");
+                    });
+                    row(ui, tl!("Website"), |ui| {
+                        pass.text(ui, "website", &mut self.website, f32::INFINITY, "");
+                    });
+                    row(ui, tl!("Birthday"), |ui| {
+                        pass.date_text(ui, "birthday", &mut self.birthday, false);
+                        date_hint(ui, &self.birthday, false);
+                    });
+                }
+                // //// Neoffice — kept from one visit to the next only where the session keeps what is made here (`pim_rights`).
+                crate::pim_rights::local_only(ui, &keeps, |ui| {
+                    tall_row(ui, tl!("Categories"), |ui| category_chips(ui, &categories, &mut self.categories));
+                    row(ui, "", |ui| {
+                        ui.checkbox(&mut self.favorite, tl!("Favorite"));
+                    });
                 });
-                row(ui, tl!("City"), |ui| {
-                    pass.text(ui, "city", &mut self.address.city, f32::INFINITY, "");
-                });
-                row(ui, tl!("State or region"), |ui| {
-                    pass.text(ui, "region", &mut self.address.region, f32::INFINITY, "");
-                });
-                row(ui, tl!("Postal code"), |ui| {
-                    pass.text(ui, "postal", &mut self.address.postal_code, 140.0, "");
-                });
-                row(ui, tl!("Country"), |ui| {
-                    pass.text(ui, "country", &mut self.address.country, f32::INFINITY, "");
-                });
-                row(ui, tl!("Website"), |ui| {
-                    pass.text(ui, "website", &mut self.website, f32::INFINITY, "");
-                });
-                row(ui, tl!("Birthday"), |ui| {
-                    pass.date_text(ui, "birthday", &mut self.birthday, false);
-                    date_hint(ui, &self.birthday, false);
-                });
-                tall_row(ui, tl!("Categories"), |ui| category_chips(ui, &categories, &mut self.categories));
-                row(ui, "", |ui| {
-                    ui.checkbox(&mut self.favorite, tl!("Favorite"));
-                });
-                tall_row(ui, tl!("Notes"), |ui| {
-                    multiline(ui, "notes", &mut self.notes, 3);
-                });
+                // //// Neoffice — see `keeps`, and why the rows it doesn't keep are not offered.
+                if keeps.everything {
+                    tall_row(ui, tl!("Notes"), |ui| {
+                        multiline(ui, "notes", &mut self.notes, 3);
+                    });
+                }
+                crate::pim_rights::kept_note(ui, &keeps);
             });
             error(ui, &self.error);
             let ready = self.ready();
@@ -4916,6 +4945,19 @@ mod contact {
             // The command cut the one-line fields down.
             assert!(s.mailbox.contact(id).unwrap().first.chars().count() <= 300);
             assert!(label_text(&junk).chars().count() <= 41);
+        }
+
+        // //// Neoffice — where a new contact goes, when the owner picked it (`pim_rights`).
+        #[test]
+        fn a_new_contact_says_the_address_book_the_owner_picked() {
+            let mut f = ContactForm::new(&json!({"first": "Gus"}));
+            assert_eq!(f.command(), ("people.new", json!({"first": "Gus"})), "where the engine puts it, unless picked");
+            f.book = Some(0);
+            assert_eq!(f.command(), ("people.new", json!({"first": "Gus", "book": 0})));
+            let s = session();
+            let mut f = ContactForm::edit(&s, &json!({"id": contact_id(&s, "Dev Patel")})).unwrap();
+            f.book = Some(7);
+            assert!(f.command().1.get("book").is_none(), "an existing contact stays in its book");
         }
     }
 }

@@ -32,15 +32,16 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"category": string, "value"?: bool, "id"?: number}"#)
             .selection(needs_contact),
         CommandSpec::new("people.email", "Email", "Home › Communicate", email).pure().params(ONE).selection(needs_contact),
-        // //// Neoffice — see `people.new`: the sender would be a contact kept nowhere.
+        // //// Neoffice — see `people.new`: the sender would be a contact kept nowhere; `book` as there.
         CommandSpec::new("people.fromMessage", "Add to Contacts", "Home › Actions", from_message)
-            .params(r#"{"id"?: number} (a message; default: the selected one)"#)
+            .params(r#"{"id"?: number (a message; default: the selected one), "book"?: number (as for people.new)}"#)
             .selection(needs_message_to_add),
     ]
 }
 
 const ONE: &str = r#"{"id"?: number} (default: the selected contact)"#;
-const CONTACT: &str = r#"{"first"?: string, "last"?: string, "displayName"?: string, "company"?: string, "title"?: string, "department"?: string, "nickname"?: string, "email"?: string (primary) | "emails"?: [{"label", "value"}], "phone"?: string | "phones"?: [{"label", "value"}], "address"?: {"label", "street", "city", "region", "postalCode", "country"}, "website"?: string, "birthday"?: "YYYY-MM-DD" | null, "notes"?: string, "categories"?: [string], "favorite"?: bool}"#;
+// //// Neoffice — `book`: the address book a new contact goes to.
+const CONTACT: &str = r#"{"book"?: number (an address book's id; 0: the mailbox's own contacts; default: a server's book the account may change, else the mailbox's own), "first"?: string, "last"?: string, "displayName"?: string, "company"?: string, "title"?: string, "department"?: string, "nickname"?: string, "email"?: string (primary) | "emails"?: [{"label", "value"}], "phone"?: string | "phones"?: [{"label", "value"}], "address"?: {"label", "street", "city", "region", "postalCode", "country"}, "website"?: string, "birthday"?: "YYYY-MM-DD" | null, "notes"?: string, "categories"?: [string], "favorite"?: bool}"#;
 
 fn needs_contact(s: &Session) -> Option<&'static str> {
     if s.sel.contact.is_none() { Some("select a contact first") } else { None }
@@ -75,11 +76,13 @@ fn target(s: &Session, v: &Value) -> Result<Id, CmdError> {
 fn own_target(s: &Session, v: &Value) -> Result<Id, CmdError> {
     let id = target(s, v)?;
     if let Some(c) = s.mailbox.contact(id) {
-        // //// Neoffice — an address book the account may only read says so first, in the words of the greyed control.
+        // //// Neoffice — an address book the account may only read says so first, in the words of the greyed control; one it may change takes the change, which goes to its server (`remote_contacts`).
         if let Some(why) = super::remote_contacts::change_refusal(&s.mailbox, c) {
             return Err(fail(why));
         }
-        super::remote::changeable(&s.mailbox, &c.origin, "contact")?;
+        if super::remote_contacts::writable_book_of(&s.mailbox, c).is_none() {
+            super::remote::changeable(&s.mailbox, &c.origin, "contact")?;
+        }
     }
     Ok(id)
 }
@@ -183,16 +186,15 @@ fn apply(c: &mut Contact, v: &Value) -> Result<(), CmdError> {
 }
 
 fn new(s: &mut Session, v: &Value) -> CmdResult {
-    // //// Neoffice — never made where it would be kept nowhere (the spec's `when` says it first; this holds for any caller).
-    if let Some(why) = super::remote_contacts::adding_refusal(s) {
-        return Err(fail(why));
-    }
+    // //// Neoffice — into the address book it goes to (`book`, else a server's book the account may change), never where it would be kept nowhere (the spec's `when` says it first; this holds for any caller).
+    let book = super::remote_contacts::target_book(s, v)?;
     let mut c = Contact::default();
     apply(&mut c, v)?;
     if c.name().is_empty() {
         return Err(bad("a contact needs a name, a company or an e-mail address"));
     }
-    let id = s.mailbox.add_contact(c);
+    // //// Neoffice — made in that book, and noted for its server (`remote_contacts::add_contact`).
+    let id = super::remote_contacts::add_contact(s, book, c)?;
     s.sel.contact = Some(id);
     Ok(json!({"id": id}))
 }
@@ -204,7 +206,8 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     if c.name().is_empty() {
         return Err(fail("a contact needs a name, a company or an e-mail address"));
     }
-    *s.mailbox.contact_mut(id)? = c;
+    // //// Neoffice — in a server's address book, what its server would not keep is refused and the rest is noted for it (`remote_contacts::put_edited`).
+    super::remote_contacts::put_edited(s, c, v)?;
     Ok(json!({"id": id}))
 }
 
@@ -224,7 +227,12 @@ fn delete(s: &mut Session, v: &Value) -> CmdResult {
     // The selection moves to the neighbour in the list.
     let order = sorted(s, &s.view.people_search);
     let at = order.iter().position(|x| *x == id);
+    // //// Neoffice — one of a server's address book is deleted there too (`remote_contacts`).
+    let before = s.mailbox.contact(id).cloned();
     s.mailbox.remove_contact(id)?;
+    if let Some(before) = before {
+        super::remote_contacts::note_deleted(&mut s.mailbox, &before)?;
+    }
     if s.sel.contact == Some(id) {
         s.sel.contact = at.and_then(|i| order.get(i + 1).or_else(|| i.checked_sub(1).and_then(|j| order.get(j)))).copied();
     }
@@ -305,16 +313,16 @@ fn from_message(s: &mut Session, v: &Value) -> CmdResult {
         s.view.module = Module::People;
         return Ok(json!({"id": existing, "existing": true}));
     }
-    // //// Neoffice — see `new`: the sender is not made a contact where it would be kept nowhere.
-    if let Some(why) = super::remote_contacts::adding_refusal(s) {
-        return Err(fail(why));
-    }
+    // //// Neoffice — see `new`: into the address book it goes to, and never where it would be kept nowhere.
+    let book = super::remote_contacts::target_book(s, v)?;
     // "First Last" splits at the last space; a single word is a first name.
     let (first, last) = match from.name.trim().rsplit_once(' ') {
         Some((f, l)) => (f.trim().to_string(), l.trim().to_string()),
         None => (from.name.trim().to_string(), String::new()),
     };
-    let id = s.mailbox.add_contact(Contact { first, last, emails: vec![Labeled::new("work", from.email)], ..Default::default() });
+    // //// Neoffice — see `new`.
+    let id =
+        super::remote_contacts::add_contact(s, book, Contact { first, last, emails: vec![Labeled::new("work", from.email)], ..Default::default() })?;
     s.sel.contact = Some(id);
     s.view.module = Module::People;
     Ok(json!({"id": id, "existing": false}))

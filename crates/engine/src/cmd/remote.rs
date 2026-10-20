@@ -64,6 +64,7 @@
 //! delete one that a server keeps refuse ([`changeable`]). The calendars of an account and the
 //! mailbox's categories are taken in as the server lists them ([`apply_calendars`],
 //! [`apply_categories`]).
+// //// Neoffice — the contacts of a server's address book are the exception: they go back as events do (`remote_contacts::written`).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -780,7 +781,8 @@ pub(crate) fn room_for_change(mailbox: &Mailbox) -> Result<(), CmdError> {
 
 /// A mark for a new event ([`EventChange::token`]), in the shape of a GUID: no two the same,
 /// whenever and wherever they were made.
-fn new_token(event: Id, salt: u64) -> String {
+// //// Neoffice — a new contact of a server's address book is made with a mark of the same kind (`remote_contacts`).
+pub(crate) fn new_token(event: Id, salt: u64) -> String {
     static MADE: AtomicU64 = AtomicU64::new(0);
     let mix = |mut x: u64| {
         x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
@@ -1331,7 +1333,8 @@ pub fn retry_event_changes(s: &mut Session, account: Id) {
 }
 
 /// How long a change waits after failing `failures` times in a row (seconds).
-fn wait_after(failures: u32, asked: Option<u32>) -> i64 {
+// //// Neoffice — a change to a contact of a server's address book waits as long (`remote_contacts`).
+pub(crate) fn wait_after(failures: u32, asked: Option<u32>) -> i64 {
     let own = FIRST_WAIT.saturating_mul(1i64 << failures.saturating_sub(1).min(10)).min(LONGEST_WAIT);
     own.max(i64::from(asked.unwrap_or(0)).min(86_400))
 }
@@ -1343,7 +1346,8 @@ fn called(event: Option<&Event>) -> String {
 }
 
 /// Why the server said no, for the end of a sentence.
-fn because(error: &str) -> String {
+// //// Neoffice — and why it said no to a change to a contact (`remote_contacts`).
+pub(crate) fn because(error: &str) -> String {
     let error = error.trim();
     if error.is_empty() { String::new() } else { format!(" ({error})") }
 }
@@ -3277,6 +3281,9 @@ fn adopt(mailbox: &mut Mailbox, account: Id, id: Id, mut fresh: Event, token: &s
 pub fn merge_contacts(mailbox: &mut Mailbox, download: &ContactsDownload) -> Result<Merged, CmdError> {
     let account = owner(mailbox, download.account, &download.email)?.id;
     let mut merged = Merged::default();
+    // //// Neoffice — a contact made here that the download has under its mark is that card from now on, and what waits to be told to the server of a contact stays as it is here until then (`remote_contacts`).
+    let (waiting, adopted) = super::remote_contacts::before_merge(mailbox, account, download);
+    merged.updated += adopted;
     let mut known: HashMap<String, Id> = HashMap::new();
     let mut extra: Vec<Id> = Vec::new();
     for contact in mailbox.contacts.values().filter(|contact| contact.origin.account == account && !contact.origin.id.is_empty()) {
@@ -3295,6 +3302,11 @@ pub fn merge_contacts(mailbox: &mut Mailbox, download: &ContactsDownload) -> Res
         fresh.origin.account = account;
         // //// Neoffice — in the address book of its server that it says it is in, as the books were taken in (`remote_contacts.rs`).
         fresh.book = super::remote_contacts::book_here(mailbox, account, &remote.book);
+        // //// Neoffice — see `waiting` above.
+        if waiting.contains(&remote.id) {
+            merged.unchanged += 1;
+            continue;
+        }
         match known.get(&remote.id).and_then(|id| mailbox.contact(*id)) {
             Some(old) => {
                 fresh.id = old.id;
@@ -3316,7 +3328,9 @@ pub fn merge_contacts(mailbox: &mut Mailbox, download: &ContactsDownload) -> Res
         }
     }
     if download.complete && download.contacts.len() <= MAX_CONTACTS {
-        let gone: Vec<Id> = known.iter().filter(|(remote, _)| !seen.contains(*remote)).map(|(_, id)| *id).chain(extra).collect();
+        // //// Neoffice — one whose change waits is not removed for not being there: the server answers that change first.
+        let gone: Vec<Id> =
+            known.iter().filter(|(remote, _)| !seen.contains(*remote) && !waiting.contains(*remote)).map(|(_, id)| *id).chain(extra).collect();
         for id in gone {
             if mailbox.remove_contact(id).is_ok() {
                 merged.removed += 1;

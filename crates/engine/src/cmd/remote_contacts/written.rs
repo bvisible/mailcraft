@@ -1,0 +1,952 @@
+// SPDX-FileCopyrightText: MailCraft contributors
+// SPDX-License-Identifier: MIT OR Apache-2.0
+// //// Neoffice — added file (no upstream equivalent)
+//! What is made, changed and deleted here of the contacts of a server's address books goes to that server, as what is
+//! done to its events does ([`super::super::remote`]): the change is made here at once and noted
+//! ([`ContactChange`], in [`Mailbox::contact_changes`]: [`note_contact_created`], [`note_contact_changed`],
+//! [`note_contact_deleted`]); `sync.contactChanges` ([`contact_upload`]) says what the server is to be told, a host
+//! carries it out, and `sync.applyContactChanges` ([`apply_contact_outcomes`]) takes in what the server said.
+//!
+//! - **What goes** is what a server's card holds of a contact ([`ContactFields`]): a new contact whole, a changed one
+//!   as what differs from what the server has (the note's `base`), so that several changes before the server hears of
+//!   any are one, and a change taken back is none. A new contact goes with a mark of its own (its card's `uid`): sent
+//!   twice, it makes one card, and a download that has it before the answer came finds it again ([`before_merge`]).
+//! - **Until the server was told**, a download leaves a contact whose change or deletion waits as it is here, and does
+//!   not bring back one deleted here.
+//! - **What the server said.** Done: a new contact has the server's name for it, and the note goes (what was changed
+//!   since is noted afresh). Gone: a change has nothing to change there, and the contact goes here too; a deletion is
+//!   done. Refused: a change is put back as the server has it, a deleted contact comes back, a new one is kept on this
+//!   computer only, or (in a session that keeps nothing of its own) taken away; each says so, once. Denied: tried once
+//!   more, then refused. Failed: it waits, longer after every failure in a row.
+//! - **An answer about a change that is no longer noted** (it was undone while it was on its way): the server did what
+//!   the mailbox no longer says, so the opposite is noted.
+//! - **Nothing is dropped without a word.** A note that no longer fits the mailbox (its contact is gone, its book may
+//!   not be changed any more, another note about the same contact waits before it) is given up when the next upload is
+//!   worked out, or when an answer is taken in ([`settle_contact_changes`]), and what it changed is put back.
+//!
+//! Like mail that arrives, taking an answer in is not an undo step; and once a server was told anything, the undo
+//! history is forgotten, as it is for events.
+
+use std::collections::HashSet;
+
+use mailcraft_model::book::{
+    ContactChange, ContactChangeKind, ContactFields, ContactName, ContactOp, ContactOutcome, ContactsUpload, ContactsUploaded, MAX_CONTACT_CHANGES,
+    MAX_CONTACT_OPS,
+};
+use mailcraft_model::remote::{ContactsDownload, EventResult, clean_key};
+use mailcraft_model::{Contact, Id, Mailbox, Origin};
+use mailcraft_time::Timestamp;
+use serde_json::{Value, json};
+
+use super::super::remote::{EventsWaiting, because, keeper, new_token, owner, wait_after};
+use super::super::{bad, fail};
+use super::{writable, writable_book_of};
+use crate::{CmdError, CmdResult, Session, p};
+
+/// Most outcomes taken from one answer, and most lines said about them.
+const MAX_OUTCOMES: usize = 1_000;
+const MAX_MESSAGES: usize = 20;
+/// Longest text of a parameter error handed back.
+const MAX_SHOWN: usize = 200;
+
+/// Why a waiting change is given up ([`unfit`]).
+const NO_ACCOUNT: &str = "its account is no longer in the mailbox";
+const NO_CONTACT: &str = "the contact it is about is no longer in the contacts";
+const NOT_ITS_OWN: &str = "it doesn't match the contact it names";
+const NO_NAME: &str = "it doesn't say which contact it is about";
+const STILL_HERE: &str = "the contact it deletes is still in the contacts";
+const READ_ONLY: &str = "the contact's address book can't be changed any more";
+const SAID_TWICE: &str = "another change about the same contact waits before it";
+const TOO_MANY: &str = "too many changes were waiting";
+/// And why one that was sent is: the server no longer has the contact.
+const GONE_THERE: &str = "the server no longer has the contact";
+/// Why another change can't be noted.
+const NO_ROOM: &str = "Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first.";
+
+/// A change that waited for a server and was given up without being sent ([`settle_contact_changes`]), or one that the
+/// server no longer has the contact for. What it changed here was put back to what the server has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContactDropped {
+    /// The account whose server the change was for.
+    pub account: Id,
+    pub kind: ContactChangeKind,
+    /// Why, in words that say nothing of the contact: they go to the log.
+    pub reason: &'static str,
+    /// What the owner is told (it names the contact); empty when there is nothing to tell.
+    pub message: String,
+}
+
+/// What a command answers of the changes that were given up: how many, why (each reason once), and what the owner is
+/// told. Nothing of the contacts but their names, in the messages.
+pub fn contact_dropped_json(dropped: &[ContactDropped]) -> Value {
+    let mut reasons: Vec<String> = Vec::new();
+    for one in dropped.iter().take(MAX_OUTCOMES) {
+        let reason = format!("{:?}: {}", one.kind, one.reason);
+        if reasons.len() < MAX_MESSAGES && !reasons.contains(&reason) {
+            reasons.push(reason);
+        }
+    }
+    let messages: Vec<&str> = dropped.iter().map(|one| one.message.as_str()).filter(|line| !line.is_empty()).take(MAX_MESSAGES).collect();
+    json!({"count": dropped.len(), "reasons": reasons, "messages": messages})
+}
+
+/// A name for a line about a contact: short, and never empty.
+fn called(contact: Option<&Contact>) -> String {
+    let name: String = contact.map(Contact::name).unwrap_or_default().trim().chars().filter(|c| !c.is_control()).take(60).collect();
+    if name.is_empty() { "a contact".into() } else { format!("\"{name}\"") }
+}
+
+/// The same, at the start of a sentence.
+fn called_first(contact: Option<&Contact>) -> String {
+    let name = called(contact);
+    if name == "a contact" { "A contact".into() } else { name }
+}
+
+// ---- what is noted ----
+
+/// Whether one more change to a contact may be noted: a mailbox that can't reach its server for a long time doesn't
+/// pile them up without end.
+fn room(mailbox: &Mailbox) -> Result<(), CmdError> {
+    if mailbox.contact_changes.len() >= MAX_CONTACT_CHANGES { Err(fail(NO_ROOM)) } else { Ok(()) }
+}
+
+/// The contact `id` was made in an address book of a server (it names the book, and its account): the server is to be
+/// told. Nothing to do for one of the mailbox's own; refused for a book whose contacts may not be changed.
+pub(crate) fn note_contact_created(s: &mut Session, id: Id) -> Result<(), CmdError> {
+    let Some(contact) = s.mailbox.contact(id) else { return Ok(()) };
+    if contact.book == 0 {
+        return Ok(());
+    }
+    let account = match writable_book_of(&s.mailbox, contact) {
+        Some(book) => book.origin.account,
+        None => return Err(fail(super::NO_ADDING)),
+    };
+    room(&s.mailbox)?;
+    let token = new_token(id, s.rev() ^ s.now().unsigned_abs().rotate_left(32));
+    let mailbox = &mut s.mailbox;
+    let contact = mailbox.contact_mut(id)?;
+    contact.origin = Origin { account, ..Default::default() };
+    // (Its card's own mark, which an exported card keeps too.)
+    if contact.uid.is_empty() {
+        contact.uid.clone_from(&token);
+    }
+    mailbox.contact_changes.retain(|change| !(change.kind == ContactChangeKind::Create && change.contact == id));
+    mailbox.contact_changes.push(ContactChange { account, kind: ContactChangeKind::Create, contact: id, token, ..Default::default() });
+    Ok(())
+}
+
+/// A contact was changed here; `before` is what it was. When it is in a server's book, the server is to be told what
+/// differs from its own copy: `before`, or what it was before an earlier change that is still waiting. A change that
+/// takes everything back to that leaves nothing to tell.
+pub(crate) fn note_contact_changed(mailbox: &mut Mailbox, before: &Contact) -> Result<(), CmdError> {
+    let Some(now) = mailbox.contact(before.id).cloned() else { return Ok(()) };
+    if writable_book_of(mailbox, &now).is_none() {
+        return Ok(());
+    }
+    // One the server doesn't have yet is sent as it is when it goes.
+    if now.origin.id.is_empty() {
+        return Ok(());
+    }
+    let account = now.origin.account;
+    let waiting = |change: &ContactChange| change.kind == ContactChangeKind::Update && change.account == account && change.remote == now.origin.id;
+    match mailbox.contact_changes.iter().position(waiting) {
+        Some(at) => {
+            let back =
+                mailbox.contact_changes.get(at).and_then(|change| change.base.as_deref()).is_some_and(|base| changed_fields(base, &now).is_empty());
+            if back {
+                mailbox.contact_changes.remove(at);
+            } else if let Some(change) = mailbox.contact_changes.get_mut(at) {
+                // Something new to say: it doesn't wait out what the last try earned.
+                change.contact = now.id;
+                change.retry_at = 0;
+            }
+        }
+        None if changed_fields(before, &now).is_empty() => {}
+        None => {
+            room(mailbox)?;
+            mailbox.contact_changes.push(ContactChange {
+                account,
+                kind: ContactChangeKind::Update,
+                contact: now.id,
+                remote: now.origin.id.clone(),
+                base: Some(Box::new(before.clone())),
+                ..Default::default()
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A contact was deleted here; `before` is what it was. When it is in a server's book, the server is to delete it too;
+/// one the server never had needs no telling (its note to make it goes).
+pub(crate) fn note_contact_deleted(mailbox: &mut Mailbox, before: &Contact) -> Result<(), CmdError> {
+    if before.book == 0 || keeper(mailbox, &before.origin).is_none() {
+        return Ok(());
+    }
+    let account = before.origin.account;
+    if before.origin.id.is_empty() {
+        mailbox.contact_changes.retain(|change| !(change.account == account && change.contact == before.id && change.remote.is_empty()));
+        return Ok(());
+    }
+    let remote = before.origin.id.clone();
+    // A change that was waiting is overtaken; what the server has is still what it was before it.
+    let waiting = |change: &ContactChange| change.kind == ContactChangeKind::Update && change.account == account && change.remote == remote;
+    let base = match mailbox.contact_changes.iter().position(waiting) {
+        Some(at) => mailbox.contact_changes.remove(at).base,
+        None => {
+            room(mailbox)?;
+            None
+        }
+    };
+    let base = base.unwrap_or_else(|| Box::new(before.clone()));
+    mailbox.contact_changes.retain(|change| !(change.account == account && change.remote == remote));
+    mailbox.contact_changes.push(ContactChange {
+        account,
+        kind: ContactChangeKind::Delete,
+        contact: before.id,
+        remote,
+        base: Some(base),
+        ..Default::default()
+    });
+    Ok(())
+}
+
+// ---- what is sent ----
+
+/// The name of a contact as a card holds it.
+fn name_of(contact: &Contact) -> ContactName {
+    ContactName { first: contact.first.trim().to_string(), last: contact.last.trim().to_string(), display: contact.display_name.trim().to_string() }
+}
+
+/// Everything a server's card holds of `contact`: what a new one is made with.
+pub fn contact_fields(contact: &Contact) -> ContactFields {
+    let mut fields = ContactFields {
+        name: Some(name_of(contact)),
+        company: Some(contact.company.trim().to_string()),
+        title: Some(contact.title.trim().to_string()),
+        emails: Some(contact.emails.clone()),
+        phones: Some(contact.phones.clone()),
+    };
+    fields.tidy();
+    fields
+}
+
+/// What a server's card holds of `now` that differs from `base`: what a change of a contact the server has tells it.
+pub fn changed_fields(base: &Contact, now: &Contact) -> ContactFields {
+    fn differs<T: PartialEq>(was: Option<T>, is: Option<T>) -> Option<T> {
+        if was == is { None } else { is }
+    }
+    let (was, is) = (contact_fields(base), contact_fields(now));
+    ContactFields {
+        name: differs(was.name, is.name),
+        company: differs(was.company, is.company),
+        title: differs(was.title, is.title),
+        emails: differs(was.emails, is.emails),
+        phones: differs(was.phones, is.phones),
+    }
+}
+
+/// `contact` with what `fields` say put into it: the contact as the server has it once it took them.
+fn put_fields(contact: &mut Contact, fields: &ContactFields) {
+    if let Some(name) = &fields.name {
+        (contact.first, contact.last, contact.display_name) = (name.first.clone(), name.last.clone(), name.display.clone());
+    }
+    if let Some(company) = &fields.company {
+        contact.company.clone_from(company);
+    }
+    if let Some(title) = &fields.title {
+        contact.title.clone_from(title);
+    }
+    if let Some(emails) = &fields.emails {
+        contact.emails.clone_from(emails);
+    }
+    if let Some(phones) = &fields.phones {
+        contact.phones.clone_from(phones);
+    }
+}
+
+/// What the server calls the book `contact` is in, here; empty for none.
+fn book_name(mailbox: &Mailbox, contact: &Contact) -> String {
+    mailbox
+        .address_book(contact.book)
+        .filter(|book| book.origin.account == contact.origin.account)
+        .map(|book| book.origin.id.clone())
+        .unwrap_or_default()
+}
+
+/// How much of an account's contacts waits to go to its server: due now, all of them, and when the next held back is
+/// due ([`EventsWaiting`], as for its events).
+pub fn contacts_waiting(s: &Session, account: Id) -> EventsWaiting {
+    let mut waiting = EventsWaiting::default();
+    if !s.mailbox.contact_changes.iter().any(|change| change.account == account) {
+        return waiting;
+    }
+    let (now, here) = (s.now(), contacts_here(&s.mailbox));
+    for change in s.mailbox.contact_changes.iter().filter(|change| change.account == account && unfit(&s.mailbox, change, &here).is_none()) {
+        waiting.total += 1;
+        if change.retry_at <= now {
+            waiting.due += 1;
+        } else {
+            waiting.next = Some(waiting.next.map_or(change.retry_at, |next| next.min(change.retry_at)));
+        }
+    }
+    waiting
+}
+
+/// What the server of `account` is to be told now of the contacts made, changed and deleted here in its books: the
+/// changes that are due, oldest first, [`MAX_CONTACT_OPS`] at most.
+pub fn contact_upload(s: &Session, account: Id) -> Result<ContactsUpload, CmdError> {
+    let owner = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
+    let (mailbox, now) = (&s.mailbox, s.now());
+    let here = contacts_here(mailbox);
+    let mut ops = Vec::new();
+    for change in mailbox.contact_changes.iter().filter(|change| change.account == account && change.retry_at <= now) {
+        if ops.len() >= MAX_CONTACT_OPS {
+            break;
+        }
+        if unfit(mailbox, change, &here).is_some() {
+            continue;
+        }
+        let contact = mailbox.contact(change.contact);
+        let (fields, book) = match (change.kind, contact, change.base.as_deref()) {
+            (ContactChangeKind::Create, Some(contact), _) => (contact_fields(contact), book_name(mailbox, contact)),
+            (ContactChangeKind::Update, Some(contact), Some(base)) => (changed_fields(base, contact), book_name(mailbox, contact)),
+            (ContactChangeKind::Delete, _, base) => (ContactFields::default(), base.map(|base| book_name(mailbox, base)).unwrap_or_default()),
+            _ => continue,
+        };
+        // Changed and changed back: nothing to say.
+        if change.kind == ContactChangeKind::Update && fields.is_empty() {
+            continue;
+        }
+        ops.push(ContactOp { kind: change.kind, contact: change.contact, remote: change.remote.clone(), token: change.token.clone(), book, fields });
+    }
+    Ok(ContactsUpload { ops, ..Default::default() }.for_account(owner))
+}
+
+// ---- what no longer fits ----
+
+/// What the mailbox has of each server's contacts, by account and by what the server calls them: for [`unfit`]. Nothing
+/// is listed when no deletion waits (nothing would ask).
+fn contacts_here(mailbox: &Mailbox) -> HashSet<(Id, &str)> {
+    if !mailbox.contact_changes.iter().any(|change| change.kind == ContactChangeKind::Delete) {
+        return HashSet::new();
+    }
+    mailbox.contacts.values().filter(|c| !c.origin.id.is_empty()).map(|c| (c.origin.account, c.origin.id.as_str())).collect()
+}
+
+/// Why a noted change no longer hangs together with the mailbox, when it doesn't: only one that does is sent (a file
+/// from elsewhere could otherwise have the server told anything).
+fn unfit(mailbox: &Mailbox, change: &ContactChange, here: &HashSet<(Id, &str)>) -> Option<&'static str> {
+    if mailbox.account(change.account).is_none() {
+        return Some(NO_ACCOUNT);
+    }
+    let named = |name: &str| !name.is_empty() && clean_key(name) == name;
+    let of_account = |contact: &&Contact| contact.origin.account == change.account;
+    let changeable = |contact: &Contact| writable_book_of(mailbox, contact).is_some();
+    match change.kind {
+        ContactChangeKind::Create if change.token.is_empty() => Some(NO_NAME),
+        ContactChangeKind::Create => match mailbox.contact(change.contact).filter(of_account) {
+            None => Some(NO_CONTACT),
+            Some(contact) if !contact.origin.id.is_empty() => Some(NOT_ITS_OWN),
+            Some(contact) if !changeable(contact) => Some(READ_ONLY),
+            Some(_) => None,
+        },
+        ContactChangeKind::Update if !named(&change.remote) || change.base.is_none() => Some(NO_NAME),
+        ContactChangeKind::Update => match mailbox.contact(change.contact).filter(of_account) {
+            None => Some(NO_CONTACT),
+            Some(contact) if contact.origin.id != change.remote => Some(NOT_ITS_OWN),
+            Some(contact) if !changeable(contact) => Some(READ_ONLY),
+            Some(_) => None,
+        },
+        ContactChangeKind::Delete if !named(&change.remote) => Some(NO_NAME),
+        ContactChangeKind::Delete => {
+            // The contact it deletes is one that was here, and isn't any more; and its book still lets it be deleted.
+            let base = change.base.as_deref();
+            let was_here = base.is_none_or(|base| base.origin.id == change.remote && base.origin.account == change.account);
+            let deletable = base.is_none_or(|base| {
+                mailbox
+                    .address_book(base.book)
+                    .is_some_and(|book| book.origin.account == change.account && writable(mailbox, book) && book.may_remove)
+            });
+            if !was_here {
+                Some(NOT_ITS_OWN)
+            } else if here.contains(&(change.account, change.remote.as_str())) {
+                Some(STILL_HERE)
+            } else if !deletable {
+                Some(READ_ONLY)
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Whether a noted change has nothing to tell the server any more: the contact is, in everything a server is told, as
+/// the server has it.
+fn says_nothing(mailbox: &Mailbox, change: &ContactChange) -> bool {
+    change.kind == ContactChangeKind::Update
+        && match (change.base.as_deref(), mailbox.contact(change.contact)) {
+            (Some(base), Some(contact)) => changed_fields(base, contact).is_empty(),
+            _ => false,
+        }
+}
+
+/// Give up the noted changes that no longer hang together with the mailbox, and all but the first about any one
+/// contact; none without a word ([`give_up`]). `keeps_local`: whether a contact that can't be on its server stays
+/// here, as one of the mailbox's own.
+fn tidy_contact_changes(mailbox: &mut Mailbox, keeps_local: bool) -> Vec<ContactDropped> {
+    if mailbox.contact_changes.is_empty() {
+        return Vec::new();
+    }
+    /// A new contact is known by its id here, anything else by what the server calls it.
+    fn about(change: &ContactChange) -> (Id, &str, Id) {
+        match change.kind {
+            ContactChangeKind::Create => (change.account, "", change.contact),
+            _ => (change.account, change.remote.as_str(), 0),
+        }
+    }
+    let mut kept: Vec<ContactChange> = Vec::new();
+    let mut given_up: Vec<(ContactChange, &'static str)> = Vec::new();
+    let mut said_nothing = 0usize;
+    {
+        let here = contacts_here(mailbox);
+        let mut seen: HashSet<(Id, &str, Id)> = HashSet::new();
+        for change in &mailbox.contact_changes {
+            let why = unfit(mailbox, change, &here).or_else(|| (!seen.insert(about(change))).then_some(SAID_TWICE));
+            match why {
+                Some(reason) => given_up.push((change.clone(), reason)),
+                None if says_nothing(mailbox, change) => said_nothing += 1,
+                None if kept.len() >= MAX_CONTACT_CHANGES => given_up.push((change.clone(), TOO_MANY)),
+                None => kept.push(change.clone()),
+            }
+        }
+    }
+    if kept.len() == mailbox.contact_changes.len() {
+        return Vec::new();
+    }
+    if said_nothing > 0 {
+        log::debug!("contacts: {said_nothing} waiting changes had nothing left to send");
+    }
+    mailbox.contact_changes = kept;
+    given_up.iter().take(MAX_OUTCOMES).map(|(change, reason)| give_up(mailbox, change, reason, keeps_local)).collect()
+}
+
+/// Take a contact that can't be on its server out of its book and keep it as one of the mailbox's own, or (`keeps_local`
+/// false: the session keeps nothing of its own) take it away. Whether it is kept.
+fn keep_here(mailbox: &mut Mailbox, id: Id, keeps_local: bool) -> bool {
+    if !keeps_local {
+        let _ = mailbox.remove_contact(id);
+        return false;
+    }
+    match mailbox.contact_mut(id) {
+        Ok(contact) => {
+            contact.book = 0;
+            contact.origin = Origin::default();
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Put a contact back as `base` says the server has it, under its id here; what is kept here only (its categories,
+/// whether it is a favourite) stays as it is now.
+fn put_back(mailbox: &mut Mailbox, id: Id, base: &Contact) {
+    match mailbox.contact_mut(id) {
+        Ok(contact) => {
+            let (categories, favorite) = (std::mem::take(&mut contact.categories), contact.favorite);
+            *contact = Contact { id, categories, favorite, ..base.clone() };
+        }
+        // (One that was deleted here comes back under the id it had when that is still free.)
+        Err(_) => {
+            mailbox.add_contact(Contact { id, ..base.clone() });
+        }
+    }
+}
+
+/// Give a waiting change up for `reason`: what it changed here is put back to what the server has, where that can be
+/// told, and what became of it is said, for the owner (who is named the contact) and for the log (which is not).
+fn give_up(mailbox: &mut Mailbox, change: &ContactChange, reason: &'static str, keeps_local: bool) -> ContactDropped {
+    let here = mailbox.contact(change.contact).filter(|contact| contact.origin.account == change.account).cloned();
+    let name = called_first(here.as_ref().or(change.base.as_deref()));
+    let message = match (reason, change.kind) {
+        // (The first of them still goes; an account that was removed took its contacts along.)
+        (SAID_TWICE | NO_ACCOUNT, _) => String::new(),
+        (READ_ONLY, ContactChangeKind::Update) => {
+            if let (Some(base), Some(contact)) = (change.base.as_deref(), here.as_ref())
+                && base.origin.id == contact.origin.id
+            {
+                put_back(mailbox, contact.id, base);
+            }
+            format!("{name}: its address book can't be changed any more, so the change made here was undone.")
+        }
+        (READ_ONLY, ContactChangeKind::Create) => {
+            if keep_here(mailbox, change.contact, keeps_local) {
+                format!("{name} was not sent to the server: its address book can't be changed any more. It is kept on this computer only.")
+            } else {
+                format!("{name} was not sent to the server: its address book can't be changed any more. It was removed here.")
+            }
+        }
+        (READ_ONLY, ContactChangeKind::Delete) => {
+            if let Some(base) = change.base.as_deref() {
+                put_back(mailbox, change.contact, base);
+            }
+            format!("{name}: its address book can't be changed any more, so it was not deleted there and is back in the contacts.")
+        }
+        (NO_CONTACT, _) => format!("A change to {} was not sent: it is no longer in the contacts.", called(change.base.as_deref())),
+        _ => "A contact change that was waiting to be sent no longer matched the contacts. It was not sent.".to_string(),
+    };
+    log::warn!("contacts: a waiting change was given up without being sent ({:?}): {reason}", change.kind);
+    ContactDropped { account: change.account, kind: change.kind, reason, message }
+}
+
+/// Give up the waiting changes that can't be sent any more ([`tidy_contact_changes`]), outside of an answer or a
+/// download: before a host is told what to send. What was given up, for the host to tell the owner and to log.
+pub fn settle_contact_changes(s: &mut Session) -> Vec<ContactDropped> {
+    let before = s.mailbox.contact_changes.len();
+    let keeps_local = s.keeps_local;
+    let dropped = tidy_contact_changes(&mut s.mailbox, keeps_local);
+    if s.mailbox.contact_changes.len() != before || !dropped.is_empty() {
+        s.mailbox_changed();
+    }
+    dropped
+}
+
+// ---- what the server said ----
+
+/// What taking in the answers to a [`ContactsUpload`] came to.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ContactsApplied {
+    /// Changes the server took on (or that needed no more telling).
+    pub done: usize,
+    /// Changes the server refused for good: put back as they were, or kept here only.
+    pub refused: usize,
+    /// Changes that couldn't be sent and wait to be tried again.
+    pub failed: usize,
+    /// The account may not change its contacts on the server: its owner is to be asked.
+    pub denied: bool,
+    /// What still waits, after this.
+    pub waiting: usize,
+    /// What the owner should hear, a line each.
+    pub messages: Vec<String>,
+    /// Changes given up without the server taking them, or about a contact the server no longer has.
+    pub dropped: Vec<ContactDropped>,
+}
+
+impl ContactsApplied {
+    fn say(&mut self, line: String) {
+        if self.messages.len() < MAX_MESSAGES && !line.is_empty() && !self.messages.contains(&line) {
+            self.messages.push(line);
+        }
+    }
+
+    fn json(&self) -> Value {
+        json!({
+            "done": self.done,
+            "refused": self.refused,
+            "failed": self.failed,
+            "denied": self.denied,
+            "waiting": self.waiting,
+            "messages": self.messages,
+            "dropped": contact_dropped_json(&self.dropped),
+        })
+    }
+}
+
+/// Note that a change couldn't be sent, or may not be: it waits, longer after each failure. `true` when it has been
+/// denied before and is now to be given up.
+fn held_back(change: &mut ContactChange, outcome: &ContactOutcome, now: Timestamp) -> bool {
+    if outcome.result == EventResult::Denied {
+        if change.denied {
+            return true;
+        }
+        change.denied = true;
+    }
+    change.failures = change.failures.saturating_add(1);
+    change.retry_at = now.saturating_add(wait_after(change.failures, outcome.retry_after));
+    change.error.clone_from(&outcome.error);
+    false
+}
+
+/// What the answers are taken in with.
+struct Taking<'a> {
+    mailbox: &'a mut Mailbox,
+    account: Id,
+    now: Timestamp,
+    keeps_local: bool,
+    applied: ContactsApplied,
+    /// The server was told something: the undo history is not what it has any more.
+    told: bool,
+    /// For a new mark: what is mixed into it.
+    salt: u64,
+}
+
+/// Take in what a server said to a [`ContactsUpload`] ([`ContactsUploaded`]): see the module.
+pub fn apply_contact_outcomes(s: &mut Session, uploaded: &ContactsUploaded) -> Result<ContactsApplied, CmdError> {
+    let account = owner(&s.mailbox, uploaded.account, &uploaded.email)?.id;
+    let (now, keeps_local, salt) = (s.now(), s.keeps_local, s.rev());
+    let (changes, contacts) = (s.mailbox.contact_changes.clone(), s.mailbox.contacts.clone());
+    let mut taking = Taking { mailbox: &mut s.mailbox, account, now, keeps_local, applied: ContactsApplied::default(), told: false, salt };
+    for outcome in uploaded.outcomes.iter().take(MAX_OUTCOMES) {
+        let mut outcome = outcome.clone();
+        outcome.tidy();
+        match outcome.op.kind {
+            ContactChangeKind::Create => taking.created(&outcome),
+            ContactChangeKind::Update => taking.updated(&outcome),
+            ContactChangeKind::Delete => taking.deleted(&outcome),
+        }
+    }
+    let Taking { mut applied, told, .. } = taking;
+    for dropped in tidy_contact_changes(&mut s.mailbox, keeps_local) {
+        applied.say(dropped.message.clone());
+        applied.dropped.push(dropped);
+    }
+    applied.waiting = s.mailbox.contact_changes.iter().filter(|change| change.account == account).count();
+    if told {
+        s.forget_history();
+    }
+    if told || s.mailbox.contact_changes != changes || s.mailbox.contacts != contacts {
+        s.mailbox_changed();
+    }
+    Ok(applied)
+}
+
+impl Taking<'_> {
+    /// The contact here the server calls `remote`.
+    fn by_remote(&self, remote: &str) -> Option<Id> {
+        self.mailbox.contacts.values().find(|c| c.origin.account == self.account && c.origin.id == remote).map(|c| c.id)
+    }
+
+    /// The answer to making a contact.
+    fn created(&mut self, outcome: &ContactOutcome) {
+        let (op, account, now) = (&outcome.op, self.account, self.now);
+        let noted = |change: &ContactChange| {
+            change.kind == ContactChangeKind::Create && change.account == account && !op.token.is_empty() && change.token == op.token
+        };
+        let at = self.mailbox.contact_changes.iter().position(noted);
+        let contact =
+            at.and_then(|at| self.mailbox.contact_changes.get(at)).map(|change| change.contact).filter(|id| self.mailbox.contact(*id).is_some());
+        match outcome.result {
+            EventResult::Done if outcome.remote.is_empty() => {
+                // Made, but under what name wasn't said: it goes again (with its mark, which makes no second one).
+                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
+                    change.failures = change.failures.saturating_add(1);
+                    change.retry_at = now.saturating_add(wait_after(change.failures, None));
+                }
+                self.applied.failed += 1;
+            }
+            EventResult::Done => {
+                self.told = true;
+                self.applied.done += 1;
+                let (Some(at), Some(id)) = (at, contact) else {
+                    // Undone, or deleted again, while it was on its way: the server is to delete it.
+                    let about = |change: &ContactChange| change.account == account && change.remote == outcome.remote;
+                    if !self.mailbox.contact_changes.iter().any(about) && self.by_remote(&outcome.remote).is_none() {
+                        self.mailbox.contact_changes.push(ContactChange {
+                            account,
+                            kind: ContactChangeKind::Delete,
+                            remote: outcome.remote.clone(),
+                            ..Default::default()
+                        });
+                    }
+                    return;
+                };
+                let Ok(contact) = self.mailbox.contact_mut(id) else { return };
+                contact.origin.id.clone_from(&outcome.remote);
+                // What the server has is what was sent; what was changed here since is still to go.
+                let mut sent = contact.clone();
+                put_fields(&mut sent, &op.fields);
+                let more = !changed_fields(&sent, contact).is_empty();
+                self.mailbox.contact_changes.remove(at);
+                if more {
+                    self.mailbox.contact_changes.push(ContactChange {
+                        account,
+                        kind: ContactChangeKind::Update,
+                        contact: id,
+                        remote: outcome.remote.clone(),
+                        base: Some(Box::new(sent)),
+                        ..Default::default()
+                    });
+                }
+            }
+            EventResult::Failed => {
+                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
+                    held_back(change, outcome, now);
+                    self.applied.failed += 1;
+                }
+            }
+            EventResult::Denied | EventResult::Refused | EventResult::Gone => {
+                let Some(at) = at else { return };
+                let give_up = match self.mailbox.contact_changes.get_mut(at) {
+                    Some(change) if outcome.result == EventResult::Denied => held_back(change, outcome, now),
+                    _ => true,
+                };
+                if !give_up {
+                    self.applied.denied = true;
+                    self.applied.failed += 1;
+                    return;
+                }
+                self.mailbox.contact_changes.remove(at);
+                self.applied.refused += 1;
+                // What was written is not thrown away where it can be kept.
+                let name = called(contact.and_then(|id| self.mailbox.contact(id)));
+                let kept = contact.is_some_and(|id| keep_here(self.mailbox, id, self.keeps_local));
+                let then = if kept { " It is kept on this computer only." } else { " It was removed here." };
+                self.applied.say(format!("The server wouldn't take {name}{}.{then}", because(&outcome.error)));
+            }
+        }
+    }
+
+    /// The answer to changing a contact.
+    fn updated(&mut self, outcome: &ContactOutcome) {
+        let (op, account, now) = (&outcome.op, self.account, self.now);
+        if op.remote.is_empty() {
+            return;
+        }
+        let about = |change: &ContactChange| change.account == account && change.remote == op.remote && change.kind != ContactChangeKind::Create;
+        let at = self.mailbox.contact_changes.iter().position(about);
+        let contact = self.by_remote(&op.remote);
+        match outcome.result {
+            EventResult::Done => {
+                self.told = true;
+                self.applied.done += 1;
+                let here = contact.and_then(|id| self.mailbox.contact(id)).cloned();
+                match at {
+                    // The server has what was sent now; what was changed here since is still to go (and what is to be
+                    // put back, should a deletion be refused, is this).
+                    Some(at) => {
+                        let mut settled = false;
+                        if let Some(change) = self.mailbox.contact_changes.get_mut(at) {
+                            if let Some(base) = change.base.as_deref_mut() {
+                                put_fields(base, &op.fields);
+                            }
+                            change.failures = 0;
+                            change.retry_at = 0;
+                            change.denied = false;
+                            change.error.clear();
+                            settled = change.kind == ContactChangeKind::Update
+                                && match (change.base.as_deref(), here.as_ref()) {
+                                    (Some(base), Some(contact)) => changed_fields(base, contact).is_empty(),
+                                    _ => true,
+                                };
+                        }
+                        if settled {
+                            self.mailbox.contact_changes.remove(at);
+                        }
+                    }
+                    // Undone while it was on its way: the server has the change and the mailbox doesn't, so what the
+                    // mailbox says is to be sent after it.
+                    None => {
+                        let Some(contact) = here else { return };
+                        let mut sent = contact.clone();
+                        put_fields(&mut sent, &op.fields);
+                        if !changed_fields(&sent, &contact).is_empty() && self.mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
+                            self.mailbox.contact_changes.push(ContactChange {
+                                account,
+                                kind: ContactChangeKind::Update,
+                                contact: contact.id,
+                                remote: contact.origin.id.clone(),
+                                base: Some(Box::new(sent)),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+            }
+            EventResult::Gone => {
+                // The server no longer has it: there is nothing to change, here either.
+                let Some(at) = at else { return };
+                let deleting = self.mailbox.contact_changes.get(at).is_some_and(|change| change.kind == ContactChangeKind::Delete);
+                self.mailbox.contact_changes.remove(at);
+                self.applied.done += 1;
+                if !deleting && let Some(id) = contact {
+                    let name = called_first(self.mailbox.contact(id));
+                    let _ = self.mailbox.remove_contact(id);
+                    self.applied.refused += 1;
+                    let message = format!("{name} is no longer on the server, so it couldn't be changed there. It was removed here too.");
+                    log::warn!("contacts: a change was not taken: {GONE_THERE}");
+                    self.applied.say(message.clone());
+                    self.applied.dropped.push(ContactDropped { account, kind: ContactChangeKind::Update, reason: GONE_THERE, message });
+                }
+            }
+            EventResult::Failed => {
+                if let Some(change) =
+                    at.and_then(|at| self.mailbox.contact_changes.get_mut(at)).filter(|change| change.kind == ContactChangeKind::Update)
+                {
+                    held_back(change, outcome, now);
+                    self.applied.failed += 1;
+                }
+            }
+            EventResult::Denied | EventResult::Refused => {
+                let Some(at) = at else { return };
+                let Some(change) = self.mailbox.contact_changes.get_mut(at).filter(|change| change.kind == ContactChangeKind::Update) else { return };
+                if outcome.result == EventResult::Denied && !held_back(change, outcome, now) {
+                    self.applied.denied = true;
+                    self.applied.failed += 1;
+                    return;
+                }
+                let change = self.mailbox.contact_changes.remove(at);
+                self.applied.refused += 1;
+                let name = called(contact.and_then(|id| self.mailbox.contact(id)));
+                if let (Some(base), Some(id)) = (change.base.as_deref(), contact) {
+                    put_back(self.mailbox, id, base);
+                }
+                self.applied.say(format!("The server wouldn't take the change to {name}{}. It was put back as it was.", because(&outcome.error)));
+            }
+        }
+    }
+
+    /// The answer to deleting a contact.
+    fn deleted(&mut self, outcome: &ContactOutcome) {
+        let (op, account, now) = (&outcome.op, self.account, self.now);
+        if op.remote.is_empty() {
+            return;
+        }
+        let noted = |change: &ContactChange| change.kind == ContactChangeKind::Delete && change.account == account && change.remote == op.remote;
+        let at = self.mailbox.contact_changes.iter().position(noted);
+        match outcome.result {
+            EventResult::Done | EventResult::Gone => {
+                self.told |= outcome.result == EventResult::Done;
+                self.applied.done += 1;
+                if let Some(at) = at {
+                    self.mailbox.contact_changes.remove(at);
+                    return;
+                }
+                // Undone while it was on its way: the contact is here again and the server no longer has it. It is
+                // made anew there, where its book still takes it; else it goes here too.
+                self.mailbox.contact_changes.retain(|change| !(change.account == account && change.remote == op.remote));
+                let Some(id) = self.by_remote(&op.remote) else { return };
+                let again = self.mailbox.contact(id).is_some_and(|contact| writable_book_of(self.mailbox, contact).is_some());
+                if again && self.mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
+                    // The mark is new: the one card the server had under the old one is gone.
+                    let token = new_token(id, self.salt ^ now.unsigned_abs());
+                    if let Ok(contact) = self.mailbox.contact_mut(id) {
+                        contact.origin = Origin { account, ..Default::default() };
+                    }
+                    self.mailbox.contact_changes.push(ContactChange {
+                        account,
+                        kind: ContactChangeKind::Create,
+                        contact: id,
+                        token,
+                        ..Default::default()
+                    });
+                } else {
+                    let name = called_first(self.mailbox.contact(id));
+                    let _ = self.mailbox.remove_contact(id);
+                    self.applied
+                        .say(format!("{name} was already deleted on the server when the deletion was undone here; it couldn't be brought back."));
+                }
+            }
+            EventResult::Failed => {
+                if let Some(change) = at.and_then(|at| self.mailbox.contact_changes.get_mut(at)) {
+                    held_back(change, outcome, now);
+                    self.applied.failed += 1;
+                }
+            }
+            EventResult::Denied | EventResult::Refused => {
+                let Some(at) = at else { return };
+                let Some(change) = self.mailbox.contact_changes.get_mut(at) else { return };
+                if outcome.result == EventResult::Denied && !held_back(change, outcome, now) {
+                    self.applied.denied = true;
+                    self.applied.failed += 1;
+                    return;
+                }
+                let change = self.mailbox.contact_changes.remove(at);
+                self.applied.refused += 1;
+                let name = called(change.base.as_deref());
+                // Back in the contacts, under the id it had when that is still free.
+                let back = change.base.as_deref().is_some_and(|base| {
+                    put_back(self.mailbox, change.contact, base);
+                    true
+                });
+                let then = if back { " It is back in the contacts." } else { "" };
+                self.applied.say(format!("The server wouldn't delete {name}{}.{then}", because(&outcome.error)));
+            }
+        }
+    }
+}
+
+// ---- a download ----
+
+/// Before a download of `account`'s contacts is merged ([`super::super::remote::merge_contacts`]): a contact made here
+/// whose card the download has under the mark it was made with (its answer was lost on the way) is that card from now
+/// on, its note to make it done (what differs here from the card is noted as a change). What it answers: what the
+/// server calls the contacts whose change or deletion here it is yet to be told, which the merge leaves as they are
+/// here (and doesn't bring back); and how many contacts were found again so.
+pub(crate) fn before_merge(mailbox: &mut Mailbox, account: Id, download: &ContactsDownload) -> (HashSet<String>, usize) {
+    let mut adopted = 0usize;
+    let making: Vec<(String, Id)> = mailbox
+        .contact_changes
+        .iter()
+        .filter(|change| change.account == account && change.kind == ContactChangeKind::Create && !change.token.is_empty())
+        .map(|change| (change.token.clone(), change.contact))
+        .collect();
+    if !making.is_empty() {
+        for remote in download.contacts.iter().take(mailcraft_model::remote::MAX_CONTACTS) {
+            let mut remote = remote.clone();
+            remote.tidy();
+            let Some((token, id)) = making.iter().find(|(token, _)| !remote.uid.is_empty() && *token == remote.uid) else { continue };
+            let taken = mailbox.contacts.values().any(|c| c.origin.account == account && c.origin.id == remote.id);
+            if remote.id.is_empty() || taken {
+                continue;
+            }
+            let Some(here) = mailbox.contact(*id).cloned().filter(|c| c.origin.account == account && c.origin.id.is_empty()) else { continue };
+            // The card as the server has it, with what is kept here only.
+            let mut card = super::super::remote::contact_from_remote(&remote);
+            (card.id, card.book, card.uid) = (here.id, here.book, here.uid.clone());
+            (card.categories, card.favorite) = (here.categories.clone(), here.favorite);
+            card.origin = Origin { account, id: remote.id.clone(), ..card.origin };
+            let mut found = here.clone();
+            found.origin = card.origin.clone();
+            mailbox
+                .contact_changes
+                .retain(|change| !(change.account == account && change.kind == ContactChangeKind::Create && &change.token == token));
+            let more = !changed_fields(&card, &found).is_empty();
+            if let Ok(contact) = mailbox.contact_mut(here.id) {
+                *contact = found;
+            }
+            if more && mailbox.contact_changes.len() < MAX_CONTACT_CHANGES {
+                mailbox.contact_changes.push(ContactChange {
+                    account,
+                    kind: ContactChangeKind::Update,
+                    contact: here.id,
+                    remote: remote.id.clone(),
+                    base: Some(Box::new(card)),
+                    ..Default::default()
+                });
+            }
+            log::debug!("contacts: a contact made here was found again on the server by its mark");
+            adopted += 1;
+        }
+    }
+    let waiting = mailbox
+        .contact_changes
+        .iter()
+        .filter(|change| change.account == account && change.kind != ContactChangeKind::Create && !change.remote.is_empty())
+        .map(|change| change.remote.clone())
+        .collect();
+    (waiting, adopted)
+}
+
+// ---- the commands ----
+
+pub(super) fn contact_changes_command(s: &mut Session, v: &Value) -> CmdResult {
+    let account = p::req_id(v, "account")?;
+    // What can't be sent any more is given up first, and said: none of it goes without a word.
+    let dropped = settle_contact_changes(s);
+    let upload = contact_upload(s, account)?;
+    let mut answer = serde_json::to_value(upload).map_err(|e| fail(e.to_string()))?;
+    if let Some(answer) = answer.as_object_mut() {
+        answer.insert("dropped".into(), contact_dropped_json(&dropped));
+    }
+    Ok(answer)
+}
+
+pub(super) fn apply_contact_changes_command(s: &mut Session, v: &Value) -> CmdResult {
+    let result = v.get("result").cloned().ok_or_else(|| bad("`result` is required"))?;
+    let uploaded: ContactsUploaded = serde_json::from_value(result)
+        .map_err(|e| bad(format!("`result`: {}", e.to_string().chars().filter(|c| !c.is_control()).take(MAX_SHOWN).collect::<String>())))?;
+    Ok(apply_contact_outcomes(s, &uploaded)?.json())
+}
+
+#[cfg(test)]
+mod tests;

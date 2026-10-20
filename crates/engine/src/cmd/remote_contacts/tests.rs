@@ -210,7 +210,7 @@ fn a_read_only_book_marks_its_contacts_and_edit_and_delete_refuse_with_the_reaso
     run(&mut s, "people.favorite", json!({"id": cy.id, "value": true}));
     run(&mut s, "people.categorize", json!({"id": cy.id, "category": "Red category"}));
     // A contact of the mailbox's own is as ever, and nothing is said against it.
-    let own = run(&mut s, "people.new", json!({"first": "Fay", "email": "fay@example.org"}))["id"].as_u64().unwrap();
+    let own = run(&mut s, "people.new", json!({"first": "Fay", "email": "fay@example.org", "book": 0}))["id"].as_u64().unwrap();
     assert_eq!((greyed(&s, "people.edit"), greyed(&s, "people.delete")), (None, None));
     run(&mut s, "people.edit", json!({"id": own, "last": "Park"}));
     run(&mut s, "people.delete", json!({"id": own}));
@@ -229,13 +229,16 @@ fn a_book_whose_cards_cannot_be_deleted_refuses_delete_only() {
     run(&mut s, "people.select", json!({"id": bob}));
     assert_eq!((greyed(&s, "people.edit"), greyed(&s, "people.delete")), (None, Some(NO_DELETING)));
     assert_eq!(refused(&mut s, "people.delete", json!({"id": bob})), NO_DELETING);
-    // Changing it is not a matter of rights: it is not sent back yet, as for any contact a server keeps.
-    assert_eq!(refused(&mut s, "people.edit", json!({"id": bob, "first": "Robert"})), NOT_SENT_BACK);
-    // A book whose contacts may be deleted too says nothing against Delete either.
+    // Changing it is the account's right: the change goes to the server (`written`).
+    run(&mut s, "people.edit", json!({"id": bob, "first": "Robert"}));
+    assert_eq!(kept(&s, account, "c-bob").first, "Robert");
+    assert_eq!(s.mailbox.contact_changes.len(), 1);
+    // A book whose contacts may be deleted too says nothing against Delete either, and the deletion goes.
     apply_books(&mut s, &books(account, vec![book("team", "Team", false)])).unwrap();
     assert_eq!(greyed(&s, "people.delete"), None);
-    assert_eq!(refused(&mut s, "people.delete", json!({"id": bob})), NOT_SENT_BACK);
-    assert!(s.mailbox.contact(bob).is_some());
+    run(&mut s, "people.delete", json!({"id": bob}));
+    assert!(s.mailbox.contact(bob).is_none());
+    assert_eq!(s.mailbox.contact_changes.iter().map(|c| c.remote.as_str()).collect::<Vec<_>>(), ["c-bob"]);
 }
 
 #[test]
@@ -279,6 +282,16 @@ fn a_tab_that_keeps_nothing_refuses_a_local_contact_with_the_reason() {
     the_two_books(&mut s, account);
     let message = *s.mailbox.messages.keys().next().unwrap();
     s.keeps_local = false;
+    // A book Ada may change takes a new contact, there: nothing is kept here only.
+    assert_eq!(greyed(&s, "people.new"), None);
+    let made = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}))["id"].as_u64().unwrap();
+    assert_eq!(book_of(&s, account, ""), "team", "made in the team's book");
+    assert!(s.mailbox.contact(made).is_some_and(|c| c.origin.account == account));
+    assert_eq!(refused(&mut s, "people.new", json!({"first": "Hal", "book": 0})), NO_ADDING, "not the mailbox's own");
+    run(&mut s, "people.delete", json!({"id": made}));
+    // None does: the team's book is read-only now.
+    let team = RemoteBook { main: true, ..book("team", "Team", true) };
+    apply_books(&mut s, &books(account, vec![team, book("grace", "Grace's", true)])).unwrap();
     let snapshot = s.mailbox.clone();
     // New Contact: greyed with the reason, and refused however it is asked for.
     assert_eq!(greyed(&s, "people.new"), Some(NO_ADDING));
@@ -298,7 +311,7 @@ fn a_tab_that_keeps_nothing_refuses_a_local_contact_with_the_reason() {
     assert_eq!(greyed(&s, "people.fromMessage"), Some("select a message first"));
     // The contacts of the server are still found and shown.
     assert_eq!(run(&mut s, "people.list", json!({"query": "Bob"}))["contacts"][0]["email"], "bob@example.org");
-    // A session that keeps what it makes makes it.
+    // A session that keeps what it makes makes it, as one of the mailbox's own.
     s.keeps_local = true;
     assert_eq!(greyed(&s, "people.new"), None);
     let made = run(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"}));

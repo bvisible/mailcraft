@@ -922,8 +922,9 @@ fn contacts_come_page_by_page() {
             birthday: Date::new(1815, 12, 10),
             notes: "Met at the\nRoyal Society.".into(),
             modified: at(2026, 9, 30, 10, 0),
-            // //// Neoffice — in no address book: Microsoft's contacts have none here.
+            // //// Neoffice — in no address book: Microsoft's contacts have none here, nor a mark of their own.
             book: String::new(),
+            uid: String::new(),
         }
     );
     // Somebody of whom only the name is known.

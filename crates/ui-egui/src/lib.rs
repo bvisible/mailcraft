@@ -59,6 +59,8 @@ pub mod nav;
 // //// Neoffice — Nora, the assistant of the Neoffice server, reached through the hosting page: her answers, her commands, her band and her button.
 pub mod nora;
 pub mod people_view;
+// //// Neoffice — what the owner may do with what a server keeps in its address books, said where it is offered.
+pub mod pim_rights;
 pub mod reading;
 mod reminders;
 pub mod ribbon;

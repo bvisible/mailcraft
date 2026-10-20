@@ -16,6 +16,8 @@
 //! - [`Session::run`](crate::Session::run) checks what a command did while [`Session::agent`] is
 //!   set: mail put in an Outbox (which sends it) or gone for good without the grant is undone.
 
+// //// Neoffice — what waits to be told to a server's address book (`overstep`).
+use mailcraft_model::book::ContactChangeKind;
 use mailcraft_model::{FolderKind, Id, Mailbox};
 use serde_json::Value;
 
@@ -406,8 +408,10 @@ const NEVER: &[&str] = &[
     "sync.applyEventChanges",
     "sync.applyEvents",
     "sync.applyContacts",
-    // //// Neoffice — the address books a host brought from a server (JMAP for Contacts): the host's side, as the contacts are.
+    // //// Neoffice — the address books a host brought from a server (JMAP for Contacts), and what goes up to their server of the contacts made, changed and deleted here: the host's side, as the contacts and the events are.
     "sync.applyBooks",
+    "sync.contactChanges",
+    "sync.applyContactChanges",
     "sync.applyCalendars",
     "sync.applyCategories",
     "sync.applyFavorites",
@@ -517,6 +521,11 @@ pub fn classify(s: &Session, id: &str, params: &Value) -> Access {
             if ids.iter().any(|m| deletes_for_good(&s.mailbox, *m)) { Access::Owner(Class::Delete) } else { Access::Safe }
         }
         "ui.sync" if params.get("password").is_some_and(|v| !v.is_null()) => Access::Owner(Class::Accounts),
+        // //// Neoffice — a contact made or changed in a server's address book is written for everyone who reads that book, and one deleted there is deleted for them: the owner's to allow, as mail that goes out is (D8).
+        "people.delete" if crate::cmd::remote_contacts::writes_to_a_book(s, id, params) => Access::Owner(Class::Delete),
+        "people.new" | "people.fromMessage" | "people.edit" if crate::cmd::remote_contacts::writes_to_a_book(s, id, params) => {
+            Access::Owner(Class::Send)
+        }
         _ => Access::Safe,
     }
 }
@@ -695,6 +704,14 @@ pub(crate) fn overstep(before: &Mailbox, after: &Mailbox, allow: &[Class]) -> Op
         if gone {
             return Some(Class::Delete);
         }
+    }
+    // //// Neoffice — and a change to a server's address book noted for its server: a contact made or changed there is written for everyone who reads it, one deleted there deleted for them (D8).
+    let noted = |kind: ContactChangeKind| after.contact_changes.iter().any(|change| change.kind == kind && !before.contact_changes.contains(change));
+    if !allow.contains(&Class::Send) && (noted(ContactChangeKind::Create) || noted(ContactChangeKind::Update)) {
+        return Some(Class::Send);
+    }
+    if !allow.contains(&Class::Delete) && noted(ContactChangeKind::Delete) {
+        return Some(Class::Delete);
     }
     None
 }
