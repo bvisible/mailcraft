@@ -401,8 +401,9 @@ fn is_over(s: &Session, event: &Event) -> bool {
 /// one yet) with an Outbox to write from.
 fn can_mail(s: &Session, invitation: &Invitation) -> bool {
     let owner = s.mailbox.account(invitation.account).or(s.mailbox.default_account());
+    // //// Neoffice — (a JMAP account's where the host runs its Send/Receive: `Session::sends_mail_of`)
     invitation.event.organizer.as_ref().is_some_and(Address::is_valid)
-        && owner.is_some_and(|owner| owner.kind.sends_mail() && s.mailbox.folder_of_kind(owner.id, FolderKind::Outbox).is_some())
+        && owner.is_some_and(|owner| s.sends_mail_of(owner) && s.mailbox.folder_of_kind(owner.id, FolderKind::Outbox).is_some())
 }
 
 /// Whether a meeting on the calendar is somebody else's: what a message may call off.
@@ -808,7 +809,8 @@ fn reply_message(
             "which sends its mail: answer the invitation there, or here without sending an answer",
         ));
     }
-    if !owner.kind.sends_mail() {
+    // //// Neoffice — (a JMAP account's where the host runs its Send/Receive: `Session::sends_mail_of`)
+    if !s.sends_mail_of(owner) {
         // (Its Outbox would keep the answer for ever: none is taken, and the meeting stays as it is.)
         if owner.kind.has_server() {
             return Err(fail(format!("{NOT_SENDING_YET}: answer the invitation without sending an answer.")));
@@ -892,11 +894,14 @@ fn reply_message(
 /// a few words, the owner's note, and the item as an iCalendar file for them to put into their
 /// own calendars. It is for the Outbox of the mailbox's first account that sends its mail (not a
 /// JMAP one yet).
+// //// Neoffice — a JMAP account sends its mail where the host runs its Send/Receive (`Session::sends_mail_of`): the
+// default account when it sends now, else the first that does; never one whose Outbox nothing here sends.
 ///
 /// What the owner made of the item for their own use (its reminder, its categories, that it is
 /// private) and who else is invited stay here: the file says what, when and where.
 pub(super) fn forward_message(s: &Session, event: &Event, to: &[Address], note: &str) -> Result<Message, CmdError> {
-    let sends = |account: &&mailcraft_model::Account| account.kind.sends_mail() && s.mailbox.folder_of_kind(account.id, FolderKind::Outbox).is_some();
+    // //// Neoffice — (as above)
+    let sends = |account: &&mailcraft_model::Account| s.sends_mail_of(account) && s.mailbox.folder_of_kind(account.id, FolderKind::Outbox).is_some();
     let owner = s.mailbox.default_account().filter(sends).or_else(|| s.mailbox.accounts.iter().find(sends));
     let owner = owner.cloned().ok_or_else(|| {
         // (One with a server that doesn't send yet: a JMAP account.)
@@ -1149,12 +1154,11 @@ mod tests {
         assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events + 1, 0));
     }
 
-    /// A JMAP account sends its mail: an invitation to it is answered by mail through its Outbox, and
-    /// a meeting is forwarded from it when it is the only account here that sends.
-    // //// Neoffice — a JMAP account sends its mail in this fork (`mailcraft-jmap`'s `send`), where upstream sends nothing
-    // from one yet: an invitation to it is answered by mail, and a meeting forwarded, through its own Outbox.
+    /// A JMAP account sends nothing yet (M6): an invitation to it isn't answered by mail, and when
+    /// that is asked for it isn't answered at all; answered without mail, the meeting goes into a
+    /// calendar here. Forwarding a meeting needs an account that sends its mail.
     #[test]
-    fn a_jmap_account_answers_and_forwards_a_meeting_by_mail() {
+    fn a_jmap_account_answers_and_forwards_no_meeting_by_mail() {
         let mut s = Session::at(crate::sample::mailbox(now(), 0), now(), 0);
         let server = mailcraft_model::JmapServer { session: "https://jmap.example/.well-known/jmap".into(), bearer: true };
         let jmap = mailcraft_model::Account {
@@ -1167,14 +1171,47 @@ mod tests {
         let account = s.mailbox.add_account(jmap);
         let request = mail(&mut s, account, "REQUEST", "uid-jmap", "");
         let said = run(&mut s, "calendar.invitation", json!({"message": request}));
-        // //// Neoffice — answerable, and by mail.
+        assert_eq!((said["answerable"].as_bool(), said["canSend"].as_bool()), (Some(true), Some(false)));
+        let events = s.mailbox.events.len();
+        let why = refused(&mut s, "calendar.respond", json!({"message": request, "response": "accept", "send": true}));
+        assert_eq!(why, "MailCraft doesn't send mail from a JMAP account yet: answer the invitation without sending an answer.");
+        assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events, 0));
+        let answered = run(&mut s, "calendar.respond", json!({"message": request, "response": "accept"}));
+        let event = answered["event"].as_u64().unwrap();
+        assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events + 1, 0));
+        // Forwarded: refused while it is the only account with a server, then sent from the
+        // account that sends its mail, never from its Outbox.
+        let forward = json!({"id": event, "to": "dana@example.org", "send": true});
+        let why = refused(&mut s, "calendar.forward", forward.clone());
+        assert_eq!(why, "MailCraft doesn't send mail from a JMAP account yet, and no other account here has a mail server to send this through.");
+        let imap = run(&mut s, "account.add", json!({"email": "ada@imap.example", "incoming": {"host": "imap.example.org"}}))["id"].as_u64().unwrap();
+        assert_eq!(run(&mut s, "calendar.forward", forward)["onServer"], false);
+        assert_eq!((outbox(&s, account).len(), outbox(&s, imap).len()), (0, 1));
+    }
+
+    // //// Neoffice — where the host runs a JMAP account's Send/Receive (`Session::jmap_runs`: this fork's browser build), it
+    // sends its mail: an invitation to it is answered by mail, and a meeting forwarded, through its own Outbox.
+    #[test]
+    fn a_jmap_account_whose_host_runs_it_answers_and_forwards_a_meeting_by_mail() {
+        let mut s = Session::at(crate::sample::mailbox(now(), 0), now(), 0);
+        s.jmap_runs = true;
+        let server = mailcraft_model::JmapServer { session: "https://jmap.example/.well-known/jmap".into(), bearer: true };
+        let jmap = mailcraft_model::Account {
+            name: "Ada".into(),
+            email: "ada@example.org".into(),
+            kind: mailcraft_model::AccountKind::Jmap,
+            jmap: Some(server),
+            ..Default::default()
+        };
+        let account = s.mailbox.add_account(jmap);
+        let request = mail(&mut s, account, "REQUEST", "uid-jmap", "");
+        let said = run(&mut s, "calendar.invitation", json!({"message": request}));
         assert_eq!((said["answerable"].as_bool(), said["canSend"].as_bool()), (Some(true), Some(true)));
         let events = s.mailbox.events.len();
-        // //// Neoffice — answered by mail: the answer waits in its Outbox, and the meeting goes into a calendar here.
         let answered = run(&mut s, "calendar.respond", json!({"message": request, "response": "accept", "send": true}));
         let event = answered["event"].as_u64().unwrap();
         assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events + 1, 1));
-        // //// Neoffice — forwarded from it, the only account here that sends its mail, through its Outbox.
+        // Forwarded from it, the account here that sends its mail.
         let forward = json!({"id": event, "to": "dana@example.org", "send": true});
         assert_eq!(run(&mut s, "calendar.forward", forward)["onServer"], false);
         assert_eq!(outbox(&s, account).len(), 2);

@@ -699,12 +699,15 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     // An account kept in step with a server that doesn't send its mail yet (JMAP) has nowhere
     // for the message: not its Outbox, where it would wait for ever, nor Sent Items, as if it had
     // gone. It stays as it is being written.
-    if account.kind.has_server() && !account.kind.sends_mail() {
+    // //// Neoffice — (a JMAP account's mail is sent where the host runs its Send/Receive: `Session::sends_mail_of`)
+    let sends = s.sends_mail_of(&account);
+    if account.kind.has_server() && !sends {
         return Err(fail(format!("{NOT_SENDING_YET}: send this message from another account, or save it as a draft")));
     }
     // An account that sends its mail queues the message for the next Send/Receive; a local one
     // has nowhere to send it, so it is filed as sent (and delivered to local accounts it names).
-    let queued = account.kind.sends_mail();
+    // //// Neoffice — (as above)
+    let queued = sends;
     let kind = if queued { FolderKind::Outbox } else { FolderKind::Sent };
     m.folder = s.mailbox.folder_of_kind(account.id, kind).ok_or_else(|| fail(format!("this account has no {} folder", kind.default_name())))?;
     // The original is marked replied or forwarded once this has gone (#154): from the Outbox when

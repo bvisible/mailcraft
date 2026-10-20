@@ -934,9 +934,8 @@ fn a_jmap_account_keeps_its_setting_and_a_damaged_one_costs_only_itself() {
 fn only_a_jmap_or_microsoft_account_has_server_ids() {
     use AccountKind::*;
     assert_eq!([Local, Imap, Microsoft, Jmap, Unknown].map(AccountKind::server_ids), [false, false, true, true, false]);
-    // A JMAP account is kept in step with a server. An account of a kind this version doesn't know is neither:
-    // whatever it is, this version doesn't know how.
+    // A JMAP account is kept in step with a server, but nothing sends its Outbox yet. An account of a
+    // kind this version doesn't know is neither: whatever it is, this version doesn't know how.
     assert_eq!([Local, Imap, Microsoft, Jmap, Unknown].map(AccountKind::has_server), [false, true, true, true, false]);
-    // //// Neoffice — and its Send/Receive sends the Outbox: this fork sends from a JMAP account.
-    assert_eq!([Local, Imap, Microsoft, Jmap, Unknown].map(AccountKind::sends_mail), [false, true, true, true, false]);
+    assert_eq!([Local, Imap, Microsoft, Jmap, Unknown].map(AccountKind::sends_mail), [false, true, true, false, false]);
 }

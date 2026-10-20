@@ -21,6 +21,8 @@ const SESSION: &str = "https://mail.example.org/jmap/session";
 /// message and the local account's folder.
 fn setup() -> (Session, Id, Id, Id) {
     let mut s = Session::at(Mailbox::with_local_account("", ""), NOW, 0);
+    // A host that runs a JMAP account's Send/Receive (this fork's browser build).
+    s.jmap_runs = true;
     let account =
         s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap()["id"].as_u64().unwrap();
     for (kind, id) in [(FolderKind::Inbox, "Min"), (FolderKind::Archive, "Mar"), (FolderKind::Deleted, "Mtr"), (FolderKind::Junk, "Mju")] {
@@ -426,6 +428,7 @@ fn a_run_that_got_no_answer_works_the_same_changes_out_again_and_the_same_answer
     let written = serde_json::to_string(&s.mailbox).unwrap();
     let reopened: Mailbox = serde_json::from_str(&written).unwrap();
     let mut s2 = Session::at(reopened, NOW, 0);
+    s2.jmap_runs = true;
     assert_eq!(jmap_mail_request(&s2, account, false, &[], false).unwrap().changes, first.changes, "the difference is still there");
     assert_eq!(unpushed(&s2, account), 2);
     // Answered, and the answer taken in twice (a host that tried again): once is all it does.

@@ -587,6 +587,13 @@ pub struct Session {
     /// nothing of them between visits. What would vanish at the next visit is then refused, with the reason, rather than
     /// made. Set by the host, never by a command's params. Never saved.
     pub keeps_local: bool,
+    // //// Neoffice — whether the host runs a JMAP account's Send/Receive: this fork's browser build does (`mailcraft-jmap`);
+    // a build that can't reach a JMAP server keeps upstream's guards (nothing sent from one, no run made of one).
+    /// The host runs a JMAP account's Send/Receive: it reaches the server, sends what waits in the account's Outbox and
+    /// files its drafts there ([`Session::sends_mail_of`]). False where there is no way to reach a JMAP server (the
+    /// desktop window and the command line, for now): a JMAP account then sends nothing and no run is made of it, as
+    /// upstream has it. Set by the host, never by a command's params. Never saved.
+    pub jmap_runs: bool,
     history: Vec<Undo>,
     redo: Vec<Undo>,
     /// What the last undo or redo couldn't do there (a delete for good, a message sent).
@@ -703,6 +710,8 @@ impl Session {
             server_search: Default::default(),
             // //// Neoffice — see the field: kept, unless the host says otherwise.
             keeps_local: true,
+            // //// Neoffice — see the field: none, unless the host says it runs one.
+            jmap_runs: false,
             history: Vec::new(),
             redo: Vec::new(),
             undo_said: Vec::new(),
@@ -741,6 +750,14 @@ impl Session {
     /// A session whose clock stands still at `now`, with this computer in `zone`.
     pub fn in_zone(mailbox: Mailbox, now: Timestamp, zone: Zone) -> Self {
         Session::with_clock(mailbox, Clock { now: Some(now), offset: None, zone: Some(zone) })
+    }
+
+    // //// Neoffice — whether an account's mail is sent here: a JMAP account's where the host runs it (`jmap_runs`).
+    /// Whether a Send/Receive here sends the mail that waits in `account`'s Outbox: as its kind says
+    /// ([`mailcraft_model::AccountKind::sends_mail`]), and a JMAP account's where the host runs its Send/Receive
+    /// ([`Session::jmap_runs`]).
+    pub fn sends_mail_of(&self, account: &mailcraft_model::Account) -> bool {
+        account.kind.sends_mail() || (account.kind == mailcraft_model::AccountKind::Jmap && self.jmap_runs)
     }
 
     // ---- time ----

@@ -35,6 +35,8 @@ struct Rig {
 impl Rig {
     fn new(profile: Profile) -> Rig {
         let mut s = Session::at(Mailbox::with_local_account("", ""), 1_800_000_000, 0);
+        // (This test is a host that runs a JMAP account's Send/Receive, through the in-process server.)
+        s.jmap_runs = true;
         let added = s.run("account.add", &json!({"email": ADDRESS, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
         let server = StandIn::new();
         let inbox = server.with(|d| {

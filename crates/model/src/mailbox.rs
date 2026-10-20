@@ -215,12 +215,11 @@ impl AccountKind {
         matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Jmap)
     }
 
-    /// Whether a Send/Receive sends the mail that waits in the account's Outbox (through SMTP,
-    /// through Microsoft Graph, or through a JMAP server's submission).
-    // //// Neoffice — a JMAP account's Send/Receive sends its Outbox too: this fork sends through its server's
-    // submission (`mailcraft-jmap`'s `send`), where upstream sends nothing from one yet (`NOT_SENDING_YET`).
+    /// Whether a Send/Receive sends the mail that waits in the account's Outbox (through SMTP, or
+    /// through Microsoft Graph). Not yet for a JMAP account: its sending comes after its reading,
+    /// and until then no mail is put in its Outbox, where it would wait for ever.
     pub fn sends_mail(self) -> bool {
-        matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Jmap)
+        matches!(self, AccountKind::Imap | AccountKind::Microsoft)
     }
 
     /// Whether the account's folders and messages are known to its server by the ids the server

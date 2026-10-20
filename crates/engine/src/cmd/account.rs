@@ -349,8 +349,10 @@ pub fn sync_request(s: &Session, account: Id) -> Result<SyncRequest, CmdError> {
     }
     // A JMAP account is kept in step over JMAP alone, and no run of it is made here yet: nothing
     // is asked of IMAP or SMTP servers it doesn't have.
+    // //// Neoffice — said of a build that can't reach a JMAP server: where the host can, its run is a JMAP one
+    // (`sync.jmapRequest`, which `sync.request` hands it to).
     if a.kind == AccountKind::Jmap {
-        return Err(fail(format!("{} is a JMAP account, and this version doesn't send and receive with one yet", a.name)));
+        return Err(fail(format!("{} is a JMAP account, and this build has no way to send and receive with one", a.name)));
     }
     if a.kind != AccountKind::Imap {
         return Err(fail(format!("{} isn't connected to a mail server", a.name)));
@@ -496,8 +498,9 @@ fn request(s: &mut Session, v: &Value) -> CmdResult {
         req["graph"] = json!(true);
         return Ok(req);
     }
-    // //// Neoffice — and one kept in step with a JMAP server too (`sync.jmapRequest`).
-    if s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap) {
+    // //// Neoffice — and one kept in step with a JMAP server too (`sync.jmapRequest`), where the host runs it
+    // (`Session::jmap_runs`); elsewhere `sync_request` says why there is none.
+    if s.jmap_runs && s.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap) {
         let mut req = serde_json::to_value(super::jmap_mail::jmap_mail_request(s, account, false, &[], false)?).map_err(|e| fail(e.to_string()))?;
         req["jmap"] = json!(true);
         return Ok(req);

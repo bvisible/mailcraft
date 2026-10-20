@@ -18,6 +18,8 @@ const SESSION: &str = "https://mail.example.org/jmap/session";
 /// A session with one JMAP account that is tied to its server (it has been listed): its id.
 fn session() -> (Session, Id) {
     let mut s = Session::empty();
+    // A host that runs a JMAP account's Send/Receive (this fork's browser build).
+    s.jmap_runs = true;
     let added = s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
     let account = added["id"].as_u64().unwrap();
     let folder = |id: &str, name: &str, kind: FolderKind| GraphFolder { id: id.into(), name: name.into(), kind, ..Default::default() };

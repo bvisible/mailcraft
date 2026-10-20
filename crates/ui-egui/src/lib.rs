@@ -1480,6 +1480,8 @@ impl MailApp {
     /// Run a command for a script or an agent (control channel, MCP bridge): never asks first.
     /// UI-level commands (`ui.*`) are handled here, the rest by the engine.
     pub fn execute(&mut self, id: &str, params: Value) -> Result<Value, String> {
+        // //// Neoffice — the engine sends from a JMAP account (and makes a run of one) where this window can run one.
+        self.session.jmap_runs = self.services.can_run(mailcraft_model::AccountKind::Jmap);
         if let Some(r) = self.ui_command(id, &params) {
             return r;
         }
@@ -2897,6 +2899,8 @@ impl MailApp {
     /// drops, saving.
     pub fn logic(&mut self, ctx: &egui::Context) {
         i18n::set_current(i18n::Lang::from_pref(&self.ui.language));
+        // //// Neoffice — (as in `execute`: what the engine says of a JMAP account's mail follows this window's runners)
+        self.session.jmap_runs = self.services.can_run(mailcraft_model::AccountKind::Jmap);
         if !self.styled {
             theme::install_fonts(ctx);
             // Mod with -, = and 0 would also scale the whole window; interface size is in Options.

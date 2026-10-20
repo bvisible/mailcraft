@@ -106,6 +106,8 @@ impl Rig {
             d.deliver(&inbox, raw.as_bytes(), &[], "2026-10-14T09:30:00Z");
         });
         let mut s = Session::at(Mailbox::with_local_account("", ""), NOW, 0);
+        // (The browser build runs a JMAP account's Send/Receive.)
+        s.jmap_runs = true;
         let added = s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
         Rig { server, s, account: added["id"].as_u64().unwrap() }
     }

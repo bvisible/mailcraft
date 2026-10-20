@@ -16,6 +16,8 @@ const SESSION: &str = "https://mail.example.org/jmap/session";
 /// A session with one JMAP account; its id.
 fn session() -> (Session, Id) {
     let mut s = Session::empty();
+    // A host that runs a JMAP account's Send/Receive (this fork's browser build).
+    s.jmap_runs = true;
     let added = s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
     (s, added["id"].as_u64().unwrap())
 }
@@ -361,6 +363,8 @@ fn a_meeting_is_mailed_through_a_jmap_account_like_through_any_other() {
     const NOW: i64 = 1_791_993_600;
     // An item kept on this computer is forwarded as mail through an account with a mail server to send it.
     let mut s = Session::at(crate::sample::mailbox(NOW, 0), NOW, 0);
+    // A host that runs a JMAP account's Send/Receive (this fork's browser build).
+    s.jmap_runs = true;
     let review = s.mailbox.events.values().find(|e| e.title.starts_with("Design review")).map(|e| e.id).unwrap();
     let jmap =
         s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap()["id"].as_u64().unwrap();

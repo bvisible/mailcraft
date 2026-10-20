@@ -2041,6 +2041,7 @@ fn an_account_a_newer_version_added_is_said_to_be_one_and_left_out_of_send_recei
 /// A JMAP account (M6): no Send/Receive of the window takes it in until the engine has its
 /// commands. Asked for by name, it is refused with its reason, nothing is handed to the host and
 /// nothing is asked of the owner; the accounts beside it go on as before.
+// //// Neoffice — so in a window that has no JMAP runner (`Services::jmap`): one that has takes it in (`jmap_job_tests`).
 #[test]
 fn a_jmap_account_is_left_out_of_send_receive_until_one_can_be_run() {
     let mut a = app();
