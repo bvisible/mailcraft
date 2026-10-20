@@ -129,3 +129,50 @@ fn a_graph_calendar_is_not_plain() {
     let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
     assert!(!super::plain(&s, own));
 }
+
+#[test]
+fn one_occurrence_of_somebody_elses_meeting_is_not_answered_alone_by_mail_in_a_plain_calendar() {
+    for plain in [true, false] {
+        let (mut s, _, _) = session(plain);
+        let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+        // Bo's weekly meeting, Tuesdays at nine, Ada invited.
+        let series = RemoteEvent {
+            id: "V3".into(),
+            title: "Weekly sync".into(),
+            start: at(13, 9),
+            end: at(13, 10),
+            organizer: Some(Address::new("Bo", "bo@example.org")),
+            attendees: vec![Attendee { address: Address::new("Ada", "ada@example.org"), ..Default::default() }],
+            is_organizer: Some(false),
+            kind: mailcraft_model::remote::RemoteEventKind::SeriesMaster,
+            recurrence: Some(mailcraft_model::Recurrence { count: Some(4), ..mailcraft_model::Recurrence::every(mailcraft_model::Freq::Weekly) }),
+            series_day: Date::new(2026, 10, 13),
+            ..Default::default()
+        };
+        let download = EventsDownload {
+            account,
+            email: "ada@example.org".into(),
+            from: at(1, 0),
+            to: at(31, 0),
+            complete: false,
+            events: vec![series],
+            ..Default::default()
+        };
+        apply_events(&mut s, &download).unwrap();
+        let weekly = s.mailbox.events.values().find(|e| e.title == "Weekly sync").map(|e| e.id).unwrap();
+        let one = |send: bool| json!({"id": weekly, "response": "decline", "scope": "occurrence", "occurrence": "2026-10-20", "send": send});
+        if plain {
+            assert_eq!(refused(&mut s, "calendar.respond", one(true)), super::PLAIN_WHOLE_ANSWER);
+            let declined = json!({"id": weekly, "decline": true, "scope": "occurrence", "occurrence": "2026-10-20", "send": true});
+            assert_eq!(refused(&mut s, "calendar.delete", declined), super::PLAIN_WHOLE_ANSWER);
+            assert!(s.mailbox.event_changes.is_empty());
+            // Kept here and on the copy, without telling Bo: as before.
+            s.run("calendar.respond", &one(false)).unwrap();
+        } else {
+            s.run("calendar.respond", &one(true)).unwrap();
+        }
+        assert_eq!(s.mailbox.event_changes.len(), 1, "plain: {plain}");
+        // The whole series is answered and told as before.
+        s.run("calendar.respond", &json!({"id": weekly, "response": "accept", "send": true})).unwrap();
+    }
+}

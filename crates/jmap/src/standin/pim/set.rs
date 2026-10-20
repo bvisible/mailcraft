@@ -58,8 +58,9 @@ pub const SERVER_SET: [&str; 18] = [
 pub const MAX_EVENTS_PER_SET: usize = 50;
 /// The answers a person gives an invitation.
 const ANSWERS: [&str; 3] = ["accepted", "tentative", "declined"];
-/// The longest `uid` kept.
+/// The longest `uid` kept, and most changes kept as they came.
 const MAX_UID: usize = 255;
+const MAX_WRITTEN: usize = 10_000;
 
 /// Mail the server sent about an event.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -445,6 +446,9 @@ impl Pim {
 
     /// A change of the event (or occurrence) `id`.
     fn update(&mut self, id: &str, patch: &Value, notify: bool) -> Result<(), Value> {
+        if self.written.len() < MAX_WRITTEN {
+            self.written.push((id.chars().take(MAX_UID).collect(), patch.clone()));
+        }
         let addressed = self.addressed(id)?;
         self.refused_on_demand(id)?;
         let stored = self.events.get(addressed.at).cloned().ok_or_else(|| set_error("notFound", ""))?;

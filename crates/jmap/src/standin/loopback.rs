@@ -22,7 +22,8 @@
 //! - **Trouble on demand**, by a `GET` of `/__trouble` with a query: `?down` (from then on every request is closed
 //!   without an answer, as a server that is gone), `?up` (well again, and quick), `?slow=<ms>` (each answer waits that
 //!   long first, a minute at most), `?expire` (the token it holds now is no longer good: it holds another, which
-//!   `GET /__token` gives, as a hosting page's renewal would). `GET /__log` lists the methods it was asked to call.
+//!   `GET /__token` gives, as a hosting page's renewal would). `GET /__log` lists the methods it was asked to call,
+//!   `GET /__written` the changes of events it was sent, and `GET /__mail` the mail it would have sent about them.
 //! - Anything else is the stand-in's, at its own address: the session (`/jmap/session`, whose other addresses are
 //!   relative to it), the API, the downloads.
 
@@ -110,6 +111,21 @@ pub(super) fn answer(stand_in: &StandIn, trouble: &mut Trouble, raw: &[u8]) -> O
         "/__log" => {
             let calls = serde_json::to_vec(&stand_in.calls()).unwrap_or_default();
             return Some(reply(200, "application/json", &calls, None));
+        }
+        "/__mail" => {
+            let sent: Vec<serde_json::Value> = stand_in.with(|d| {
+                d.pim
+                    .scheduled
+                    .iter()
+                    .map(|m| serde_json::json!({"what": m.what, "event": m.event, "occurrence": m.occurrence, "to": m.to}))
+                    .collect()
+            });
+            return Some(reply(200, "application/json", &serde_json::to_vec(&sent).unwrap_or_default(), None));
+        }
+        "/__written" => {
+            let written: Vec<serde_json::Value> =
+                stand_in.with(|d| d.pim.written.iter().map(|(id, patch)| serde_json::json!({"id": id, "patch": patch})).collect());
+            return Some(reply(200, "application/json", &serde_json::to_vec(&written).unwrap_or_default(), None));
         }
         _ => {}
     }

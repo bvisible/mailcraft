@@ -456,3 +456,197 @@ fn a_series_keeps_its_hour_across_a_change_of_the_clock_here_and_on_the_server()
     assert_eq!(flow.when("Site meeting"), ["2026-10-19T09:00:00", "2026-10-26T09:00:00", "2026-11-02T09:00:00"]);
     assert_eq!(flow.app.session.mailbox.events.values().filter(|e| e.title == "Site meeting").count(), 1);
 }
+
+// One day of a series, the series, and answers.
+
+impl Flow {
+    /// Ada's weekly site meeting on the server (Mondays at nine in Zurich, four of them from 2026-10-12), and Grace's
+    /// planning in Ada's calendar (Tuesdays at ten, three of them from 2026-10-13, Ada invited), read here.
+    fn with_series(&mut self) {
+        self.server.with(|d| {
+            let zurich = Some("Europe/Zurich");
+            d.pim.add_event(
+                Event::timed("site", "ada", "Site meeting", "2026-10-12T09:00:00", zurich, "PT1H")
+                    .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 4})),
+            );
+            d.pim.add_event(
+                Event::timed("planning", "ada", "Planning", "2026-10-13T10:00:00", zurich, "PT1H")
+                    .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 3}))
+                    .with("organizerCalendarAddress", json!("mailto:grace@example.org"))
+                    .with(
+                        "participants",
+                        json!({
+                            "grace": {"@type": "Participant", "name": "Grace", "calendarAddress": "mailto:grace@example.org", "roles": {"owner": true}, "participationStatus": "accepted"},
+                            "ada": {"@type": "Participant", "name": "Ada", "calendarAddress": format!("mailto:{ME}"), "roles": {"attendee": true}, "participationStatus": "needs-action"},
+                        }),
+                    ),
+            );
+        });
+        // The wide stretch, with the list: the series come whole.
+        self.look(10.0 * MINUTE + SECOND);
+        assert!(self.event("Site meeting").is_some_and(|e| e.recurrence.is_some()) && self.event("Planning").is_some_and(|e| e.recurrence.is_some()));
+    }
+
+    /// The server's site meeting, as its store has it.
+    fn site(&self) -> Event {
+        self.server.with(|d| d.pim.events.iter().find(|e| e.raw == "site").cloned()).unwrap()
+    }
+}
+
+#[test]
+fn one_day_of_a_series_is_moved_and_the_others_stay() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let site = flow.event("Site meeting").unwrap();
+    // (`start` is where the series would start: two hours later, and so is that Monday.)
+    flow.app
+        .execute("calendar.move", json!({"id": site.id, "scope": "occurrence", "occurrence": "2026-10-19", "start": "2026-10-12T11:00"}))
+        .unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.site().overrides["2026-10-19T09:00:00"]["start"], "2026-10-19T11:00:00");
+    assert!(flow.app.session.mailbox.event_changes.is_empty());
+    assert_eq!(flow.when("Site meeting"), ["2026-10-12T09:00:00", "2026-10-19T11:00:00", "2026-10-26T09:00:00", "2026-11-02T09:00:00"]);
+    // Still one series, and the moved day an event of its own that stands for it.
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.when("Site meeting").len(), 4);
+    assert_eq!(flow.app.session.mailbox.events.values().filter(|e| e.title == "Site meeting" && e.recurrence.is_some()).count(), 1);
+}
+
+#[test]
+fn one_day_is_deleted_and_the_series_goes_on() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let site = flow.event("Site meeting").unwrap();
+    flow.app.execute("calendar.delete", json!({"id": site.id, "scope": "occurrence", "occurrence": "2026-10-26"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.site().excluded, ["2026-10-26T09:00:00"]);
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.when("Site meeting"), ["2026-10-12T09:00:00", "2026-10-19T09:00:00", "2026-11-02T09:00:00"]);
+}
+
+#[test]
+fn the_whole_series_is_moved_by_days_and_keeps_its_clock() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let site = flow.event("Site meeting").unwrap();
+    // To Tuesdays, from the first one: nine o'clock either side of the 25th still.
+    flow.app.execute("calendar.move", json!({"id": site.id, "scope": "series", "start": "2026-10-13T09:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    let moved = flow.site();
+    assert_eq!((moved.start.as_str(), moved.zone.as_deref()), ("2026-10-13T09:00:00", Some("Europe/Zurich")));
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.when("Site meeting"), ["2026-10-13T09:00:00", "2026-10-20T09:00:00", "2026-10-27T09:00:00", "2026-11-03T09:00:00"]);
+}
+
+#[test]
+fn an_invitation_about_one_occurrence_is_answered_for_that_occurrence() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    // Grace's invitation for the 27th, in the mail.
+    let ics = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nUID:planning@standin.example\r\nSUMMARY:Planning\r\n\
+               RECURRENCE-ID:20261027T090000Z\r\nDTSTART:20261027T090000Z\r\nDTEND:20261027T100000Z\r\n\
+               ORGANIZER;CN=Grace:mailto:grace@example.org\r\nATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:mailto:ada@example.org\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    let inbox = flow.app.session.mailbox.folders.iter().find(|f| f.kind == mailcraft_model::FolderKind::Inbox).map(|f| f.id).unwrap();
+    let message = mailcraft_model::Message {
+        folder: inbox,
+        message_id: "planning-27@example.org".into(),
+        from: mailcraft_model::Address::new("Grace", "grace@example.org"),
+        to: vec![mailcraft_model::Address::new("Ada", ME)],
+        subject: "Planning".into(),
+        attachments: vec![mailcraft_model::Attachment::new("invite.ics", "text/calendar", ics.as_bytes().to_vec())],
+        ..Default::default()
+    };
+    let id = flow.app.session.mailbox.add_message(message).unwrap();
+    let said = flow.app.execute("calendar.invitation", json!({"message": id})).unwrap();
+    assert_eq!(said["occurrence"], "2026-10-27", "{said}");
+    // Declined, kept on her copy (not sent): that Tuesday alone.
+    flow.app.execute("calendar.respond", json!({"message": id, "response": "decline"})).unwrap();
+    assert!(flow.look(SECOND));
+    let planning = flow.server.with(|d| d.pim.events.iter().find(|e| e.raw == "planning").cloned()).unwrap();
+    assert_eq!(planning.overrides["2026-10-27T10:00:00"]["participants"]["ada"]["participationStatus"], "declined");
+    assert_eq!(planning.props["participants"]["ada"]["participationStatus"], "needs-action", "the others as they were");
+    assert!(flow.app.session.mailbox.event_changes.is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+}
+
+#[test]
+fn an_answer_to_an_invitation_reaches_the_organizer_when_the_server_does_it() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let planning = flow.event("Planning").unwrap();
+    flow.app.execute("calendar.respond", json!({"id": planning.id, "response": "accept", "send": true})).unwrap();
+    assert!(flow.look(SECOND));
+    let told = flow.server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("reply", vec!["grace@example.org".to_string()])]);
+    // A server that keeps the answer on her copy only: kept, and nobody told (as before such a server did).
+    flow.server.with(|d| {
+        d.pim.tells_the_organizer = false;
+        d.pim.scheduled.clear();
+    });
+    flow.app.execute("calendar.respond", json!({"id": planning.id, "response": "tentative", "send": true})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.server.with(|d| d.pim.scheduled.is_empty()));
+}
+
+#[test]
+fn an_answer_in_a_read_only_calendar_is_left_as_the_server_has_it() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        d.pim.add_event(
+            Event::timed("review", "grace", "Design review", "2026-10-16T15:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("organizerCalendarAddress", json!("mailto:grace@example.org"))
+                .with(
+                    "participants",
+                    json!({"ada": {"calendarAddress": format!("mailto:{ME}"), "roles": {"attendee": true}, "participationStatus": "needs-action"}}),
+                ),
+        );
+    });
+    let grace = flow.calendar("Grace").map(|c| c.id).unwrap();
+    flow.app.execute("calendar.showCalendar", json!({"id": grace, "value": true})).unwrap();
+    assert!(flow.look(SECOND));
+    let review = flow.event("Design review").unwrap();
+    let refused = flow.app.execute("calendar.respond", json!({"id": review.id, "response": "accept", "send": true})).unwrap_err();
+    assert!(refused.contains("can only be read"), "{refused}");
+    assert!(flow.app.session.mailbox.event_changes.is_empty());
+}
+
+#[test]
+fn a_meeting_the_person_organizes_tells_the_guests_on_a_change_and_not_on_a_silent_one() {
+    let mut flow = Flow::start();
+    flow.server.with(|d| {
+        d.pim.add_event(
+            Event::timed("review", "ada", "Review", "2026-10-16T15:00:00", Some("Europe/Zurich"), "PT1H")
+                .with("organizerCalendarAddress", json!(format!("mailto:{ME}")))
+                .with(
+                    "participants",
+                    json!({
+                        "ada": {"calendarAddress": format!("mailto:{ME}"), "roles": {"owner": true, "attendee": true}, "participationStatus": "accepted"},
+                        "bob": {"calendarAddress": "mailto:bob@example.org", "roles": {"attendee": true}, "participationStatus": "accepted"},
+                    }),
+                ),
+        );
+    });
+    assert!(flow.look(2.0 * MINUTE + SECOND));
+    let review = flow.event("Review").unwrap();
+    // A reminder of her own: nobody told.
+    flow.app.execute("calendar.reminder", json!({"id": review.id, "minutes": 30})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.server.with(|d| d.pim.scheduled.is_empty()));
+    // Moved, which Bob sees: he is sent the update.
+    flow.app.execute("calendar.move", json!({"id": review.id, "start": "2026-10-16T16:00", "send": true})).unwrap();
+    assert!(flow.look(SECOND));
+    let told = flow.server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("update", vec!["bob@example.org".to_string()])]);
+}
+
+#[test]
+fn a_note_with_an_answer_is_not_sent_and_the_answer_still_is() {
+    let mut flow = Flow::start();
+    flow.with_series();
+    let planning = flow.event("Planning").unwrap();
+    flow.app.execute("calendar.respond", json!({"id": planning.id, "response": "accept", "send": true, "comment": "See you there"})).unwrap();
+    assert!(flow.look(SECOND));
+    // Such a server takes the answer and no note with it: nothing of the note was written.
+    let written = flow.server.with(|d| d.pim.written.clone());
+    assert!(!written.iter().any(|(_, patch)| patch.to_string().contains("See you there")));
+    assert_eq!(flow.server.with(|d| d.pim.scheduled.len()), 1);
+}

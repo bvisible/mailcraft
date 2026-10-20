@@ -143,7 +143,10 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
     assert_eq!(list.calendars.iter().filter(|c| c.main).map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Ada Marlow"]);
     assert_eq!(list.calendars.len(), 3);
     let main = result.events.as_ref().unwrap();
-    assert!(main.complete && main.events.len() == 9, "{} events", main.events.len());
+    // Nine of their own, and Grace's weekly design sync: the series and its four Thursdays.
+    assert!(main.complete && main.events.len() == 14, "{} events", main.events.len());
+    let sync = main.events.iter().find(|e| e.title == "Design sync" && e.kind == mailcraft_model::remote::RemoteEventKind::SeriesMaster).unwrap();
+    assert_eq!((sync.is_organizer, sync.response), (Some(false), mailcraft_model::Response::None));
     // The meeting she organizes, with its three guests, and the one she is invited to, unanswered.
     let budget = main.events.iter().find(|e| e.title == "Budget review").unwrap();
     assert_eq!((budget.is_organizer, budget.attendees.len(), budget.reminder_minutes, budget.location.as_str()), (Some(true), 3, Some(15), "Room 4"));
@@ -170,7 +173,7 @@ fn the_demo_data_reads_back_as_the_server_would_serve_it() {
     crowd(&stand_in, today(), 600);
     crowd_cards(&stand_in, 2_000);
     let crowded = block_on(sync_pim(&client, &request, &AtomicBool::new(false)));
-    assert_eq!(crowded.events.as_ref().map(|d| (d.events.len(), d.complete)), Some((609, true)));
+    assert_eq!(crowded.events.as_ref().map(|d| (d.events.len(), d.complete)), Some((614, true)));
     assert_eq!(crowded.contacts.as_ref().map(|d| (d.contacts.len(), d.complete)), Some((DEMO_CARDS + 4 + 2_000, true)));
     // And the mail is there for a mail run.
     let mail = JmapMailRequest {

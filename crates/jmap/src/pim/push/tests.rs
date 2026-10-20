@@ -12,7 +12,7 @@ use mailcraft_model::remote::{
     EventsUpload,
 };
 use mailcraft_model::sync::{JmapPimRequest, JmapPimResult};
-use mailcraft_model::{Address, Freq, Recurrence, ShowAs};
+use mailcraft_model::{Address, Freq, Recurrence, Response, ShowAs};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
@@ -458,4 +458,216 @@ fn a_series_is_changed_by_its_master_and_keeps_its_zone_and_clock() {
     let mut starts: Vec<i64> = read.events.unwrap().events.iter().filter(|e| e.series == Pim::event_id("site")).map(|e| e.start).collect();
     starts.sort();
     assert_eq!(starts, [utc(12, 8, 0), utc(19, 8, 0), utc(26, 9, 0)]);
+}
+
+// One occurrence of a series, the series, and answers.
+
+/// One occurrence of the weekly site meeting as the engine knows it: by its series and when the series has it (the
+/// `day` of October at `hour` UTC).
+fn of_site(kind: EventChangeKind, day: u8, hour: i64, fields: EventFields) -> EventOp {
+    EventOp { kind, event: 300, series: Pim::event_id("site"), occurrence: utc(day, hour, 0), fields, ..Default::default() }
+}
+
+/// What the server keeps of the site meeting's occurrence of `at`.
+fn overridden(server: &StandIn, at: &str) -> Option<serde_json::Map<String, Value>> {
+    stored(server, "site").and_then(|site| site.overrides.get(at).cloned())
+}
+
+#[test]
+fn one_occurrence_is_found_by_its_series_and_its_start_to_the_minute() {
+    let server = server();
+    // The 19th at nine in Zurich is 07:00 UTC.
+    let result = run(&server, &job(vec![of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)"))]));
+    let done = &result.uploaded.as_ref().unwrap().outcomes[0];
+    assert_eq!((done.result, done.remote.as_str()), (EventResult::Done, Pim::occurrence_id("site", "2026-10-19T09:00:00").as_str()), "{done:?}");
+    assert_eq!(overridden(&server, "2026-10-19T09:00:00").unwrap()["title"], "Site meeting (room B)");
+    // Looked for in the series' calendar, around that time, each occurrence apart.
+    let query = server.asked().into_iter().find(|a| a.method == "CalendarEvent/query").unwrap();
+    assert_eq!(query.limit, Some(200));
+    assert_eq!(stored(&server, "site").unwrap().props["title"], "Site meeting", "the others stay as they are");
+}
+
+#[test]
+fn no_occurrence_found_is_gone() {
+    let server = server();
+    let ops = vec![
+        // A Tuesday the series doesn't have, and the Monday two minutes off.
+        of_site(EventChangeKind::Update, 20, 7, title("x")),
+        EventOp { occurrence: utc(19, 7, 2), ..of_site(EventChangeKind::Delete, 19, 7, EventFields::default()) },
+        // A series the server doesn't have.
+        EventOp { series: Pim::event_id("nobody"), ..of_site(EventChangeKind::Delete, 19, 7, EventFields::default()) },
+    ];
+    let result = run(&server, &job(ops));
+    assert_eq!(outcomes(&result).iter().map(|o| o.0).collect::<Vec<_>>(), [EventResult::Gone; 3]);
+    assert!(stored(&server, "site").unwrap().overrides.is_empty() && stored(&server, "site").unwrap().excluded.is_empty());
+}
+
+#[test]
+fn an_occurrence_is_updated_by_its_own_id_with_neither_zone_nor_calendar() {
+    let server = server();
+    // Moved to eleven in Zurich, by an event that names its zone.
+    let fields = EventFields {
+        time: Some(EventTime { start: utc(19, 9, 0), end: utc(19, 10, 0), all_day: false }),
+        zones: Some(EventZones { start: "America/New_York".into(), end: String::new() }),
+        ..Default::default()
+    };
+    let result = run(&server, &job(vec![of_site(EventChangeKind::Update, 19, 7, fields)]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    let written = server.with(|d| d.pim.written.clone());
+    let (id, patch) = written.last().unwrap();
+    assert_eq!(id, &Pim::occurrence_id("site", "2026-10-19T09:00:00"));
+    assert_eq!(
+        patch,
+        &json!({"start": "2026-10-19T11:00:00", "duration": "PT1H", "showWithoutTime": false}),
+        "on the series' clock, no zone, no calendar"
+    );
+    assert_eq!(overridden(&server, "2026-10-19T09:00:00").unwrap()["start"], "2026-10-19T11:00:00");
+}
+
+#[test]
+fn an_occurrence_is_deleted_by_its_own_id_and_the_server_excludes_it() {
+    let server = server();
+    // The 26th, winter time: nine in Zurich is 08:00 UTC.
+    let result = run(&server, &job(vec![of_site(EventChangeKind::Delete, 26, 8, EventFields::default())]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    assert_eq!(stored(&server, "site").unwrap().excluded, ["2026-10-26T09:00:00"]);
+}
+
+#[test]
+fn the_whole_series_is_deleted_by_its_master() {
+    let server = server();
+    let all = EventOp { kind: EventChangeKind::Delete, event: 300, remote: Pim::event_id("site"), ..Default::default() };
+    let result = run(&server, &job(vec![all]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    assert!(stored(&server, "site").is_none());
+}
+
+#[test]
+fn a_second_occurrence_is_still_found_after_the_first_was_changed() {
+    let server = server();
+    run(&server, &job(vec![of_site(EventChangeKind::Update, 19, 7, title("Site meeting (room B)"))]));
+    let result = run(&server, &job(vec![of_site(EventChangeKind::Update, 26, 8, title("Site meeting (room C)"))]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    assert_eq!(overridden(&server, "2026-10-19T09:00:00").unwrap()["title"], "Site meeting (room B)");
+    assert_eq!(overridden(&server, "2026-10-26T09:00:00").unwrap()["title"], "Site meeting (room C)");
+}
+
+/// Ada's answer `response` to Grace's planning meeting, told to Grace when `send`.
+fn respond(remote: &str, response: Response, send: bool) -> EventOp {
+    EventOp { kind: EventChangeKind::Respond, event: 400, remote: remote.into(), response, send, ..Default::default() }
+}
+
+fn status_of_ada(server: &StandIn) -> Value {
+    stored(server, "planning").unwrap().props["participants"]["ada"]["participationStatus"].clone()
+}
+
+#[test]
+fn an_answer_is_the_servers_participants_map_with_the_persons_status_set() {
+    let server = server();
+    let result = run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Accepted, false)]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    let (id, patch) = server.with(|d| d.pim.written.last().cloned()).unwrap();
+    assert_eq!(id, Pim::event_id("planning"));
+    assert_eq!(patch.as_object().unwrap().keys().collect::<Vec<_>>(), ["participants"], "nothing else");
+    assert_eq!(patch["participants"]["grace"], stored(&server, "planning").unwrap().props["participants"]["grace"]);
+    assert_eq!(status_of_ada(&server), "accepted");
+    // Somebody's meeting Ada is not invited to has nobody to answer for.
+    let lunch = run(&server, &job(vec![respond(&Pim::event_id("lunch"), Response::Accepted, false)]));
+    assert_eq!(outcomes(&lunch)[0], (EventResult::Refused, "you are not among the people invited to it".to_string()));
+}
+
+#[test]
+fn an_answer_with_send_asks_the_server_to_tell_the_organizer_and_one_without_does_not() {
+    let server = server();
+    run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Tentative, false)]));
+    assert!(server.with(|d| d.pim.scheduled.is_empty()), "kept on her copy, nobody told");
+    assert_eq!(status_of_ada(&server), "tentative");
+    run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Declined, true)]));
+    let told = server.with(|d| d.pim.scheduled.clone());
+    assert_eq!(told.iter().map(|t| (t.what, t.to.clone())).collect::<Vec<_>>(), [("reply", vec!["grace@example.org".to_string()])]);
+    assert_eq!(status_of_ada(&server), "declined");
+}
+
+#[test]
+fn an_answer_to_one_occurrence_is_that_occurrence_alone_and_to_the_series_is_the_master() {
+    let server = server();
+    // Grace's planning repeats, Tuesdays at ten.
+    server.with(|d| d.pim.events.iter_mut().find(|e| e.raw == "planning").unwrap().rule = Some(json!({"frequency": "weekly", "count": 3})));
+    let one = |response: Response, send: bool| EventOp {
+        kind: EventChangeKind::Respond,
+        event: 400,
+        series: Pim::event_id("planning"),
+        occurrence: utc(27, 9, 0),
+        response,
+        send,
+        ..Default::default()
+    };
+    // Kept on her copy of that Tuesday alone.
+    let kept = run(&server, &job(vec![one(Response::Declined, false)]));
+    assert_eq!(outcomes(&kept)[0].0, EventResult::Done);
+    let planning = stored(&server, "planning").unwrap();
+    assert_eq!(planning.overrides["2026-10-27T10:00:00"]["participants"]["ada"]["participationStatus"], "declined");
+    assert_eq!(status_of_ada(&server), "needs-action", "the series as it was");
+    // Told to Grace: such a server answers an invitation as a whole, and says so.
+    let told = run(&server, &job(vec![one(Response::Tentative, true)]));
+    let said = outcomes(&told);
+    assert_eq!(said[0].0, EventResult::Refused);
+    assert!(said[0].1.contains("answered as a whole"), "{said:?}");
+    // The series: the master, and Grace is told.
+    let series = run(&server, &job(vec![respond(&Pim::event_id("planning"), Response::Accepted, true)]));
+    assert_eq!(outcomes(&series)[0].0, EventResult::Done);
+    assert_eq!(status_of_ada(&server), "accepted");
+    assert_eq!(server.with(|d| d.pim.scheduled.len()), 1);
+}
+
+#[test]
+fn a_proposal_sent_with_an_answer_and_a_forward_are_refused_with_their_reason() {
+    let server = server();
+    let proposing = EventOp {
+        proposed: Some(EventTime { start: utc(20, 12, 0), end: utc(20, 13, 0), all_day: false }),
+        ..respond(&Pim::event_id("planning"), Response::Tentative, true)
+    };
+    let forward = EventOp {
+        kind: EventChangeKind::Forward,
+        event: 9,
+        remote: Pim::event_id("planning"),
+        token: "f".into(),
+        send: true,
+        to: vec![Address::new("", "eve@example.org")],
+        ..Default::default()
+    };
+    let result = run(&server, &job(vec![proposing, forward]));
+    let said = outcomes(&result);
+    assert_eq!((said[0].0, said[0].1.contains("another time")), (EventResult::Refused, true), "{said:?}");
+    assert_eq!((said[1].0, said[1].1.contains("forwards no meetings")), (EventResult::Refused, true));
+    assert_eq!(status_of_ada(&server), "needs-action", "nothing written");
+    assert!(server.asked().iter().all(|a| a.method != "CalendarEvent/set"));
+}
+
+#[test]
+fn a_write_to_an_event_of_a_series_is_never_sent_before_the_master_was_read() {
+    let server = server();
+    // An occurrence the window holds as an event of its own, by its own id: its series is read before it is written.
+    let own = Pim::occurrence_id("site", "2026-10-19T09:00:00");
+    let result = run(&server, &job(vec![update(&own, title("Site meeting (room B)"))]));
+    assert_eq!(outcomes(&result)[0].0, EventResult::Done);
+    let methods: Vec<(String, Option<usize>)> = server.asked().into_iter().map(|a| (a.method, a.ids)).collect();
+    assert_eq!(
+        methods,
+        [("CalendarEvent/get".to_string(), Some(1)), ("CalendarEvent/get".to_string(), Some(1)), ("CalendarEvent/set".to_string(), None)],
+        "the occurrence, its series, then the write"
+    );
+    // A series that can't be read just now: nothing is written, and the change waits.
+    server.with(|d| {
+        d.pim.broken_events.insert(Pim::event_id("site"));
+    });
+    let before = server.asked().len();
+    let waits = run(&server, &job(vec![update(&own, title("Site meeting (room C)"))]));
+    assert_eq!(outcomes(&waits)[0].0, EventResult::Failed);
+    assert!(server.asked().into_iter().skip(before).all(|a| a.method != "CalendarEvent/set"));
+    // One occurrence known by its time: its series is read first too, and one the server doesn't have is gone.
+    server.with(|d| d.pim.broken_events.clear());
+    server.with(|d| d.pim.events.retain(|e| e.raw != "site"));
+    let gone = run(&server, &job(vec![of_site(EventChangeKind::Delete, 26, 8, EventFields::default()), update(&own, title("x"))]));
+    assert_eq!(outcomes(&gone).iter().map(|o| o.0).collect::<Vec<_>>(), [EventResult::Gone, EventResult::Gone]);
 }

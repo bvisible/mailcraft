@@ -6,7 +6,8 @@
 //!
 //! - **Ada's calendar** ([`DEMO_PERSON`]'s own, the default, which she may write): a meeting she organizes with three
 //!   guests, a meeting she is invited to and has not answered, a whole-day event of two days, an event that names no
-//!   zone (a floating one), a private one, a tentative one, one shown as free, one cancelled.
+//!   zone (a floating one), a private one, a tentative one, one shown as free, one cancelled; and a weekly meeting of
+//!   Grace's she is invited to, four Thursdays at eleven, not answered yet.
 //! - **The team's calendar**, which she may write: a weekly meeting on Mondays at nine in Zurich, from the week before
 //!   to five weeks after; around the end of October it crosses the night summer time ends, and stays at nine.
 //! - **Grace's calendar**, a colleague's she may only read: her days off and a review.
@@ -121,6 +122,19 @@ pub fn demo(today: Date) -> StandIn {
         pim.add_event(Event::timed("focus", "ada", "Focus time", &at(9, "08:00"), zurich, "PT2H").with("freeBusyStatus", json!("free")));
         pim.add_event(Event::timed("old-sync", "ada", "Old sync", &at(10, "15:00"), zurich, "PT30M").with("status", json!("cancelled")));
         pim.add_event(Event::whole_days("release", "ada", "Release day", &day(11), 1));
+        // A weekly meeting of Grace's that Ada is invited to and has not answered: Thursdays at eleven, four of them.
+        pim.add_event(
+            Event::timed("sync", "ada", "Design sync", &at(3, "11:00"), zurich, "PT45M")
+                .repeating(json!({"@type": "RecurrenceRule", "frequency": "weekly", "count": 4}))
+                .with("organizerCalendarAddress", json!(mailto("grace@example.org")))
+                .with(
+                    "participants",
+                    json!({
+                        "grace": person("Grace Okafor", "grace@example.org", json!({"owner": true}), "accepted"),
+                        "ada": person("Ada Marlow", DEMO_PERSON, json!({"attendee": true}), "needs-action"),
+                    }),
+                ),
+        );
         // The team's weekly meeting, from the week before to five weeks after.
         pim.add_event(
             Event::timed("site", "team", "Site meeting", &at(-7, "09:00"), zurich, "PT1H30M")

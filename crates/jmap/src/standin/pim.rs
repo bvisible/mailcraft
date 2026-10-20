@@ -312,6 +312,8 @@ pub struct Pim {
     pub own: Vec<String>,
     /// The mail the server sent about events, oldest first.
     pub scheduled: Vec<Scheduled>,
+    /// The changes it was sent, as they came (the id of the event or occurrence, and the patch), oldest first.
+    pub written: Vec<(String, Value)>,
     /// Events (their ids in the API, or a new one's `uid`) whose `CalendarEvent/set` is answered with the SetError of
     /// that `type`.
     pub refused_events: BTreeMap<String, &'static str>,
@@ -344,6 +346,7 @@ impl Default for Pim {
             says_state: true,
             own: Vec::new(),
             scheduled: Vec::new(),
+            written: Vec::new(),
             refused_events: BTreeMap::new(),
             keeps_old_times: BTreeSet::new(),
             tells_the_organizer: true,

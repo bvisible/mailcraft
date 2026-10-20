@@ -248,6 +248,10 @@ fn writable(s: &Session, calendar: Id) -> Result<(), CmdError> {
 pub const PLAIN_KEEPS_NO: &str = "This calendar's server keeps no categories, importance, response options, online meetings or proposed times.";
 /// Why it refuses an event that shows otherwise than free or busy.
 pub const PLAIN_FREE_BUSY: &str = "This calendar's server keeps only Free and Busy.";
+/// Why it refuses an answer to one occurrence of somebody else's meeting that is to be told to the organizer: such a
+/// server answers an invitation as a whole.
+pub const PLAIN_WHOLE_ANSWER: &str =
+    "This calendar's server answers an invitation as a whole: answer the whole series, or keep this answer here without sending it.";
 
 /// Whether `calendar` is one whose server keeps only the basics of an event.
 pub(crate) fn plain(s: &Session, calendar: Id) -> bool {
@@ -757,6 +761,10 @@ fn delete(s: &mut Session, v: &Value) -> CmdResult {
         // (A series that isn't on the server yet has invited nobody yet.)
         let people = if before.origin.id.is_empty() { 0 } else { invited(s, &before) };
         let send = if decline { tell } else { may_send(v, people, TELLS_CANCEL)? };
+        // //// Neoffice — nor declined alone with a word to the organizer, there.
+        if decline && send && plain(s, before.calendar) {
+            return Err(fail(PLAIN_WHOLE_ANSWER));
+        }
         s.mailbox.event_mut(id)?.exceptions.push(day);
         // Its server is to delete (or decline) that occurrence too; a series that isn't there
         // yet arrives without it.
@@ -897,6 +905,10 @@ fn respond(s: &mut Session, v: &Value) -> CmdResult {
             Part::One(day) => {
                 if !happens_on(s, &before, day) {
                     return Err(fail(format!("the series doesn't happen on {}", day.iso())));
+                }
+                // //// Neoffice — a server that keeps only the basics answers an invitation as a whole: one occurrence is not told alone.
+                if send && plain(s, before.calendar) {
+                    return Err(fail(PLAIN_WHOLE_ANSWER));
                 }
                 // Declined, that day is out of the calendar; otherwise the server makes the
                 // occurrence an event of its own with the answer, which the next download brings.
