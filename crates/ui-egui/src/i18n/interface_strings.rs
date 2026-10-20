@@ -782,6 +782,28 @@ const AFTER: &str = "after the tests";
         }
     }
 
+    /// The words of an account a newer MailCraft added, in French as its translator wrote them.
+    #[test]
+    fn an_account_a_newer_version_added_reads_in_french() {
+        let french = super::super::Lang::from_tag("fr").unwrap();
+        for (english, translation) in [
+            (
+                "Added by a newer version of MailCraft: send and receive with it there",
+                "Ajouté par une version plus récente de MailCraft : pour envoyer et recevoir avec ce compte, utilisez cette version-là",
+            ),
+            (
+                "This account was added by a newer version of MailCraft. This version keeps it as it is and doesn't send or receive with it: use the newer version for that, and to change its settings.",
+                "Ce compte a été ajouté par une version plus récente de MailCraft. Cette version le conserve tel quel, sans envoyer ni recevoir de messages avec lui : pour cela, et pour modifier ses réglages, utilisez la version plus récente.",
+            ),
+            (
+                "Its mail can be read here. What you change in it is kept in this mailbox, and this version tells no mail server about it.",
+                "Vous pouvez lire ses messages ici. Les modifications que vous y apportez sont conservées dans cette boîte aux lettres, et cette version n’en informe aucun serveur de messagerie.",
+            ),
+        ] {
+            assert_eq!(super::super::t_in(french, english), translation);
+        }
+    }
+
     /// The names of the months and of the days of the week reach `tl!` from `mailcraft_time`, which the scan can't
     /// follow: the calendar's titles and columns draw every one of them, full and short, and every catalog has them.
     #[test]
