@@ -51,6 +51,8 @@ pub mod icons;
 pub mod jmap_job;
 // //// Neoffice — a JMAP account's calendars, kept current by a job of their own beside its Send/Receive.
 pub mod jmap_pim;
+// //// Neoffice — a JMAP account's notes, kept current by the job that keeps its calendars.
+mod jmap_notes;
 mod keep_offline;
 pub mod keys;
 pub mod mail_view;

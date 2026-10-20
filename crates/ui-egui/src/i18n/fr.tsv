@@ -64,7 +64,7 @@
 	Apply Sent Contact Changes	Appliquer les modifications de contacts envoyées
 	The contact changes couldn't be taken in	Les modifications de contacts n’ont pas pu être prises en compte
 	A contact change couldn't be sent yet and will be tried again	Une modification de contact n’a pas encore pu être envoyée et sera réessayée
-# Notes, the mailbox's own and a server's (crates/engine/src/cmd/notes.rs and notes/, crates/ui-egui/src/notes_view.rs): kept together, near the top.
+# Notes, the mailbox's own and a server's (crates/engine/src/cmd/notes.rs and notes/, crates/jmap/src/pim/notes.rs, crates/ui-egui/src/jmap_notes.rs and notes_view.rs): kept together, near the top.
 	Find Notes	Rechercher des notes
 	Open Note	Ouvrir la note
 	Select Note	Sélectionner une note
@@ -99,6 +99,7 @@
 	1 note couldn't be read: {why}	1 note n’a pas pu être lue : {why}
 	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
 	their text is more than one job reads	leur texte dépasse ce qu’une seule synchronisation peut lire
+	The notes couldn't be taken in	Les notes n’ont pas pu être prises en compte
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange

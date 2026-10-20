@@ -30,6 +30,9 @@
 //! long after each one more, ten minutes at the most. (The cadences are the server's to bear: a server of the kind that
 //! answers from a layer over another store pays for each read.)
 //!
+//! **The notes** of an account whose server keeps them come with the same jobs, as [`crate::jmap_notes`] says: read with
+//! the wide job and while Notes is in front, a change of them sent three seconds after the last one, and taken in last.
+//!
 //! **The contacts cost one question when nothing changed.** The window keeps, in memory, the state the server said of
 //! an account's contacts at the last job that brought them all, and hands it back with the next job: the host then asks
 //! for that state alone, and reads them all only when it changed or is an hour old. A job that brought no state (any
@@ -163,6 +166,8 @@ pub(crate) struct JmapPim {
     sent_contacts: HashMap<Id, (ContactsUpload, f64)>,
     /// The state of the mailbox at which the waiting changes were last looked over for ones that can't go any more.
     settled_rev: Option<u64>,
+    /// What the jobs ask of each account's notes, and what they said of them ([`crate::jmap_notes`]).
+    pub(crate) notes: crate::jmap_notes::NotesJobs,
 }
 
 impl MailApp {
@@ -202,7 +207,9 @@ impl MailApp {
             let accounts = self.jmap_pim_accounts();
             // Sooner when a change waits to go.
             let waits = accounts.iter().any(|account| {
-                remote::events_waiting(&self.session, *account).due > 0 || remote_contacts::contacts_waiting(&self.session, *account).due > 0
+                remote::events_waiting(&self.session, *account).due > 0
+                    || remote_contacts::contacts_waiting(&self.session, *account).due > 0
+                    || self.notes_waiting(*account)
             });
             if !accounts.is_empty() {
                 ctx.request_repaint_after(std::time::Duration::from_secs(if waits { 1 } else { 5 }));
@@ -229,6 +236,7 @@ impl MailApp {
     /// [`jmap_pim_tick`](Self::jmap_pim_tick) at `now` (milliseconds), with the window in front or not. Whether a job
     /// was started. (Public for a host's tests, which have no window.)
     pub fn jmap_pim_tick_at(&mut self, focused: bool, now: f64) -> bool {
+        self.notes_look(focused, now);
         let in_front = matches!(self.session.view.module, Module::Calendar | Module::People) && !self.ui.backstage;
         let came_back = (focused && !self.jmap_pim.focused) || (in_front && !self.jmap_pim.in_front) || self.people_came_to_the_front();
         (self.jmap_pim.focused, self.jmap_pim.in_front) = (focused, in_front);
@@ -300,7 +308,8 @@ impl MailApp {
             let newly = in_front && self.ticked_unread(account);
             let asked = self.jmap_pim.checked.get(&account).copied();
             let refresh = wide || ((self.jmap_pim.due || elsewhere || newly) && in_front) || asked.is_none_or(|at| now - at >= every);
-            if !refresh && !push {
+            // (The notes: a change to send, or Notes in front.)
+            if !refresh && !push && !self.notes_want(account, now) {
                 continue;
             }
             // A server that didn't answer the last time is given longer each time.
@@ -386,7 +395,7 @@ impl MailApp {
             plain_unless_said: false,
             changes: changes.clone(),
             contact_changes: cards.clone(),
-            notes: None,
+            notes: self.notes_ask(account, wide, around.is_some(), now),
         };
         let cancel = Arc::new(AtomicBool::new(false));
         if self.services.jmap_pim.is_none() {
@@ -559,7 +568,10 @@ impl MailApp {
         ]
         .into_iter()
         .any(|answered| answered.is_some_and(|n| n > 0));
+        // What the server made of the changes of notes, then the notes.
+        let notes = self.take_in_notes(account, &mut result, &mut errors);
         let well = result.offers.is_some()
+            && notes
             && errors.is_empty()
             && !result.auth_refused
             && result.busy_for.is_none()
