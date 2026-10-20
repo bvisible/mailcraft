@@ -242,18 +242,9 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
             log::error!("a mailbox the page handed over couldn't be set up");
             continue;
         };
-        // Its signature, as the page gives it: new messages, replies and forwards start with it.
-        let mut signature = serde_json::json!({"name": a.email, "default": true, "account": id});
-        if !a.signature_html.trim().is_empty() {
-            signature["html"] = a.signature_html.clone().into();
-        } else if !a.signature_text.trim().is_empty() {
-            signature["text"] = a.signature_text.clone().into();
-        } else {
-            continue;
-        }
-        if session.run("signature.set", &signature).is_err() {
-            log::warn!("the signature of a mailbox the page handed over couldn't be set");
-        }
+        // Its signature, as the page gives it, with a company's logo by its bytes: new messages, replies and forwards
+        // start with it (page_signature.rs).
+        crate::page_signature::set_up(&mut session, id, &a.email, &a.signature);
     }
     // What set the page's mailboxes up is no change of the owner's: nothing to undo.
     session.forget_history();

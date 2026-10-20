@@ -26,6 +26,9 @@ mod credentials;
 #[cfg(target_arch = "wasm32")]
 mod fetch;
 mod jmap_services;
+// //// Neoffice — the signature a hosting page gives a mailbox, its logo by its bytes (built everywhere, so that it is
+// tested natively).
+mod page_signature;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

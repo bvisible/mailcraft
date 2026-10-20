@@ -13,7 +13,9 @@
 //!   username: "jane@example.com",
 //!   secret: "<token>",           // kept in this tab's memory only, never stored
 //!   scheme: "bearer",            // or "basic"
-//!   signature: { html: "…", text: "…" }  // optional: the mailbox's signature in Neoffice
+//!   signature: { html: "…", text: "…",   // optional: the mailbox's signature in Neoffice
+//!     logo: { data: "<base64>", name: "logo.png", alt: "…", width: 120 },  // a company's logo, by its bytes
+//!     layout: "pictureLeft" }            // where it goes: "pictureLeft" or "pictureAbove"
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail" };        // the name the person reads, shown wherever MailCraft names itself
 //! ```
@@ -70,15 +72,14 @@ pub struct HostAccount {
     pub username: String,
     pub secret: String,
     pub bearer: bool,
-    /// Its signature in Neoffice, as the page gives it: its HTML and its text (both may be empty).
-    pub signature_html: String,
-    pub signature_text: String,
+    /// Its signature in Neoffice, as the page gives it: its HTML, its text, and a company's logo with its place.
+    pub signature: crate::page_signature::PageSignature,
 }
 
 impl std::fmt::Debug for HostAccount {
     // Never the secret, nor the address: they go into logs.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("HostAccount").field("bearer", &self.bearer).field("signature", &!self.signature_text.is_empty()).finish_non_exhaustive()
+        f.debug_struct("HostAccount").field("bearer", &self.bearer).field("signature", &self.signature).finish_non_exhaustive()
     }
 }
 
@@ -231,13 +232,7 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
     let Some(list) = get(host, "accounts").filter(js_sys::Array::is_array) else { return Vec::new() };
     let mut out: Vec<HostAccount> = Vec::new();
     for item in js_sys::Array::from(&list).iter().take(MAX_ACCOUNTS as usize) {
-        let (signature_html, signature_text) = match get(&item, "signature").filter(|_| signatures) {
-            Some(given) => (
-                get(&given, "html").and_then(|v| v.as_string()).filter(|h| h.len() <= MAX_SIGNATURE_HTML).unwrap_or_default(),
-                text(&given, "text").chars().take(MAX_SIGNATURE_TEXT).collect(),
-            ),
-            None => Default::default(),
-        };
+        let signature = get(&item, "signature").filter(|_| signatures).map(|given| signature(&given)).unwrap_or_default();
         let account = HostAccount {
             email: text(&item, "email"),
             name: text(&item, "name"),
@@ -245,14 +240,29 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
             username: text(&item, "username"),
             secret: text(&item, "secret"),
             bearer: text(&item, "scheme").eq_ignore_ascii_case("bearer"),
-            signature_html,
-            signature_text,
+            signature,
         };
         if complete(&account) && !out.iter().any(|a| a.email.eq_ignore_ascii_case(&account.email)) {
             out.push(account);
         }
     }
     out
+}
+
+/// The signature a page gives a mailbox: its HTML and its text within their lengths, and a company's logo by its bytes
+/// with its place, as far as MailCraft takes them (page_signature.rs).
+fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
+    use crate::page_signature::{PageSignature, layout, picture};
+    let logo = get(given, "logo").and_then(|logo| {
+        let width = get(&logo, "width").and_then(|v| v.as_f64());
+        picture(&text(&logo, "data"), &text(&logo, "name"), &text(&logo, "alt"), width)
+    });
+    PageSignature {
+        html: get(given, "html").and_then(|v| v.as_string()).filter(|h| h.len() <= MAX_SIGNATURE_HTML).unwrap_or_default(),
+        text: text(given, "text").chars().take(MAX_SIGNATURE_TEXT).collect(),
+        layout: logo.as_ref().map_or_else(String::new, |_| layout(&text(given, "layout"))),
+        logo,
+    }
 }
 
 /// A mailbox MailCraft can open: an address, an `https` session and a secret.
