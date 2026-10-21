@@ -1092,6 +1092,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line_c(&[(10.5, 16.5), (17.0, 16.5)], a);
             pen.head(17.0, 16.5, 0.0, 3.0, a);
         }
+        // //// Neoffice — Chat in Synk (host_share.rs): two speech bubbles, one answering the other.
+        "chatSynk" => {
+            pen.rounded(&[(2.5, 3.0), (2.5, 10.0), (4.5, 10.0), (4.5, 12.5), (7.5, 10.0), (12.0, 10.0), (12.0, 3.0)], true, 1.5, c);
+            pen.rounded(&[(8.5, 12.5), (8.5, 7.5), (17.5, 7.5), (17.5, 14.5), (15.5, 14.5), (15.5, 17.0), (12.5, 14.5), (8.5, 14.5)], true, 1.5, a);
+        }
         // Anything else: a lettered tile, so a missing drawing is visible rather than empty.
         _ => {
             pen.rect(3.5, 3.5, 16.5, 16.5, c);
@@ -1260,8 +1265,9 @@ pub const NAMES: &[&str] = &[
     // //// Neoffice — Nora's marks (nora/look.rs).
     "nora",
     "noraWand",
-    // //// Neoffice — Share in Synk (host_share.rs).
+    // //// Neoffice — Share in Synk and Chat in Synk (host_share.rs).
     "shareChat",
+    "chatSynk",
     "notes",
     "description",
     "work",

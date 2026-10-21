@@ -797,6 +797,19 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Home › Respond",
         r#"{} — hands the hosting page the message in the reading pane, by its mailbox's address and its id on the server alone, for the page to ask where to share it in its team chat; only a message of a mailbox the page handed over, that its server has. Answers {"shared": true}"#,
     ),
+    // //// Neoffice — Chat in Synk, with the sender or everyone of the message, where the hosting page takes a message to share (host_share.rs): the owner's click only.
+    (
+        "ui.chatWithSender",
+        "Chat with the Sender in Synk",
+        "Home › Respond",
+        r#"{} — has the hosting page open a conversation in its team chat with the sender of the message in the reading pane, named by its mailbox's address and its id on the server alone (the page's server reads the sender); as ui.shareMessage for which messages. Answers {"chat": "sender"}"#,
+    ),
+    (
+        "ui.chatWithEveryone",
+        "Chat with Everyone in Synk",
+        "Home › Respond",
+        r#"{} — as ui.chatWithSender, with everyone of the message: its sender and its recipients. Answers {"chat": "all"}"#,
+    ),
     ("ui.focusSearch", "Search", "Search", "{}"),
     (
         "ui.sync",
@@ -1494,6 +1507,8 @@ impl MailApp {
             None if id.starts_with("ui.nora") => nora::enabled(self, id),
             // //// Neoffice — Share in Synk: a page takes messages to share, and the message in the reading pane is one (host_share.rs).
             None if id == host_share::COMMAND => host_share::enabled(self),
+            // //// Neoffice — Chat in Synk, on the same messages (host_share.rs).
+            None if id == host_share::CHAT_SENDER || id == host_share::CHAT_ALL => host_share::enabled(self),
             None if id == "ui.copySelection" => self.text_selection.any(),
             // //// Neoffice — Import is File › Import's (`kept_here`: refused where nothing is kept).
             None if id == "ui.import" => self.session.enabled("file.import"),
@@ -1752,6 +1767,9 @@ impl MailApp {
             },
             // //// Neoffice — Share in Synk: the message in the reading pane handed to the hosting page (host_share.rs).
             host_share::COMMAND => host_share::run(self),
+            // //// Neoffice — Chat in Synk: the conversation the hosting page opens, with the sender or everyone (host_share.rs).
+            host_share::CHAT_SENDER => host_share::chat(self, false),
+            host_share::CHAT_ALL => host_share::chat(self, true),
             "ui.focusSearch" => {
                 self.search_focus = true;
                 self.ui.backstage = false;

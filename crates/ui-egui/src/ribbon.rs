@@ -133,6 +133,8 @@ pub(crate) enum Menu {
     // //// Neoffice — Nora's menus, when a host reaches her: what she does on a message, and the languages she translates the owner's text into (nora/ribbon.rs).
     Nora,
     NoraTranslate,
+    // //// Neoffice — Chat in Synk's menu, where the hosting page takes a message to share in its team chat: with whom (host_share.rs).
+    HostChat,
     MoveFolder,
     ReadingPane,
     Preview,
@@ -886,6 +888,8 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
         Menu::NewItems => new_items(ui, app),
         // //// Neoffice — Nora's menus (nora/ribbon.rs).
         Menu::Nora | Menu::NoraTranslate => crate::nora::ribbon::menu(ui, app, menu),
+        // //// Neoffice — Chat in Synk's menu (host_share.rs).
+        Menu::HostChat => crate::host_share::menu(ui, app),
         Menu::MoveMessages => {
             if app.session.sel.messages.is_empty() {
                 ui.label(tl!("Select a message first"));

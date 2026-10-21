@@ -232,6 +232,12 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   in `ribbon.rs`, the entry's in `mail_view.rs`, its drawing `shareChat` in `icons.rs`). The browser's part is
   `apps/mailcraft-web/src/host.rs` (`share`, and the contract in its comment), `host_menu.rs` (`tell`) and `web.rs`;
   the French lines are in `crates/i18n/po/neoffice/fr.po`. Without `share: true` nothing is offered.
+  Beside it, Chat in Synk, a button of the same group with a menu (With the Sender, With Everyone; the window
+  commands `ui.chatWithSender` and `ui.chatWithEveryone`, also two entries of the context menu after Share in Synk),
+  posts `{type: "mailcraft:chat", account, email, who: "sender" | "all"}` the same way, for the same messages; the
+  page finds or makes the conversation and opens it in Synk (`host_share.rs`, `chat` and `menu`; the menu's
+  `Menu::HostChat` in `ribbon.rs`, its drawing `chatSynk` in `icons.rs`, the commands kept from agents in
+  `crates/engine/src/agent.rs`, `NEVER`).
 - This file.
 
 ## What cannot carry a comment

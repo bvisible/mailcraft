@@ -400,6 +400,9 @@ const NEVER: &[&str] = &[
     "ui.noraLearnStyle",
     // //// Neoffice — Share in Synk hands a message to the hosting page, for other people to read it: the owner's own click only (ui-egui host_share.rs).
     "ui.shareMessage",
+    // //// Neoffice — Chat in Synk opens a conversation with other people about a message: the owner's own click only (ui-egui host_share.rs).
+    "ui.chatWithSender",
+    "ui.chatWithEveryone",
     // A search of the server goes only on the owner's own click (R6.2).
     "sync.graphSearchRequest",
     "sync.applyGraphSearch",

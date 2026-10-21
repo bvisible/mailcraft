@@ -1579,6 +1579,26 @@ msgstr "Modifica…"
 msgid "Changing the calendar needs your permission: File › Info › Connect calendar and contacts"
 msgstr "La modifica del calendario richiede l'autorizzazione: File › Informazioni › Collega calendario e contatti"
 
+#. interface
+#: crates/ui-egui/src/mail_view.rs
+msgid "Chat with Everyone"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Chat with Everyone in Synk"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view.rs
+msgid "Chat with the Sender"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Chat with the Sender in Synk"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -10541,6 +10561,16 @@ msgstr "Larghezza"
 #, fuzzy
 msgid "Window"
 msgstr "Finestra"
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "With Everyone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "With the Sender"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/calendar_view.rs

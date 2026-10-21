@@ -11,7 +11,7 @@ use mailcraft_engine::Session;
 use mailcraft_engine::cmd::jmap_mail::apply_jmap_mail;
 use mailcraft_model::sync::{FolderListing, GraphFolder, GraphMessage, JmapMailResult, MessagePage, ServerMessage};
 use mailcraft_model::{Address, FolderKind, Id, Mailbox};
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::*;
 use crate::{MailApp, Services};
@@ -46,8 +46,8 @@ fn mailbox(app: &mut MailApp, email: &str, ids: &[&str]) -> Id {
     account
 }
 
-/// What the page was handed, call by call.
-type Handed = Rc<RefCell<Vec<(String, String)>>>;
+/// What the page was handed, message by message.
+type Handed = Rc<RefCell<Vec<Value>>>;
 
 /// A hosting page's window: Ada's mailbox, handed over (in the page's own case), and Bob's, which the person added by
 /// hand. With `share`, the page takes messages to share, and what it is handed is kept.
@@ -62,10 +62,8 @@ fn page(share: bool) -> (MailApp, Id, Id, Handed) {
     let handed: Handed = Rc::default();
     if share {
         let kept = handed.clone();
-        app.services.share = Some(Share {
-            mailboxes: vec!["Ada@Example.org".into()],
-            send: Box::new(move |account, email| kept.borrow_mut().push((account.to_string(), email.to_string()))),
-        });
+        app.services.share =
+            Some(Share { mailboxes: vec!["Ada@Example.org".into()], post: Box::new(move |message| kept.borrow_mut().push(message.clone())) });
     }
     app.execute("folder.select", json!({"kind": "inbox", "account": ada})).unwrap();
     (app, ada, bob, handed)
@@ -94,7 +92,7 @@ fn the_page_is_handed_the_message_s_mailbox_and_its_id_on_the_server_and_nothing
     assert!(app.enabled(COMMAND));
     assert_eq!(app.run(COMMAND, json!({})).unwrap(), json!({"shared": true}));
     // The address as the page handed it over, the id as its server gave it.
-    assert_eq!(handed.borrow().as_slice(), [("Ada@Example.org".to_string(), "A2".to_string())]);
+    assert_eq!(handed.borrow().as_slice(), [json!({"type": SHARE_TYPE, "account": "Ada@Example.org", "email": "A2"})]);
     assert_eq!(super::message("Ada@Example.org", "A2"), json!({"type": SHARE_TYPE, "account": "Ada@Example.org", "email": "A2"}));
 }
 
@@ -132,4 +130,42 @@ fn the_button_is_in_mail_s_respond_group_only_where_a_page_takes_messages_to_sha
     app.execute("view.mail", json!({})).unwrap();
     app.execute("folder.select", json!({"kind": "inbox", "account": ada})).unwrap();
     assert!(respond(&app).contains(&COMMAND));
+}
+
+#[test]
+fn chat_in_synk_hands_the_page_the_message_and_with_whom_and_nothing_else() {
+    let (mut app, _, _, handed) = page(true);
+    select(&mut app, "A1");
+    assert!(app.enabled(CHAT_SENDER));
+    assert!(app.enabled(CHAT_ALL));
+    assert_eq!(app.run(CHAT_SENDER, json!({})).unwrap(), json!({"chat": "sender"}));
+    assert_eq!(app.run(CHAT_ALL, json!({})).unwrap(), json!({"chat": "all"}));
+    assert_eq!(
+        handed.borrow().as_slice(),
+        [
+            json!({"type": CHAT_TYPE, "account": "Ada@Example.org", "email": "A1", "who": "sender"}),
+            json!({"type": CHAT_TYPE, "account": "Ada@Example.org", "email": "A1", "who": "all"}),
+        ]
+    );
+    // The same messages as Share in Synk: not one of a mailbox added by hand.
+    select(&mut app, "B1");
+    assert!(!app.enabled(CHAT_SENDER));
+    assert!(app.run(CHAT_ALL, json!({})).is_err());
+    assert_eq!(handed.borrow().len(), 2);
+}
+
+#[test]
+fn chat_in_synk_is_a_menu_beside_share_in_synk_only_where_a_page_takes_messages() {
+    let (app, _, _, _) = page(false);
+    assert!(!respond(&app).contains(&"hostChat"));
+    assert!(!app.enabled(CHAT_SENDER));
+    let (app, _, _, _) = page(true);
+    let tab = crate::ribbon::describe(&app);
+    let respond = tab.groups.iter().find(|g| g.title == "Respond").unwrap();
+    let keys: Vec<&str> = respond.items.iter().map(|i| i.key).collect();
+    let share = keys.iter().position(|k| *k == COMMAND).unwrap();
+    assert_eq!(keys.get(share + 1), Some(&"hostChat"));
+    let chat = respond.items.iter().find(|i| i.key == "hostChat").unwrap();
+    assert_eq!(chat.menu, Some(Menu::HostChat));
+    assert!(chat.command.is_none());
 }

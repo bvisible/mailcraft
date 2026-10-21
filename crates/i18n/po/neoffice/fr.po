@@ -224,6 +224,24 @@ msgstr "modifier {n} messages"
 msgid "Changed {when}"
 msgstr "Dernière modification : {when}"
 
+msgid "Chat\nin Synk"
+msgstr "Discuter\ndans Synk"
+
+msgid "Chat in Synk with the people of this message"
+msgstr "Discuter dans Synk avec les personnes de ce message"
+
+msgid "Chat with Everyone"
+msgstr "Discuter avec tout le monde"
+
+msgid "Chat with Everyone in Synk"
+msgstr "Discuter avec tout le monde dans Synk"
+
+msgid "Chat with the Sender"
+msgstr "Discuter avec l’expéditeur"
+
+msgid "Chat with the Sender in Synk"
+msgstr "Discuter avec l’expéditeur dans Synk"
+
 msgid "Close Anyway"
 msgstr "Fermer quand même"
 
@@ -1579,6 +1597,12 @@ msgstr "étaient"
 
 msgid "whether it is private"
 msgstr "son caractère privé ou non"
+
+msgid "With Everyone"
+msgstr "Avec tout le monde"
+
+msgid "With the Sender"
+msgstr "Avec l’expéditeur"
 
 msgid "Write a Note with the Response…"
 msgstr "Écrire une note avec la réponse…"

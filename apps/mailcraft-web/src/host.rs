@@ -45,6 +45,14 @@
 //! Only on the person's click, and nothing of the message but its id: the page asks where to share it, and its server
 //! reads the message itself, under its own rules of who may. Absent or anything but `true`, nothing is offered.
 //!
+//! The same page gets **Chat in Synk** too (a menu button beside Share in Synk, and two entries of the context menu):
+//! with the sender of the message in the reading pane, or with everyone of it, on the same messages and the same
+//! terms; the page opens the conversation with those of them who use its chat (its server reads the addresses):
+//!
+//! ```js
+//! { type: "mailcraft:chat", account: "ada@example.org", email: "<its id on the server>", who: "sender" }  // or "all"
+//! ```
+//!
 //! **A page that draws the navigation in its own menu** (`chrome: "menu"`, Neoffice's desk at `/app/neomail`; absent
 //! or anything else, MailCraft draws everything as it always does, as in Neodesk): MailCraft draws no module bar and,
 //! in Mail, no folder pane, not even its strip, so that the message list starts at the left edge; the ribbon with its
