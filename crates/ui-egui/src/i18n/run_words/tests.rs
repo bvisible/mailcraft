@@ -446,7 +446,7 @@ fn the_calendar_and_contact_lines_read_in_french() {
     // The engine's refusals, and what a greyed control says.
     for refusal in [
         "Your rights do not let you delete this contact",
-        "This calendar's server keeps no categories, importance, response options or proposed times.",
+        "This calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer.",
         "This page keeps no tasks: they would be gone at the next visit",
     ] {
         assert_eq!(fr(refusal), Some(t(refusal)));
@@ -461,6 +461,21 @@ fn the_calendar_and_contact_lines_read_in_french() {
     let reason = super::reason("the server no longer has the series", &mb).into_owned();
     crate::i18n::set_current(Lang::English);
     assert_eq!(reason, t("the server no longer has the series"));
+}
+
+/// The status bar's message is read once for each text and language: the same text gives the same reading, another text
+/// or another language a new one.
+#[test]
+fn the_status_bar_reads_its_message_once_for_each_text_and_language() {
+    let mb = mailbox();
+    crate::i18n::set_current(french());
+    let refusal = "Your rights do not let you delete this contact";
+    let first = super::line_shown(refusal, &mb);
+    assert_eq!(first, t_in(french(), refusal));
+    assert_eq!(super::line_shown(refusal, &mb), first);
+    assert_eq!(super::line_shown("Up to date", &mb), t_in(french(), "Up to date"));
+    crate::i18n::set_current(Lang::English);
+    assert_eq!(super::line_shown(refusal, &mb), refusal, "another language, another reading");
 }
 
 /// A line that only looks as though it ends with one of the engine's sentences is read whole, or left as it came.

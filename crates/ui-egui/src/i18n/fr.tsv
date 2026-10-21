@@ -143,9 +143,12 @@
 	You may read this note, not change it.	Vous pouvez lire cette note, pas la modifier.
 # What a hosting page's tab, which keeps nothing of its own between visits, asks before what its server keeps is deleted (crates/ui-egui/src/dialogs.rs).
 	This contact's card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.	La fiche de ce contact sera retirée des contacts de Neoffice pour toute l’équipe. Un administrateur peut la restaurer.
-	{name}'s card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.	La fiche {name} sera retirée des contacts de Neoffice pour toute l’équipe. Un administrateur peut la restaurer.
-	This event will be removed from your Neoffice calendar.	Cet événement sera retiré de votre calendrier Neoffice.
-	The event "{title}" will be removed from your Neoffice calendar.	L’événement « {title} » sera retiré de votre calendrier Neoffice.
+	{name}'s card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.	La fiche « {name} » sera retirée des contacts de Neoffice pour toute l’équipe. Un administrateur peut la restaurer.
+	This event will be removed from the calendar "{calendar}".	Cet événement sera retiré du calendrier « {calendar} ».
+	The event "{title}" will be removed from the calendar "{calendar}".	L’événement « {title} » sera retiré du calendrier « {calendar} ».
+	Delete This Occurrence?	Supprimer cette occurrence ?
+	"{title}" on {day} will be removed from the calendar "{calendar}".	« {title} » le {day} sera retiré du calendrier « {calendar} ».
+	This event on {day} will be removed from the calendar "{calendar}".	Cet événement le {day} sera retiré du calendrier « {calendar} ».
 	Delete This Event?	Supprimer cet événement ?
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
@@ -347,7 +350,7 @@
 	Couldn't read {n} contacts of the address books: {why}	Impossible de lire {n} contacts des carnets d’adresses : {why}
 	the answer has no list of address books	la réponse ne contient aucune liste de carnets d’adresses
 	the answer has no list of cards	la réponse ne contient aucune liste de fiches
-	this calendar's server keeps no categories, importance, response options, online meetings or proposed times	le serveur de ce calendrier ne conserve ni catégories, ni importance, ni options de réponse, ni réunions en ligne, ni horaires proposés
+	this calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer	le serveur de ce calendrier ne conserve ni catégories, ni importance, ni autres horaires proposés, et une réponse est demandée à toutes les personnes invitées
 	{why}, and forwards no meetings	{why}, et ne transfère aucune réunion
 	{why}: answer without another time	{why} : réponse sans autre horaire proposé
 	the server says the event is one occurrence of a series, and doesn't say of which	le serveur indique que l’événement est une occurrence d’une série, sans préciser laquelle
@@ -375,11 +378,12 @@
 	the server no longer has the card it made of it	le serveur n’a plus la fiche qu’il en avait créée
 	Your rights do not let you add contacts	Vos droits ne vous permettent pas d’ajouter des contacts
 	This page keeps no contacts of its own, and its server has no address book to put new ones in	Cette page ne conserve aucun contact en propre, et son serveur n’a pas de carnet d’adresses où en ajouter de nouveaux
+	The address books are still being read from the server	Les carnets d’adresses sont encore en cours de lecture sur le serveur
 	Your rights do not let you change this contact	Vos droits ne vous permettent pas de modifier ce contact
 	Your rights do not let you delete this contact	Vos droits ne vous permettent pas de supprimer ce contact
 	A contact can't be moved to another address book here	Un contact ne peut pas être déplacé vers un autre carnet d’adresses ici
 	Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first.	Trop de modifications de contacts attendent d’être envoyées au serveur. Laissez Envoyer/Recevoir les transmettre d’abord.
-	This calendar's server keeps no categories, importance, response options or proposed times.	Le serveur de ce calendrier ne conserve ni catégories, ni importance, ni options de réponse, ni horaires proposés.
+	This calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer.	Le serveur de ce calendrier ne conserve ni catégories, ni importance, ni autres horaires proposés, et une réponse est demandée à toutes les personnes invitées.
 	This calendar's server doesn't forward meetings.	Le serveur de ce calendrier ne transfère pas les réunions.
 	This calendar's server keeps only Free and Busy.	Le serveur de ce calendrier ne conserve que Libre et Occupé.
 	This calendar's server answers an invitation as a whole: answer the whole series, or keep this answer here without sending it.	Le serveur de ce calendrier répond à une invitation dans son ensemble : répondez à toute la série, ou conservez cette réponse ici sans l’envoyer.
@@ -431,8 +435,8 @@
 	{name} couldn't be made a Teams meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion Teams : le serveur du compte ne l’a pas accepté. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
 	{name} couldn't be made a Teams meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion Teams : le serveur du compte ne l’a pas accepté ({why}). La réunion elle-même est enregistrée, sans lien pour la rejoindre.
 	{name} is no longer on the server, so it wasn't forwarded.	{name} ne figure plus sur le serveur : il n’a pas été transféré.
-	The server wouldn't forward {name}. Nobody was written to.	Le serveur n’a pas pu transférer {name}. Personne n’a reçu de message.
-	The server wouldn't forward {name} ({why}). Nobody was written to.	Le serveur n’a pas pu transférer {name} ({why}). Personne n’a reçu de message.
+	The server wouldn't forward {name}. Nobody was written to.	Le serveur a refusé de transférer {name}. Personne n’a reçu de message.
+	The server wouldn't forward {name} ({why}). Nobody was written to.	Le serveur a refusé de transférer {name} ({why}). Personne n’a reçu de message.
 	The server wouldn't take deleting one occurrence of {name}. It was put back as it was.	Le serveur n’a pas accepté la suppression d’une occurrence concernant {name}. Elle a été remise telle quelle.
 	The server wouldn't take deleting one occurrence of {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté la suppression d’une occurrence concernant {name} ({why}). Elle a été remise telle quelle.
 	The server wouldn't take your answer to one occurrence of {name}. It was put back as it was.	Le serveur n’a pas accepté votre réponse à une occurrence concernant {name}. Elle a été remise telle quelle.
@@ -448,13 +452,13 @@
 	The server wouldn't take {name} out of the calendar it was in ({why}), so it wasn't moved: it is back there, and the copy in the other calendar was removed.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine ({why}) : il n’a donc pas été déplacé, il y est revenu, et la copie de l’autre calendrier a été supprimée.
 	The server wouldn't take {name} out of the calendar it was in. It is in both calendars now.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine. Il figure désormais dans les deux calendriers.
 	The server wouldn't take {name} out of the calendar it was in ({why}). It is in both calendars now.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine ({why}). Il figure désormais dans les deux calendriers.
-	One day of {name} was deleted here and {why}, but it still has it. That day is back in the calendar.	Une journée concernant {name} a été supprimée ici et {why}, mais le serveur la possède encore. Cette journée est revenue dans le calendrier.
+	One day of {name} was deleted here and {why}, but it still has it. That day is back in the calendar.	Une journée concernant {name} a été supprimée ici et {why}, mais le serveur l’a encore. Cette journée est revenue dans le calendrier.
 	{name} was deleted here and {why}, but it still has it. It is back in the calendar.	{name} a été supprimé ici et {why}, mais le serveur le possède encore. Il est revenu dans le calendrier.
 	{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It wasn't moved: it is back there, and the copy in the other calendar was removed.	{name} a été déplacé vers un autre calendrier ici, et lorsqu’il devait être retiré de celui où il se trouvait, {why}, mais le serveur l’y possède encore. Il n’a pas été déplacé : il est revenu dans son calendrier d’origine, et la copie de l’autre calendrier a été supprimée.
 	{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It is in both calendars now.	{name} a été déplacé vers un autre calendrier ici, et lorsqu’il devait être retiré de celui où il se trouvait, {why}, mais le serveur l’y possède encore. Il figure désormais dans les deux calendriers.
 	the server answered that it has no such day	le serveur a répondu qu’il ne contient pas cette journée
 	the server answered that it has no such item	le serveur a répondu qu’il ne contient pas cet élément
-	the server said it deleted it too	le serveur a dit l’avoir supprimé aussi
+	the server said it deleted it too	le serveur a dit avoir fait de même
 	The server took the change to {name} but has {parts} otherwise than it was sent. It is shown here as the server has it.	Le serveur a accepté la modification apportée à {name}, mais il enregistre {parts} autrement que ce qui a été envoyé. Elle est affichée ici telle que le serveur la possède.
 	{name} was changed here and the server said it took the change, but it still has {parts} as before. It was put back to what the server has.	{name} a été modifié ici et le serveur a dit avoir accepté la modification, mais il conserve {parts} comme avant. Il a été remis dans l’état du serveur.
 	its time	son heure

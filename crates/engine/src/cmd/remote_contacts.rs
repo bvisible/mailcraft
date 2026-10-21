@@ -52,6 +52,9 @@ pub use written::{
 pub const NO_ADDING: &str = "Your rights do not let you add contacts";
 /// Why the owner may not make a contact here: the session keeps none of its own, and no server lists an address book.
 pub const NO_BOOKS: &str = "This page keeps no contacts of its own, and its server has no address book to put new ones in";
+/// Why the owner may not make a contact here yet: the session keeps none of its own, and the servers' address books are
+/// still to come ([`Session::books_listed`]).
+pub const NO_BOOKS_YET: &str = "The address books are still being read from the server";
 /// Why the owner may not change a contact: its address book is one the account may only read.
 pub const NO_CHANGING: &str = "Your rights do not let you change this contact";
 /// Why the owner may not delete a contact: the account may only read its book's contacts, or change them and not
@@ -170,6 +173,7 @@ fn book_from_remote(id: Id, account: Id, remote: &RemoteBook) -> AddressBook {
 /// Take in the address books a host brought ([`merge_books`]). Not an undo step.
 pub fn apply_books(s: &mut Session, download: &BooksDownload) -> CmdResult {
     let merged = merge_books(&mut s.mailbox, download)?;
+    s.books_listed = true;
     if merged.changed() {
         s.mailbox_changed();
     }
@@ -237,13 +241,20 @@ pub fn delete_refusal(mailbox: &Mailbox, contact: &Contact) -> Option<&'static s
 
 /// Why a new contact can't be made: no address book of a server takes it ([`default_book`]) and the session keeps
 /// nothing of its own between visits ([`Session::keeps_local`]), so it would be kept nowhere. The account's rights
-/// when a server lists books it may only read; that no server lists one, when none does.
+/// when a server lists books it may only read; that no server lists one, when none does; that they are still being
+/// read, before any server said ([`Session::books_listed`]).
 pub fn adding_refusal(s: &Session) -> Option<&'static str> {
     if s.keeps_local || default_book(s).is_some() {
         return None;
     }
     let listed = s.mailbox.address_books.iter().any(|book| super::remote::keeper(&s.mailbox, &book.origin).is_some());
-    Some(if listed { NO_ADDING } else { NO_BOOKS })
+    Some(if listed {
+        NO_ADDING
+    } else if s.books_listed {
+        NO_BOOKS
+    } else {
+        NO_BOOKS_YET
+    })
 }
 
 /// The address book a new contact made with the params `v` goes to, by its id here; `None` for the mailbox's own

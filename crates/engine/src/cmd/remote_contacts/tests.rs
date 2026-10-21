@@ -11,7 +11,7 @@ use mailcraft_model::{Contact, Id, Labeled, Mailbox, Origin};
 use mailcraft_time::{Date, DateTime, Timestamp};
 use serde_json::{Value, json};
 
-use super::{NO_ADDING, NO_BOOKS, NO_CHANGING, NO_DELETING, apply_books, book_here, merge_books};
+use super::{NO_ADDING, NO_BOOKS, NO_BOOKS_YET, NO_CHANGING, NO_DELETING, apply_books, book_here, merge_books};
 use crate::agent::{self, Access};
 use crate::cmd::remote::{apply_contacts, forget};
 use crate::{CmdError, Session};
@@ -282,7 +282,12 @@ fn two_contacts_with_one_origin_leave_one() {
 fn a_tab_that_keeps_nothing_and_has_no_book_says_so_rather_than_blame_the_rights() {
     let (mut s, account) = session();
     s.keeps_local = false;
-    // No server lists a book (yet, or ever): nothing to do with the account's rights.
+    // Before any server said which books it keeps: they are still being read.
+    assert_eq!(greyed(&s, "people.new"), Some(NO_BOOKS_YET));
+    assert_eq!(refused(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"})), NO_BOOKS_YET);
+    // Its server lists none: nothing to do with the account's rights.
+    apply_books(&mut s, &books(account, Vec::new())).unwrap();
+    assert!(s.books_listed);
     assert_eq!(greyed(&s, "people.new"), Some(NO_BOOKS));
     assert_eq!(refused(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"})), NO_BOOKS);
     // A book it may only read: then it is the rights.

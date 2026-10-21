@@ -612,7 +612,10 @@ fn a_kept_contact_completes_the_to_field() {
 fn an_account_that_offers_no_contacts_is_not_asked_for_them() {
     let (mut app, id, asked) = window();
     app.jmap_pim_tick_at(true, 0.0);
+    assert!(!app.session.books_listed);
     answer(&mut app, &asked, JmapPimResult { offers: Some(PimOffers { calendars: true, contacts: false }), ..answered(id) });
+    // The server said it keeps no address books: New Contact says there are none, not that they are still being read.
+    assert!(app.session.books_listed);
     app.execute("view.people", json!({})).unwrap();
     assert!(app.jmap_pim_tick_at(true, SECOND));
     assert!(!last(&asked).contacts, "a session with no address book");

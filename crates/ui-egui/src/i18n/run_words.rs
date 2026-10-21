@@ -294,6 +294,22 @@ pub(crate) fn line<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
     in_language(current(), Family::Line, text, mb)
 }
 
+/// [`line`] for what is drawn at every frame (the status bar's message): read once for each text and language, and the
+/// same reading given back while they stay.
+pub(crate) fn line_shown(text: &str, mb: &Mailbox) -> String {
+    thread_local! {
+        static LAST: std::cell::RefCell<Option<(Lang, String, String)>> = const { std::cell::RefCell::new(None) };
+    }
+    let lang = current();
+    let kept = LAST.with(|last| last.borrow().as_ref().filter(|(was, said, _)| *was == lang && said == text).map(|(.., shown)| shown.clone()));
+    if let Some(shown) = kept {
+        return shown;
+    }
+    let shown = line(text, mb).into_owned();
+    LAST.with(|last| *last.borrow_mut() = Some((lang, text.to_string(), shown.clone())));
+    shown
+}
+
 /// A reason the window puts after words of its own (`A calendar change couldn't be sent yet…: {why}`), in the interface's
 /// language: as it came when no row reads it.
 pub(crate) fn reason<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {

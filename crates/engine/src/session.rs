@@ -594,6 +594,11 @@ pub struct Session {
     /// nothing of them between visits. What would vanish at the next visit is then refused, with the reason, rather than
     /// made. Set by the host, never by a command's params. Never saved.
     pub keeps_local: bool,
+    // //// Neoffice — whether a server's list of address books (or its word that it keeps none) has come since this session
+    // began: before it, New Contact says the books are still being read, not that there are none
+    // (`cmd::remote_contacts::adding_refusal`). Set by `sync.applyBooks` and by the host. Never saved.
+    /// A server said which address books it keeps, or that it keeps none, since this session began.
+    pub books_listed: bool,
     // //// Neoffice — whether the host runs a JMAP account's Send/Receive: this fork's browser build does (`mailcraft-jmap`);
     // a build that can't reach a JMAP server keeps upstream's guards (nothing sent from one, no run made of one).
     /// The host runs a JMAP account's Send/Receive: it reaches the server, sends what waits in the account's Outbox and
@@ -719,6 +724,8 @@ impl Session {
             server_search: Default::default(),
             // //// Neoffice — see the field: kept, unless the host says otherwise.
             keeps_local: true,
+            // //// Neoffice — see the field: not yet.
+            books_listed: false,
             // //// Neoffice — see the field: none, unless the host says it runs one.
             jmap_runs: false,
             // //// Neoffice — see the field.

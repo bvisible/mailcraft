@@ -169,10 +169,17 @@ fn favourite_categorize_and_import_are_greyed_with_the_reason_where_nothing_is_k
     // Import by hand says why, and opens nothing.
     let refused = h.state_mut().run("ui.import", json!({})).unwrap_err();
     assert_eq!(refused, kept_here::NO_IMPORT_HERE);
+    // File › Open & Export greys its Import tile, saying why.
+    h.state_mut().execute("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+    h.run_steps(3);
+    assert!(h.state().hit.rect("greyedTile", 0).is_some(), "greyed");
     // A window that keeps its mailbox offers them.
     let (mut app, _) = window(false);
     app.execute("people.select", json!({"id": bob})).unwrap();
     assert!(app.enabled("people.favorite") && app.enabled("people.categorize") && app.enabled("ui.import"));
+    app.execute("ui.backstage", json!({"value": true, "page": "open"})).unwrap();
+    let h = drawn(app);
+    assert!(h.state().hit.rect("greyedTile", 0).is_none(), "a tile of its own");
 }
 
 #[test]
@@ -181,26 +188,74 @@ fn a_simple_event_in_a_tab_asks_before_it_is_deleted() {
     let budget = event(&app, "Budget review");
     let (title, text, action) = asked(&mut app, "calendar.delete", json!({"id": budget})).expect("a question");
     assert_eq!((title.as_str(), action.as_str()), ("Delete This Event?", "Delete"));
-    assert_eq!(text, "The event \"Budget review\" will be removed from your Neoffice calendar.");
+    assert_eq!(text, "The event \"Budget review\" will be removed from the calendar \"Ada\".");
     assert!(!text.contains("restore") && !text.contains("back"), "nothing promised back: {text}");
-    // Cancelled: still there, nothing noted for the server.
-    app.dialog = None;
-    assert!(app.session.mailbox.event(budget).is_some() && app.session.mailbox.event_changes.is_empty());
-    // Answered Delete: gone, and noted for the server, with no second question.
-    let params = crate::dialogs::answered(&json!({"id": budget}), &serde_json::Value::Null, None);
-    assert_eq!(asked(&mut app, "calendar.delete", params), None);
-    assert!(app.session.mailbox.event(budget).is_none() && app.session.mailbox.event_changes.len() == 1);
+    // Escape is Cancel, on screen: still there, nothing noted for the server.
+    let mut h = drawn(app);
+    h.key_press(egui::Key::Escape);
+    h.run_steps(2);
+    assert!(h.state().dialog.is_none());
+    let still =
+        |h: &Harness<'static, MailApp>| h.state().session.mailbox.event(budget).is_some() && h.state().session.mailbox.event_changes.is_empty();
+    assert!(still(&h));
+    // So is its Cancel button.
+    h.state_mut().run("calendar.delete", json!({"id": budget})).unwrap();
+    h.run_steps(2);
+    h.get_by_label("Cancel").click();
+    h.run_steps(2);
+    assert!(h.state().dialog.is_none() && still(&h));
+    // Delete: gone, and noted for the server, with no second question.
+    h.state_mut().run("calendar.delete", json!({"id": budget})).unwrap();
+    h.run_steps(2);
+    h.get_by_label("Delete").click();
+    h.run_steps(2);
+    assert!(h.state().dialog.is_none());
+    assert!(h.state().session.mailbox.event(budget).is_none() && h.state().session.mailbox.event_changes.len() == 1);
     // In French, by the window's catalog.
     let (mut app, _) = window(true);
     crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
     let budget = event(&app, "Budget review");
     let (title, text, _) = asked(&mut app, "calendar.delete", json!({"id": budget})).expect("a question");
     crate::i18n::set_current(crate::i18n::Lang::English);
-    assert!(title != "Delete This Event?" && text.contains("Budget review") && !text.contains("will be removed"), "{title}: {text}");
+    assert!(
+        title != "Delete This Event?" && text.contains("Budget review") && text.contains("Ada") && !text.contains("will be removed"),
+        "{title}: {text}"
+    );
     // A window that keeps its mailbox asks nothing of it, as upstream.
     let (mut app, _) = window(false);
     let budget = event(&app, "Budget review");
     assert_eq!(asked(&mut app, "calendar.delete", json!({"id": budget})), None);
+}
+
+#[test]
+fn one_day_of_a_series_deleted_by_itself_asks_as_that_day() {
+    let (mut app, _) = window(true);
+    let series = event(&app, "Weekly review");
+    // Delete This Occurrence, from the event's menu: the day is named, which of the series is not asked.
+    let (title, text, _) = asked(&mut app, "calendar.delete", json!({"id": series, "occurrence": "2026-10-20"})).expect("a question");
+    let day = mailcraft_time::Date::new(2026, 10, 20).unwrap().medium_shown();
+    assert_eq!(title, "Delete This Occurrence?");
+    assert_eq!(text, format!("\"Weekly review\" on {day} will be removed from the calendar \"Ada\"."));
+    // Answered: that day goes, with no second question.
+    let params = crate::dialogs::answered(&json!({"id": series, "occurrence": "2026-10-20"}), &serde_json::Value::Null, None);
+    assert_eq!(asked(&mut app, "calendar.delete", params), None);
+    assert!(app.session.mailbox.event(series).is_some_and(|e| e.exceptions.iter().any(|d| d.iso() == "2026-10-20")));
+}
+
+#[test]
+fn an_event_of_a_calendar_the_account_may_only_read_asks_nothing_and_its_delete_is_greyed() {
+    let (mut app, account) = window(true);
+    let calendars = vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, plain: true, read_only: true, ..Default::default() }];
+    remote::apply_calendars(&mut app.session, &CalendarsDownload { account, email: ME.into(), complete: true, calendars }).unwrap();
+    let budget = event(&app, "Budget review");
+    app.execute("calendar.select", json!({"id": budget})).unwrap();
+    assert!(!app.enabled("calendar.delete"));
+    let reason = app.session.registry.get("calendar.delete").and_then(|spec| (spec.enabled)(&app.session));
+    assert_eq!(reason, Some(mailcraft_engine::cmd::calendar::READ_ONLY_CALENDAR));
+    // Named, it is refused with the reason, and nothing is asked first.
+    let refused = app.run("calendar.delete", json!({"id": budget})).unwrap_err();
+    assert!(refused.contains("can only be read") && app.dialog.as_ref().is_none_or(|d| !matches!(d, Dialog::Confirm { .. })), "{refused}");
+    assert!(app.session.mailbox.event(budget).is_some());
 }
 
 #[test]

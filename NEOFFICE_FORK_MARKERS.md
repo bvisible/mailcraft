@@ -111,21 +111,27 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - A hosting page's tab, which keeps nothing of its own between visits (`Session::keeps_local` false), refuses what it
   would lose, with the reason a greyed control says: Tasks are not offered at all (`view.tasks`, `tasks.new`, Add to
   Tasks, Mod+4, the module bar), nor Import, nor a contact's favourite and categories
-  (`crates/engine/src/cmd/kept_here.rs`); New Contact says whether no book is listed or the rights forbid it, and
-  Delete says it is deleting that the rights forbid (`cmd/remote_contacts.rs`). A calendar whose server keeps no
-  categories, importance, response options or other times proposed (`Calendar::plain`) greys them in the ribbon, the
-  Categorize menus, the appointment's window and the invitation bar, with one reason (`cmd/calendar.rs`
-  `needs_kept_options`, `options_refusal`; `forms.rs`, `ribbon.rs`, `reading/invitation.rs`), and refuses to forward
-  in words of its own. Such a tab asks before a server's event with nobody to tell is deleted, and before a server's
-  contact is (an administrator restores it from the instance's Deleted Documents), in `crates/ui-egui/src/dialogs.rs`;
-  it keeps which of the servers' calendars are ticked with the interface's settings, by the account's address and the
-  calendar's name on its server (`crates/ui-egui/src/calendar_ticks.rs`, `UiState::calendar_ticks`). The window's
-  tests of all this are `crates/ui-egui/src/kept_here_tests.rs`.
+  (`crates/engine/src/cmd/kept_here.rs`; File › Open & Export greys its Import tile, `backstage.rs`); New Contact says
+  whether the books are still being read (`Session::books_listed`), none is listed or the rights forbid it, and Delete
+  says it is deleting that the rights forbid (`cmd/remote_contacts.rs`). A calendar whose server keeps no categories,
+  importance or other times proposed, and asks everyone invited for an answer (`Calendar::plain`: this program writes
+  every person invited as asked to answer), greys them and the response options in the ribbon, the Categorize menus,
+  the appointment's window and the invitation bar, with one reason (`cmd/calendar.rs` `needs_kept_options`,
+  `options_refusal`; `forms.rs`, `ribbon.rs`, `reading/invitation.rs`); an appointment moved into one in its form
+  drops them, and it refuses to forward in words of its own. Delete is greyed for an event of a calendar the account
+  may only read (`needs_changeable_event`). Such a tab asks before a server's event with nobody to tell is deleted, or
+  one day of its series, naming the calendar, and before a server's contact is (an administrator restores it from the
+  instance's Deleted Documents), in `crates/ui-egui/src/dialogs.rs`; it keeps which of the servers' calendars are
+  ticked with the interface's settings, by the account's address and the calendar's name on its server, noted whenever
+  the person changes them and put back on the calendars the first list of a visit makes
+  (`crates/ui-egui/src/calendar_ticks.rs`, `UiState::calendar_ticks`). The window's tests of all this are
+  `crates/ui-egui/src/kept_here_tests.rs`.
 - The hosted browser build tells the page that frames it whether closing it now would lose work: a message being
   written with changes, an appointment's window or a form a dialog holds with something typed into it (an
   appointment's, a contact's), and in a tab that keeps nothing, a change of an event or a contact not told to its
-  server yet, mail in an Outbox, or what the notes' own question counts (`MailApp::notes_unsent`): `MailApp::unsent_work`,
-  `crates/ui-egui/src/unsent.rs`. It speaks the Craft
+  server yet, mail in an Outbox, a draft saved here that the next run files, a move or a delete for good not told yet,
+  a JMAP account's messages read, flagged or moved here (worked out once for each state of the mailbox), or what the
+  notes' own question counts (`MailApp::notes_unsent`): `MailApp::unsent_work`, `crates/ui-egui/src/unsent.rs`. It speaks the Craft
   editors' contract with their host page (`<editor>:dirty`), in `apps/mailcraft-web/src/host_dirty.rs`, sent from the
   shell's frame loop (`apps/mailcraft-web/src/web.rs`, a tab of a hosting page only):
   `window.parent.postMessage({type: "mailcraft:dirty", dirty: true|false}, location.origin)` — once as the tab starts
@@ -147,7 +153,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`Family::Tail`), an item with no name by the interface's words for one, and what of an event a server shows
   otherwise by its parts (`Family::Parts`). The status bar reads its message through `run_words` too
   (`crates/ui-egui/src/chrome.rs`), and a change that waits says its reason in the interface's language
-  (`calendar_sync.rs`, `jmap_pim.rs`). Their French lines are a block near the top of `fr.tsv`; the census of the
+  (`calendar_sync.rs`, `jmap_pim.rs`); the status bar reads a message once for each text and language. Their French lines are a block near the top of `fr.tsv`; the census of the
   tests holds those files to their rows.
 - This file.
 

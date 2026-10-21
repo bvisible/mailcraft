@@ -102,6 +102,18 @@ fn tile(ui: &mut Ui, icon: &str, title: &str, detail: &str, t: &Tokens) -> bool 
     resp.clicked()
 }
 
+// //// Neoffice — added: a tile that can't be used, greyed, and saying why in place of what it does (`open`).
+/// A tile of [`tile`]'s look, greyed, with `why` under its title; nothing happens when it is clicked.
+fn greyed_tile(ui: &mut Ui, hit: &mut crate::control::HitMap, icon: &str, title: &str, why: &str, t: &Tokens) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width().min(560.0), 52.0), Sense::hover());
+    hit.add("greyedTile", 0, r);
+    ui.painter().rect(r, 6.0, t.panel, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    let ink = t.text_disabled;
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 26.0, r.center().y), vec2(24.0, 24.0)), icon, ink, ink);
+    ui.painter().text(pos2(r.min.x + 52.0, r.min.y + 18.0), Align2::LEFT_CENTER, title, semibold(13.0), ink);
+    crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 52.0, r.min.y + 36.0), r.width() - 64.0, why, regular(11.5), t.text_dim);
+}
+
 /// The line under an account's name on its card in File › Info: what kind of account it is, and
 /// for one on a mail server, its servers.
 pub(crate) fn account_detail(app: &MailApp, a: &mailcraft_model::Account) -> String {
@@ -326,7 +338,10 @@ fn download_in_full(app: &mut MailApp, ui: &mut Ui, a: &mailcraft_model::Account
 fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     heading(ui, tl!("Open & Export"), t);
     section(ui, tl!("Bring in"), t);
-    if tile(ui, "import", tl!("Import"), tl!("Messages (.eml, .mbox), calendars (.ics) and contacts (.vcf)"), t) {
+    // //// Neoffice — greyed, saying why, where what a file brings would be gone at the next visit (`kept_here`).
+    if let Some(why) = mailcraft_engine::cmd::kept_here::import_refusal(&app.session) {
+        greyed_tile(ui, &mut app.hit, "import", tl!("Import"), tl!(why), t);
+    } else if tile(ui, "import", tl!("Import"), tl!("Messages (.eml, .mbox), calendars (.ics) and contacts (.vcf)"), t) {
         let _ = app.run("ui.import", json!({}));
     }
     if tile(ui, "open", tl!("Open Mailbox File"), tl!("Replace what is open with a .mailcraft file"), t) {

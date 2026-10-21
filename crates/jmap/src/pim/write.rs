@@ -42,7 +42,8 @@ pub const ONLINE: &str = "virtualLocations";
 /// The property of an event's links, among which a server that makes online meetings keeps the room it made.
 pub const LINKS: &str = "links";
 /// What the person is told when only what such a server doesn't keep was changed.
-pub const KEEPS_NO: &str = "this calendar's server keeps no categories, importance, response options, online meetings or proposed times";
+pub const KEEPS_NO: &str =
+    "this calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer";
 /// Most people of an event that are written.
 const MAX_PEOPLE: usize = 500;
 /// Most people of the server's copy of an event that are rewritten: as many as are read.

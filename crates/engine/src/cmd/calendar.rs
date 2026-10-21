@@ -39,7 +39,8 @@ fn own_specs() -> Vec<CommandSpec> {
             .selection(needs_event),
         CommandSpec::new("calendar.delete", "Delete", "Appointment › Actions", delete)
             .params(r#"{"id"?: number, "scope"?: "series" | "occurrence", "occurrence"?: "YYYY-MM-DD" (only that day of a series), "send"?: true (required for a meeting the owner organizes on a server: the people invited are sent a cancellation), "comment"?: string (a note for them), "decline"?: true (somebody else's meeting: decline it rather than only delete the owner's copy; the organizer is told when "send" is true)}"#)
-            .selection(needs_event),
+            // //// Neoffice — greyed, with the reason, for an event of a calendar the account may only read (`needs_changeable_event`).
+            .selection(needs_changeable_event),
         CommandSpec::new("calendar.select", "Select Event", "Calendar", select).pure().params(r#"{"id": number | null, "day"?: "YYYY-MM-DD"}"#),
         CommandSpec::new("calendar.get", "Get Event", "Calendar", get).pure().params(r#"{"id"?: number}"#),
         CommandSpec::new("calendar.list", "List Events", "Calendar", list)
@@ -245,8 +246,11 @@ fn writable(s: &Session, calendar: Id) -> Result<(), CmdError> {
 // hosting page's server) refuses here what that server would refuse, with the reason, rather than note a change its
 // host has to drop and the next download undoes.
 /// Why a calendar whose server keeps only the basics of an event refuses categories, importance, response options and
-/// another time proposed. (An online meeting is one where its server makes them: `meeting::NO_ONLINE` says when not.)
-pub const PLAIN_KEEPS_NO: &str = "This calendar's server keeps no categories, importance, response options or proposed times.";
+/// another time proposed: its events keep none of the first three nor proposals, and everyone invited to them is asked
+/// for an answer (what is written there asks each one). (An online meeting is one where its server makes them:
+/// `meeting::NO_ONLINE` says when not.)
+pub const PLAIN_KEEPS_NO: &str =
+    "This calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer.";
 /// Why it refuses to forward a meeting: such a server forwards none.
 pub const PLAIN_NO_FORWARD: &str = "This calendar's server doesn't forward meetings.";
 /// Why it refuses an event that shows otherwise than free or busy.
@@ -276,6 +280,15 @@ fn selected_plain(s: &Session) -> bool {
 /// options and proposals: what greys those controls, with the reason.
 pub(super) fn needs_kept_options(s: &Session) -> Option<&'static str> {
     needs_event(s).or_else(|| selected_plain(s).then_some(PLAIN_KEEPS_NO))
+}
+
+/// Why an event of a calendar the account may only read can't be deleted (or changed) here, said where it is greyed.
+pub const READ_ONLY_CALENDAR: &str = "This calendar can only be read";
+
+/// [`needs_event`], and the selected event in a calendar the account may change: what greys Delete, with the reason.
+pub(super) fn needs_changeable_event(s: &Session) -> Option<&'static str> {
+    let read_only = |e: &Event| s.mailbox.calendar(e.calendar).is_some_and(|c| c.read_only && remote::keeper(&s.mailbox, &c.origin).is_some());
+    needs_event(s).or_else(|| s.sel.event.and_then(|id| s.mailbox.event(id)).filter(|e| read_only(e)).map(|_| READ_ONLY_CALENDAR))
 }
 
 /// [`needs_event`], and the selected event in a calendar whose server forwards meetings.

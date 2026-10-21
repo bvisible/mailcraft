@@ -630,23 +630,20 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
         None => {}
     }
     // //// Neoffice — 4 (D10). In a tab that keeps nothing, a server's event with no people to tell (a meeting's
-    // cancellation asks already) is asked about once before it is deleted, unless it repeats and its scope question was
-    // asked (which asks it): it goes from the person's calendar on the instance, and nothing promises it back.
-    let scoped = has("scope") || has("occurrence");
-    if id == "calendar.delete"
-        && !app.session.keeps_local
-        && keeper(mb, &e.origin).is_some()
-        && !e.origin.guest
-        && e.attendees.is_empty()
-        && (e.recurrence.is_none() || !scoped)
-    {
-        let title: String = e.title.trim().chars().filter(|c| !c.is_control()).take(80).collect();
-        let text = if title.is_empty() {
-            tl!("This event will be removed from your Neoffice calendar.").to_string()
-        } else {
-            crate::i18n::fmt(tl!("The event \"{title}\" will be removed from your Neoffice calendar."), &[("title", &title)])
-        };
-        return Some(Question::new(tl!("Delete This Event?"), text, tl!("Delete"), Value::Null));
+    // cancellation asks already), in a calendar the account may change (one it may only read refuses, with the reason),
+    // is asked about once before it is deleted, unless it repeats and its scope question was answered (which asked it):
+    // it goes from that calendar, and nothing promises it back. One day of a series deleted by itself (Delete This
+    // Occurrence) is asked about as that day.
+    let changeable = mb.calendar(e.calendar).filter(|c| !c.read_only);
+    if let Some(calendar) = changeable.filter(|_| {
+        id == "calendar.delete"
+            && !app.session.keeps_local
+            && keeper(mb, &e.origin).is_some()
+            && !e.origin.guest
+            && e.attendees.is_empty()
+            && (e.recurrence.is_none() || !has("scope"))
+    }) {
+        return Some(delete_question(e, calendar, params));
     }
     // 3. Somebody else's meeting that the account's server keeps.
     keeper(mb, &e.origin)?;
@@ -686,6 +683,43 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
         }
         _ => None,
     }
+}
+
+// //// Neoffice — added: the question before a server's event, or one day of its series, is deleted in a tab that keeps
+// nothing (`calendar_question`, step 4).
+/// "Delete This Event?" (or "Delete This Occurrence?" for one day of a series that `params` names), naming the event
+/// and its calendar, with Delete and Cancel.
+fn delete_question(e: &mailcraft_model::Event, calendar: &mailcraft_model::Calendar, params: &Value) -> Question {
+    let title: String = e.title.trim().chars().filter(|c| !c.is_control()).take(80).collect();
+    let name: String = calendar.name.trim().chars().filter(|c| !c.is_control()).take(80).collect();
+    let day = e.recurrence.as_ref().and(params.get("occurrence")).and_then(Value::as_str).and_then(mailcraft_time::Date::parse_iso);
+    let (heading, text) = match (day, title.is_empty()) {
+        (Some(day), false) => (
+            tl!("Delete This Occurrence?"),
+            crate::i18n::fmt(
+                tl!("\"{title}\" on {day} will be removed from the calendar \"{calendar}\"."),
+                &[("title", &title), ("day", &day.medium_shown()), ("calendar", &name)],
+            ),
+        ),
+        (Some(day), true) => (
+            tl!("Delete This Occurrence?"),
+            crate::i18n::fmt(
+                tl!("This event on {day} will be removed from the calendar \"{calendar}\"."),
+                &[("day", &day.medium_shown()), ("calendar", &name)],
+            ),
+        ),
+        (None, false) => (
+            tl!("Delete This Event?"),
+            crate::i18n::fmt(
+                tl!("The event \"{title}\" will be removed from the calendar \"{calendar}\"."),
+                &[("title", &title), ("calendar", &name)],
+            ),
+        ),
+        (None, true) => {
+            (tl!("Delete This Event?"), crate::i18n::fmt(tl!("This event will be removed from the calendar \"{calendar}\"."), &[("calendar", &name)]))
+        }
+    };
+    Question::new(heading, text, tl!("Delete"), Value::Null)
 }
 
 /// Whether a command is what an appointment's form saves: `calendar.edit` with everything the

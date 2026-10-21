@@ -365,7 +365,12 @@ pub(super) static ROWS: &[Row] = &[
     row(CARDS, Why, run_word!("the answer has no list of cards"), &[]),
     // Why a server didn't take a change of an event (`jmap::pim::push`) or of a contact (`jmap::pim::contacts::push`):
     // what a line about it says in brackets, and after the window's words for a change that waits.
-    row(WRITE, Why, run_word!("this calendar's server keeps no categories, importance, response options, online meetings or proposed times"), &[]),
+    row(
+        WRITE,
+        Why,
+        run_word!("this calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer"),
+        &[],
+    ),
     row(EVENTS_UP, Why, run_word!("{why}, and forwards no meetings"), &[("why", Why)]),
     row(EVENTS_UP, Why, run_word!("{why}: answer without another time"), &[("why", Why)]),
     row(EVENTS_UP, Why, run_word!("the server says the event is one occurrence of a series, and doesn't say of which"), &[]),
@@ -396,12 +401,19 @@ pub(super) static ROWS: &[Row] = &[
     // says them too, by these rows' lines.
     row(BOOKS, Line, run_word!("Your rights do not let you add contacts"), &[]),
     row(BOOKS, Line, run_word!("This page keeps no contacts of its own, and its server has no address book to put new ones in"), &[]),
+    row(BOOKS, Line, run_word!("The address books are still being read from the server"), &[]),
     row(BOOKS, Line, run_word!("Your rights do not let you change this contact"), &[]),
     row(BOOKS, Line, run_word!("Your rights do not let you delete this contact"), &[]),
     row(BOOKS, Line, run_word!("Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers"), &[]),
     row(BOOKS, Line, run_word!("A contact can't be moved to another address book here"), &[]),
     row(CONTACTS, Line, run_word!("Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first."), &[]),
-    row(CALENDAR, Line, run_word!("This calendar's server keeps no categories, importance, response options or proposed times."), &[]),
+    row(
+        CALENDAR,
+        Line,
+        run_word!("This calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer."),
+        &[],
+    ),
+    row(CALENDAR, Line, run_word!("This calendar can only be read"), &[]),
     row(CALENDAR, Line, run_word!("This calendar's server doesn't forward meetings."), &[]),
     row(CALENDAR, Line, run_word!("This calendar's server keeps only Free and Busy."), &[]),
     row(

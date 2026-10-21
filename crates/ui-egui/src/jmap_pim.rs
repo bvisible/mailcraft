@@ -511,6 +511,11 @@ impl MailApp {
         result.tidy();
         if let Some(offers) = result.offers {
             self.jmap_pim.offers.insert(account, offers);
+            // A server that keeps no address books has said so: New Contact says there are none rather than that they are
+            // still being read (`Session::books_listed`; one that keeps some says so with its list).
+            if !offers.contacts {
+                self.session.books_listed = true;
+            }
         }
         if let Some(identities) = result.identities.take() {
             self.jmap_pim.identities.insert(account, identities);

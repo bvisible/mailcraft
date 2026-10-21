@@ -377,7 +377,7 @@ pub fn status_bar(app: &mut MailApp, ui: &mut Ui) {
                 {
                     // //// Neoffice — what the engine and a server's job say, in the interface's language (`run_words`): what a
                     // change of an event or a contact came to, what waited and couldn't go.
-                    let msg = crate::i18n::run_words::line(msg, &app.session.mailbox);
+                    let msg = crate::i18n::run_words::line_shown(msg, &app.session.mailbox);
                     let shown = st_most(ui, &msg, t.accent_text, full_w * STATUS_MSG_SHARE);
                     app.hit.add("statusMessage", 0, shown.rect);
                     ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));

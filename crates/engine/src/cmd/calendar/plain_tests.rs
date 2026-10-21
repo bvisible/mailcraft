@@ -130,6 +130,28 @@ fn a_plain_calendar_greys_categories_importance_options_and_proposals_with_one_r
 }
 
 #[test]
+fn delete_is_greyed_for_an_event_of_a_calendar_the_account_may_only_read() {
+    let (mut s, mine, _) = session(false);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    s.run("calendar.select", &json!({"id": mine})).unwrap();
+    let greyed = |s: &Session| s.registry.get("calendar.delete").and_then(|spec| (spec.enabled)(s));
+    assert_eq!(greyed(&s), None, "a calendar it may change");
+    // The same calendar, read-only now.
+    let list = CalendarsDownload {
+        account,
+        email: "ada@example.org".into(),
+        complete: true,
+        calendars: vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, read_only: true, ..Default::default() }],
+    };
+    apply_calendars(&mut s, &list).unwrap();
+    assert_eq!(greyed(&s), Some(super::READ_ONLY_CALENDAR));
+    // Named, the command says why in its own words, and nothing goes.
+    let refused = refused(&mut s, "calendar.delete", json!({"id": mine}));
+    assert!(refused.contains("can only be read"), "{refused}");
+    assert!(s.mailbox.event(mine).is_some() && s.mailbox.event_changes.is_empty());
+}
+
+#[test]
 fn show_as_other_than_free_or_busy_is_refused_in_a_plain_calendar() {
     let (mut s, mine, theirs) = session(true);
     for value in ["tentative", "outOfOffice", "workingElsewhere"] {
