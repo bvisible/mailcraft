@@ -33,7 +33,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use mailcraft_model::sync::{GraphFetchResult, GraphFetched, JmapFetchRequest};
 use serde_json::{Value, json};
 
-use crate::{Client, Error, Http, Request, Result, check_hiding, send, valid_id};
+use crate::mail::{said, secrets_of};
+use crate::{Client, Error, Http, Request, Result, Secrets, check_hiding, send, valid_id};
 
 /// Largest message taken, in octets: what a caller may ask for is held to it. A bigger message is
 /// refused ([`Error::TooLarge`]), not cut.
@@ -47,6 +48,9 @@ pub const MAX_BATCH_OCTETS: usize = 64 << 20;
 const _: () = assert!(MAX_BATCH_OCTETS >= MAX_MESSAGE);
 /// Messages the server wouldn't give, one after another, before the batch stops.
 const MAX_FAILED_IN_A_ROW: usize = 3;
+/// Largest answer taken to one `Email/get` of where messages are: a thousand ids with their blobs and
+/// sizes come to well under this, and what is parsed of an answer takes much more memory than the answer.
+const LOCATE_BYTES: usize = 2 << 20;
 /// The type and the file name a download is asked for: a server may put them in its answer.
 const MESSAGE_TYPE: &str = "message/rfc822";
 const MESSAGE_NAME: &str = "message.eml";
@@ -90,7 +94,7 @@ async fn locate<H: Http>(client: &Client<H>, ids: &[String]) -> Result<Vec<Locat
     let mut known: HashMap<&str, Located> = HashMap::new();
     for chunk in asked.chunks(client.max_objects_in_get().max(1)) {
         let args = json!({"accountId": client.account_id(), "ids": chunk, "properties": ["blobId", "size"]});
-        let answers = client.mail(vec![("Email/get", args)]).await?;
+        let answers = client.mail_within(vec![("Email/get", args)], LOCATE_BYTES).await?;
         read_located(answers.get(0)?, chunk, &mut known);
     }
     Ok(ids.iter().map(|id| known.get(id.as_str()).cloned().unwrap_or(Located::Unusable)).collect())
@@ -186,6 +190,9 @@ pub async fn fetch_messages<H: Http>(client: &Client<H>, request: &JmapFetchRequ
 /// [`fetch_messages`] with a cap for a message and for a batch of its own (a test's).
 async fn fetch_batch<H: Http>(client: &Client<H>, request: &JmapFetchRequest, cancel: &AtomicBool, max: usize, budget: usize) -> GraphFetchResult {
     let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    // What the lines of the batch hide, as a run's do: what the client hides, and the account's address, its id
+    // and the session's address, which a server may name although they are no part of the sign-in.
+    let secrets = secrets_of(&request.email, &request.session, &client.secrets, client.account_id());
     // Each message once, the first hundred. An id no server hands out names nothing there: it is
     // passed over without asking, and says nothing of the server.
     let mut seen: HashSet<&str> = HashSet::new();
@@ -201,7 +208,7 @@ async fn fetch_batch<H: Http>(client: &Client<H>, request: &JmapFetchRequest, ca
     let located = match locate(client, &ids).await {
         Ok(located) => located,
         Err(e) => {
-            stop(&mut out, &e);
+            stop(&mut out, &e, &secrets);
             return out;
         }
     };
@@ -236,7 +243,7 @@ async fn fetch_batch<H: Http>(client: &Client<H>, request: &JmapFetchRequest, ca
             }
             // Nothing else would go better now.
             Err(e) if stops(&e) => {
-                stop(&mut out, &e);
+                stop(&mut out, &e, &secrets);
                 break;
             }
             // This message, as far as can be told: passed over, so that it can't hold the rest up.
@@ -245,7 +252,7 @@ async fn fetch_batch<H: Http>(client: &Client<H>, request: &JmapFetchRequest, ca
                 out.failed.push(id);
                 in_a_row += 1;
                 if in_a_row >= MAX_FAILED_IN_A_ROW {
-                    stop(&mut out, &e);
+                    stop(&mut out, &e, &secrets);
                     break;
                 }
             }
@@ -274,19 +281,19 @@ fn stops(e: &Error) -> bool {
 /// `error`. What [`fetch_messages`] would have said of the same trouble: nothing fetched, and why.
 pub fn failed_fetch(request: &JmapFetchRequest, error: &Error) -> GraphFetchResult {
     let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() };
-    stop(&mut out, error);
+    stop(&mut out, error, &secrets_of(&request.email, &request.session, &Secrets::default(), ""));
     out
 }
 
-/// Say that the batch stopped, and why: for the owner's reading (no address, no secret: the errors are
-/// hidden where they are made).
-fn stop(out: &mut GraphFetchResult, e: &Error) {
+/// Say that the batch stopped, and why: for the owner's reading, with `secrets` hidden and no word that
+/// holds an address, as in the lines of a run.
+fn stop(out: &mut GraphFetchResult, e: &Error, secrets: &Secrets) {
     match e {
         Error::Busy { retry_after, .. } => out.busy_for = Some(retry_after.unwrap_or(0)),
         Error::Io(_) => out.offline = true,
         _ => {}
     }
-    out.errors.push(format!("Couldn't download the messages from the server: {e}"));
+    out.errors.push(format!("Couldn't download the messages from the server: {}", said(secrets, e)));
 }
 
 /// A word for what an error was, for a log line: what a server said is not in it.

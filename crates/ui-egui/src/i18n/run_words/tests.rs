@@ -535,6 +535,7 @@ const NOT_READ: &[(&str, &str)] = &[
     ("JMAP: that answer was taken", "as above"),
     ("{} method calls in one request, and the server takes {}", "every caller holds its request to the server's `maxCallsInRequest`"),
     ("not a blob id", "a download's alone, whose problems are only logged (`graph_fetch`)"),
+    ("a type or a file name that can't be put in an address", "a download's alone, as above (and the fetch names its own type and name)"),
     ("(not a web address)", "the `Debug` of a request"),
     ("Answers({} of which {} failed)", "the `Debug` of the answers"),
     ("the server takes no message as large as this", "`Outgoing::trouble` and `draft_failed` say a refused size in their own words"),

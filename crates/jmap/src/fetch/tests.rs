@@ -102,6 +102,8 @@ fn an_email_is_found_by_its_id_and_its_blob_is_downloaded() {
     let call: Value = serde_json::from_slice(&sent[1].body).unwrap();
     assert_eq!(call["using"], json!([crate::CORE, crate::MAIL]));
     assert_eq!(call["methodCalls"], json!([["Email/get", {"accountId": "A1", "ids": ["E1"], "properties": ["blobId", "size"]}, "c0"]]));
+    // Its answer is held to what such an answer can be, not to the cap of any answer.
+    assert_eq!(sent[1].max, LOCATE_BYTES);
     // The blob is downloaded from the session's address for it, signed in, and held to the cap.
     let get = &sent[2];
     assert_eq!(
@@ -307,6 +309,27 @@ fn what_a_server_echoes_never_reaches_an_error() {
             assert!(!shown.contains(secret), "{secret} in {shown}");
         }
     }
+}
+
+#[test]
+fn a_batch_that_stops_says_why_without_the_account_s_address() {
+    // Signed in with a token, the account's address is no part of the credentials; a server may name it all the
+    // same, and another person's too.
+    let asked =
+        JmapFetchRequest { account: 7, email: "bo@example.org".into(), session: SESSION.into(), ids: vec!["E1".into()], ..Default::default() };
+    let said = "no mailbox for bo@example.org (bo%40example.org), ask zoe@example.net";
+    let (client, _) = connected(vec![reply(500, &json!({"detail": said}))]);
+    let got = block_on(fetch_messages(&client, &asked, &AtomicBool::new(false)));
+    assert_eq!(got.errors.len(), 1, "{:?}", got.errors);
+    let line = &got.errors[0];
+    assert!(line.starts_with("Couldn't download the messages from the server: ") && line.contains("no mailbox for"), "{line}");
+    for shown in ["bo@", "bo%40", "zoe@", "example"] {
+        assert!(!line.contains(shown), "{shown} in {line}");
+    }
+    // And when the batch could not begin.
+    let failed = failed_fetch(&asked, &Error::Bad(format!("HTTP 403 {said}")));
+    assert_eq!(failed.errors.len(), 1);
+    assert!(!failed.errors[0].contains("bo@") && !failed.errors[0].contains("zoe@"), "{:?}", failed.errors);
 }
 
 #[test]

@@ -159,7 +159,7 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
 /// The end of a run that could not begin: signing in to the server (`Client::connect`) failed with `error`.
 /// What [`sync_mail`] would have said of the same trouble: the sign-in refused, the server busy, or a line.
 pub fn failed_run(request: &JmapMailRequest, error: &Error) -> JmapMailResult {
-    let secrets = secrets_of(request, &Secrets::default(), "");
+    let secrets = secrets_of(&request.email, &request.session, &Secrets::default(), "");
     let mut result = JmapMailResult { account: request.account, email: request.email.clone(), ..Default::default() };
     match error {
         Error::Auth(_) => result.auth_refused = true,
@@ -331,7 +331,7 @@ impl<'a, H: Http> Run<'a, H> {
             client,
             request,
             cancel,
-            secrets: secrets_of(request, &client.secrets, client.account_id()),
+            secrets: secrets_of(&request.email, &request.session, &client.secrets, client.account_id()),
             window: asked.min(take),
             chunk: MAX_CHUNK.min(take),
             known,
@@ -740,13 +740,13 @@ fn halvable(stop: &Stop, count: usize, splits: usize) -> bool {
         }
 }
 
-/// What must not show in a line: what the client hides, the account's address and the address of the
-/// session (with the addresses in its query), and the account's id when it is long enough to be one of
-/// the first (a server may make it of the address).
-fn secrets_of(request: &JmapMailRequest, client: &Secrets, account_id: &str) -> Secrets {
+/// What must not show in a line: what the client hides, the account's address `email` and the address of
+/// the session (with the addresses in its query), and the account's id when it is long enough to be one of
+/// the first (a server may make it of the address). Also for the lines of a fetch ([`crate::fetch`]).
+pub(crate) fn secrets_of(email: &str, session: &str, client: &Secrets, account_id: &str) -> Secrets {
     let mut secrets = client.clone();
-    secrets.add(&request.email);
-    secrets.add_address(&request.session);
+    secrets.add(email);
+    secrets.add_address(session);
     if account_id.len() >= SECRET_ID {
         secrets.add(account_id);
     }
@@ -755,7 +755,7 @@ fn secrets_of(request: &JmapMailRequest, client: &Secrets, account_id: &str) -> 
 
 /// `error` as a line of at most [`MAX_LINE`] characters, the secrets hidden before it is cut, and any word
 /// that holds an `@` (an address, whose it may be), or the `%40` it is written as in an address, hidden after.
-fn said(secrets: &Secrets, error: &Error) -> String {
+pub(crate) fn said(secrets: &Secrets, error: &Error) -> String {
     let cut = message::line(&secrets.hide(&error.to_string()), MAX_LINE);
     cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
 }

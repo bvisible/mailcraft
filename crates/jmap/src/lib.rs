@@ -38,6 +38,11 @@
 //! bare host name through a redirect to another server (RFC 8620 §2.2) is for the caller: an [`Http`]
 //! does not hand the credentials on to another origin, so a session that is behind such a redirect is
 //! refused for want of them.
+//!
+//! What a [`Client`] needs of the [`Http`] it runs over: a redirect is never followed from `https` to
+//! `http`, the `Authorization` header goes to the origin it was set for and to no other, no cookie is
+//! sent or kept, and an answer whose body is over [`Request::max`] is given up as soon as that is known
+//! (the client checks again the size of what it is handed).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::fmt;
@@ -325,7 +330,8 @@ fn json_body(resp: &Response) -> Result<Value> {
 /// [`Error::Auth`], 429 and 503 are [`Error::Busy`] (with the wait the server asked for), a request that
 /// is over a limit of the server's (RFC 8620 §3.6.1) is [`Error::TooLarge`], and any other status that is
 /// not a success is [`Error::Bad`] with the reason the server gave, when it gave one as RFC 7807 problem
-/// details.
+/// details. That includes 502 and 504: a gateway that gives up on one request may take a smaller one, so a
+/// run halves the call ([`mail`]) rather than waits as for a busy server.
 pub fn check(resp: &Response) -> Result<()> {
     check_hiding(resp, &Secrets::default())
 }
@@ -522,7 +528,7 @@ impl<H: Http> Client<H> {
         if !base.https && !base.is_loopback() {
             return Err(Error::Tls("the session address isn't https".into()));
         }
-        // What is sent is the address that was parsed, in plain ASCII, not what was typed.
+        // What is sent is the address that was parsed and checked, not what was typed.
         let sent = base.full();
         let secrets = Secrets::of(auth, &header, &[session, address.as_str(), sent.as_str()]);
         let request = Request::get(&sent, MAX_SESSION).header("Authorization", &header).header("Accept", "application/json");
@@ -687,10 +693,16 @@ impl<H: Http> Client<H> {
 
     /// The address a blob is downloaded from: the session's template with the account, the blob (an
     /// id of the alphabet of [`valid_id`]), the type to answer with and a file name filled in (these two
-    /// at most 512 bytes each).
+    /// at most 512 bytes each, and neither of them `.` or `..`).
     pub fn download_url(&self, blob_id: &str, content_type: &str, name: &str) -> Result<String> {
         if !valid_id(blob_id) {
             return Err(Error::Protocol("not a blob id".into()));
+        }
+        // Encoding leaves a dot as it is (RFC 6570 §3.2.2), and a path that is read drops a `.` segment, and a
+        // `..` one with the segment before it (RFC 3986 §5.2.4): put in a template's path, either would make
+        // the address lead to another place on the server than the one the template names.
+        if [content_type, name].iter().any(|value| matches!(*value, "." | "..")) {
+            return Err(Error::Protocol("a type or a file name that can't be put in an address".into()));
         }
         expand(&self.download, &[("accountId", &self.account), ("blobId", blob_id), ("type", content_type), ("name", name)])
     }

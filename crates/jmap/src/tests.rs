@@ -178,6 +178,12 @@ fn connect_signs_in_and_resolves_the_session_against_its_own_address() {
     assert!(matches!(client.download_url("B1", "t", &long), Err(Error::Protocol(_))));
     assert!(matches!(client.download_url("B1", &long, "n"), Err(Error::Protocol(_))));
     assert!(client.download_url("B1", "t", &"n".repeat(MAX_VARIABLE)).is_ok());
+    // `.` and `..` are no names: in a template's path, they would lead elsewhere on the server.
+    for dots in [".", ".."] {
+        assert!(matches!(client.download_url("B1", "t", dots), Err(Error::Protocol(_))), "{dots}");
+        assert!(matches!(client.download_url("B1", dots, "n"), Err(Error::Protocol(_))), "{dots}");
+    }
+    assert_eq!(client.download_url("B1", "...", ".eml").unwrap(), "https://jmap.example.org/jmap/download/A1/B1/.eml?type=...");
 }
 
 #[test]
