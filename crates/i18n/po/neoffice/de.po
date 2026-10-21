@@ -1817,3 +1817,51 @@ msgstr "wählen Sie zuerst eine Notiz aus"
 
 msgid "the note is gone"
 msgstr "die Notiz existiert nicht mehr"
+
+msgid "Attachment"
+msgstr "Anlage"
+
+msgid "Nothing here takes an attachment."
+msgstr "Hier nimmt nichts eine Anlage auf."
+
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr "Nur eine Datei .docx, .xlsx, .pptx oder .pdf öffnet sich in einem Editor."
+
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr "Nur ein PDF oder ein Bild gelangt in die gescannten Dokumente."
+
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
+msgstr "Nur eine Anlage aus einer Nachricht eines Postfachs, das die Seite übergeben hat, kann ihr übergeben werden."
+
+msgid "Open Attachment in Its Editor"
+msgstr "Anlage im Editor öffnen"
+
+msgid "Open in NeoDoc"
+msgstr "In NeoDoc öffnen"
+
+msgid "Open in NeoGrille"
+msgstr "In NeoGrille öffnen"
+
+msgid "Open in NeoPDF"
+msgstr "In NeoPDF öffnen"
+
+msgid "Open in NeoPrés"
+msgstr "In NeoPrés öffnen"
+
+msgid "Save Attachment to Drive"
+msgstr "Anlage auf Drive speichern"
+
+msgid "Save to Drive…"
+msgstr "Auf Drive speichern…"
+
+msgid "Send Attachment to Scanned Documents"
+msgstr "Anlage an gescannte Dokumente senden"
+
+msgid "Send to Scanned Documents"
+msgstr "An gescannte Dokumente senden"
+
+msgid "The page doesn't offer this for an attachment."
+msgstr "Die Seite bietet dies für eine Anlage nicht an."
+
+msgid "This message has no such attachment."
+msgstr "Diese Nachricht enthält keine solche Anlage."

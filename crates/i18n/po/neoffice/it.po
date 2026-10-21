@@ -1833,3 +1833,51 @@ msgstr "selezioni prima una nota"
 
 msgid "the note is gone"
 msgstr "la nota non esiste più"
+
+msgid "Attachment"
+msgstr "Allegato"
+
+msgid "Nothing here takes an attachment."
+msgstr "Qui non si può inserire nessun allegato."
+
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr "Solo un file .docx, .xlsx, .pptx o .pdf si apre in un editor."
+
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr "Solo un PDF o un'immagine finisce nei documenti scansionati."
+
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
+msgstr "A questa pagina si può passare solo un allegato di un messaggio di una cassetta postale che la pagina ha fornito."
+
+msgid "Open Attachment in Its Editor"
+msgstr "Apri allegato nel suo editor"
+
+msgid "Open in NeoDoc"
+msgstr "Apri in NeoDoc"
+
+msgid "Open in NeoGrille"
+msgstr "Apri in NeoGrille"
+
+msgid "Open in NeoPDF"
+msgstr "Apri in NeoPDF"
+
+msgid "Open in NeoPrés"
+msgstr "Apri in NeoPrés"
+
+msgid "Save Attachment to Drive"
+msgstr "Salva allegato su Drive"
+
+msgid "Save to Drive…"
+msgstr "Salva su Drive…"
+
+msgid "Send Attachment to Scanned Documents"
+msgstr "Invia allegato ai documenti scansionati"
+
+msgid "Send to Scanned Documents"
+msgstr "Invia ai documenti scansionati"
+
+msgid "The page doesn't offer this for an attachment."
+msgstr "La pagina non offre questa operazione per un allegato."
+
+msgid "This message has no such attachment."
+msgstr "Questo messaggio non contiene un allegato del genere."
