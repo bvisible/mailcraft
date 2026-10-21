@@ -305,8 +305,9 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
         return Err(fail(format!("{} is already set up", a.email)));
     }
     // //// Neoffice — another address or JMAP server is another's notes: what this account's server had of them is let go, the words waiting to go kept, and nothing goes to the new one (cmd/notes/server.rs).
-    let session = |a: &Account| a.jmap.as_ref().map(|jmap| jmap.session.trim().to_string());
-    let moved = s.mailbox.account(id).is_some_and(|old| !a.email.trim().eq_ignore_ascii_case(old.email.trim()) || session(&a) != session(old));
+    // (The same server written another way is no move: compared as the notes' answers are.)
+    let server = |a: &Account| crate::cmd::notes::server::session_key(&crate::cmd::notes::server::session_of(a));
+    let moved = s.mailbox.account(id).is_some_and(|old| !a.email.trim().eq_ignore_ascii_case(old.email.trim()) || server(&a) != server(old));
     // (Let go while the account is still the one they were of: what is held is held as that one's.)
     if moved {
         for said in crate::cmd::notes::server::account_moved(s, id) {

@@ -681,6 +681,9 @@ fn same_server(owner: &mailcraft_model::Account, session: &str) -> Result<(), Cm
 /// `account`'s address or server was changed: it is another's now, and what was the old server's of notes is let go as
 /// when a server stops keeping notes ([`let_go`]); nothing of it goes to the new one. What is said of it, for the log.
 pub fn account_moved(s: &mut Session, account: Id) -> Vec<String> {
+    // (A job of its notes under way is of the server it had: its answer is set aside, wherever the account goes next.)
+    let moves = s.notes_moves.entry(account).or_default();
+    *moves = moves.saturating_add(1);
     let said = let_go(s, account).messages;
     // (Said in the status bar: where her waiting notes are now.)
     if !said.is_empty() {
@@ -1041,8 +1044,20 @@ impl Taking<'_> {
                     return;
                 };
                 let (Some(at), Some(id)) = (at, note) else {
-                    // Undone, or deleted again, while it was on its way: the server is to delete it.
-                    if self.mailbox.notes.by_remote(self.account, &said.id).is_none() && self.mailbox.notes.changes.len() < MAX_NOTE_CHANGES {
+                    // Undone, or deleted again, while it was on its way: the server is to delete it. Not while a note
+                    // here still carries the mark it was made with (one a page holds, say): that is no undo, and what
+                    // was made is hers.
+                    let marked = !op.token.is_empty()
+                        && self
+                            .mailbox
+                            .notes
+                            .items
+                            .values()
+                            .any(|note| note.token == op.token || note.held.as_deref().is_some_and(|hold| hold.token == op.token));
+                    if !marked
+                        && self.mailbox.notes.by_remote(self.account, &said.id).is_none()
+                        && self.mailbox.notes.changes.len() < MAX_NOTE_CHANGES
+                    {
                         let base = Box::new(said.note(self.account, 0));
                         self.mailbox.notes.changes.push(NoteChange {
                             account: self.account,

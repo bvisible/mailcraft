@@ -14,11 +14,13 @@ pub(crate) struct NotesReplay {
     left: Option<NotesAsk>,
     /// What the server answered of the changes, every try together.
     answered: Vec<NoteOutcome>,
+    /// The server the job asks (its session): the answer says so, whichever try had the outcomes.
+    session: String,
 }
 
 impl NotesReplay {
     pub(crate) fn new(request: &JmapPimRequest) -> NotesReplay {
-        NotesReplay { left: request.notes.clone(), answered: Vec::new() }
+        NotesReplay { left: request.notes.clone(), answered: Vec::new(), session: request.session.clone() }
     }
 
     /// What the next try asks of the notes.
@@ -53,7 +55,7 @@ impl NotesReplay {
         let (account, email) = (answer.account, answer.email.clone());
         let notes = answer.notes.get_or_insert_with(Default::default);
         let last = notes.uploaded.take().unwrap_or_default();
-        notes.uploaded = Some(NotesUploaded { account, email, outcomes: self.answered.clone(), ..last });
+        notes.uploaded = Some(NotesUploaded { account, email, session: self.session.clone(), outcomes: self.answered.clone(), ..last });
         answer
     }
 }
@@ -130,6 +132,13 @@ mod tests {
         let failed = JmapPimResult { account: 7, email: ME.into(), auth_refused: true, ..Default::default() };
         let given = replay.give(failed);
         assert_eq!(given.notes.and_then(|notes| notes.uploaded).map(|uploaded| uploaded.outcomes.len()), Some(3));
+        // Which server they are of goes with them, whichever try had them, even one that said nothing of the notes.
+        let request = JmapPimRequest { session: "https://mail.example.org/jmap/session".into(), ..request };
+        let mut replay = NotesReplay::new(&request);
+        replay.take(&answered(vec![done(&ops[0])], true));
+        let failed = JmapPimResult { account: 7, email: ME.into(), auth_refused: true, ..Default::default() };
+        let given = replay.give(failed);
+        assert_eq!(given.notes.and_then(|notes| notes.uploaded).map(|uploaded| uploaded.session), Some(request.session.clone()));
         // Nothing answered: the answer as it came.
         let untouched = NotesReplay::new(&JmapPimRequest::default()).give(JmapPimResult::default());
         assert!(untouched.notes.is_none());

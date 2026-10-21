@@ -601,6 +601,8 @@ pub struct Session {
     /// desktop window and the command line, for now): a JMAP account then sends nothing and no run is made of it, as
     /// upstream has it. Set by the host, never by a command's params. Never saved.
     pub jmap_runs: bool,
+    // //// Neoffice — how many times an account was moved to another server in this session (`account.edit`, cmd/notes/server.rs): a job of its notes notes it when it starts, and its answer is set aside when it changed since, even when the account is back on the server it asked. Never saved, never undone.
+    pub notes_moves: std::collections::HashMap<Id, u32>,
     history: Vec<Undo>,
     redo: Vec<Undo>,
     /// What the last undo or redo couldn't do there (a delete for good, a message sent).
@@ -719,6 +721,8 @@ impl Session {
             keeps_local: true,
             // //// Neoffice — see the field: none, unless the host says it runs one.
             jmap_runs: false,
+            // //// Neoffice — see the field.
+            notes_moves: Default::default(),
             history: Vec::new(),
             redo: Vec::new(),
             undo_said: Vec::new(),

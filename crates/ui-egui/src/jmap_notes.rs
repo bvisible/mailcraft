@@ -56,15 +56,18 @@ struct NotesJob {
     /// What was last sent, and when (milliseconds); and the state of the mailbox then.
     sent: Option<(NotesUpload, f64)>,
     sent_rev: Option<u64>,
-    /// The account's server when this was learnt (its session, as compared): all of it is of that server only.
+    /// The account's server when this was learnt (its session, as compared), and how many times it had been moved then
+    /// ([`mailcraft_engine::Session::notes_moves`]): all of it is of that server, as it was then, only.
     server: String,
+    moves: u32,
 }
 
 /// The job in flight's notes: whether it read them and carried changes, and when it was asked for.
 struct Flight {
     account: Id,
-    /// The server it asked (its session, as compared).
+    /// The server it asked (its session, as compared), and how many times the account had been moved then.
     server: String,
+    moves: u32,
     read: bool,
     carried: bool,
     asked_at: Timestamp,
@@ -110,7 +113,9 @@ impl MailApp {
                 .notes
                 .accounts
                 .iter()
-                .filter(|(account, job)| !job.server.is_empty() && job.server != self.notes_server(**account))
+                .filter(|(account, job)| {
+                    !job.server.is_empty() && (job.server != self.notes_server(**account) || job.moves != self.notes_moves(**account))
+                })
                 .map(|(account, _)| *account)
                 .collect();
             for account in moved {
@@ -122,6 +127,11 @@ impl MailApp {
     /// The server of `account` now, as compared: its JMAP session.
     fn notes_server(&self, account: Id) -> String {
         self.session.mailbox.account(account).map(|a| session_key(&session_of(a))).unwrap_or_default()
+    }
+
+    /// How many times `account` was moved to another server in this session.
+    fn notes_moves(&self, account: Id) -> u32 {
+        self.session.notes_moves.get(&account).copied().unwrap_or_default()
     }
 
     /// What of `account`'s notes is to go now, when anything: due, the mailbox quiet a moment, and not the very same as
@@ -195,12 +205,12 @@ impl MailApp {
         }
         let asked_at = self.session.now();
         let rev = self.session.rev();
-        let server = self.notes_server(account);
+        let (server, moves) = (self.notes_server(account), self.notes_moves(account));
         let job = self.jmap_pim.notes.accounts.entry(account).or_default();
-        if !job.server.is_empty() && job.server != server {
+        if !job.server.is_empty() && (job.server != server || job.moves != moves) {
             *job = NotesJob::default();
         }
-        job.server.clone_from(&server);
+        (job.server, job.moves) = (server.clone(), moves);
         if ask.read {
             (job.read, job.due) = (Some(now), false);
         }
@@ -213,7 +223,7 @@ impl MailApp {
             // (The state of the mailbox when they went, with them kept as sent: while it is the same, so are they.)
             job.sent_rev = Some(rev);
         }
-        self.jmap_pim.notes.flight = Some(Flight { account, server, read: ask.read, carried: ask.changes.is_some(), asked_at });
+        self.jmap_pim.notes.flight = Some(Flight { account, server, moves, read: ask.read, carried: ask.changes.is_some(), asked_at });
     }
 
     /// Take in what the job of `account` brought of its notes (taken out of `result`), as the module says. Whether it went
@@ -223,7 +233,7 @@ impl MailApp {
         let Some(flight) = flight else { return true };
         // A job of a server the account no longer has: nothing of it is taken in (it would be another server's notes,
         // and its names another's), and what was held of that server is forgotten.
-        if flight.server != self.notes_server(account) {
+        if flight.server != self.notes_server(account) || flight.moves != self.notes_moves(account) {
             result.notes = None;
             self.jmap_pim.notes.accounts.remove(&account);
             log::info!("notes, account {account}: a job of the server it had before was set aside");

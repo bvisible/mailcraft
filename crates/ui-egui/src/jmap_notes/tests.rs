@@ -431,3 +431,23 @@ fn a_job_of_an_account_moved_to_another_server_is_forgotten_with_what_it_held() 
     assert!(app.session.mailbox.notes.changes.iter().all(|change| change.kind != mailcraft_model::note::NoteChangeKind::Delete));
     assert_eq!(app.jmap_notes_state(id), None, "nor is its state held");
 }
+
+#[test]
+fn a_job_of_an_account_moved_away_and_back_is_set_aside_all_the_same() {
+    let (mut app, id, asked) = read_once();
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    // Moved to another server and back while the job runs.
+    app.execute("account.edit", json!({"id": id, "jmap": {"session": "https://mail2.example.org/jmap/session", "bearer": true}})).unwrap();
+    app.execute("account.edit", json!({"id": id, "jmap": {"session": SESSION, "bearer": true}})).unwrap();
+    // Its answer that the note was made: set aside, and nothing is deleted there.
+    let done = NoteOutcome { op, result: NoteResult::Done, note: Some(remote("VN-9", "Lunch")), ..Default::default() };
+    let notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), session: SESSION.into(), outcomes: vec![done], ..Default::default() }),
+        ..Default::default()
+    };
+    answer(&mut app, &asked, id, Some(notes));
+    assert!(app.session.mailbox.notes.changes.iter().all(|change| change.kind != mailcraft_model::note::NoteChangeKind::Delete));
+}

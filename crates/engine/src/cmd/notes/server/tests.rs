@@ -1110,3 +1110,30 @@ fn an_undo_that_can_not_keep_a_change_unanswered_says_so() {
     assert_eq!(back.notes.changes.len(), mailcraft_model::note::MAX_NOTE_CHANGES);
     assert!(said.iter().any(|line| line.contains("too many note changes")), "{said:?}");
 }
+
+#[test]
+fn the_same_server_written_another_way_is_no_move() {
+    let (mut s, account) = jmap_session();
+    let offsite = by_remote(&s, "VN-1");
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+    let same = "HTTPS://Mail.Example.org/jmap/session/";
+    run(&mut s, "account.edit", json!({"id": account, "jmap": {"session": same, "bearer": true}}));
+    assert!(s.mailbox.notes.server(account).is_some(), "its notes stay its server's");
+    assert_eq!((note(&s, offsite).origin.id.as_str(), kinds(&s)), ("VN-1", vec![NoteChangeKind::Update]));
+}
+
+#[test]
+fn an_answer_that_a_new_note_was_made_never_deletes_it_while_a_note_here_carries_its_mark() {
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    let lunch = run(&mut s, "notes.new", json!({"title": "Lunch", "text": "Friday"}))["id"].as_u64().unwrap();
+    let first = ops(&mut s, account);
+    // The server stops keeping notes while the note is on its way: the page holds it, with its mark.
+    let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+    run(&mut s, "sync.applyNotes", json!({"download": gone}));
+    assert!(note(&s, lunch).held.is_some());
+    // The answer that it was made comes after: not an undo, nothing is deleted there.
+    let done = NoteOutcome { op: first[0].clone(), result: NoteResult::Done, note: Some(remote("VN-9", "Lunch", "v1")), ..Default::default() };
+    run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![done], ..Default::default() }}));
+    assert!(s.mailbox.notes.changes.iter().all(|change| change.kind != NoteChangeKind::Delete), "{:?}", kinds(&s));
+}
