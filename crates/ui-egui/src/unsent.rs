@@ -10,12 +10,16 @@
 //! - An appointment or a meeting whose window has changes not saved ([`crate::windows`]), and a form a dialog holds
 //!   with something typed into it: an appointment's, a contact's.
 //! - In a tab that keeps nothing of its own between visits ([`mailcraft_engine::Session::keeps_local`] false): what
-//!   waits to go to a server, made here and not told to it yet (a change of an event or of a contact), and mail that
-//!   waits in an Outbox. The next visit starts from what the servers have, and these would not be there.
+//!   waits to go to a server, made here and not told to it yet: a change of an event or of a contact, mail that waits
+//!   in an Outbox, a draft saved here that the next run files on the server, a move or a delete for good the server is
+//!   yet to be told of (`Mailbox::pending`, `Mailbox::queued`), and a JMAP account's messages read, flagged or moved here
+//!   (`jmap_up::message_changes`, worked out once for each state of the mailbox). The next visit starts from what the
+//!   servers have, and these would not be there.
 //! - What the notes' own question before leaving counts ([`MailApp::notes_unsent`]): a change of a note that waits to
 //!   go, a note here alone, words typed into a note and not in it yet.
 
-use mailcraft_model::FolderKind;
+use mailcraft_engine::cmd::{jmap_send, jmap_up};
+use mailcraft_model::{AccountKind, FolderKind};
 
 use crate::MailApp;
 use crate::dialogs::Dialog;
@@ -29,17 +33,40 @@ impl MailApp {
     }
 
     /// Whether something made here waits to go to a server: a change of an event or of a contact not yet told to it,
-    /// or mail in an Outbox.
+    /// mail in an Outbox, a draft to file, a move or a delete to tell, a change of a JMAP account's messages.
     fn waits_to_go(&self) -> bool {
         let mb = &self.session.mailbox;
         let outbox = mb.folders.iter().filter(|f| f.kind == FolderKind::Outbox).any(|f| mb.count(f.id) > 0);
-        !mb.event_changes.is_empty() || !mb.contact_changes.is_empty() || outbox
+        let drafts = mb.accounts.iter().any(|a| jmap_send::pending_drafts(mb, a.id) > 0);
+        !mb.event_changes.is_empty()
+            || !mb.contact_changes.is_empty()
+            || outbox
+            || drafts
+            || !mb.pending.is_empty()
+            || !mb.queued.is_empty()
+            || self.mail_changes_wait()
+    }
+
+    /// Whether a JMAP account's messages were changed here (read, flagged, moved) and its server is yet to be told: worked
+    /// out once for each state of the mailbox, as it reads every message.
+    fn mail_changes_wait(&self) -> bool {
+        let at = (self.session.openings(), self.session.rev());
+        if let Some((openings, rev, waits)) = self.unsent_marks.get()
+            && (openings, rev) == at
+        {
+            return waits;
+        }
+        let mut jmap = self.session.mailbox.accounts.iter().filter(|a| a.kind == AccountKind::Jmap);
+        let waits = jmap.any(|account| jmap_up::message_changes(&self.session, account.id, 1).1 > 0);
+        self.unsent_marks.set(Some((at.0, at.1, waits)));
+        waits
     }
 }
 
 #[cfg(test)]
 mod tests {
     use mailcraft_engine::Session;
+    use mailcraft_model::{FolderKind, Id, Message};
     use serde_json::json;
 
     use crate::{MailApp, Services};
@@ -108,14 +135,12 @@ mod tests {
     #[test]
     fn what_waits_to_go_to_a_server_is_unsent_work_in_a_tab_that_keeps_nothing() {
         for keeps_local in [false, true] {
-            let mut app = window(keeps_local);
             // Mail that waits in the Outbox.
-            let outbox = app.session.mailbox.folders.iter().find(|f| f.kind == mailcraft_model::FolderKind::Outbox).map(|f| f.id);
-            if let Some(outbox) = outbox {
-                let message = app.session.mailbox.messages.values().next().map(|m| (**m).clone()).unwrap();
-                app.session.mailbox.add_message(mailcraft_model::Message { id: 0, folder: outbox, ..message }).unwrap();
-                assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: the Outbox");
-            }
+            let mut app = window(keeps_local);
+            let outbox = app.session.mailbox.folders.iter().find(|f| f.kind == FolderKind::Outbox).map(|f| f.id).expect("the sample has an Outbox");
+            let message = app.session.mailbox.messages.values().next().map(|m| (**m).clone()).unwrap();
+            app.session.mailbox.add_message(mailcraft_model::Message { id: 0, folder: outbox, ..message }).unwrap();
+            assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: the Outbox");
             // A change of an event noted for a server.
             let mut app = window(keeps_local);
             app.session.mailbox.event_changes.push(mailcraft_model::remote::EventChange::default());
@@ -128,6 +153,62 @@ mod tests {
             let mut app = window(keeps_local);
             app.session.mailbox.notes.changes.push(mailcraft_model::note::NoteChange::default());
             assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a note's change");
+            // A delete for good the server is yet to be told of.
+            let mut app = window(keeps_local);
+            let delete = mailcraft_model::Pending::Delete { account: 1, from: "INBOX".into(), uid: 7, message_id: String::new() };
+            app.session.mailbox.pending.push(delete);
+            assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a delete for good");
         }
+    }
+
+    /// A JMAP account with its Inbox and Drafts: the window, the account, its Inbox and its Drafts.
+    fn jmap_window() -> (MailApp, Id, Id, Id) {
+        let mut app = window(false);
+        let added = app
+            .session
+            .run("account.add", &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://mail.example.org/jmap/session"}}));
+        let account = added.unwrap()["id"].as_u64().unwrap();
+        // (Those the account has already, else made.)
+        let mut folder = |kind: FolderKind, name: &str| {
+            if let Some(id) = app.session.mailbox.folder_of_kind(account, kind) {
+                return id;
+            }
+            let id = app.session.mailbox.alloc_id();
+            app.session.mailbox.folders.push(mailcraft_model::Folder { id, account, kind, name: name.into(), ..Default::default() });
+            id
+        };
+        let (inbox, drafts) = (folder(FolderKind::Inbox, "Inbox"), folder(FolderKind::Drafts, "Drafts"));
+        app.session.mailbox_changed();
+        (app, account, inbox, drafts)
+    }
+
+    #[test]
+    fn a_draft_saved_here_and_a_message_marked_here_wait_to_go_in_a_tab_that_keeps_nothing() {
+        // A draft saved here, which the next run files on the server.
+        let (mut app, account, _, drafts) = jmap_window();
+        assert!(!app.unsent_work(), "nothing yet");
+        let draft = Message {
+            account,
+            folder: drafts,
+            draft: true,
+            subject: "Plans".into(),
+            server_draft: Some(mailcraft_model::sync::ServerDraft { pending: true, ..Default::default() }),
+            ..Default::default()
+        };
+        app.session.mailbox.add_message(draft).unwrap();
+        app.session.mailbox_changed();
+        assert!(app.unsent_work(), "a draft to file");
+        // A message read here that its server still has unread.
+        let (mut app, account, inbox, _) = jmap_window();
+        let server = mailcraft_model::sync::ServerMessage { id: "M1".into(), folder: "f-inbox".into(), read: false, ..Default::default() };
+        let read = Message { account, folder: inbox, subject: "Hello".into(), read: false, server: Some(server), ..Default::default() };
+        let id = app.session.mailbox.add_message(read).unwrap();
+        app.session.mailbox_changed();
+        assert!(!app.unsent_work(), "as the server has it");
+        app.session.run("mail.markRead", &json!({"ids": [id]})).unwrap();
+        assert!(app.unsent_work(), "read here, unread there");
+        // Worked out once for that state, again for the next.
+        app.session.run("mail.markUnread", &json!({"ids": [id]})).unwrap();
+        assert!(!app.unsent_work(), "as the server has it again");
     }
 }

@@ -2320,8 +2320,11 @@ mod event {
             };
             // //// Neoffice — whose online meetings its calendar's server holds (`online_own`), and whether it makes rooms now.
             (f.online_own, f.online_rooms) = (online_own(s, f.calendar), own_rooms(s, f.calendar));
-            // //// Neoffice — see `options_refused`.
+            // //// Neoffice — see `options_refused`; and what such a calendar keeps none of starts as it would be there.
             f.options_refused = mailcraft_engine::cmd::calendar::options_refusal(s, f.calendar);
+            if f.options_refused.is_some() {
+                f.drop_unkept();
+            }
             // Zones it is to have of its own: its times are then by their clocks.
             let zone = |k: &str| p.get(k).and_then(Value::as_str).and_then(Zone::named).map(Zone::id).unwrap_or_default();
             (f.start_zone, f.end_zone) = (zone("startZone"), zone("endZone"));
@@ -3113,14 +3116,28 @@ mod event {
             }
         }
 
+        // //// Neoffice — added: see `options_refused`.
+        /// Categories, importance and response options as a calendar whose server keeps none of them has them: none, normal,
+        /// and as a new meeting has them.
+        fn drop_unkept(&mut self) {
+            self.categories.clear();
+            self.importance = Importance::Normal;
+            self.options = ResponseOptions::default();
+        }
+
         // //// Neoffice — what the form says of an online meeting follows the calendar it is in now.
         /// Whose online meetings the calendar the item is in now holds (it may have been changed in the form): an
         /// appointment that goes to a calendar without them is held online no more, as its button is gone there.
         fn follow_calendar(&mut self, s: &Session) {
             let had_rooms = self.online_rooms;
             (self.online_own, self.online_rooms) = (online_own(s, self.calendar), own_rooms(s, self.calendar));
-            // //// Neoffice — see `options_refused`.
-            self.options_refused = mailcraft_engine::cmd::calendar::options_refusal(s, self.calendar);
+            // //// Neoffice — see `options_refused`: moved into a calendar that keeps none of them, they are dropped, which
+            // a greyed control could no longer do and which saving there would be refused for.
+            let refused = mailcraft_engine::cmd::calendar::options_refusal(s, self.calendar);
+            if refused.is_some() && self.options_refused.is_none() {
+                self.drop_unkept();
+            }
+            self.options_refused = refused;
             // (Only when that changes: a Teams meeting is a meeting's, and stays as it is.)
             if had_rooms && !self.online_rooms && !self.meeting && !self.online_made {
                 self.online_dropped |= self.online;
@@ -3762,6 +3779,21 @@ mod event {
             for offered in ["categorize", "importanceHigh", "importanceLow", "responseOptions"] {
                 assert!(key(&f, offered).is_some_and(|item| item.on), "{offered}");
             }
+            // An appointment with a category, High importance and no responses asked for, moved into the plain calendar in
+            // the form: what it keeps none of goes, which the greyed controls could no longer do, and it saves there.
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": own}), false);
+            f.categories = vec!["Blue category".into()];
+            f.importance = Importance::High;
+            f.options.request_responses = false;
+            f.calendar = calendar;
+            f.follow_calendar(&s);
+            assert_eq!((f.categories.len(), f.importance, f.options), (0, Importance::Normal, ResponseOptions::default()));
+            let (command, params) = f.command();
+            assert!(params.get("categories").is_none_or(|c| c.as_array().is_some_and(Vec::is_empty)), "{params}");
+            s.run(command, &params).unwrap_or_else(|e| panic!("{params}: {e}"));
+            // Opened there with a category asked for, it starts without it.
+            let f = EventForm::new(&s, &json!({"title": "Sync", "calendar": calendar, "categories": ["Blue category"], "importance": "high"}), false);
+            assert!(f.categories.is_empty() && f.importance == Importance::Normal && !f.dirty());
         }
 
         // //// Neoffice — an appointment of a JMAP account's calendar whose server makes rooms may be held online without
