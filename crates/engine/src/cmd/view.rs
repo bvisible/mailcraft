@@ -17,7 +17,8 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("view.mail", "Mail", "Navigation", mail).pure().key("Mod+1"),
         CommandSpec::new("view.calendar", "Calendar", "Navigation", calendar).pure().key("Mod+2"),
         CommandSpec::new("view.people", "People", "Navigation", people).pure().key("Mod+3"),
-        CommandSpec::new("view.tasks", "Tasks", "Navigation", tasks).pure().key("Mod+4"),
+        // //// Neoffice — not offered where nothing made here is kept (`kept_here`: a hosting page's tab).
+        CommandSpec::new("view.tasks", "Tasks", "Navigation", tasks).pure().key("Mod+4").when(super::kept_here::tasks_refusal),
         CommandSpec::new("view.readingPane", "Reading Pane", "View › Layout", reading_pane).pure().params(r#"{"value": "right"|"bottom"|"off"}"#),
         CommandSpec::new("view.folderPane", "Folder Pane", "View › Layout", folder_pane).pure().params(TOGGLE),
         CommandSpec::new("view.conversations", "Show as Conversations", "View › Messages", conversations).pure().params(TOGGLE),

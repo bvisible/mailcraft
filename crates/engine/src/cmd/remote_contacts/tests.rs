@@ -11,7 +11,7 @@ use mailcraft_model::{Contact, Id, Labeled, Mailbox, Origin};
 use mailcraft_time::{Date, DateTime, Timestamp};
 use serde_json::{Value, json};
 
-use super::{NO_ADDING, NO_CHANGING, NO_DELETING, apply_books, book_here, merge_books};
+use super::{NO_ADDING, NO_BOOKS, NO_CHANGING, NO_DELETING, apply_books, book_here, merge_books};
 use crate::agent::{self, Access};
 use crate::cmd::remote::{apply_contacts, forget};
 use crate::{CmdError, Session};
@@ -199,12 +199,13 @@ fn a_read_only_book_marks_its_contacts_and_edit_and_delete_refuse_with_the_reaso
     let snapshot = s.mailbox.clone();
     // Named, as an agent names it: the command says why.
     assert_eq!(refused(&mut s, "people.edit", json!({"id": cy.id, "first": "Cyril"})), NO_CHANGING);
-    assert_eq!(refused(&mut s, "people.delete", json!({"id": cy.id})), NO_CHANGING);
+    // (Deleting says it is deleting that is not allowed.)
+    assert_eq!(refused(&mut s, "people.delete", json!({"id": cy.id})), NO_DELETING);
     // Selected, as the ribbon has it: the controls are greyed with the reason, and say it when pressed.
     run(&mut s, "people.select", json!({"id": cy.id}));
-    assert_eq!((greyed(&s, "people.edit"), greyed(&s, "people.delete")), (Some(NO_CHANGING), Some(NO_CHANGING)));
+    assert_eq!((greyed(&s, "people.edit"), greyed(&s, "people.delete")), (Some(NO_CHANGING), Some(NO_DELETING)));
     assert_eq!(refused(&mut s, "people.edit", json!({"first": "Cyril"})), NO_CHANGING);
-    assert_eq!(refused(&mut s, "people.delete", json!({})), NO_CHANGING);
+    assert_eq!(refused(&mut s, "people.delete", json!({})), NO_DELETING);
     assert!(s.mailbox == snapshot);
     // What is kept here only may still be set: whether it is a favourite, and its categories.
     run(&mut s, "people.favorite", json!({"id": cy.id, "value": true}));
@@ -275,6 +276,18 @@ fn two_contacts_with_one_origin_leave_one() {
     let bobs: Vec<Id> = s.mailbox.contacts.values().filter(|c| c.origin.id == "c-bob").map(|c| c.id).collect();
     assert_eq!(bobs, [bob], "the next whole download leaves one, the first (a contact made here, not the copy a read brought)");
     assert_eq!(book_of(&s, account, "c-bob"), "team");
+}
+
+#[test]
+fn a_tab_that_keeps_nothing_and_has_no_book_says_so_rather_than_blame_the_rights() {
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    // No server lists a book (yet, or ever): nothing to do with the account's rights.
+    assert_eq!(greyed(&s, "people.new"), Some(NO_BOOKS));
+    assert_eq!(refused(&mut s, "people.new", json!({"first": "Gus", "email": "gus@example.org"})), NO_BOOKS);
+    // A book it may only read: then it is the rights.
+    apply_books(&mut s, &books(account, vec![RemoteBook { main: true, ..book("team", "Team", true) }])).unwrap();
+    assert_eq!(greyed(&s, "people.new"), Some(NO_ADDING));
 }
 
 #[test]

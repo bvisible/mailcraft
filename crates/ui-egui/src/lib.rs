@@ -34,6 +34,8 @@ pub mod approval;
 mod attachment_open;
 pub mod backstage;
 mod calendar_sync;
+// //// Neoffice — which of a server's calendars are ticked, remembered across the visits of a tab that keeps nothing.
+pub mod calendar_ticks;
 pub mod calendar_view;
 pub mod chrome;
 pub mod compose;
@@ -635,6 +637,11 @@ pub struct UiState {
     pub alert_new_mail: bool,
     /// Show a desktop alert for each reminder as it falls due: on unless the owner turns it off.
     pub alert_reminders: bool,
+    // //// Neoffice — a hosting page's tab keeps no mailbox between visits, so which of a server's calendars are ticked is kept
+    // here, with the other settings (`calendar_ticks`).
+    /// Which calendars of a server are ticked, by the account's address and the calendar's name on its server
+    /// (`calendar_ticks::key`), for a session that keeps nothing of its own between visits.
+    pub calendar_ticks: std::collections::BTreeMap<String, bool>,
 }
 
 impl Default for UiState {
@@ -673,6 +680,8 @@ impl Default for UiState {
             update_install_told: false,
             alert_new_mail: true,
             alert_reminders: true,
+            // //// Neoffice — see `calendar_ticks`.
+            calendar_ticks: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -1379,6 +1388,8 @@ impl MailApp {
         self.ui.collapsed_folders.truncate(10_000);
         self.ui.recent.truncate(20);
         self.ui.collapsed_calendar_groups.truncate(200);
+        // //// Neoffice — the ticks of the server's calendars, as many as are kept (`calendar_ticks`).
+        calendar_ticks::sanitize(&mut self.ui.calendar_ticks);
         updates::sanitize(&mut self.ui);
         self.session.prefs = self.ui.options.clone();
         // Layout choices carry over; the folder, the day and the search start fresh.
@@ -1414,6 +1425,8 @@ impl MailApp {
             // //// Neoffice — Nora's commands, when a host reaches her and what each needs is there (nora/flow.rs).
             None if id.starts_with("ui.nora") => nora::enabled(self, id),
             None if id == "ui.copySelection" => self.text_selection.any(),
+            // //// Neoffice — Import is File › Import's (`kept_here`: refused where nothing is kept).
+            None if id == "ui.import" => self.session.enabled("file.import"),
             None => UI_COMMANDS.iter().any(|c| c.0 == id),
         }
     }
@@ -1518,6 +1531,10 @@ impl MailApp {
             return r;
         }
         let r = self.session.run(id, &params).map_err(|e| e.to_string());
+        // //// Neoffice — a server's calendar ticked or not is remembered for the next visit of a tab that keeps nothing (`calendar_ticks`).
+        if r.is_ok() && id == "calendar.showCalendar" {
+            self.remember_calendar_tick(&params);
+        }
         // Asked for the reminders: their window comes up, due or not.
         if r.is_ok() && id == "view.reminders" {
             self.reminders.asked_for = true;
@@ -1783,6 +1800,10 @@ impl MailApp {
                 Ok(json!({"pending": "open"}))
             }
             "ui.import" => {
+                // //// Neoffice — not where what a file brings would be gone at the next visit (`kept_here`).
+                if let Some(why) = mailcraft_engine::cmd::kept_here::import_refusal(&self.session) {
+                    return Some(Err(why.to_string()));
+                }
                 files::open(self, "import");
                 Ok(json!({"pending": "import"}))
             }
@@ -3675,3 +3696,6 @@ pub fn now_ms() -> f64 {
 
 #[cfg(test)]
 mod tests;
+// //// Neoffice — a hosting page's tab in the window: what it doesn't offer, what it greys, what it asks first (kept_here_tests.rs).
+#[cfg(test)]
+mod kept_here_tests;

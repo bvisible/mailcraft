@@ -287,6 +287,20 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
             {
                 let book = if book.name.trim().is_empty() { book.origin.id.as_str() } else { book.name.trim() };
                 let name = c.name();
+                // //// Neoffice — in a hosting page's tab, the book is the instance's, shared with the whole team, and what is
+                // deleted there is kept among its Deleted Documents, where an administrator restores it.
+                if !app.session.keeps_local {
+                    let text = if name.trim().is_empty() {
+                        tl!("This contact's card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.")
+                            .to_string()
+                    } else {
+                        crate::i18n::fmt(
+                            tl!("{name}'s card will be removed from Neoffice's contacts for the whole team. An administrator can restore it."),
+                            &[("name", name.trim())],
+                        )
+                    };
+                    return question(tl!("Delete Contact"), text, tl!("Delete"));
+                }
                 let what = if name.trim().is_empty() {
                     crate::i18n::fmt(
                         tl!("This contact will be deleted from the server's address book \"{book}\", for everyone who uses it."),
@@ -614,6 +628,25 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
             return Some(ask.noted("comment", note_hint));
         }
         None => {}
+    }
+    // //// Neoffice — 4 (D10). In a tab that keeps nothing, a server's event with no people to tell (a meeting's
+    // cancellation asks already) is asked about once before it is deleted, unless it repeats and its scope question was
+    // asked (which asks it): it goes from the person's calendar on the instance, and nothing promises it back.
+    let scoped = has("scope") || has("occurrence");
+    if id == "calendar.delete"
+        && !app.session.keeps_local
+        && keeper(mb, &e.origin).is_some()
+        && !e.origin.guest
+        && e.attendees.is_empty()
+        && (e.recurrence.is_none() || !scoped)
+    {
+        let title: String = e.title.trim().chars().filter(|c| !c.is_control()).take(80).collect();
+        let text = if title.is_empty() {
+            tl!("This event will be removed from your Neoffice calendar.").to_string()
+        } else {
+            crate::i18n::fmt(tl!("The event \"{title}\" will be removed from your Neoffice calendar."), &[("title", &title)])
+        };
+        return Some(Question::new(tl!("Delete This Event?"), text, tl!("Delete"), Value::Null));
     }
     // 3. Somebody else's meeting that the account's server keeps.
     keeper(mb, &e.origin)?;

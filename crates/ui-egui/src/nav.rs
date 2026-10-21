@@ -63,6 +63,8 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
                 Module::Mail => ("mail", "view.mail"),
                 Module::Calendar => ("calendar", "view.calendar"),
                 Module::People => ("people", "view.people"),
+                // //// Neoffice — Tasks, where what is made here is kept (a hosting page's tab offers none: `kept_here`).
+                Module::Tasks if !mailcraft_engine::cmd::kept_here::tasks_offered(&app.session) => continue,
                 Module::Tasks => ("tasks", "view.tasks"),
                 // //// Neoffice — Notes, where notes are kept (a hosting page's tab whose server keeps none offers none).
                 Module::Notes if !mailcraft_engine::cmd::notes::offered(&app.session) => continue,

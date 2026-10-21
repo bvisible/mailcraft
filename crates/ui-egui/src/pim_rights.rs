@@ -26,9 +26,10 @@ use mailcraft_model::Id;
 pub const PLAIN_PHONE_LABELS: [&str; 2] = ["mobile", "other"];
 
 /// The engine's reasons that the window says, as the engine has them (they are translated by these literals).
-pub const REASONS: [&str; 4] = [
+pub const REASONS: [&str; 5] = [
     "Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers",
     "Your rights do not let you add contacts",
+    "This page keeps no contacts of its own, and its server has no address book to put new ones in",
     "Your rights do not let you change this contact",
     "Your rights do not let you delete this contact",
 ];

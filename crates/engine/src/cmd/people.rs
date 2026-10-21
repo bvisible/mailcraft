@@ -25,12 +25,14 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("people.get", "Get Contact", "People", get).pure().params(ONE),
         CommandSpec::new("people.list", "List Contacts", "People", list).pure().params(r#"{"query"?: string}"#),
         CommandSpec::new("people.search", "Search People", "Home › Find", search).pure().params(r#"{"query": string}"#),
+        // //// Neoffice — a contact's favourite and its categories are kept on this computer alone: refused, with the reason, where nothing is kept between visits (`kept_here`).
         CommandSpec::new("people.favorite", "Add to Favorites", "Home › Actions", favorite)
             .params(r#"{"value"?: bool (default: toggle), "id"?: number}"#)
-            .selection(needs_contact),
+            .selection(needs_marked_contact),
         CommandSpec::new("people.categorize", "Categorize", "Home › Tags", categorize)
             .params(r#"{"category": string, "value"?: bool, "id"?: number}"#)
-            .selection(needs_contact),
+            // //// Neoffice — see `people.favorite`.
+            .selection(needs_marked_contact),
         CommandSpec::new("people.email", "Email", "Home › Communicate", email).pure().params(ONE).selection(needs_contact),
         // //// Neoffice — see `people.new`: the sender would be a contact kept nowhere; `book` as there.
         CommandSpec::new("people.fromMessage", "Add to Contacts", "Home › Actions", from_message)
@@ -58,6 +60,11 @@ fn needs_changeable_contact(s: &Session) -> Option<&'static str> {
 fn needs_deletable_contact(s: &Session) -> Option<&'static str> {
     needs_contact(s)
         .or_else(|| s.sel.contact.and_then(|id| s.mailbox.contact(id)).and_then(|c| super::remote_contacts::delete_refusal(&s.mailbox, c)))
+}
+
+/// [`needs_contact`], where a contact's favourite and its categories are kept.
+fn needs_marked_contact(s: &Session) -> Option<&'static str> {
+    super::kept_here::marks_refusal(s).or_else(|| needs_contact(s))
 }
 
 /// [`needs_message`], and somewhere to keep the contact.
@@ -278,6 +285,10 @@ fn search(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn favorite(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — also for a caller that names the contact (`needs_marked_contact`).
+    if let Some(why) = super::kept_here::marks_refusal(s) {
+        return Err(fail(why));
+    }
     let id = target(s, v)?;
     let c = s.mailbox.contact_mut(id)?;
     c.favorite = p::bool(v, "value").unwrap_or(!c.favorite);
@@ -285,6 +296,10 @@ fn favorite(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn categorize(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — see `favorite`.
+    if let Some(why) = super::kept_here::marks_refusal(s) {
+        return Err(fail(why));
+    }
     let id = target(s, v)?;
     let name = clean_name(p::req_str(v, "category")?).ok_or_else(|| bad("`category` is empty"))?;
     let c = s.mailbox.contact_mut(id)?;

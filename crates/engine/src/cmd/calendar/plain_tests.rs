@@ -10,7 +10,7 @@ use mailcraft_model::{Address, Attendee, Id};
 use mailcraft_time::{Date, DateTime, Timestamp};
 use serde_json::{Value, json};
 
-use super::{PLAIN_FREE_BUSY, PLAIN_KEEPS_NO};
+use super::{PLAIN_FREE_BUSY, PLAIN_KEEPS_NO, PLAIN_NO_FORWARD};
 use crate::cmd::remote::{apply_calendars, apply_events, event_upload};
 use crate::{CmdError, Session};
 
@@ -89,10 +89,11 @@ fn a_plain_calendar_refuses_categories_importance_options_teams_and_proposals_wi
             "calendar.respond",
             json!({"id": theirs, "response": "tentative", "send": true, "propose": {"start": "2026-10-20T11:00", "end": "2026-10-20T12:00"}}),
         ),
-        ("calendar.forward", json!({"id": theirs, "to": "eve@example.org", "send": true})),
     ] {
         assert_eq!(refused(&mut s, command, params.clone()), PLAIN_KEEPS_NO, "{command} {params}");
     }
+    // Forwarding, which such a server doesn't do, says so in words of its own.
+    assert_eq!(refused(&mut s, "calendar.forward", json!({"id": theirs, "to": "eve@example.org", "send": true})), PLAIN_NO_FORWARD);
     // An online meeting, where its server makes none: refused with that reason.
     assert_eq!(refused(&mut s, "calendar.teamsMeeting", json!({"id": mine, "value": true})), super::meeting::NO_ONLINE);
     assert!(s.mailbox.event_changes.is_empty(), "nothing noted for the server");
@@ -100,6 +101,32 @@ fn a_plain_calendar_refuses_categories_importance_options_teams_and_proposals_wi
     s.run("calendar.edit", &json!({"id": mine, "title": "Budget review (moved)", "location": "Room 5"})).unwrap();
     s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-15T12:00", "end": "2026-10-15T13:00"})).unwrap();
     assert_eq!(s.mailbox.event_changes.len(), 2);
+}
+
+#[test]
+fn a_plain_calendar_greys_categories_importance_options_and_proposals_with_one_reason() {
+    let (mut s, mine, theirs) = session(true);
+    let greyed = |s: &Session, id: &str| s.registry.get(id).and_then(|spec| (spec.enabled)(s));
+    for event in [mine, theirs] {
+        s.run("calendar.select", &json!({"id": event})).unwrap();
+        for command in ["calendar.categorize", "calendar.importance", "calendar.responseOptions", "calendar.propose"] {
+            assert_eq!(greyed(&s, command), Some(PLAIN_KEEPS_NO), "{command}");
+        }
+        assert_eq!(greyed(&s, "calendar.forward"), Some(PLAIN_NO_FORWARD));
+        // What it keeps is not greyed.
+        for command in ["calendar.edit", "calendar.private", "calendar.reminder", "calendar.showAs", "calendar.delete"] {
+            assert_eq!(greyed(&s, command), None, "{command}");
+        }
+    }
+    // Nothing selected: what is missing is said first.
+    s.run("calendar.select", &json!({"id": null})).unwrap();
+    assert_eq!(greyed(&s, "calendar.categorize"), Some("select an appointment first"));
+    // A calendar whose server keeps them greys nothing of them.
+    let (mut s, mine, _) = session(false);
+    s.run("calendar.select", &json!({"id": mine})).unwrap();
+    for command in ["calendar.categorize", "calendar.importance", "calendar.responseOptions", "calendar.forward"] {
+        assert_eq!(greyed(&s, command), None, "{command}");
+    }
 }
 
 #[test]

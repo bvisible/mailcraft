@@ -11,7 +11,8 @@ use crate::{CmdError, CmdResult, CommandSpec, Module, Session, TaskFilter, p};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        CommandSpec::new("tasks.new", "New Task", "Home › New", new).key("Mod+Shift+K").params(TASK),
+        // //// Neoffice — never where nothing made here is kept (`kept_here`: a hosting page's tab).
+        CommandSpec::new("tasks.new", "New Task", "Home › New", new).key("Mod+Shift+K").params(TASK).when(super::kept_here::tasks_refusal),
         CommandSpec::new("tasks.edit", "Edit Task", "Task", edit).params(r#"{"id"?: number, …the fields of tasks.new}"#).selection(needs_task),
         CommandSpec::new("tasks.delete", "Delete", "Home › Delete", delete).params(ONE).selection(needs_task),
         CommandSpec::new("tasks.complete", "Mark Complete", "Home › Manage Task", complete)
@@ -23,14 +24,21 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("tasks.categorize", "Categorize", "Home › Tags", categorize)
             .params(r#"{"category": string, "value"?: bool, "id"?: number}"#)
             .selection(needs_task),
+        // //// Neoffice — see `tasks.new`.
         CommandSpec::new("tasks.fromMessage", "Add to Tasks", "Home › Tags", from_message)
             .params(r#"{"id"?: number, "due"?: "YYYY-MM-DD"} (a message; default: the selected one)"#)
-            .selection(needs_message),
+            .selection(needs_message_for_task),
     ]
 }
 
 const ONE: &str = r#"{"id"?: number} (default: the selected task)"#;
 const TASK: &str = r#"{"title": string, "notes"?: string, "due"?: "YYYY-MM-DD" | null, "start"?: "YYYY-MM-DD" | null, "importance"?: "low"|"normal"|"high", "categories"?: [string], "reminder"?: "YYYY-MM-DDTHH:MM" | null}"#;
+
+// //// Neoffice — a task of a message is a task: never made where nothing made here is kept (`kept_here`).
+/// [`needs_message`], where tasks are kept.
+fn needs_message_for_task(s: &Session) -> Option<&'static str> {
+    super::kept_here::tasks_refusal(s).or_else(|| needs_message(s))
+}
 
 fn needs_task(s: &Session) -> Option<&'static str> {
     if s.sel.task.is_none() { Some("select a task first") } else { None }
@@ -189,6 +197,10 @@ fn categorize(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn from_message(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — also for a caller that names the message (`needs_message_for_task`).
+    if let Some(why) = super::kept_here::tasks_refusal(s) {
+        return Err(fail(why));
+    }
     let mid = p::id(v, "id").or(s.sel.focus()).ok_or_else(|| fail("select a message first"))?;
     let due = p::date(v, "due")?;
     let m = s.mailbox.message(mid).ok_or_else(|| fail(format!("no message with id {mid}")))?;

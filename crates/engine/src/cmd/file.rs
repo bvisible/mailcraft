@@ -21,7 +21,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("file.saveAs", "Save Mailbox As", "File › Open & Export", save_as)
             .pure()
             .params(r#"{"path": string} — everything in one self-contained file; a copy, unless the mailbox wasn't kept anywhere yet"#),
+        // //// Neoffice — what a file brings is kept on this computer only: refused where nothing is kept between visits (`kept_here`).
         CommandSpec::new("file.import", "Import", "File › Open & Export", import)
+            .when(super::kept_here::import_refusal)
             .params(r#"{"path": string} | {"name": string, "data": base64}, "folder"?: number — .eml, .mbox, .ics, .vcf; messages meant for a Microsoft account go to the local folder Imported (`local`)"#),
         CommandSpec::new("file.exportMessage", "Save Message As", "File › Save As", export_message).pure().params(r#"{"id"?: number, "path"?: string} — one message as .eml"#),
         CommandSpec::new("file.exportFolder", "Export Folder", "File › Open & Export", export_folder).pure().params(r#"{"id"?: number, "path"?: string} — a folder's messages as .mbox"#),

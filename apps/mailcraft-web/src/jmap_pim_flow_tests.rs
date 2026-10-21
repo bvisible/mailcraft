@@ -379,9 +379,13 @@ fn a_contact_in_a_read_only_book_cannot_be_changed_and_the_engine_says_why() {
     let mut flow = Flow::start();
     flow.with_books();
     let carol = flow.contact("Carol").unwrap();
-    for (command, params) in [("people.edit", json!({"id": carol.id, "title": "Partner"})), ("people.delete", json!({"id": carol.id}))] {
+    for (command, params, why) in [
+        ("people.edit", json!({"id": carol.id, "title": "Partner"}), "Your rights do not let you change this contact"),
+        // (Deleting says it is deleting that is not allowed.)
+        ("people.delete", json!({"id": carol.id}), "Your rights do not let you delete this contact"),
+    ] {
         let refused = flow.app.execute(command, params).unwrap_err();
-        assert!(refused.contains("Your rights do not let you change this contact"), "{command}: {refused}");
+        assert!(refused.contains(why), "{command}: {refused}");
     }
     assert!(flow.app.session.mailbox.contact_changes.is_empty() && flow.contact("Carol").is_some_and(|c| c.title.is_empty()));
     // And a book whose rights were narrowed on the server while a read was on its way: the change made here meanwhile

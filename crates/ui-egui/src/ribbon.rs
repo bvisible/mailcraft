@@ -820,6 +820,9 @@ pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, mut pick: impl FnMut(&mut Mai
 /// The categories as menu items that toggle one on the selection through `command`.
 pub fn category_menu(ui: &mut Ui, app: &mut MailApp, command: &str, has: impl Fn(&MailApp, &str) -> bool, clear: Option<&str>) {
     let cats: Vec<(String, egui::Color32)> = app.session.mailbox.categories.iter().map(|c| (c.name.clone(), crate::theme::c32(c.color))).collect();
+    // //// Neoffice — greyed, saying why, where the command can't run (a calendar whose server keeps no categories, a tab
+    // that keeps none of a contact's: `kept_here`).
+    let enabled = app.enabled(command);
     for (name, color) in cats {
         let on = has(app, &name);
         ui.horizontal(|ui| {
@@ -828,7 +831,11 @@ pub fn category_menu(ui: &mut Ui, app: &mut MailApp, command: &str, has: impl Fn
             if on {
                 ui.painter().text(r.center(), Align2::CENTER_CENTER, "✓", medium(10.0), egui::Color32::WHITE);
             }
-            if ui.add(egui::Button::new(name.as_str()).selected(on).min_size(vec2(170.0, 0.0))).clicked() {
+            // //// Neoffice — the categories a mailbox starts with in the interface's language (`forms::kit::category_shown`),
+            // and greyed with the reason (above).
+            let shown = crate::forms::kit::category_shown(&name);
+            let pressed = ui.add_enabled(enabled, egui::Button::new(shown).selected(on).min_size(vec2(170.0, 0.0)));
+            if crate::widgets::with_reason(app, pressed, command).clicked() {
                 let _ = app.run(command, json!({"category": name}));
                 ui.close();
             }
@@ -1259,9 +1266,37 @@ fn drop_menu(ui: &mut Ui, app: &mut MailApp, b: &Button<'_>) {
     }
 }
 
+// //// Neoffice — added: a menu whose entries all run one command (a selection's categories) is greyed, saying why, where
+// that command can't run for the selection (a calendar whose server keeps no categories, a tab that keeps none of a
+// contact's: `kept_here`).
+/// Why the button of `menu` is greyed, when it is: the reason its entries' command gives for what is selected.
+pub(crate) fn menu_refusal(app: &MailApp, menu: Option<Menu>) -> Option<&'static str> {
+    let s = &app.session;
+    let command = match menu? {
+        Menu::CategorizeContact if s.sel.contact.is_some() => "people.categorize",
+        Menu::CategorizeEvent if s.sel.event.is_some() => "calendar.categorize",
+        Menu::CategorizeTask if s.sel.task.is_some() => "tasks.categorize",
+        _ => return None,
+    };
+    s.registry.get(command).and_then(|spec| (spec.enabled)(s))
+}
+
+/// The tooltip of a menu's button: why it is greyed, when it is.
+fn menu_tip(resp: egui::Response, tip: String, refused: Option<&'static str>) -> egui::Response {
+    match refused {
+        Some(why) => resp.on_hover_text(format!("{tip}\n{}", crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))]))),
+        None => resp.on_hover_text(tip),
+    }
+}
+
 /// A button that is behind `…`, as entries of that menu.
 fn more_entries(ui: &mut Ui, app: &mut MailApp, b: &Button<'_>) {
     if b.item.command.is_none() {
+        // //// Neoffice — greyed where its command can't run (`menu_refusal`).
+        if menu_refusal(app, b.item.menu).is_some() {
+            ui.add_enabled(false, egui::Button::new(b.item.name()).min_size(vec2(190.0, 0.0)));
+            return;
+        }
         ui.menu_button(b.item.name(), |ui| drop_menu(ui, app, b));
         return;
     }
@@ -1288,7 +1323,9 @@ fn drop_mark(ui: &Ui, c: egui::Pos2, color: egui::Color32) {
 fn simple_button(app: &mut MailApp, ui: &mut Ui, t: &Tokens, b: &Button<'_>, labelled: bool, rect: Rect) {
     let item = b.item;
     let id = ui.id().with(("ribbon", item.key));
-    let on = item.command.as_ref().is_none_or(|(command, _)| app.enabled(command));
+    // //// Neoffice — and a menu of one command's entries, where that can run (`menu_refusal`).
+    let refused = menu_refusal(app, item.menu.filter(|_| item.command.is_none()));
+    let on = item.command.as_ref().is_none_or(|(command, _)| app.enabled(command)) && refused.is_none();
     let drop_rect = Rect::from_min_max(pos2(rect.max.x - DROP_W, rect.min.y), rect.max);
     let main_rect = if b.is_split() { Rect::from_min_max(rect.min, pos2(drop_rect.min.x, rect.max.y)) } else { rect };
     let main = ui.interact(main_rect, id, Sense::click());
@@ -1305,8 +1342,11 @@ fn simple_button(app: &mut MailApp, ui: &mut Ui, t: &Tokens, b: &Button<'_>, lab
     let Some((command, params)) = &item.command else {
         // The whole button opens its menu.
         drop_mark(ui, drop_rect.center(), ink);
-        let main = main.on_hover_text(item.tip_text());
-        egui::Popup::menu(&main).show(|ui| drop_menu(ui, app, b));
+        // //// Neoffice — (none where it is greyed: its tip says why)
+        let main = menu_tip(main, item.tip_text(), refused);
+        if refused.is_none() {
+            egui::Popup::menu(&main).show(|ui| drop_menu(ui, app, b));
+        }
         return;
     };
     let main = command_tooltip(app, main, &item.tip_text(), command);
@@ -1407,14 +1447,19 @@ fn classic_big(app: &mut MailApp, ui: &mut Ui, item: &Item) {
             }
         }
         (None, Some(menu)) => {
-            let (resp, text) = big_frame(ui, item.icon, label, true, false, true);
-            let resp = resp.on_hover_text(item.tip_text());
+            // //// Neoffice — greyed, saying why, where its entries' command can't run (`menu_refusal`).
+            let refused = menu_refusal(app, Some(menu));
+            let (resp, text) = big_frame(ui, item.icon, label, refused.is_none(), false, true);
+            let resp = menu_tip(resp, item.tip_text(), refused);
             app.hit.add("ribbon", hit_id(item.key), resp.rect);
             app.hit.add("ribbonLabel", hit_id(item.key), text);
-            egui::Popup::menu(&resp).show(|ui| {
-                ui.set_min_width(200.0);
-                menu_contents(ui, app, menu);
-            });
+            // //// Neoffice — (no menu where it is greyed)
+            if refused.is_none() {
+                egui::Popup::menu(&resp).show(|ui| {
+                    ui.set_min_width(200.0);
+                    menu_contents(ui, app, menu);
+                });
+            }
         }
         (None, None) => {}
     }
@@ -1439,12 +1484,17 @@ fn classic_column(app: &mut MailApp, ui: &mut Ui, items: &[&Item]) {
                     }
                 }
                 (None, Some(menu)) => {
-                    let resp = small_frame(ui, item.icon, label, true, false, true).on_hover_text(item.tip_text());
+                    // //// Neoffice — see `classic_big`.
+                    let refused = menu_refusal(app, Some(menu));
+                    let resp = menu_tip(small_frame(ui, item.icon, label, refused.is_none(), false, true), item.tip_text(), refused);
                     app.hit.add("ribbon", hit_id(item.key), resp.rect);
-                    egui::Popup::menu(&resp).show(|ui| {
-                        ui.set_min_width(200.0);
-                        menu_contents(ui, app, menu);
-                    });
+                    // //// Neoffice — (no menu where it is greyed)
+                    if refused.is_none() {
+                        egui::Popup::menu(&resp).show(|ui| {
+                            ui.set_min_width(200.0);
+                            menu_contents(ui, app, menu);
+                        });
+                    }
                 }
                 (None, None) => {}
             }

@@ -696,6 +696,10 @@ impl MailApp {
         {
             errors.push(format!("{}: {e}", tl!("The list of calendars couldn't be taken in")));
         }
+        // //// Neoffice — and ticked as the person left them at the last visit of a tab that keeps nothing (`calendar_ticks`).
+        if calendars.is_some() {
+            self.apply_calendar_ticks(account);
+        }
         if let Some(list) = categories {
             // They came: the sign-in covers them.
             self.calendar.extras_missing.remove(&account);

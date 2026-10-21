@@ -134,6 +134,9 @@ pub(crate) struct Info {
     /// Another time may be proposed with an answer: the organizer takes proposals, and the
     /// answer can be sent.
     can_propose: bool,
+    // //// Neoffice — why Propose New Time is greyed, when it is (a calendar whose server keeps no other time proposed).
+    /// Why another time can't be proposed after all, when it can't.
+    propose_refused: Option<String>,
     /// For a message that proposes another time: the time it proposes.
     proposed: Option<Proposed>,
     /// How many proposals of another time are known for the meeting, this message's among them.
@@ -716,14 +719,27 @@ fn answers(app: &mut MailApp, ui: &mut Ui, t: &Tokens, message: Id, info: &Info,
     // Another time, proposed with a tentative answer or a decline: asked for in a dialog of its
     // own, which says who is written to and sends from its own buttons.
     if info.can_propose {
-        let (propose, _) = button(ui, t, "proposeTime", tl!("Propose New Time"), false, false);
-        let propose = propose.on_hover_text(tl!(
-            "Propose another time to the organizer, with a tentative answer or a decline. Nothing is sent until you say so there."
-        ));
+        // //// Neoffice — greyed, with the reason, where the meeting's calendar keeps no other time proposed.
+        let refused = info.propose_refused.as_deref();
+        let (propose, _) = ui
+            .scope(|ui| {
+                if refused.is_some() {
+                    ui.multiply_opacity(0.45);
+                }
+                button(ui, t, "proposeTime", tl!("Propose New Time"), false, false)
+            })
+            .inner;
+        let propose = match refused {
+            Some(why) => propose.on_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))])),
+            None => propose.on_hover_text(tl!(
+                "Propose another time to the organizer, with a tentative answer or a decline. Nothing is sent until you say so there."
+            )),
+        };
         if !native {
             app.hit.add(hit_kind(place, Part::Propose), message, propose.rect);
         }
-        if propose.clicked() {
+        // //// Neoffice — (not where it is greyed)
+        if propose.clicked() && refused.is_none() {
             run(app, ui, "ui.dialog", json!({"name": "proposeTime", "message": message}));
         }
     }

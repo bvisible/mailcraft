@@ -147,8 +147,19 @@ fn a_new_contact_form_offers_the_writable_books() {
 
 #[test]
 fn the_engines_reasons_and_the_tables_are_the_same_strings() {
-    assert_eq!(REASONS, [remote_contacts::NO_KEEPING, remote_contacts::NO_ADDING, remote_contacts::NO_CHANGING, remote_contacts::NO_DELETING]);
+    assert_eq!(
+        REASONS,
+        [
+            remote_contacts::NO_KEEPING,
+            remote_contacts::NO_ADDING,
+            remote_contacts::NO_BOOKS,
+            remote_contacts::NO_CHANGING,
+            remote_contacts::NO_DELETING
+        ]
+    );
     assert_eq!(KEEPS_ONLY, remote_contacts::NO_KEEPING);
+    // The form's reason for a contact's favourite and categories is the engine's (`kept_here`).
+    assert_eq!(super::not_kept_here(), mailcraft_engine::cmd::kept_here::NO_MARKS_HERE);
 }
 
 #[test]
@@ -188,7 +199,7 @@ fn deleting_a_contact_of_a_servers_book_is_asked_about_first_naming_it_and_where
     assert!(app.session.mailbox.contact(bob).is_none() && app.session.mailbox.contact_changes.len() == 1);
     // One of a book it may only read is not asked about: the command says why.
     let refused = app.run("people.delete", json!({"id": cy})).unwrap_err();
-    assert!(refused.contains("Your rights do not let you change this contact"), "{refused}");
+    assert!(refused.contains("Your rights do not let you delete this contact"), "{refused}");
     // On screen, in French.
     crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
     let (s, _) = session();

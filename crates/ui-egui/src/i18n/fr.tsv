@@ -141,6 +141,12 @@
 	Untitled	Sans titre
 	Write your note…	Écrivez votre note…
 	You may read this note, not change it.	Vous pouvez lire cette note, pas la modifier.
+# What a hosting page's tab, which keeps nothing of its own between visits, asks before what its server keeps is deleted (crates/ui-egui/src/dialogs.rs).
+	This contact's card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.	La fiche de ce contact sera retirée des contacts de Neoffice pour toute l’équipe. Un administrateur peut la restaurer.
+	{name}'s card will be removed from Neoffice's contacts for the whole team. An administrator can restore it.	La fiche {name} sera retirée des contacts de Neoffice pour toute l’équipe. Un administrateur peut la restaurer.
+	This event will be removed from your Neoffice calendar.	Cet événement sera retiré de votre calendrier Neoffice.
+	The event "{title}" will be removed from your Neoffice calendar.	L’événement « {title} » sera retiré de votre calendrier Neoffice.
+	Delete This Event?	Supprimer cet événement ?
 # The colour categories a mailbox starts with, as the forms show them (crates/ui-egui/src/forms.rs: their names stay as they are).
 	Red category	Catégorie rouge
 	Orange category	Catégorie orange

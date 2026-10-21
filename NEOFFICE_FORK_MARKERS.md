@@ -108,6 +108,19 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   bar where notes are kept, and each module's button in the hit map), `ribbon.rs`, `chrome.rs`, `keys.rs`,
   `apps/mailcraft-web/src/web.rs` and `Cargo.toml` (the `web-sys` features of the question); their French lines are a
   block near the top of `fr.tsv`.
+- A hosting page's tab, which keeps nothing of its own between visits (`Session::keeps_local` false), refuses what it
+  would lose, with the reason a greyed control says: Tasks are not offered at all (`view.tasks`, `tasks.new`, Add to
+  Tasks, Mod+4, the module bar), nor Import, nor a contact's favourite and categories
+  (`crates/engine/src/cmd/kept_here.rs`); New Contact says whether no book is listed or the rights forbid it, and
+  Delete says it is deleting that the rights forbid (`cmd/remote_contacts.rs`). A calendar whose server keeps no
+  categories, importance, response options or other times proposed (`Calendar::plain`) greys them in the ribbon, the
+  Categorize menus, the appointment's window and the invitation bar, with one reason (`cmd/calendar.rs`
+  `needs_kept_options`, `options_refusal`; `forms.rs`, `ribbon.rs`, `reading/invitation.rs`), and refuses to forward
+  in words of its own. Such a tab asks before a server's event with nobody to tell is deleted, and before a server's
+  contact is (an administrator restores it from the instance's Deleted Documents), in `crates/ui-egui/src/dialogs.rs`;
+  it keeps which of the servers' calendars are ticked with the interface's settings, by the account's address and the
+  calendar's name on its server (`crates/ui-egui/src/calendar_ticks.rs`, `UiState::calendar_ticks`). The window's
+  tests of all this are `crates/ui-egui/src/kept_here_tests.rs`.
 - This file.
 
 ## What cannot carry a comment

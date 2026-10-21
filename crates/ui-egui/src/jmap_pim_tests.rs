@@ -602,7 +602,9 @@ fn a_kept_contact_completes_the_to_field() {
     app.execute("people.select", json!({"id": grace.id})).unwrap();
     let reason = |app: &MailApp, command: &str| app.session.registry.get(command).and_then(|spec| (spec.enabled)(&app.session));
     let why = mailcraft_engine::cmd::remote_contacts::NO_CHANGING;
-    assert_eq!((reason(&app, "people.edit"), reason(&app, "people.delete")), (Some(why), Some(why)));
+    // (Deleting says it is deleting that is not allowed.)
+    let not_deleting = mailcraft_engine::cmd::remote_contacts::NO_DELETING;
+    assert_eq!((reason(&app, "people.edit"), reason(&app, "people.delete")), (Some(why), Some(not_deleting)));
     assert!(!app.enabled("people.edit") && !app.enabled("people.delete"));
 }
 

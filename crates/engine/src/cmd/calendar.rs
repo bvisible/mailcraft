@@ -57,9 +57,10 @@ fn own_specs() -> Vec<CommandSpec> {
         CommandSpec::new("calendar.private", "Private", "Appointment › Tags", private)
             .params(r#"{"value"?: bool, "id"?: number}"#)
             .selection(needs_event),
+        // //// Neoffice — greyed, with the reason, for an event of a calendar whose server keeps no categories (`needs_kept_options`).
         CommandSpec::new("calendar.categorize", "Categorize", "Appointment › Tags", categorize)
             .params(r#"{"category": string, "value"?: bool, "id"?: number}"#)
-            .selection(needs_event),
+            .selection(needs_kept_options),
         CommandSpec::new("calendar.fromMessage", "Reply with Meeting", "Home › Respond", from_message).key("Mod+Alt+R").selection(needs_message),
         CommandSpec::new("calendar.addCalendar", "Add Calendar", "Home › Manage Calendars", add_calendar)
             .params(r##"{"name": string, "color"?: "#RRGGBB"}"##),
@@ -243,9 +244,11 @@ fn writable(s: &Session, calendar: Id) -> Result<(), CmdError> {
 // //// Neoffice — a calendar whose server keeps only the basics of an event (`Calendar::plain`: JMAP for Calendars on a
 // hosting page's server) refuses here what that server would refuse, with the reason, rather than note a change its
 // host has to drop and the next download undoes.
-/// Why a calendar whose server keeps only the basics of an event refuses categories, importance, response options,
-/// an online meeting and another time proposed (and forwarding, which such a server doesn't do).
-pub const PLAIN_KEEPS_NO: &str = "This calendar's server keeps no categories, importance, response options, online meetings or proposed times.";
+/// Why a calendar whose server keeps only the basics of an event refuses categories, importance, response options and
+/// another time proposed. (An online meeting is one where its server makes them: `meeting::NO_ONLINE` says when not.)
+pub const PLAIN_KEEPS_NO: &str = "This calendar's server keeps no categories, importance, response options or proposed times.";
+/// Why it refuses to forward a meeting: such a server forwards none.
+pub const PLAIN_NO_FORWARD: &str = "This calendar's server doesn't forward meetings.";
 /// Why it refuses an event that shows otherwise than free or busy.
 pub const PLAIN_FREE_BUSY: &str = "This calendar's server keeps only Free and Busy.";
 /// Why it refuses an answer to one occurrence of somebody else's meeting that is to be told to the organizer: such a
@@ -256,6 +259,28 @@ pub const PLAIN_WHOLE_ANSWER: &str =
 /// Whether `calendar` is one whose server keeps only the basics of an event.
 pub(crate) fn plain(s: &Session, calendar: Id) -> bool {
     s.mailbox.calendar(calendar).is_some_and(|c| c.plain && remote::keeper(&s.mailbox, &c.origin).is_some())
+}
+
+/// Why an event of `calendar` takes no categories, importance, response options or other time proposed: its server
+/// keeps none of them. `None` where it does. (For a form, which offers them greyed with the reason.)
+pub fn options_refusal(s: &Session, calendar: Id) -> Option<&'static str> {
+    plain(s, calendar).then_some(PLAIN_KEEPS_NO)
+}
+
+/// Whether the selected event is in a calendar whose server keeps only the basics of an event.
+fn selected_plain(s: &Session) -> bool {
+    s.sel.event.and_then(|id| s.mailbox.event(id)).is_some_and(|e| plain(s, e.calendar))
+}
+
+/// [`needs_event`], and the selected event in a calendar whose server keeps its categories, importance, response
+/// options and proposals: what greys those controls, with the reason.
+pub(super) fn needs_kept_options(s: &Session) -> Option<&'static str> {
+    needs_event(s).or_else(|| selected_plain(s).then_some(PLAIN_KEEPS_NO))
+}
+
+/// [`needs_event`], and the selected event in a calendar whose server forwards meetings.
+pub(super) fn needs_forwarding(s: &Session) -> Option<&'static str> {
+    needs_event(s).or_else(|| selected_plain(s).then_some(PLAIN_NO_FORWARD))
 }
 
 /// Refuse what the server of a plain calendar doesn't keep, of the event `e` as it is to be (`before`: as it was, for

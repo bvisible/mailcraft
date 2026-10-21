@@ -37,7 +37,8 @@ pub fn key_text(sc: &str) -> String {
 /// and why it can't run when it can't. `label` is already in the interface language.
 pub(crate) fn command_tooltip(app: &MailApp, resp: Response, label: &str, id: &str) -> Response {
     let sc = shortcut_text(app, id);
-    let spec = app.session.registry.get(id);
+    // //// Neoffice — Import is File › Import's, and greyed for its reasons (`kept_here`).
+    let spec = app.session.registry.get(if id == "ui.import" { "file.import" } else { id });
     let desc = spec.map(|s| crate::i18n::location(s.location)).unwrap_or_default();
     let reason = spec.and_then(|s| (s.enabled)(&app.session));
     resp.on_hover_ui(|ui| {
@@ -160,9 +161,21 @@ pub fn mi(ui: &mut Ui, app: &mut MailApp, label: &str, id: &str, params: Value) 
     let sc = shortcut_text(app, id);
     let enabled = app.enabled(id);
     let resp = ui.add_enabled(enabled, egui::Button::new(tl!(label)).shortcut_text(sc).min_size(vec2(190.0, 0.0)));
+    // //// Neoffice — a greyed entry says why, as a greyed button of the ribbon does.
+    let resp = with_reason(app, resp, id);
     if resp.clicked() {
         let _ = app.run(id, params);
         ui.close();
+    }
+}
+
+// //// Neoffice — added: why a control that runs a command is greyed, on hover.
+/// `resp`, saying on hover why the command `id` can't run now, when it can't and its engine says why.
+pub(crate) fn with_reason(app: &MailApp, resp: Response, id: &str) -> Response {
+    let spec = app.session.registry.get(if id == "ui.import" { "file.import" } else { id });
+    match spec.and_then(|s| (s.enabled)(&app.session)) {
+        Some(reason) => resp.on_disabled_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(reason))])),
+        None => resp,
     }
 }
 

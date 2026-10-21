@@ -34,6 +34,8 @@ pub mod jmap_mail;
 pub mod jmap_send;
 // //// Neoffice — what goes up to a JMAP server (the changes made here).
 pub mod jmap_up;
+// //// Neoffice — what a session that keeps nothing of its own between visits refuses (tasks, importing, a contact's marks).
+pub mod kept_here;
 pub mod mail;
 #[cfg(test)]
 mod newer_account_tests;

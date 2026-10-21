@@ -48,11 +48,14 @@ pub use written::{
     note_sending, note_unsent, settle_contact_changes,
 };
 
-/// Why the owner may not make a contact here: there is no address book this one could go to that keeps it.
+/// Why the owner may not make a contact here: the servers' address books are ones the account may only read.
 pub const NO_ADDING: &str = "Your rights do not let you add contacts";
-/// Why the owner may not change (nor delete) a contact: its address book is one the account may only read.
+/// Why the owner may not make a contact here: the session keeps none of its own, and no server lists an address book.
+pub const NO_BOOKS: &str = "This page keeps no contacts of its own, and its server has no address book to put new ones in";
+/// Why the owner may not change a contact: its address book is one the account may only read.
 pub const NO_CHANGING: &str = "Your rights do not let you change this contact";
-/// Why the owner may not delete a contact: the account may change the contacts of its book, not delete them.
+/// Why the owner may not delete a contact: the account may only read its book's contacts, or change them and not
+/// delete them.
 pub const NO_DELETING: &str = "Your rights do not let you delete this contact";
 /// Why a part of a contact can't be set here: its address book keeps no more of a contact than that.
 pub const NO_KEEPING: &str = "Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers";
@@ -226,22 +229,21 @@ pub fn change_refusal(mailbox: &Mailbox, contact: &Contact) -> Option<&'static s
 }
 
 /// Why `contact` may not be deleted here for its address book's sake: the account may only read the book's contacts,
-/// or may change them and not delete them.
+/// or may change them and not delete them. (Deleting is what is refused either way, and said so.)
 pub fn delete_refusal(mailbox: &Mailbox, contact: &Contact) -> Option<&'static str> {
     let book = kept_in(mailbox, contact)?;
-    if book.read_only {
-        Some(NO_CHANGING)
-    } else if !book.may_remove {
-        Some(NO_DELETING)
-    } else {
-        None
-    }
+    (book.read_only || !book.may_remove).then_some(NO_DELETING)
 }
 
 /// Why a new contact can't be made: no address book of a server takes it ([`default_book`]) and the session keeps
-/// nothing of its own between visits ([`Session::keeps_local`]), so it would be kept nowhere.
+/// nothing of its own between visits ([`Session::keeps_local`]), so it would be kept nowhere. The account's rights
+/// when a server lists books it may only read; that no server lists one, when none does.
 pub fn adding_refusal(s: &Session) -> Option<&'static str> {
-    (!s.keeps_local && default_book(s).is_none()).then_some(NO_ADDING)
+    if s.keeps_local || default_book(s).is_some() {
+        return None;
+    }
+    let listed = s.mailbox.address_books.iter().any(|book| super::remote::keeper(&s.mailbox, &book.origin).is_some());
+    Some(if listed { NO_ADDING } else { NO_BOOKS })
 }
 
 /// The address book a new contact made with the params `v` goes to, by its id here; `None` for the mailbox's own
@@ -264,7 +266,7 @@ pub fn target_book(s: &Session, v: &Value) -> Result<Option<Id>, CmdError> {
         }
     };
     if target.is_none() && !s.keeps_local {
-        return Err(fail(NO_ADDING));
+        return Err(fail(adding_refusal(s).unwrap_or(NO_ADDING)));
     }
     Ok(target)
 }

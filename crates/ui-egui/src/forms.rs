@@ -961,10 +961,13 @@ pub(crate) mod kit {
                 };
                 if item.menu {
                     drop_mark(ui, pos2(rect.max.x - DROP_W / 2.0, rect.center().y), ink);
-                    egui::Popup::menu(&resp).show(|ui| {
-                        ui.set_min_width(200.0);
-                        menu(ui, item.key);
-                    });
+                    // //// Neoffice — a greyed menu opens nothing (what it would offer can't be had: its tip says why).
+                    if item.on {
+                        egui::Popup::menu(&resp).show(|ui| {
+                            ui.set_min_width(200.0);
+                            menu(ui, item.key);
+                        });
+                    }
                 } else if resp.clicked() && item.on {
                     clicked = Some(item.key);
                 }
@@ -987,8 +990,11 @@ pub(crate) mod kit {
                             ui.separator();
                         }
                         before = Some(item.section);
-                        if item.menu {
+                        // //// Neoffice — (a greyed menu, as above, is greyed here too)
+                        if item.menu && item.on {
                             ui.menu_button(item.tip.as_str(), |ui| menu(ui, item.key));
+                        } else if item.menu {
+                            ui.add_enabled(false, egui::Button::new(item.label.as_str()).min_size(vec2(190.0, 0.0)));
                         } else if ui
                             .add_enabled(item.on, egui::Button::new(item.tip.as_str()).selected(item.checked).min_size(vec2(190.0, 0.0)))
                             .clicked()
@@ -2224,6 +2230,10 @@ mod event {
         // //// Neoffice — an appointment may be held online where its calendar's server makes rooms now (`own_rooms`).
         /// Its calendar's server makes rooms of its own now ([`own_rooms`]): an appointment may be held online there.
         online_rooms: bool,
+        // //// Neoffice — what its calendar's server keeps none of (categories, importance, response options): greyed, with
+        // the reason (`mailcraft_engine::cmd::calendar::options_refusal`), as the calendar it is in now has them.
+        /// Why its categories, importance and response options are greyed, when they are.
+        options_refused: Option<&'static str>,
         // //// Neoffice — an online meeting the form stopped asking for, as its calendar's server makes rooms no more.
         /// The form stopped asking for an online meeting, as its calendar's server makes rooms no more
         /// ([`EventForm::follow_calendar`]): an item that exists is saved without it.
@@ -2300,6 +2310,8 @@ mod event {
             };
             // //// Neoffice — whose online meetings its calendar's server holds (`online_own`), and whether it makes rooms now.
             (f.online_own, f.online_rooms) = (online_own(s, f.calendar), own_rooms(s, f.calendar));
+            // //// Neoffice — see `options_refused`.
+            f.options_refused = mailcraft_engine::cmd::calendar::options_refusal(s, f.calendar);
             // Zones it is to have of its own: its times are then by their clocks.
             let zone = |k: &str| p.get(k).and_then(Value::as_str).and_then(Zone::named).map(Zone::id).unwrap_or_default();
             (f.start_zone, f.end_zone) = (zone("startZone"), zone("endZone"));
@@ -2350,6 +2362,8 @@ mod event {
             };
             // //// Neoffice — whose online meetings its calendar's server holds (`online_own`), and whether it makes rooms now.
             (f.online_own, f.online_rooms) = (online_own(s, f.calendar), own_rooms(s, f.calendar));
+            // //// Neoffice — see `options_refused`.
+            f.options_refused = mailcraft_engine::cmd::calendar::options_refusal(s, f.calendar);
             let here = |instant: mailcraft_time::Timestamp| s.offset_at(instant);
             // Which of a series is meant, when that is said: one occurrence shows on its own day.
             // (The day that is said is the day the occurrence starts on here; the series names
@@ -3066,6 +3080,14 @@ mod event {
             } else if !self.guest {
                 items.push(item("invite", "meeting", tl!("Invite Attendees"), 4, 2));
             }
+            // //// Neoffice — what its calendar's server keeps none of is greyed, saying why (`options_refused`).
+            if let Some(why) = self.options_refused {
+                let tip = crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))]);
+                for item in items.iter_mut().filter(|item| matches!(item.key, "categorize" | "importanceHigh" | "importanceLow" | "responseOptions"))
+                {
+                    (item.on, item.tip) = (false, tip.clone());
+                }
+            }
             items
         }
 
@@ -3087,6 +3109,8 @@ mod event {
         fn follow_calendar(&mut self, s: &Session) {
             let had_rooms = self.online_rooms;
             (self.online_own, self.online_rooms) = (online_own(s, self.calendar), own_rooms(s, self.calendar));
+            // //// Neoffice — see `options_refused`.
+            self.options_refused = mailcraft_engine::cmd::calendar::options_refusal(s, self.calendar);
             // (Only when that changes: a Teams meeting is a meeting's, and stays as it is.)
             if had_rooms && !self.online_rooms && !self.meeting && !self.online_made {
                 self.online_dropped |= self.online;
@@ -3280,7 +3304,14 @@ mod event {
                 });
             }
             if !windowed {
-                tall_row(ui, tl!("Categories"), |ui| category_chips(ui, &s.mailbox.categories, &mut self.categories));
+                // //// Neoffice — greyed, saying why, where its calendar's server keeps no categories (`options_refused`).
+                let refused = self.options_refused;
+                tall_row(ui, tl!("Categories"), |ui| {
+                    let chips = ui.add_enabled_ui(refused.is_none(), |ui| category_chips(ui, &s.mailbox.categories, &mut self.categories));
+                    if let Some(why) = refused {
+                        chips.response.on_disabled_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))]));
+                    }
+                });
                 row(ui, "", |ui| {
                     ui.checkbox(&mut self.private, tl!("Private"));
                     ui.add_space(12.0);
@@ -3679,6 +3710,48 @@ mod event {
             let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
             let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": theirs}), true);
             assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
+        }
+
+        // //// Neoffice — what a calendar whose server keeps no categories, importance or response options greys, saying why.
+        #[test]
+        fn a_plain_calendar_greys_categories_importance_and_response_options_with_one_reason() {
+            let mut s = session();
+            let added = s.run(
+                "account.add",
+                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
+            );
+            let account = added.unwrap()["id"].as_u64().unwrap();
+            let list = mailcraft_model::remote::CalendarsDownload {
+                account,
+                email: "ada@example.org".into(),
+                complete: true,
+                calendars: vec![mailcraft_model::remote::RemoteCalendar {
+                    id: "C1".into(),
+                    name: "Ada".into(),
+                    main: true,
+                    plain: true,
+                    ..Default::default()
+                }],
+            };
+            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
+            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
+            let key = |f: &EventForm, key: &str| f.bar_items().into_iter().find(|item| item.key == key);
+            let reason = mailcraft_engine::cmd::calendar::PLAIN_KEEPS_NO;
+            // A meeting there: the four are greyed, each saying why; the rest is not.
+            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), true);
+            for greyed in ["categorize", "importanceHigh", "importanceLow", "responseOptions"] {
+                assert!(key(&f, greyed).is_some_and(|item| !item.on && item.tip.contains(reason)), "{greyed}");
+            }
+            for open in ["showAs", "reminder", "private", "send"] {
+                assert!(key(&f, open).is_some_and(|item| item.on), "{open}");
+            }
+            // Moved to a calendar of this computer's in the form: offered again.
+            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
+            f.calendar = own;
+            f.follow_calendar(&s);
+            for offered in ["categorize", "importanceHigh", "importanceLow", "responseOptions"] {
+                assert!(key(&f, offered).is_some_and(|item| item.on), "{offered}");
+            }
         }
 
         // //// Neoffice — an appointment of a JMAP account's calendar whose server makes rooms may be held online without

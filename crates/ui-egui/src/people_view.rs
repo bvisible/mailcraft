@@ -568,17 +568,49 @@ fn card_actions(app: &mut MailApp, ui: &mut Ui, c: &Contact) {
             let _ = app.run("people.email", json!({"id": id}));
         }
         // The card shows the selected contact, so Edit opens its form.
-        if widgets::icon_text_button(ui, "edit", tl!("Edit"), true).clicked() {
+        // //// Neoffice — each greyed, saying why, where its command can't run (a book the account may only read, a tab
+        // that keeps no favourites: `remote_contacts`, `kept_here`); the card shows the selected contact, which is what
+        // the commands look at.
+        if action(app, ui, "edit", tl!("Edit"), "people.edit", tl!("Edit")) {
             let _ = app.run("people.edit", json!({}));
         }
         let tip = if c.favorite { tl!("Remove from Favorites") } else { tl!("Add to Favorites") };
-        if widgets::icon_text_button(ui, if c.favorite { "starOn" } else { "star" }, tl!("Favorite"), true).on_hover_text(tip).clicked() {
+        // //// Neoffice — see above.
+        if action(app, ui, if c.favorite { "starOn" } else { "star" }, tl!("Favorite"), "people.favorite", tip) {
             let _ = app.run("people.favorite", json!({"id": id}));
         }
-        if widgets::icon_text_button(ui, "delete", tl!("Delete"), true).clicked() {
+        // //// Neoffice — see above.
+        if action(app, ui, "delete", tl!("Delete"), "people.delete", tl!("Delete")) {
             let _ = app.run("people.delete", json!({"id": id}));
         }
     });
+}
+
+// //// Neoffice — added: the card's buttons, greyed with their reason (`card_actions`).
+/// A button of the card that runs `command`: greyed, saying why, where it can't run now. Whether it was clicked.
+fn action(app: &mut MailApp, ui: &mut Ui, icon: &str, label: &str, command: &str, tip: &str) -> bool {
+    let on = app.enabled(command);
+    let resp = widgets::icon_text_button(ui, icon, label, on);
+    app.hit.add("cardAction", hit_of(command), resp.rect);
+    let resp = if on { resp.on_hover_text(tip) } else { why_not(app, resp, command) };
+    on && resp.clicked()
+}
+
+/// What the hit map calls the card's button that runs `command`.
+fn hit_of(command: &str) -> u64 {
+    match command {
+        "people.edit" => 1,
+        "people.favorite" => 2,
+        _ => 3,
+    }
+}
+
+/// `resp` of a greyed button of the card: on hover, why its command can't run now.
+fn why_not(app: &MailApp, resp: egui::Response, command: &str) -> egui::Response {
+    match app.session.registry.get(command).and_then(|spec| (spec.enabled)(&app.session)) {
+        Some(reason) => resp.on_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(reason))])),
+        None => resp,
+    }
 }
 
 /// A section's heading: a small accent title over a hairline.

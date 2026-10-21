@@ -617,6 +617,10 @@ fn invitation(s: &mut Session, v: &Value) -> CmdResult {
         "day": day,
     });
     told["canPropose"] = json!(can_propose);
+    // //// Neoffice — why another time can't be proposed after all: the meeting is in a calendar whose server keeps none
+    // (the bar greys its button with this reason).
+    let plain = on_calendar.filter(|_| kept).is_some_and(|there| super::plain(s, there.calendar));
+    told["proposeRefused"] = json!(plain.then_some(super::PLAIN_KEEPS_NO));
     // For a message that proposes another time: the time it proposes, as the message has it.
     told["proposed"] = json!((kind == "counter").then(|| json!({"start": invitation.event.start.iso(), "end": invitation.event.end.iso()})));
     told["proposals"] = json!(proposals);
