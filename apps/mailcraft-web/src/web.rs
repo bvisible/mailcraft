@@ -18,10 +18,6 @@ const UI_KEY: &str = "mailcraft.ui.v1";
 
 pub fn start() {
     eframe::WebLogger::init(log::LevelFilter::Info).ok();
-    // //// Neoffice — the interface language "System default" follows is the hosting page's (the person's, host.rs), else the browser's, said before the first frame.
-    if let Some(language) = crate::host::language().or_else(|| web_sys::window().and_then(|w| w.navigator().language())) {
-        mailcraft_ui_egui::i18n::set_system_language(&language);
-    }
     // //// Neoffice — the name the hosting page gives the program (host.rs) is the one every interface string shows.
     if let Some(name) = crate::host::product() {
         mailcraft_ui_egui::i18n::set_product_name(&name);
@@ -214,6 +210,16 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         pictures,
         // //// Neoffice — as above.
         nora,
+        // The browser's language, for an interface language left on Automatic; and the page says
+        // which language it is in (`<html lang>`), for screen readers and the browser's own tools.
+        // //// Neoffice — the hosting page's language first (the person's, host.rs), else the browser's.
+        system_locale: crate::host::language().or_else(|| web_sys::window().and_then(|w| w.navigator().language())),
+        on_language: Some(Box::new(|code: &str| {
+            let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
+            if let Some(root) = root {
+                let _ = root.set_attribute("lang", code);
+            }
+        })),
         ..Default::default()
     }
 }

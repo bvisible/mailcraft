@@ -420,7 +420,7 @@ impl MailApp {
                         self.status(tl!("Changing the calendar needs your permission: File › Info › Connect calendar and contacts"));
                     }
                 }
-                Err(e) => errors.push(format!("{}: {e}", tl!("The calendar changes couldn't be taken in"))),
+                Err(e) => errors.push(crate::i18n::fmt(tl!("The calendar changes couldn't be taken in: {error}"), &[("error", &e.to_string())])),
             }
             // What couldn't be sent stays as it is here and is tried again: never without a word.
             let failed = |outcome: &&mailcraft_model::remote::EventOutcome| outcome.result == mailcraft_model::remote::EventResult::Failed;
@@ -431,7 +431,7 @@ impl MailApp {
                 } else {
                     crate::i18n::run_words::reason(&outcome.error, &self.session.mailbox).into_owned()
                 };
-                let line = format!("{}: {why}", tl!("A calendar change couldn't be sent yet and will be tried again"));
+                let line = crate::i18n::fmt(tl!("A calendar change couldn't be sent yet and will be tried again: {error}"), &[("error", &why)]);
                 if n == 0 {
                     self.status(line.clone());
                 }
@@ -469,7 +469,7 @@ impl MailApp {
                 true
             }
             Err(e) => {
-                errors.push(format!("{}: {e}", tl!("The calendar couldn't be taken in")));
+                errors.push(crate::i18n::fmt(tl!("The calendar couldn't be taken in: {error}"), &[("error", &e.to_string())]));
                 false
             }
         }
@@ -597,7 +597,7 @@ impl MailApp {
             .unwrap_or_default();
         let mut lines: Vec<String> = Vec::new();
         let verdict = if !result.error.is_empty() {
-            format!("{} {}", tl!("The calendar connection couldn't be checked:"), result.error)
+            crate::i18n::fmt(tl!("The calendar connection couldn't be checked: {error}"), &[("error", &result.error)])
         } else if result.ok {
             tl!("The calendar connection works: what was sent arrived, and the server has it as it was sent.").to_string()
         } else {
@@ -605,9 +605,16 @@ impl MailApp {
         };
         lines.push(format!("{whose}: {verdict}"));
         for (n, step) in result.steps.iter().take(20).enumerate() {
-            let answered = if step.status == 0 { tl!("no answer").to_string() } else { format!("{} {}", tl!("the server answered"), step.status) };
+            let answered = if step.status == 0 {
+                tl!("no answer").to_string()
+            } else {
+                crate::i18n::fmt(tl!("the server answered {status}"), &[("status", &step.status.to_string())])
+            };
             let how = if step.ok { tl!("OK") } else { tl!("FAILED") };
-            let line = format!("{}. {}: {how} ({answered}). {}", n + 1, tl!(&step.what), step.said);
+            let line = crate::i18n::fmt(
+                tl!("{n}. {step}: {result} ({answered}). {said}"),
+                &[("n", &(n + 1).to_string()), ("step", tl!(&step.what)), ("result", how), ("answered", &answered), ("said", &step.said)],
+            );
             // What was sent, what the server said, and when: nothing of anybody's calendar.
             if step.ok {
                 log::info!("calendar check, account {account}: {line}");
@@ -701,7 +708,7 @@ impl MailApp {
         if let Some(list) = calendars
             && let Err(e) = remote::apply_calendars(&mut self.session, list)
         {
-            errors.push(format!("{}: {e}", tl!("The list of calendars couldn't be taken in")));
+            errors.push(crate::i18n::fmt(tl!("The list of calendars couldn't be taken in: {error}"), &[("error", &e.to_string())]));
         }
         // //// Neoffice — those it made ticked as the person left them at the last visit of a tab that keeps nothing (`calendar_ticks`).
         if calendars.is_some() {
@@ -711,7 +718,7 @@ impl MailApp {
             // They came: the sign-in covers them.
             self.calendar.extras_missing.remove(&account);
             if let Err(e) = remote::apply_categories(&mut self.session, list) {
-                errors.push(format!("{}: {e}", tl!("The categories couldn't be taken in")));
+                errors.push(crate::i18n::fmt(tl!("The categories couldn't be taken in: {error}"), &[("error", &e.to_string())]));
             }
         } else if extras_missing {
             self.calendar.extras_missing.insert(account);

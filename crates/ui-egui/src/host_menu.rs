@@ -337,6 +337,7 @@ fn named_folder(app: &MailApp, account: &str, folder: &str) -> Result<Id, String
 /// Run a command of the page's as the window's own button or box runs it: why not, in the interface's language, when
 /// it was refused.
 pub fn run(app: &mut MailApp, command: &Command) -> Result<(), String> {
+    let since = crate::now_ms();
     let ran = match command {
         Command::View(view) => app.run(view, json!({})),
         Command::NewMail => app.run("mail.new", json!({})),
@@ -357,12 +358,16 @@ pub fn run(app: &mut MailApp, command: &Command) -> Result<(), String> {
             return show(app, message);
         }
     };
-    refused(app, ran)
+    refused(app, ran, since)
 }
 
-/// A command's refusal, in the interface's language.
-fn refused(app: &MailApp, ran: Result<Value, String>) -> Result<(), String> {
-    ran.map(|_| ()).map_err(|e| crate::i18n::run_words::refusal(&e, &app.session.mailbox).into_owned())
+/// A command's refusal, in the interface's language: as the window has just said it in its status bar (`MailApp::run`), else
+/// as `run_words` reads it back.
+fn refused(app: &MailApp, ran: Result<Value, String>, since: f64) -> Result<(), String> {
+    ran.map(|_| ()).map_err(|e| match &app.status_msg {
+        Some((said, at)) if *at >= since => said.clone(),
+        _ => crate::i18n::run_words::refusal(&e, &app.session.mailbox).into_owned(),
+    })
 }
 
 /// The message of `account` whose server id is `id`, when this window has it.
@@ -375,10 +380,12 @@ fn here(app: &MailApp, account: Id, id: &str) -> Option<Id> {
 /// selected and in the reading pane, and the list brought round to it.
 fn show(app: &mut MailApp, message: Id) -> Result<(), String> {
     let folder = app.session.mailbox.message(message).map(|m| m.folder).ok_or_else(|| tl!("That mailbox has no such message.").to_string())?;
+    let since = crate::now_ms();
     let ran = app.run("folder.select", json!({"id": folder}));
-    refused(app, ran)?;
+    refused(app, ran, since)?;
+    let since = crate::now_ms();
     let ran = app.run("mail.select", json!({"id": message}));
-    refused(app, ran)?;
+    refused(app, ran, since)?;
     app.reveal_selection = true;
     Ok(())
 }

@@ -41,6 +41,8 @@ fn run(s: &mut Session, id: &str, params: Value) -> Value {
 fn refused(s: &mut Session, id: &str, params: Value) -> String {
     match s.run(id, &params) {
         Err(CmdError::Failed(why) | CmdError::Disabled(why)) => why,
+        // (A refusal upstream's engine says as a template, `failed!`: in English, as an agent reads it.)
+        Err(CmdError::Said(said)) => said.to_string(),
         other => panic!("{id} {params}: expected a refusal, got {other:?}"),
     }
 }

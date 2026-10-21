@@ -201,7 +201,7 @@ fn deleting_a_contact_of_a_servers_book_is_asked_about_first_naming_it_and_where
     let refused = app.run("people.delete", json!({"id": cy})).unwrap_err();
     assert!(refused.contains("Your rights do not let you delete this contact"), "{refused}");
     // On screen, in French.
-    crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+    crate::i18n::set_current(crate::i18n::Lang::French);
     let (s, _) = session();
     let bob = contact(&s, "Bob");
     let mut app = MailApp::new(s, Services::default());
@@ -219,7 +219,7 @@ fn the_contact_form_names_the_categories_in_the_interfaces_language() {
     let bob = contact(&s, "Bob");
     let mut app = MailApp::new(s, Services::default());
     app.autosave = false;
-    app.execute("ui.language", json!({"value": "fr"})).unwrap();
+    app.execute("ui.language", json!({"language": "fr"})).unwrap();
     app.execute("ui.dialog", json!({"name": "editContact", "id": bob})).unwrap();
     let mut h = Harness::builder().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
         |ui, app: &mut MailApp| {
@@ -230,7 +230,7 @@ fn the_contact_form_names_the_categories_in_the_interfaces_language() {
         app,
     );
     h.run_steps(6);
-    let french = crate::i18n::Lang::from_tag("fr").unwrap();
+    let french = crate::i18n::Lang::French;
     let (in_english, in_french) = (h.query_by_label("Red category").is_some(), h.query_by_label(crate::i18n::t_in(french, "Red category")).is_some());
     // What the contact carries is the name as it is.
     let carried = h.state().session.mailbox.categories.first().map(|c| c.name.clone());

@@ -10,8 +10,7 @@ use mailcraft_model::{Address, Attachment, FolderKind, Id, Message};
 use mailcraft_time::{Date, DateTime};
 use serde_json::{Value, json};
 
-// //// Neoffice — the words of the header over the original (QuoteWords).
-use super::compose::{QUOTE_MARK, QuoteWords, set_quote_words};
+use super::compose::QUOTE_MARK;
 use crate::{BodyFormat, Compose, Session, sample};
 
 fn session() -> Session {
@@ -264,42 +263,59 @@ fn originals_of_any_shape_are_carried_without_panicking() {
     }
 }
 
-// //// Neoffice — the header over the original in the words an interface sets (QuoteWords), with the date as it shows a
-// message's; English, the date written out, when none are set.
 #[test]
-fn the_header_over_the_original_is_in_the_words_the_interface_sets() {
-    let words = QuoteWords {
-        original: "-----The original-----".into(),
-        from: "Writer:".into(),
-        sent: "Written:".into(),
-        to: "Readers:".into(),
-        cc: "Copies:".into(),
-        subject: "Topic:".into(),
-    };
-    let mut s = session();
-    let id = newsletter(&mut s);
-    set_quote_words(Some(words));
-    run(&mut s, "mail.reply", json!({"id": id}));
-    let q = compose(&s).quote.clone().unwrap();
-    let date = mailcraft_time::header_label(1_791_000_000, s.offset_at(1_791_000_000), s.prefs.twelve_hour);
-    assert!(q.text.starts_with("\n\n-----The original-----\nWriter: "), "{:?}", q.text);
-    assert!(q.text.contains(&format!("\nWritten: {date}\nReaders: ")) && q.text.contains("\nTopic: October <arrivals>\n"), "{:?}", q.text);
-    assert!(q.html.contains("<b>Writer:</b> ") && q.html.contains(&format!("<b>Written:</b> {date}<br>")), "{}", q.html);
-    assert!(q.html.contains("<b>Readers:</b> ") && q.html.contains("<b>Topic:</b> October &lt;arrivals&gt;"), "{}", q.html);
-    // A draft of it reopens with its original in plain text found under those words.
-    let d = run(&mut s, "compose.saveDraft", json!({}))["draft"].as_u64().unwrap();
-    run(&mut s, "compose.close", json!({}));
-    run(&mut s, "mail.editDraft", json!({"id": d}));
-    assert_eq!(compose(&s).quote.as_ref().map(|q| q.text.clone()), Some(q.text.clone()));
-    set_quote_words(None);
-    // In English (none set): as it was.
-    run(&mut s, "compose.close", json!({}));
-    run(&mut s, "mail.reply", json!({"id": id}));
-    let q = compose(&s).quote.clone().unwrap();
-    assert!(
-        q.text.starts_with("\n\n-----Original Message-----\nFrom: ") && q.text.contains("\nSent: ") && q.text.contains("\nSubject: "),
-        "{:?}",
-        q.text
-    );
-    assert!(q.html.contains("<b>From:</b> ") && q.html.contains("<b>Subject:</b> "), "{}", q.html);
+fn a_reply_quotes_in_the_interface_language_and_its_draft_reopens_in_any() {
+    use mailcraft_i18n::{Lang, test_support};
+    let fr = test_support::po(&[
+        ("-----Original Message-----", "-----Message d'origine-----"),
+        ("From:", "De\u{202f}:"),
+        ("Sent:", "Envoyé\u{202f}:"),
+        ("To:", "À\u{202f}:"),
+        ("Subject:", "Objet\u{202f}:"),
+        ("{weekday}, {month} {day}, {year}", "{weekday} {day} {month} {year}"),
+        ("Saturday", "samedi"),
+        ("October", "octobre"),
+    ]);
+    test_support::with_catalogue(Lang::French, &fr, || {
+        let mut s = session();
+        s.interface_language = Lang::French;
+        s.prefs.twelve_hour = false;
+        let id = newsletter(&mut s);
+        run(&mut s, "mail.reply", json!({"id": id}));
+        let was = compose(&s).quote.clone().unwrap();
+        assert!(was.text.starts_with("\n\n-----Message d'origine-----\nDe\u{202f}: ") && was.text.contains("\nObjet\u{202f}: "), "{}", was.text);
+        assert!(was.text.contains("\nEnvoyé\u{202f}: samedi 3 octobre 2026 04:00\n"), "{}", was.text);
+        assert!(was.html.contains("<b>De\u{202f}:</b> ") && was.html.contains("<b>Envoyé\u{202f}:</b> "), "{}", was.html);
+        let d = run(&mut s, "compose.saveDraft", json!({}))["draft"].as_u64().unwrap();
+        run(&mut s, "compose.close", json!({}));
+        // Reopened after the owner has gone back to English, the French original is still known.
+        s.interface_language = Lang::English;
+        run(&mut s, "mail.editDraft", json!({"id": d}));
+        assert_eq!(compose(&s).quote.clone().unwrap().text, was.text);
+    });
+}
+
+#[test]
+fn a_draft_quoted_in_any_shipped_language_reopens_with_its_quote() {
+    use mailcraft_i18n::Lang;
+    let markers = [
+        (Lang::French, "-----Message d'origine-----", "De\u{202f}: "),
+        (Lang::German, "-----Ursprüngliche Nachricht-----", "Von: "),
+        (Lang::Spanish, "-----Mensaje original-----", "De: "),
+        (Lang::Italian, "-----Messaggio originale-----", "Da: "),
+    ];
+    for (lang, marker, from) in markers {
+        let mut s = session();
+        s.interface_language = lang;
+        let id = newsletter(&mut s);
+        run(&mut s, "mail.reply", json!({"id": id}));
+        let was = compose(&s).quote.clone().unwrap();
+        assert!(was.text.starts_with(&format!("\n\n{marker}\n{from}")), "{lang:?}: {}", was.text);
+        let d = run(&mut s, "compose.saveDraft", json!({}))["draft"].as_u64().unwrap();
+        run(&mut s, "compose.close", json!({}));
+        // Reopened in English, the quote is still found by its language's marker.
+        s.interface_language = Lang::English;
+        run(&mut s, "mail.editDraft", json!({"id": d}));
+        assert_eq!(compose(&s).quote.clone().unwrap().text, was.text, "{lang:?}");
+    }
 }

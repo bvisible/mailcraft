@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use egui_kittest::kittest::Queryable as _;
 use mailcraft_model::{FolderKind, Mailbox};
 
-use super::super::interface_strings::{Literal, literals_of};
-use super::super::{catalog, fmt, t_in};
+use super::super::{fmt, t_in};
+use super::census::{Literal, literals_of, placeholders};
 use super::pattern::{Budget, Part, Pattern};
 use super::{Family, Kind, Lang, Row, Table, read_steps, read_with};
 
@@ -45,7 +45,9 @@ fn mailbox() -> Mailbox {
     let mut mb = Mailbox::with_local_account("Ada", "ada@example.org");
     let account = mb.accounts[0].id;
     let inbox = mb.folder_of_kind(account, FolderKind::Inbox).unwrap();
-    mb.folders.iter_mut().find(|f| f.id == inbox).unwrap().name = "INBOX".into();
+    // The server's Inbox, by the name the server gives it.
+    let f = mb.folders.iter_mut().find(|f| f.id == inbox).unwrap();
+    (f.name, f.remote) = ("INBOX".into(), "INBOX".into());
     mb
 }
 
@@ -55,7 +57,8 @@ fn shaped(family: Family, text: &str) -> Option<super::Reading> {
 }
 
 fn pseudo(english: &str) -> &'static str {
-    super::super::pseudo(english)
+    // (Kept for the test's life, as the pseudo-language keeps its forms.)
+    Box::leak(Lang::Pseudo.t(english).to_string().into_boxed_str())
 }
 
 #[test]
@@ -254,7 +257,7 @@ fn junk_never_makes_it_panic() {
     .collect();
     for text in &junk {
         for family in Family::ALL {
-            for lang in [Lang::English, Lang::Pseudo, Lang::from_tag("fr").unwrap()] {
+            for lang in [Lang::English, Lang::Pseudo, Lang::French] {
                 let _ = read_with(shapes(), lang, family, text, &mailbox());
             }
         }
@@ -264,9 +267,9 @@ fn junk_never_makes_it_panic() {
 // ---------------------------------------------------------------------------------------------
 // The table of the crates' sentences
 
-/// The French catalog.
+/// The French catalogue.
 fn french() -> Lang {
-    Lang::from_tag("fr").unwrap()
+    Lang::French
 }
 
 /// A value of the kind a placeholder holds, for a sample of its row; a reason is a sentence of its family.
@@ -318,7 +321,7 @@ fn every_row_is_a_template_whose_placeholders_are_known() {
         }
         let mut sorted = slots.clone();
         sorted.sort_unstable();
-        assert_eq!(sorted, catalog::placeholders(row.english), "{:?}", row.english);
+        assert_eq!(sorted, placeholders(row.english), "{:?}", row.english);
         assert!(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(row.at).is_file(), "{:?}: {} is no file", row.english, row.at);
     }
 }
@@ -347,7 +350,7 @@ fn every_row_has_french_of_its_own() {
     for row in super::rows() {
         let french = t_in(french(), row.english);
         assert_ne!(french, row.english, "{:?} has no French line", row.english);
-        assert_eq!(catalog::placeholders(french), catalog::placeholders(row.english), "{:?}", row.english);
+        assert_eq!(placeholders(french), placeholders(row.english), "{:?}", row.english);
     }
     // The engine's two words too.
     assert_eq!(t_in(french(), super::ADDRESS), "(adresse)");
@@ -734,7 +737,7 @@ fn the_status_bar_and_the_panel_show_a_failed_run_in_the_interface_s_language() 
     let french: Vec<String> = FAILED.iter().map(|(_, fr)| (*fr).to_string()).collect();
     app.keep_sync_problems(account, &english);
     app.session.sync_status = english[0].clone();
-    super::super::set_current(super::super::Lang::from_tag("fr").unwrap());
+    super::super::set_current(super::super::Lang::French);
     // The bar says the first problem, the panel every one, and Copy problems copies them as they are shown.
     assert_eq!(sync_shown(&app), SyncShown::Text(french[0].clone()));
     assert_eq!(problems_of(&app, account), french);
@@ -745,7 +748,7 @@ fn the_status_bar_and_the_panel_show_a_failed_run_in_the_interface_s_language() 
     assert_eq!(sync_shown(&app), SyncShown::Text(english[0].clone()));
     assert_eq!(problems_of(&app, account), english);
     assert!(app.sync_problem_lines().iter().any(|l| l == &format!("  {}", english[0])));
-    super::super::set_current(Lang::from_tag("fr").unwrap());
+    super::super::set_current(Lang::French);
     assert_eq!(problems_of(&app, account), french);
     // How a run ended, with the time, and what the engine adds of the messages it can't find.
     for (status, shown) in [
@@ -792,7 +795,7 @@ fn in_english_a_line_is_handed_back_as_it_came() {
     let line = "Couldn't reach the server: network: connection refused";
     assert!(matches!(super::line(line, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, line)));
     assert!(matches!(super::status(line, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, line)));
-    super::super::set_current(Lang::from_tag("fr").unwrap());
+    super::super::set_current(Lang::French);
     // And in French, one no row reads.
     let other = "Receiving mail failed: the server closed the connection";
     assert!(matches!(super::line(other, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, other)));
@@ -804,28 +807,45 @@ fn in_english_a_line_is_handed_back_as_it_came() {
 fn what_sending_says_reads_in_french() {
     let mb = mailbox();
     let fr = |family: Family, text: &str| super::explain(french(), family, text, &mb).map(|r| r.text);
-    assert_eq!(
-        fr(Family::Line, "Couldn't send 'Hello': the server doesn't accept (address). It is held in the Outbox.").as_deref(),
-        Some("Impossible d’envoyer « Hello » : le serveur n’accepte pas (adresse). Il est retenu dans la Boîte d’envoi.")
-    );
-    assert_eq!(
-        fr(Family::Line, "'(no subject)' may have been sent: the server's answer was lost. It is held in the Outbox.").as_deref(),
-        Some("« (sans objet) » a peut-être été envoyé : la réponse du serveur a été perdue. Il est retenu dans la Boîte d’envoi.")
-    );
-    assert_eq!(
-        fr(Family::Banner, "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.").as_deref(),
-        Some("Il n’a pas été envoyé : le serveur n’accepte pas bob@example.org. Modifiez-le, ou renvoyez-le.")
-    );
-    // A server's words stay as they came, under words of ours.
-    assert_eq!(
-        fr(Family::Banner, "It wasn't sent: the server refused it (somethingNew): It said so. Change it, or send it again.").as_deref(),
-        Some("Il n’a pas été envoyé : le serveur l’a refusé (somethingNew) : It said so. Modifiez-le, ou renvoyez-le.")
-    );
-    // A subject that holds what follows it.
-    assert_eq!(
-        fr(Family::Line, "Couldn't send 'Re: plans': the details': the message has no recipients. It is held in the Outbox.").as_deref(),
-        Some("Impossible d’envoyer « Re: plans': the details » : le message n’a aucun destinataire. Il est retenu dans la Boîte d’envoi.")
-    );
+    // (The frame of a message held in the Outbox is a sentence upstream's catalogue has too: its French is upstream's.)
+    let held = |subject: &str, why: &str| {
+        fmt(t_in(french(), "Couldn't send '{subject}': {why}. It is held in the Outbox."), &[("subject", subject), ("why", why)])
+    };
+    let cases: [(Family, &str, String); 5] = [
+        (
+            Family::Line,
+            "Couldn't send 'Hello': the server doesn't accept (address). It is held in the Outbox.",
+            held("Hello", "le serveur n’accepte pas (adresse)"),
+        ),
+        (
+            Family::Line,
+            "'(no subject)' may have been sent: the server's answer was lost. It is held in the Outbox.",
+            "« (sans objet) » a peut-être été envoyé : la réponse du serveur a été perdue. Il est retenu dans la Boîte d’envoi.".into(),
+        ),
+        (
+            Family::Banner,
+            "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.",
+            "Il n’a pas été envoyé : le serveur n’accepte pas bob@example.org. Modifiez-le, ou renvoyez-le.".into(),
+        ),
+        // A server's words stay as they came, under words of ours.
+        (
+            Family::Banner,
+            "It wasn't sent: the server refused it (somethingNew): It said so. Change it, or send it again.",
+            "Il n’a pas été envoyé : le serveur l’a refusé (somethingNew) : It said so. Modifiez-le, ou renvoyez-le.".into(),
+        ),
+        // A subject that holds what follows it.
+        (
+            Family::Line,
+            "Couldn't send 'Re: plans': the details': the message has no recipients. It is held in the Outbox.",
+            held("Re: plans': the details", "le message n’a aucun destinataire"),
+        ),
+    ];
+    let wrong: Vec<String> = cases
+        .iter()
+        .filter(|(family, english, french)| fr(*family, english).as_deref() != Some(french.as_str()))
+        .map(|(family, english, french)| format!("{english:?}\n  read {:?}\n  want {french:?}", fr(*family, english)))
+        .collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
 /// The window, drawn for a few frames.
@@ -912,7 +932,7 @@ fn how_far_a_run_has_got_names_a_standard_folder_as_a_refused_move_does() {
     for lang in [Lang::English, Lang::Pseudo, french()] {
         let named = super::standard_folder_name(&mb, "INBOX", lang);
         super::super::set_current(lang);
-        assert_eq!(named.as_deref(), Some(crate::nav::folder_name(mb.folders.iter().find(|f| f.name == "INBOX").unwrap()).as_str()), "{lang:?}");
+        assert_eq!(named.as_deref(), Some(crate::nav::folder_name(mb.folders.iter().find(|f| f.name == "INBOX").unwrap())), "{lang:?}");
         assert_eq!(super::standard_folder_name(&mb, "Projects", lang), None);
     }
     super::super::set_current(Lang::English);
@@ -979,9 +999,9 @@ fn what_undo_and_the_engine_refuse_reads_in_french() {
 
 #[test]
 fn a_meeting_held_online_by_a_service_of_its_own_is_joined_in_french_as_one_online() {
-    // (The card's menu: `Join {service} Meeting`, the service by its label.)
-    let service = t_in(french(), mailcraft_model::OnlineProvider::Other.label());
-    assert_eq!(fmt(t_in(french(), "Join {service} Meeting"), &[("service", service)]), "Rejoindre la réunion en ligne");
+    // (The card's menu: `Join Online Meeting` for the service a server has of its own, not `Join {service} Meeting`.)
+    assert_eq!(mailcraft_model::OnlineProvider::Other.label(), "Online");
+    assert_eq!(t_in(french(), "Join Online Meeting"), "Rejoindre la réunion en ligne");
 }
 
 #[test]

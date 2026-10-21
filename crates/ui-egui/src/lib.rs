@@ -27,6 +27,26 @@ macro_rules! run_word {
     };
 }
 
+/// An English UI string in a context, in the current interface language: `tlc!("folder",
+/// "Archive")` is the folder where `tl!("Archive")` is the command ([`i18n::tc`]). Both are
+/// literals, so `cargo xtask i18n` finds them.
+#[macro_export]
+macro_rules! tlc {
+    ($context:expr, $s:expr) => {
+        $crate::i18n::tc($context, $s)
+    };
+}
+
+/// A count in the current interface language: `tln!(n, "{n} message", "{n} messages")` picks the
+/// form the language's plural rule gives `n` and fills in `{n}` ([`i18n::tn`]). Both English forms
+/// are literals, so `cargo xtask i18n` finds them.
+#[macro_export]
+macro_rules! tln {
+    ($n:expr, $one:expr, $other:expr) => {
+        $crate::i18n::tn($crate::i18n::Count::count($n), $one, $other)
+    };
+}
+
 mod account_setup;
 pub mod agent_gate;
 pub mod alerts;
@@ -41,6 +61,7 @@ pub mod chrome;
 pub mod compose;
 pub mod control;
 pub mod credits;
+pub mod dates;
 pub mod dialogs;
 pub mod favorites_sync;
 pub mod files;
@@ -296,6 +317,12 @@ pub struct Services {
     /// when it can't, and hands back which were clicked. Only the window asks for one, never a
     /// command. Absent in the browser and the tests: nothing is shown.
     pub alert: Option<Box<dyn alerts::AlertHost>>,
+    /// The system's locale (`fr-FR`; the browser's in the browser build), which the interface
+    /// language follows while it is Automatic. `None` (the tests, scripts): English.
+    pub system_locale: Option<String>,
+    /// Web: told the interface language's code (`en`) whenever it changes, for the page's
+    /// `<html lang>`.
+    pub on_language: Option<Box<dyn Fn(&str)>>,
 }
 
 // //// Neoffice — which accounts this build can run a Send/Receive for: a JMAP account needs the host's JMAP runner, not its mail connections.
@@ -573,6 +600,8 @@ struct SigningIn {
     shared: Option<Id>,
     /// And for sending from it: what waits in its Outbox goes once it is had, or is held.
     shared_send: bool,
+    /// The owner signs in on a page in the browser (no kept token to renew it with).
+    browser: bool,
     rx: Receiver<Result<Tokens, String>>,
     cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
@@ -714,14 +743,8 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
     ),
     ("ui.closeDialog", "Close Dialog", "Window", "{}"),
     ("ui.theme", "Interface Theme", "File › Options", r#"{"value": "light"|"dark"|"system"}"#),
+    ("ui.language", "Interface Language", "File › Options", r#"{"language": "auto"|"en"|"fr"|"pseudo"}"#),
     ("ui.interfaceSize", "Interface Size", "File › Options", r#"{"value": 80-200}"#),
-    // //// Neoffice — the interface language (File › Options › General), a command like the rest of the window's settings.
-    (
-        "ui.language",
-        "Interface Language",
-        "File › Options",
-        r#"{"value": "auto" (the system's)|"en"|"pseudo"|the code of a language with a catalog, as "fr"}"#,
-    ),
     // //// Neoffice — Nora, the assistant of the Neoffice server, when the hosting page reaches her (nora.rs): the owner's clicks only.
     (
         "ui.noraReply",
@@ -1035,6 +1058,8 @@ pub struct MailApp {
     /// File › Signatures was on screen in the last frame: leaving it saves and closes the open
     /// signature.
     signatures_shown: bool,
+    /// What File › Signatures last said of a picture (a refusal, or that it was made smaller).
+    signature_note: Option<signatures::Note>,
     /// The last input the window was given, by kind only (never what was typed), for
     /// `ui.inspect`: what a script looks at when typing or the keyboard goes astray.
     pub(crate) input_trail: std::collections::VecDeque<String>,
@@ -1098,6 +1123,9 @@ pub struct MailApp {
     /// Shared mailboxes just added in Add Shared Mailbox whose Inbox hasn't been read yet: kept
     /// only once it has been, and removed again when it can't be (#70).
     shared_checking: std::collections::HashSet<Id>,
+    /// A shared mailbox being added whose first run waits for the Send/Receive under way, which
+    /// was called off for it: it starts as soon as that one has stopped.
+    shared_check_next: Option<Id>,
     /// The next sign-in asks for mail alone (account setup's "mail only").
     mail_only_next: bool,
     /// A sign-in the host is waiting on (the owner is in the browser).
@@ -1111,8 +1139,9 @@ pub struct MailApp {
     /// What the run in flight has come to so far, piece by piece.
     sync_totals: mailcraft_engine::cmd::account::SyncTotals,
     /// The run in flight: whose it is, how much was still waiting to go out when it turned to
-    /// bringing mail down (unknown until then), and whether it was called off to let more out.
-    sync_run: Option<(Id, Option<usize>, bool)>,
+    /// bringing mail down (unknown until then), whether it was called off to let more out, and
+    /// whether nobody asked for it (it comes back as it was).
+    sync_run: Option<(Id, Option<usize>, bool, bool)>,
     /// A piece of the run in flight said the server refused the sign-in.
     sync_refused: bool,
     // //// Neoffice — the Send/Receive of a JMAP account under way ([`jmap_job`]).
@@ -1142,6 +1171,8 @@ pub struct MailApp {
     styled: bool,
     /// The interface theme last installed in egui ([`theme::apply`]).
     applied_theme: Option<egui::ThemePreference>,
+    /// The interface language last told the host ([`Services::on_language`]).
+    applied_language: Option<i18n::Lang>,
     fonts_frames: u32,
     pub frame_ms: f64,
     /// The window title last sent; a viewport command schedules a repaint, so only send changes.
@@ -1229,6 +1260,9 @@ pub struct MailApp {
     /// release or a key started, or a file let go over it (#152). Never so for the control
     /// channel, an agent or the background.
     pub(crate) by_hand: bool,
+    /// The engine's last refusal as it was ([`execute`](Self::execute)), so that the window says
+    /// it in the interface language; scripts and agents get its English.
+    last_error: Option<mailcraft_engine::CmdError>,
     /// A refusal of what the owner has just done by hand, shown in a message box once the frame
     /// is laid out ([`MailApp::refusal`]).
     pub(crate) refused: Option<String>,
@@ -1272,6 +1306,7 @@ impl MailApp {
             compose_bcc: false,
             body_focus_wanted: false,
             signatures_shown: false,
+            signature_note: None,
             input_trail: std::collections::VecDeque::new(),
             reveal_selection: false,
             passwords: Default::default(),
@@ -1299,6 +1334,7 @@ impl MailApp {
             shared_send_pressed: Default::default(),
             shared_refused: Default::default(),
             shared_checking: Default::default(),
+            shared_check_next: None,
             mail_only_next: false,
             signing_in: None,
             setup_sign_in: None,
@@ -1324,6 +1360,7 @@ impl MailApp {
             asking: Default::default(),
             styled: false,
             applied_theme: None,
+            applied_language: None,
             fonts_frames: 0,
             frame_ms: 0.0,
             sent_title: String::new(),
@@ -1360,6 +1397,7 @@ impl MailApp {
             sync_problems: Vec::new(),
             sync_panel: None,
             by_hand: false,
+            last_error: None,
             refused: None,
             windows: Default::default(),
             // //// Neoffice — see the field.
@@ -1499,9 +1537,24 @@ impl MailApp {
         }
         match &r {
             Err(e) => {
-                // (The engine's refusal of received mail for a Microsoft account, in the interface's language.)
-                // //// Neoffice — and the engine's other sentences the window reads back, a JMAP account's refusals among them (run_words).
-                let said = i18n::run_words::refusal(e, &self.session.mailbox).into_owned();
+                // The engine's refusal in the interface language: its template, filled; any other
+                // text is looked up whole.
+                let said = match self.last_error.take() {
+                    // //// Neoffice — a sentence the catalogue doesn't have whole (one with values in it: a JMAP account's refusals,
+                    // the fork's engine's) is read back by run_words, as the window did before upstream's catalogues.
+                    Some(err) if err.to_string() == *e => match err.in_lang(i18n::current()) {
+                        said if matches!(&err, mailcraft_engine::CmdError::Failed(s) | mailcraft_engine::CmdError::Disabled(s) | mailcraft_engine::CmdError::Params(s) if said == *s) => {
+                            i18n::run_words::refusal(&said, &self.session.mailbox).into_owned()
+                        }
+                        said => said,
+                    },
+                    // //// Neoffice — any other text first as the engine's and a JMAP run's sentences the window reads back (a JMAP
+                    // account's refusals among them: run_words), and whole only when no row reads it.
+                    _ => match i18n::run_words::refusal(e, &self.session.mailbox) {
+                        std::borrow::Cow::Borrowed(same) if same == e.as_str() => tl!(e).to_string(),
+                        read => read.into_owned(),
+                    },
+                };
                 // What the owner has just done by hand and was refused at once is said in a
                 // message box too, as Outlook does (#152).
                 if self.by_hand && refusal_worth_a_box(id, e) {
@@ -1546,7 +1599,9 @@ impl MailApp {
         if let Some(r) = self.through_saver(id, &params) {
             return r;
         }
-        let r = self.session.run(id, &params).map_err(|e| e.to_string());
+        let r = self.session.run(id, &params);
+        self.last_error = r.as_ref().err().cloned();
+        let r = r.map_err(|e| e.to_string());
         // //// Neoffice — which of the servers' calendars are ticked is remembered for the next visit of a tab that keeps nothing (`calendar_ticks`).
         if r.is_ok() && matches!(id, "calendar.showCalendar" | "calendar.showOnly" | "edit.undo" | "edit.redo") {
             self.remember_calendar_ticks();
@@ -1658,23 +1713,26 @@ impl MailApp {
                 }
                 None => Err("`value` is light, dark or system".into()),
             },
+            "ui.language" => {
+                let code = s("language").unwrap_or_default();
+                let lang = i18n::Lang::from_code(code);
+                if code.trim().eq_ignore_ascii_case(i18n::AUTO) {
+                    self.ui.language = i18n::AUTO.into();
+                } else if let Some(lang) = lang.filter(|l| *l == i18n::Lang::Pseudo || i18n::Lang::available().contains(l)) {
+                    self.ui.language = lang.code().into();
+                } else {
+                    let codes: Vec<&str> = i18n::Lang::available().iter().map(|l| l.code()).collect();
+                    return Some(Err(format!("`language` is auto or one of: {}", codes.join(", "))));
+                }
+                self.apply_language();
+                Ok(json!({"language": self.ui.language, "inForce": self.language().code()}))
+            }
             "ui.interfaceSize" => match p.get("value").and_then(Value::as_f64).and_then(theme::InterfaceSize::from_percent) {
                 Some(size) => {
                     self.ui.interface_size = size;
                     Ok(json!({"value": size.percent()}))
                 }
                 None => Err("`value` is a percentage from 80 to 200".into()),
-            },
-            // //// Neoffice — the interface language: `auto` follows the system's; else a language code, in the one form it is kept in.
-            "ui.language" => match s("value").and_then(i18n::canonical_pref) {
-                Some(code) => {
-                    self.ui.language = code.to_string();
-                    Ok(json!({"value": code}))
-                }
-                None => {
-                    let codes: Vec<&str> = i18n::Lang::choices().map(i18n::Lang::code).collect();
-                    Err(format!("`value` is auto, pseudo or the code of a language: {}", codes.join(", ")))
-                }
             },
             "ui.focusSearch" => {
                 self.search_focus = true;
@@ -1780,6 +1838,10 @@ impl MailApp {
                 self.services.sync_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                 self.pause_fetch();
                 self.sync_queue.clear();
+                // (Nor does a run called off for something else go on after.)
+                if let Some((_, _, called_off, _)) = self.sync_run.as_mut() {
+                    *called_off = false;
+                }
                 // (Send/Receive Progress: the accounts still to go are stopped with it.)
                 let waiting: Vec<Id> = self
                     .session
@@ -1934,7 +1996,8 @@ impl MailApp {
             return Err(tl!("This build can't sign in to this kind of account. Use the desktop app.").to_string());
         };
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let waiting = if refresh.is_empty() { tl!("Sign in on the page that opened in your browser…") } else { tl!("Renewing the sign-in…") };
+        let browser = refresh.is_empty();
+        let waiting = if browser { tl!("Sign in on the page that opened in your browser…") } else { tl!("Renewing the sign-in…") };
         let request = SignInRequest {
             account,
             oauth: self.effective_oauth(oauth),
@@ -1952,7 +2015,7 @@ impl MailApp {
             shared_send,
         };
         let rx = sign_in(request);
-        self.signing_in = Some(SigningIn { graph, favorites, quiet, account, shared, shared_send, rx, cancel });
+        self.signing_in = Some(SigningIn { graph, favorites, quiet, account, shared, shared_send, browser, rx, cancel });
         self.session.sync_status = waiting.to_string();
         Ok(())
     }
@@ -2148,7 +2211,7 @@ impl MailApp {
             request.password = password;
         }
         let Some(start) = &self.services.sync else { return Err(tl!("This build can't connect to mail servers").to_string()) };
-        self.sync_run = Some((account, None, false));
+        self.sync_run = Some((account, None, false, quiet));
         self.sync_rx = Some(start(request));
         self.session.sync_status = tl!("Sending and receiving…").to_string();
         Ok(json!({"started": true, "account": account}))
@@ -2174,7 +2237,7 @@ impl MailApp {
         if refresh.is_empty() {
             // Nobody asked for this run: no page is put in front of the owner.
             if quiet {
-                return Err(format!("{} {address}", tl!("Use Send/Receive to sign in to")));
+                return Err(i18n::fmt(tl!("Use Send/Receive to sign in to {address}"), &[("address", &address)]));
             }
             self.begin_sign_in(account, oauth, &address, String::new(), false, true)?;
             return Ok(json!({"pending": "signIn", "account": account}));
@@ -2222,6 +2285,7 @@ impl MailApp {
         if ask.directory || ask.calendar.is_some() || ask.changes.is_some() {
             self.session.sync_progress.hold(account);
         }
+        self.sync_run = Some((account, None, false, quiet));
         self.graph_rx = Some((account, quiet, directory, graph(ask)));
         self.session.sync_status = tl!("Sending and receiving…").to_string();
         Ok(json!({"started": true, "account": account, "graph": true}))
@@ -2293,15 +2357,16 @@ impl MailApp {
         // Something the owner did (a read mark, a move, a message to send) waits while a long run
         // is still bringing mail down: the run is called off, which loses nothing, and the next
         // one tells the server first.
+        // (Whichever way the account is kept in step: a Graph run too, #274.)
         if self.auto_sync
-            && self.sync_rx.is_some()
-            && let Some((whose, Some(baseline), false)) = self.sync_run
+            && self.syncing()
+            && let Some((whose, Some(baseline), false, quiet)) = self.sync_run
             && now_ms() - self.push_checked >= 3_000.0
         {
             self.push_checked = now_ms();
             if self.waiting_to_go(whose) > baseline {
                 self.services.sync_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
-                self.sync_run = Some((whose, Some(baseline), true));
+                self.sync_run = Some((whose, Some(baseline), true, quiet));
                 self.session.sync_status = tl!("Sending your changes…").to_string();
             }
         }
@@ -2422,6 +2487,16 @@ impl MailApp {
                     Err(e) => self.graph_problems.push(e.to_string()),
                 }
             }
+            // Its first piece made the changes made here and sent the Outbox; what waits beyond
+            // what waits now was done here since, and calls the run off ([`MailApp::auto_sync`]).
+            if self.graph_pieces_taken > 0
+                && let Some((whose, None, false, q)) = self.sync_run
+                && whose == account
+            {
+                self.sync_run = Some((whose, Some(self.waiting_to_go(whose)), false, q));
+            }
+            // A shared mailbox being added is kept once its Inbox is read, not after all its mail.
+            self.shared_check_piece(account, over);
             if !over {
                 return;
             }
@@ -2441,6 +2516,13 @@ impl MailApp {
             }
         };
         self.graph_rx = None;
+        // Called off so that what the owner did could go out: it goes on at once, as it was.
+        if self.sync_run.is_some_and(|(whose, ..)| whose == account)
+            && let Some((whose, _, true, quiet)) = self.sync_run.take()
+            && !self.sync_queue.iter().any(|(a, _)| *a == whose)
+        {
+            self.sync_queue.push_front((whose, quiet));
+        }
         let streamed = std::mem::take(&mut self.graph_pieces_taken) > 0;
         let after_sign_in = self.graph_after_sign_in.take() == Some(account);
         // A shared mailbox's run is its mail alone (#70).
@@ -2485,7 +2567,7 @@ impl MailApp {
         if let Some(contacts) = &result.contacts {
             match mailcraft_engine::cmd::remote::apply_contacts(&mut self.session, contacts) {
                 Ok(_) => contacts_ok = true,
-                Err(e) => errors.push(format!("{}: {e}", tl!("The contacts couldn't be taken in"))),
+                Err(e) => errors.push(i18n::fmt(tl!("The contacts couldn't be taken in: {error}"), &[("error", &e.to_string())])),
             }
         }
         if directory && calendar_ok && contacts_ok {
@@ -2778,7 +2860,7 @@ impl MailApp {
             return;
         }
         let name = self.session.mailbox.account(account).map(|a| a.name.clone()).unwrap_or_default();
-        let at = self.session.local_now().time_short(self.session.prefs.twelve_hour);
+        let at = crate::dates::clock(self.session.local_now(), self.session.prefs.twelve_hour);
         let clip = |e: &String| e.chars().take(600).collect::<String>();
         match self.sync_problems.iter_mut().find(|(a, ..)| *a == account) {
             Some((_, _, when, lines)) => {
@@ -2864,8 +2946,8 @@ impl MailApp {
             }
             // Once it brings mail down, the run has told the server what there was to tell: what
             // waits beyond what waits at this moment was done here since.
-            if downloading && let Some((whose, None, false)) = self.sync_run {
-                self.sync_run = Some((whose, Some(self.waiting_to_go(whose)), false));
+            if downloading && let Some((whose, None, false, quiet)) = self.sync_run {
+                self.sync_run = Some((whose, Some(self.waiting_to_go(whose)), false, quiet));
             }
             if !last {
                 continue;
@@ -2874,8 +2956,8 @@ impl MailApp {
             self.sync_rx = None;
             // Called off so that what the owner did could go out: the next run starts at once,
             // tells the server first, and carries on bringing mail down.
-            if let Some((whose, _, true)) = self.sync_run.take() {
-                self.sync_queue.push_front((whose, true));
+            if let Some((whose, _, true, quiet)) = self.sync_run.take() {
+                self.sync_queue.push_front((whose, quiet));
             }
             let totals = std::mem::take(&mut self.sync_totals);
             let address = self.session.mailbox.account(account).map(|a| a.email.clone()).unwrap_or_default();
@@ -2897,7 +2979,7 @@ impl MailApp {
                 // And nothing is left of the last run's problems.
                 self.note_sync_problems(account, &[], true);
             }
-            self.status(totals.summary());
+            self.status(totals.summary_in(i18n::current()));
             self.note_pushed(account);
             self.graph_switch_after_sync(account, totals.errors.is_empty() && !totals.stopped);
             return;
@@ -2944,32 +3026,54 @@ impl MailApp {
             self.session.mailbox.folder(self.session.view.folder).and_then(|f| self.session.mailbox.account(f.account)).map(|a| a.name.clone());
         match self.session.view.module {
             Module::Mail => {
-                // //// Neoffice — as in the folder pane: a standard folder under its name in the interface's language.
-                let folder = self.session.mailbox.folder(self.session.view.folder).map_or_else(|| tl!("Mail").to_string(), crate::nav::folder_name);
+                let folder = self.session.mailbox.folder(self.session.view.folder).map_or(tl!("Mail"), crate::nav::folder_name);
                 match account.filter(|a| !a.is_empty()) {
-                    Some(a) => format!("{folder} - {a}"),
-                    // //// Neoffice — the name above is already the window's own text.
-                    None => folder,
+                    Some(a) => i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", folder), ("mailbox", &a)]),
+                    None => folder.to_string(),
                 }
             }
             m => tl!(m.label()).to_string(),
         }
     }
 
+    /// The interface language: the owner's choice (`ui.json`'s `language`), with the system's
+    /// locale for Automatic.
+    pub fn language(&self) -> i18n::Lang {
+        i18n::Lang::from_pref(&self.ui.language, self.services.system_locale.as_deref())
+    }
+
+    /// Put the interface language in force: the window's text, the engine's, and the host's
+    /// (`<html lang>` in the browser) when it changed.
+    fn apply_language(&mut self) {
+        let lang = self.language();
+        i18n::set_current(lang);
+        self.session.interface_language = lang;
+        self.session.prefs.follow_language(lang);
+        if self.applied_language != Some(lang) {
+            self.applied_language = Some(lang);
+            if let Some(tell) = &self.services.on_language {
+                tell(lang.code());
+            }
+        }
+    }
+
     /// Per-frame logic before layout: control requests, screenshots, background results, file
     /// drops, saving.
     pub fn logic(&mut self, ctx: &egui::Context) {
-        i18n::set_current(i18n::Lang::from_pref(&self.ui.language));
+        self.apply_language();
         // //// Neoffice — (as in `execute`: what the engine says of a JMAP account's mail follows this window's runners)
         self.session.jmap_runs = self.services.can_run(mailcraft_model::AccountKind::Jmap);
         if !self.styled {
             theme::install_fonts(ctx);
             // Mod with -, = and 0 would also scale the whole window; interface size is in Options.
             ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            // egui closes the window on Mod+Q by itself; here that is Mark as Read. A Mac quits
+            // from its app menu (craft-quit).
+            ctx.options_mut(|o| o.quit_shortcuts.clear());
             self.styled = true;
         }
         // Settled from the main window's input, so every window has the same theme.
-        let preference = self.ui.theme.preference(ctx.system_theme());
+        let preference = self.ui.theme.preference(theme::main_system_theme(ctx));
         if self.applied_theme != Some(preference) {
             theme::apply(ctx, preference);
             self.applied_theme = Some(preference);
@@ -3019,6 +3123,8 @@ impl MailApp {
         self.poll_calendar_check();
         self.poll_free_busy();
         self.poll_sync();
+        // (Before any other run can start: a shared mailbox being added goes first.)
+        self.shared_check_tick();
         self.check_secret_store();
         // Whether a new version is out, when the owner wants that known ([`updates`]).
         self.updates_tick(ctx);
@@ -3060,7 +3166,7 @@ impl MailApp {
             let path = f.path().to_string_lossy().to_string();
             // A picture dropped on File › Signatures goes into the signature open there.
             if signatures && self.session.signature_edit.is_some() {
-                let _ = self.run("signature.picture.add", json!({"path": path}));
+                signatures::add_picture(self, json!({"path": path}));
             } else {
                 self.open_path(&path);
             }
@@ -3071,6 +3177,7 @@ impl MailApp {
 
     /// Keep what was changed in the signature open in File › Signatures, and close it.
     fn leave_signature(&mut self) {
+        self.signature_note = None;
         if self.session.signature_edit.as_ref().is_some_and(|e| e.dirty)
             && let Err(e) = self.execute("signature.save", json!({}))
         {
@@ -3385,7 +3492,7 @@ impl MailApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let t0 = now_ms();
         let ctx = ui.ctx().clone();
-        i18n::set_current(i18n::Lang::from_pref(&self.ui.language));
+        self.apply_language();
         // Fonts installed by `logic` take effect on the next frame.
         if self.fonts_frames < 2 {
             self.fonts_frames += 1;
@@ -3627,7 +3734,6 @@ pub(crate) fn refusal_worth_a_box(id: &str, error: &str) -> bool {
 
 fn feedback(id: &str, v: &Value) -> Option<String> {
     let n = |k: &str| v.get(k).and_then(Value::as_u64);
-    let plural = |n: u64, one: &str, many: &str| if n == 1 { format!("1 {one}") } else { format!("{n} {many}") };
     match id {
         "compose.send" if v.get("queued").and_then(Value::as_bool) == Some(true) => Some(tl!("In the Outbox: it is on its way").to_string()),
         // A mailbox whose content folder lost something still opens; say how much is missing. A
@@ -3638,10 +3744,10 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
                 Some(damaged_mailbox_notice())
             } else {
                 n("unavailable").filter(|c| *c > 0).map(|c| {
-                    format!(
-                        "{} {}",
-                        plural(c, tl!("part of a message"), tl!("parts of messages")),
-                        tl!("couldn't be read from the mailbox's content folder")
+                    tln!(
+                        c,
+                        "{n} part of a message couldn't be read from the mailbox's content folder",
+                        "{n} parts of messages couldn't be read from the mailbox's content folder"
                     )
                 })
             };
@@ -3654,14 +3760,18 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
         }
         "compose.send" => Some(tl!("Sent").to_string()),
         "compose.saveDraft" => Some(tl!("Draft saved").to_string()),
-        "mail.markAllRead" | "rules.run" => n("changed").or(n("matched")).map(|c| plural(c, tl!("message changed"), tl!("messages changed"))),
+        "mail.markAllRead" | "rules.run" => n("changed").or(n("matched")).map(|c| tln!(c, "{n} message changed", "{n} messages changed")),
         "file.import" => {
             let mut parts = Vec::new();
-            for (key, one, many) in
-                [("messages", "message", "messages"), ("events", "event", "events"), ("tasks", "task", "tasks"), ("contacts", "contact", "contacts")]
-            {
+            let counts: [(&str, fn(u64) -> String); 4] = [
+                ("messages", |c| tln!(c, "{n} message", "{n} messages")),
+                ("events", |c| tln!(c, "{n} event", "{n} events")),
+                ("tasks", |c| tln!(c, "{n} task", "{n} tasks")),
+                ("contacts", |c| tln!(c, "{n} contact", "{n} contacts")),
+            ];
+            for (key, said) in counts {
                 if let Some(c) = n(key).filter(|c| *c > 0) {
-                    parts.push(plural(c, tl!(one), tl!(many)));
+                    parts.push(said(c));
                 }
             }
             let what = parts.join(", ");
@@ -3675,7 +3785,7 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
             (!parts.is_empty()).then(|| i18n::fmt(tl!("Imported {what}"), &[("what", &what)]))
         }
         "people.fromMessage" if v.get("existing").and_then(Value::as_bool) == Some(true) => Some(tl!("Already in your contacts").to_string()),
-        "folder.empty" => n("removed").map(|c| plural(c, tl!("message removed"), tl!("messages removed"))),
+        "folder.empty" => n("removed").map(|c| tln!(c, "{n} message removed", "{n} messages removed")),
         // An appointment that goes into another calendar of its account is made there first, and
         // taken out of the one it was in once that is done: said, as it takes a moment.
         "calendar.edit" if v.get("moved").and_then(Value::as_bool) == Some(true) => {
@@ -3684,13 +3794,13 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
         // What went into the account's calendar, what was there already, and what stayed.
         "calendar.moveToAccount" => {
             let mut parts =
-                vec![format!("{} {}", plural(n("moved").unwrap_or(0), tl!("item"), tl!("items")), tl!("moved to your account's calendar"))];
+                vec![tln!(n("moved").unwrap_or(0), "{n} item moved to your account's calendar", "{n} items moved to your account's calendar")];
             if let Some(c) = n("already").filter(|c| *c > 0) {
-                parts.push(format!("{} {}", plural(c, tl!("was"), tl!("were")), tl!("there already")));
+                parts.push(tln!(c, "{n} was there already", "{n} were there already"));
             }
             let kept = v.get("kept").and_then(Value::as_array).map_or(0, Vec::len);
             if kept > 0 {
-                parts.push(format!("{} {}", plural(kept as u64, tl!("stays"), tl!("stay")), tl!("on this computer")));
+                parts.push(tln!(kept, "{n} stays on this computer", "{n} stay on this computer"));
             }
             Some(parts.join("; "))
         }

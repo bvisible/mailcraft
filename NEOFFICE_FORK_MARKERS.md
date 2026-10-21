@@ -9,7 +9,27 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `3f9cf26` (upstream `main` on 2026-10-20 in the evening: a JMAP account in the model, M6, upstream's own shape of what
+- `8ec913a` (upstream `main` on 2026-10-21 at noon: 0.6.0; the interface in French, German, Spanish and Italian by
+  upstream's own catalogues, the crate `mailcraft-i18n` with its `.po` files in `crates/i18n/po/`, the `tl!`, `tlc!`
+  and `tln!` macros, `cargo xtask i18n` and its `--check`, the dates written by `crates/ui-egui/src/dates.rs` and the
+  language followed by the week and the clock (`MailApp::apply_language`, `Services::system_locale`, #255, #258, #259,
+  #260, #263); the engine's refusals said in the interface's language (`CmdError::Said`); inline widths and centring
+  in a message's HTML (#275); Calendar › View with the four views (#239); signature pictures over the cap made smaller
+  (#270); the appointment's window in dark mode (#266); the rest of a new shared mailbox no longer holding up the
+  owner's (#70)), merged into `version-15` on 2026-10-21. The fork's own interface catalogue (`fr.tsv`, its lookup in
+  `crates/ui-egui/src/i18n/catalog.rs` and `interface_strings.rs`, its Options row "Language" and its `ui.language`
+  command) gave way to upstream's: there is one Language row and one `ui.language`, upstream's; the fork's texts are
+  written with upstream's macros and extracted by upstream's `cargo xtask i18n`, so `messages.pot` and the four
+  catalogues it writes hold them too (`crates/i18n/po/`, listed below), and their French is in the fork's own
+  catalogue `crates/i18n/po/neoffice/fr.po`, read over upstream's French (`crates/i18n/build.rs`, `OVERLAYS`;
+  `Catalogue::overlaid` in `crates/i18n/src/lib.rs`). A text both have keeps upstream's French; the fork's catalogue
+  holds the fork's own texts, the texts the window looks up from a table of its own that upstream's catalogue lacks,
+  and one choice of the fork's: a numeric date day first with dots, as in Switzerland (`21.10.2026`, its entry in
+  that catalogue and the marked line in `crates/i18n/src/date.rs`). The fork's `DateWords` and `QuoteWords` gave way
+  to upstream's `dates` and catalogues (the header over a quoted original, the calendar's titles); 24-hour time and
+  the week from Monday follow the language as upstream has it. The fork's tests now say what upstream's engine says
+  (`CmdError::Said` where they expected `CmdError::Failed`).
+- Before it: `3f9cf26` (upstream `main` on 2026-10-20 in the evening: a JMAP account in the model, M6, upstream's own shape of what
   this fork had there (`AccountKind::Jmap`, `JmapServer`, `sync/jmap.rs`, the answered and forwarded marks of a
   `ServerMessage`); an account of a kind this version doesn't know kept as its file has it, `AccountKind::Unknown`; shared
   mailboxes out of testing, with moves and copies between a shared mailbox and its owner's mailbox and File › Signatures
@@ -56,7 +76,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   the browser's way to her in `apps/mailcraft-web/src/nora.rs` and `nora_origin.rs`. The marked hunks are in
   `crates/ui-egui/src/lib.rs` (the module, the host's field of `Services`, the commands, the window's state, the poll
   once a frame), `reading.rs`, `compose.rs`, `ribbon.rs`, `icons.rs`, `crates/engine/src/agent.rs`,
-  `apps/mailcraft-web/src/main.rs` and `web.rs`; her French lines are a block near the top of `fr.tsv`. The rules:
+  `apps/mailcraft-web/src/main.rs` and `web.rs`; her French lines are in `crates/i18n/po/neoffice/fr.po`. The rules:
   only the six methods Neodesk's shell lets through are called; a message of a mailbox the page handed over goes by
   its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; a mailbox of
   the page is named by the name of the server's account for it (the page's `account`, else the `account` of its
@@ -71,21 +91,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - The sentences a JMAP Send/Receive and the engine write in English, read back in the interface's language where they
   are drawn (the status bar and its tooltip, Send/Receive Progress and Copy problems, the banner of a message held in
   the Outbox, a command's refusal, what Undo couldn't take back): `crates/ui-egui/src/i18n/run_words.rs` and
-  `run_words/` (the matcher, the table of the crates' sentences, written with `run_word!` so that every catalog must
-  have them, and its tests, among them a census of the files that write them). The crates and the engine are not
-  changed: what they write stays English in the mailbox file, the log and the control channel. The marked hunks are in
-  `crates/ui-egui/src/i18n.rs` (`t_in`, a `fmt` that fills in one pass, the module), `lib.rs` (`run_word!`, Copy
-  problems, the refusals of `run`), `chrome.rs` (the status), `sync_panel.rs` (the lines of the panel) and
-  `reading.rs` (the banner); `i18n/interface_strings.rs`, the fork's own, reads `run_word!` as a lookup and hands the
-  census the literals of a source file. Their French lines are a block near the top of `fr.tsv`. The guard that makes
+  `run_words/` (the matcher, the table of the crates' sentences, written with `run_word!`, which upstream's extractor
+  takes as it takes `tl!` (a marked branch of `xtask/src/i18n.rs`), so that `messages.pot` and every catalogue have
+  them, and its tests, among them a census of the files that write them, `run_words/census.rs`). The crates and the
+  engine are not changed: what they write stays English in the mailbox file, the log and the control channel; a JMAP
+  run's progress words are asked for in English (`crates/engine/src/cmd/jmap_mail.rs`). The marked hunks are in
+  `crates/ui-egui/src/i18n.rs` (`t_in`, the module, the window's language kept per thread in the tests), `lib.rs`
+  (`run_word!`, Copy problems, the refusals of `run`: a refusal the catalogue doesn't have whole is read by
+  `run_words`), `chrome.rs` (the status), `sync_panel.rs` (the lines of the panel), `reading.rs` (the banner) and
+  `host_menu.rs` (a command's refusal). Their French lines are in `crates/i18n/po/neoffice/fr.po`. The guard that makes
   the real runner fail over the in-process server, in every way it and a stand-in transport can, and reads every line
   in French is `apps/mailcraft-web/src/run_words_tests.rs`.
-- Three French defects of the window, fixed in upstream's files (marked): the header over the original a reply or a
-  forward quotes is written in the interface's words (`QuoteWords` in `crates/engine/src/cmd/compose.rs`, which the
-  window sets with its language in `crates/ui-egui/src/i18n.rs`; English, as before, for an agent or the command line),
-  with its date as the window writes a message's; and in `crates/ui-egui/src/calendar_view.rs` the titles of the
-  calendar's days and weeks are templates of the catalogs (« 18 – 24 octobre 2026 »), and the label of the row of
-  whole-day events wraps in its gutter when a language's words are longer than "All day".
+- The name of a server's folder of a standard kind in English too: "Inbox" for a server's "INBOX", "Sent Items" for its
+  "Sent", as this fork's builds have always shown them (upstream shows the server's name in English and translates it
+  in the other languages): a marked hunk of `folder_name` in `crates/ui-egui/src/nav.rs`, with `named_kind`, the kind
+  `run_words` names a folder by. A hosting page that draws the folders in its own menu is told the same names.
+- A hosting page's language first: the browser build takes the language the hosting page says the person reads
+  (`crates/ui-egui`'s `Services::system_locale`, from `apps/mailcraft-web/src/host.rs`) before the browser's (`web.rs`).
 - An online meeting in a JMAP account's calendar, made by its server (a room of its own, asked for by a virtual
   location whose address is `urn:x-online-meeting:new`, its link read back from the event's `virtualLocations`): the
   reading and the writing are in `crates/jmap/` (`pim/jscalendar.rs`, `pim/calendars.rs`, `pim/write.rs`,
@@ -94,8 +116,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `cmd/calendar.rs` (a plain calendar refuses one only where its server makes none, and a meeting made online here takes
   its calendar's service), `cmd/calendar/meeting.rs` (`teams_refusal`, `online_fits`, `online_here`, the words of an
   online meeting that is no Teams one), `cmd/remote.rs` (what became of one, said as an online meeting, also for one
-  occurrence) and `crates/ui-egui/src/forms.rs` (the toggle and the row say "Online Meeting"); its French lines are in
-  `fr.tsv`, and the engine's sentences have their rows in `crates/ui-egui/src/i18n/run_words/rows.rs`.
+  occurrence), `crates/ui-egui/src/forms.rs` (the toggle and the row say "Online Meeting") and `calendar_view.rs`
+  (such a meeting is joined by "Join Online Meeting"); its French lines are in `crates/i18n/po/neoffice/fr.po`, and the
+  engine's sentences have their rows in `crates/ui-egui/src/i18n/run_words/rows.rs`.
 - Notes, the mailbox's own and those of a server that keeps them (the hosting page's server, whose notes are the
   person's: one place for notes): the model (`crates/model/src/note.rs`), the commands, their refusals and what an agent
   may do (`crates/engine/src/cmd/notes.rs` and `notes/`, among them `notes/server.rs`, what is noted for the server and
@@ -108,8 +131,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `crates/engine/src/session.rs` (`Module::Notes`, the selected note), `cmd/mod.rs`, `agent.rs` (the notes' classes,
   `ui.openNote` among them), `crates/ui-egui/src/lib.rs` (the module, `ui.openNote`), `nav.rs` (Notes in the module
   bar where notes are kept, and each module's button in the hit map), `ribbon.rs`, `chrome.rs`, `keys.rs`,
-  `apps/mailcraft-web/src/web.rs` and `Cargo.toml` (the `web-sys` features of the question); their French lines are a
-  block near the top of `fr.tsv`.
+  `apps/mailcraft-web/src/web.rs` and `Cargo.toml` (the `web-sys` features of the question); their French lines are in
+  `crates/i18n/po/neoffice/fr.po`.
 - A hosting page's tab, which keeps nothing of its own between visits (`Session::keeps_local` false), refuses what it
   would lose, with the reason a greyed control says: Tasks are not offered at all (`view.tasks`, `tasks.new`, Add to
   Tasks, Mod+4, the module bar), nor Import, nor a contact's favourite and categories
@@ -174,8 +197,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   takes them in as no Send/Receive (the account's progress and status stay as they were, nothing is taken for gone). The browser's part (the flag,
   the listener, the posts, the throttle, the version with the commit the web build's workflow knows) is
   `apps/mailcraft-web/src/host.rs` (`menu`, and the contract in its comment), `host_menu.rs`, `main.rs`, `web.rs` and
-  `Cargo.toml` (the `MessageEvent` feature of `web-sys`); the refusals' French lines are a block near the top of
-  `fr.tsv`.
+  `Cargo.toml` (the `MessageEvent` feature of `web-sys`); the refusals' French lines are in
+  `crates/i18n/po/neoffice/fr.po`.
 - The engine's and the JMAP crate's sentences about a JMAP account's calendars and address books, read back in the
   interface's language by `run_words`: what a job says went wrong (`crates/jmap/src/pim.rs`, `pim/calendars.rs`,
   `pim/contacts.rs`), why a server didn't take a change (`pim/push.rs`, `pim/contacts/push.rs`, `pim/write.rs`), what
@@ -185,8 +208,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`Family::Tail`), an item with no name by the interface's words for one, and what of an event a server shows
   otherwise by its parts (`Family::Parts`). The status bar reads its message through `run_words` too
   (`crates/ui-egui/src/chrome.rs`), and a change that waits says its reason in the interface's language
-  (`calendar_sync.rs`, `jmap_pim.rs`); the status bar reads a message once for each text and language. Their French lines are a block near the top of `fr.tsv`; the census of the
-  tests holds those files to their rows.
+  (`calendar_sync.rs`, `jmap_pim.rs`); the status bar reads a message once for each text and language. Their French
+  lines are in `crates/i18n/po/neoffice/fr.po`; the census of the tests holds those files to their rows.
 - A company signature a hosting page hands over with a mailbox (`apps/mailcraft-web/src/page_signature.rs`, read in
   `host.rs`): its HTML or its text, then its pictures by their bytes (`pictures: [{data, name, alt, width, lead, href}]`,
   three at most), the first beside or above the words when `lead`, the others under them in paragraphs of their own, and
@@ -206,11 +229,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap` package (with its dependencies on `mailcraft-mime`, `mailcraft-model` and
-  `mailcraft-time`), the dependencies on it of the web app and, for its tests, the command line, and nothing else.
-- `Cargo.lock`: `rustls-webpki` 0.103.16 (was 0.103.15) and `webpki-roots` 1.0.10 (was 1.0.9), for RUSTSEC-2026-0382
-  and RUSTSEC-2026-0381 (distrusted emSign intermediates), which fail `cargo deny` since 2026-10-20. To drop when an
-  upstream merge brings these versions or later.
-- `crates/ui-egui/src/i18n/fr.tsv`: the French interface catalog. Its first line is a `#` comment that says it is ours
-  (the format has comments), but the check reads a `.tsv` as text without comment syntax. Each catalog added next to
-  it (`crates/ui-egui/src/i18n/<code>.tsv`) is named here the same way.
+- `Cargo.lock`: the `mailcraft-jmap` package (0.6.0, the workspace's version, with its dependencies on `mailcraft-mime`,
+  `mailcraft-model` and `mailcraft-time`), the dependencies on it of the web app and, for its tests, the command line,
+  and nothing else. (The newer `rustls-webpki` and `webpki-roots` this fork took for RUSTSEC-2026-0381 and 0382 came
+  with upstream's 0.6.0 and are upstream's lines now.)
+- `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
+  `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
+  texts the extractor finds (new entries, untranslated in upstream's catalogues: their French is in the fork's
+  catalogue below; German, Spanish and Italian show them in English) and by the files named in the references of
+  shared texts. At the next upstream merge: take upstream's, then run `cargo xtask i18n` again.
+- `crates/i18n/po/neoffice/fr.po`: the fork's own French catalogue, read over upstream's (above). Its first line is a
+  `#` comment that says it is ours (the format has comments), but the check does not read `.po` comments. A catalogue
+  added next to it for another language (`crates/i18n/po/neoffice/<code>.po`, read by the same `OVERLAYS`) is named
+  here the same way.

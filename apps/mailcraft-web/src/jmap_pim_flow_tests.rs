@@ -1218,7 +1218,7 @@ fn a_new_contact_the_server_has_no_room_for_waits_and_goes_once_there_is_room() 
     let line = "The server's mailbox is full: \"Gus Hale\" waits here and goes as soon as there is room.";
     assert!(said.iter().any(|said| said == line), "{said:?}");
     // In French, as the window reads it back.
-    let french = mailcraft_ui_egui::i18n::Lang::from_tag("fr").unwrap();
+    let french = mailcraft_ui_egui::i18n::Lang::French;
     let read = mailcraft_ui_egui::i18n::run_words::explain(french, mailcraft_ui_egui::i18n::run_words::Family::Line, line, &flow.app.session.mailbox);
     assert_eq!(
         read.map(|reading| reading.text).as_deref(),
@@ -1330,7 +1330,7 @@ impl Flow {
 
 /// What a line of the window reads as in French.
 fn in_french(flow: &Flow, line: &str) -> String {
-    let french = mailcraft_ui_egui::i18n::Lang::from_tag("fr").unwrap();
+    let french = mailcraft_ui_egui::i18n::Lang::French;
     mailcraft_ui_egui::i18n::run_words::explain(french, mailcraft_ui_egui::i18n::run_words::Family::Line, line, &flow.app.session.mailbox)
         .map(|reading| reading.text)
         .unwrap_or_else(|| panic!("{line:?} isn't read"))

@@ -49,7 +49,9 @@ pub use mailbox::{
 // //// Neoffice — why mail isn't moved between a JMAP account and another account, nor copied to or from one, and how many deletes may wait for an id.
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES};
 pub use mailcraft_time as time;
-pub use message::{Answers, Attachment, Body, ContentRef, FlagStatus, Importance, KeptBody, Message, normalize_subject, size_label, text_hash};
+pub use message::{
+    Answers, Attachment, Body, ContentRef, FlagStatus, Importance, KeptBody, Message, normalize_subject, size_label, size_label_in, text_hash,
+};
 // //// Neoffice — see `note`.
 pub use note::Note;
 pub use offline::{KeepOffline, OfflineWindow};

@@ -28,9 +28,6 @@ or the Apache License, Version 2.0:
 The ArtCraft name, wordmark and logos are trademarks of the ArtCraft Team. They are not open
 source, are not included in this repository and are not covered by the license above.
 
-# //// Neoffice — this fork writes these JMAP helpers itself, from the standards, so upstream's paragraph here is replaced.
-The JMAP URL, HTTP and fetch helpers were written fresh from RFC 3986, 6570, 7617, 6750, 8620 and 9110 and the WHATWG URL and Fetch Standards.
-
 Third-party material
 
 This product bundles third-party material under its own licenses, listed below. The per-file

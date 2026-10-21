@@ -438,7 +438,7 @@ fn the_ribbon_reaches_her_in_both_layouts() {
 #[test]
 fn her_words_follow_the_interface_language() {
     let (mut app, _calls, id) = sample(PLAIN);
-    app.execute("ui.language", json!({"value": "fr"})).unwrap();
+    app.execute("ui.language", json!({"language": "fr"})).unwrap();
     let mut harness = window(app, (1440.0, 900.0));
     let at = harness.state().hit.rect("nora", id).unwrap().center();
     click_at(&mut harness, at);
@@ -451,8 +451,8 @@ fn her_words_follow_the_interface_language() {
     for words in ["Corriger", "Améliorer", "Traduire"] {
         assert!(harness.query_all_by_label(words).next().is_some(), "{words}");
     }
-    run(&mut harness, "ui.language", json!({"value": "pseudo"}));
-    for words in ["Córréct", "Impróvé", "Tránsláté"] {
+    run(&mut harness, "ui.language", json!({"language": "pseudo"}));
+    for words in ["Córréct", "Ímpróvé", "Tránsláté"] {
         assert!(harness.query_all_by_label(words).next().is_some(), "{words}");
     }
 }

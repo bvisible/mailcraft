@@ -348,7 +348,9 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     };
     match (&result.progress, result.partial) {
         // Under way: how far it has got.
-        (Some(progress), true) => s.sync_status = graph_down::progress_words(&s.mailbox, account, progress),
+        // (In English: the status bar reads it back in the interface's language, a standard folder by the name the folder pane
+        // gives it, `chrome::status_in_language`.)
+        (Some(progress), true) => s.sync_status = graph_down::progress_words(&s.mailbox, account, progress, mailcraft_i18n::Lang::English),
         (_, true) => {}
         (_, false) => {
             let t = s.local_now();

@@ -83,6 +83,17 @@ fn window_commands_validate() {
     let mut a = app();
     assert_eq!(a.execute("ui.theme", json!({"value": "dark"})).unwrap()["value"], "dark");
     assert!(a.execute("ui.theme", json!({"value": "sepia"})).is_err());
+    // (Only English here: the window's language is shared by the tests alongside; the pseudo
+    // language has a test of its own, `tests/pseudo.rs`.)
+    assert_eq!(a.execute("ui.language", json!({"language": "en"})).unwrap()["language"], "en");
+    assert_eq!(a.ui.language, "en");
+    assert!(a.execute("ui.language", json!({"language": "xx"})).is_err());
+    assert!(a.execute("ui.language", json!({})).is_err());
+    // Dutch has no catalogue: it can't be chosen, and Automatic in the Netherlands is English.
+    assert!(a.execute("ui.language", json!({"language": "nl"})).is_err());
+    a.services.system_locale = Some("nl-NL".into());
+    assert_eq!(a.execute("ui.language", json!({"language": "auto"})).unwrap()["inForce"], "en");
+    assert_eq!(a.session.interface_language, crate::i18n::Lang::English);
     assert_eq!(a.execute("ui.interfaceSize", json!({"value": 9000})).unwrap()["value"], 200);
     assert!(a.execute("ui.interfaceSize", json!({"value": "big"})).is_err());
     assert!(a.execute("ui.backstage", json!({"page": "nowhere"})).is_err());
@@ -381,6 +392,13 @@ fn click_at(harness: &mut egui_kittest::Harness<'static, MailApp>, pos: egui::Po
     harness.run_steps(2);
 }
 
+/// Ctrl+Q is Mark as Read: egui's own Mod+Q quit is off, so it doesn't also close the window.
+#[test]
+fn ctrl_q_does_not_quit() {
+    let harness = window(app());
+    assert!(harness.ctx.options(|o| o.quit_shortcuts.is_empty()));
+}
+
 /// The strip down the left edge of a row switches read and unread, and leaves the selection alone.
 #[test]
 fn the_left_edge_of_a_row_switches_read_and_unread() {
@@ -419,6 +437,24 @@ fn the_theme_follows_the_system_until_one_is_chosen() {
     harness.state_mut().execute("ui.theme", json!({"value": "system"})).unwrap();
     harness.run_steps(2);
     assert!(dark(&harness));
+}
+
+/// #266: a window of its own reports a theme of its own (light, on Linux), and egui keeps the
+/// last pass's, whichever window it was. `logic` runs between passes, so the theme must come from
+/// the main window's input, not from whichever window drew last.
+#[test]
+fn another_windows_theme_does_not_change_the_system_theme() {
+    let mut app = app();
+    let ctx = egui::Context::default();
+    let pass = |viewport: egui::ViewportId, theme: Option<egui::Theme>| {
+        let viewports = std::iter::once((viewport, egui::ViewportInfo::default())).collect();
+        let raw = egui::RawInput { viewport_id: viewport, viewports, system_theme: theme, ..Default::default() };
+        ctx.run_ui(raw, |_| {}).drop_without_applying_deltas();
+    };
+    pass(egui::ViewportId::ROOT, Some(egui::Theme::Dark));
+    pass(egui::ViewportId::from_hash_of("appointment"), Some(egui::Theme::Light));
+    app.logic(&ctx);
+    assert!(crate::theme::Tokens::get(&ctx).dark, "the main window is dark, so the program is");
 }
 
 /// An account that signs in on its provider's page: Send/Receive has the host sign in first and
@@ -2070,4 +2106,77 @@ fn a_jmap_account_is_left_out_of_send_receive_until_one_can_be_run() {
     // A Send/Receive of every account is the IMAP account's alone.
     a.execute("ui.sync", json!({"password": "not-a-real-password"})).unwrap();
     assert_eq!(*handed.lock().unwrap(), ["ada@imap.example"]);
+}
+
+/// A noisy PNG far over a signature picture's cap.
+fn big_png(side: u32) -> Vec<u8> {
+    use image::ImageEncoder as _;
+    let mut x = 0x9E37_79B9_u32;
+    let raw: Vec<u8> = (0..side * side * 3)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            x as u8
+        })
+        .collect();
+    let mut out = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut out).write_image(&raw, side, side, image::ExtendedColorType::Rgb8).unwrap();
+    out
+}
+
+fn signature_app() -> MailApp {
+    let mut a = app();
+    a.execute("signature.set", json!({"name": "Mine", "text": "Avery"})).unwrap();
+    a.execute("signature.open", json!({"name": "Mine"})).unwrap();
+    a
+}
+
+/// #270: a picture over the cap is made smaller to fit, and the page says so.
+#[test]
+fn signature_picture_over_the_cap_is_made_smaller() {
+    use mailcraft_model::signature::{MAX_PICTURE_BYTES, MAX_WIDTH};
+    let png = big_png(1200);
+    assert!(png.len() > 4 * MAX_PICTURE_BYTES);
+    let mut a = signature_app();
+    crate::signatures::add_picture(&mut a, json!({"data": crate::files::base64_lite::encode(&png), "file": "logo.png"}));
+    let e = a.session.signature_edit.as_ref().unwrap();
+    let p = e.signature.pictures().first().expect("picture added");
+    assert!(p.data.len() <= MAX_PICTURE_BYTES);
+    assert!(image::load_from_memory(&p.data).unwrap().width() <= u32::from(MAX_WIDTH));
+    assert!(a.signature_note.as_ref().is_some_and(|n| !n.error));
+}
+
+/// #270: a refusal shows on the Signatures page (the status bar is hidden behind File).
+#[test]
+fn signature_picture_refusal_is_on_the_page() {
+    let mut a = signature_app();
+    crate::signatures::add_picture(&mut a, json!({"data": crate::files::base64_lite::encode(b"not a picture at all"), "file": "x.png"}));
+    assert!(a.signature_note.as_ref().is_some_and(|n| n.error && !n.text.is_empty()));
+    assert!(a.session.signature_edit.as_ref().unwrap().signature.pictures().is_empty());
+    // A new try clears it.
+    crate::signatures::add_picture(&mut a, json!({"data": crate::files::base64_lite::encode(&big_png(900)), "file": "y.png"}));
+    assert!(a.signature_note.as_ref().is_some_and(|n| !n.error));
+}
+
+/// #270: a shrunk picture that would take the signature over its total is refused on the page,
+/// and the signature keeps what it had.
+#[test]
+fn signature_picture_over_the_total_is_refused_on_the_page() {
+    use mailcraft_model::signature::{MAX_PICTURES, MAX_PICTURES_BYTES};
+    let png = crate::files::base64_lite::encode(&big_png(1200));
+    let mut a = signature_app();
+    let total = |a: &MailApp| a.session.signature_edit.as_ref().unwrap().signature.pictures().iter().map(|p| p.data.len()).sum::<usize>();
+    let mut refused = false;
+    for _ in 0..MAX_PICTURES {
+        let before = total(&a);
+        crate::signatures::add_picture(&mut a, json!({"data": png, "file": "logo.png"}));
+        if a.signature_note.as_ref().is_some_and(|n| n.error) {
+            assert_eq!(total(&a), before);
+            refused = true;
+            break;
+        }
+    }
+    assert!(refused);
+    assert!(total(&a) <= MAX_PICTURES_BYTES);
 }

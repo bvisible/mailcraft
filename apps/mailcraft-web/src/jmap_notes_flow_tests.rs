@@ -158,9 +158,9 @@ fn a_note_shared_for_reading_cannot_be_changed_and_says_why() {
     assert_eq!(refused(&mut flow, "notes.pin", json!({"id": codes})), NOTE_READ_ONLY);
     assert_eq!(refused(&mut flow, "notes.delete", json!({"id": codes})), NOTE_NOT_YOURS);
     // In the interface's language, the reason reads in French.
-    flow.app.execute("ui.language", json!({"value": "fr"})).unwrap();
+    flow.app.execute("ui.language", json!({"language": "fr"})).unwrap();
     let french = refused(&mut flow, "notes.delete", json!({"id": codes}));
-    flow.app.execute("ui.language", json!({"value": "en"})).unwrap();
+    flow.app.execute("ui.language", json!({"language": "en"})).unwrap();
     assert!(french.contains("propriétaire") || french == NOTE_NOT_YOURS, "{french}");
     let before = flow.server.calls().len();
     flow.push_notes();

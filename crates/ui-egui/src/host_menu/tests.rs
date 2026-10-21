@@ -289,7 +289,7 @@ fn the_page_is_told_its_mailboxes_folders_and_favourites_and_where_the_window_is
     assert_eq!(inbox, &json!({"account": "Team@Example.org", "folder": "Tin", "name": "Inbox - team@example.org", "unread": 1}));
 
     // In the interface's language.
-    set_current(Lang::from_tag("fr").unwrap());
+    set_current(Lang::French);
     let french = state(&app).unwrap();
     set_current(Lang::English);
     assert_eq!(french["accounts"][1]["folders"][0]["name"], "Boîte de réception");
@@ -419,10 +419,11 @@ fn each_command_the_page_may_send_runs_its_engine_command() {
         assert_eq!(app.session.view.module, module);
     }
     // Notes where a server keeps them; refused, with the engine's reason in the interface's language, where none does.
-    set_current(Lang::from_tag("fr").unwrap());
+    set_current(Lang::French);
     let why = refused(&mut app, "view.notes", json!({}));
     let engine = app.session.run("view.notes", &json!({})).unwrap_err().to_string();
-    let french = crate::i18n::run_words::refusal(&engine, &app.session.mailbox).into_owned();
+    // (As the window's status says it: the reason, in the catalogue's French, without the agent's "not available:".)
+    let french = crate::i18n::t_in(Lang::French, mailcraft_engine::cmd::notes::NO_NOTES_HERE).to_string();
     set_current(Lang::English);
     assert_eq!(why, french);
     assert!(
@@ -514,7 +515,7 @@ fn an_unknown_command_or_one_with_bad_params_is_refused_with_a_reason() {
     assert_eq!(app.session.view.module, Module::People);
 
     // In the interface's language.
-    set_current(Lang::from_tag("fr").unwrap());
+    set_current(Lang::French);
     let french = refused(&mut app, "mail.delete", json!({}));
     set_current(Lang::English);
     assert_ne!(french, unknown);
@@ -685,7 +686,7 @@ fn a_message_its_server_hasnt_got_is_refused_with_a_reason() {
     // In the interface's language.
     runner.answers(Vec::new(), &[]);
     assert_eq!(open(&mut app, ADA, "Mgone"), None);
-    set_current(Lang::from_tag("fr").unwrap());
+    set_current(Lang::French);
     let french = poll(&mut app);
     set_current(Lang::English);
     assert_ne!(french[0]["error"], "That mailbox has no such message.");

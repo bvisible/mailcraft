@@ -130,7 +130,7 @@ fn an_ended_session_and_an_old_page_say_what_to_do() {
     );
     assert_eq!(answer::translation(&other, "fr"), Err("Nora couldn't translate the message: Unsupported target language".to_string()));
     // In the person's language.
-    set_current(Lang::from_tag("fr").unwrap());
+    set_current(Lang::French);
     let in_french = (
         answer::draft(&NoraAnswer { id: 1, status: 403, body: to_login.into() }),
         answer::style_started(&answer(400, json!({"exc_type": "CSRFTokenError"}))),

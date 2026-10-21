@@ -581,6 +581,13 @@ pub fn paint_clipped(painter: &egui::Painter, pos: egui::Pos2, width: f32, text:
     size.x
 }
 
+/// The theme the system reports for the main window, from its own input. `Context::system_theme`
+/// is the last pass's, whichever window that was, and a window of its own reports another one
+/// (light, on Linux) than the desktop's (#266); `logic` runs between passes.
+pub fn main_system_theme(ctx: &egui::Context) -> Option<egui::Theme> {
+    ctx.input_for(egui::ViewportId::ROOT, |i| i.raw.system_theme)
+}
+
 /// Apply the interface theme to egui. Both palettes go in, our light one as egui's light style
 /// and our dark one as its dark style, and `preference` ([`Appearance::preference`]) pins egui
 /// (and the window decorations) to one of them.
@@ -924,6 +931,33 @@ mod tests {
         for fonts in [super::font_definitions(), super::font_definitions_with(&SystemFont::none())] {
             symbols_have_glyphs(fonts);
         }
+    }
+
+    /// Every character of every shipped catalogue (accents, ß, « » „ “ ¿ ¡, the narrow no-break
+    /// space French puts before a colon) has a glyph in every weight of the bundled fonts.
+    #[test]
+    fn the_catalogues_are_drawn_with_the_bundled_fonts() {
+        let catalogues = [
+            ("fr", include_str!("../../i18n/po/fr.po")),
+            ("de", include_str!("../../i18n/po/de.po")),
+            ("es", include_str!("../../i18n/po/es.po")),
+            ("it", include_str!("../../i18n/po/it.po")),
+        ];
+        let mut chars = BTreeSet::new();
+        for (code, text) in catalogues {
+            chars.extend(text.chars().filter(|c| !c.is_ascii() && !c.is_control()).map(|c| (c, code)));
+        }
+        assert!(chars.iter().any(|(c, _)| *c == '\u{202f}') && chars.iter().any(|(c, _)| *c == 'ß'));
+        let ctx = draws(super::font_definitions_with(&SystemFont::none()));
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            for font in [super::regular(12.0), super::medium(12.0), super::semibold(12.0), super::bold(12.0)] {
+                let missing: Vec<String> = ui.fonts_mut(|f| {
+                    chars.iter().filter(|(c, _)| !f.has_glyph(&font, *c)).map(|(c, code)| format!("{c} U+{:04X} in {code}.po", *c as u32)).collect()
+                });
+                assert!(missing.is_empty(), "{font:?}: {missing:#?}");
+            }
+        })
+        .drop_without_applying_deltas();
     }
 
     fn symbols_have_glyphs(fonts: egui::FontDefinitions) {

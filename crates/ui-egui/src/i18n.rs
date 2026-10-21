@@ -1,244 +1,109 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Interface text. Every string the interface shows goes through [`t`] (the `tl!` macro), keyed by
-//! its English text, so language catalogs can be added without touching the widgets. `pseudo` (a
-//! test language) proves that no string bypasses the lookup.
-// //// Neoffice — English is no longer the only language: the others come from a catalog each (`catalog`).
-//!
-//! # Languages
-//! English is the language of the strings as they are written. Any other language is a catalog
-//! ([`catalog`]) that maps them to what that language shows, and a string it lacks shows in
-//! English. The `language` setting ([`Lang::from_pref`]) is a language's code, or `auto` to follow
-//! the language that the host says the system (or the browser) is in ([`set_system_language`]).
+//! Interface text. Every string the window shows goes through [`t`] (the `tl!` macro) or, for a
+//! count, [`tn`] (`tln!`), keyed by its English text and looked up in the catalogue of the
+//! window's language (`mailcraft-i18n`). The window's language is set once a frame from the
+//! owner's choice ([`set_current`]); the engine is told it through `Session::interface_language`.
 
-// //// Neoffice — the catalogs, and the tests that hold them to the interface.
-pub mod catalog;
-#[cfg(test)]
-mod interface_strings;
-#[cfg(test)]
-mod language_setting;
 // //// Neoffice — the engine's and a JMAP run's sentences, read back in the interface's language where they are drawn.
 pub mod run_words;
 
-/// The interface language setting that follows the system.
-pub const AUTO: &str = "auto";
+pub use mailcraft_i18n::{AUTO, Lang, fmt};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Lang {
-    English,
-    /// Accented look-alikes of the English text, for finding strings that skip translation.
-    Pseudo,
-    // //// Neoffice — a language that has a catalog.
-    /// A language that has a catalog ([`catalog::LANGUAGES`]).
-    Catalog(catalog::Id),
-}
-
-// //// Neoffice — the current language and the system's, as numbers (0 English, 1 pseudo, then a catalog's row plus 2).
-// One of each per process; in tests one per thread, so that tests that run side by side and change the language can't change one another's.
+// //// Neoffice — the window's language kept per thread in the tests (as before the merge of the catalogues), so that a test that
+// changes it can't change the language of another running beside it; one for the process otherwise, as upstream keeps it.
 #[cfg(not(test))]
 mod state {
     use std::sync::atomic::{AtomicU8, Ordering};
 
     static CURRENT: AtomicU8 = AtomicU8::new(0);
-    static SYSTEM: AtomicU8 = AtomicU8::new(0);
 
-    pub fn current() -> u8 {
+    pub fn get() -> u8 {
         CURRENT.load(Ordering::Relaxed)
     }
-    pub fn set_current(value: u8) {
+    pub fn set(value: u8) {
         CURRENT.store(value, Ordering::Relaxed);
-    }
-    pub fn system() -> u8 {
-        SYSTEM.load(Ordering::Relaxed)
-    }
-    pub fn set_system(value: u8) {
-        SYSTEM.store(value, Ordering::Relaxed);
     }
 }
 
-// //// Neoffice — in tests, one language per thread: tests that run side by side and change it can't change one another's.
+// //// Neoffice — as above.
 #[cfg(test)]
 mod state {
     use std::cell::Cell;
 
     thread_local! {
         static CURRENT: Cell<u8> = const { Cell::new(0) };
-        static SYSTEM: Cell<u8> = const { Cell::new(0) };
     }
 
-    pub fn current() -> u8 {
+    pub fn get() -> u8 {
         CURRENT.get()
     }
-    pub fn set_current(value: u8) {
+    pub fn set(value: u8) {
         CURRENT.set(value);
     }
-    pub fn system() -> u8 {
-        SYSTEM.get()
-    }
-    pub fn set_system(value: u8) {
-        SYSTEM.set(value);
-    }
 }
 
-impl Lang {
-    pub fn code(self) -> &'static str {
-        match self {
-            Lang::English => "en",
-            Lang::Pseudo => "pseudo",
-            // //// Neoffice — a language that has a catalog.
-            Lang::Catalog(id) => id.row().map_or("en", |row| row.code),
-        }
-    }
-
-    // //// Neoffice — the language's own name, for the list of languages in File › Options.
-    pub fn name(self) -> &'static str {
-        match self {
-            Lang::English => "English",
-            Lang::Pseudo => "Pseudo",
-            Lang::Catalog(id) => id.row().map_or("English", |row| row.name),
-        }
-    }
-
-    // //// Neoffice — a code is any language that has a catalog, in any case and with or without a region; `auto` is the system's.
-    /// The language for a saved setting: `auto` (the system's language, see [`set_system_language`]), `pseudo`, or the code of a
-    /// language, in any case and with or without a region (`fr`, `FR`, `fr-CH`); anything unknown is English.
-    pub fn from_pref(pref: &str) -> Lang {
-        // //// Neoffice — as above.
-        let pref = pref.trim();
-        if pref.eq_ignore_ascii_case(AUTO) {
-            Lang::decode(state::system())
-        } else if pref.eq_ignore_ascii_case("pseudo") {
-            Lang::Pseudo
-        } else {
-            Lang::from_tag(pref).unwrap_or(Lang::English)
-        }
-    }
-
-    // //// Neoffice — what a locale tag (`fr`, `fr-CH`, `fr_CH.UTF-8`, `en-GB`) names, when that is English or a language with a catalog.
-    pub fn from_tag(tag: &str) -> Option<Lang> {
-        if let Some(id) = catalog::find(tag) {
-            return Some(Lang::Catalog(id));
-        }
-        let primary = tag.trim().split(['-', '_', '.', '@']).next().unwrap_or_default();
-        primary.eq_ignore_ascii_case("en").then_some(Lang::English)
-    }
-
-    // //// Neoffice — the languages a person can choose among: English, then those that have a catalog.
-    pub fn choices() -> impl Iterator<Item = Lang> {
-        std::iter::once(Lang::English).chain(catalog::Id::all().map(Lang::Catalog))
-    }
-
-    // //// Neoffice — a language as the number it is kept as.
-    fn encode(self) -> u8 {
-        match self {
-            Lang::English => 0,
-            Lang::Pseudo => 1,
-            Lang::Catalog(id) => id.index().checked_add(2).unwrap_or(0),
-        }
-    }
-
-    fn decode(value: u8) -> Lang {
-        match value {
-            0 => Lang::English,
-            1 => Lang::Pseudo,
-            n => n.checked_sub(2).and_then(|row| catalog::Id::new(usize::from(row))).map_or(Lang::English, Lang::Catalog),
-        }
-    }
-}
-
-// //// Neoffice — a value of the `language` setting in its one form: `auto`, `pseudo` or a language's code (`None`: it is none of those).
-pub fn canonical_pref(pref: &str) -> Option<&'static str> {
-    let pref = pref.trim();
-    if pref.eq_ignore_ascii_case(AUTO) {
-        Some(AUTO)
-    } else if pref.eq_ignore_ascii_case("pseudo") {
-        Some(Lang::Pseudo.code())
-    } else {
-        Lang::from_tag(pref).map(Lang::code)
-    }
-}
-
-// //// Neoffice — the language of the system, as the host says it, for the setting `auto`.
-/// Tell the interface which language the system (or the browser) is in, as a locale tag such as `fr`, `fr-CH` or `fr_CH.UTF-8`:
-/// what the setting `auto` shows. A tag that names no language with a catalog means English, as does never calling this.
-pub fn set_system_language(code: &str) {
-    state::set_system(Lang::from_tag(code).unwrap_or(Lang::English).encode());
-}
-
+/// The window's language from now on.
 pub fn set_current(lang: Lang) {
-    // //// Neoffice — kept as a number in `state`, which a catalog language has too.
-    state::set_current(lang.encode());
-    // //// Neoffice — the dates people read follow the language too (date_words).
-    mailcraft_time::set_date_words(date_words());
-    // //// Neoffice — and so does the header written over the original a reply or a forward quotes (quote_words).
-    mailcraft_engine::cmd::compose::set_quote_words(quote_words());
+    let i = Lang::ALL.iter().position(|l| *l == lang).unwrap_or(0);
+    // //// Neoffice — kept in `state` (above).
+    state::set(u8::try_from(i).unwrap_or(0));
 }
 
-// //// Neoffice — the day and month names of the interface's language, for the dates people read; a numeric date day first.
-/// The words the dates of the message list and of an open message are written with: none in English.
-fn date_words() -> Option<mailcraft_time::DateWords> {
-    if current() == Lang::English {
-        return None;
-    }
-    Some(mailcraft_time::DateWords {
-        weekdays_short: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(|day| t(day).to_string()),
-        months_short: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(|month| t(month).to_string()),
-        day_first: Some('.'),
-    })
-}
-
-// //// Neoffice — the words of the header over a quoted original in the interface's language (Outlook writes them in its own).
-/// The words of the header written over the original under a reply or a forward: none in English.
-fn quote_words() -> Option<mailcraft_engine::cmd::compose::QuoteWords> {
-    if current() == Lang::English {
-        return None;
-    }
-    Some(mailcraft_engine::cmd::compose::QuoteWords {
-        original: tl!("-----Original Message-----").to_string(),
-        from: tl!("From:").to_string(),
-        sent: tl!("Sent:").to_string(),
-        to: tl!("To:").to_string(),
-        cc: tl!("Cc:").to_string(),
-        subject: tl!("Subject:").to_string(),
-    })
-}
-
+/// The window's language.
 pub fn current() -> Lang {
     // //// Neoffice — as above.
-    Lang::decode(state::current())
+    Lang::ALL.get(usize::from(state::get())).copied().unwrap_or_default()
 }
 
 /// `s` in the interface language.
 pub fn t(s: &str) -> &str {
-    // //// Neoffice — the lookup of `t_in`, in the current language.
-    t_in(current(), s)
-}
-
-// //// Neoffice — `t` in a language that is given, so that what reads the engine's sentences (run_words) can be asked for any language
-// without changing the process's.
-/// `s` in `lang`.
-pub fn t_in(lang: Lang, s: &str) -> &str {
     // //// Neoffice — under the product's name a host gives, when it gives one (`set_product_name`).
-    renamed(match lang {
-        Lang::English => s,
-        Lang::Pseudo => pseudo(s),
-        // //// Neoffice — the catalog's translation; the English without one.
-        Lang::Catalog(id) => catalog::translate(id, "", s).unwrap_or(s),
-    })
+    renamed(current().t(s))
 }
 
-// //// Neoffice — `s` under a context, for English words that need two translations (the Archive folder, the Archive command).
-/// `s` where `context` tells words that are the same in English apart: the catalog's entry under that context, else what [`t`] gives.
+/// `s` in `context` (`msgctxt`), in the interface language.
 pub fn tc<'a>(context: &str, s: &'a str) -> &'a str {
-    if let Lang::Catalog(id) = current()
-        && let Some(translation) = catalog::translate(id, context, s)
-    {
-        return renamed(translation);
-    }
-    t(s)
+    // //// Neoffice — as above.
+    renamed(current().tc(context, s))
 }
 
-// //// Neoffice — the name a host gives the program (a page that frames the browser build names it its own way).
+// //// Neoffice — `t` in a language that is given, so that what reads the engine's and a JMAP run's sentences back (`run_words`) can be
+// asked for any language without changing the window's.
+/// `s` in `lang`, under the product's name a host gives.
+pub fn t_in(lang: Lang, s: &str) -> &str {
+    renamed(lang.t(s))
+}
+
+/// The form for a count of `n` of `one` / `other` (English singular and plural), in the interface
+/// language, with `{n}` filled in (other placeholders are left to [`fmt`]).
+pub fn tn(n: u64, one: &str, other: &str) -> String {
+    // //// Neoffice — under the product's name a host gives (`set_product_name`).
+    fmt(renamed(current().tn(n, one, other)), &[("n", &n.to_string())])
+}
+
+/// A number of things, for [`tn`]: any integer (a negative one counts as none).
+pub trait Count {
+    fn count(self) -> u64;
+}
+
+macro_rules! count {
+    ($($t:ty),*) => {$(
+        impl Count for $t {
+            fn count(self) -> u64 {
+                u64::try_from(self).unwrap_or(0)
+            }
+        }
+    )*};
+}
+count!(u8, u16, u32, u64, usize, i32, i64, isize);
+
+/// A command's location (`Home › Respond`) in the interface language, part by part.
+pub fn location(loc: &str) -> String {
+    mailcraft_i18n::location(current(), loc)
+}
+
+// //// Neoffice — the name a host gives the program (a page that frames the browser build names it its own way: NeoMail).
 /// The name the program is written with in its interface text.
 pub const PRODUCT: &str = "MailCraft";
 
@@ -253,7 +118,7 @@ pub fn set_product_name(name: &str) {
 }
 
 // //// Neoffice — as above.
-/// `s` with the program's name a host gave, interned so that it can be handed out like a catalog's entry.
+/// `s` with the program's name a host gave, interned so that it can be handed out like a catalogue's entry.
 fn renamed(s: &str) -> &str {
     if !s.contains(PRODUCT) {
         return s;
@@ -311,312 +176,30 @@ mod product {
     }
 }
 
-/// The pseudo-language form of `s`, interned so it can be handed out as `&'static str`.
-fn pseudo(s: &str) -> &'static str {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-    static CACHE: OnceLock<Mutex<HashMap<String, &'static str>>> = OnceLock::new();
-    let mut cache = CACHE.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(done) = cache.get(s) {
-        return done;
-    }
-    // `{placeholders}` stay as they are.
-    let mut out = String::with_capacity(s.len() + 2);
-    let mut inside = false;
-    for c in s.chars() {
-        match c {
-            '{' => inside = true,
-            '}' => inside = false,
-            _ => {}
-        }
-        out.push(if inside {
-            c
-        } else {
-            match c {
-                'a' => 'á',
-                'e' => 'é',
-                'i' => 'í',
-                'o' => 'ó',
-                'u' => 'ú',
-                'A' => 'Á',
-                'E' => 'É',
-                'O' => 'Ó',
-                'U' => 'Ú',
-                _ => c,
-            }
-        });
-    }
-    // The catalog is small and fixed (interface strings), so leaking each form once is bounded.
-    let leaked: &'static str = Box::leak(out.into_boxed_str());
-    cache.insert(s.to_string(), leaked);
-    leaked
-}
-
-/// Fill `{name}` placeholders in a (translated) template.
-// //// Neoffice — one pass over the template: a value is never read again, so a value that holds `{name}` (a subject, a server's words) is
-// shown as it is instead of being filled by the next argument. A placeholder with no argument stays as it is written, as before.
-pub fn fmt(template: &str, args: &[(&str, &str)]) -> String {
-    let mut out = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some((head, tail)) = rest.split_once('{') {
-        out.push_str(head);
-        let filled = tail.split_once('}').and_then(|(name, after)| args.iter().find(|(k, _)| *k == name).map(|(_, v)| (*v, after)));
-        match filled {
-            Some((value, after)) => {
-                out.push_str(value);
-                rest = after;
-            }
-            None => {
-                out.push('{');
-                rest = tail;
-            }
-        }
-    }
-    // //// Neoffice — as above: the text after the last placeholder.
-    out.push_str(rest);
-    out
-}
-
-// //// Neoffice — the separator, named so that the tests that list the parts of the locations split at the same one.
-/// What the parts of a command's location are separated by.
-pub const LOCATION_SEPARATOR: &str = " › ";
-
-/// A command's location (`Home › Respond`) in the interface language, part by part.
-pub fn location(loc: &str) -> String {
-    // //// Neoffice — the separator has a name.
-    loc.split(LOCATION_SEPARATOR).map(t).collect::<Vec<_>>().join(LOCATION_SEPARATOR)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn formatting_and_pseudo() {
-        assert_eq!(fmt("{n} of {total} items", &[("n", "3"), ("total", "10")]), "3 of 10 items");
-        assert_eq!(pseudo("Reply {name}"), "Réply {name}");
-        assert_eq!(Lang::from_pref("PSEUDO"), Lang::Pseudo);
-        assert_eq!(Lang::from_pref("klingon"), Lang::English);
+    fn english_by_default() {
+        // (The window's language is shared by the tests running alongside: only English here.)
+        assert_eq!(t("Reply"), "Reply");
+        assert_eq!(tn(1, "{n} message", "{n} messages"), "1 message");
+        assert_eq!(tn(3, "{n} message", "{n} messages"), "3 messages");
         assert_eq!(location("Home › Respond"), "Home › Respond");
     }
 
-    // //// Neoffice — `fmt` fills a template in one pass (run_words hands it subjects and a server's words).
-    #[test]
-    fn fmt_fills_each_placeholder_once_and_never_inside_a_value() {
-        // A value that holds a placeholder is shown as it is, whichever argument comes next.
-        assert_eq!(fmt("{subject}: {why}", &[("subject", "Re: {why}"), ("why", "gone")]), "Re: {why}: gone");
-        assert_eq!(fmt("{a}{b}", &[("a", "{b}"), ("b", "{a}")]), "{b}{a}");
-        // A placeholder written twice is filled twice; one with no argument stays as it is written.
-        assert_eq!(fmt("{n} and {n} of {total}", &[("n", "3")]), "3 and 3 of {total}");
-        // Braces that make no placeholder are text, as they were.
-        assert_eq!(fmt("{{n}} {n", &[("n", "3")]), "{3} {n");
-        assert_eq!(fmt("}{ {} {}", &[("", "empty")]), "}{ empty empty");
-        assert_eq!(fmt("", &[("n", "3")]), "");
-        assert_eq!(fmt("no placeholder", &[]), "no placeholder");
-        // Text outside ASCII on either side of a placeholder.
-        assert_eq!(fmt("« {subject} » — {n} ☃", &[("subject", "Été"), ("n", "1")]), "« Été » — 1 ☃");
-        // A long hostile value is copied once, not read.
-        let flood = "{why}".repeat(20_000);
-        assert_eq!(fmt("{subject}{why}", &[("subject", &flood), ("why", "x")]).len(), flood.len() + 1);
-    }
-
-    // //// Neoffice — `t_in`: a lookup in a language that is given.
-    #[test]
-    fn t_in_gives_the_language_asked_for_and_t_is_t_in_current() {
-        let french = Lang::from_tag("fr").unwrap();
-        assert_eq!(t_in(french, "Reply"), "Répondre");
-        assert_eq!(t_in(Lang::Pseudo, "Reply"), "Réply");
-        assert_eq!(t_in(Lang::English, "Reply"), "Reply");
-        let stranger = "A string that no catalog will ever hold ☃";
-        assert!(std::ptr::eq(t_in(french, stranger), stranger));
-        // The current language is not changed by asking for another.
-        assert_eq!(current(), Lang::English);
-        assert_eq!(t("Reply"), "Reply");
-        for lang in Lang::choices().chain([Lang::Pseudo]) {
-            set_current(lang);
-            assert_eq!(t("Reply"), t_in(lang, "Reply"), "{lang:?}");
-        }
-        set_current(Lang::English);
-    }
-
-    // //// Neoffice — a reply quotes its original under the interface's words (quote_words).
-    #[test]
-    fn a_reply_quotes_its_original_under_the_interface_s_words() {
-        let now = 1_791_993_600;
-        let reply = |lang: Lang| {
-            set_current(lang);
-            let mut s = mailcraft_engine::Session::at(mailcraft_engine::sample::mailbox(now, 0), now, 0);
-            let plain = s.mailbox.messages.values().find(|m| m.body.html.is_none() && !m.draft && m.subject == "Release checklist").map(|m| m.id);
-            s.run("mail.reply", &serde_json::json!({"id": plain})).unwrap();
-            let text = s.compose.as_ref().map(|c| c.body.plain()).unwrap_or_default();
-            set_current(Lang::English);
-            text
-        };
-        let french = reply(Lang::from_tag("fr").unwrap());
-        assert!(french.contains("-----Message d’origine-----\nDe : "), "{french}");
-        assert!(french.contains("\nEnvoyé : ") && french.contains("\nÀ : ") && french.contains("\nObjet : Release checklist"), "{french}");
-        let english = reply(Lang::English);
-        assert!(
-            english.contains("-----Original Message-----\nFrom: ")
-                && english.contains("\nSent: ")
-                && english.contains("\nSubject: Release checklist")
-        );
-    }
-
-    // //// Neoffice — the setting that picks the language, and the system's language it can follow.
-    fn french() -> Lang {
-        Lang::from_tag("fr").unwrap()
-    }
-
-    // //// Neoffice — the name a host gives the program.
+    // //// Neoffice — the name a host gives the program, in every language's text, the plurals' included.
     #[test]
     fn a_hosts_name_for_the_program_is_the_one_its_text_shows_in_every_language() {
         assert_eq!(t("About MailCraft"), "About MailCraft", "its own name until a host gives one");
         set_product_name("NeoMail");
         assert_eq!(t("About MailCraft"), "About NeoMail");
-        assert_eq!(t("Reply"), "Reply", "a string that doesn't name it is as it was");
-        set_current(french());
-        assert_eq!(t("About MailCraft"), "À propos de NeoMail");
-        assert_eq!(tc("", "About MailCraft"), "À propos de NeoMail");
-        set_current(Lang::English);
-        // A name that is empty, too long or not one line puts the program's own back.
-        for refused in ["", "   ", &"x".repeat(41), "Neo\nMail"] {
-            set_product_name("NeoMail");
-            set_product_name(refused);
-            assert_eq!(t("About MailCraft"), "About MailCraft", "{refused:?}");
-        }
-    }
-
-    #[test]
-    fn the_setting_is_a_code_in_any_case_with_or_without_a_region() {
-        for pref in ["fr", "FR", "Fr", " fr ", "fr-CH", "fr_CH", "fr-ch", "fr_CA.UTF-8", "fr-Latn-BE"] {
-            assert_eq!(Lang::from_pref(pref), french(), "{pref:?}");
-        }
-        for pref in ["en", "EN", "en-GB", "en_US.UTF-8", "", " ", "klingon", "français", "fra", "frr", "f", "-", "fr\u{0}", "C", "POSIX", "de", "ar"]
-        {
-            assert_eq!(Lang::from_pref(pref), Lang::English, "{pref:?}");
-        }
-        for pref in ["pseudo", "PSEUDO", " Pseudo "] {
-            assert_eq!(Lang::from_pref(pref), Lang::Pseudo, "{pref:?}");
-        }
-        // A setting from a file that someone edited can be anything.
-        assert_eq!(Lang::from_pref(&"x".repeat(100_000)), Lang::English);
-        assert_eq!(Lang::from_pref(&format!("fr-{}", "-".repeat(100_000))), french());
-        assert_eq!(Lang::from_pref("\u{feff}fr"), Lang::English);
-        assert_eq!(french().code(), "fr");
-        assert_eq!(french().name(), "Français");
-        assert_eq!((Lang::English.code(), Lang::English.name(), Lang::Pseudo.code()), ("en", "English", "pseudo"));
-    }
-
-    #[test]
-    fn auto_follows_the_language_the_host_says_the_system_is_in() {
-        for pref in ["auto", "AUTO", "Auto", " auto "] {
-            // The host hasn't said: English.
-            assert_eq!(Lang::from_pref(pref), Lang::English, "{pref:?}");
-        }
-        for (said, shown) in [
-            ("fr", french()),
-            ("fr-CH", french()),
-            ("fr_CA.UTF-8", french()),
-            ("FR", french()),
-            ("en-GB", Lang::English),
-            ("de", Lang::English),
-            ("", Lang::English),
-            ("klingon", Lang::English),
-            ("pseudo", Lang::English),
-            ("auto", Lang::English),
-        ] {
-            set_system_language(said);
-            for pref in ["auto", "AUTO", " auto "] {
-                assert_eq!(Lang::from_pref(pref), shown, "the system says {said:?}, the setting is {pref:?}");
-            }
-            // A language that is chosen is not the system's.
-            assert_eq!(Lang::from_pref("en"), Lang::English);
-            assert_eq!(Lang::from_pref("fr"), french());
-        }
-        set_system_language("fr");
-        set_system_language("de");
-        assert_eq!(Lang::from_pref("auto"), Lang::English, "what the host says last is what counts");
-    }
-
-    #[test]
-    fn a_tag_names_a_language_and_a_setting_has_one_form() {
-        assert_eq!(Lang::from_tag("fr-CH"), Some(french()));
-        assert_eq!(Lang::from_tag("en"), Some(Lang::English));
-        assert_eq!(Lang::from_tag("EN_us.UTF-8"), Some(Lang::English));
-        assert_eq!(Lang::from_tag("english"), None, "a word that merely starts like a code is not one");
-        assert_eq!(Lang::from_tag("pseudo"), None);
-        assert_eq!(Lang::from_tag("auto"), None);
-        assert_eq!(Lang::from_tag("de"), None);
-        assert_eq!(Lang::from_tag(""), None);
-        for (pref, one) in [("auto", "auto"), (" AUTO", "auto"), ("fr-CH", "fr"), ("FR", "fr"), ("en-GB", "en"), ("PSEUDO", "pseudo")] {
-            assert_eq!(canonical_pref(pref), Some(one), "{pref:?}");
-        }
-        for pref in ["", "de", "klingon", "fra", "autom", "français"] {
-            assert_eq!(canonical_pref(pref), None, "{pref:?}");
-        }
-    }
-
-    #[test]
-    fn the_languages_to_choose_among_are_english_and_those_with_a_catalog() {
-        let codes: Vec<&str> = Lang::choices().map(Lang::code).collect();
-        assert_eq!(codes.first(), Some(&"en"));
-        assert_eq!(codes.len(), 1 + catalog::LANGUAGES.len());
-        let mut sorted = codes.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), codes.len(), "{codes:?}");
-        for lang in Lang::choices() {
-            assert_eq!(Lang::from_pref(lang.code()), lang, "a language's code is its setting");
-            assert!(!lang.name().is_empty());
-        }
-        assert!(Lang::choices().all(|lang| lang != Lang::Pseudo));
-    }
-
-    #[test]
-    fn a_language_is_kept_as_a_number_and_comes_back() {
-        for lang in Lang::choices().chain([Lang::Pseudo]) {
-            assert_eq!(Lang::decode(lang.encode()), lang, "{lang:?}");
-            set_current(lang);
-            assert_eq!(current(), lang);
-        }
-        // A number no language has is English.
-        for value in [u8::try_from(2 + catalog::LANGUAGES.len()).unwrap_or(u8::MAX), 250, 255] {
-            assert_eq!(Lang::decode(value), Lang::English, "{value}");
-        }
-        set_current(Lang::English);
-        assert_eq!(current(), Lang::English);
-    }
-
-    #[test]
-    fn a_string_a_catalog_lacks_shows_in_english_and_pseudo_shows_every_string_changed() {
-        let stranger = "A string that no catalog will ever hold ☃";
-        for lang in Lang::choices() {
-            set_current(lang);
-            assert!(std::ptr::eq(t(stranger), stranger), "{lang:?}: the English itself comes back");
-            assert!(std::ptr::eq(tc("some context", stranger), stranger), "{lang:?}: and under a context too");
-            assert_eq!(fmt(t("{n} of {total} items"), &[("n", "3"), ("total", "10")]).split(' ').count(), 4);
-        }
-        set_current(Lang::Pseudo);
-        assert_eq!(t("Reply"), "Réply");
-        assert_eq!(tc("context", "Reply"), "Réply");
-        // (A command's location is translated part by part, at the same separator.)
-        assert_eq!(location("Home › Respond"), "Hómé › Réspónd");
-        set_current(french());
-        assert_eq!(location("Home › Respond").split(" › ").count(), 2);
-        set_current(Lang::English);
-        assert_eq!(t("Reply"), "Reply");
-    }
-
-    #[test]
-    fn the_language_of_one_test_is_not_the_language_of_another() {
-        // In tests each thread has its own current and system language (in the program, one for all).
-        set_current(french());
-        set_system_language("fr");
-        let (current, auto) = std::thread::spawn(|| (current(), Lang::from_pref("auto"))).join().unwrap();
-        assert_eq!((current, auto), (Lang::English, Lang::English));
-        assert_eq!(super::current(), french());
-        set_current(Lang::English);
-        set_system_language("");
+        assert_eq!(t_in(Lang::English, "About MailCraft"), "About NeoMail");
+        assert_eq!(tn(2, "MailCraft has {n} window", "MailCraft has {n} windows"), "NeoMail has 2 windows");
+        set_product_name("   ");
+        assert_eq!(t("About MailCraft"), "About MailCraft", "an empty name puts its own back");
+        set_product_name(&"x".repeat(41));
+        assert_eq!(t("About MailCraft"), "About MailCraft", "and so does one too long");
     }
 }

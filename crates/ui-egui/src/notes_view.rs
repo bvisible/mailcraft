@@ -120,7 +120,7 @@ fn several_places(app: &MailApp) -> bool {
 
 /// What the card of `note` says (see the module).
 pub(crate) fn card_text(app: &MailApp, note: &Note) -> CardText {
-    let changed = mailcraft_time::list_label(note.updated, app.session.now(), app.session.offset_at(note.updated), app.session.prefs.twelve_hour);
+    let changed = crate::dates::list_label(note.updated, app.session.now(), app.session.offset_at(note.updated), app.session.prefs.twelve_hour);
     let mut badges = Vec::new();
     if note.pinned {
         badges.push(tl!("Pinned").to_string());

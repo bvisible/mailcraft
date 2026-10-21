@@ -19,6 +19,9 @@
 //! them and them, when it ends with one ([`explain`]). An event or a contact with no name is one the engine calls
 //! `an event` or `a contact`, which are words of the interface's ([`NAMES`]).
 
+// //// Neoffice — (as the rest of this file) the string literals of the sources, for the census of the tests.
+#[cfg(test)]
+mod census;
 mod pattern;
 mod rows;
 #[cfg(test)]
@@ -30,7 +33,7 @@ use std::sync::OnceLock;
 use mailcraft_model::{FolderKind, Mailbox};
 
 use self::pattern::{Budget, Pattern};
-use super::{Lang, catalog, current, fmt, t_in};
+use super::{Lang, current, fmt, t_in};
 
 /// The longest text that is read; a longer one is shown as it came.
 const MAX_TEXT: usize = 1_024;
@@ -491,14 +494,11 @@ impl Reader<'_> {
 }
 
 /// The name the folder pane gives the standard folder that the engine names `name` (its name on the server, `INBOX`),
-/// in `lang`; None for a folder that isn't a standard one.
+/// in `lang` (as `nav::folder_name`: its own name in English, the language's word for its kind in another); None for a
+/// folder that isn't a standard one, or keeps its own name.
 pub(crate) fn standard_folder_name(mb: &Mailbox, name: &str, lang: Lang) -> Option<String> {
     let folder = mb.folders.iter().find(|f| f.kind != FolderKind::Custom && f.name == name)?;
-    let english = folder.kind.default_name();
-    // (A folder's name has a context of its own in a catalog: `nav::folder_name`.)
-    let shown = match lang {
-        Lang::Catalog(id) => catalog::translate(id, "folder", english).unwrap_or_else(|| t_in(lang, english)),
-        _ => t_in(lang, english),
-    };
-    Some(shown.to_string())
+    let kind = crate::nav::named_kind(folder)?;
+    // (A folder's name has a context of its own in a catalogue: `nav::folder_name`.)
+    Some(lang.folder(kind.default_name()).to_string())
 }

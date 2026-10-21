@@ -213,7 +213,7 @@ fn a_simple_event_in_a_tab_asks_before_it_is_deleted() {
     assert!(h.state().session.mailbox.event(budget).is_none() && h.state().session.mailbox.event_changes.len() == 1);
     // In French, by the window's catalog.
     let (mut app, _) = window(true);
-    crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+    crate::i18n::set_current(crate::i18n::Lang::French);
     let budget = event(&app, "Budget review");
     let (title, text, _) = asked(&mut app, "calendar.delete", json!({"id": budget})).expect("a question");
     crate::i18n::set_current(crate::i18n::Lang::English);
@@ -233,7 +233,7 @@ fn one_day_of_a_series_deleted_by_itself_asks_as_that_day() {
     let series = event(&app, "Weekly review");
     // Delete This Occurrence, from the event's menu: the day is named, which of the series is not asked.
     let (title, text, _) = asked(&mut app, "calendar.delete", json!({"id": series, "occurrence": "2026-10-20"})).expect("a question");
-    let day = mailcraft_time::Date::new(2026, 10, 20).unwrap().medium_shown();
+    let day = crate::dates::medium(mailcraft_time::Date::new(2026, 10, 20).unwrap());
     assert_eq!(title, "Delete This Occurrence?");
     assert_eq!(text, format!("\"Weekly review\" on {day} will be removed from the calendar \"Ada\"."));
     // Answered: that day goes, with no second question.
@@ -312,14 +312,14 @@ fn a_kept_contact_asks_before_it_is_deleted_for_the_whole_team() {
 #[test]
 fn the_categorize_menu_names_the_starting_categories_in_the_interfaces_language() {
     let (mut app, _) = window(false);
-    crate::i18n::set_current(crate::i18n::Lang::from_tag("fr").unwrap());
+    crate::i18n::set_current(crate::i18n::Lang::French);
     let bob = app.session.mailbox.contacts.values().find(|c| c.first == "Bob").map(|c| c.id).unwrap();
     app.execute("people.select", json!({"id": bob})).unwrap();
     let mut h = Harness::builder()
         .with_size(egui::vec2(400.0, 400.0))
         .build_ui_state(|ui, app: &mut MailApp| crate::ribbon::category_menu(ui, app, "people.categorize", |_, _| false, None), app);
     h.run_steps(2);
-    let french = crate::i18n::Lang::from_tag("fr").unwrap();
+    let french = crate::i18n::Lang::French;
     let (red, english) = (h.query_by_label(crate::i18n::t_in(french, "Red category")).is_some(), h.query_by_label("Red category").is_some());
     crate::i18n::set_current(crate::i18n::Lang::English);
     assert!(red && !english, "the menu in French");

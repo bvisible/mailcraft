@@ -223,7 +223,7 @@ impl Rig {
 }
 
 fn french() -> Lang {
-    Lang::from_tag("fr").unwrap()
+    Lang::French
 }
 
 /// A scenario: what it did, what the window was shown, and the words in it that are a server's or the transport's
@@ -1194,8 +1194,9 @@ fn a_message_held_says_why_in_french_and_the_mailbox_keeps_the_english() {
         ),
         "{french:#?}"
     );
-    assert!(
-        french.contains(&"Impossible d’envoyer « Plans » : le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant. Il est retenu dans la Boîte d’envoi.".to_string()),
-        "{french:#?}"
-    );
+    // (The frame of a message held in the Outbox is a sentence upstream's catalogue has too: its French is upstream's.)
+    let frame = mailcraft_ui_egui::i18n::Lang::French.t("Couldn't send '{subject}': {why}. It is held in the Outbox.");
+    let why = "le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant";
+    let held = mailcraft_ui_egui::i18n::fmt(frame, &[("subject", "Plans"), ("why", why)]);
+    assert!(french.contains(&held), "{french:#?}");
 }

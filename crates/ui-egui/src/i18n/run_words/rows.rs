@@ -3,7 +3,7 @@
 // //// Neoffice — added file (no upstream equivalent)
 //! The sentences the crates write, as `run_words` reads them back: each row is the crates' English, the file that
 //! writes it, its family, and the family each placeholder that holds a reason is read with. The French of a row is its
-//! line in `fr.tsv`, found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
+//! line in a catalogue (the fork's own, `crates/i18n/po/neoffice/fr.po`), found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
 //! that lacks one fails its test. The tests hold the rows to the files they name (a census of their sentences).
 
 use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Parts, Server, Tail, Why};

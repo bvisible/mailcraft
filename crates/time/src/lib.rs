@@ -265,13 +265,6 @@ impl Date {
         format!("{} {}, {}", month_short(self.month), self.day, self.year)
     }
 
-    // //// Neoffice — the medium date people read in the interface's words (set_date_words); `medium` stays English for the text it goes into.
-    /// [`Date::medium`] as people read it in the interface's language: `20 oct. 2026` where the day comes first,
-    /// `Oct 20, 2026` in English.
-    pub fn medium_shown(self) -> String {
-        medium_in(date_words().as_ref(), self)
-    }
-
     /// `10/11/2026`.
     pub fn numeric(self) -> String {
         format!("{}/{}/{}", self.month, self.day, self.year)
@@ -471,101 +464,24 @@ impl DateGroup {
 
 /// The date column of a message list: the time today, `Sat 3:05 PM` within the last week,
 /// `Oct 3` this year, `10/3/2025` before that.
-// //// Neoffice — in the words of the interface's language when it set them (set_date_words): `jeu. 15:05`, `3 oct.`, `03.10.2025`.
 pub fn list_label(ts: Timestamp, now: Timestamp, offset_minutes: i32, twelve_hour: bool) -> String {
-    list_label_in(date_words().as_ref(), ts, now, offset_minutes, twelve_hour)
-}
-
-fn list_label_in(words: Option<&DateWords>, ts: Timestamp, now: Timestamp, offset_minutes: i32, twelve_hour: bool) -> String {
     let (t, n) = (DateTime::from_timestamp(ts, offset_minutes), DateTime::from_timestamp(now, offset_minutes));
     let diff = t.date.days_until(n.date);
     if diff == 0 {
         t.time_short(twelve_hour)
     } else if (1..7).contains(&diff) {
-        // //// Neoffice — the day's name in the interface's words.
-        format!("{} {}", shown_weekday(words, t.date.weekday()), t.time_short(twelve_hour))
+        format!("{} {}", t.date.weekday().short(), t.time_short(twelve_hour))
     } else if t.date.year == n.date.year {
-        // //// Neoffice — the month's name in the interface's words, and the day first where its language puts it first.
-        match words {
-            Some(w) if w.day_first.is_some() => format!("{} {}", t.date.day, shown_month(Some(w), t.date.month)),
-            _ => format!("{} {}", shown_month(words, t.date.month), t.date.day),
-        }
+        format!("{} {}", month_short(t.date.month), t.date.day)
     } else {
-        // //// Neoffice — a numeric date in the interface's order.
-        shown_numeric(words, t.date)
+        t.date.numeric()
     }
 }
 
 /// The date line of an open message: `Sun 10/11/2026 9:30 AM`.
-// //// Neoffice — as above: `dim. 11.10.2026 09:30`.
 pub fn header_label(ts: Timestamp, offset_minutes: i32, twelve_hour: bool) -> String {
-    header_label_in(date_words().as_ref(), ts, offset_minutes, twelve_hour)
-}
-
-fn header_label_in(words: Option<&DateWords>, ts: Timestamp, offset_minutes: i32, twelve_hour: bool) -> String {
     let t = DateTime::from_timestamp(ts, offset_minutes);
-    format!("{} {} {}", shown_weekday(words, t.date.weekday()), shown_numeric(words, t.date), t.time_short(twelve_hour))
-}
-
-// //// Neoffice — the dates people read in the language of the interface, which sets the words; a message's own dates (format_rfc5322) stay English.
-/// How the dates people read are written ([`list_label`], [`header_label`]): the short names of the
-/// days and the months, and a numeric date's order. English until [`set_date_words`] says otherwise.
-/// The dates a message carries ([`format_rfc5322`]) are the protocol's, and never follow it.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct DateWords {
-    /// Monday first: `lun.`.
-    pub weekdays_short: [String; 7],
-    /// January first: `janv.`.
-    pub months_short: [String; 12],
-    /// A numeric date day first, `03.10.2025` with this separator, and a day before its month
-    /// (`3 oct.`); `None`: `10/3/2025` and `Oct 3`, as in English.
-    pub day_first: Option<char>,
-}
-
-// The thread that draws the interface is the one that writes its dates: what it sets is its own (and tests that run
-// side by side in other languages can't change one another's).
-thread_local! {
-    static DATE_WORDS: std::cell::RefCell<Option<DateWords>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Write the dates people read on this thread (the interface's) with these words from now on; `None`: in English.
-pub fn set_date_words(words: Option<DateWords>) {
-    DATE_WORDS.with(|set| set.replace(words));
-}
-
-fn date_words() -> Option<DateWords> {
-    DATE_WORDS.with(|set| set.borrow().clone())
-}
-
-fn shown_weekday(words: Option<&DateWords>, day: Weekday) -> String {
-    words
-        .and_then(|w| w.weekdays_short.get(usize::from(day.index())))
-        .filter(|name| !name.is_empty())
-        .cloned()
-        .unwrap_or_else(|| day.short().to_string())
-}
-
-fn shown_month(words: Option<&DateWords>, month: u8) -> String {
-    words
-        .and_then(|w| w.months_short.get(usize::from(month).wrapping_sub(1)))
-        .filter(|name| !name.is_empty())
-        .cloned()
-        .unwrap_or_else(|| month_short(month).to_string())
-}
-
-// //// Neoffice — as above (Date::medium_shown).
-fn medium_in(words: Option<&DateWords>, date: Date) -> String {
-    match words {
-        Some(w) if w.day_first.is_some() => format!("{} {} {}", date.day, shown_month(Some(w), date.month), date.year),
-        _ => format!("{} {}, {}", shown_month(words, date.month), date.day, date.year),
-    }
-}
-
-fn shown_numeric(words: Option<&DateWords>, date: Date) -> String {
-    match words.and_then(|w| w.day_first) {
-        Some(separator) => format!("{:02}{separator}{:02}{separator}{}", date.day, date.month, date.year),
-        None => date.numeric(),
-    }
+    format!("{} {} {}", t.date.weekday().short(), t.date.numeric(), t.time_short(twelve_hour))
 }
 
 /// A length of time for people: `30 minutes`, `1 hour`, `1.5 hours`, `2 days`.
@@ -710,35 +626,6 @@ mod tests {
         assert_eq!(duration_label(90), "1.5 hours");
         assert_eq!(duration_label(1), "1 minute");
         assert_eq!(duration_label(3 * 24 * 60), "3 days");
-    }
-
-    // //// Neoffice — the dates people read, in the words an interface gives (set_date_words).
-    #[test]
-    fn the_dates_people_read_follow_the_interface_s_words() {
-        let words = DateWords {
-            weekdays_short: ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."].map(String::from),
-            months_short: ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."].map(String::from),
-            day_first: Some('.'),
-        };
-        let today = d(2026, 10, 14); // Wednesday
-        let now = DateTime::new(today, 16, 0, 0).unwrap().to_timestamp(0);
-        let at = |day, h| DateTime::new(day, h, 5, 0).unwrap().to_timestamp(0);
-        let fr = Some(&words);
-        assert_eq!(list_label_in(fr, at(today, 9), now, 0, false), "09:05");
-        assert_eq!(list_label_in(fr, at(d(2026, 10, 10), 15), now, 0, false), "sam. 15:05");
-        assert_eq!(list_label_in(fr, at(d(2026, 3, 3), 15), now, 0, false), "3 mars");
-        assert_eq!(list_label_in(fr, at(d(2025, 3, 3), 15), now, 0, false), "03.03.2025");
-        assert_eq!(header_label_in(fr, at(today, 9), 0, false), "mer. 14.10.2026 09:05");
-        // //// Neoffice — the medium date too (Date::medium_shown).
-        assert_eq!(medium_in(fr, d(2026, 10, 20)), "20 oct. 2026");
-        assert_eq!(medium_in(None, d(2026, 10, 20)), "Oct 20, 2026");
-        // A word left empty is the English one; no words at all is English throughout.
-        let empty = DateWords::default();
-        assert_eq!(list_label_in(Some(&empty), at(d(2026, 10, 10), 15), now, 0, true), "Sat 3:05 PM");
-        assert_eq!(list_label_in(None, at(d(2026, 3, 3), 15), now, 0, true), "Mar 3");
-        assert_eq!(header_label_in(None, at(today, 9), 0, false), "Wed 10/14/2026 09:05");
-        // A message's own date is the protocol's, whatever the interface says.
-        assert!(format_rfc5322(at(today, 9), 0).starts_with("Wed, 14 Oct 2026 09:05"), "{}", format_rfc5322(at(today, 9), 0));
     }
 
     #[test]

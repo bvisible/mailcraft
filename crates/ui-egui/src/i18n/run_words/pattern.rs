@@ -61,7 +61,7 @@ impl Budget {
 
 impl Pattern {
     /// The parts of `template`: a `{name}` whose name is letters, digits and `_` is a slot (as the catalogs read a
-    /// placeholder, `catalog::placeholders`), any other brace is text. Two slots side by side can't be told apart in a
+    /// placeholder, `census::placeholders`), any other brace is text. Two slots side by side can't be told apart in a
     /// line, and a template with no text can't be told from anything: both are refused.
     pub(super) fn parse(template: &'static str) -> Result<Pattern, String> {
         let mut parts = Vec::new();
