@@ -30,7 +30,8 @@
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
 //!   signatures: "https://…",     // where the site writes these mailboxes' signatures: File › Signatures links there
 //!   chrome: "menu",              // optional: the page draws MailCraft's navigation in its own menu (below)
-//!   share: true };               // optional: the page takes a message to share in its team chat (below)
+//!   share: true,                 // optional: the page takes a message to share in its team chat (below)
+//!   attachments: ["drive", "scan", "edit"] };  // optional: what the page does with an attachment (below)
 //! ```
 //!
 //! **A page that takes a message to share in its team chat** (`share: true`, Neoffice's desk, whose chat is Synk):
@@ -52,6 +53,27 @@
 //! ```js
 //! { type: "mailcraft:chat", account: "ada@example.org", email: "<its id on the server>", who: "sender" }  // or "all"
 //! ```
+//!
+//! **A page that does things with an attachment** (`attachments`, a list among `"drive"`, `"scan"` and `"edit"`;
+//! Neoffice's desk, which lists what the person may do there): an attachment's menu in the reading pane offers, after
+//! Save As, Save to Drive… (`"drive"`: the page asks for a folder of its Drive and saves the file there), Send to Scanned
+//! Documents (`"scan"`, for a PDF or a picture only) and Open in NeoDoc, NeoGrille, NeoPrés or NeoPDF (`"edit"`, for a
+//! `.docx`, `.xlsx`, `.pptx` or `.pdf` only: the page saves it in its Drive and opens it in that editor), for an
+//! attachment of a message of a mailbox the page handed over that its server has (mailcraft_ui_egui::host_attachments).
+//! A click posts, as above:
+//!
+//! ```js
+//! { type: "mailcraft:attachment", action: "drive",       // or "scan", "edit"
+//!   account: "ada@example.org", email: "<its id on the server>",
+//!   attachment: { index: 1, count: 3, name: "Invoice 118.pdf", size: 12700, mime: "application/pdf", cid: "" } }
+//! ```
+//!
+//! `attachment` is what MailCraft knows of the file, never its bytes: its rank among the message's attachments as
+//! MailCraft counts them (the pictures of the text among them, an attached message one file) and how many it counts,
+//! its name as the message gives it, its size in bytes, its type and its Content-ID (without angle brackets, empty when
+//! it has none). The page's server reads the message itself and finds the file by what identifies it, the rank only
+//! telling apart files that are otherwise alike, and only when it counts as many. A word MailCraft doesn't know is left
+//! out; absent, or a list of none of them, nothing is offered.
 //!
 //! **A page that draws the navigation in its own menu** (`chrome: "menu"`, Neoffice's desk at `/app/neomail`; absent
 //! or anything else, MailCraft draws everything as it always does, as in Neodesk): MailCraft draws no module bar and,
@@ -382,6 +404,15 @@ pub fn menu() -> bool {
 /// Whether the page takes a message to share in its team chat (`share: true`): anything else, or nothing, is no.
 pub fn share() -> bool {
     handed().and_then(|host| get(&host, "share")).and_then(|share| share.as_bool()) == Some(true)
+}
+
+// //// Neoffice — a page that does things with an attachment (`attachments`): what it offers, read as the window knows it (host_attachments.rs of the window).
+/// What the page does with an attachment (`attachments: ["drive", "scan", "edit"]`), each once, in the window's order:
+/// a word the window doesn't know, or anything that isn't a list of words, is left out.
+pub fn attachments() -> Vec<mailcraft_ui_egui::host_attachments::Action> {
+    let Some(list) = handed().and_then(|host| get(&host, "attachments")).filter(js_sys::Array::is_array) else { return Vec::new() };
+    let words: Vec<String> = js_sys::Array::from(&list).iter().take(8).filter_map(|word| word.as_string()).collect();
+    mailcraft_ui_egui::host_attachments::actions(&words)
 }
 
 /// Where the page's site writes the signatures of the mailboxes it hands over, if it says: File › Signatures links

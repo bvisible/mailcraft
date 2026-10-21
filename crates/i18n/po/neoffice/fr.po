@@ -179,6 +179,9 @@ msgstr "Archiver la note"
 msgid "Archived notes"
 msgstr "Notes archivées"
 
+msgid "Attachment"
+msgstr "Pièce jointe"
+
 msgid "Black"
 msgstr "Noir"
 
@@ -713,6 +716,9 @@ msgstr "Aucune réponse de la page de connexion de Microsoft"
 msgid "Nothing here takes a message to share."
 msgstr "Rien ici ne reçoit de message à partager."
 
+msgid "Nothing here takes an attachment."
+msgstr "Rien ici ne prend de pièce jointe."
+
 msgid "Off"
 msgstr "Désactivé"
 
@@ -725,14 +731,38 @@ msgstr "Une journée concernant {name} a été supprimée ici et {why}, mais le 
 msgid "Online Meeting"
 msgstr "Réunion en ligne"
 
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr "Seul un fichier .docx, .xlsx, .pptx ou .pdf s’ouvre dans un éditeur."
+
 msgid "Only a message of a mailbox the page handed over can be shared."
 msgstr "Seul un message d’une boîte aux lettres transmise par la page peut être partagé."
+
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr "Seul un PDF ou une image va aux scans de documents."
+
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
+msgstr "Seule une pièce jointe d’un message d’une boîte aux lettres que la page a transmise peut lui être remise."
 
 msgid "Only its owner deletes a note: this one was shared with you"
 msgstr "Seul son propriétaire peut supprimer une note : celle-ci a été partagée avec vous"
 
 msgid "Only on this computer: not in your Outlook calendar"
 msgstr "Uniquement sur cet ordinateur : pas dans votre calendrier Outlook"
+
+msgid "Open Attachment in Its Editor"
+msgstr "Ouvrir la pièce jointe dans son éditeur"
+
+msgid "Open in NeoDoc"
+msgstr "Ouvrir dans NeoDoc"
+
+msgid "Open in NeoGrille"
+msgstr "Ouvrir dans NeoGrille"
+
+msgid "Open in NeoPDF"
+msgstr "Ouvrir dans NeoPDF"
+
+msgid "Open in NeoPrés"
+msgstr "Ouvrir dans NeoPrés"
 
 msgid "Open Note"
 msgstr "Ouvrir la note"
@@ -818,6 +848,12 @@ msgstr "Le redémarrage pour mettre à jour relève de votre organisation."
 msgid "Right"
 msgstr "À droite"
 
+msgid "Save Attachment to Drive"
+msgstr "Enregistrer la pièce jointe dans le Drive"
+
+msgid "Save to Drive…"
+msgstr "Enregistrer dans le Drive…"
+
 msgid "Saved"
 msgstr "Enregistrée"
 
@@ -835,6 +871,12 @@ msgstr "Sélectionnez d’abord une note"
 
 msgid "Select Note"
 msgstr "Sélectionner une note"
+
+msgid "Send Attachment to Scanned Documents"
+msgstr "Envoyer la pièce jointe aux scans de documents"
+
+msgid "Send to Scanned Documents"
+msgstr "Envoyer aux scans de documents"
 
 msgid "Send/Receive with JMAP"
 msgstr "Envoyer / recevoir avec JMAP"
@@ -1111,6 +1153,9 @@ msgstr "L’autre horaire proposé pour {name} n’a pas été envoyé : cela é
 
 msgid "The owner hasn't allowed update checks."
 msgstr "Votre organisation n’a pas autorisé la recherche de mises à jour."
+
+msgid "The page doesn't offer this for an attachment."
+msgstr "La page ne propose pas cela pour une pièce jointe."
 
 msgid "the page is out of date. Reload it and try again."
 msgstr "la page n’est plus à jour. Actualisez-la et réessayez."
@@ -1498,6 +1543,9 @@ msgstr "ce serveur JMAP ne propose pas de courrier"
 
 msgid "This mailbox isn't one the page handed over."
 msgstr "Cette boîte aux lettres n’est pas l’une de celles transmises par la page."
+
+msgid "This message has no such attachment."
+msgstr "Ce message n’a pas cette pièce jointe."
 
 msgid "This message isn't on its server yet."
 msgstr "Ce message n’est pas encore sur son serveur."

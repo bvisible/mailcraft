@@ -300,6 +300,15 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
             post: Box::new(crate::host_menu::tell),
         });
     }
+    // //// Neoffice — a page that does things with an attachment (host.rs `attachments`): Save to Drive…, Send to Scanned Documents and Open in its editor name an attachment of one of these mailboxes to it, by its message's mailbox and server id and what identifies the file (host_attachments.rs of the window).
+    let offered = crate::host::attachments();
+    if !offered.is_empty() {
+        services.attachments = Some(mailcraft_ui_egui::host_attachments::Attachments {
+            mailboxes: accounts.iter().map(|a| a.email.clone()).collect(),
+            actions: offered,
+            post: Box::new(crate::host_menu::tell),
+        });
+    }
     // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).
     let runners = crate::hosted::Runners {
         jmap: crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()),

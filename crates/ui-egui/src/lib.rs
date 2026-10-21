@@ -68,6 +68,8 @@ pub mod files;
 pub mod forms;
 pub mod graph_fetch;
 mod graph_switch;
+// //// Neoffice — a hosting page that files a message's attachment: its Drive, its scanned documents, an editor.
+pub mod host_attachments;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
 // //// Neoffice — a hosting page that takes a message to share in its team chat (Synk, in Neoffice's desk).
@@ -217,6 +219,12 @@ pub struct Services {
     /// over, and how a message is handed to it, by its mailbox and its id on the server alone ([`host_share`]). Absent
     /// everywhere else: nothing is offered.
     pub share: Option<host_share::Share>,
+    // //// Neoffice — a hosting page that files a message's attachment: Save to Drive…, Send to Scanned Documents and Open in its editor name it to the page by its message's mailbox and server id and what identifies the file (host_attachments.rs).
+    /// Web, in a hosting page that does things with a message's attachment (`attachments: ["drive", "scan", "edit"]`):
+    /// the mailboxes it handed over, what it offers, and how an attachment is named to it, by its message's mailbox and
+    /// id on the server and what identifies the file, never its bytes ([`host_attachments`]). Absent everywhere else:
+    /// nothing is offered.
+    pub attachments: Option<host_attachments::Attachments>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
@@ -809,6 +817,25 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Chat with Everyone in Synk",
         "Home › Respond",
         r#"{} — as ui.chatWithSender, with everyone of the message: its sender and its recipients. Answers {"chat": "all"}"#,
+    ),
+    // //// Neoffice — an attachment named to the hosting page, for its Drive, its scanned documents or an editor (host_attachments.rs): the owner's click only.
+    (
+        "ui.saveAttachmentToDrive",
+        "Save Attachment to Drive",
+        "Message › Attachment",
+        r#"{"id"?: number (default: the message in the reading pane), "index": number (its attachment, from 0)} — names the attachment to the hosting page, for the page to ask for a folder of its Drive and save the file there: the message by its mailbox's address and its id on the server, the file by its rank, name, size, type and Content-ID, never its bytes; only a message of a mailbox the page handed over, that its server has, and only where the page offers it. Answers {"handed": "drive"}"#,
+    ),
+    (
+        "ui.sendAttachmentToScans",
+        "Send Attachment to Scanned Documents",
+        "Message › Attachment",
+        r#"{"id"?: number, "index": number} — as ui.saveAttachmentToDrive, for the page to send a PDF or a picture to its scanned documents. Answers {"handed": "scan"}"#,
+    ),
+    (
+        "ui.openAttachmentInEditor",
+        "Open Attachment in Its Editor",
+        "Message › Attachment",
+        r#"{"id"?: number, "index": number} — as ui.saveAttachmentToDrive, for the page to save a .docx, .xlsx, .pptx or .pdf in its Drive and open it in its editor (NeoDoc, NeoGrille, NeoPrés, NeoPDF). Answers {"handed": "edit"}"#,
     ),
     ("ui.focusSearch", "Search", "Search", "{}"),
     (
@@ -1509,6 +1536,8 @@ impl MailApp {
             None if id == host_share::COMMAND => host_share::enabled(self),
             // //// Neoffice — Chat in Synk, on the same messages (host_share.rs).
             None if id == host_share::CHAT_SENDER || id == host_share::CHAT_ALL => host_share::enabled(self),
+            // //// Neoffice — an attachment named to the hosting page: it offers what the command does (host_attachments.rs).
+            None if host_attachments::is_command(id) => host_attachments::enabled(self, id),
             None if id == "ui.copySelection" => self.text_selection.any(),
             // //// Neoffice — Import is File › Import's (`kept_here`: refused where nothing is kept).
             None if id == "ui.import" => self.session.enabled("file.import"),
@@ -1770,6 +1799,8 @@ impl MailApp {
             // //// Neoffice — Chat in Synk: the conversation the hosting page opens, with the sender or everyone (host_share.rs).
             host_share::CHAT_SENDER => host_share::chat(self, false),
             host_share::CHAT_ALL => host_share::chat(self, true),
+            // //// Neoffice — an attachment named to the hosting page, for its Drive, its scanned documents or an editor (host_attachments.rs).
+            command if host_attachments::is_command(command) => host_attachments::run(self, command, p),
             "ui.focusSearch" => {
                 self.search_focus = true;
                 self.ui.backstage = false;

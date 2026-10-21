@@ -1061,6 +1061,11 @@ msgid "Attach File"
 msgstr ""
 
 #. ribbon location
+#: crates/ui-egui/src/lib.rs
+msgid "Attachment"
+msgstr ""
+
+#. ribbon location
 #: crates/engine/src/cmd/mail.rs
 msgid "Attachments"
 msgstr ""
@@ -4886,6 +4891,11 @@ msgid "Nothing here takes a message to share."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Nothing here takes an attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 msgid "Nothing here yet."
 msgstr ""
@@ -5046,6 +5056,16 @@ msgid "Online meeting"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/windows.rs
 msgid "Only a meeting you organize has a Scheduling Assistant"
 msgstr ""
@@ -5053,6 +5073,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/host_share.rs
 msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
 msgstr ""
 
 #. interface, what a command says
@@ -5102,6 +5127,11 @@ msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
+msgid "Open Attachment in Its Editor"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
 msgid "Open Dialog"
 msgstr ""
 
@@ -5143,6 +5173,26 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Open a mailbox of your organisation that you were given Full Access to, such as a team's, under this account"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoDoc"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoGrille"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPDF"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPrés"
 msgstr ""
 
 #. interface
@@ -6022,6 +6072,11 @@ msgstr ""
 msgid "Save Attachment"
 msgstr ""
 
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Save Attachment to Drive"
+msgstr ""
+
 #. command label, interface, ribbon location
 #: crates/engine/src/cmd/file.rs crates/ui-egui/src/backstage.rs
 msgid "Save Calendar"
@@ -6070,6 +6125,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Save out"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Save to Drive…"
 msgstr ""
 
 #. interface
@@ -6280,7 +6340,7 @@ msgid "Select a meeting first"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 msgid "Select a message first"
 msgstr ""
 
@@ -6317,6 +6377,11 @@ msgstr ""
 #. command label, interface
 #: crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/reading.rs
 msgid "Send Again"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Send Attachment to Scanned Documents"
 msgstr ""
 
 #. interface
@@ -6372,6 +6437,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "Send the update to them? The account's server sends them the change by mail."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Send to Scanned Documents"
 msgstr ""
 
 #. interface
@@ -7595,6 +7665,11 @@ msgid "The other time proposed for {name} was not sent: that writes to its organ
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "The page doesn't offer this for an attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/host_menu.rs
 msgid "The page's command has parameters it doesn't take."
 msgstr ""
@@ -8295,6 +8370,11 @@ msgid "This message doesn't propose another time for a meeting."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "This message has no such attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/view.rs
 msgid "This message has no text."
 msgstr ""
@@ -8310,7 +8390,7 @@ msgid "This message isn't an invitation that can be answered."
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/host_share.rs
+#: crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs
 msgid "This message isn't on its server yet."
 msgstr ""
 

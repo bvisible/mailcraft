@@ -1241,6 +1241,11 @@ msgid "Attach File"
 msgstr "Adjuntar archivo"
 
 #. ribbon location
+#: crates/ui-egui/src/lib.rs
+msgid "Attachment"
+msgstr ""
+
+#. ribbon location
 #: crates/engine/src/cmd/mail.rs
 #, fuzzy
 msgid "Attachments"
@@ -5769,6 +5774,11 @@ msgid "Nothing here takes a message to share."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Nothing here takes an attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "Nothing here yet."
@@ -5959,6 +5969,16 @@ msgid "Online meeting"
 msgstr "Reunión en línea"
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "Only a meeting you organize has a Scheduling Assistant"
@@ -5967,6 +5987,11 @@ msgstr "Solo las reuniones que organiza usted tienen Asistente para programació
 #. interface
 #: crates/ui-egui/src/host_share.rs
 msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
 msgstr ""
 
 #. interface, what a command says
@@ -6024,6 +6049,11 @@ msgstr "Abrir datos adjuntos"
 
 #. command label
 #: crates/ui-egui/src/lib.rs
+msgid "Open Attachment in Its Editor"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Open Dialog"
 msgstr "Abrir cuadro de diálogo"
@@ -6073,6 +6103,26 @@ msgstr "Abrir resultado del servidor"
 #, fuzzy
 msgid "Open a mailbox of your organisation that you were given Full Access to, such as a team's, under this account"
 msgstr "Abrir en esta cuenta un buzón de su organización al que se le haya dado Acceso total, como el de un equipo"
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoDoc"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoGrille"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPDF"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPrés"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -7135,6 +7185,11 @@ msgstr "Guardar como…"
 msgid "Save Attachment"
 msgstr "Guardar datos adjuntos"
 
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Save Attachment to Drive"
+msgstr ""
+
 #. command label, interface, ribbon location
 #: crates/engine/src/cmd/file.rs crates/ui-egui/src/backstage.rs
 #, fuzzy
@@ -7194,6 +7249,11 @@ msgstr "Guardar borrador"
 #, fuzzy
 msgid "Save out"
 msgstr "Extraer"
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Save to Drive…"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/notes_view.rs
@@ -7442,7 +7502,7 @@ msgid "Select a meeting first"
 msgstr "Seleccione primero una reunión"
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Select a message first"
 msgstr "Seleccione primero un mensaje"
@@ -7487,6 +7547,11 @@ msgstr "Enviar y recibir"
 #, fuzzy
 msgid "Send Again"
 msgstr "Volver a enviar"
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Send Attachment to Scanned Documents"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -7553,6 +7618,11 @@ msgstr "¿Enviarles la invitación? El servidor de la cuenta la envía por corre
 #, fuzzy
 msgid "Send the update to them? The account's server sends them the change by mail."
 msgstr "¿Enviarles la actualización? El servidor de la cuenta les envía el cambio por correo."
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Send to Scanned Documents"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
@@ -8991,6 +9061,11 @@ msgid "The other time proposed for {name} was not sent: that writes to its organ
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "The page doesn't offer this for an attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/host_menu.rs
 msgid "The page's command has parameters it doesn't take."
 msgstr ""
@@ -9773,6 +9848,11 @@ msgid "This message doesn't propose another time for a meeting."
 msgstr "Este mensaje no propone otra hora para una reunión."
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "This message has no such attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/view.rs
 #, fuzzy
 msgid "This message has no text."
@@ -9791,7 +9871,7 @@ msgid "This message isn't an invitation that can be answered."
 msgstr "Este mensaje no es una invitación que se pueda responder."
 
 #. interface
-#: crates/ui-egui/src/host_share.rs
+#: crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs
 msgid "This message isn't on its server yet."
 msgstr ""
 

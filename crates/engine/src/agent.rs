@@ -403,6 +403,10 @@ const NEVER: &[&str] = &[
     // //// Neoffice — Chat in Synk opens a conversation with other people about a message: the owner's own click only (ui-egui host_share.rs).
     "ui.chatWithSender",
     "ui.chatWithEveryone",
+    // //// Neoffice — an attachment named to the hosting page goes into its Drive or its scanned documents, for other people to read it: the owner's own click only (ui-egui host_attachments.rs).
+    "ui.saveAttachmentToDrive",
+    "ui.sendAttachmentToScans",
+    "ui.openAttachmentInEditor",
     // A search of the server goes only on the owner's own click (R6.2).
     "sync.graphSearchRequest",
     "sync.applyGraphSearch",

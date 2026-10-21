@@ -466,6 +466,8 @@ fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
             resp.context_menu(|ui| {
                 crate::widgets::mi(ui, app, "Open", "mail.openAttachment", json!({"id": m.id, "index": index}));
                 crate::widgets::mi(ui, app, "Save As…", "mail.saveAttachment", json!({"id": m.id, "index": index}));
+                // //// Neoffice — what the hosting page does with an attachment: its Drive, its scanned documents, an editor (host_attachments.rs).
+                crate::host_attachments::menu(ui, app, m, index, a);
                 crate::widgets::mi(ui, app, "Remove Attachment", "mail.removeAttachment", json!({"id": m.id, "index": index}));
             });
         }

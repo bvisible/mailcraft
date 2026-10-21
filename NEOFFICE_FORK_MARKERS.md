@@ -238,6 +238,21 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   page finds or makes the conversation and opens it in Synk (`host_share.rs`, `chat` and `menu`; the menu's
   `Menu::HostChat` in `ribbon.rs`, its drawing `chatSynk` in `icons.rs`, the commands kept from agents in
   `crates/engine/src/agent.rs`, `NEVER`).
+- A hosting page that files a message's attachment (Neoffice's desk at `/app/neomail`, which hands `attachments`, a
+  list among `"drive"`, `"scan"` and `"edit"`, of what the person may do there): an attachment's menu in the reading
+  pane gains, after Save As, Save to Drive…, Send to Scanned Documents (a PDF or a picture only) and Open in NeoDoc,
+  NeoGrille, NeoPrés or NeoPDF (a `.docx`, `.xlsx`, `.pptx` or `.pdf` only; product names, never translated). Each
+  posts `{type: "mailcraft:attachment", action, account, email, attachment: {index, count, name, size, mime, cid}}`
+  to `window.parent` on the page's own origin, only on the person's click and only for a message of a mailbox the page
+  handed over that its server has: what the window knows of the file, never its bytes; the page's server reads the
+  message itself and finds the file by its Content-ID, then its name, size and type, the rank only telling apart files
+  that are otherwise alike, and only when the server counts as many attachments as the window (`count`)
+  (`crates/ui-egui/src/host_attachments.rs`, the window commands `ui.saveAttachmentToDrive`,
+  `ui.sendAttachmentToScans` and `ui.openAttachmentInEditor`, tested with its window in `host_attachments/tests.rs`;
+  `Services::attachments` and the commands' hunks in `lib.rs`, the menu's call in `reading.rs`, the commands kept from
+  agents in `crates/engine/src/agent.rs`, `NEVER`). The browser's part is `apps/mailcraft-web/src/host.rs`
+  (`attachments`, and the contract in its comment) and `web.rs`; the French lines are in
+  `crates/i18n/po/neoffice/fr.po`. Without `attachments` nothing is offered and nothing changes on screen.
 - This file.
 
 ## What cannot carry a comment
