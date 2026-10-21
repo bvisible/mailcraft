@@ -145,7 +145,8 @@ impl eframe::App for WebShell {
             crate::host_dirty::tell(self.app.unsent_work());
         }
         // //// Neoffice — a page that draws the navigation in its own menu is told where the window is, and its menu's commands are run (host_menu.rs).
-        if self.app.services.host_menu.is_some() {
+        // //// Neoffice — and for modules the page draws itself (host_modules.rs of the window), whose messages it hears.
+        if self.app.services.host_menu.is_some() || self.app.services.modules.is_some() {
             crate::host_menu::frame(&mut self.app, ctx);
         }
         // Interface settings: stored when they change, checked every couple of seconds.
@@ -293,6 +294,14 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
         crate::host_menu::listen(ctx.clone());
     }
     // //// Neoffice — a page that takes a message to share in its team chat (host.rs `share`): Share in Synk and Chat in Synk hand it the message of one of these mailboxes, by its mailbox and its id on the server (host_share.rs of the window).
+    // //// Neoffice — modules the page draws itself (host.rs `modules`): their buttons in the module bar, the window's place left them, and the page's messages heard (host_modules.rs of the window).
+    let modules = crate::host::modules();
+    if !modules.is_empty() {
+        services.modules = Some(mailcraft_ui_egui::host_modules::Modules::new(&modules, Box::new(crate::host_menu::tell)));
+        if services.host_menu.is_none() {
+            crate::host_menu::listen(ctx.clone());
+        }
+    }
     if crate::host::share() {
         services.share = Some(mailcraft_ui_egui::host_share::Share {
             mailboxes: accounts.iter().map(|a| a.email.clone()).collect(),

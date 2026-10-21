@@ -253,6 +253,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   agents in `crates/engine/src/agent.rs`, `NEVER`). The browser's part is `apps/mailcraft-web/src/host.rs`
   (`attachments`, and the contract in its comment) and `web.rs`; the French lines are in
   `crates/i18n/po/neoffice/fr.po`. Without `attachments` nothing is offered and nothing changes on screen.
+- A hosting page that draws modules of its own (Neodesk's NeoMail window, which hands `modules` and draws Synk, its
+  chat, itself): a button each in the module bar after Calendar, with the badge the page gives
+  (`mailcraft:module-badge`); chosen, the window keeps its title bar, module bar and status bar, leaves the rest empty
+  and tells the page where that is (`mailcraft:module {id, rect}`), or that there is nothing to draw while a window, a
+  menu or Backstage of its own stands over it, and a view of its own brings it back (`crates/ui-egui/src/host_modules.rs`
+  and its tests, `Services::modules`, the layout's and `run`'s hunks in `lib.rs`, the button's in `nav.rs`). The
+  browser's part: `apps/mailcraft-web/src/host.rs` (`modules`, the contract in its comment), `web.rs`, and
+  `host_menu.rs` (the page's messages heard). Without `modules` nothing changes.
 - This file.
 
 ## What cannot carry a comment

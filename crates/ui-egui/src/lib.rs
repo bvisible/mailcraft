@@ -72,6 +72,8 @@ mod graph_switch;
 pub mod host_attachments;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
+// //// Neoffice — modules a hosting page draws itself, beside the window's own (Synk, in Neodesk's NeoMail window).
+pub mod host_modules;
 // //// Neoffice — a hosting page that takes a message to share in its team chat (Synk, in Neoffice's desk).
 pub mod host_share;
 pub mod i18n;
@@ -225,6 +227,10 @@ pub struct Services {
     /// id on the server and what identifies the file, never its bytes ([`host_attachments`]). Absent everywhere else:
     /// nothing is offered.
     pub attachments: Option<host_attachments::Attachments>,
+    // //// Neoffice — modules a hosting page draws itself: a button each in the module bar, the window's place left them (host_modules.rs).
+    /// Web, in a hosting page that draws modules of its own (`modules`, Neodesk's Synk): their buttons in the module
+    /// bar after Calendar, the one in view, their badges ([`host_modules`]). Absent everywhere else.
+    pub modules: Option<host_modules::Modules>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
@@ -1579,6 +1585,10 @@ impl MailApp {
         }
         // Check for Updates pressed by the owner checks whether the daily check is on or not.
         // So are Restart to update and Go back, which are the owner's clicks alone.
+        // //// Neoffice — a module of the window's own brings it back in place of the hosting page's (host_modules.rs).
+        if id.starts_with("view.") {
+            host_modules::leave(self);
+        }
         let r = match id {
             updates::CHECK => self.check_for_updates(true),
             updates::RESTART => self.restart_to_update(),
@@ -3595,15 +3605,20 @@ impl MailApp {
             if self.services.host_menu.is_none() {
                 nav::module_bar(self, ui);
             }
-            ribbon::show(self, ui);
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| match self.session.view.module {
-                mailcraft_engine::Module::Mail => mail_view::show(self, ui),
-                mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),
-                mailcraft_engine::Module::People => people_view::show(self, ui),
-                mailcraft_engine::Module::Tasks => tasks_view::show(self, ui),
-                // //// Neoffice — Notes' module (notes_view.rs).
-                mailcraft_engine::Module::Notes => notes_view::show(self, ui),
-            });
+            // //// Neoffice — a module of the hosting page's in view: no ribbon, its place left empty for the page to draw it (host_modules.rs).
+            if host_modules::shown(self) {
+                host_modules::place(self, ui);
+            } else {
+                ribbon::show(self, ui);
+                egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| match self.session.view.module {
+                    mailcraft_engine::Module::Mail => mail_view::show(self, ui),
+                    mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),
+                    mailcraft_engine::Module::People => people_view::show(self, ui),
+                    mailcraft_engine::Module::Tasks => tasks_view::show(self, ui),
+                    // //// Neoffice — Notes' module (notes_view.rs).
+                    mailcraft_engine::Module::Notes => notes_view::show(self, ui),
+                });
+            }
         }
         sync_panel::show(self, &ctx);
         dialogs::show(self, &ctx);
@@ -3612,6 +3627,8 @@ impl MailApp {
         reminders::show(self, &ctx);
         // Over everything: what an agent wants that needs the owner.
         agent_gate::show(self, &ctx);
+        // //// Neoffice — the hosting page told where to draw its module in view, or that something of the window's stands over it (host_modules.rs).
+        host_modules::settle(self, &ctx);
         self.by_hand = false;
         self.refusal();
         let title = format!("{} - MailCraft", self.title_stem());

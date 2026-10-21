@@ -73,7 +73,8 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
             let (r, resp) = ui.allocate_exact_size(vec2(RAIL_W, RAIL_PITCH), Sense::click());
             // //// Neoffice — where each module's button is, for the control channel and the tests (which modules are offered).
             app.hit.add("module", m as u64, r);
-            let active = app.session.view.module == m;
+            // //// Neoffice — not while a module of the hosting page's is in view (host_modules.rs).
+            let active = app.session.view.module == m && !crate::host_modules::shown(app);
             if active {
                 // The module in view: a bar at the window's edge, and its icon in the accent.
                 let bar = Rect::from_min_size(pos2(r.min.x + 6.0, r.center().y - 16.0), vec2(2.0, 32.0));
@@ -87,6 +88,10 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
             let sc = crate::widgets::shortcut_text(app, id);
             if resp.on_hover_text(format!("{} ({sc})", tl!(m.label()))).clicked() {
                 let _ = app.run(id, json!({}));
+            }
+            // //// Neoffice — the modules a hosting page draws itself, after Calendar (host_modules.rs).
+            if m == Module::Calendar {
+                crate::host_modules::bar(app, ui, RAIL_W, RAIL_PITCH);
             }
         }
     });

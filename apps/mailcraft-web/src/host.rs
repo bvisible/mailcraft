@@ -31,7 +31,8 @@
 //!   signatures: "https://…",     // where the site writes these mailboxes' signatures: File › Signatures links there
 //!   chrome: "menu",              // optional: the page draws MailCraft's navigation in its own menu (below)
 //!   share: true,                 // optional: the page takes a message to share in its team chat (below)
-//!   attachments: ["drive", "scan", "edit"] };  // optional: what the page does with an attachment (below)
+//!   attachments: ["drive", "scan", "edit"],  // optional: what the page does with an attachment (below)
+//!   modules: [{ id: "synk", title: "Synk", icon: "chatSynk" }] };  // optional: modules the page draws (below)
 //! ```
 //!
 //! **A page that takes a message to share in its team chat** (`share: true`, Neoffice's desk, whose chat is Synk):
@@ -74,6 +75,23 @@
 //! it has none). The page's server reads the message itself and finds the file by what identifies it, the rank only
 //! telling apart files that are otherwise alike, and only when it counts as many. A word MailCraft doesn't know is left
 //! out; absent, or a list of none of them, nothing is offered.
+//!
+//! **A page that draws modules of its own** (`modules`, Neodesk's NeoMail window, which draws Synk, its chat: at most
+//! four, each an `id` of lower-case letters, digits and hyphens, a `title`, an `icon` among MailCraft's own or its
+//! chat icon; mailcraft_ui_egui::host_modules): each has a button in the module bar after Calendar's. Chosen,
+//! MailCraft keeps its title bar, its module bar and its status bar and leaves the rest of its page empty, and tells
+//! the page, at each change, where that is in CSS pixels of its own page, or that the page has nothing to draw there
+//! (`rect: null`) while something of MailCraft's stands over it (a dialog, a menu, Backstage), or that its own module
+//! is back (`id: null`). The page gives a button its badge, and may bring its module into view (a conversation it
+//! opens there); MailCraft takes them from `window.parent` on its own origin only:
+//!
+//! ```js
+//! { type: "mailcraft:module", id: "synk", rect: { x: 48, y: 38, width: 1132, height: 732 } }  // to the page
+//! { type: "mailcraft:module", id: "synk", rect: null }                // something of MailCraft's over its place
+//! { type: "mailcraft:module", id: null, rect: null }                  // MailCraft's own module back
+//! { type: "mailcraft:module-badge", id: "synk", badge: 3 }            // from the page: a number, a short text, or null
+//! { type: "mailcraft:module-show", id: "synk" }                       // from the page: its module into view
+//! ```
 //!
 //! **A page that draws the navigation in its own menu** (`chrome: "menu"`, Neoffice's desk at `/app/neomail`; absent
 //! or anything else, MailCraft draws everything as it always does, as in Neodesk): MailCraft draws no module bar and,
@@ -413,6 +431,19 @@ pub fn attachments() -> Vec<mailcraft_ui_egui::host_attachments::Action> {
     let Some(list) = handed().and_then(|host| get(&host, "attachments")).filter(js_sys::Array::is_array) else { return Vec::new() };
     let words: Vec<String> = js_sys::Array::from(&list).iter().take(8).filter_map(|word| word.as_string()).collect();
     mailcraft_ui_egui::host_attachments::actions(&words)
+}
+
+// //// Neoffice — the modules a page draws itself, in the window's place (Neodesk's Synk: host_modules.rs of the window).
+/// The modules the page draws itself (`modules`: `[{id, title, icon?}]`), as JSON for the window to sort out
+/// (mailcraft_ui_egui::host_modules::Modules::new); none when it hands none.
+pub fn modules() -> Vec<serde_json::Value> {
+    let Some(list) = handed().and_then(|host| get(&host, "modules")) else { return Vec::new() };
+    js_sys::JSON::stringify(&list)
+        .ok()
+        .and_then(|text| text.as_string())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|value| value.as_array().cloned())
+        .unwrap_or_default()
 }
 
 /// Where the page's site writes the signatures of the mailboxes it hands over, if it says: File › Signatures links

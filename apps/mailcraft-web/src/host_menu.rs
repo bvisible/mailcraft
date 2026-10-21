@@ -159,6 +159,10 @@ mod page {
             post(&host_menu::ready(&version()));
         }
         while let Some(text) = WAITING.with(|waiting| waiting.borrow_mut().pop_front()) {
+            // //// Neoffice — a message for the modules the page draws itself (a badge, a module into view: host_modules.rs of the window).
+            if mailcraft_ui_egui::host_modules::hear(app, &text) {
+                continue;
+            }
             if let Some(done) = host_menu::answer(app, &text) {
                 post(&done);
             }
