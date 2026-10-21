@@ -401,6 +401,79 @@ fn a_new_contact_the_server_has_no_room_for_reads_in_french() {
     }
 }
 
+/// What a JMAP account's calendar and address book job says went wrong, what became of a change of an event or a
+/// contact, and the engine's refusals of them: in French, the sentences the engine puts after a line, the words for an
+/// item with no name and the parts of an event included.
+#[test]
+fn the_calendar_and_contact_lines_read_in_french() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
+    let t = |english: &str| t_in(french(), english).to_string();
+    // A job's line, round a reason of its own.
+    assert_eq!(
+        fr("Couldn't list the calendars on the server: the answer has no list of calendars"),
+        Some(fmt(&t("Couldn't list the calendars on the server: {why}"), &[("why", &t("the answer has no list of calendars"))]))
+    );
+    assert_eq!(
+        fr("Couldn't read 3 contacts of the address books: the server's answer did not have them"),
+        Some(fmt(&t("Couldn't read {n} contacts of the address books: {why}"), &[("n", "3"), ("why", &t("the server's answer did not have them"))]))
+    );
+    // What became of a change, with the sentence the engine puts after it, read off its end.
+    let line = "\"Gus Hale\" was not sent to the server: its address book can't be changed any more. It stays here until this tab is closed: copy what you need of it.";
+    let head = fmt(&t("{name} was not sent to the server: its address book can't be changed any more."), &[("name", "\"Gus Hale\"")]);
+    assert_eq!(fr(line), Some(format!("{head} {}", t("It stays here until this tab is closed: copy what you need of it."))));
+    // Two of them.
+    let line = "A contact was made on the server, which doesn't say what it calls it. It is kept on this computer only. The next read brings the server's card too.";
+    let read = fr(line).expect("read");
+    assert!(!read.contains("It is kept") && !read.contains("The next read") && read.starts_with(&t("A contact")), "{read}");
+    // A refusal with the server's own words in brackets: the frame in French, the words as they came.
+    let read = fr("The server wouldn't take the change to \"Lunch\" (forbidden: the desk says no). It was put back as it was.").expect("read");
+    assert_eq!(
+        read,
+        fmt(
+            &t("The server wouldn't take the change to {name} ({why}). It was put back as it was."),
+            &[("name", "\"Lunch\""), ("why", "forbidden: the desk says no")]
+        )
+    );
+    // An event with no name, and what of it the server shows otherwise.
+    let read = fr(
+        "The server took the change to an event but has its time and its title otherwise than it was sent. It is shown here as the server has it.",
+    )
+    .expect("read");
+    for english in ["an event", "its time", "its title"] {
+        assert!(read.contains(&t(english)) && !read.contains(english), "{english}: {read}");
+    }
+    // The engine's refusals, and what a greyed control says.
+    for refusal in [
+        "Your rights do not let you delete this contact",
+        "This calendar's server keeps no categories, importance, response options or proposed times.",
+        "This page keeps no tasks: they would be gone at the next visit",
+    ] {
+        assert_eq!(fr(refusal), Some(t(refusal)));
+        assert_ne!(t(refusal), refusal, "{refusal} has French");
+    }
+    assert_eq!(
+        fr("not available: Your rights do not let you change this contact"),
+        Some(fmt(&t("not available: {why}"), &[("why", &t("Your rights do not let you change this contact"))]))
+    );
+    // A reason after the window's own words.
+    crate::i18n::set_current(french());
+    let reason = super::reason("the server no longer has the series", &mb).into_owned();
+    crate::i18n::set_current(Lang::English);
+    assert_eq!(reason, t("the server no longer has the series"));
+}
+
+/// A line that only looks as though it ends with one of the engine's sentences is read whole, or left as it came.
+#[test]
+fn a_line_is_read_off_its_end_only_where_what_comes_before_reads_too() {
+    let mb = mailbox();
+    let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
+    assert_eq!(fr("Something nobody wrote. It is back in the calendar."), None);
+    // Many of them, more than are read off: left as it came.
+    let many = format!("The server wouldn't take \"X\".{}", " It is back in the calendar.".repeat(5));
+    assert!(fr(&many).is_none_or(|read| read.contains("It is back")), "only so many are read off");
+}
+
 // ---------------------------------------------------------------------------------------------
 // The census: the table against the crates' source
 
@@ -419,6 +492,14 @@ const CENSUS: &[&str] = &[
     "crates/model/src/jmap_server.rs",
     "crates/engine/src/cmd/notes/words.rs",
     "crates/jmap/src/pim/notes.rs",
+    "crates/jmap/src/pim.rs",
+    "crates/jmap/src/pim/calendars.rs",
+    "crates/jmap/src/pim/contacts.rs",
+    "crates/jmap/src/pim/push.rs",
+    "crates/jmap/src/pim/contacts/push.rs",
+    "crates/jmap/src/pim/write.rs",
+    "crates/engine/src/cmd/remote_contacts/written.rs",
+    "crates/engine/src/cmd/kept_here.rs",
 ];
 
 /// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.
@@ -456,6 +537,21 @@ const NOT_READ: &[(&str, &str)] = &[
     ("{} messages were moved out of their account and the server's copies removed: that can't be undone here.", "as above"),
     ("the server's answer said nothing of it", "a note change's words, which a line about the note shows as they came"),
     ("the version its words were read at isn't known yet", "as above: a change that waits for a read"),
+    (
+        "an online meeting is the whole series': it is not asked for one occurrence",
+        "for the record: the person is told in words of their own (`remote::unmade_words`)",
+    ),
+    ("the server no longer makes online meetings", "as above"),
+    ("its account is no longer in the mailbox", "why a waiting change of a contact is given up: words for the log"),
+    ("the contact it is about is no longer in the contacts", "as above"),
+    ("it doesn't match the contact it names", "as above"),
+    ("it doesn't say which contact it is about", "as above"),
+    ("the contact it deletes is still in the contacts", "as above"),
+    ("the contact's address book can't be changed any more", "as above"),
+    ("another change about the same contact waits before it", "as above"),
+    ("too many changes were waiting", "as above"),
+    ("the server kept failing with it", "as above"),
+    ("`result` is required", "a command's parameters, for a host or an agent"),
 ];
 
 /// The text between the placeholders of a template or of a format string (`{}`, `{0}`, `{why}`, `{:?}`), each with text
@@ -512,6 +608,20 @@ fn made_of(fragment: &str, literals: &[Literal]) -> Option<usize> {
     Some(longest)
 }
 
+/// Whether a row has `pieces` in order; or one has the first of them and the rest are sentences of [`Family::Tail`], each
+/// a row's whole, which the engine writes after a line (`{name} was made… .{kept} The next read…`).
+fn read_by_rows(pieces: &[&str]) -> bool {
+    let tail = |piece: &&str| {
+        let sentence = piece.trim_start_matches(|c: char| c == '.' || c.is_whitespace()).trim_end();
+        super::rows().iter().any(|row| row.family == Family::Tail && row.english == sentence)
+    };
+    (0..=pieces.len()).rev().any(|k| {
+        let (head, rest) = pieces.split_at(k);
+        let head_read = head.is_empty() || super::rows().iter().any(|row| row.family != Family::Tail && has_in_order(row.english, head));
+        head_read && rest.iter().all(tail)
+    })
+}
+
 #[test]
 fn every_row_is_written_by_the_file_it_names() {
     for row in super::rows() {
@@ -547,7 +657,7 @@ fn every_sentence_of_the_census_has_a_row() {
             }
             let pieces = fragments(text);
             assert!(
-                super::rows().iter().any(|row| has_in_order(row.english, &pieces)),
+                read_by_rows(&pieces),
                 "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_READ why no row reads it",
                 literal.line
             );

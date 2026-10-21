@@ -13,6 +13,11 @@
 //! translated, and a line that no row reads is shown as it came.
 //!
 //! What a placeholder may hold follows its name ([`Kind`]); the families and the rows of each are in [`rows`].
+//!
+//! A line may end with sentences that the engine puts after many of its lines (`It is kept on this computer only.`,
+//! `It is back in the calendar.`): each is a row of its own ([`Family::Tail`]), and a line is read as what comes before
+//! them and them, when it ends with one ([`explain`]). An event or a contact with no name is one the engine calls
+//! `an event` or `a contact`, which are words of the interface's ([`NAMES`]).
 
 mod pattern;
 mod rows;
@@ -33,6 +38,8 @@ const MAX_TEXT: usize = 1_024;
 const MAX_DEPTH: usize = 4;
 /// How many ways of reading a line may be tried (rows, and places where a placeholder may end) before it is left as it came.
 const MAX_STEPS: usize = 10_000;
+/// How many sentences of [`Family::Tail`] are read off the end of a line.
+const MAX_TAILS: usize = 3;
 
 /// The word the engine puts where a line had an address ([`Kind::Addresses`]).
 pub const ADDRESS: &str = run_word!("(address)");
@@ -42,6 +49,9 @@ pub const NO_SUBJECT: &str = run_word!("(no subject)");
 pub const NO_REASON: &str = run_word!("no reason given");
 /// The words of ours that a value may be, which are the interface's.
 pub const WORDS: [&str; 3] = [ADDRESS, NO_SUBJECT, NO_REASON];
+/// What the engine calls an event or a contact that has no name, where a line names one (`{name}`): words of the
+/// interface's.
+pub const NAMES: [&str; 3] = [run_word!("an event"), run_word!("a contact"), run_word!("A contact")];
 
 /// What a text is read as: a whole line, or a part of one that a placeholder of a line holds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -64,12 +74,27 @@ pub enum Family {
     Cause,
     /// What is wrong with the address of a JMAP server.
     Server,
+    /// A sentence the engine puts after a line, about what became of the item (`It is back in the calendar.`).
+    Tail,
+    /// What of an event a server shows otherwise than it was sent (`its time and its title`).
+    Parts,
 }
 
 impl Family {
     /// Every family, in order.
-    pub const ALL: [Family; 9] =
-        [Family::Line, Family::Banner, Family::Why, Family::Inner, Family::Hold, Family::Doubt, Family::Doing, Family::Cause, Family::Server];
+    pub const ALL: [Family; 11] = [
+        Family::Line,
+        Family::Banner,
+        Family::Why,
+        Family::Inner,
+        Family::Hold,
+        Family::Doubt,
+        Family::Doing,
+        Family::Cause,
+        Family::Server,
+        Family::Tail,
+        Family::Parts,
+    ];
 
     fn index(self) -> usize {
         self as usize
@@ -136,7 +161,7 @@ impl Kind {
             "subject" => Kind::Subject,
             "address" | "addresses" => Kind::Addresses,
             "folder" => Kind::Folder,
-            "why" | "doubt" | "doing" | "text" => Kind::Reason,
+            "why" | "doubt" | "doing" | "text" | "parts" | "one" | "two" | "three" | "four" => Kind::Reason,
             "said" | "description" | "browser" | "parser" | "method" | "key" | "limit" | "id" | "account" | "size" | "name" | "title" | "copy" => {
                 Kind::Text
             }
@@ -218,9 +243,33 @@ fn table() -> &'static Table {
 }
 
 /// What `text` reads as in `lang`, read as a `family`; None when no row reads it (it is shown as it came), when it is
-/// longer than a line can be, or when reading it would cost too much.
+/// longer than a line can be, or when reading it would cost too much. A line that ends with sentences of
+/// [`Family::Tail`] is read as what comes before them and them, when both can be read; as a whole otherwise.
 pub fn explain(lang: Lang, family: Family, text: &str, mb: &Mailbox) -> Option<Reading> {
+    if family == Family::Line
+        && let Some(reading) = with_tails(table(), lang, text, mb, MAX_TAILS)
+    {
+        return Some(reading);
+    }
     read_with(table(), lang, family, text, mb)
+}
+
+/// `text` read as a line that ends with up to `tails` sentences of [`Family::Tail`] after a full stop and a space,
+/// each read by its row and what comes before them by a row of [`Family::Line`]; None when it doesn't end with one, or
+/// what comes before can't be read.
+fn with_tails(table: &Table, lang: Lang, text: &str, mb: &Mailbox, tails: usize) -> Option<Reading> {
+    if tails == 0 || text.len() > MAX_TEXT {
+        return None;
+    }
+    let at = text.rfind(". ")?;
+    let (head, tail) = (text.get(..=at)?, text.get(at.checked_add(2)?..)?);
+    let end = read_with(table, lang, Family::Tail, tail, mb)?;
+    let head = with_tails(table, lang, head, mb, tails - 1).or_else(|| read_with(table, lang, Family::Line, head, mb))?;
+    Some(Reading {
+        text: format!("{} {}", head.text, end.text),
+        unread: head.unread.into_iter().chain(end.unread).collect(),
+        rows: head.rows.into_iter().chain(end.rows).collect(),
+    })
 }
 
 fn read_with(table: &Table, lang: Lang, family: Family, text: &str, mb: &Mailbox) -> Option<Reading> {
@@ -243,6 +292,12 @@ fn read_steps(table: &Table, lang: Lang, family: Family, text: &str, mb: &Mailbo
 /// One line of the problems of a run, in the interface's language: as it came in English, or when no row reads it.
 pub(crate) fn line<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
     in_language(current(), Family::Line, text, mb)
+}
+
+/// A reason the window puts after words of its own (`A calendar change couldn't be sent yet…: {why}`), in the interface's
+/// language: as it came when no row reads it.
+pub(crate) fn reason<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
+    in_language(current(), Family::Why, text, mb)
 }
 
 /// A command's refusal, in the interface's language.
@@ -407,6 +462,8 @@ impl Reader<'_> {
                 Some(Kind::Text) if value == NO_REASON => t_in(self.lang, NO_REASON).to_string(),
                 // (A large number with its thousands as the reader's language writes them.)
                 Some(Kind::Number) => value.replace(',', &thousands(self.lang)),
+                // (An event or a contact with no name.)
+                Some(Kind::Text) if name == "name" && NAMES.contains(&value) => t_in(self.lang, value).to_string(),
                 Some(Kind::Token | Kind::Text) | None => value.to_string(),
             };
             args.push((name, shown));

@@ -1059,6 +1059,24 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
     ("the notes hold more text than one reading takes, and these are not shown", "as above"),
 ];
 
+/// The files whose rows are a JMAP account's calendar and address book job's, or the engine's about their items, not a
+/// mail run's: the calendar and contact flows over the same in-process server make lines of them and read them in French
+/// (`jmap_pim_flow_tests`), and run_words' own tests read every row and hold it to its file.
+const PIM: &[&str] = &[
+    "crates/jmap/src/pim.rs",
+    "crates/jmap/src/pim/calendars.rs",
+    "crates/jmap/src/pim/contacts.rs",
+    "crates/jmap/src/pim/push.rs",
+    "crates/jmap/src/pim/contacts/push.rs",
+    "crates/jmap/src/pim/write.rs",
+    "crates/engine/src/cmd/remote.rs",
+    "crates/engine/src/cmd/remote_contacts.rs",
+    "crates/engine/src/cmd/remote_contacts/written.rs",
+    "crates/engine/src/cmd/calendar.rs",
+    "crates/engine/src/cmd/kept_here.rs",
+    "crates/engine/src/lib.rs",
+];
+
 // ---------------------------------------------------------------------------------------------
 // The tests
 
@@ -1072,7 +1090,12 @@ fn what_a_failed_run_shows_reads_in_french() {
         }
     }
     let excused: BTreeSet<&str> = NOT_PROVOKED.iter().map(|(row, _)| *row).collect();
-    let missed: Vec<&str> = rows().iter().map(|row| row.english).filter(|english| !seen.contains(english) && !excused.contains(english)).collect();
+    let missed: Vec<&str> = rows()
+        .iter()
+        .filter(|row| !PIM.contains(&row.at))
+        .map(|row| row.english)
+        .filter(|english| !seen.contains(english) && !excused.contains(english))
+        .collect();
     assert!(missed.is_empty(), "rows no scenario made (a row nobody makes is a row nobody checked): {missed:#?}");
     for row in &excused {
         assert!(!seen.contains(row), "{row:?} is made after all: take it off NOT_PROVOKED");

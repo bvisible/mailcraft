@@ -218,6 +218,10 @@ fn a_server_that_goes_down_leaves_what_is_here_and_is_asked_again_later() {
     assert_eq!(flow.shown(), ["Book fair", "Budget review"], "what was here stays");
     let problems = flow.app.sync_problems_of(flow.account);
     assert!(problems.iter().any(|line| line.contains("calendar")), "{problems:?}");
+    // In French, as the window reads it back: its frame and its reason.
+    let line = problems.iter().find(|line| line.starts_with("Couldn't bring the calendar down from the server: ")).expect("the job's line");
+    let french = in_french(&flow, line);
+    assert!(french.starts_with("Impossible de télécharger le calendrier depuis le serveur : ") && !french.contains("Couldn't"), "{french}");
     // Asked again after half a minute, then a minute: still down; then up again.
     assert!(!flow.look(20.0 * SECOND));
     assert!(flow.look(10.0 * SECOND + SECOND));
@@ -406,6 +410,10 @@ fn a_contact_in_a_read_only_book_cannot_be_changed_and_the_engine_says_why() {
         said.iter().any(|line| line == "\"Grace Okafor\": its address book can't be changed any more, so the change made here was undone."),
         "{said:?}"
     );
+    assert_eq!(
+        in_french(&flow, "\"Grace Okafor\": its address book can't be changed any more, so the change made here was undone."),
+        "\"Grace Okafor\" : son carnet d’adresses ne peut plus être modifié, la modification faite ici a donc été annulée."
+    );
     assert!(flow.card("Grace Okafor").is_some_and(|card| card.title.is_empty()), "nothing went");
     assert!(flow.app.session.mailbox.contact_changes.is_empty());
 }
@@ -426,6 +434,16 @@ fn a_refused_deletion_comes_back_with_the_reason() {
         said.iter().any(|line| line.contains("wouldn't delete \"Grace Okafor\"") && line.contains("is linked with Issue ISS-2026-00012")),
         "{said:?}"
     );
+    // In French: the frame and the sentence after it, the server's own words as they came.
+    let line = said.iter().find(|line| line.contains("wouldn't delete")).expect("said");
+    let french = in_french(&flow, line);
+    assert!(
+        french.starts_with("Le serveur a refusé de supprimer \"Grace Okafor\" (") && french.contains("is linked with Issue ISS-2026-00012"),
+        "{french}"
+    );
+    if line.ends_with(" It is back in the contacts.") {
+        assert!(french.ends_with(" Il est de retour dans les contacts."), "{french}");
+    }
     assert!(flow.card("Grace Okafor").is_some() && flow.app.session.mailbox.contact_changes.is_empty());
 }
 

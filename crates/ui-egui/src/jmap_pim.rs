@@ -655,7 +655,12 @@ impl MailApp {
         let failed =
             |outcome: &&mailcraft_model::book::ContactOutcome| outcome.result == mailcraft_model::remote::EventResult::Failed && !outcome.full;
         for (n, outcome) in uploaded.outcomes.iter().filter(failed).take(3).enumerate() {
-            let why = if outcome.error.is_empty() { tl!("the server couldn't be reached") } else { outcome.error.as_str() };
+            // (The reason in the interface's language too, where it is words of the crates': `run_words`.)
+            let why = if outcome.error.is_empty() {
+                tl!("the server couldn't be reached").to_string()
+            } else {
+                crate::i18n::run_words::reason(&outcome.error, &self.session.mailbox).into_owned()
+            };
             let line = format!("{}: {why}", tl!("A contact change couldn't be sent yet and will be tried again"));
             if n == 0 {
                 self.status(line.clone());

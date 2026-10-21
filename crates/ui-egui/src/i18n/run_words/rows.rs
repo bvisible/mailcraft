@@ -6,7 +6,7 @@
 //! line in `fr.tsv`, found by the English as for any `tl!`; the rows are written with `run_word!`, so that a catalog
 //! that lacks one fails its test. The tests hold the rows to the files they name (a census of their sentences).
 
-use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Server, Why};
+use super::Family::{Banner, Cause, Doing, Doubt, Hold, Inner, Line, Parts, Server, Tail, Why};
 use super::{Family, Row};
 
 /// A row: the file that writes the sentence, its family, the sentence, and the family each reason in it is read with.
@@ -35,6 +35,16 @@ const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
 const NOTES: &str = "crates/engine/src/cmd/notes/words.rs";
 const NOTES_JOB: &str = "crates/jmap/src/pim/notes.rs";
+const PIM: &str = "crates/jmap/src/pim.rs";
+const CALENDARS: &str = "crates/jmap/src/pim/calendars.rs";
+const CARDS: &str = "crates/jmap/src/pim/contacts.rs";
+const EVENTS_UP: &str = "crates/jmap/src/pim/push.rs";
+const CARDS_UP: &str = "crates/jmap/src/pim/contacts/push.rs";
+const WRITE: &str = "crates/jmap/src/pim/write.rs";
+const BOOKS: &str = "crates/engine/src/cmd/remote_contacts.rs";
+const CALENDAR: &str = "crates/engine/src/cmd/calendar.rs";
+const KEPT_HERE: &str = "crates/engine/src/cmd/kept_here.rs";
+const COMMANDS: &str = "crates/engine/src/lib.rs";
 
 /// Every row, family by family.
 pub(super) static ROWS: &[Row] = &[
@@ -336,4 +346,330 @@ pub(super) static ROWS: &[Row] = &[
     row(SERVER, Server, run_word!("has a port that isn't a number from 1 to 65535"), &[]),
     row(SERVER, Server, run_word!("is a plain http:// address to a server that isn't on this computer: use https://"), &[]),
     row(SERVER, Server, run_word!("names a server that isn't letters, digits, dots and dashes, or an IP address"), &[]),
+    // A JMAP account's calendars and address books: what a job says went wrong (`jmap::pim`), and why.
+    row(PIM, Line, run_word!("Couldn't reach the server of the calendars and contacts: {why}"), &[("why", Why)]),
+    row(CALENDARS, Line, run_word!("Couldn't list the calendars on the server: {why}"), &[("why", Why)]),
+    row(CALENDARS, Line, run_word!("Couldn't bring the calendar down from the server: {why}"), &[("why", Why)]),
+    row(CALENDARS, Line, run_word!("Couldn't read 1 event of the calendar: {why}"), &[("why", Why)]),
+    row(CALENDARS, Line, run_word!("Couldn't read {n} events of the calendar: {why}"), &[("why", Why)]),
+    row(CALENDARS, Line, run_word!("1 event from the server couldn't be read and was left out."), &[]),
+    row(CALENDARS, Line, run_word!("{n} events from the server couldn't be read and were left out."), &[]),
+    row(CALENDARS, Why, run_word!("the answer has no list of events"), &[]),
+    row(CALENDARS, Why, run_word!("the answer has no list of calendars"), &[]),
+    row(CALENDARS, Why, run_word!("the server's answer did not have the series"), &[]),
+    row(CARDS, Line, run_word!("Couldn't list the address books on the server: {why}"), &[("why", Why)]),
+    row(CARDS, Line, run_word!("Couldn't bring the contacts down from the server: {why}"), &[("why", Why)]),
+    row(CARDS, Line, run_word!("Couldn't read 1 contact of the address books: {why}"), &[("why", Why)]),
+    row(CARDS, Line, run_word!("Couldn't read {n} contacts of the address books: {why}"), &[("why", Why)]),
+    row(CARDS, Why, run_word!("the answer has no list of address books"), &[]),
+    row(CARDS, Why, run_word!("the answer has no list of cards"), &[]),
+    // Why a server didn't take a change of an event (`jmap::pim::push`) or of a contact (`jmap::pim::contacts::push`):
+    // what a line about it says in brackets, and after the window's words for a change that waits.
+    row(WRITE, Why, run_word!("this calendar's server keeps no categories, importance, response options, online meetings or proposed times"), &[]),
+    row(EVENTS_UP, Why, run_word!("{why}, and forwards no meetings"), &[("why", Why)]),
+    row(EVENTS_UP, Why, run_word!("{why}: answer without another time"), &[("why", Why)]),
+    row(EVENTS_UP, Why, run_word!("the server says the event is one occurrence of a series, and doesn't say of which"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server has too many events around that time to find the occurrence among them just now"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server has more than 1,000 people for this event, more than are rewritten from here"), &[]),
+    row(EVENTS_UP, Why, run_word!("the event has no mark or no time to be made with"), &[]),
+    row(EVENTS_UP, Why, run_word!("the change says nothing that could be sent"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server's answer did not have it"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server no longer has the event"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server's copy of it couldn't be read"), &[]),
+    row(EVENTS_UP, Why, run_word!("the event has no time to be made with"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server no longer has the series"), &[]),
+    row(EVENTS_UP, Why, run_word!("the series no longer has that occurrence"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server no longer has its series"), &[]),
+    row(EVENTS_UP, Why, run_word!("you are not among the people invited to it"), &[]),
+    row(EVENTS_UP, Why, run_word!("the server's answer said nothing of it"), &[]),
+    row(CARDS_UP, Why, run_word!("the server has another contact under its name now"), &[]),
+    row(CARDS_UP, Why, run_word!("the contact has no mark to be made with"), &[]),
+    row(CARDS_UP, Why, run_word!("the contact's name on the server can't be read"), &[]),
+    row(CARDS_UP, Why, run_word!("the server's answer to the look for its card can't be read"), &[]),
+    row(CARDS_UP, Why, run_word!("the server no longer has the contact"), &[]),
+    row(CARDS_UP, Why, run_word!("the server's card couldn't be read"), &[]),
+    row(CARDS_UP, Why, run_word!("the card the server said it had is gone"), &[]),
+    row(CARDS_UP, Why, run_word!("too many changes at once"), &[]),
+    row(CARDS_UP, Why, run_word!("the server no longer has the card it made of it"), &[]),
+    // The engine's refusals of a change of a server's contact, event or calendar (`remote_contacts`, `calendar`, `remote`),
+    // and of what a window that keeps nothing of its own between visits doesn't keep (`kept_here`). A greyed control
+    // says them too, by these rows' lines.
+    row(BOOKS, Line, run_word!("Your rights do not let you add contacts"), &[]),
+    row(BOOKS, Line, run_word!("This page keeps no contacts of its own, and its server has no address book to put new ones in"), &[]),
+    row(BOOKS, Line, run_word!("Your rights do not let you change this contact"), &[]),
+    row(BOOKS, Line, run_word!("Your rights do not let you delete this contact"), &[]),
+    row(BOOKS, Line, run_word!("Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers"), &[]),
+    row(BOOKS, Line, run_word!("A contact can't be moved to another address book here"), &[]),
+    row(CONTACTS, Line, run_word!("Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first."), &[]),
+    row(CALENDAR, Line, run_word!("This calendar's server keeps no categories, importance, response options or proposed times."), &[]),
+    row(CALENDAR, Line, run_word!("This calendar's server doesn't forward meetings."), &[]),
+    row(CALENDAR, Line, run_word!("This calendar's server keeps only Free and Busy."), &[]),
+    row(
+        CALENDAR,
+        Line,
+        run_word!("This calendar's server answers an invitation as a whole: answer the whole series, or keep this answer here without sending it."),
+        &[],
+    ),
+    row(REMOTE, Line, run_word!("Too many calendar changes are waiting to be sent to the server. Let Send/Receive get them through first."), &[]),
+    row(REMOTE, Line, run_word!("The calendar \"{name}\" can only be read: its owner hasn't let this account change it."), &[]),
+    row(KEPT_HERE, Line, run_word!("This page keeps no tasks: they would be gone at the next visit"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page keeps nothing of its own between visits: what is imported would be gone at the next one"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page keeps no categories or favorites: they would be gone at the next visit"), &[]),
+    row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
+    // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
+    row(CONTACTS, Line, run_word!("{name}: its address book can't be changed any more, so the change made here was undone."), &[]),
+    row(CONTACTS, Line, run_word!("{name} was not sent to the server: its address book can't be changed any more."), &[]),
+    row(
+        CONTACTS,
+        Line,
+        run_word!(
+            "{name}: its address book can't be changed any more, so it was not deleted there. It comes back with the next read if the server still has it."
+        ),
+        &[],
+    ),
+    row(CONTACTS, Line, run_word!("A change to {name} was not sent: it is no longer in the contacts."), &[]),
+    row(CONTACTS, Line, run_word!("A contact change that was waiting to be sent no longer matched the contacts. It was not sent."), &[]),
+    row(CONTACTS, Line, run_word!("{name} could not be sent to the server, which keeps failing with it."), &[]),
+    row(CONTACTS, Line, run_word!("{name} could not be sent to the server, which keeps failing with it ({why})."), &[("why", Why)]),
+    row(
+        CONTACTS,
+        Line,
+        run_word!("The change to {name} could not be sent: the server keeps failing with it. It was put back as the server has it."),
+        &[],
+    ),
+    row(
+        CONTACTS,
+        Line,
+        run_word!("The change to {name} could not be sent: the server keeps failing with it ({why}). It was put back as the server has it."),
+        &[("why", Why)],
+    ),
+    row(
+        CONTACTS,
+        Line,
+        run_word!(
+            "Deleting {name} could not be sent: the server keeps failing with it. It comes back with the next read if the server still has it."
+        ),
+        &[],
+    ),
+    row(
+        CONTACTS,
+        Line,
+        run_word!(
+            "Deleting {name} could not be sent: the server keeps failing with it ({why}). It comes back with the next read if the server still has it."
+        ),
+        &[("why", Why)],
+    ),
+    row(CONTACTS, Line, run_word!("{name} was made on the server, which doesn't say what it calls it."), &[]),
+    row(CONTACTS, Line, run_word!("The server wouldn't take the change to {name}. It was put back as it was."), &[]),
+    row(CONTACTS, Line, run_word!("The server wouldn't take the change to {name} ({why}). It was put back as it was."), &[("why", Why)]),
+    row(CONTACTS, Line, run_word!("The server wouldn't take {name}."), &[]),
+    row(CONTACTS, Line, run_word!("The server wouldn't take {name} ({why})."), &[("why", Why)]),
+    row(CONTACTS, Line, run_word!("{name} is no longer on the server, so it couldn't be changed there. It was removed here too."), &[]),
+    row(
+        CONTACTS,
+        Line,
+        run_word!(
+            "{name} was already deleted on the server when the deletion was undone here, so it is gone here too. The server may keep a copy of what was deleted."
+        ),
+        &[],
+    ),
+    row(CONTACTS, Line, run_word!("The server wouldn't delete {name}."), &[]),
+    row(CONTACTS, Line, run_word!("The server wouldn't delete {name} ({why})."), &[("why", Why)]),
+    // The sentences the engine puts after such a line, read off its end.
+    row(CONTACTS, Tail, run_word!("It is kept on this computer only."), &[]),
+    row(CONTACTS, Tail, run_word!("It stays here until this tab is closed: copy what you need of it."), &[]),
+    row(CONTACTS, Tail, run_word!("The server may have it already: then the next read brings it too, as a contact of its own."), &[]),
+    row(CONTACTS, Tail, run_word!("The next read brings the server's card too."), &[]),
+    row(CONTACTS, Tail, run_word!("It is back in the contacts."), &[]),
+    row(REMOTE, Tail, run_word!("It is back in the calendar."), &[]),
+    row(REMOTE, Tail, run_word!("It is kept on this device only."), &[]),
+    // What became of a change of an event a server was told, or that waited for it (`remote`): for a JMAP account's
+    // calendar and a Microsoft one's alike.
+    row(REMOTE, Why, run_word!("it would have made the server write to the people invited, and nobody said to send that"), &[]),
+    row(REMOTE, Line, run_word!("The change to one day of {name} was not sent: {why}. It was put back to what the server has."), &[("why", Why)]),
+    row(REMOTE, Line, run_word!("The change to {name} was not sent: {why}. It was put back to what the server has."), &[("why", Why)]),
+    row(REMOTE, Line, run_word!("{name} was not sent to the server: {why}."), &[("why", Why)]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("Deleting {name} was not sent to the server: {why}. It is still there, and comes back into the calendar."),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("{name} was not forwarded: that writes to other people, and nobody said to send it. Nobody was written to."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The other time proposed for {name} was not sent: that writes to its organizer, and nobody said to send it. The next Send/Receive shows the meeting as the server has it."
+        ),
+        &[],
+    ),
+    row(REMOTE, Line, run_word!("{name} was not forwarded: it is no longer in the calendar."), &[]),
+    row(REMOTE, Line, run_word!("A change to {name} was not sent: it is no longer in the calendar."), &[]),
+    row(REMOTE, Line, run_word!("A calendar change that was waiting to be sent no longer matched the calendar. It was not sent."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The invitations to \"{name}\" were already sent when it was taken back here. It is still on the server and comes back into the calendar: delete it there to call it off."
+        ),
+        &[],
+    ),
+    row(REMOTE, Line, run_word!("The server wouldn't take {name} into the other calendar, so it wasn't moved: it is back where it was."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("The server wouldn't take {name} into the other calendar ({why}), so it wasn't moved: it is back where it was."),
+        &[("why", Why)],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made a Teams meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} couldn't be made a Teams meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join."
+        ),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("{name} is no longer on the server, so it wasn't forwarded."), &[]),
+    row(REMOTE, Line, run_word!("The server wouldn't forward {name}. Nobody was written to."), &[]),
+    row(REMOTE, Line, run_word!("The server wouldn't forward {name} ({why}). Nobody was written to."), &[("why", Why)]),
+    row(REMOTE, Line, run_word!("The server wouldn't take deleting one occurrence of {name}. It was put back as it was."), &[]),
+    row(REMOTE, Line, run_word!("The server wouldn't take deleting one occurrence of {name} ({why}). It was put back as it was."), &[("why", Why)]),
+    row(REMOTE, Line, run_word!("The server wouldn't take your answer to one occurrence of {name}. It was put back as it was."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("The server wouldn't take your answer to one occurrence of {name} ({why}). It was put back as it was."),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("The server wouldn't take the change to one occurrence of {name}. It was put back as it was."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("The server wouldn't take the change to one occurrence of {name} ({why}). It was put back as it was."),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("The server wouldn't take your answer to {name}. It was put back as it was."), &[]),
+    row(REMOTE, Line, run_word!("The server wouldn't take your answer to {name} ({why}). It was put back as it was."), &[("why", Why)]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The account's server doesn't let it be changed, once a meeting is made, whether another time may be proposed for {name}. That option is as it was."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The change to {name} had already reached the server, and the people invited, when it was taken back here. It is shown as the server has it."
+        ),
+        &[],
+    ),
+    row(REMOTE, Line, run_word!("{name} was already deleted on the server when the deletion was undone here; it couldn't be brought back."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The server wouldn't take {name} out of the calendar it was in, so it wasn't moved: it is back there, and the copy in the other calendar was removed."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "The server wouldn't take {name} out of the calendar it was in ({why}), so it wasn't moved: it is back there, and the copy in the other calendar was removed."
+        ),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("The server wouldn't take {name} out of the calendar it was in. It is in both calendars now."), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("The server wouldn't take {name} out of the calendar it was in ({why}). It is in both calendars now."),
+        &[("why", Why)],
+    ),
+    // What the server shows of a change it said it took, when that is not what it was sent (`remote`'s checks), and what
+    // of the event that is.
+    row(
+        REMOTE,
+        Line,
+        run_word!("One day of {name} was deleted here and {why}, but it still has it. That day is back in the calendar."),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Line, run_word!("{name} was deleted here and {why}, but it still has it. It is back in the calendar."), &[("why", Why)]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It wasn't moved: it is back there, and the copy in the other calendar was removed."
+        ),
+        &[("why", Why)],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It is in both calendars now."
+        ),
+        &[("why", Why)],
+    ),
+    row(REMOTE, Why, run_word!("the server answered that it has no such day"), &[]),
+    row(REMOTE, Why, run_word!("the server answered that it has no such item"), &[]),
+    row(REMOTE, Why, run_word!("the server said it deleted it too"), &[]),
+    row(
+        REMOTE,
+        Line,
+        run_word!("The server took the change to {name} but has {parts} otherwise than it was sent. It is shown here as the server has it."),
+        &[("parts", Parts)],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was changed here and the server said it took the change, but it still has {parts} as before. It was put back to what the server has."
+        ),
+        &[("parts", Parts)],
+    ),
+    row(REMOTE, Parts, run_word!("its time"), &[]),
+    row(REMOTE, Parts, run_word!("its title"), &[]),
+    row(REMOTE, Parts, run_word!("how it shows"), &[]),
+    row(REMOTE, Parts, run_word!("whether it is private"), &[]),
+    row(REMOTE, Parts, run_word!("{one} and {two}"), &[("one", Parts), ("two", Parts)]),
+    row(REMOTE, Parts, run_word!("{one}, {two} and {three}"), &[("one", Parts), ("two", Parts), ("three", Parts)]),
+    row(REMOTE, Parts, run_word!("{one}, {two}, {three} and {four}"), &[("one", Parts), ("two", Parts), ("three", Parts), ("four", Parts)]),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was moved to another calendar here and the server said it took it there, but that calendar doesn't have it. It wasn't moved: it is back where it was."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was made here and the server said it took it, but it is not in the server's calendar. It is kept on this computer only: it is not in your Outlook calendar."
+        ),
+        &[],
+    ),
+    row(
+        REMOTE,
+        Line,
+        run_word!(
+            "{name} was changed here and the server said it took the change, but the server's calendar doesn't have it where it is here. It was taken out here; the next Send/Receive shows it where the server has it."
+        ),
+        &[],
+    ),
 ];

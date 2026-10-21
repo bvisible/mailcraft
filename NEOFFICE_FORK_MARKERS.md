@@ -121,6 +121,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   it keeps which of the servers' calendars are ticked with the interface's settings, by the account's address and the
   calendar's name on its server (`crates/ui-egui/src/calendar_ticks.rs`, `UiState::calendar_ticks`). The window's
   tests of all this are `crates/ui-egui/src/kept_here_tests.rs`.
+- The engine's and the JMAP crate's sentences about a JMAP account's calendars and address books, read back in the
+  interface's language by `run_words`: what a job says went wrong (`crates/jmap/src/pim.rs`, `pim/calendars.rs`,
+  `pim/contacts.rs`), why a server didn't take a change (`pim/push.rs`, `pim/contacts/push.rs`, `pim/write.rs`), what
+  became of a change of an event or a contact (`crates/engine/src/cmd/remote.rs`, `cmd/remote_contacts/written.rs`)
+  and the engine's refusals of their items (`cmd/remote_contacts.rs`, `cmd/calendar.rs`, `cmd/kept_here.rs`,
+  `crates/engine/src/lib.rs`'s "not available"). A line is read with the sentences the engine puts after it
+  (`Family::Tail`), an item with no name by the interface's words for one, and what of an event a server shows
+  otherwise by its parts (`Family::Parts`). The status bar reads its message through `run_words` too
+  (`crates/ui-egui/src/chrome.rs`), and a change that waits says its reason in the interface's language
+  (`calendar_sync.rs`, `jmap_pim.rs`). Their French lines are a block near the top of `fr.tsv`; the census of the
+  tests holds those files to their rows.
 - This file.
 
 ## What cannot carry a comment

@@ -327,6 +327,146 @@
 	The server's mailbox is full: {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : {name} attend ici et partira dès qu’il y aura de la place.
 	The server's mailbox is full: the change to {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : la modification de {name} attend ici et partira dès qu’il y aura de la place.
 	The server's mailbox is full: deleting {name} waits here and goes as soon as there is room.	L’espace du serveur est plein : la suppression de {name} attend ici et partira dès qu’il y aura de la place.
+# run_words, a JMAP account's calendars and address books: what a job says went wrong and why, the engine's refusals of their items and of what a tab that keeps nothing doesn't keep, what became of a change of an event or a contact, and the words for an item with no name (crates/jmap/src/pim/, crates/engine/src/cmd/remote.rs, remote_contacts/, calendar.rs, kept_here.rs, lib.rs).
+	an event	un événement
+	a contact	un contact
+	A contact	Un contact
+	Couldn't reach the server of the calendars and contacts: {why}	Impossible de joindre le serveur des calendriers et des contacts : {why}
+	Couldn't list the calendars on the server: {why}	Impossible de récupérer la liste des calendriers sur le serveur : {why}
+	Couldn't bring the calendar down from the server: {why}	Impossible de télécharger le calendrier depuis le serveur : {why}
+	Couldn't read 1 event of the calendar: {why}	Impossible de lire 1 événement du calendrier : {why}
+	Couldn't read {n} events of the calendar: {why}	Impossible de lire {n} événements du calendrier : {why}
+	1 event from the server couldn't be read and was left out.	Un événement du serveur n’a pas pu être lu et a été laissé de côté.
+	{n} events from the server couldn't be read and were left out.	{n} événements du serveur n’ont pas pu être lus et ont été laissés de côté.
+	the answer has no list of events	la réponse ne contient aucune liste d’événements
+	the answer has no list of calendars	la réponse ne contient aucune liste de calendriers
+	the server's answer did not have the series	la réponse du serveur ne contenait pas la série
+	Couldn't list the address books on the server: {why}	Impossible de récupérer la liste des carnets d’adresses sur le serveur : {why}
+	Couldn't bring the contacts down from the server: {why}	Impossible de télécharger les contacts depuis le serveur : {why}
+	Couldn't read 1 contact of the address books: {why}	Impossible de lire 1 contact des carnets d’adresses : {why}
+	Couldn't read {n} contacts of the address books: {why}	Impossible de lire {n} contacts des carnets d’adresses : {why}
+	the answer has no list of address books	la réponse ne contient aucune liste de carnets d’adresses
+	the answer has no list of cards	la réponse ne contient aucune liste de fiches
+	this calendar's server keeps no categories, importance, response options, online meetings or proposed times	le serveur de ce calendrier ne conserve ni catégories, ni importance, ni options de réponse, ni réunions en ligne, ni horaires proposés
+	{why}, and forwards no meetings	{why}, et ne transfère aucune réunion
+	{why}: answer without another time	{why} : réponse sans autre horaire proposé
+	the server says the event is one occurrence of a series, and doesn't say of which	le serveur indique que l’événement est une occurrence d’une série, sans préciser laquelle
+	the server has too many events around that time to find the occurrence among them just now	le serveur compte trop d’événements autour de cette heure pour y retrouver l’occurrence pour l’instant
+	the server has more than 1,000 people for this event, more than are rewritten from here	le serveur compte plus de 1 000 personnes pour cet événement, ce qui dépasse ce qui peut être réécrit d’ici
+	the event has no mark or no time to be made with	l’événement n’a ni repère ni heure pour être créé
+	the change says nothing that could be sent	la modification ne contient rien à envoyer
+	the server's answer did not have it	la réponse du serveur ne le contenait pas
+	the server no longer has the event	le serveur n’a plus l’événement
+	the server's copy of it couldn't be read	la copie de l’événement sur le serveur n’a pas pu être lue
+	the event has no time to be made with	l’événement n’a pas d’heure pour être créé
+	the server no longer has the series	le serveur n’a plus la série
+	the series no longer has that occurrence	la série n’a plus cette occurrence
+	the server no longer has its series	le serveur n’a plus sa série
+	you are not among the people invited to it	vous ne faites pas partie des personnes invitées
+	the server's answer said nothing of it	la réponse du serveur n’en disait rien
+	the server has another contact under its name now	le serveur a désormais un autre contact sous ce nom
+	the contact has no mark to be made with	le contact n’a pas de repère pour être créé
+	the contact's name on the server can't be read	le nom du contact sur le serveur ne peut pas être lu
+	the server's answer to the look for its card can't be read	la réponse du serveur à la recherche de sa fiche ne peut pas être lue
+	the server no longer has the contact	le serveur n’a plus le contact
+	the server's card couldn't be read	la fiche du serveur n’a pas pu être lue
+	the card the server said it had is gone	la fiche que le serveur disait avoir a disparu
+	too many changes at once	trop de modifications à la fois
+	the server no longer has the card it made of it	le serveur n’a plus la fiche qu’il en avait créée
+	Your rights do not let you add contacts	Vos droits ne vous permettent pas d’ajouter des contacts
+	This page keeps no contacts of its own, and its server has no address book to put new ones in	Cette page ne conserve aucun contact en propre, et son serveur n’a pas de carnet d’adresses où en ajouter de nouveaux
+	Your rights do not let you change this contact	Vos droits ne vous permettent pas de modifier ce contact
+	Your rights do not let you delete this contact	Vos droits ne vous permettent pas de supprimer ce contact
+	A contact can't be moved to another address book here	Un contact ne peut pas être déplacé vers un autre carnet d’adresses ici
+	Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first.	Trop de modifications de contacts attendent d’être envoyées au serveur. Laissez Envoyer/Recevoir les transmettre d’abord.
+	This calendar's server keeps no categories, importance, response options or proposed times.	Le serveur de ce calendrier ne conserve ni catégories, ni importance, ni options de réponse, ni horaires proposés.
+	This calendar's server doesn't forward meetings.	Le serveur de ce calendrier ne transfère pas les réunions.
+	This calendar's server keeps only Free and Busy.	Le serveur de ce calendrier ne conserve que Libre et Occupé.
+	This calendar's server answers an invitation as a whole: answer the whole series, or keep this answer here without sending it.	Le serveur de ce calendrier répond à une invitation dans son ensemble : répondez à toute la série, ou conservez cette réponse ici sans l’envoyer.
+	Too many calendar changes are waiting to be sent to the server. Let Send/Receive get them through first.	Trop de modifications de calendrier attendent d’être envoyées au serveur. Laissez Envoyer/Recevoir les transmettre d’abord.
+	The calendar "{name}" can only be read: its owner hasn't let this account change it.	Le calendrier « {name} » est en lecture seule : son propriétaire n’a pas autorisé ce compte à le modifier.
+	This page keeps no tasks: they would be gone at the next visit	Cette page ne conserve aucune tâche : elles seraient perdues à la prochaine visite
+	This page keeps nothing of its own between visits: what is imported would be gone at the next one	Cette page ne conserve rien d’elle-même entre deux visites : ce qui est importé serait perdu à la prochaine
+	not available: {why}	non disponible : {why}
+	{name}: its address book can't be changed any more, so the change made here was undone.	{name} : son carnet d’adresses ne peut plus être modifié, la modification faite ici a donc été annulée.
+	{name} was not sent to the server: its address book can't be changed any more.	{name} n’a pas été envoyé au serveur : son carnet d’adresses ne peut plus être modifié.
+	{name}: its address book can't be changed any more, so it was not deleted there. It comes back with the next read if the server still has it.	{name} : son carnet d’adresses ne peut plus être modifié, il n’a donc pas été supprimé sur le serveur. Il revient à la prochaine lecture si le serveur le possède encore.
+	A change to {name} was not sent: it is no longer in the contacts.	Une modification apportée à {name} n’a pas été envoyée : l’élément ne figure plus dans les contacts.
+	A contact change that was waiting to be sent no longer matched the contacts. It was not sent.	Une modification de contact en attente d’envoi ne correspondait plus aux contacts. Elle n’a pas été envoyée.
+	{name} could not be sent to the server, which keeps failing with it.	{name} n’a pas pu être envoyé au serveur, qui n’arrête pas d’échouer sur cet élément.
+	{name} could not be sent to the server, which keeps failing with it ({why}).	{name} n’a pas pu être envoyé au serveur, qui n’arrête pas d’échouer sur cet élément ({why}).
+	The change to {name} could not be sent: the server keeps failing with it. It was put back as the server has it.	La modification apportée à {name} n’a pas pu être envoyée : le serveur n’arrête pas d’échouer sur cet élément. Elle a été remise comme le serveur la possède.
+	The change to {name} could not be sent: the server keeps failing with it ({why}). It was put back as the server has it.	La modification apportée à {name} n’a pas pu être envoyée : le serveur n’arrête pas d’échouer sur cet élément ({why}). Elle a été remise comme le serveur la possède.
+	Deleting {name} could not be sent: the server keeps failing with it. It comes back with the next read if the server still has it.	La suppression concernant {name} n’a pas pu être envoyée : le serveur n’arrête pas d’échouer sur cet élément. Il revient à la prochaine lecture si le serveur le possède encore.
+	Deleting {name} could not be sent: the server keeps failing with it ({why}). It comes back with the next read if the server still has it.	La suppression concernant {name} n’a pas pu être envoyée : le serveur n’arrête pas d’échouer sur cet élément ({why}). Il revient à la prochaine lecture si le serveur le possède encore.
+	{name} was made on the server, which doesn't say what it calls it.	{name} a été créé sur le serveur, qui n’en précise pas le nom.
+	The server wouldn't take the change to {name}. It was put back as it was.	Le serveur n’a pas accepté la modification apportée à {name}. Elle a été remise telle quelle.
+	The server wouldn't take the change to {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté la modification apportée à {name} ({why}). Elle a été remise telle quelle.
+	The server wouldn't take {name}.	Le serveur n’a pas accepté {name}.
+	The server wouldn't take {name} ({why}).	Le serveur n’a pas accepté {name} ({why}).
+	{name} is no longer on the server, so it couldn't be changed there. It was removed here too.	{name} ne figure plus sur le serveur : il n’a donc pas pu y être modifié. Il a aussi été retiré ici.
+	{name} was already deleted on the server when the deletion was undone here, so it is gone here too. The server may keep a copy of what was deleted.	{name} avait déjà été supprimé sur le serveur lorsque la suppression a été annulée ici : il est donc supprimé ici aussi. Le serveur peut conserver une copie de ce qui a été supprimé.
+	The server wouldn't delete {name}.	Le serveur a refusé de supprimer {name}.
+	The server wouldn't delete {name} ({why}).	Le serveur a refusé de supprimer {name} ({why}).
+	It is kept on this computer only.	Il n’est conservé que sur cet ordinateur.
+	It stays here until this tab is closed: copy what you need of it.	Il reste ici jusqu’à la fermeture de cet onglet : copiez ce dont vous avez besoin.
+	The server may have it already: then the next read brings it too, as a contact of its own.	Le serveur l’a peut-être déjà : la prochaine lecture le ramènera alors aussi, comme contact distinct.
+	The next read brings the server's card too.	La prochaine lecture ramènera aussi la fiche du serveur.
+	It is back in the contacts.	Il est de retour dans les contacts.
+	It is back in the calendar.	Il est de retour dans le calendrier.
+	It is kept on this device only.	Il n’est conservé que sur cet appareil.
+	it would have made the server write to the people invited, and nobody said to send that	cela aurait conduit le serveur à écrire aux personnes invitées, sans que personne ait demandé de l’envoyer
+	The change to one day of {name} was not sent: {why}. It was put back to what the server has.	La modification d’un seul jour apportée à {name} n’a pas été envoyée : {why}. Elle a été remise à ce que possède le serveur.
+	The change to {name} was not sent: {why}. It was put back to what the server has.	La modification apportée à {name} n’a pas été envoyée : {why}. Elle a été remise à ce que possède le serveur.
+	{name} was not sent to the server: {why}.	{name} n’a pas été envoyé au serveur : {why}.
+	Deleting {name} was not sent to the server: {why}. It is still there, and comes back into the calendar.	La suppression concernant {name} n’a pas été envoyée au serveur : {why}. L’élément est toujours là et revient dans le calendrier.
+	{name} was not forwarded: that writes to other people, and nobody said to send it. Nobody was written to.	{name} n’a pas été transféré : cela écrirait à d’autres personnes, et personne n’a demandé de le faire. Personne n’a reçu de message.
+	The other time proposed for {name} was not sent: that writes to its organizer, and nobody said to send it. The next Send/Receive shows the meeting as the server has it.	L’autre horaire proposé pour {name} n’a pas été envoyé : cela écrirait à son organisateur, et personne n’a demandé de le faire. Le prochain Envoyer/Recevoir affiche la réunion telle que le serveur la possède.
+	{name} was not forwarded: it is no longer in the calendar.	{name} n’a pas été transféré : il ne figure plus dans le calendrier.
+	A change to {name} was not sent: it is no longer in the calendar.	Une modification apportée à {name} n’a pas été envoyée : l’élément ne figure plus dans le calendrier.
+	A calendar change that was waiting to be sent no longer matched the calendar. It was not sent.	Une modification de calendrier en attente d’envoi ne correspondait plus au calendrier. Elle n’a pas été envoyée.
+	The invitations to "{name}" were already sent when it was taken back here. It is still on the server and comes back into the calendar: delete it there to call it off.	Les invitations pour « {name} » avaient déjà été envoyées lorsqu’il a été repris ici. Il est toujours sur le serveur et revient dans le calendrier : supprimez-le là-bas pour annuler l’envoi.
+	The server wouldn't take {name} into the other calendar, so it wasn't moved: it is back where it was.	Le serveur n’a pas accepté {name} dans l’autre calendrier : il n’a donc pas été déplacé, il est revenu à sa place d’origine.
+	The server wouldn't take {name} into the other calendar ({why}), so it wasn't moved: it is back where it was.	Le serveur n’a pas accepté {name} dans l’autre calendrier ({why}) : il n’a donc pas été déplacé, il est revenu à sa place d’origine.
+	{name} couldn't be made a Teams meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion Teams : le serveur du compte ne l’a pas accepté. La réunion elle-même est enregistrée, sans lien pour la rejoindre.
+	{name} couldn't be made a Teams meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join.	{name} n’a pas pu devenir une réunion Teams : le serveur du compte ne l’a pas accepté ({why}). La réunion elle-même est enregistrée, sans lien pour la rejoindre.
+	{name} is no longer on the server, so it wasn't forwarded.	{name} ne figure plus sur le serveur : il n’a pas été transféré.
+	The server wouldn't forward {name}. Nobody was written to.	Le serveur n’a pas pu transférer {name}. Personne n’a reçu de message.
+	The server wouldn't forward {name} ({why}). Nobody was written to.	Le serveur n’a pas pu transférer {name} ({why}). Personne n’a reçu de message.
+	The server wouldn't take deleting one occurrence of {name}. It was put back as it was.	Le serveur n’a pas accepté la suppression d’une occurrence concernant {name}. Elle a été remise telle quelle.
+	The server wouldn't take deleting one occurrence of {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté la suppression d’une occurrence concernant {name} ({why}). Elle a été remise telle quelle.
+	The server wouldn't take your answer to one occurrence of {name}. It was put back as it was.	Le serveur n’a pas accepté votre réponse à une occurrence concernant {name}. Elle a été remise telle quelle.
+	The server wouldn't take your answer to one occurrence of {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté votre réponse à une occurrence concernant {name} ({why}). Elle a été remise telle quelle.
+	The server wouldn't take the change to one occurrence of {name}. It was put back as it was.	Le serveur n’a pas accepté la modification d’une occurrence concernant {name}. Elle a été remise telle quelle.
+	The server wouldn't take the change to one occurrence of {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté la modification d’une occurrence concernant {name} ({why}). Elle a été remise telle quelle.
+	The server wouldn't take your answer to {name}. It was put back as it was.	Le serveur n’a pas accepté votre réponse à {name}. Elle a été remise telle quelle.
+	The server wouldn't take your answer to {name} ({why}). It was put back as it was.	Le serveur n’a pas accepté votre réponse à {name} ({why}). Elle a été remise telle quelle.
+	The account's server doesn't let it be changed, once a meeting is made, whether another time may be proposed for {name}. That option is as it was.	Le serveur du compte ne permet pas de modifier, une fois la réunion créée, si un autre horaire peut être proposé pour {name}. Cette option reste inchangée.
+	The change to {name} had already reached the server, and the people invited, when it was taken back here. It is shown as the server has it.	La modification apportée à {name} était déjà parvenue au serveur et aux personnes invitées lorsqu’elle a été reprise ici. Elle est affichée telle que le serveur la possède.
+	{name} was already deleted on the server when the deletion was undone here; it couldn't be brought back.	{name} avait déjà été supprimé sur le serveur lorsque la suppression a été annulée ici : il n’a pas pu être rétabli.
+	The server wouldn't take {name} out of the calendar it was in, so it wasn't moved: it is back there, and the copy in the other calendar was removed.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine : il n’a donc pas été déplacé, il y est revenu, et la copie de l’autre calendrier a été supprimée.
+	The server wouldn't take {name} out of the calendar it was in ({why}), so it wasn't moved: it is back there, and the copy in the other calendar was removed.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine ({why}) : il n’a donc pas été déplacé, il y est revenu, et la copie de l’autre calendrier a été supprimée.
+	The server wouldn't take {name} out of the calendar it was in. It is in both calendars now.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine. Il figure désormais dans les deux calendriers.
+	The server wouldn't take {name} out of the calendar it was in ({why}). It is in both calendars now.	Le serveur n’a pas accepté de retirer {name} du calendrier d’origine ({why}). Il figure désormais dans les deux calendriers.
+	One day of {name} was deleted here and {why}, but it still has it. That day is back in the calendar.	Une journée concernant {name} a été supprimée ici et {why}, mais le serveur la possède encore. Cette journée est revenue dans le calendrier.
+	{name} was deleted here and {why}, but it still has it. It is back in the calendar.	{name} a été supprimé ici et {why}, mais le serveur le possède encore. Il est revenu dans le calendrier.
+	{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It wasn't moved: it is back there, and the copy in the other calendar was removed.	{name} a été déplacé vers un autre calendrier ici, et lorsqu’il devait être retiré de celui où il se trouvait, {why}, mais le serveur l’y possède encore. Il n’a pas été déplacé : il est revenu dans son calendrier d’origine, et la copie de l’autre calendrier a été supprimée.
+	{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It is in both calendars now.	{name} a été déplacé vers un autre calendrier ici, et lorsqu’il devait être retiré de celui où il se trouvait, {why}, mais le serveur l’y possède encore. Il figure désormais dans les deux calendriers.
+	the server answered that it has no such day	le serveur a répondu qu’il ne contient pas cette journée
+	the server answered that it has no such item	le serveur a répondu qu’il ne contient pas cet élément
+	the server said it deleted it too	le serveur a dit l’avoir supprimé aussi
+	The server took the change to {name} but has {parts} otherwise than it was sent. It is shown here as the server has it.	Le serveur a accepté la modification apportée à {name}, mais il enregistre {parts} autrement que ce qui a été envoyé. Elle est affichée ici telle que le serveur la possède.
+	{name} was changed here and the server said it took the change, but it still has {parts} as before. It was put back to what the server has.	{name} a été modifié ici et le serveur a dit avoir accepté la modification, mais il conserve {parts} comme avant. Il a été remis dans l’état du serveur.
+	its time	son heure
+	its title	son titre
+	how it shows	son mode d’affichage
+	whether it is private	son caractère privé ou non
+	{one} and {two}	{one} et {two}
+	{one}, {two} and {three}	{one}, {two} et {three}
+	{one}, {two}, {three} and {four}	{one}, {two}, {three} et {four}
+	{name} was moved to another calendar here and the server said it took it there, but that calendar doesn't have it. It wasn't moved: it is back where it was.	{name} a été déplacé vers un autre calendrier ici et le serveur a dit l’y avoir accepté, mais ce calendrier ne le contient pas. Il n’a pas été déplacé : il est revenu à sa place d’origine.
+	{name} was made here and the server said it took it, but it is not in the server's calendar. It is kept on this computer only: it is not in your Outlook calendar.	{name} a été créé ici et le serveur a dit l’avoir accepté, mais il ne figure pas dans le calendrier du serveur. Il n’est conservé que sur cet ordinateur : il ne figure pas dans votre calendrier Outlook.
+	{name} was changed here and the server said it took the change, but the server's calendar doesn't have it where it is here. It was taken out here; the next Send/Receive shows it where the server has it.	{name} a été modifié ici et le serveur a dit avoir accepté la modification, mais le calendrier du serveur ne l’a pas là où il se trouve ici. Il a été retiré ici ; le prochain Envoyer/Recevoir l’affiche là où le serveur le possède.
 # The header over the original a reply or a forward quotes (crates/engine/src/cmd/compose.rs, set by crates/ui-egui/src/i18n.rs),
 # and the titles of the calendar's days and weeks (crates/ui-egui/src/calendar_view.rs).
 	-----Original Message-----	-----Message d’origine-----
