@@ -146,6 +146,27 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`saveBeforeClosing` drives an editor's Save): for a window of `kind === 'mail'` it offers leaving and staying only.
   The frame stays loaded as now (no `?host=parent`); the browser's own `beforeunload` question (`hosted/leave.rs`, the
   notes') is left as it is.
+- A hosting page that draws MailCraft's navigation in its own menu (Neoffice's desk at `/app/neomail`, which hands
+  `chrome: "menu"` with its mailboxes; Neodesk never does, and without it nothing changes): the window draws no module
+  bar and, in Mail, no folder pane, not even its strip, so that the message list starts at its left edge; the ribbon
+  with its search box, the list, the reading pane, the side panes of Calendar, People and Notes and every shortcut
+  stay (`Services::host_menu`; the marked hunks are in `crates/ui-egui/src/lib.rs`, `mail_view.rs` and `nav.rs`, whose
+  folder order and unread counts the page is told). What the page is told and what it may ask are
+  `crates/ui-egui/src/host_menu.rs`, natively tested with their window in `host_menu/tests.rs`: posted to
+  `window.parent` on the page's own origin, `{type: "mailcraft:ready", version}` once, then
+  `{type: "mailcraft:state", module, account, folder, favorites, accounts}` at each change, at most every 250 ms and
+  never twice the same, of the mailboxes the page handed over alone (their folders in the pane's order with the name
+  shown, the role, the parent, the unread mail known here and the server's id, `local:<n>` for one only MailCraft has;
+  their Favourites as the pane lists them; the mailbox and folder in view; no message, no other address, no token);
+  and seven commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
+  `view.mail`, `view.calendar`, `view.people`, `view.notes`, `folder.select {account, folder}`, `mail.new` and
+  `search {query}` (the search box's), each run as the window's own button or box runs it and answered
+  `{type: "mailcraft:command-done", id, ok, error?}`, the reason in the interface's language; any other name, a
+  parameter it doesn't take or an id that is no number nor a short text is refused. The browser's part (the flag,
+  the listener, the posts, the throttle, the version with the commit the web build's workflow knows) is
+  `apps/mailcraft-web/src/host.rs` (`menu`, and the contract in its comment), `host_menu.rs`, `main.rs`, `web.rs` and
+  `Cargo.toml` (the `MessageEvent` feature of `web-sys`); the refusals' French lines are a block near the top of
+  `fr.tsv`.
 - The engine's and the JMAP crate's sentences about a JMAP account's calendars and address books, read back in the
   interface's language by `run_words`: what a job says went wrong (`crates/jmap/src/pim.rs`, `pim/calendars.rs`,
   `pim/contacts.rs`), why a server didn't take a change (`pim/push.rs`, `pim/contacts/push.rs`, `pim/write.rs`), what

@@ -160,6 +160,12 @@
 # File › Signatures in a tab of a hosting page (crates/ui-egui/src/hosted_signatures.rs): kept together, near the top.
 	These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes.	Les signatures de ces boîtes proviennent du site qui les a ouvertes : toute modification faite ici est perdue à la fermeture de cet onglet.
 	Change them on the site	Modifier les signatures sur le site
+# A hosting page that draws the navigation in its own menu: why the window refuses one of its commands (crates/ui-egui/src/host_menu.rs): kept together, near the top.
+	The command has no id.	La commande n’a pas d’identifiant.
+	The page's command has parameters it doesn't take.	La commande de la page comporte des paramètres qu’elle n’accepte pas.
+	MailCraft doesn't take this command from the page.	MailCraft n’accepte pas cette commande de la page.
+	This mailbox isn't one the page handed over.	Cette boîte aux lettres n’est pas l’une de celles transmises par la page.
+	That mailbox has no such folder.	Cette boîte aux lettres n’a pas ce dossier.
 # The sentences of a JMAP Send/Receive and of the engine, read back where they are drawn (crates/ui-egui/src/i18n/run_words.rs and run_words/rows.rs): kept together, near the top.
 	(address)	(adresse)
 # run_words, the frames a run puts round what went wrong, and its own reasons (crates/jmap/src/mail.rs, mail/up.rs).

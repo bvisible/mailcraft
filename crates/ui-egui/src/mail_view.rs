@@ -103,9 +103,10 @@ fn drag_ghost(ui: &Ui) {
 pub fn show(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     drag_ghost(ui);
-    if app.session.view.folder_pane {
+    // //// Neoffice — neither the pane nor its strip where a hosting page lists the folders in its own menu: the list starts at the window's left edge (host_menu.rs).
+    if app.services.host_menu.is_none() && app.session.view.folder_pane {
         crate::nav::folder_pane(app, ui);
-    } else {
+    } else if app.services.host_menu.is_none() {
         // Hidden: a narrow strip stays, with the button that brings the pane back.
         crate::nav::folder_pane_strip(app, ui);
     }

@@ -114,7 +114,8 @@ const MAX_ROWS: usize = 4000;
 
 /// The folders of `account` as the pane lists them, depth first, skipping what is under a folded
 /// one: each with its depth and whether it has subfolders.
-fn visible(mailbox: &Mailbox, folded: &[Id], account: Id) -> Vec<(Folder, usize, bool)> {
+// //// Neoffice — and, nothing folded, every folder in the pane's order for a hosting page that lists them in its own menu (host_menu.rs).
+pub(crate) fn visible(mailbox: &Mailbox, folded: &[Id], account: Id) -> Vec<(Folder, usize, bool)> {
     // By parent, in one pass over the folders however many there are, each list in order.
     let mut tree: HashMap<Option<Id>, Vec<&Folder>> = HashMap::new();
     for f in mailbox.folders.iter().filter(|f| f.account == account) {
@@ -176,7 +177,8 @@ impl Count {
 }
 
 /// How many messages each folder holds and how many of those are unread, in one pass over the mail.
-fn tallies(mailbox: &Mailbox) -> HashMap<Id, (usize, usize)> {
+// //// Neoffice — the unread counts a hosting page that lists the folders in its own menu is told too (host_menu.rs).
+pub(crate) fn tallies(mailbox: &Mailbox) -> HashMap<Id, (usize, usize)> {
     let mut out: HashMap<Id, (usize, usize)> = HashMap::new();
     for m in mailbox.messages.values() {
         let entry = out.entry(m.folder).or_default();

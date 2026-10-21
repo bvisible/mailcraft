@@ -28,8 +28,54 @@
 //!                                        // them (`html` stays for the builds that place one picture)
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
-//!   signatures: "https://…" };   // where the site writes these mailboxes' signatures: File › Signatures links there
+//!   signatures: "https://…",     // where the site writes these mailboxes' signatures: File › Signatures links there
+//!   chrome: "menu" };            // optional: the page draws MailCraft's navigation in its own menu (below)
 //! ```
+//!
+//! **A page that draws the navigation in its own menu** (`chrome: "menu"`, Neoffice's desk at `/app/neomail`; absent
+//! or anything else, MailCraft draws everything as it always does, as in Neodesk): MailCraft draws no module bar and,
+//! in Mail, no folder pane, not even its strip, so that the message list starts at the left edge; the ribbon with its
+//! search box, the list, the reading pane, the side panes of Calendar, People and Notes and every shortcut stay
+//! (mailcraft_ui_egui::host_menu, host_menu.rs). It posts to `window.parent`, on its own origin (`location.origin`,
+//! never `"*"`), and to nobody when it is not framed:
+//!
+//! ```js
+//! { type: "mailcraft:ready", version: "0.5.2+8b7972c" }  // once, when it has started and read the handover
+//! { type: "mailcraft:state",                              // after it, then at each change: at most every 250 ms,
+//!   module: "mail",                                       //   never twice the same; "calendar", "people", "notes"
+//!   account: "ada@example.org",   // the mailbox shown in Mail, or null (another one, a search of every mailbox)
+//!   folder: "F-inbox-id",         // its folder shown, by its server's id, or null (a search shows what it found)
+//!   favorites: [{ account, folder, name, unread }],      // the Favourites of these mailboxes, as the pane lists them
+//!   accounts: [{ email, name,     // the mailboxes handed over, in the page's order (no other: none added by hand),
+//!     unread,                     //   as the page wrote them; the unread mail of the Inbox
+//!     folders: [{ id, name, role, parent, unread, selectable }] }] }  // every folder, in the pane's order
+//! ```
+//!
+//! A folder's `name` is the one MailCraft shows (a special folder's in the interface's language), its `role` one of
+//! `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`, `outbox` or null, its `parent` its parent's `id` or null,
+//! `unread` the unread messages MailCraft knows of (not the server's count), and `id` its server's id, or `local:<n>`
+//! for a folder only MailCraft has so far (an Outbox, one made here the server is yet to hear of). Nothing else
+//! leaves: no message, no address but the mailboxes' own, no token. The page drives MailCraft by posting to the
+//! frame, on its own origin:
+//!
+//! ```js
+//! { type: "mailcraft:command", id: 7, name: "folder.select", params: { account: "ada@example.org", folder: "F-inbox-id" } }
+//! ```
+//!
+//! and only these, each run as MailCraft's own button or box runs it: `view.mail`, `view.calendar`, `view.people`,
+//! `view.notes` (refused where Notes are not offered), `mail.new` (from the mailbox shown), all with `{}`;
+//! `folder.select` with `{ account, folder }` (a mailbox the page handed over, any case, and a folder's `id` from the
+//! state); `search` with `{ query }` (what the search box does with what is typed: Mail in front, empty text
+//! searches for nothing). Any other name, a parameter it doesn't take, or an `id` that is neither a number nor a text
+//! of 64 characters at most is refused. Each command is answered:
+//!
+//! ```js
+//! { type: "mailcraft:command-done", id: 7, ok: true }
+//! { type: "mailcraft:command-done", id: 7, ok: false, error: "<why, in the interface's language>" }
+//! ```
+//!
+//! A message is taken only from `window.parent`, on MailCraft's own origin (`event.source === window.parent &&
+//! event.origin === location.origin`); anything else, a message that is no command, or one over 64 KiB, is ignored.
 //!
 //! When the server refuses a token (it expired, or died with the session that asked for it), MailCraft calls
 //! `window.mailcraftJmapRenew()` if the page has it: a promise of `{ accounts: [...] }` with new secrets, as above; the
@@ -296,6 +342,11 @@ pub fn product() -> Option<String> {
 /// The language of the person the page is for (a tag such as `fr` or `de-CH`), if it says one.
 pub fn language() -> Option<String> {
     Some(text(&handed()?, "language")).filter(|tag| !tag.is_empty() && tag.len() <= 35)
+}
+
+/// Whether the page draws MailCraft's navigation in its own menu (`chrome: "menu"`): anything else, or nothing, is no.
+pub fn menu() -> bool {
+    handed().is_some_and(|host| text(&host, "chrome") == "menu")
 }
 
 /// Where the page's site writes the signatures of the mailboxes it hands over, if it says: File › Signatures links

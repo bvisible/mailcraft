@@ -24,6 +24,9 @@ mod host;
 // //// Neoffice — the page that frames a hosting page's window is told whether closing it would lose work (built
 // everywhere, so that it is tested natively).
 mod host_dirty;
+// //// Neoffice — a hosting page that draws the navigation in its own menu is told where the window is and drives it
+// (built everywhere, so that it is tested natively).
+mod host_menu;
 mod renewal;
 // //// Neoffice — HTTP through the browser's `fetch`, for JMAP; the runner of a JMAP account's Send/Receive and the
 // credentials it is given (built everywhere, so that its tests run natively).

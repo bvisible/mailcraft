@@ -47,6 +47,8 @@ pub mod files;
 pub mod forms;
 pub mod graph_fetch;
 mod graph_switch;
+// //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
+pub mod host_menu;
 pub mod i18n;
 pub mod icons;
 // //// Neoffice — a JMAP account's Send/Receive in the window: the job the host is handed, starting a run, taking in its pieces.
@@ -181,6 +183,12 @@ pub struct Services {
     /// handed over are written (they come from there, and its tab keeps nothing between visits).
     /// Absent everywhere else.
     pub signatures_home: Option<String>,
+    // //// Neoffice — a hosting page that draws the navigation in its own menu (Neoffice's desk): no module bar, no folder pane in Mail (host_menu.rs).
+    /// Web, in a hosting page that draws MailCraft's navigation in its own menu: the mailboxes it handed over, in its
+    /// order. The window then draws no module bar and, in Mail, no folder pane (the list starts at its left edge),
+    /// tells the page where it is and takes its menu's commands ([`host_menu`]); the shortcuts stay. Absent everywhere
+    /// else: the window draws its navigation itself.
+    pub host_menu: Option<host_menu::Menu>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
@@ -3409,7 +3417,10 @@ impl MailApp {
             chrome::status_bar(self, ui);
             // The question about checking for new versions, at the first starts: above the status bar.
             updates::question(self, ui);
-            nav::module_bar(self, ui);
+            // //// Neoffice — none where a hosting page draws the modules in its own menu (host_menu.rs); their shortcuts stay.
+            if self.services.host_menu.is_none() {
+                nav::module_bar(self, ui);
+            }
             ribbon::show(self, ui);
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| match self.session.view.module {
                 mailcraft_engine::Module::Mail => mail_view::show(self, ui),
