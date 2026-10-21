@@ -8,16 +8,17 @@
 //! not, as a calendar that arrives is (`sync.applyCalendars`), whatever the person ticked the last time, and the ids
 //! here are new at each visit. So the person's ticks are kept with the interface's settings, which the browser keeps
 //! ([`crate::UiState::calendar_ticks`]): by the account's address and the calendar's name on its server, which don't
-//! change from one visit to the next. A tick is noted when the person ticks a calendar or clears it
-//! (`calendar.showCalendar`), and the ticks noted are put back each time the list of an account's calendars is taken in.
-//! A calendar the server lists for the first time is as it arrives: unticked, but the main one. A window that keeps its
-//! mailbox keeps the ticks in it, and notes none here.
+//! change from one visit to the next. The ticks are noted whenever the person changes them (`calendar.showCalendar`,
+//! `calendar.showOnly`, and Undo and Redo of either), every server's calendar as it is then, and put back on a calendar
+//! when the list that makes it here is taken in, at the start of a visit: a later list (every ten minutes) leaves the
+//! calendars here as the person has them now. A calendar the server lists for the first time is as it arrives:
+//! unticked, but the main one. What was noted of a mailbox the page no longer hands over goes at the next visit. A
+//! window that keeps its mailbox keeps the ticks in it, and notes none here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use mailcraft_engine::cmd::remote::keeper;
 use mailcraft_model::Id;
-use serde_json::Value;
 
 use crate::MailApp;
 
@@ -42,36 +43,43 @@ pub fn sanitize(ticks: &mut BTreeMap<String, bool>) {
 }
 
 impl MailApp {
-    /// What a calendar of `id` is known by across visits, when a server keeps it.
-    fn tick_key(&self, id: Id) -> Option<String> {
-        let calendar = self.session.mailbox.calendar(id)?;
-        let account = keeper(&self.session.mailbox, &calendar.origin)?;
-        Some(key(&account.email, &calendar.origin.id))
-    }
-
-    /// `calendar.showCalendar` ran with `params`: in a tab that keeps nothing, whether that calendar is ticked now is
-    /// noted for the next visit.
-    pub(crate) fn remember_calendar_tick(&mut self, params: &Value) {
+    /// The person changed which calendars are ticked: in a tab that keeps nothing, every server's calendar is noted as it
+    /// is now, for the next visit.
+    pub(crate) fn remember_calendar_ticks(&mut self) {
         if self.session.keeps_local {
             return;
         }
-        let Some(id) = params.get("id").and_then(Value::as_u64) else { return };
-        let (Some(key), Some(visible)) = (self.tick_key(id), self.session.mailbox.calendar(id).map(|c| c.visible)) else { return };
-        if key.len() > MAX_KEY || (self.ui.calendar_ticks.len() >= MAX_TICKS && !self.ui.calendar_ticks.contains_key(&key)) {
-            return;
+        let mb = &self.session.mailbox;
+        let ticks: Vec<(String, bool)> = mb
+            .calendars
+            .iter()
+            .filter_map(|calendar| keeper(mb, &calendar.origin).map(|account| (key(&account.email, &calendar.origin.id), calendar.visible)))
+            .filter(|(key, _)| key.len() <= MAX_KEY)
+            .collect();
+        for (key, visible) in ticks {
+            if self.ui.calendar_ticks.len() < MAX_TICKS || self.ui.calendar_ticks.contains_key(&key) {
+                self.ui.calendar_ticks.insert(key, visible);
+            }
         }
-        self.ui.calendar_ticks.insert(key, visible);
     }
 
-    /// The list of `account`'s calendars was taken in: in a tab that keeps nothing, its calendars are ticked as they were
-    /// at the last visit. (Not an undo step: nothing the person did here.)
-    pub(crate) fn apply_calendar_ticks(&mut self, account: Id) {
+    /// The calendars of `account` here, by their ids: what a list taken in after this is to be compared with
+    /// ([`apply_calendar_ticks`](Self::apply_calendar_ticks)).
+    pub(crate) fn calendars_of(&self, account: Id) -> HashSet<Id> {
+        self.session.mailbox.calendars.iter().filter(|c| c.origin.account == account).map(|c| c.id).collect()
+    }
+
+    /// The list of `account`'s calendars was taken in: in a tab that keeps nothing, the calendars it made here (none of
+    /// `before`) are ticked as they were at the last visit; those that were here stay as the person has them. (Not an
+    /// undo step: nothing the person did here.)
+    pub(crate) fn apply_calendar_ticks(&mut self, account: Id, before: &HashSet<Id>) {
         if self.session.keeps_local || self.ui.calendar_ticks.is_empty() {
             return;
         }
         let Some(address) = self.session.mailbox.account(account).map(|a| a.email.clone()) else { return };
         let mut changed = false;
-        for calendar in self.session.mailbox.calendars.iter_mut().filter(|c| c.origin.account == account) {
+        let made = |c: &&mut mailcraft_model::Calendar| c.origin.account == account && !before.contains(&c.id);
+        for calendar in self.session.mailbox.calendars.iter_mut().filter(made) {
             if let Some(ticked) = self.ui.calendar_ticks.get(&key(&address, &calendar.origin.id))
                 && calendar.visible != *ticked
             {
@@ -82,6 +90,15 @@ impl MailApp {
         if changed {
             self.session.mailbox_changed();
         }
+    }
+
+    /// In a tab that keeps nothing, what was noted of a mailbox the page doesn't hand over at this visit goes.
+    pub(crate) fn prune_calendar_ticks(&mut self) {
+        if self.session.keeps_local {
+            return;
+        }
+        let handed: HashSet<String> = self.session.mailbox.accounts.iter().map(|a| a.email.trim().to_lowercase()).collect();
+        self.ui.calendar_ticks.retain(|key, _| key.split_once('/').is_some_and(|(address, _)| handed.contains(address)));
     }
 }
 
@@ -146,7 +163,7 @@ mod tests {
         app.run("calendar.showCalendar", json!({"id": id_of(&app, account, ""), "value": false})).unwrap();
         // Saved by the shell with the other settings, as the browser keeps them.
         let saved = serde_json::to_string(&app.prefs()).unwrap();
-        assert!(saved.contains(r#""calendarTicks":{"ada@example.org/":false,"ada@example.org/C2":true}"#), "{saved}");
+        assert!(saved.contains(r#""calendarTicks":{"ada@example.org/":false,"ada@example.org/C2":true,"ada@example.org/C3":false}"#), "{saved}");
         let ui: UiState = serde_json::from_str(&saved).unwrap();
         // The next visit: other ids here, the same calendars there.
         let first = id_of(&app, account, "C2");
@@ -172,6 +189,42 @@ mod tests {
         assert!(ticked(&next, account, ""), "the main one, ticked as it arrives");
         assert!(ticked(&next, account, "C2"), "as the person left it");
         assert!(!ticked(&next, account, "C4"), "new: unticked");
+    }
+
+    #[test]
+    fn a_later_list_leaves_the_calendars_as_the_person_has_them_now() {
+        // The last visit had the team's calendar ticked.
+        let (mut app, account) = visit(0, None);
+        list(&mut app, account, &["C2"]);
+        app.run("calendar.showCalendar", json!({"id": id_of(&app, account, "C2"), "value": true})).unwrap();
+        let (mut app, account) = visit(0, Some(app.prefs()));
+        list(&mut app, account, &["C2"]);
+        assert!(ticked(&app, account, "C2"));
+        // Show Only This Calendar, the main one: noted, and a later list (every ten minutes) doesn't tick C2 again.
+        app.run("calendar.showOnly", json!({"id": id_of(&app, account, "")})).unwrap();
+        assert_eq!(app.ui.calendar_ticks.get(&key(ME, "C2")), Some(&false));
+        list(&mut app, account, &["C2"]);
+        assert!(ticked(&app, account, "") && !ticked(&app, account, "C2"));
+        // Undone: ticked again, and noted so.
+        app.run("edit.undo", json!({})).unwrap();
+        assert!(ticked(&app, account, "C2"));
+        assert_eq!(app.ui.calendar_ticks.get(&key(ME, "C2")), Some(&true));
+        // Redone: as Show Only had it.
+        app.run("edit.redo", json!({})).unwrap();
+        assert_eq!(app.ui.calendar_ticks.get(&key(ME, "C2")), Some(&false));
+        // And a tick cleared by hand stays cleared past the next list too.
+        app.run("calendar.showCalendar", json!({"id": id_of(&app, account, ""), "value": false})).unwrap();
+        list(&mut app, account, &["C2"]);
+        assert!(!ticked(&app, account, ""));
+    }
+
+    #[test]
+    fn what_was_noted_of_a_mailbox_not_handed_over_goes() {
+        let mut ui = UiState::default();
+        ui.calendar_ticks.insert(key(ME, "C2"), true);
+        ui.calendar_ticks.insert(key("bo@example.org", "C9"), true);
+        let (app, _) = visit(0, Some(ui));
+        assert_eq!(app.ui.calendar_ticks.keys().collect::<Vec<_>>(), [&key(ME, "C2")]);
     }
 
     #[test]

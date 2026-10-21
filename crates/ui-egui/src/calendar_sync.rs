@@ -696,14 +696,16 @@ impl MailApp {
         extras_missing: bool,
         errors: &mut Vec<String>,
     ) {
+        // //// Neoffice — the calendars here before it, to tell those it makes (`calendar_ticks`).
+        let before = self.calendars_of(account);
         if let Some(list) = calendars
             && let Err(e) = remote::apply_calendars(&mut self.session, list)
         {
             errors.push(format!("{}: {e}", tl!("The list of calendars couldn't be taken in")));
         }
-        // //// Neoffice — and ticked as the person left them at the last visit of a tab that keeps nothing (`calendar_ticks`).
+        // //// Neoffice — those it made ticked as the person left them at the last visit of a tab that keeps nothing (`calendar_ticks`).
         if calendars.is_some() {
-            self.apply_calendar_ticks(account);
+            self.apply_calendar_ticks(account, &before);
         }
         if let Some(list) = categories {
             // They came: the sign-in covers them.

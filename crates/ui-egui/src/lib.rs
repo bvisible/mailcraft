@@ -1390,8 +1390,9 @@ impl MailApp {
         self.ui.collapsed_folders.truncate(10_000);
         self.ui.recent.truncate(20);
         self.ui.collapsed_calendar_groups.truncate(200);
-        // //// Neoffice — the ticks of the server's calendars, as many as are kept (`calendar_ticks`).
+        // //// Neoffice — the ticks of the server's calendars, as many as are kept, of the mailboxes handed over now (`calendar_ticks`).
         calendar_ticks::sanitize(&mut self.ui.calendar_ticks);
+        self.prune_calendar_ticks();
         updates::sanitize(&mut self.ui);
         self.session.prefs = self.ui.options.clone();
         // Layout choices carry over; the folder, the day and the search start fresh.
@@ -1533,9 +1534,9 @@ impl MailApp {
             return r;
         }
         let r = self.session.run(id, &params).map_err(|e| e.to_string());
-        // //// Neoffice — a server's calendar ticked or not is remembered for the next visit of a tab that keeps nothing (`calendar_ticks`).
-        if r.is_ok() && id == "calendar.showCalendar" {
-            self.remember_calendar_tick(&params);
+        // //// Neoffice — which of the servers' calendars are ticked is remembered for the next visit of a tab that keeps nothing (`calendar_ticks`).
+        if r.is_ok() && matches!(id, "calendar.showCalendar" | "calendar.showOnly" | "edit.undo" | "edit.redo") {
+            self.remember_calendar_ticks();
         }
         // Asked for the reminders: their window comes up, due or not.
         if r.is_ok() && id == "view.reminders" {
