@@ -82,11 +82,14 @@
 //! MailCraft keeps its title bar, its module bar and its status bar and leaves the rest of its page empty, and tells
 //! the page, at each change, where that is in CSS pixels of its own page, or that the page has nothing to draw there
 //! (`rect: null`) while something of MailCraft's stands over it (a dialog, a menu, Backstage), or that its own module
-//! is back (`id: null`). The page gives a button its badge, and may bring its module into view (a conversation it
-//! opens there); MailCraft takes them from `window.parent` on its own origin only:
+//! is back (`id: null`). With the place comes MailCraft's look (`look`: light or dark, the colours of its palette as
+//! `#rrggbb`, its interface font), for the page to draw its module as MailCraft draws its own; told again when it
+//! changes. The page gives a button its badge, and may bring its module into view (a conversation it opens there);
+//! MailCraft takes them from `window.parent` on its own origin only:
 //!
 //! ```js
-//! { type: "mailcraft:module", id: "synk", rect: { x: 48, y: 38, width: 1132, height: 732 } }  // to the page
+//! { type: "mailcraft:module", id: "synk", rect: { x: 48, y: 38, width: 1132, height: 732 },
+//!   look: { dark: true, font: "Inter", colors: { canvas: "#0f161f", panel: "#141414", accent: "#58b8fe", … } } }
 //! { type: "mailcraft:module", id: "synk", rect: null }                // something of MailCraft's over its place
 //! { type: "mailcraft:module", id: null, rect: null }                  // MailCraft's own module back
 //! { type: "mailcraft:module-badge", id: "synk", badge: 3 }            // from the page: a number, a short text, or null

@@ -98,6 +98,11 @@ fn its_button_is_after_calendar_and_shows_the_page_s_module_in_the_window_s_plac
     let last = told.borrow().last().cloned().unwrap();
     assert_eq!(last["type"], MODULE_TYPE);
     assert_eq!(last["id"], "synk");
+    // The window's look goes with it: the palette in use and the font
+    let tokens = crate::theme::Tokens::get(&h.ctx);
+    assert_eq!(last["look"], look(&tokens));
+    assert_eq!(last["look"]["dark"], tokens.dark);
+    assert_eq!(last["look"]["font"], LOOK_FONT);
     // The place beside the module bar, under the title bar, above the status bar, in CSS pixels
     let rect = &last["rect"];
     assert!(rect["x"].as_f64().unwrap() >= button.max.x as f64, "{rect}");
@@ -156,6 +161,23 @@ fn the_page_gives_its_module_a_badge_and_may_bring_it_into_view() {
     // Any of the window's own views brings it back
     app.run("view.calendar", json!({})).unwrap();
     assert!(!shown(&app));
+}
+
+#[test]
+fn the_look_is_the_palette_in_use_as_css_writes_it() {
+    let dark = look(&crate::theme::Tokens::dark());
+    assert_eq!(dark["dark"], true);
+    assert_eq!(dark["colors"]["canvas"], "#0f161f");
+    assert_eq!(dark["colors"]["accent"], "#58b8fe");
+    let light = look(&crate::theme::Tokens::light());
+    assert_eq!(light["dark"], false);
+    assert_eq!(light["colors"]["accent"], "#0f6cbd");
+    assert_eq!(light["colors"]["surface"], "#ffffff");
+    let colors = light["colors"].as_object().unwrap();
+    assert_eq!(colors.len(), 22);
+    // Opaque colours in six digits, the others with their alpha
+    assert!(colors.values().all(|c| c.as_str().is_some_and(|c| c.len() == 7 && c.starts_with('#'))), "{colors:?}");
+    assert_eq!(hex(egui::Color32::from_rgba_unmultiplied(0xff, 0xff, 0xff, 0x80)).len(), 9);
 }
 
 #[test]

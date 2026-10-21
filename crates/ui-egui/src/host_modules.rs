@@ -8,12 +8,13 @@
 //! window keeps its title bar, its module bar and its status bar and leaves the rest empty ([`place`]); it tells the
 //! page where that is, in CSS pixels of its own page, at each change ([`MODULE_TYPE`]), and that there is nothing to
 //! draw while something of the window's own stands over it (a dialog, a menu, Backstage): the page's view, drawn above
-//! the window, would hide it. A module of the window's own brings it back ([`leave`]).
+//! the window, would hide it. A module of the window's own brings it back ([`leave`]). With the place goes the window's
+//! look ([`look`]), for the page to draw its module as the window draws its own.
 
 use std::collections::HashMap;
 
-use egui::{Align2, Order, Rect, Sense, Ui, pos2, vec2};
-use serde_json::{Value, json};
+use egui::{Align2, Color32, Order, Rect, Sense, Ui, pos2, vec2};
+use serde_json::{Map, Value, json};
 
 use crate::theme::{Tokens, bold};
 use crate::{MailApp, icons};
@@ -30,6 +31,9 @@ pub const MAX_TITLE: usize = 40;
 const MAX_BADGE: usize = 3;
 /// The icon a module is drawn with when the page names none the window has.
 pub const DEFAULT_ICON: &str = "chatSynk";
+/// The font the window draws its interface in, as the page knows it (theme.rs, `font_definitions_with`: the bundled
+/// Inter where there is no system font, as in a browser).
+pub const LOOK_FONT: &str = "Inter";
 
 /// A module a hosting page draws itself: its id (what the page and the window call it), its name (the button's
 /// tooltip) and the name of one of the window's icons.
@@ -161,12 +165,50 @@ pub fn place(app: &mut MailApp, ui: &mut Ui) {
     });
 }
 
+/// The window's look, for the page to draw its module as the window draws its own: light or dark, the colours of the
+/// palette in use (`#rrggbb`, `#rrggbbaa` when not opaque), and the interface font.
+pub fn look(t: &Tokens) -> Value {
+    let colours: [(&str, Color32); 22] = [
+        ("canvas", t.canvas),
+        ("panel", t.panel),
+        ("surface", t.surface),
+        ("border", t.border),
+        ("borderStrong", t.border_strong),
+        ("text", t.text),
+        ("textDim", t.text_dim),
+        ("textDisabled", t.text_disabled),
+        ("hover", t.hover),
+        ("pressed", t.pressed),
+        ("checked", t.checked),
+        ("selection", t.selection),
+        ("accent", t.accent),
+        ("accentText", t.accent_text),
+        ("onAccent", t.on_accent),
+        ("input", t.input),
+        ("inputBorder", t.input_border),
+        ("red", t.red),
+        ("green", t.green),
+        ("orange", t.orange),
+        ("flaggedRow", t.flagged_row),
+        ("overdue", t.overdue),
+    ];
+    let colors: Map<String, Value> = colours.into_iter().map(|(name, c)| (name.to_string(), Value::String(hex(c)))).collect();
+    json!({"dark": t.dark, "font": LOOK_FONT, "colors": colors})
+}
+
+/// A colour as CSS writes it: `#rrggbb`, or `#rrggbbaa` when it is not opaque.
+fn hex(c: Color32) -> String {
+    let [r, g, b, a] = c.to_srgba_unmultiplied();
+    if a == u8::MAX { format!("#{r:02x}{g:02x}{b:02x}") } else { format!("#{r:02x}{g:02x}{b:02x}{a:02x}") }
+}
+
 /// Once the window is laid out: tell the page where to draw the module in view, in CSS pixels of the window's page,
 /// or that there is nothing to draw while something of the window's own stands over that place (a window, a menu,
-/// Backstage, where the central part was not laid out).
+/// Backstage, where the central part was not laid out), and the window's look.
 pub fn settle(app: &mut MailApp, ctx: &egui::Context) {
     let over = ctx.memory(|m| m.areas().visible_layer_ids().iter().any(|layer| matches!(layer.order, Order::Middle | Order::Foreground)));
     let zoom = ctx.zoom_factor();
+    let look = look(&Tokens::get(ctx));
     let Some(modules) = app.services.modules.as_mut() else { return };
     let Some(id) = modules.shown.clone() else { return };
     let placed = modules.placed.take().filter(|_| !over);
@@ -178,7 +220,7 @@ pub fn settle(app: &mut MailApp, ctx: &egui::Context) {
             "height": (r.height() * zoom).round(),
         })
     });
-    tell(modules, json!({"type": MODULE_TYPE, "id": id, "rect": rect}));
+    tell(modules, json!({"type": MODULE_TYPE, "id": id, "rect": rect, "look": look}));
 }
 
 /// A message of the page's for the modules (its JSON, `text`): a badge (`{type: BADGE_TYPE, id, badge}`, a number or
