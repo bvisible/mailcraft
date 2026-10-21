@@ -344,9 +344,14 @@ pub struct NoteChange {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
     /// What of it was sent and not answered (the answer was lost, or never came), the last [`MAX_UNANSWERED`] sendings:
-    /// what the server may have written already, so that its own write is never taken for someone else's.
+    /// what the server may have written already, so that its own write is never taken for someone else's. A deletion's
+    /// that went holds one entry that names nothing.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sent: Vec<NoteFields>,
+    /// For a change: a deletion of the note went without an answer and was undone here. Whether the server deleted it is
+    /// learnt at the next whole read (or from the answer to what goes of it); if it did, the note is made there anew.
+    #[serde(skip_serializing_if = "is_false")]
+    pub undeleted: bool,
 }
 
 impl std::fmt::Debug for NoteChange {
@@ -357,6 +362,7 @@ impl std::fmt::Debug for NoteChange {
             .field("note", &self.note)
             .field("base", &self.base.is_some())
             .field("failures", &self.failures)
+            .field("undeleted", &self.undeleted)
             .finish_non_exhaustive()
     }
 }

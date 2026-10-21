@@ -712,6 +712,32 @@ pub(crate) fn close_question(app: &mut MailApp, ctx: &egui::Context) {
     }
 }
 
+/// What is asked before the owner deletes a note its server keeps (`notes.delete` from the window, by its button, its
+/// card's menu or the Delete key): it goes from the server's notes, where an administrator can restore it. Nothing for
+/// one of the mailbox's own or one the server doesn't have yet (an undo brings it back), nor for one she may not delete
+/// (the command refuses it, with why).
+pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::dialogs::Question> {
+    let id = params.get("id").and_then(Value::as_u64).or(app.session.sel.note)?;
+    let note = app.session.mailbox.notes.note(id)?;
+    if note.origin.is_local() || note.origin.id.is_empty() || !note.rights.delete {
+        return None;
+    }
+    let title: String = note.heading().chars().filter(|c| !c.is_control()).take(80).collect();
+    let what = if title.trim().is_empty() {
+        tl!("This note will be removed from Neoffice's notes.").to_string()
+    } else {
+        crate::i18n::fmt(tl!("\"{title}\" will be removed from Neoffice's notes."), &[("title", title.trim())])
+    };
+    Some(crate::dialogs::Question {
+        title: tl!("Delete Note").to_string(),
+        text: format!("{what} {}", tl!("An administrator can restore it.")),
+        action: tl!("Delete").to_string(),
+        with: Value::Null,
+        more: Vec::new(),
+        note: None,
+    })
+}
+
 /// Whether words typed into a note are not in it yet.
 pub(crate) fn typed(ctx: &egui::Context) -> bool {
     ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).values().any(|draft| draft.typed.is_some()))

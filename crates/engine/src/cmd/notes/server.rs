@@ -189,6 +189,20 @@ pub(super) fn note_created(mailbox: &mut Mailbox, id: Id, salt: u64) {
     mailbox.notes.changes.push(NoteChange { account, kind: NoteChangeKind::Create, note: id, token, ..Default::default() });
 }
 
+/// The note `id`, whose server no longer has it, is one of the person's own, to be made there anew with its words: a new
+/// note of that server's, as if it had been made here.
+fn anew(mailbox: &mut Mailbox, id: Id, salt: u64) {
+    if let Some(note) = mailbox.notes.note_mut(id) {
+        note.origin.id.clear();
+        note.version.clear();
+        note.error.clear();
+        (note.shared, note.rights) = (false, NoteRights::default());
+        note.owner_name.clear();
+        note.web_url.clear();
+    }
+    note_created(mailbox, id, salt);
+}
+
 /// A server's note was changed here; `before` is what it was. The server is to be told what differs from its own copy:
 /// `before`, or what it was before an earlier change that still waits. A change that takes everything back to that
 /// leaves nothing to tell. One the server doesn't have yet is sent as it is when it goes (and one whose making was
@@ -212,7 +226,8 @@ pub(super) fn note_changed(mailbox: &mut Mailbox, before: &Note, salt: u64) {
             let back = mailbox.notes.changes.get(at).and_then(|change| change.base.as_deref()).is_some_and(|base| changed(base, &now).is_empty());
             // (Unless what went of it was never answered and isn't what the note says now: the server may have written it,
             // and is to be told what the note says, her undo or words typed back.)
-            let unsure = mailbox.notes.changes.get(at).is_some_and(|change| !unanswered(change, &now).is_empty());
+            // (Nor one that waits to know whether the server deleted the note: [`NoteChange::undeleted`].)
+            let unsure = mailbox.notes.changes.get(at).is_some_and(|change| change.undeleted || !unanswered(change, &now).is_empty());
             if back && !unsure {
                 let change = mailbox.notes.changes.remove(at);
                 // The note is as the server had it when it was read: so is its version (one a read brought meanwhile
@@ -263,7 +278,34 @@ pub(super) fn note_deleted(mailbox: &mut Mailbox, before: &Note) {
 /// An undo or redo goes from `now` to `back`: a change of a server's note that went and was never answered stays noted in
 /// `back`, with what went (the server may have written it), so that what `back` says goes there over it, as soon as the
 /// server may be asked (as a change typed does).
+///
+/// A deletion that went without an answer, undone: the note is here again, and the server may have deleted it. A change
+/// of it is noted that waits to know ([`NoteChange::undeleted`]): if the server did delete it, it is made there anew with
+/// her words; if not, nothing is made twice.
 pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
+    for change in now.notes.changes.iter().filter(|change| change.kind == NoteChangeKind::Delete && !change.sent.is_empty()) {
+        let Some(id) = back.notes.by_remote(change.account, &change.remote).map(|note| note.id) else { continue };
+        let deleted = back.notes.changes.iter().any(|kept| kept.kind == NoteChangeKind::Delete && kept.remote == change.remote);
+        if deleted {
+            continue;
+        }
+        let same = |kept: &&mut NoteChange| kept.kind == NoteChangeKind::Update && kept.note == id && kept.remote == change.remote;
+        match back.notes.changes.iter_mut().find(same) {
+            Some(kept) => (kept.undeleted, kept.retry_at) = (true, 0),
+            None => {
+                let base = change.base.clone().or_else(|| back.notes.note(id).map(|note| Box::new(note.clone())));
+                back.notes.changes.push(NoteChange {
+                    account: change.account,
+                    kind: NoteChangeKind::Update,
+                    note: id,
+                    remote: change.remote.clone(),
+                    base,
+                    undeleted: true,
+                    ..Default::default()
+                });
+            }
+        }
+    }
     for change in now.notes.changes.iter().filter(|change| change.kind == NoteChangeKind::Update && !change.sent.is_empty()) {
         let here = back.notes.note(change.note).is_some_and(|note| note.origin.account == change.account && note.origin.id == change.remote);
         if !here {
@@ -335,12 +377,14 @@ pub fn notes_waiting(s: &Session, account: Id) -> EventsWaiting {
 }
 
 /// Whether `account`'s notes are to be read whole before what waits can go: a change of words whose version isn't
-/// known (an answer that didn't say the note's words, a version lost) waits for the one a read brings.
+/// known (an answer that didn't say the note's words, a version lost) waits for the one a read brings; so does a note
+/// whose deletion was undone after it went without an answer ([`NoteChange::undeleted`]).
 pub fn notes_need_read(s: &Session, account: Id) -> bool {
     s.mailbox.notes.changes.iter().filter(|change| change.account == account && change.kind == NoteChangeKind::Update).any(|change| {
         let note = s.mailbox.notes.note(change.note);
         let words = note.zip(change.base.as_deref()).is_some_and(|(note, base)| with(changed(base, note), unanswered(change, note)).has_words());
-        words && change.base.as_deref().is_some_and(|base| base.version.is_empty())
+        // (And a note whose deletion was undone after it went without an answer: whether the server deleted it.)
+        change.undeleted || (words && change.base.as_deref().is_some_and(|base| base.version.is_empty()))
     })
 }
 
@@ -357,6 +401,15 @@ pub fn notes_sending(s: &mut Session, upload: &NotesUpload) {
             if change.sent.len() > mailcraft_model::note::MAX_UNANSWERED {
                 change.sent.remove(0);
             }
+            kept = true;
+        }
+    }
+    // A deletion: that it went.
+    for op in upload.ops.iter().filter(|op| op.kind == NoteChangeKind::Delete) {
+        let going =
+            |change: &&mut NoteChange| change.account == upload.account && change.kind == NoteChangeKind::Delete && change.remote == op.remote;
+        if let Some(change) = s.mailbox.notes.changes.iter_mut().find(going).filter(|change| change.sent.is_empty()) {
+            change.sent.push(NoteFields::default());
             kept = true;
         }
     }
@@ -562,11 +615,33 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             merged.updated += 1;
         }
     }
+    // A note whose deletion was undone after it went without an answer, in the read: the server never deleted it, and
+    // nothing is made anew. What was changed of it since still goes; a change with nothing to tell goes.
+    let kept_there: Vec<Id> = s
+        .mailbox
+        .notes
+        .changes
+        .iter()
+        .filter(|change| change.account == account && change.undeleted && seen.contains(&change.remote))
+        .map(|change| change.note)
+        .collect();
+    for id in &kept_there {
+        let note = s.mailbox.notes.note(*id).cloned();
+        s.mailbox.notes.changes.retain_mut(|change| {
+            if change.note != *id || !change.undeleted {
+                return true;
+            }
+            change.undeleted = false;
+            let Some(note) = note.as_ref() else { return true };
+            change.base.as_deref().is_some_and(|base| !with(changed(base, note), unanswered(change, note)).is_empty())
+        });
+    }
     let notes = &mut s.mailbox.notes;
     // A whole read: what isn't there any more goes, unless a change of it waits; two notes with one name of the
     // server's leave one, the first (the one made here), unless a change of the other waits.
     let mut kept_names: HashSet<String> = HashSet::new();
     let mut versioned = false;
+    let mut deleted_there: Vec<Id> = Vec::new();
     let ours: Vec<(Id, String)> = notes
         .items
         .values()
@@ -579,6 +654,12 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             // there, or no longer shared): no read brings one. It goes with the oldest version, never over other words;
             // the server says the note is gone, and her words are kept as a note of her own.
             if download.complete && !seen.contains(&remote) {
+                // (One whose deletion she undid, deleted there after all: made anew with her words, below.)
+                if notes.changes.iter().any(|change| change.account == account && change.note == id && change.undeleted) {
+                    deleted_there.push(id);
+                    kept_names.insert(remote);
+                    continue;
+                }
                 let of = |change: &&mut NoteChange| change.account == account && change.note == id && change.kind == NoteChangeKind::Update;
                 for change in notes.changes.iter_mut().filter(of) {
                     if let Some(base) = change.base.as_deref_mut().filter(|base| base.version.is_empty()) {
@@ -597,7 +678,14 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             merged.removed += 1;
         }
     }
-    if merged.added + merged.updated + merged.removed > 0 || versioned || !held.is_empty() {
+    for id in &deleted_there {
+        let title = called(s.mailbox.notes.note(*id));
+        s.mailbox.notes.changes.retain(|change| change.note != *id);
+        anew(&mut s.mailbox, *id, salt);
+        merged.messages.push(fill(MADE_ANEW, &[("title", &title)]));
+    }
+    let undeleted = !kept_there.is_empty() || !deleted_there.is_empty();
+    if merged.added + merged.updated + merged.removed > 0 || versioned || !held.is_empty() || undeleted {
         s.mailbox_changed();
     }
     Ok(merged)
@@ -894,6 +982,8 @@ impl Taking<'_> {
                 let Some(change) = self.mailbox.notes.changes.get_mut(at) else { return };
                 (change.failures, change.retry_at) = (0, 0);
                 change.error.clear();
+                // (The server has the note: its deletion, undone, never happened there.)
+                change.undeleted = false;
                 let Some(base) = change.base.as_deref_mut() else {
                     self.mailbox.notes.changes.remove(at);
                     return;
@@ -949,20 +1039,19 @@ impl Taking<'_> {
                 // The person's words that the server didn't take, as they are here now.
                 let words = change.base.as_deref().is_some_and(|base| changed(base, &here).has_words());
                 match outcome.result {
-                    NoteResult::Gone if words => {
+                    NoteResult::Gone if words || change.undeleted => {
                         // Deleted there, or no longer shared with her: the note here, with her words, is one of her own,
-                        // to be made there anew.
+                        // to be made there anew (and so is one whose deletion she undid).
                         self.applied.done += 1;
-                        if let Some(note) = self.mailbox.notes.note_mut(op.note) {
-                            note.origin.id.clear();
-                            note.version.clear();
-                            note.error.clear();
-                            (note.shared, note.rights) = (false, NoteRights::default());
-                            note.owner_name.clear();
-                            note.web_url.clear();
-                        }
-                        note_created(self.mailbox, op.note, self.salt);
-                        self.applied.say(fill(if here.shared { KEPT_WHEN_UNSHARED } else { KEPT_WHEN_GONE }, &[("title", &title)]));
+                        anew(self.mailbox, op.note, self.salt);
+                        let line = if !words {
+                            MADE_ANEW
+                        } else if here.shared {
+                            KEPT_WHEN_UNSHARED
+                        } else {
+                            KEPT_WHEN_GONE
+                        };
+                        self.applied.say(fill(line, &[("title", &title)]));
                     }
                     NoteResult::Gone => {
                         // Deleted there, and nothing of hers to keep: it goes here too.

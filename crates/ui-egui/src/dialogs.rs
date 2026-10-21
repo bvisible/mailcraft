@@ -316,6 +316,8 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
             };
             question(tl!("Delete Contact"), format!("{what} {}", tl!("Contacts don't go to Deleted Items.")), tl!("Delete"))
         }
+        // //// Neoffice — a note a server keeps is deleted there, where an administrator can restore it: asked about first, naming it (one she may not delete is refused by the command, with the reason) (notes_view.rs).
+        "notes.delete" => crate::notes_view::delete_question(app, params),
         "folder.empty" => {
             let f = folder("id")?;
             if mb.count(f.id) == 0 {

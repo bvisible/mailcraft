@@ -357,3 +357,34 @@ fn a_hosting_tab_asks_before_it_is_left_while_a_note_has_no_name_on_its_server()
     assert!(app.session.mailbox.notes.changes.is_empty());
     assert!(app.notes_unsent(), "as far as this page knows, nowhere but here");
 }
+
+#[test]
+fn a_deletion_undone_after_its_answer_was_lost_has_the_notes_read_and_the_note_made_anew_if_it_is_gone() {
+    let (mut app, id, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    app.execute("notes.delete", json!({"id": groceries})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    // The answer is lost; she undoes the deletion.
+    let lost = NoteOutcome { op, result: NoteResult::Failed, error: "network: the connection broke".into(), ..Default::default() };
+    let notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![lost], ..Default::default() }),
+        ..Default::default()
+    };
+    answer(&mut app, &asked, id, Some(notes));
+    app.execute("edit.undo", json!({})).unwrap();
+    assert!(app.session.mailbox.notes.note(groceries).is_some());
+    app.notes_look(true, T0 + 6.0 * SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 10.0 * SECOND), "read at once, to know whether the server deleted it");
+    let ask = last(&asked).notes.unwrap();
+    assert!(ask.read && ask.state.is_empty() && ask.changes.is_none(), "{ask:?}");
+    // It did.
+    answer(&mut app, &asked, id, Some(read(id, vec![remote("VN-1", "Offsite")], "s2")));
+    let mine = app.session.mailbox.notes.note(groceries).cloned().expect("never lost");
+    assert_eq!((mine.origin.id.as_str(), mine.text.as_str()), ("", "Groceries words"));
+    app.notes_look(true, T0 + 11.0 * SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 15.0 * SECOND));
+    let made = last(&asked).notes.unwrap().changes.unwrap().ops;
+    assert_eq!((made.len(), made[0].kind, made[0].note), (1, mailcraft_model::note::NoteChangeKind::Create, groceries), "made there anew");
+}

@@ -104,6 +104,9 @@
 	Unsaved Note	Note non enregistrée
 	A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.	Une note contient des mots qui ne peuvent pas encore être enregistrés : ils dépassent la longueur acceptée par son serveur. En fermant maintenant, ils seront perdus.
 	A note has words that can't be saved yet: {why} Closing now loses them.	Une note contient des mots qui ne peuvent pas encore être enregistrés : {why} En fermant maintenant, ils seront perdus.
+	"{title}" will be removed from Neoffice's notes.	« {title} » sera supprimée des notes de Neoffice.
+	This note will be removed from Neoffice's notes.	Cette note sera supprimée des notes de Neoffice.
+	An administrator can restore it.	Un administrateur peut la restaurer.
 	Close Anyway	Fermer quand même
 	1,000	1'000
 	Discard Unsaved Note Words	Abandonner les mots non enregistrés de la note

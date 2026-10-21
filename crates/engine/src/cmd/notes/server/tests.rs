@@ -789,3 +789,68 @@ fn a_read_before_the_resend_keeps_words_typed_back_over_her_own_lost_write() {
         "told against the words she read: the server's copy of her own write is known by what went"
     );
 }
+
+/// Offsite deleted and the deletion sent, its answer lost (the server may have deleted it); ten minutes later the
+/// deletion is undone.
+fn deletion_lost_then_undone() -> (Session, u64, u64) {
+    let (mut s, account) = session();
+    let offsite = by_remote(&s, "VN-1");
+    run(&mut s, "notes.delete", json!({"id": offsite}));
+    let going = note_upload_now(&mut s, account);
+    super::notes_sending(&mut s, &going);
+    answer(&mut s, account, NoteResult::Failed, "network: the connection broke", None);
+    s.clock.now = s.clock.now.map(|now| now + 600);
+    assert!(s.undo());
+    let back = note(&s, offsite);
+    assert_eq!((back.origin.id.as_str(), back.text.as_str()), ("VN-1", "Offsite words"));
+    (s, account, offsite)
+}
+
+#[test]
+fn a_deletion_undone_after_its_answer_was_lost_is_made_anew_when_the_server_deleted_the_note() {
+    let (mut s, account, offsite) = deletion_lost_then_undone();
+    // A whole read without it: the server did delete it.
+    let said = run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-2", "Groceries", "v")])}));
+    let mine = note(&s, offsite);
+    assert_eq!((mine.origin.id.as_str(), mine.title.as_str(), mine.text.as_str()), ("", "Offsite", "Offsite words"), "never lost: {said}");
+    assert_eq!(said["messages"], json!(["\"Offsite\" was already deleted on the server when its deletion was undone here: it is made there anew."]));
+    let going = ops(&mut s, account);
+    assert_eq!(
+        (going.len(), going[0].kind, going[0].fields.text.as_deref()),
+        (1, NoteChangeKind::Create, Some("Offsite words")),
+        "a new note of hers, with her words"
+    );
+    assert!(!super::notes_need_read(&s, account));
+}
+
+#[test]
+fn a_deletion_undone_after_its_answer_was_lost_makes_nothing_twice_when_the_server_kept_the_note() {
+    let (mut s, account, offsite) = deletion_lost_then_undone();
+    assert!(super::notes_need_read(&s, account), "whether the server deleted it is read at once");
+    assert!(ops(&mut s, account).is_empty(), "nothing goes before that is known");
+    // A whole read with it: the server never deleted it.
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "v2"), remote("VN-2", "Groceries", "v")])}));
+    assert_eq!(note(&s, offsite).origin.id, "VN-1");
+    assert!(s.mailbox.notes.changes.is_empty() && ops(&mut s, account).is_empty(), "nothing is made, nothing waits");
+    assert_eq!(s.mailbox.notes.items.values().filter(|note| note.title == "Offsite").count(), 1);
+    assert!(!super::notes_need_read(&s, account));
+    // What she types since goes as a change of that very note.
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Lake walk"}));
+    let going = ops(&mut s, account);
+    assert_eq!((going.len(), going[0].kind, going[0].version.as_str()), (1, NoteChangeKind::Update, "v2"));
+}
+
+#[test]
+fn a_deletion_undone_after_its_answer_was_lost_and_typed_into_keeps_her_words_either_way() {
+    // Typed into before the read, the server having deleted it: her words go as a change, and come back as a note of
+    // her own made anew.
+    let (mut s, account, offsite) = deletion_lost_then_undone();
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Lake walk"}));
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Offsite words"}));
+    assert!(!s.mailbox.notes.changes.is_empty(), "typed back: still to be checked");
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Lake walk"}));
+    answer(&mut s, account, NoteResult::Gone, "", None);
+    let mine = note(&s, offsite);
+    assert_eq!((mine.origin.id.as_str(), mine.text.as_str()), ("", "Lake walk"));
+    assert_eq!(kinds(&s), [NoteChangeKind::Create]);
+}

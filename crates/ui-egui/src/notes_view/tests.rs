@@ -476,3 +476,54 @@ fn words_kept_for_a_note_gone_keep_a_title_too_long_for_the_server_whole() {
     assert_eq!(kept.title.chars().count(), 12);
     assert_eq!(kept.text, "Groceries for the week\nMilk", "her whole title first, then her words");
 }
+
+#[test]
+fn deleting_a_note_the_server_keeps_asks_first_and_escape_or_cancel_deletes_nothing() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    let delete = |window: &mut Harness<'static, MailApp>| {
+        let rect = window.state().hit.rect("noteDelete", id).expect("Delete");
+        click(window, rect.center(), PointerButton::Primary, 1);
+    };
+    let asked = |window: &Harness<'static, MailApp>| match &window.state().dialog {
+        Some(crate::dialogs::Dialog::Confirm { command, ask, .. }) if command == "notes.delete" => {
+            Some((ask.title.clone(), ask.text.clone(), ask.action.clone()))
+        }
+        _ => None,
+    };
+    // Its button asks, naming it.
+    delete(&mut window);
+    let (title, text, action) = asked(&window).expect("asked first");
+    assert_eq!((title.as_str(), action.as_str()), ("Delete Note", "Delete"));
+    assert_eq!(text, "\"Groceries\" will be removed from Neoffice's notes. An administrator can restore it.");
+    // Escape: nothing deleted.
+    key(&mut window, Key::Escape);
+    assert!(asked(&window).is_none() && window.state().session.mailbox.notes.note(id).is_some(), "Escape deletes nothing");
+    // Cancel: nothing deleted.
+    delete(&mut window);
+    assert!(asked(&window).is_some());
+    window.get_by_label("Cancel").click();
+    window.run_steps(3);
+    assert!(asked(&window).is_none() && window.state().session.mailbox.notes.note(id).is_some(), "Cancel deletes nothing");
+    // The Delete key asks too.
+    key(&mut window, Key::Delete);
+    assert!(asked(&window).is_some(), "the Delete key asks");
+    // Delete: deleted, and noted for the server.
+    let Some(crate::dialogs::Dialog::Confirm { command, params, ask }) = window.state_mut().dialog.take() else { panic!("no question") };
+    crate::dialogs::go_ahead(window.state_mut(), &command, crate::dialogs::answered(&params, &ask.with, None));
+    assert!(window.state().session.mailbox.notes.note(id).is_none());
+    assert_eq!(window.state().session.mailbox.notes.changes.last().map(|change| change.kind), Some(mailcraft_model::note::NoteChangeKind::Delete));
+    // One of this computer's own asks nothing (an undo brings it back); one shared with her she may not delete stays
+    // refused, and asks nothing either.
+    let own = window.state_mut().session.mailbox.alloc_id();
+    window.state_mut().session.mailbox.notes.items.insert(own, Arc::new(Note { id: own, title: "Mine".into(), ..Default::default() }));
+    assert!(crate::dialogs::confirmation(window.state(), "notes.delete", &json!({"id": own})).is_none());
+    let theirs = server_note(
+        &mut window,
+        account,
+        Note { title: "Codes".into(), shared: true, rights: NoteRights { write: true, write_text: true, delete: false }, ..Default::default() },
+    );
+    assert!(window.state_mut().run("notes.delete", json!({"id": theirs})).is_err());
+    assert!(window.state().dialog.is_none() && window.state().session.mailbox.notes.note(theirs).is_some());
+}
