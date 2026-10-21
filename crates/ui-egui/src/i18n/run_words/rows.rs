@@ -310,6 +310,7 @@ pub(super) static ROWS: &[Row] = &[
         run_word!("The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left."),
         &[],
     ),
+    row(NOTES, Line, run_word!("The undo couldn't keep a note in step with its server: too many note changes are waiting to be sent."), &[]),
     // What a job's notes say went wrong (`jmap::pim::notes`): they name no note.
     row(NOTES_JOB, Line, run_word!("Couldn't send the note changes: {why}"), &[("why", Why)]),
     row(NOTES_JOB, Line, run_word!("Couldn't read the notes: {why}"), &[("why", Why)]),

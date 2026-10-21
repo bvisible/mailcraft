@@ -171,6 +171,8 @@ pub struct Notes {
     pub broken: BTreeSet<String>,
     /// Notes whose `get` leaves out `updated` (a server that says no version of them), by id.
     pub unversioned: BTreeSet<String>,
+    /// Notes a query lists that `get` says are not found (deleted between the two), by id.
+    pub vanishing: BTreeSet<String>,
     /// Notes (by id, or a new one by its `uid`) whose write is answered with this SetError `type`.
     pub refused: BTreeMap<String, &'static str>,
     /// The notes made with a `uid`: `uid` → (id, when).
@@ -193,6 +195,7 @@ impl Default for Notes {
             max_text: MAX_TEXT,
             broken: BTreeSet::new(),
             unversioned: BTreeSet::new(),
+            vanishing: BTreeSet::new(),
             refused: BTreeMap::new(),
             made: BTreeMap::new(),
             clock: NOTES_CLOCK,
@@ -451,7 +454,7 @@ impl Notes {
         }
         let (mut list, mut not_found) = (Vec::new(), Vec::new());
         for id in &ids {
-            match self.list.iter().find(|note| &note.id == id && note.visible()) {
+            match self.list.iter().find(|note| &note.id == id && note.visible() && !self.vanishing.contains(id)) {
                 Some(note) => {
                     let mut served = Notes::served(note, wanted.as_deref());
                     if let (true, Value::Object(map)) = (self.unversioned.contains(id), &mut served) {

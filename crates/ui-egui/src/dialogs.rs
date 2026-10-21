@@ -1145,6 +1145,15 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             // OK is what Enter means here too.
             close |= !open || enter;
         }
+        // //// Neoffice — the question before deleting a server's note is modal: nothing behind it changes what it names, and only the owner answers it (notes_view.rs).
+        Dialog::Confirm { command, params, ask } if command == "notes.delete" => match crate::notes_view::delete_modal(app, ctx, ask) {
+            Some(true) => {
+                close = true;
+                go_ahead(app, "notes.delete", answered(params, &ask.with, None));
+            }
+            Some(false) => close = true,
+            None => {}
+        },
         Dialog::Confirm { command, params, ask } => {
             // The way of going ahead that was picked: what it adds to the parameters.
             let mut picked: Option<Value> = None;

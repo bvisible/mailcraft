@@ -411,3 +411,23 @@ fn reads_for_a_version_that_none_brings_come_less_and_less_often() {
     }
     assert_eq!(at, [5.0, 125.0, 365.0], "at once, then two minutes, then four");
 }
+
+#[test]
+fn a_job_of_an_account_moved_to_another_server_is_forgotten_with_what_it_held() {
+    let (mut app, id, asked) = read_once();
+    assert!(app.jmap_notes_state(id).is_some());
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    // The account is moved to another server while the job runs.
+    app.execute("account.edit", json!({"id": id, "jmap": {"session": "https://mail2.example.org/jmap/session", "bearer": true}})).unwrap();
+    // The old server's answer comes: nothing of it is taken in.
+    let done = NoteOutcome { op, result: NoteResult::Done, note: Some(remote("VN-1", "Lunch")), ..Default::default() };
+    let mut notes = read(id, vec![remote("VN-1", "Offsite"), remote("VN-2", "Groceries")], "s2");
+    notes.uploaded = Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![done], ..Default::default() });
+    answer(&mut app, &asked, id, Some(notes));
+    assert!(app.session.mailbox.notes.items.values().all(|note| note.origin.id.is_empty()), "the old server's notes stay out");
+    assert!(app.session.mailbox.notes.changes.iter().all(|change| change.kind != mailcraft_model::note::NoteChangeKind::Delete));
+    assert_eq!(app.jmap_notes_state(id), None, "nor is its state held");
+}

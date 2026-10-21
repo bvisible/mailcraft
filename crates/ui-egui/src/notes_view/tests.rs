@@ -550,3 +550,32 @@ fn the_close_question_ends_the_reason_as_a_sentence() {
     );
     assert!(close_text("", mailbox).contains("longer than its server takes"));
 }
+
+#[test]
+fn the_delete_question_deletes_the_note_it_names_and_nothing_behind_it_changes_that() {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    let other = server_note(&mut window, account, Note { title: "Codes".into(), text: "4711".into(), ..Default::default() });
+    window.run_steps(3);
+    let rect = window.state().hit.rect("noteDelete", id).expect("Delete");
+    click(&mut window, rect.center(), PointerButton::Primary, 1);
+    window.run_steps(3);
+    // Modal: its own buttons, and a click on a card behind it selects nothing.
+    assert!(window.state().hit.rect("noteDeleteConfirm", 0).is_some(), "the question, modal");
+    if let Some(card) = window.state().hit.rect("note", other) {
+        click(&mut window, card.center(), PointerButton::Primary, 1);
+    }
+    assert_eq!(window.state().session.sel.note, Some(id));
+    // Nor does an agent reach the window meanwhile.
+    let (request, _answer) = crate::ControlRequest::new("ui.click", json!({"x": 1, "y": 1}));
+    let request = request.from_agent(vec![mailcraft_engine::agent::Class::Input]);
+    let settled = crate::agent_gate::screen(window.state_mut(), &request, &[mailcraft_engine::agent::Class::Input]);
+    assert!(matches!(settled, Some(crate::control::Outcome::Done(ref reply)) if reply["ok"] == false));
+    // Something else selects the other note meanwhile: Delete deletes the one it named, and only that one.
+    window.state_mut().session.sel.note = Some(other);
+    let Some(crate::dialogs::Dialog::Confirm { command, params, ask }) = window.state_mut().dialog.take() else { panic!("no question") };
+    crate::dialogs::go_ahead(window.state_mut(), &command, crate::dialogs::answered(&params, &ask.with, None));
+    assert!(window.state().session.mailbox.notes.note(id).is_none(), "the note named is deleted");
+    assert!(window.state().session.mailbox.notes.note(other).is_some(), "never one she wasn't asked about");
+}

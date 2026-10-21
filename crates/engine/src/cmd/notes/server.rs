@@ -43,7 +43,7 @@ use super::super::remote::{EventsWaiting, new_token, owner, wait_after};
 use super::super::{bad, fail};
 use super::words::{
     CHANGE_PUT_BACK, KEPT_AS_COPY, KEPT_REFUSED, KEPT_WHEN_GONE, KEPT_WHEN_UNSHARED, MADE_ANEW, NO_LONGER_KEPT, NO_LONGER_KEPT_PAGE,
-    NO_ROOM_FOR_COPY, NOT_DELETED, NOT_SAVED, TOO_MANY_NOTE_CHANGES, fill,
+    NO_ROOM_FOR_COPY, NOT_DELETED, NOT_SAVED, TOO_MANY_NOTE_CHANGES, UNDO_NOT_IN_STEP, fill,
 };
 use crate::{CmdError, CmdResult, CommandSpec, Session, p};
 
@@ -287,7 +287,8 @@ pub(super) fn note_deleted(mailbox: &mut Mailbox, before: &Note) {
 /// A deletion that went without an answer, undone: the note is here again, and the server may have deleted it. A change
 /// of it is noted that waits to know ([`NoteChange::undeleted`]): if the server did delete it, it is made there anew with
 /// her words; if not, nothing is made twice.
-pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
+pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) -> Vec<String> {
+    let mut said = Vec::new();
     for change in now.notes.changes.iter().filter(|change| change.kind == NoteChangeKind::Delete && !change.sent.is_empty()) {
         let Some(id) = back.notes.by_remote(change.account, &change.remote).map(|note| note.id) else { continue };
         let deleted = back.notes.changes.iter().any(|kept| kept.kind == NoteChangeKind::Delete && kept.remote == change.remote);
@@ -300,6 +301,7 @@ pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
             Some(kept) => (kept.undeleted, kept.retry_at) = (true, 0),
             None if full => {
                 log::warn!("notes: a deletion undone after it went unanswered couldn't be noted: too many changes wait");
+                said.push(UNDO_NOT_IN_STEP.to_string());
             }
             None => {
                 let base = change.base.clone().or_else(|| back.notes.note(id).map(|note| Box::new(note.clone())));
@@ -335,10 +337,13 @@ pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
             }
             None if full => {
                 log::warn!("notes: a change undone after it went unanswered couldn't be noted: too many changes wait");
+                said.push(UNDO_NOT_IN_STEP.to_string());
             }
             None => back.notes.changes.push(NoteChange { retry_at: 0, ..change.clone() }),
         }
     }
+    said.dedup();
+    said
 }
 
 // ---- what is sent ----
@@ -522,28 +527,31 @@ fn let_go(s: &mut Session, account: Id) -> NotesMerged {
         return merged;
     }
     // (A new note, one changed here, and one the server refused to make, here alone: the words that waited to go; and
-    // what each change was made over.)
-    let mut waiting: HashMap<Id, Option<Box<Note>>> = HashMap::new();
+    // what each change was made over, the mark a new one went with, and what went without an answer.)
+    let mut waiting: HashMap<Id, NoteHold> = HashMap::new();
     for change in notes.changes.iter().filter(|change| change.account == account && change.kind != NoteChangeKind::Delete) {
-        let base = if change.kind == NoteChangeKind::Update { change.base.clone() } else { None };
-        waiting.insert(change.note, base);
+        let hold = match change.kind {
+            NoteChangeKind::Update => NoteHold { base: change.base.clone(), sent: change.sent.clone(), ..Default::default() },
+            _ => NoteHold { token: change.token.clone(), ..Default::default() },
+        };
+        waiting.insert(change.note, hold);
     }
     for note in notes.items.values().filter(|note| note.origin.account == account && note.origin.id.is_empty()) {
-        waiting.entry(note.id).or_insert(None);
+        waiting.entry(note.id).or_insert_with(|| NoteHold { token: note.token.clone(), ..Default::default() });
     }
     notes.servers.retain(|server| server.account != account);
     notes.changes.retain(|change| change.account != account);
     let ours: Vec<Id> = notes.items.values().filter(|note| note.origin.account == account).map(|note| note.id).collect();
     for id in ours {
-        let Some(base) = waiting.get(&id) else {
+        let Some(hold) = waiting.get(&id) else {
             notes.items.remove(&id);
             merged.removed += 1;
             continue;
         };
         if let Some(note) = notes.note_mut(id) {
             let held = (!keeps_local).then(|| {
-                let remote = if base.is_some() { note.origin.id.clone() } else { String::new() };
-                Box::new(NoteHold { account, email: email.clone(), session: session.clone(), remote, base: base.clone() })
+                let remote = if hold.base.is_some() { note.origin.id.clone() } else { String::new() };
+                Box::new(NoteHold { account, email: email.clone(), session: session.clone(), remote, ..hold.clone() })
             });
             let mut own = Note {
                 id,
@@ -566,7 +574,7 @@ fn let_go(s: &mut Session, account: Id) -> NotesMerged {
 }
 
 /// What a hold says the server of an account is: its JMAP session, or none.
-fn session_of(account: &mailcraft_model::Account) -> String {
+pub fn session_of(account: &mailcraft_model::Account) -> String {
     account.jmap.as_ref().map(|jmap| jmap.session.trim().to_string()).unwrap_or_default()
 }
 
@@ -575,11 +583,7 @@ fn session_of(account: &mailcraft_model::Account) -> String {
 /// that waits to know whether it is still there ([`NoteChange::undeleted`], [`NoteChange::resumed`]), told against the
 /// oldest version so that it never goes over other words. As many as there is room to note; how many.
 fn give_back(mailbox: &mut Mailbox, account: Id, salt: u64) -> usize {
-    let Some(owner) = mailbox.account(account) else { return 0 };
-    let (email, session) = (owner.email.trim().to_string(), session_of(owner));
-    let same = |hold: &NoteHold| hold.account == account && hold.email.eq_ignore_ascii_case(&email) && hold.session == session;
-    let mut held: Vec<Id> =
-        mailbox.notes.items.values().filter(|note| note.origin.is_local() && note.held.as_deref().is_some_and(same)).map(|note| note.id).collect();
+    let mut held = held_here(mailbox, account);
     held.sort_unstable();
     let mut given = 0;
     for id in held {
@@ -587,35 +591,54 @@ fn give_back(mailbox: &mut Mailbox, account: Id, salt: u64) -> usize {
             break;
         }
         let Some(hold) = mailbox.notes.note_mut(id).and_then(|note| note.held.take()) else { continue };
-        let NoteHold { remote, base, .. } = *hold;
+        let NoteHold { remote, base, token, sent, .. } = *hold;
+        // (A copy of it a read brought anyway, with nothing of its own waiting, is the server's: hers takes its place.)
+        let twin = mailbox.notes.by_remote(account, &remote).map(|note| note.id).filter(|twin| *twin != id && !remote.is_empty());
+        if let Some(twin) = twin.filter(|twin| !mailbox.notes.changes.iter().any(|change| change.note == *twin)) {
+            mailbox.notes.items.remove(&twin);
+        }
         let had = !remote.is_empty() && mailbox.notes.by_remote(account, &remote).is_none();
         match base.filter(|_| had) {
             Some(mut base) => {
-                if let Some(note) = mailbox.notes.note_mut(id) {
-                    // Hers as she left it, the server's as it was.
-                    let mut back = Note { id, origin: Origin { account, id: remote.clone(), ..Default::default() }, ..(*base).clone() };
-                    (back.title, back.text, back.pinned, back.archived) = (note.title.clone(), note.text.clone(), note.pinned, note.archived);
-                    (back.created, back.updated) = (note.created, note.updated);
-                    back.token.clear();
-                    *note = back;
+                let Some(note) = mailbox.notes.note_mut(id) else { continue };
+                // Hers as she left it, the server's as it was.
+                let mut back = Note { id, origin: Origin { account, id: remote.clone(), ..Default::default() }, ..(*base).clone() };
+                (back.title, back.text, back.pinned, back.archived) = (note.title.clone(), note.text.clone(), note.pinned, note.archived);
+                (back.created, back.updated) = (note.created, note.updated);
+                back.token.clear();
+                back.error.clear();
+                let mine = changed(&base, &back);
+                *note = back;
+                // Nothing of hers left: it is the server's note, as any other. Otherwise the change goes, never over
+                // other words; made anew if the server deleted it only when her words are in it.
+                if !mine.is_empty() || !sent.is_empty() {
+                    base.version = OLDEST_VERSION.to_string();
+                    mailbox.notes.changes.push(NoteChange {
+                        account,
+                        kind: NoteChangeKind::Update,
+                        note: id,
+                        remote,
+                        base: Some(base),
+                        sent,
+                        undeleted: mine.has_words(),
+                        resumed: true,
+                        ..Default::default()
+                    });
                 }
-                base.version = OLDEST_VERSION.to_string();
-                mailbox.notes.changes.push(NoteChange {
-                    account,
-                    kind: NoteChangeKind::Update,
-                    note: id,
-                    remote,
-                    base: Some(base),
-                    undeleted: true,
-                    resumed: true,
-                    ..Default::default()
-                });
             }
             None => {
                 if let Some(note) = mailbox.notes.note_mut(id) {
                     note.origin.account = account;
                 }
-                note_created(mailbox, id, salt);
+                if token.is_empty() {
+                    note_created(mailbox, id, salt);
+                } else {
+                    // Sent with its mark again: the server makes no second one.
+                    if let Some(note) = mailbox.notes.note_mut(id) {
+                        note.token.clone_from(&token);
+                    }
+                    mailbox.notes.changes.push(NoteChange { account, kind: NoteChangeKind::Create, note: id, token, ..Default::default() });
+                }
             }
         }
         given += 1;
@@ -623,16 +646,55 @@ fn give_back(mailbox: &mut Mailbox, account: Id, salt: u64) -> usize {
     given
 }
 
+/// The notes a page holds of `account`'s server as it is now (its address and session as they were then).
+fn held_here(mailbox: &Mailbox, account: Id) -> Vec<Id> {
+    let Some(owner) = mailbox.account(account) else { return Vec::new() };
+    let (email, session) = (owner.email.trim().to_string(), session_key(&session_of(owner)));
+    let same = |hold: &NoteHold| hold.account == account && hold.email.eq_ignore_ascii_case(&email) && session_key(&hold.session) == session;
+    mailbox.notes.items.values().filter(|note| note.origin.is_local() && note.held.as_deref().is_some_and(same)).map(|note| note.id).collect()
+}
+
+/// A JMAP session's address as two are compared: without the spaces around it or a slash at its end, its scheme and
+/// host in small letters.
+pub fn session_key(session: &str) -> String {
+    let session = session.trim().trim_end_matches('/');
+    match session.split_once("://") {
+        Some((scheme, rest)) => {
+            let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+            format!("{}://{}/{path}", scheme.to_ascii_lowercase(), host.to_ascii_lowercase())
+        }
+        None => session.to_string(),
+    }
+}
+
+/// A job's answer that says which server it asked (`session`) is `owner`'s only while that is still its server: one
+/// moved to another since would take another server's notes in, and send them back there under its names. As
+/// [`owner`] checks the address.
+fn same_server(owner: &mailcraft_model::Account, session: &str) -> Result<(), CmdError> {
+    if session.trim().is_empty() || session_key(session) == session_key(&session_of(owner)) {
+        Ok(())
+    } else {
+        Err(fail(format!("this answer was from another server than {}'s now", owner.name)))
+    }
+}
+
 /// `account`'s address or server was changed: it is another's now, and what was the old server's of notes is let go as
 /// when a server stops keeping notes ([`let_go`]); nothing of it goes to the new one. What is said of it, for the log.
 pub fn account_moved(s: &mut Session, account: Id) -> Vec<String> {
-    let_go(s, account).messages
+    let said = let_go(s, account).messages;
+    // (Said in the status bar: where her waiting notes are now.)
+    if !said.is_empty() {
+        s.sync_status = said.join(" ");
+    }
+    said
 }
 
 /// Take in what a server has of an account's notes ([`NotesDownload`]): see the module. Nothing is changed when this
 /// returns an error.
 pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMerged, CmdError> {
-    let account = owner(&s.mailbox, download.account, &download.email)?.id;
+    let owner = owner(&s.mailbox, download.account, &download.email)?;
+    same_server(owner, &download.session)?;
+    let account = owner.id;
     let mut download = download.clone();
     download.tidy();
     let mut merged = NotesMerged::default();
@@ -649,6 +711,12 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
     // The notes a page held when this very server stopped keeping notes (it keeps none of its own) go back to it.
     let salt = s.rev();
     let held = if keeps_local { 0 } else { give_back(&mut s.mailbox, account, salt) };
+    // (Those it couldn't give back yet are that server's notes: a read doesn't bring them in beside them.)
+    let still_held: HashSet<String> = held_here(&s.mailbox, account)
+        .into_iter()
+        .filter_map(|id| s.mailbox.notes.note(id).and_then(|note| note.held.as_ref()).map(|hold| hold.remote.clone()))
+        .filter(|remote| !remote.is_empty())
+        .collect();
     let notes = &s.mailbox.notes;
     // The notes a change of waits for (they are as they are here), and those deleted here (they stay deleted).
     let waiting: HashSet<Id> = notes.changes.iter().filter(|change| change.account == account).map(|change| change.note).collect();
@@ -661,7 +729,7 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
     let mut seen: HashSet<String> = HashSet::new();
     for remote in &download.notes {
         seen.insert(remote.id.clone());
-        if deleted.contains(&remote.id) {
+        if deleted.contains(&remote.id) || still_held.contains(&remote.id) {
             continue;
         }
         let here =
@@ -721,7 +789,7 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
         .notes
         .changes
         .iter()
-        .filter(|change| change.account == account && change.undeleted && there(&change.remote))
+        .filter(|change| change.account == account && change.undeleted && there(&change.remote) && !gone_there(&change.remote))
         .map(|change| change.note)
         .collect();
     for id in &kept_there {
@@ -847,7 +915,9 @@ fn called(note: Option<&Note>) -> String {
 
 /// Take in what a server said to a [`NotesUpload`] ([`NotesUploaded`]): see the module.
 pub fn apply_note_outcomes(s: &mut Session, uploaded: &NotesUploaded) -> Result<NotesApplied, CmdError> {
-    let account = owner(&s.mailbox, uploaded.account, &uploaded.email)?.id;
+    let owner = owner(&s.mailbox, uploaded.account, &uploaded.email)?;
+    same_server(owner, &uploaded.session)?;
+    let account = owner.id;
     let (now, salt) = (s.now(), s.rev());
     let before = s.mailbox.notes.clone();
     let mut taking = Taking { mailbox: &mut s.mailbox, account, now, salt, applied: NotesApplied::default(), told: false };

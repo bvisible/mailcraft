@@ -22,7 +22,7 @@ use std::collections::HashMap;
 
 use mailcraft_engine::Module;
 use mailcraft_engine::cmd::notes::server::{
-    apply_note_outcomes, merge_notes, note_upload, notes_need_read, notes_sending, notes_waiting, settle_note_changes,
+    apply_note_outcomes, merge_notes, note_upload, notes_need_read, notes_sending, notes_waiting, session_key, session_of, settle_note_changes,
 };
 use mailcraft_model::Id;
 use mailcraft_model::note::{NoteResult, NotesAsk, NotesUpload};
@@ -56,11 +56,15 @@ struct NotesJob {
     /// What was last sent, and when (milliseconds); and the state of the mailbox then.
     sent: Option<(NotesUpload, f64)>,
     sent_rev: Option<u64>,
+    /// The account's server when this was learnt (its session, as compared): all of it is of that server only.
+    server: String,
 }
 
 /// The job in flight's notes: whether it read them and carried changes, and when it was asked for.
 struct Flight {
     account: Id,
+    /// The server it asked (its session, as compared).
+    server: String,
     read: bool,
     carried: bool,
     asked_at: Timestamp,
@@ -100,7 +104,24 @@ impl MailApp {
             // What waits and can't go any more (its note, account or server gone) is given up; the engine logs it.
             settle_note_changes(&mut self.session);
             self.jmap_pim.notes.rev = Some(self.session.rev());
+            // An account moved to another server: what was learnt of the old one is forgotten.
+            let moved: Vec<Id> = self
+                .jmap_pim
+                .notes
+                .accounts
+                .iter()
+                .filter(|(account, job)| !job.server.is_empty() && job.server != self.notes_server(**account))
+                .map(|(account, _)| *account)
+                .collect();
+            for account in moved {
+                self.jmap_pim.notes.accounts.remove(&account);
+            }
         }
+    }
+
+    /// The server of `account` now, as compared: its JMAP session.
+    fn notes_server(&self, account: Id) -> String {
+        self.session.mailbox.account(account).map(|a| session_key(&session_of(a))).unwrap_or_default()
     }
 
     /// What of `account`'s notes is to go now, when anything: due, the mailbox quiet a moment, and not the very same as
@@ -157,7 +178,9 @@ impl MailApp {
         // A change waiting for the version of its words: the notes are read whole, the state held says nothing of it.
         // (Otherwise the state goes with changes alone too: the host keeps it when the server took them from that very
         // state.)
-        let held = self.jmap_pim.notes.accounts.get(&account).and_then(|job| job.state.clone());
+        let server = self.notes_server(account);
+        let held =
+            self.jmap_pim.notes.accounts.get(&account).filter(|job| job.server.is_empty() || job.server == server).and_then(|job| job.state.clone());
         let (state, read_at) = if notes_need_read(&self.session, account) { Default::default() } else { held.unwrap_or_default() };
         Some(NotesAsk { read, state, read_at, changes })
     }
@@ -172,7 +195,12 @@ impl MailApp {
         }
         let asked_at = self.session.now();
         let rev = self.session.rev();
+        let server = self.notes_server(account);
         let job = self.jmap_pim.notes.accounts.entry(account).or_default();
+        if !job.server.is_empty() && job.server != server {
+            *job = NotesJob::default();
+        }
+        job.server.clone_from(&server);
         if ask.read {
             (job.read, job.due) = (Some(now), false);
         }
@@ -185,7 +213,7 @@ impl MailApp {
             // (The state of the mailbox when they went, with them kept as sent: while it is the same, so are they.)
             job.sent_rev = Some(rev);
         }
-        self.jmap_pim.notes.flight = Some(Flight { account, read: ask.read, carried: ask.changes.is_some(), asked_at });
+        self.jmap_pim.notes.flight = Some(Flight { account, server, read: ask.read, carried: ask.changes.is_some(), asked_at });
     }
 
     /// Take in what the job of `account` brought of its notes (taken out of `result`), as the module says. Whether it went
@@ -193,6 +221,14 @@ impl MailApp {
     pub(crate) fn take_in_notes(&mut self, account: Id, result: &mut JmapPimResult, errors: &mut Vec<String>) -> bool {
         let flight = self.jmap_pim.notes.flight.take().filter(|flight| flight.account == account);
         let Some(flight) = flight else { return true };
+        // A job of a server the account no longer has: nothing of it is taken in (it would be another server's notes,
+        // and its names another's), and what was held of that server is forgotten.
+        if flight.server != self.notes_server(account) {
+            result.notes = None;
+            self.jmap_pim.notes.accounts.remove(&account);
+            log::info!("notes, account {account}: a job of the server it had before was set aside");
+            return true;
+        }
         let answer = result.notes.take();
         let ended_early = result.stopped || result.auth_refused || result.busy_for.is_some();
         let mut messages: Vec<String> = Vec::new();

@@ -743,16 +743,50 @@ pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::di
         title: tl!("Delete Note").to_string(),
         text: format!("{what} {}", tl!("An administrator can restore it.")),
         action: tl!("Delete").to_string(),
-        with: Value::Null,
+        // The note it names, and no other: whatever is selected when it is answered.
+        with: json!({"id": id, "confirmed": true}),
         more: Vec::new(),
         note: None,
     })
 }
 
-/// Whether the question closing asks about words that can't be saved is up: nothing but the owner's answer reaches the
-/// window meanwhile (an agent's clicks and keys are refused).
-pub(crate) fn asking_to_close(app: &MailApp) -> bool {
-    app.ctx.as_ref().is_some_and(|ctx| ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK)).is_some()))
+/// The question before deleting a note its server keeps ([`delete_question`]), shown modal: nothing behind it is reached
+/// until it is answered. `Some(true)`: Delete; `Some(false)`: Cancel (Escape and Enter too: deleting takes a deliberate
+/// click); `None`: not answered yet.
+pub(crate) fn delete_modal(app: &mut MailApp, ctx: &egui::Context, ask: &crate::dialogs::Question) -> Option<bool> {
+    let t = Tokens::get(ctx);
+    let frame = egui::Frame::window(&ctx.global_style()).fill(t.surface).inner_margin(egui::Margin::same(16));
+    let width = (ctx.content_rect().width() - 48.0).clamp(120.0, 420.0);
+    let mut answer = None;
+    egui::Modal::new(egui::Id::new("notes_delete_ask")).frame(frame).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, |ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+        ui.label(RichText::new(ask.title.as_str()).font(semibold(14.0)));
+        ui.label(ask.text.as_str());
+        ui.add_space(6.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let no = ui.add(egui::Button::new(tl!("Cancel")).min_size(vec2(72.0, 26.0)));
+            let yes = ui.add(egui::Button::new(ask.action.as_str()).min_size(vec2(72.0, 26.0)));
+            app.hit.add("noteDeleteCancel", 0, no.rect);
+            app.hit.add("noteDeleteConfirm", 0, yes.rect);
+            if no.clicked() {
+                answer = Some(false);
+            }
+            if yes.clicked() {
+                answer = Some(true);
+            }
+        });
+    });
+    let (enter, escape) =
+        ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+    answer.or((enter || escape).then_some(false))
+}
+
+/// Whether a question of the notes' is up (closing with words that can't be saved, deleting a server's note): nothing
+/// but the owner's answer reaches the window meanwhile (an agent's clicks and keys are refused).
+pub(crate) fn asking(app: &MailApp) -> bool {
+    let deleting = matches!(&app.dialog, Some(crate::dialogs::Dialog::Confirm { command, .. }) if command == "notes.delete");
+    deleting || app.ctx.as_ref().is_some_and(|ctx| ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK)).is_some()))
 }
 
 /// Whether words typed into a note are not in it yet.

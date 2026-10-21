@@ -592,3 +592,14 @@ fn a_whole_list_is_handed_over_even_when_a_note_of_it_can_not_be_read() {
     listed.sort();
     assert_eq!(listed, ["VN-1", "VN-2", "VN-3", "VN-4", "VN-5", "VN-6"]);
 }
+
+#[test]
+fn a_note_the_list_has_but_its_read_says_is_gone_is_not_listed() {
+    let server = server();
+    // Deleted between the query and the read.
+    server.with(|d| d.notes.vanishing.insert("VN-2".into()));
+    let result = run(&server, &request(read()));
+    let got = download(&result);
+    assert!(got.listed.as_ref().is_some_and(|listed| !listed.iter().any(|id| id == "VN-2")), "{:?}", got.listed);
+    assert_eq!(got.session, SESSION, "the answer says whose server it is");
+}

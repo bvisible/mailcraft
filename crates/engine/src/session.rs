@@ -1543,11 +1543,13 @@ impl Session {
         let now = std::mem::take(&mut self.mailbox);
         // //// Neoffice — and a change of a server's note that went unanswered stays noted, so that the words undone go there over what it may have written (cmd/notes/server.rs).
         let (mut back, said) = crate::undo::keep_in_step(u.mailbox, &u.touched, &now);
-        crate::cmd::notes::server::keep_unanswered(&mut back, &now);
+        let kept = crate::cmd::notes::server::keep_unanswered(&mut back, &now);
         // Undone, the step is to be done again from here: what that does is the way back.
         let touched = crate::undo::touched(&now, &back);
         self.mailbox = back;
         self.undo_said = said;
+        // //// Neoffice — and what of a server's notes it couldn't keep in step (cmd/notes/server.rs).
+        self.undo_said.extend(kept);
         // Where each message is, is looked at afresh.
         self.graph_index = Default::default();
         let cur = Undo { label: u.label, mailbox: now, touched, sel: std::mem::replace(&mut self.sel, u.sel), folder: self.view.folder };

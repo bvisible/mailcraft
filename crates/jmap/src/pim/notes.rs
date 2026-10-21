@@ -97,7 +97,7 @@ pub(super) async fn sync<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
     let (account, email) = (request.account, request.email.clone());
     let Some(server_account) = client.notes_account() else {
         log::debug!("jmap pim: the session offers no notes");
-        let gone = NotesDownload { account, email, offered: false, ..Default::default() };
+        let gone = NotesDownload { account, email, session: request.session.clone(), offered: false, ..Default::default() };
         out.notes = Some(NotesAnswer { download: Some(gone), ..Default::default() });
         return;
     };
@@ -334,7 +334,6 @@ fn strip_tags(text: &str) -> String {
     out
 }
 
-/// Whether a server's refusal is one that asking again later may get past.
 /// What comes of a resend over her own write ([`Job::send_again`]) that the server refused with a SetError of `kind`:
 /// `None` leaves it stale, as it was (a newer version there); trouble for now is tried again later.
 fn after_resend(kind: &str) -> Option<NoteResult> {
@@ -347,6 +346,7 @@ fn after_resend(kind: &str) -> Option<NoteResult> {
     }
 }
 
+/// Whether a server's refusal is one that asking again later may get past.
 fn failed_for_now(kind: &str) -> bool {
     matches!(kind, "rateLimit" | "serverFail" | "serverUnavailable" | "serverPartialFail" | "tooManyRequests" | "overQuota")
 }
@@ -417,6 +417,7 @@ impl<H: Http> Job<'_, H> {
         let uploaded = NotesUploaded {
             account: request.account,
             email: request.email.clone(),
+            session: request.session.clone(),
             outcomes: w.outcomes.into_iter().flatten().collect(),
             old_state: w.old_state.unwrap_or_default(),
             new_state,
@@ -731,6 +732,7 @@ impl<H: Http> Job<'_, H> {
         };
         let asked: HashSet<&str> = ids.iter().map(String::as_str).collect();
         let gone: HashSet<&str> = answer.get("notFound").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+        got.not_found.extend(gone.iter().filter(|id| asked.contains(*id)).map(|id| (*id).to_string()));
         let mut came: HashSet<String> = HashSet::new();
         for value in list.iter().take(ids.len()) {
             let Some(note) = note_of(value).filter(|note| asked.contains(note.id.as_str()) && !came.contains(&note.id)) else { continue };
@@ -769,8 +771,10 @@ impl<H: Http> Job<'_, H> {
             && !got.moved
             && !got.over_budget
             && !self.cancel.load(Ordering::Relaxed);
-        // The list read whole, at one state, even when some of its notes couldn't be read: one not in it is gone.
-        let listed = (got.pager.done() == Some(true) && !got.moved && !self.cancel.load(Ordering::Relaxed)).then(|| got.pager.ids().to_vec());
+        // The list read whole, at one state, even when some of its notes couldn't be read: one not in it is gone, and so
+        // is one the server said is not found when it was asked for.
+        let listed = (got.pager.done() == Some(true) && !got.moved && !self.cancel.load(Ordering::Relaxed))
+            .then(|| got.pager.ids().iter().filter(|id| !got.not_found.contains(*id)).cloned().collect());
         let (max_title, max_text) = self.client.notes_limits();
         let server = NoteServer {
             account: request.account,
@@ -778,8 +782,16 @@ impl<H: Http> Job<'_, H> {
             max_text,
             writable: self.client.notes_writable().map(<[String]>::to_vec).unwrap_or_default(),
         };
-        *download =
-            Some(NotesDownload { account: request.account, email: request.email.clone(), offered: true, server, complete, notes: got.notes, listed });
+        *download = Some(NotesDownload {
+            account: request.account,
+            email: request.email.clone(),
+            session: request.session.clone(),
+            offered: true,
+            server,
+            complete,
+            notes: got.notes,
+            listed,
+        });
         got.state.filter(|_| complete)
     }
 }
@@ -807,6 +819,8 @@ struct Gathered {
     answered: bool,
     notes: Vec<RemoteNote>,
     seen: HashSet<String>,
+    /// Notes the query listed that the server said, when they were asked for, are not found (deleted in between).
+    not_found: HashSet<String>,
     /// Notes the query found that could not be read, and why the first could not.
     unread: (usize, Option<String>),
     /// Characters of text still to be read in this job, and whether it was spent.
@@ -827,6 +841,7 @@ impl Gathered {
             answered: false,
             notes: Vec::new(),
             seen: HashSet::new(),
+            not_found: HashSet::new(),
             unread: (0, None),
             budget: TEXT_BUDGET,
             over_budget: false,

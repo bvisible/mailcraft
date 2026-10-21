@@ -46,6 +46,8 @@ pub const NO_LONGER_KEPT_PAGE: &str =
     "The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left.";
 /// Words typed into a note shared with the person that is no longer shared with her: they are a note of her own.
 pub const KEPT_WHEN_UNSHARED: &str = "{title} is no longer shared with you: your version is kept as a note of its own.";
+/// An undo that couldn't keep a change of a server's note that went without an answer: the server may keep what was undone.
+pub const UNDO_NOT_IN_STEP: &str = "The undo couldn't keep a note in step with its server: too many note changes are waiting to be sent.";
 
 /// `n` with its thousands grouped, as English writes it (`100,000`); the window writes it in its own language's way.
 pub fn grouped(n: usize) -> String {

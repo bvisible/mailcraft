@@ -227,6 +227,12 @@ pub struct NoteHold {
     pub remote: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base: Option<Box<Note>>,
+    /// For a new note: the mark it was sent with (sent again, it makes no second one). For a change: what went of it
+    /// without an answer ([`NoteChange::sent`]).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub token: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "one_or_more")]
+    pub sent: Vec<NoteFields>,
 }
 
 /// What may be shown of a hold: whose, never what the note said.
@@ -287,6 +293,9 @@ impl Note {
             held.remote = clean_key(&held.remote);
             held.email = one_line(&held.email, MAX_OWNER).0;
             held.session = one_line(&held.session, MAX_SESSION).0;
+            held.token = clean_token(&held.token);
+            held.sent.truncate(MAX_UNANSWERED);
+            held.sent.iter_mut().for_each(NoteFields::tidy);
             if let Some(base) = &mut held.base {
                 base.held = None;
                 base.tidy();
@@ -570,6 +579,9 @@ pub struct NotesUploaded {
     pub account: Id,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub email: String,
+    /// The JMAP session the job asked (its address): an answer of another server than the account's now is refused.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub session: String,
     pub outcomes: Vec<NoteOutcome>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub old_state: String,
@@ -725,6 +737,9 @@ pub struct NotesDownload {
     pub account: Id,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub email: String,
+    /// The JMAP session the job asked (its address): notes of another server than the account's now are refused.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub session: String,
     /// The server keeps notes. False: it no longer does (or never did), and what this mailbox has of its notes goes.
     pub offered: bool,
     /// What it says of them: limits and what it writes.
