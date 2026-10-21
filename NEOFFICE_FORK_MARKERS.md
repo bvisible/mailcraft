@@ -158,7 +158,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - A company signature a hosting page hands over with a mailbox (`apps/mailcraft-web/src/page_signature.rs`, read in
   `host.rs`): its HTML or its text, then its pictures by their bytes (`pictures: [{data, name, alt, width, lead, href}]`,
   three at most), the first beside or above the words when `lead`, the others under them in paragraphs of their own, and
-  a link for one that has an `href` (the company's banner), as the owner would put them in. A picture that is a link is
+  a link for one that has an `href` (the company's banner), as the owner would put them in. With its pictures the page
+  gives `placed_html`, its HTML without any of them nor a link they leave holding nothing, read in place of `html` when
+  MailCraft takes some of them (`taken_html`): else the banner went out twice, its description as linked words above
+  the picture; `html` stays for the builds that place one picture, where those words are what shows of it. A picture that is a link is
   written inside it in the sent HTML, under a text link's rule (`crates/mime/src/rich.rs`, `linked_img`, the picture
   beside or above the words included), and says where it leads in the text part (`crates/model/src/rich.rs`,
   `[alt] <url>`): upstream keeps the link in the model and dropped it there. In the dark theme the composer and

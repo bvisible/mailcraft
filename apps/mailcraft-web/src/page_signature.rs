@@ -24,6 +24,8 @@ pub const MAX_LOGO_BASE64: usize = MAX_PICTURE_BYTES.div_ceil(3) * 4;
 const MAX_LOGO_NAME: usize = 100;
 /// The most pictures a page gives with one signature that are taken (a photo, a logo, a banner).
 pub const MAX_PAGE_PICTURES: usize = 3;
+/// The longest HTML of a signature taken from a page, in bytes.
+pub const MAX_SIGNATURE_HTML: usize = 200_000;
 /// The places a page may give a company's logo (`signature.layout`).
 const LAYOUTS: [&str; 2] = ["pictureLeft", "pictureAbove"];
 
@@ -53,9 +55,10 @@ impl std::fmt::Debug for PagePicture {
     }
 }
 
-/// The signature a page gives a mailbox: its HTML and its text (either may be empty), and a company's logo with the
-/// place it takes (`pictureLeft`, `pictureAbove`; empty: none), or, from a page that gives them, all its pictures in
-/// the order they are read (`pictures`, [`MAX_PAGE_PICTURES`] at most), which then take the logo's place.
+/// The signature a page gives a mailbox: its HTML (the one MailCraft takes of the page's two, [`taken_html`]) and its
+/// text (either may be empty), and a company's logo with the place it takes (`pictureLeft`, `pictureAbove`; empty:
+/// none), or, from a page that gives them, all its pictures in the order they are read (`pictures`,
+/// [`MAX_PAGE_PICTURES`] at most), which then take the logo's place.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct PageSignature {
     pub html: String,
@@ -100,6 +103,17 @@ pub fn picture(data: &str, name: &str, alt: &str, width: Option<f64>) -> Option<
 /// (`compose.link` takes no other, and the sent message's HTML writes no other); none else.
 pub fn link(given: &str) -> Option<String> {
     safe_link(given.trim())
+}
+
+/// The HTML MailCraft takes of the two a page may give with a signature, each when it is at most
+/// [`MAX_SIGNATURE_HTML`] bytes: `placed_html` when MailCraft takes some of the pictures the page gives by their bytes
+/// (`pictures`, those it took), the HTML without any of them nor a link they leave holding nothing, since MailCraft puts
+/// each in itself and would otherwise show it a second time by its description (a banner's as linked words); else
+/// `html`, which the page writes for the builds that place one picture, where a banner's description, linked, is what
+/// shows of it. Empty when neither is taken.
+pub fn taken_html(html: Option<String>, placed_html: Option<String>, pictures: &[PagePicture]) -> String {
+    let within = |h: &String| h.len() <= MAX_SIGNATURE_HTML;
+    placed_html.filter(|_| !pictures.is_empty()).filter(within).or_else(|| html.filter(within)).unwrap_or_default()
 }
 
 /// The place a page gives a logo, if MailCraft knows it.
@@ -426,6 +440,62 @@ mod tests {
             assert!(html.contains("<img src=\"cid:sig-2."), "{href}: {html}");
             assert!(text.contains("[Spring fair]") && !text.contains("[Spring fair] <"), "{href}: {text:?}");
         }
+    }
+
+    /// A company's signature as a page writes its `html` for the builds that place one picture: the details, then the
+    /// banner inside its link, its picture an address of the site that MailCraft does not fetch (its description is
+    /// what shows of it). Its `placed_html` is [`DETAILS`]: the same without the banner nor the link it leaves empty.
+    const WITH_BANNER: &str = r#"<div><b>Ada Lovelace</b></div><div>Example Ltd</div><a href="https://example.org/fair"><img src="/files/fair.png" alt="Spring fair" width="400"></a>"#;
+
+    #[test]
+    fn a_page_that_hands_its_pictures_and_their_placed_html_sends_the_banner_once_as_a_linked_picture() {
+        let pictures = vec![given("Ada", true), given("Example Ltd", false), banner("https://example.org/fair")];
+        let html = taken_html(Some(WITH_BANNER.into()), Some(DETAILS.into()), &pictures);
+        let (mut session, id) = hosted();
+        assert!(set_up(&mut session, id, ME, &PageSignature { html, ..photo_left(pictures, "pictureLeft") }));
+        assert_eq!(read(&session).len(), 3);
+        let (html, text) = sent(&mut session, id);
+        // The banner once, a picture inside its link, and its description nowhere else: no second line of linked words.
+        assert_eq!(html.matches("<a href").count(), 1, "{html}");
+        assert!(html.contains("<a href=\"https://example.org/fair\"><img src=\"cid:sig-3."), "{html}");
+        assert_eq!(html.matches("Spring fair").count(), 1, "only the picture's description: {html}");
+        assert_eq!(text.matches("Spring fair").count(), 1, "{text:?}");
+        assert!(text.contains("[Spring fair] <https://example.org/fair>") && text.contains("Ada Lovelace"), "{text:?}");
+    }
+
+    #[test]
+    fn without_placed_html_the_page_s_html_is_taken_as_before() {
+        let pictures = [given("Ada", true), banner("https://example.org/fair")];
+        assert_eq!(taken_html(Some(WITH_BANNER.into()), None, &pictures), WITH_BANNER);
+        assert_eq!(taken_html(Some(WITH_BANNER.into()), None, &[]), WITH_BANNER);
+        // A page of the builds that place one picture: its logo beside the words, and its banner's words, linked, under them.
+        let (mut session, id) = hosted();
+        let logo = picture(PIXEL, "logo.png", "Example Ltd", Some(90.0));
+        let older = PageSignature { html: taken_html(Some(WITH_BANNER.into()), None, &[]), ..company(logo, "pictureLeft") };
+        assert!(set_up(&mut session, id, ME, &older));
+        let (html, text) = sent(&mut session, id);
+        assert_eq!(html.matches("<a href=\"https://example.org/fair\"").count(), 1, "{html}");
+        assert!(!html.contains("<a href=\"https://example.org/fair\"><img"), "the banner's words, not a picture: {html}");
+        assert!(html.contains("Spring fair") && html.contains("<img src=\"cid:sig-1."), "{html}");
+        assert!(text.contains("Spring fair"), "{text:?}");
+    }
+
+    #[test]
+    fn placed_html_without_pictures_is_not_read() {
+        // No picture MailCraft takes (none handed, or none it keeps: host.rs passes those it took): `html`, whose
+        // description of the banner is then all there is of it.
+        assert_eq!(taken_html(Some(WITH_BANNER.into()), Some(DETAILS.into()), &[]), WITH_BANNER);
+        assert_eq!(taken_html(None, Some(DETAILS.into()), &[]), "");
+    }
+
+    #[test]
+    fn an_html_longer_than_a_signature_may_be_is_not_taken() {
+        let long = format!("<p>{}</p>", "a".repeat(MAX_SIGNATURE_HTML));
+        let pictures = [given("Ada", true)];
+        assert_eq!(taken_html(Some(WITH_BANNER.into()), Some(long.clone()), &pictures), WITH_BANNER, "the page's html in its place");
+        assert_eq!(taken_html(Some(long.clone()), Some(DETAILS.into()), &pictures), DETAILS);
+        assert_eq!(taken_html(Some(long), None, &pictures), "");
+        assert_eq!(taken_html(None, None, &pictures), "");
     }
 
     #[test]

@@ -20,9 +20,12 @@
 //!   signature: { html: "…", text: "…",   // optional: the mailbox's signature in Neoffice
 //!     logo: { data: "<base64>", name: "logo.png", alt: "…", width: 120 },  // a company's logo, by its bytes
 //!     layout: "pictureLeft",             // where it goes: "pictureLeft" or "pictureAbove"
-//!     pictures: [{ data, name, alt, width, lead: true }, …] }  // or every picture in reading order, the first one
+//!     pictures: [{ data, name, alt, width, lead: true }, …],  // or every picture in reading order, the first one
 //!                                        // beside or above the words when `lead` (then `logo` is not read); one
 //!                                        // that is a link says where it leads: `href: "https://…"` (a banner)
+//!     placed_html: "…" }                 // with `pictures`: `html` without any of them, nor a link they leave
+//!                                        // holding nothing; read in place of `html` when MailCraft takes some of
+//!                                        // them (`html` stays for the builds that place one picture)
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
 //!   signatures: "https://…" };   // where the site writes these mailboxes' signatures: File › Signatures links there
@@ -67,8 +70,7 @@ const RENEW_WAIT_MS: i32 = 20_000;
 const TIMED_OUT: &str = "mailcraft:renew-timed-out";
 /// The longest name of the signed-in person taken from the address.
 const MAX_AUTHOR_CHARS: usize = 128;
-/// The longest signature taken from the page, its HTML and its text.
-const MAX_SIGNATURE_HTML: usize = 200_000;
+/// The longest text of a signature taken from the page (its HTML: page_signature.rs, `MAX_SIGNATURE_HTML`).
 const MAX_SIGNATURE_TEXT: usize = 10_000;
 
 /// A mailbox the page handed over (hosted.rs, built everywhere so that what reads it is tested natively).
@@ -242,10 +244,11 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
     out
 }
 
-/// The signature a page gives a mailbox: its HTML and its text within their lengths, and a company's logo by its bytes
-/// with its place, as far as MailCraft takes them (page_signature.rs).
+/// The signature a page gives a mailbox: its HTML (`placed_html` beside the pictures MailCraft takes, else `html`) and
+/// its text within their lengths, and a company's logo by its bytes with its place, as far as MailCraft takes them
+/// (page_signature.rs).
 fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
-    use crate::page_signature::{MAX_PAGE_PICTURES, PagePicture, PageSignature, layout, link, picture};
+    use crate::page_signature::{MAX_PAGE_PICTURES, PagePicture, PageSignature, layout, link, picture, taken_html};
     let taken = |given: &JsValue| -> Option<PagePicture> {
         let width = get(given, "width").and_then(|v| v.as_f64());
         picture(&text(given, "data"), &text(given, "name"), &text(given, "alt"), width)
@@ -267,8 +270,11 @@ fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
         })
         .unwrap_or_default();
     let placed = logo.is_some() || pictures.first().is_some_and(|p| p.lead);
+    // The HTML without the pictures MailCraft puts in itself, when it takes some of them: else it would show each a
+    // second time by its description (the banner's as linked words).
+    let html_of = |key: &str| get(given, key).and_then(|v| v.as_string());
     PageSignature {
-        html: get(given, "html").and_then(|v| v.as_string()).filter(|h| h.len() <= MAX_SIGNATURE_HTML).unwrap_or_default(),
+        html: taken_html(html_of("html"), html_of("placed_html"), &pictures),
         text: text(given, "text").chars().take(MAX_SIGNATURE_TEXT).collect(),
         layout: if placed { layout(&text(given, "layout")) } else { String::new() },
         logo,
