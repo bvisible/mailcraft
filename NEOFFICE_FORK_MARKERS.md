@@ -121,6 +121,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   it keeps which of the servers' calendars are ticked with the interface's settings, by the account's address and the
   calendar's name on its server (`crates/ui-egui/src/calendar_ticks.rs`, `UiState::calendar_ticks`). The window's
   tests of all this are `crates/ui-egui/src/kept_here_tests.rs`.
+- The hosted browser build tells the page that frames it whether closing it now would lose work: a message being
+  written with changes, an appointment's window or a form a dialog holds with something typed into it (an
+  appointment's, a contact's), and in a tab that keeps nothing, a change of an event or a contact not told to its
+  server yet, mail in an Outbox, or what the notes' own question counts (`MailApp::notes_unsent`): `MailApp::unsent_work`,
+  `crates/ui-egui/src/unsent.rs`. It speaks the Craft
+  editors' contract with their host page (`<editor>:dirty`), in `apps/mailcraft-web/src/host_dirty.rs`, sent from the
+  shell's frame loop (`apps/mailcraft-web/src/web.rs`, a tab of a hosting page only):
+  `window.parent.postMessage({type: "mailcraft:dirty", dirty: true|false}, location.origin)` — once as the tab starts
+  (`false`, or `true` if it already holds such work), then at each change and never twice the same; nothing when the
+  page is not framed. **What the host must do** (Neodesk, `desktop/src/editors/host/host.js`, in `startMail`, not done
+  yet): listen to `message` on the host page's window, take an event only when `event.source === frame.contentWindow`
+  and `event.origin === location.origin` and `event.data` is an object whose `type` is `"mailcraft:dirty"`, and call
+  `bridge.setDirty(Boolean(event.data.dirty))` — the `editors:dirty` message that `index.js` already turns into
+  `session.dirty`, which its `onClose` asks about. NeoMail has no Save for that question to run
+  (`saveBeforeClosing` drives an editor's Save): for a window of `kind === 'mail'` it offers leaving and staying only.
+  The frame stays loaded as now (no `?host=parent`); the browser's own `beforeunload` question (`hosted/leave.rs`, the
+  notes') is left as it is.
 - The engine's and the JMAP crate's sentences about a JMAP account's calendars and address books, read back in the
   interface's language by `run_words`: what a job says went wrong (`crates/jmap/src/pim.rs`, `pim/calendars.rs`,
   `pim/contacts.rs`), why a server didn't take a change (`pim/push.rs`, `pim/contacts/push.rs`, `pim/write.rs`), what

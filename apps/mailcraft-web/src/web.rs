@@ -143,6 +143,10 @@ impl eframe::App for WebShell {
         self.app.logic(ctx);
         // //// Neoffice — whether leaving the page now would lose a note's change (hosted/leave.rs).
         crate::hosted::leave::set(self.app.notes_unsent());
+        // //// Neoffice — a hosting page's window tells the page that frames it whether closing it now would lose work (host_dirty.rs).
+        if !self.app.session.keeps_local {
+            crate::host_dirty::tell(self.app.unsent_work());
+        }
         // Interface settings: stored when they change, checked every couple of seconds.
         let now = mailcraft_ui_egui::now_ms();
         if now - self.checked > 2000.0 {

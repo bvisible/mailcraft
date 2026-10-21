@@ -80,6 +80,8 @@ mod signatures;
 mod sync_panel;
 pub mod tasks_view;
 pub mod theme;
+// //// Neoffice — whether the window holds work that leaving would lose, for a hosting page that asks before it closes.
+pub mod unsent;
 pub mod updates;
 pub mod widgets;
 pub mod window_geometry;

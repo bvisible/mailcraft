@@ -141,6 +141,16 @@ impl Form {
         self.event().is_some_and(event::EventForm::dirty)
     }
 
+    // //// Neoffice — what a hosting page asks about before it closes (`crate::unsent`): an appointment's changes, and a
+    // contact's, which a dialog holds.
+    /// Whether the form holds what was typed or changed and not saved: an appointment or a meeting, or a contact.
+    pub(crate) fn unsaved(&self) -> bool {
+        match self {
+            Form::Contact(f) => f.changed(),
+            _ => self.dirty(),
+        }
+    }
+
     /// Whether the keys are for something of the form's own that is open over it (a dialog), or
     /// the form waits for a question to be answered: its window leaves the keys alone.
     pub(crate) fn engaged(&self) -> bool {
@@ -5105,6 +5115,12 @@ mod contact {
                 "categories": self.categories,
                 "favorite": self.favorite,
             }))
+        }
+
+        // //// Neoffice — what a hosting page asks about before it closes (`crate::unsent`).
+        /// Whether something was typed or changed in the form that OK would save.
+        pub(crate) fn changed(&self) -> bool {
+            self.fields() != self.baseline
         }
 
         /// The command OK runs, with its params: the fields that were filled in for a new

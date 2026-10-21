@@ -21,6 +21,9 @@
 // means for each (renewal.rs, built everywhere so that it is tested natively).
 #[cfg(target_arch = "wasm32")]
 mod host;
+// //// Neoffice — the page that frames a hosting page's window is told whether closing it would lose work (built
+// everywhere, so that it is tested natively).
+mod host_dirty;
 mod renewal;
 // //// Neoffice — HTTP through the browser's `fetch`, for JMAP; the runner of a JMAP account's Send/Receive and the
 // credentials it is given (built everywhere, so that its tests run natively).
