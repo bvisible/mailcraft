@@ -1082,6 +1082,16 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         }
         // //// Neoffice — Nora's marks, for her place in the ribbon: her sphere, and the wand of Improve (nora/look.rs).
         "nora" | "noraWand" => crate::nora::look::icon(p, r, name, c, a),
+        // //// Neoffice — Share in Synk (host_share.rs): a speech bubble, and Forward's arrow going into a conversation.
+        "shareChat" => {
+            pen.rounded(&[(2.5, 3.5), (2.5, 12.0), (5.0, 12.0), (5.0, 15.0), (8.5, 12.0), (14.5, 12.0), (14.5, 3.5)], true, 1.5, c);
+            if !tiny {
+                pen.line(&[(5.5, 6.5), (11.5, 6.5)]);
+                pen.line(&[(5.5, 9.0), (9.5, 9.0)]);
+            }
+            pen.line_c(&[(10.5, 16.5), (17.0, 16.5)], a);
+            pen.head(17.0, 16.5, 0.0, 3.0, a);
+        }
         // Anything else: a lettered tile, so a missing drawing is visible rather than empty.
         _ => {
             pen.rect(3.5, 3.5, 16.5, 16.5, c);
@@ -1250,6 +1260,8 @@ pub const NAMES: &[&str] = &[
     // //// Neoffice — Nora's marks (nora/look.rs).
     "nora",
     "noraWand",
+    // //// Neoffice — Share in Synk (host_share.rs).
+    "shareChat",
     "notes",
     "description",
     "work",

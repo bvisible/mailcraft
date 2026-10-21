@@ -143,6 +143,12 @@ mod page {
         }
     }
 
+    /// Tell the page that frames this one `message` that the window starts itself (a message to share,
+    /// mailcraft_ui_egui::host_share): to `window.parent` on this page's own origin, and to nobody when it is not framed.
+    pub fn tell(message: &Value) {
+        post(message);
+    }
+
     /// Once a frame: tell the page the window has started (once), answer its commands, and tell it where the window
     /// is when that changed, at most every [`super::EVERY_MS`].
     pub fn frame(app: &mut MailApp, ctx: &egui::Context) {
@@ -178,7 +184,7 @@ mod page {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use page::{frame, listen};
+pub use page::{frame, listen, tell};
 
 #[cfg(test)]
 mod tests {

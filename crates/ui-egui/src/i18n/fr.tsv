@@ -51,6 +51,13 @@
 	the answer had no text	la réponse ne contenait pas de texte
 	your Neoffice session has ended. Reload the page and sign in again.	votre session Neoffice a pris fin. Actualisez la page et reconnectez-vous.
 	the page is out of date. Reload it and try again.	la page n’est plus à jour. Actualisez-la et réessayez.
+# Share in Synk, where the hosting page takes a message to share in its team chat (crates/ui-egui/src/host_share.rs).
+	Share\nin Synk	Partager\ndans Synk
+	Share this message in a Synk conversation	Partager ce message dans une conversation Synk
+	Share in Synk	Partager dans Synk
+	Nothing here takes a message to share.	Rien ici ne reçoit de message à partager.
+	Only a message of a mailbox the page handed over can be shared.	Seul un message d’une boîte aux lettres transmise par la page peut être partagé.
+	This message isn't on its server yet.	Ce message n’est pas encore sur son serveur.
 # The address books and calendars of a JMAP server (crates/jmap/src/pim/, crates/engine/src/cmd/remote_contacts.rs, crates/ui-egui/src/jmap_pim.rs): kept together, near the top.
 	Apply Downloaded Address Books	Appliquer les carnets d’adresses téléchargés
 # Contacts made, changed and deleted here in a server's address book (crates/engine/src/cmd/remote_contacts/written.rs, crates/ui-egui/src/pim_rights.rs, the question before a deletion in crates/ui-egui/src/dialogs.rs).

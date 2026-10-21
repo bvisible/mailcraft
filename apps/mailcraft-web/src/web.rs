@@ -286,6 +286,13 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
         services.host_menu = Some(mailcraft_ui_egui::host_menu::Menu::new(mailboxes));
         crate::host_menu::listen(ctx.clone());
     }
+    // //// Neoffice — a page that takes a message to share in its team chat (host.rs `share`): Share in Synk hands it the message of one of these mailboxes, by its mailbox and its id on the server (host_share.rs of the window).
+    if crate::host::share() {
+        services.share = Some(mailcraft_ui_egui::host_share::Share {
+            mailboxes: accounts.iter().map(|a| a.email.clone()).collect(),
+            send: Box::new(|account, email| crate::host_menu::tell(&mailcraft_ui_egui::host_share::message(account, email))),
+        });
+    }
     // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).
     let runners = crate::hosted::Runners {
         jmap: crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()),

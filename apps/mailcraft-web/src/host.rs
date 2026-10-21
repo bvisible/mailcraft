@@ -29,8 +29,21 @@
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
 //!   signatures: "https://…",     // where the site writes these mailboxes' signatures: File › Signatures links there
-//!   chrome: "menu" };            // optional: the page draws MailCraft's navigation in its own menu (below)
+//!   chrome: "menu",              // optional: the page draws MailCraft's navigation in its own menu (below)
+//!   share: true };               // optional: the page takes a message to share in its team chat (below)
 //! ```
+//!
+//! **A page that takes a message to share in its team chat** (`share: true`, Neoffice's desk, whose chat is Synk):
+//! Share in Synk, in the Respond group of Mail's Home tab and in a message's context menu, posts to `window.parent`, on
+//! MailCraft's own origin, for the message in the reading pane of a mailbox the page handed over that its server has
+//! (mailcraft_ui_egui::host_share):
+//!
+//! ```js
+//! { type: "mailcraft:share", account: "ada@example.org", email: "<its id on the server>" }
+//! ```
+//!
+//! Only on the person's click, and nothing of the message but its id: the page asks where to share it, and its server
+//! reads the message itself, under its own rules of who may. Absent or anything but `true`, nothing is offered.
 //!
 //! **A page that draws the navigation in its own menu** (`chrome: "menu"`, Neoffice's desk at `/app/neomail`; absent
 //! or anything else, MailCraft draws everything as it always does, as in Neodesk): MailCraft draws no module bar and,
@@ -356,6 +369,11 @@ pub fn language() -> Option<String> {
 /// Whether the page draws MailCraft's navigation in its own menu (`chrome: "menu"`): anything else, or nothing, is no.
 pub fn menu() -> bool {
     handed().is_some_and(|host| text(&host, "chrome") == "menu")
+}
+
+/// Whether the page takes a message to share in its team chat (`share: true`): anything else, or nothing, is no.
+pub fn share() -> bool {
+    handed().and_then(|host| get(&host, "share")).and_then(|share| share.as_bool()) == Some(true)
 }
 
 /// Where the page's site writes the signatures of the mailboxes it hands over, if it says: File › Signatures links

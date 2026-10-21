@@ -399,6 +399,8 @@ const NEVER: &[&str] = &[
     "ui.noraImprove",
     "ui.noraTranslateDraft",
     "ui.noraLearnStyle",
+    // //// Neoffice — Share in Synk hands a message to the hosting page, for other people to read it: the owner's own click only (ui-egui host_share.rs).
+    "ui.shareMessage",
     // A search of the server goes only on the owner's own click (R6.2).
     "sync.graphSearchRequest",
     "sync.applyGraphSearch",
