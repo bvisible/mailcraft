@@ -27,8 +27,12 @@
 //!
 //! Everything a server sends is hostile: answers are capped ([`MAX_JSON`]), ids are held to
 //! [`valid_id`], numbers are clamped, and nothing here indexes into what came over the wire. The
-//! credentials ([`Auth`]) stay out of `Debug` output and out of error text, even when a server echoes
-//! them back, and so do the addresses and the mail a request or an answer carries.
+//! credentials ([`Auth`]) stay out of error text, even when a server echoes them back, and the password
+//! and the token out of `Debug` output (which names a Basic user); so do the addresses and the mail a
+//! request or an answer carries.
+//!
+//! The address, HTTP and fetch helpers ([`url`], [`http`], and the browser build's transport) are written
+//! fresh from RFC 3986, 6570, 7617, 6750, 8620 and 9110 and the WHATWG URL and Fetch Standards.
 //!
 //! The address given to [`Client::connect`] is the one the session is served from. Finding it from a
 //! bare host name through a redirect to another server (RFC 8620 §2.2) is for the caller: an [`Http`]
@@ -38,10 +42,10 @@
 
 use std::fmt;
 
-use base64::Engine as _;
 use serde_json::Value;
 
 pub mod fetch;
+pub mod http;
 pub mod mail;
 pub mod pim;
 mod send;
@@ -49,6 +53,7 @@ mod send;
 pub mod standin;
 pub mod url;
 
+pub use http::{Auth, Error, Http, Request, Response, Result, retry_after};
 pub use mail::{failed_run, sync_mail};
 pub use pim::{failed_pim, sync_pim};
 pub use url::{Url, pct, pct_decode};
@@ -101,8 +106,6 @@ const MAX_CALLS_IN_REQUEST: usize = 64;
 /// held in memory several times over while it goes).
 const DEFAULT_SIZE_UPLOAD: usize = 50 << 20;
 const MAX_SIZE_UPLOAD: usize = 64 << 20;
-/// Longest user name and password, or access token, that one sign-in may carry.
-const MAX_CREDENTIALS: usize = 32 * 1024;
 /// Longest text kept of what a server says in an error, and largest body read for it.
 const MAX_ERROR_TEXT: usize = 300;
 const MAX_PROBLEM: usize = 64 * 1024;
@@ -118,46 +121,7 @@ const MAX_SPAN: i64 = 2 * 365 * 86_400;
 const MAX_WRITABLE: usize = 64;
 const MAX_PROPERTY_NAME: usize = 64;
 
-/// What can go wrong, in the categories the callers act on.
-#[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
-pub enum Error {
-    /// The network failed (try again later).
-    #[error("network: {0}")]
-    Io(String),
-    /// An address, or a way of getting there, that would have sent the credentials unencrypted, or to
-    /// another server than the one the session is served from.
-    #[error("secure connection: {0}")]
-    Tls(String),
-    /// The server broke the protocol: not JSON, not the shape the standard has, an id that is none.
-    #[error("unexpected server response: {0}")]
-    Protocol(String),
-    /// The server answered a method call, or one object of it, with an error: JMAP's `type` and
-    /// `description` (RFC 8620 §3.6.2), as the server worded them.
-    #[error("the server refused: {}", said(.kind, .description))]
-    Refused { kind: String, description: String },
-    /// Any other HTTP status that is not a success: the request was not understood or not allowed, or a
-    /// gateway failed.
-    #[error("the server rejected the request: {0}")]
-    Bad(String),
-    /// 401 and 403: the credentials were refused, or have expired.
-    #[error("sign-in failed: {0}")]
-    Auth(String),
-    /// 429 and 503: the server is overloaded or down; try again after `retry_after` seconds when it
-    /// says how long (one second to an hour, whatever it asked for).
-    #[error("the server is busy (HTTP {status})")]
-    Busy { status: u16, retry_after: Option<u32> },
-    /// A request that is over a limit of the server's (one it stated in the session, or one it refused the
-    /// request for), or an answer over [`MAX_JSON`] or the size the request set.
-    #[error("too large: {0}")]
-    TooLarge(String),
-}
-
-fn said(kind: &str, description: &str) -> String {
-    format!("{kind} {description}").trim().to_string()
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
+// The type is `http::Error`; hiding what it must not show is this crate's own.
 impl Error {
     /// This error with the secrets taken out of any text a transport put in it.
     fn hidden(self, secrets: &Secrets) -> Error {
@@ -170,143 +134,6 @@ impl Error {
             Error::Auth(t) => Error::Auth(secrets.hide(&t)),
             Error::TooLarge(t) => Error::TooLarge(secrets.hide(&t)),
             busy @ Error::Busy { .. } => busy,
-        }
-    }
-}
-
-/// An HTTP request.
-#[derive(Clone, Default)]
-pub struct Request {
-    pub method: String,
-    pub url: String,
-    pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
-    /// Largest answer body accepted, in bytes.
-    pub max: usize,
-}
-
-impl Request {
-    pub fn get(url: &str, max: usize) -> Request {
-        Request { method: "GET".into(), url: url.into(), headers: Vec::new(), body: Vec::new(), max }
-    }
-
-    pub fn post(url: &str, content_type: &str, body: Vec<u8>, max: usize) -> Request {
-        Request { method: "POST".into(), url: url.into(), headers: vec![("Content-Type".into(), content_type.into())], body, max }
-    }
-
-    pub fn header(mut self, name: &str, value: &str) -> Request {
-        self.headers.push((name.into(), value.into()));
-        self
-    }
-}
-
-/// What may be shown of a request: not the credentials in its headers, not the query of its address
-/// (it can hold a person's address), not the mail in its body.
-impl fmt::Debug for Request {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let origin = Url::parse(&self.url).map_or_else(|_| "(not a web address)".to_string(), |u| u.origin());
-        let names: Vec<&str> = self.headers.iter().map(|(n, _)| n.as_str()).collect();
-        f.debug_struct("Request")
-            .field("method", &self.method)
-            .field("origin", &origin)
-            .field("headers", &names)
-            .field("body_bytes", &self.body.len())
-            .field("max", &self.max)
-            .finish()
-    }
-}
-
-/// An HTTP response.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct Response {
-    pub status: u16,
-    pub body: Vec<u8>,
-    /// The seconds a `Retry-After` header asked to wait, when it gave a number of seconds.
-    pub retry_after: Option<u32>,
-}
-
-impl fmt::Debug for Response {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Response")
-            .field("status", &self.status)
-            .field("body_bytes", &self.body.len())
-            .field("retry_after", &self.retry_after)
-            .finish()
-    }
-}
-
-/// The HTTP client JMAP runs over. What an implementation owes it:
-///
-/// - Redirects are followed for a GET, never from https to http, and the `Authorization` header never
-///   goes to another origin than the one it was set for.
-/// - No cookies are sent or kept.
-/// - An address it is given is plain ASCII on one line (the [`Client`] sends nothing else), and the text of
-///   an [`Error`] it makes holds neither the address nor the headers of the request.
-/// - An answer whose body is over [`Request::max`] is refused as soon as that is known, rather than after
-///   it is all read (the [`Client`] checks again what it is handed).
-/// - The seconds a `Retry-After` header gives go into [`Response::retry_after`].
-#[allow(async_fn_in_trait)]
-pub trait Http {
-    async fn send(&self, req: Request) -> Result<Response>;
-}
-
-/// How to sign in. Neither the user name nor the password nor the token shows in `Debug` output.
-#[derive(Clone, PartialEq, Eq)]
-pub enum Auth {
-    /// A user name and a password (RFC 7617).
-    Basic { user: String, password: String },
-    /// An OAuth access token (RFC 6750).
-    Bearer(String),
-}
-
-impl fmt::Debug for Auth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Auth::Basic { .. } => "Auth::Basic(..)",
-            Auth::Bearer(_) => "Auth::Bearer(..)",
-        })
-    }
-}
-
-impl Auth {
-    pub fn basic(user: impl Into<String>, password: impl Into<String>) -> Auth {
-        Auth::Basic { user: user.into(), password: password.into() }
-    }
-
-    pub fn bearer(token: impl Into<String>) -> Auth {
-        Auth::Bearer(token.into())
-    }
-
-    /// The value of the `Authorization` header. Credentials that would break out of the header, or
-    /// that are none, are refused rather than cleaned.
-    fn header(&self) -> Result<String> {
-        let unsendable = Error::Auth("the user name, password or access token has a character that can't be sent".into());
-        let too_long = Error::Auth("the user name, password or access token is too long to be sent".into());
-        match self {
-            Auth::Basic { user, password } => {
-                if user.is_empty() && password.is_empty() {
-                    return Err(Error::Auth("there is no user name or password to sign in with".into()));
-                }
-                if user.contains(':') || user.chars().any(char::is_control) || password.chars().any(char::is_control) {
-                    return Err(unsendable);
-                }
-                if user.len().saturating_add(password.len()) > MAX_CREDENTIALS {
-                    return Err(too_long);
-                }
-                Ok(format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))))
-            }
-            Auth::Bearer(token) => {
-                if token.is_empty() {
-                    return Err(Error::Auth("there is no access token to sign in with".into()));
-                }
-                if !token.chars().all(|c| c.is_ascii_graphic()) {
-                    return Err(unsendable);
-                }
-                if token.len() > MAX_CREDENTIALS {
-                    return Err(too_long);
-                }
-                Ok(format!("Bearer {token}"))
-            }
         }
     }
 }

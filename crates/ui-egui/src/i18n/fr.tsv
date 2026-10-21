@@ -178,7 +178,7 @@
 	the server's answer did not have them	la réponse du serveur ne contenait pas ce qui était demandé
 	the server did not take them	le serveur n’a rien accepté
 	the server could not make them just now ({kind})	le serveur n’a pas pu le faire pour l’instant ({kind})
-# run_words, what a failure says (crates/jmap/src/lib.rs).
+# run_words, what a failure says (crates/jmap/src/http.rs).
 	network: {text}	réseau : {text}
 	secure connection: {text}	connexion sécurisée : {text}
 	unexpected server response: {text}	réponse inattendue du serveur : {text}
@@ -186,10 +186,18 @@
 	the server rejected the request: {said}	le serveur a rejeté la requête : {said}
 	the server is busy (HTTP {status})	le serveur est occupé (HTTP {status})
 	too large: {text}	trop volumineux : {text}
-# run_words, the words under a failure (crates/jmap/src, apps/mailcraft-web/src/fetch.rs).
-	{browser} (the server may not let this page reach it)	{browser} (le serveur ne permet peut-être pas à cette page de l’atteindre)
+# run_words, the words under a failure (crates/jmap/src, apps/mailcraft-web/src/fetch.rs and fetch_rules.rs).
 	no reason given	aucun motif indiqué
-	the server took too long to answer	le serveur a mis trop de temps à répondre
+	timed out	délai dépassé
+	the request failed	la requête a échoué
+	the response body is over {max} bytes	le corps de la réponse dépasse {max} octets
+	no window to fetch from	aucune fenêtre depuis laquelle faire la requête
+	the response body cannot be read	le corps de la réponse ne peut pas être lu
+	the response body is not bytes	le corps de la réponse n’est pas fait d’octets
+	the browser refused a request header	le navigateur a refusé un en-tête de la requête
+	the browser gave no response	le navigateur n’a donné aucune réponse
+	the browser could not build the request	le navigateur n’a pas pu construire la requête
+	the browser cannot limit the request's time	le navigateur ne peut pas limiter la durée de la requête
 	the session address isn't https	l’adresse de la session n’est pas en https
 	the JMAP {key} isn't https	l’adresse {key} de JMAP n’est pas en https
 	the JMAP {key} isn't on the server the session is served from	l’adresse {key} de JMAP n’est pas sur le serveur qui sert la session
@@ -200,7 +208,22 @@
 	the JMAP session has no `{key}`	la session JMAP ne contient pas de `{key}`
 	the JMAP {key} can't be used	l’adresse {key} de JMAP ne peut pas être utilisée
 	a JMAP address is too long	une adresse JMAP est trop longue
-	not a web address	ce n’est pas une adresse web
+	the address does not start with http:// or https://	l’adresse ne commence pas par http:// ou https://
+	the address cannot be split	l’adresse ne peut pas être découpée
+	the address holds user information	l’adresse contient des informations d’utilisateur
+	the link leads to a scheme other than http or https	le lien mène à un autre schéma que http ou https
+	the address is too long	l’adresse est trop longue
+	the address holds a space or a control character	l’adresse contient une espace ou un caractère de contrôle
+	the address holds a backslash	l’adresse contient une barre oblique inverse
+	the IPv6 address is not closed	l’adresse IPv6 n’est pas fermée
+	unexpected characters after the host	caractères inattendus après le nom d’hôte
+	the address has no host	l’adresse n’a pas de nom d’hôte
+	the host is too long	le nom d’hôte est trop long
+	the IPv6 address holds characters it cannot	l’adresse IPv6 contient des caractères interdits
+	the IPv6 address is not valid	l’adresse IPv6 n’est pas valide
+	the host holds characters a host cannot	le nom d’hôte contient des caractères interdits
+	the IPv4 address is not four decimal numbers	l’adresse IPv4 n’est pas faite de quatre nombres décimaux
+	the port is not valid	le port n’est pas valide
 	JMAP: {parser}	JMAP : {parser}
 	JMAP: no methodResponses	JMAP : pas de methodResponses
 	JMAP: the answer isn't an object	JMAP : la réponse n’est pas un objet

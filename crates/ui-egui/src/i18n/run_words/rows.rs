@@ -16,6 +16,7 @@ const fn row(at: &'static str, family: Family, english: &'static str, reasons: &
 
 // The files that write the sentences, from the workspace's root.
 const JMAP: &str = "crates/jmap/src/lib.rs";
+const HTTP: &str = "crates/jmap/src/http.rs";
 const MAIL: &str = "crates/jmap/src/mail.rs";
 const UP: &str = "crates/jmap/src/mail/up.rs";
 const URL: &str = "crates/jmap/src/url.rs";
@@ -30,6 +31,7 @@ const UNDO: &str = "crates/engine/src/undo.rs";
 const MAILBOX: &str = "crates/model/src/mailbox.rs";
 const SERVER: &str = "crates/model/src/jmap_server.rs";
 const BROWSER: &str = "apps/mailcraft-web/src/fetch.rs";
+const BROWSER_RULES: &str = "apps/mailcraft-web/src/fetch_rules.rs";
 const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
 const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
@@ -67,15 +69,24 @@ pub(super) static ROWS: &[Row] = &[
     row(UP, Why, run_word!("the server could not make them just now ({kind})"), &[]),
     // What a failure says (`jmap::Error`), and the words under it: ours, or the transport's and the server's, which
     // stay as they came.
-    row(JMAP, Why, run_word!("network: {text}"), &[("text", Inner)]),
-    row(JMAP, Why, run_word!("secure connection: {text}"), &[("text", Inner)]),
-    row(JMAP, Why, run_word!("unexpected server response: {text}"), &[("text", Inner)]),
-    row(JMAP, Why, run_word!("the server refused: {said}"), &[]),
-    row(JMAP, Why, run_word!("the server rejected the request: {said}"), &[]),
-    row(JMAP, Why, run_word!("the server is busy (HTTP {status})"), &[]),
-    row(JMAP, Why, run_word!("too large: {text}"), &[("text", Inner)]),
-    row(BROWSER, Inner, run_word!("{browser} (the server may not let this page reach it)"), &[]),
-    row(BROWSER, Inner, run_word!("the server took too long to answer"), &[]),
+    row(HTTP, Why, run_word!("network: {text}"), &[("text", Inner)]),
+    row(HTTP, Why, run_word!("secure connection: {text}"), &[("text", Inner)]),
+    row(HTTP, Why, run_word!("unexpected server response: {text}"), &[("text", Inner)]),
+    row(HTTP, Why, run_word!("the server refused: {said}"), &[]),
+    row(HTTP, Why, run_word!("the server rejected the request: {said}"), &[]),
+    row(HTTP, Why, run_word!("the server is busy (HTTP {status})"), &[]),
+    row(HTTP, Why, run_word!("too large: {text}"), &[("text", Inner)]),
+    // The browser's transport (`fetch.rs`, `fetch_rules.rs`); what the browser itself says stays as it came.
+    row(BROWSER_RULES, Inner, run_word!("timed out"), &[]),
+    row(BROWSER_RULES, Inner, run_word!("the request failed"), &[]),
+    row(BROWSER_RULES, Inner, run_word!("the response body is over {max} bytes"), &[]),
+    row(BROWSER, Inner, run_word!("no window to fetch from"), &[]),
+    row(BROWSER, Inner, run_word!("the response body cannot be read"), &[]),
+    row(BROWSER, Inner, run_word!("the response body is not bytes"), &[]),
+    row(BROWSER, Inner, run_word!("the browser refused a request header"), &[]),
+    row(BROWSER, Inner, run_word!("the browser gave no response"), &[]),
+    row(BROWSER, Inner, run_word!("the browser could not build the request"), &[]),
+    row(BROWSER, Inner, run_word!("the browser cannot limit the request's time"), &[]),
     row(JMAP, Inner, run_word!("the session address isn't https"), &[]),
     row(JMAP, Inner, run_word!("the JMAP {key} isn't https"), &[]),
     row(JMAP, Inner, run_word!("the JMAP {key} isn't on the server the session is served from"), &[]),
@@ -86,7 +97,23 @@ pub(super) static ROWS: &[Row] = &[
     row(JMAP, Inner, run_word!("the JMAP session has no `{key}`"), &[]),
     row(JMAP, Inner, run_word!("the JMAP {key} can't be used"), &[]),
     row(JMAP, Inner, run_word!("a JMAP address is too long"), &[]),
-    row(URL, Inner, run_word!("not a web address"), &[]),
+    // An address that is none (`jmap::url`).
+    row(URL, Inner, run_word!("the address does not start with http:// or https://"), &[]),
+    row(URL, Inner, run_word!("the address cannot be split"), &[]),
+    row(URL, Inner, run_word!("the address holds user information"), &[]),
+    row(URL, Inner, run_word!("the link leads to a scheme other than http or https"), &[]),
+    row(URL, Inner, run_word!("the address is too long"), &[]),
+    row(URL, Inner, run_word!("the address holds a space or a control character"), &[]),
+    row(URL, Inner, run_word!("the address holds a backslash"), &[]),
+    row(URL, Inner, run_word!("the IPv6 address is not closed"), &[]),
+    row(URL, Inner, run_word!("unexpected characters after the host"), &[]),
+    row(URL, Inner, run_word!("the address has no host"), &[]),
+    row(URL, Inner, run_word!("the host is too long"), &[]),
+    row(URL, Inner, run_word!("the IPv6 address holds characters it cannot"), &[]),
+    row(URL, Inner, run_word!("the IPv6 address is not valid"), &[]),
+    row(URL, Inner, run_word!("the host holds characters a host cannot"), &[]),
+    row(URL, Inner, run_word!("the IPv4 address is not four decimal numbers"), &[]),
+    row(URL, Inner, run_word!("the port is not valid"), &[]),
     row(JMAP, Inner, run_word!("JMAP: {parser}"), &[]),
     row(JMAP, Inner, run_word!("JMAP: no methodResponses"), &[]),
     row(JMAP, Inner, run_word!("JMAP: the answer isn't an object"), &[]),

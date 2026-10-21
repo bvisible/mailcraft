@@ -1,135 +1,204 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent): HTTP through the browser's `fetch`, for the JMAP transport.
-
-//! HTTP through the browser's `fetch`, for the JMAP transport (`mailcraft_jmap::Http`).
+// //// Neoffice — added file (no upstream equivalent)
+//! A transport for the browser build, over the WHATWG Fetch Standard: `window.fetch`, `Request`, `Headers`,
+//! `AbortController` and the response's `ReadableStream`.
 //!
-//! What the transport owes the client (`mailcraft_jmap::Http`), and how the browser gives it:
-//! - no cookies go or come: `credentials: "omit"`; the credential is the `Authorization` header alone, which
-//!   the browser drops itself on a redirect to another origin, and never follows from https to http;
-//! - an answer larger than the request's `max` is refused as soon as that is known: by its
-//!   `Content-Length` when it says one, else while it is read, a piece at a time;
-//! - the seconds of a `Retry-After` header go into the response;
-//! - the text of an error holds neither the address nor the headers of the request;
-//! - a request that is not over after [`GIVE_UP_MS`] (its answer read whole) is given up: a server that never
-//!   answers would otherwise hold up whatever waits for it, a download the owner is looking at for one.
+//! The browser-free decisions (what the request is built from, how failures read, the body-size accounting)
+//! live in `fetch_rules`, where they are tested natively.
 
-use mailcraft_jmap::{Error, Request, Response, Result};
-use wasm_bindgen::JsCast as _;
+use std::cell::Cell;
+use std::rc::Rc;
+
+use js_sys::{Function, Promise, Reflect, Uint8Array};
+use mailcraft_jmap::http::{self, Error, Http, Request, Response, Result};
 use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
+use web_sys::{
+    AbortController, Headers, ReadableStreamDefaultReader, ReadableStreamReadResult, ReferrerPolicy, RequestCache, RequestCredentials, RequestInit,
+    RequestMode, RequestRedirect, Window,
+};
 
-/// How long a request may take, its answer read whole, in milliseconds: a message of the largest size taken
-/// in comes in this time over a slow line.
+use crate::fetch_rules;
+
+/// How long one exchange may take before it is given up, in milliseconds (5 minutes).
 pub const GIVE_UP_MS: i32 = 300_000;
 
-/// The browser's HTTP client.
+/// The browser transport: sends each [`Request`] with `window.fetch`.
+///
+/// Never sends the page's cookies (`credentials: "omit"`; the client authenticates with its own
+/// `Authorization` header), never caches, follows redirects, sends no referrer, and gives up after
+/// [`GIVE_UP_MS`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Fetch;
 
-/// What the browser said, as text: never the address (the browser's messages don't carry it).
-fn js(e: &wasm_bindgen::JsValue) -> String {
-    let said = e.as_string().or_else(|| e.dyn_ref::<js_sys::Error>().map(|e| String::from(e.message()))).unwrap_or_else(|| "no reason given".into());
-    said.chars().filter(|c| !c.is_control()).take(200).collect()
-}
-
-fn too_large(max: usize) -> Error {
-    Error::TooLarge(format!("the answer is larger than {max} bytes"))
-}
-
-impl mailcraft_jmap::Http for Fetch {
+impl Http for Fetch {
+    /// Send `req` and return the status, the body (at most `req.max` bytes) and the `Retry-After` delay.
+    /// Statuses are not interpreted: a 401 or a 503 comes back as a [`Response`].
     async fn send(&self, req: Request) -> Result<Response> {
-        let window = web_sys::window().ok_or_else(|| Error::Io("no window".into()))?;
-        let controller = web_sys::AbortController::new().map_err(|e| Error::Io(js(&e)))?;
-        let give_up = {
-            let controller = controller.clone();
-            Closure::once(move || controller.abort())
-        };
-        let timer = window
-            .set_timeout_with_callback_and_timeout_and_arguments_0(give_up.as_ref().unchecked_ref(), GIVE_UP_MS)
-            .map_err(|e| Error::Io(js(&e)))?;
-        let answer = exchange(&window, req, &controller.signal()).await;
-        window.clear_timeout_with_handle(timer);
-        // The timer is cleared before its closure goes.
-        drop(give_up);
-        // An answer refused before it was read whole (too large, by what it said of itself) is not read on.
-        if answer.is_err() && !controller.signal().aborted() {
-            controller.abort();
-            return answer;
-        }
-        match answer {
-            Err(Error::Io(_)) if controller.signal().aborted() => Err(Error::Io("the server took too long to answer".into())),
-            answer => answer,
+        let window = web_sys::window().ok_or_else(|| Error::Io("no window to fetch from".to_owned()))?;
+        let controller = AbortController::new().map_err(|_| no_time_limit())?;
+        let request = build(&req, &controller)?;
+        let deadline = Deadline::start(&window, controller)?;
+        let outcome = exchange(&window, &request, req.max).await;
+        let timed_out = deadline.finish();
+        match outcome {
+            // An abort shows up as a rejected fetch or body read; say why it happened.
+            Err(Error::Io(_)) if timed_out => Err(fetch_rules::failure(true, None)),
+            other => other,
         }
     }
 }
 
-/// One request and its answer read whole, given up when `signal` says so.
-async fn exchange(window: &web_sys::Window, req: Request, signal: &web_sys::AbortSignal) -> Result<Response> {
-    let init = web_sys::RequestInit::new();
-    init.set_signal(Some(signal));
-    init.set_method(&req.method);
-    init.set_credentials(web_sys::RequestCredentials::Omit);
-    init.set_mode(web_sys::RequestMode::Cors);
-    // Not kept by the browser's cache: every answer is the server's of now.
-    init.set_cache(web_sys::RequestCache::NoStore);
-    let headers = web_sys::Headers::new().map_err(|e| Error::Io(js(&e)))?;
-    for (k, v) in &req.headers {
-        headers.set(k, v).map_err(|e| Error::Protocol(js(&e)))?;
-    }
-    init.set_headers(&headers);
-    if !req.body.is_empty() {
-        init.set_body(&js_sys::Uint8Array::from(req.body.as_slice()));
-    }
-    let request = web_sys::Request::new_with_str_and_init(&req.url, &init).map_err(|e| Error::Protocol(js(&e)))?;
-    let answer = JsFuture::from(window.fetch_with_request(&request)).await.map_err(|e| {
-        // A browser says no more than this when the server doesn't let this page reach it (CORS), or can't be reached.
-        Error::Io(format!("{} (the server may not let this page reach it)", js(&e)))
-    })?;
-    let resp: web_sys::Response = answer.dyn_into().map_err(|e| Error::Protocol(js(&e)))?;
-    let status = resp.status();
-    let retry_after = resp.headers().get("Retry-After").ok().flatten().and_then(|v| v.trim().parse::<u32>().ok());
-    // Larger than allowed, by what it says of itself: refused before a byte is read.
-    let length = resp.headers().get("Content-Length").ok().flatten().and_then(|v| v.trim().parse::<u64>().ok());
-    if length.is_some_and(|n| usize::try_from(n).map_or(true, |n| n > req.max)) {
-        return Err(too_large(req.max));
-    }
-    let body = read(&resp, req.max).await?;
-    Ok(Response { status, body, retry_after })
-}
-
-/// The body of `resp`, read a piece at a time and given up past `max` bytes (Nora's answers are read so too, nora.rs).
-pub(crate) async fn read(resp: &web_sys::Response, max: usize) -> Result<Vec<u8>> {
-    let Some(stream) = resp.body() else { return Ok(Vec::new()) };
-    let reader: web_sys::ReadableStreamDefaultReader = stream.get_reader().dyn_into().map_err(|e| Error::Protocol(js(&e)))?;
-    let mut body: Vec<u8> = Vec::new();
+/// Read a response's body as bytes, at most `max`: Error::TooLarge once more arrives. Reads the stream chunk by
+/// chunk (never the whole body first), and stops reading as soon as the limit is passed.
+pub async fn read(resp: &web_sys::Response, max: usize) -> Result<Vec<u8>> {
+    let Some(stream) = resp.body() else {
+        return Ok(Vec::new());
+    };
+    let reader = ReadableStreamDefaultReader::new(&stream).map_err(|_| Error::Protocol("the response body cannot be read".to_owned()))?;
+    let mut body = Vec::new();
     loop {
-        let chunk = JsFuture::from(reader.read()).await.map_err(|e| Error::Io(js(&e)))?;
-        let field = |name: &str| js_sys::Reflect::get(&chunk, &wasm_bindgen::JsValue::from_str(name)).unwrap_or(wasm_bindgen::JsValue::UNDEFINED);
-        if field("done").as_bool().unwrap_or(true) {
+        let next = JsFuture::from(reader.read()).await.map_err(|reason| fetch_rules::failure(false, message_of(&reason).as_deref()))?;
+        let next: ReadableStreamReadResult = next.unchecked_into();
+        if next.get_done() == Some(true) {
             return Ok(body);
         }
-        let Ok(piece) = field("value").dyn_into::<js_sys::Uint8Array>() else { continue };
-        let length = usize::try_from(piece.length()).unwrap_or(usize::MAX);
-        if body.len().saturating_add(length) > max {
-            // The rest isn't wanted: the browser stops downloading it.
-            let _ = reader.cancel();
-            return Err(too_large(max));
+        let Ok(chunk) = next.get_value().dyn_into::<Uint8Array>() else {
+            stop(&reader).await;
+            return Err(Error::Protocol("the response body is not bytes".to_owned()));
+        };
+        let length = usize::try_from(chunk.length()).unwrap_or(usize::MAX);
+        if let Err(too_large) = fetch_rules::add_chunk(body.len(), length, max) {
+            stop(&reader).await;
+            return Err(too_large);
         }
-        let start = body.len();
-        body.resize(start + length, 0);
-        if let Some(room) = body.get_mut(start..) {
-            piece.copy_to(room);
-        }
+        body.extend_from_slice(&chunk.to_vec());
     }
 }
 
-/// Wait `ms` milliseconds without holding the window's thread.
+/// Wait `ms` milliseconds (a setTimeout promise).
+///
+/// Works in a window and in a worker. Returns at once if the global scope has no `setTimeout`.
 pub async fn sleep(ms: i32) {
-    let promise = js_sys::Promise::new(&mut |resolve, _| {
-        if let Some(w) = web_sys::window() {
-            let _ = w.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms.max(0));
+    let promise = Promise::new(&mut |resolve: Function, _reject: Function| {
+        if set_timeout(&resolve, ms).is_err() {
+            // Nothing to wait with: do not hang the caller.
+            let _ = resolve.call0(&JsValue::UNDEFINED);
         }
     });
     let _ = JsFuture::from(promise).await;
+}
+
+/// The fetch `Request` for `req`, with its abort signal.
+fn build(req: &Request, controller: &AbortController) -> Result<web_sys::Request> {
+    let plan = fetch_rules::plan(req);
+    let headers = Headers::new().map_err(|_| cannot_build())?;
+    for (name, value) in plan.headers {
+        // The browser's message may quote the value, which may be a secret: keep a fixed reason.
+        headers.append(name, value).map_err(|_| Error::Protocol("the browser refused a request header".to_owned()))?;
+    }
+    let init = RequestInit::new();
+    init.set_method(plan.method);
+    init.set_headers(&headers);
+    if let Some(body) = plan.body {
+        init.set_body(&Uint8Array::from(body));
+    }
+    init.set_credentials(RequestCredentials::Omit);
+    init.set_cache(RequestCache::NoStore);
+    init.set_redirect(RequestRedirect::Follow);
+    init.set_referrer_policy(ReferrerPolicy::NoReferrer);
+    init.set_mode(RequestMode::Cors);
+    init.set_signal(Some(&controller.signal()));
+    // The browser's message may repeat the address, which may hold a token: keep a fixed reason.
+    web_sys::Request::new_with_str_and_init(plan.url, &init).map_err(|_| cannot_build())
+}
+
+/// Fetch `request` and read the answer.
+async fn exchange(window: &Window, request: &web_sys::Request, max: usize) -> Result<Response> {
+    let answer =
+        JsFuture::from(window.fetch_with_request(request)).await.map_err(|reason| fetch_rules::failure(false, message_of(&reason).as_deref()))?;
+    let resp: web_sys::Response = answer.dyn_into().map_err(|_| Error::Protocol("the browser gave no response".to_owned()))?;
+    let now = fetch_rules::unix_seconds(js_sys::Date::now());
+    let retry_after = resp.headers().get("Retry-After").ok().flatten().and_then(|value| http::retry_after(&value, now));
+    let body = read(&resp, max).await?;
+    Ok(Response { status: resp.status(), body, retry_after })
+}
+
+/// The time limit of one exchange: aborts it after [`GIVE_UP_MS`]. Dropped early (the caller gave up on the
+/// future), it aborts the exchange at once; either way its timer is cleared.
+struct Deadline {
+    window: Window,
+    controller: AbortController,
+    timer: i32,
+    fired: Rc<Cell<bool>>,
+    finished: bool,
+    // Kept alive until the timer is cleared, so the browser never calls a freed closure.
+    _on_timeout: Closure<dyn FnMut()>,
+}
+
+impl Deadline {
+    /// Start the timer that aborts `controller`.
+    fn start(window: &Window, controller: AbortController) -> Result<Deadline> {
+        let fired = Rc::new(Cell::new(false));
+        let on_timeout = {
+            let fired = Rc::clone(&fired);
+            let controller = controller.clone();
+            Closure::<dyn FnMut()>::new(move || {
+                fired.set(true);
+                controller.abort();
+            })
+        };
+        let timer = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(on_timeout.as_ref().unchecked_ref(), GIVE_UP_MS)
+            .map_err(|_| no_time_limit())?;
+        Ok(Deadline { window: window.clone(), controller, timer, fired, finished: false, _on_timeout: on_timeout })
+    }
+
+    /// End of the exchange: clear the timer and tell whether it had fired.
+    fn finish(mut self) -> bool {
+        self.finished = true;
+        self.fired.get()
+    }
+}
+
+impl Drop for Deadline {
+    fn drop(&mut self) {
+        self.window.clear_timeout_with_handle(self.timer);
+        if !self.finished {
+            self.controller.abort();
+        }
+    }
+}
+
+/// Cancel the body stream: no more of it is downloaded.
+async fn stop(reader: &ReadableStreamDefaultReader) {
+    // The body is abandoned either way; a failed cancel changes nothing for the caller.
+    let _ = JsFuture::from(reader.cancel()).await;
+}
+
+/// The message of a rejection: a string, or the `message` of an `Error` or `DOMException`.
+fn message_of(reason: &JsValue) -> Option<String> {
+    if let Some(text) = reason.as_string() {
+        return Some(text);
+    }
+    Reflect::get(reason, &JsValue::from_str("message")).ok().and_then(|message| message.as_string())
+}
+
+/// `setTimeout(handler, ms)` on whatever the global scope is (a window or a worker).
+fn set_timeout(handler: &Function, ms: i32) -> std::result::Result<JsValue, JsValue> {
+    let global = js_sys::global();
+    let set_timeout: Function = Reflect::get(&global, &JsValue::from_str("setTimeout"))?.dyn_into()?;
+    set_timeout.call2(&global, handler, &JsValue::from(ms))
+}
+
+/// The browser would not build the request (a malformed address or method).
+fn cannot_build() -> Error {
+    Error::Protocol("the browser could not build the request".to_owned())
+}
+
+/// The browser would not give us a timer or an abort controller.
+fn no_time_limit() -> Error {
+    Error::Io("the browser cannot limit the request's time".to_owned())
 }

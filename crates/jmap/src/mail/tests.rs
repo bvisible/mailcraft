@@ -680,11 +680,11 @@ fn a_method_error_in_one_mailbox_does_not_stop_the_others() {
     let end = last(&pieces);
     assert!(!end.whole && !end.stopped && !end.auth_refused && end.busy_for.is_none());
     // Said once, with the server's reason, and without a name or an id.
-    assert_eq!(end.errors, ["Couldn't read the mail in 1 mailbox: the server refused: serverFail this mailbox can't be read just now"]);
+    assert_eq!(end.errors, ["Couldn't read the mail in 1 mailbox: the server refused: this mailbox can't be read just now"]);
     // Several are counted, and the first reason given.
     stand_in.with(|d| d.broken_mailboxes.insert(ids.apollo.clone(), "serverFail"));
     let end = last(&run(&stand_in, &everything(500))).errors.clone();
-    assert_eq!(end, ["Couldn't read the mail in 2 mailboxes: the server refused: serverFail this mailbox can't be read just now"]);
+    assert_eq!(end, ["Couldn't read the mail in 2 mailboxes: the server refused: this mailbox can't be read just now"]);
 }
 
 #[test]
@@ -708,7 +708,11 @@ fn a_server_that_says_it_is_unavailable_three_mailboxes_in_a_row_is_left_alone()
     assert_eq!(folders_read(&pieces), [&ids.inbox], "the rest wait for the next run");
     let end = last(&pieces);
     assert_eq!(end.errors.len(), 2);
-    assert!(end.errors[0].starts_with("Couldn't read the mail in 3 mailboxes: the server refused: serverUnavailable"), "{:?}", end.errors);
+    assert!(
+        end.errors[0].starts_with("Couldn't read the mail in 3 mailboxes: the server refused: this mailbox can't be read just now"),
+        "{:?}",
+        end.errors
+    );
     assert_eq!(end.errors[1], "The server failed 3 mailboxes in a row; the rest wait for the next run.");
     assert!(!end.whole);
     // Two in a row, and then one that works: the count starts again.
@@ -773,7 +777,7 @@ fn one_email_that_breaks_a_call_is_found_by_halving_it_and_the_rest_are_read() {
     // The other mailboxes were read, and the trouble is said once.
     assert_eq!(subjects(page_of(&pieces, &ids.sent)), ["outgoing"]);
     let end = last(&pieces);
-    assert_eq!(end.errors, ["Couldn't read 1 message in full: the server refused: serverFail an email can't be read just now"]);
+    assert_eq!(end.errors, ["Couldn't read 1 message in full: the server refused: an email can't be read just now"]);
     assert!(!end.whole);
     // Finding it took a few calls, not one for each email: the calls for emails are the three chunks, the halves
     // of the one that failed, and the Sent mailbox's; each level of halving makes one more that fails.
@@ -1333,7 +1337,7 @@ fn a_mailbox_list_that_cannot_be_read_is_said_and_a_light_run_goes_on_with_the_m
         })
     };
     let cases: [(fn() -> Reply, &str); 3] = [
-        (|| Reply::Error("serverFail", "try later".into()), "Couldn't list the mailboxes on the server: the server refused: serverFail try later"),
+        (|| Reply::Error("serverFail", "try later".into()), "Couldn't list the mailboxes on the server: the server refused: try later"),
         (
             || Reply::Is(json!({"accountId": "A1"})),
             "Couldn't list the mailboxes on the server: unexpected server response: the answer has no list of mailboxes",

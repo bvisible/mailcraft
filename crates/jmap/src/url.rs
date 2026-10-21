@@ -1,376 +1,500 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! `http(s)://` addresses: parsed, resolved against a base, and percent-encoding.
+//! A parsed `http` or `https` address, as a JMAP client (RFC 8620) needs one: the session resource, the API,
+//! upload and download endpoints, and redirects.
 //!
-//! Addresses reach this crate from the owner (the session's address) and from a server (the
-//! session's `apiUrl`, `downloadUrl` and `uploadUrl`), so nothing here trusts them. They are bounded;
-//! they hold no user name (`https://user:password@host/`); a host is a name of letters, digits, hyphens
-//! and dots, or an IPv6 address in brackets; whatever in a path or a query is not printable ASCII is
-//! percent-encoded, so that an address is sent as one line of plain ASCII; and what a parse refuses is
-//! never echoed back, since an address can hold a person's address or a password.
+//! Syntax and reference resolution follow RFC 3986; host parsing, default ports and the origin follow the
+//! WHATWG URL Standard; [`pct`] is RFC 6570 simple string expansion. Every error is
+//! [`Error::Protocol`] with a short reason that never repeats the address (an address may carry a token).
 
-use crate::{Error, Result};
+use std::fmt;
 
-/// Longest address parsed.
-const MAX_URL: usize = 8192;
-/// Longest host name (RFC 1035).
+use crate::http::Error;
+
+/// Longest address accepted, in bytes.
+const MAX_ADDRESS: usize = 8192;
+/// Longest host accepted, in bytes.
 const MAX_HOST: usize = 253;
 
-/// A parsed `http(s)://host[:port]/path?query` URL.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Url {
-    pub https: bool,
-    pub host: String,
-    pub port: u16,
-    /// Path and query, starting with `/`, in printable ASCII.
-    pub path: String,
-}
-
-/// What may be shown of an address: the server it names and how long the rest is, never the path or the
-/// query (they can hold a person's address).
-impl std::fmt::Debug for Url {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Url").field("origin", &self.origin()).field("path_bytes", &self.path.len()).finish()
-    }
-}
-
+/// The default port of the scheme: 443 for `https`, 80 for `http`.
 pub fn default_port(https: bool) -> u16 {
     if https { 443 } else { 80 }
 }
 
-fn strip_prefix_ci<'a>(s: &'a str, p: &str) -> Option<&'a str> {
-    s.get(..p.len()).filter(|h| h.eq_ignore_ascii_case(p)).and_then(|_| s.get(p.len()..))
-}
-
-/// A port: digits only, 1 to 65535.
-fn port_of(text: &str) -> Option<u16> {
-    if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    text.parse::<u16>().ok().filter(|port| *port != 0)
+/// A parsed `http` or `https` address.
+///
+/// Built by [`Url::parse`] or [`Url::join`], which guarantee the field invariants below.
+#[derive(Clone, PartialEq, Eq)]
+pub struct Url {
+    /// `true` for `https`, `false` for `http`.
+    pub https: bool,
+    /// The host, lower-case. An IPv6 literal keeps its brackets, e.g. `"[::1]"`.
+    pub host: String,
+    /// The explicit port, or [`default_port`] of the scheme when the address gives none.
+    pub port: u16,
+    /// The path, starting with `/`, followed by `?query` when there is one. Never the `#fragment`.
+    pub path: String,
 }
 
 impl Url {
-    pub fn parse(s: &str) -> Result<Url> {
-        let s = s.trim();
-        let bad = || Error::Protocol("not a web address".into());
-        if s.len() > MAX_URL {
-            return Err(bad());
+    /// Parse an absolute `http://` or `https://` address.
+    ///
+    /// Refused (with [`Error::Protocol`]): surrounding or inner whitespace, control characters, backslashes,
+    /// more than 8192 bytes, another scheme, user information (`@`), an empty or malformed host, a host over
+    /// 253 bytes, a port outside 1..=65535. The fragment is dropped; dot segments of the path are removed;
+    /// an empty path becomes `/`.
+    pub fn parse(s: &str) -> Result<Url, Error> {
+        check_text(s)?;
+        let (https, rest) = split_scheme(s).ok_or_else(|| invalid("the address does not start with http:// or https://"))?;
+        let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+        let (authority, tail) = rest.split_at_checked(authority_end).ok_or_else(|| invalid("the address cannot be split"))?;
+        if authority.contains('@') {
+            return Err(invalid("the address holds user information"));
         }
-        let (https, rest) = if let Some(r) = strip_prefix_ci(s, "https://") {
-            (true, r)
-        } else if let Some(r) = strip_prefix_ci(s, "http://") {
-            (false, r)
-        } else {
-            return Err(bad());
-        };
-        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-        let (authority, tail) = rest.split_at(end);
-        let (host, port) = if let Some(v6) = authority.strip_prefix('[') {
-            let (h, after) = v6.split_once(']').ok_or_else(bad)?;
-            if h.parse::<std::net::Ipv6Addr>().is_err() {
-                return Err(bad());
-            }
-            let port = match after.strip_prefix(':') {
-                Some(p) => port_of(p).ok_or_else(bad)?,
-                None if after.is_empty() => default_port(https),
-                None => return Err(bad()),
-            };
-            (h.to_string(), port)
-        } else {
-            let (h, port) = match authority.split_once(':') {
-                Some((h, p)) => (h, port_of(p).ok_or_else(bad)?),
-                None => (authority, default_port(https)),
-            };
-            let named = !h.is_empty() && h.len() <= MAX_HOST && h.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.'));
-            if !named {
-                return Err(bad());
-            }
-            (h.to_string(), port)
-        };
-        let tail = tail.split('#').next().unwrap_or("");
-        let path = if tail.is_empty() {
-            "/".to_string()
-        } else if tail.starts_with('?') {
-            format!("/{tail}")
-        } else {
-            tail.to_string()
-        };
-        // What is not printable ASCII (spaces, controls, anything beyond ASCII: every byte of its UTF-8) is
-        // percent-encoded rather than sent raw, so that no line break, no blank and no byte of another
-        // character set reaches a request line.
-        let mut encoded = String::with_capacity(path.len());
-        for c in path.chars() {
-            if c.is_ascii_graphic() {
-                encoded.push(c);
-            } else {
-                let mut utf8 = [0u8; 4];
-                for b in c.encode_utf8(&mut utf8).bytes() {
-                    encoded.push_str(&format!("%{b:02X}"));
-                }
-            }
-        }
-        Ok(Url { https, host: host.to_ascii_lowercase(), port, path: encoded })
+        let (host, port) = split_host_port(authority)?;
+        let host = parse_host(host)?;
+        let port = parse_port(port, https)?;
+        let without_fragment = tail.split_once('#').map_or(tail, |(before, _)| before);
+        Ok(Url { https, host, port, path: normalize_path(without_fragment) })
     }
 
-    /// A `Location` (or any reference) resolved against this URL.
-    pub fn join(&self, location: &str) -> Result<Url> {
-        let l = location.trim();
-        // A reference with a scheme of its own is absolute (RFC 3986 §4.2): http and https are parsed,
-        // any other is refused, rather than taken for a path.
-        if let Some((scheme, _)) = l.split_once(':')
-            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-            && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
-        {
-            return Url::parse(l);
+    /// Resolve `location` (a redirect `Location` or a link a server sent) against this address, following
+    /// RFC 3986 §5.2, and validate the result as [`Url::parse`] would.
+    ///
+    /// An absolute `http:`/`https:` address is parsed as is; any other scheme is refused; `//host…` keeps the
+    /// scheme; `/path…` keeps scheme, host and port; `?query` keeps the path and replaces the query; an empty
+    /// reference gives this address back; anything else is taken relative to the directory of this path, and
+    /// dot segments are removed. The fragment of `location` is always dropped.
+    pub fn join(&self, location: &str) -> Result<Url, Error> {
+        check_text(location)?;
+        let reference = location.split_once('#').map_or(location, |(before, _)| before);
+        if let Some(scheme) = scheme_of(reference) {
+            if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+                return Url::parse(reference);
+            }
+            return Err(invalid("the link leads to a scheme other than http or https"));
         }
-        let origin = self.origin();
-        if let Some(rest) = l.strip_prefix("//") {
-            return Url::parse(&format!("{}://{rest}", if self.https { "https" } else { "http" }));
+        if reference.starts_with("//") {
+            let scheme = if self.https { "https:" } else { "http:" };
+            return Url::parse(&format!("{scheme}{reference}"));
         }
-        if l.starts_with('/') {
-            return Url::parse(&format!("{origin}{l}"));
+        if reference.starts_with('/') {
+            return Url::parse(&format!("{}{reference}", self.origin()));
         }
-        // Only a query, or only a fragment (which is dropped): this path (RFC 3986 §5.2.2).
-        let path = self.path.split('?').next().unwrap_or("/");
-        if l.starts_with('?') {
-            return Url::parse(&format!("{origin}{path}{l}"));
+        // A `Url` built by hand may break the "path starts with /" invariant; never let its path run into
+        // the host.
+        let path = self.path.as_str();
+        let slash = if path.starts_with('/') { "" } else { "/" };
+        if reference.is_empty() {
+            return Url::parse(&format!("{}{slash}{path}", self.origin()));
         }
-        if l.starts_with('#') {
-            return Ok(self.clone());
+        let base_path = path.split_once('?').map_or(path, |(before, _)| before);
+        if reference.starts_with('?') {
+            return Url::parse(&format!("{}{slash}{base_path}{reference}", self.origin()));
         }
-        let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
-        Url::parse(&format!("{origin}{dir}/{l}"))
+        let directory = base_path.rfind('/').and_then(|last| base_path.get(..=last)).filter(|directory| directory.starts_with('/')).unwrap_or("/");
+        Url::parse(&format!("{}{directory}{reference}", self.origin()))
     }
 
+    /// `"https://host"` or `"http://host"`, with `":port"` only when the port is not the scheme's default.
     pub fn origin(&self) -> String {
         let scheme = if self.https { "https" } else { "http" };
-        let host = if self.host.contains(':') { format!("[{}]", self.host) } else { self.host.clone() };
-        if self.port == default_port(self.https) { format!("{scheme}://{host}") } else { format!("{scheme}://{host}:{}", self.port) }
+        if self.port == default_port(self.https) { format!("{scheme}://{}", self.host) } else { format!("{scheme}://{}:{}", self.host, self.port) }
     }
 
-    /// The whole address again.
+    /// The whole address: [`Url::origin`] followed by the path (and query). Parses back to an equal `Url`.
     pub fn full(&self) -> String {
         format!("{}{}", self.origin(), self.path)
     }
 
-    /// Whether the address is on this computer: `localhost`, or an IP address that is a loopback one
-    /// (`127.0.0.0/8` written as four numbers, `::1`). The only place plain `http` is allowed to go to.
+    /// Whether the host is the local machine: `localhost` or a name ending in `.localhost`, an IPv4 address
+    /// in 127.0.0.0/8 written as four decimal numbers, or the IPv6 address `::1`.
     pub fn is_loopback(&self) -> bool {
-        self.host == "localhost" || self.host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+        let host = self.host.as_str();
+        if host == "localhost" || host.ends_with(".localhost") {
+            return true;
+        }
+        if let Some(inside) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+            return parse_ipv6(inside) == Some([0, 0, 0, 0, 0, 0, 0, 1]);
+        }
+        matches!(parse_ipv4(host), Some([127, _, _, _]))
     }
 }
 
-/// Percent-encode everything but RFC 3986's unreserved characters.
+impl fmt::Debug for Url {
+    /// Writes [`Url::origin`] only: the path and query can carry a token.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.origin())
+    }
+}
+
+/// Percent-encode the UTF-8 bytes of `s`, keeping only the RFC 3986 unreserved characters
+/// `A-Z a-z 0-9 - . _ ~`; every other byte becomes `%XX` with upper-case hex.
+///
+/// This is RFC 6570 simple string expansion, used to fill `{accountId}`, `{blobId}`, `{name}` and `{type}` in
+/// JMAP's URL templates (RFC 8620 §2).
 pub fn pct(s: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
-            out.push(char::from(b));
+    for byte in s.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(byte));
         } else {
-            out.push_str(&format!("%{b:02X}"));
+            out.push('%');
+            for nibble in [byte >> 4, byte & 0x0f] {
+                let digit = HEX.get(usize::from(nibble)).copied().unwrap_or(b'0');
+                out.push(char::from(digit));
+            }
         }
     }
     out
 }
 
-/// Undo [`pct`]: each `%XX` becomes its byte, what is then not UTF-8 is replaced, and a `%` that starts
-/// no escape stays as it is.
+/// Replace each `%XX` (two hex digits, either case) with its byte, leave any other `%` as it is, and turn the
+/// bytes into a string, replacing invalid UTF-8 with U+FFFD. `+` stays `+`.
 pub fn pct_decode(s: &str) -> String {
     let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut at = 0usize;
-    while let Some(&b) = bytes.get(at) {
-        let escaped = if b == b'%' {
-            bytes
-                .get(at.saturating_add(1)..at.saturating_add(3))
-                .filter(|hex| hex.iter().all(u8::is_ascii_hexdigit))
-                .and_then(|hex| std::str::from_utf8(hex).ok())
-                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-        } else {
-            None
-        };
-        match escaped {
-            Some(byte) => {
-                out.push(byte);
-                at = at.saturating_add(3);
-            }
-            None => {
-                out.push(b);
-                at = at.saturating_add(1);
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while let Some(&byte) = bytes.get(i) {
+        if byte == b'%' {
+            let high = bytes.get(i + 1).copied().and_then(hex_value);
+            let low = bytes.get(i + 2).copied().and_then(hex_value);
+            if let (Some(high), Some(low)) = (high, low) {
+                out.push((high << 4) | low);
+                i += 3;
+                continue;
             }
         }
+        out.push(byte);
+        i += 1;
     }
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The value of one hex digit, either case.
+fn hex_value(byte: u8) -> Option<u8> {
+    char::from(byte).to_digit(16).and_then(|digit| u8::try_from(digit).ok())
+}
+
+/// A protocol error with a fixed reason.
+fn invalid(reason: &str) -> Error {
+    Error::Protocol(reason.to_owned())
+}
+
+/// The checks that apply to the whole text of an address or a reference: size and characters.
+fn check_text(s: &str) -> Result<(), Error> {
+    if s.len() > MAX_ADDRESS {
+        return Err(invalid("the address is too long"));
+    }
+    if s.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(invalid("the address holds a space or a control character"));
+    }
+    if s.contains('\\') {
+        return Err(invalid("the address holds a backslash"));
+    }
+    Ok(())
+}
+
+/// `Some((https, rest))` when `s` starts with `https://` or `http://` (any case).
+fn split_scheme(s: &str) -> Option<(bool, &str)> {
+    if let Some(rest) = strip_prefix_ignore_case(s, "https://") {
+        return Some((true, rest));
+    }
+    strip_prefix_ignore_case(s, "http://").map(|rest| (false, rest))
+}
+
+/// `s` without `prefix`, matched ASCII case-insensitively.
+fn strip_prefix_ignore_case<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    let head = s.get(..prefix.len())?;
+    if head.eq_ignore_ascii_case(prefix) { s.get(prefix.len()..) } else { None }
+}
+
+/// The scheme of a URI reference (RFC 3986 §3.1, §4.2), when it has one.
+fn scheme_of(reference: &str) -> Option<&str> {
+    let (candidate, _) = reference.split_once(':')?;
+    let mut chars = candidate.chars();
+    let first = chars.next()?;
+    let valid = first.is_ascii_alphabetic() && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    valid.then_some(candidate)
+}
+
+/// Split an authority (already free of user information) into host and optional port text.
+fn split_host_port(authority: &str) -> Result<(&str, Option<&str>), Error> {
+    if authority.starts_with('[') {
+        let close = authority.find(']').ok_or_else(|| invalid("the IPv6 address is not closed"))?;
+        let (host, after) = authority.split_at_checked(close + 1).ok_or_else(|| invalid("the address cannot be split"))?;
+        if after.is_empty() {
+            return Ok((host, None));
+        }
+        return match after.strip_prefix(':') {
+            Some(port) => Ok((host, Some(port))),
+            None => Err(invalid("unexpected characters after the host")),
+        };
+    }
+    Ok(match authority.split_once(':') {
+        Some((host, port)) => (host, Some(port)),
+        None => (authority, None),
+    })
+}
+
+/// Validate a host and return it lower-cased.
+fn parse_host(host: &str) -> Result<String, Error> {
+    if host.is_empty() {
+        return Err(invalid("the address has no host"));
+    }
+    if host.len() > MAX_HOST {
+        return Err(invalid("the host is too long"));
+    }
+    if let Some(inside) = host.strip_prefix('[') {
+        let inside = inside.strip_suffix(']').ok_or_else(|| invalid("the IPv6 address is not closed"))?;
+        if !inside.chars().all(|c| c.is_ascii_hexdigit() || c == ':' || c == '.') {
+            return Err(invalid("the IPv6 address holds characters it cannot"));
+        }
+        if parse_ipv6(inside).is_none() {
+            return Err(invalid("the IPv6 address is not valid"));
+        }
+        return Ok(host.to_ascii_lowercase());
+    }
+    if !host.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.') {
+        return Err(invalid("the host holds characters a host cannot"));
+    }
+    // A host whose last label is a number is an IPv4 address to a browser, which reads forms such as
+    // `127.1`, `0x7f.0.0.1` or `2130706433` as 127.0.0.1. Only the four-decimal form means the same thing
+    // to everyone, so it is the only one accepted.
+    if ends_in_number(host) && parse_ipv4(host).is_none() {
+        return Err(invalid("the IPv4 address is not four decimal numbers"));
+    }
+    Ok(host.to_ascii_lowercase())
+}
+
+/// The port from its text: absent or empty means the scheme's default; otherwise 1 to 5 digits, 1..=65535.
+fn parse_port(port: Option<&str>, https: bool) -> Result<u16, Error> {
+    let text = match port {
+        None | Some("") => return Ok(default_port(https)),
+        Some(text) => text,
+    };
+    if text.len() > 5 || !text.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(invalid("the port is not valid"));
+    }
+    match text.parse::<u16>() {
+        Ok(value) if value != 0 => Ok(value),
+        _ => Err(invalid("the port is not valid")),
+    }
+}
+
+/// The path from the text after the authority (fragment already dropped): `/` in front when missing, and dot
+/// segments removed from the path (not from the query).
+fn normalize_path(text: &str) -> String {
+    let (path, query) = match text.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (text, None),
+    };
+    let mut out = remove_dot_segments(path);
+    if let Some(query) = query {
+        out.push('?');
+        out.push_str(query);
+    }
+    out
+}
+
+/// RFC 3986 §5.2.4 for a path that is absolute or empty (an empty path gives `/`). A segment counts as a dot
+/// segment in its percent-encoded spellings too (`%2e`, `.%2E`…), as the WHATWG URL Standard reads them.
+fn remove_dot_segments(path: &str) -> String {
+    let relative = path.strip_prefix('/').unwrap_or(path);
+    let segments: Vec<&str> = relative.split('/').collect();
+    let last = segments.len().saturating_sub(1);
+    let mut kept: Vec<&str> = Vec::with_capacity(segments.len());
+    for (index, segment) in segments.iter().enumerate() {
+        let is_last = index == last;
+        if is_double_dot(segment) {
+            kept.pop();
+            if is_last {
+                kept.push("");
+            }
+        } else if is_single_dot(segment) {
+            if is_last {
+                kept.push("");
+            }
+        } else {
+            kept.push(segment);
+        }
+    }
+    format!("/{}", kept.join("/"))
+}
+
+/// `.` or `%2e` (any case).
+fn is_single_dot(segment: &str) -> bool {
+    segment == "." || segment.eq_ignore_ascii_case("%2e")
+}
+
+/// `..`, `.%2e`, `%2e.` or `%2e%2e` (any case).
+fn is_double_dot(segment: &str) -> bool {
+    segment == ".." || [".%2e", "%2e.", "%2e%2e"].iter().any(|form| segment.eq_ignore_ascii_case(form))
+}
+
+/// Whether the last label of `host` is a number (the WHATWG URL Standard's "ends in a number checker"):
+/// only ASCII digits, or `0x` followed by hex digits.
+fn ends_in_number(host: &str) -> bool {
+    let host = host.strip_suffix('.').unwrap_or(host);
+    let last = host.rsplit('.').next().unwrap_or(host);
+    if !last.is_empty() && last.bytes().all(|b| b.is_ascii_digit()) {
+        return true;
+    }
+    let hex = last.strip_prefix("0x").or_else(|| last.strip_prefix("0X"));
+    hex.is_some_and(|digits| digits.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// An IPv4 address written as exactly four decimal numbers 0..=255 without leading zeros.
+fn parse_ipv4(text: &str) -> Option<[u8; 4]> {
+    let mut octets = [0u8; 4];
+    let mut parts = text.split('.');
+    for octet in &mut octets {
+        *octet = parse_decimal_octet(parts.next()?)?;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(octets)
+}
+
+/// One decimal number 0..=255, without a leading zero (RFC 3986 `dec-octet`).
+fn parse_decimal_octet(text: &str) -> Option<u8> {
+    let canonical = !text.is_empty() && text.len() <= 3 && text.bytes().all(|b| b.is_ascii_digit()) && (text == "0" || !text.starts_with('0'));
+    if canonical { text.parse().ok() } else { None }
+}
+
+/// The eight 16-bit pieces of an IPv6 address written as RFC 3986 `IPv6address` (`::` compression and a
+/// trailing dotted IPv4 part allowed; no zone).
+fn parse_ipv6(text: &str) -> Option<[u16; 8]> {
+    let (head, tail, compressed) = match text.split_once("::") {
+        Some((head, tail)) => (head, tail, true),
+        None => (text, "", false),
+    };
+    if tail.contains("::") {
+        return None;
+    }
+    // A dotted IPv4 part may only end the whole address.
+    let head_pieces = ipv6_pieces(head, !compressed)?;
+    let tail_pieces = ipv6_pieces(tail, true)?;
+    let given = head_pieces.len() + tail_pieces.len();
+    if compressed {
+        if given > 7 {
+            return None;
+        }
+    } else if given != 8 {
+        return None;
+    }
+    let zeros = std::iter::repeat_n(0u16, 8 - given);
+    let mut pieces = [0u16; 8];
+    for (slot, value) in pieces.iter_mut().zip(head_pieces.into_iter().chain(zeros).chain(tail_pieces)) {
+        *slot = value;
+    }
+    Some(pieces)
+}
+
+/// The pieces of one side of an IPv6 address (`h16` groups separated by `:`, the last one possibly a dotted
+/// IPv4 address worth two pieces). An empty side has no pieces.
+fn ipv6_pieces(side: &str, ipv4_may_end: bool) -> Option<Vec<u16>> {
+    let mut pieces = Vec::new();
+    if side.is_empty() {
+        return Some(pieces);
+    }
+    let mut groups = side.split(':').peekable();
+    while let Some(group) = groups.next() {
+        let is_last = groups.peek().is_none();
+        if group.contains('.') {
+            if !(is_last && ipv4_may_end) {
+                return None;
+            }
+            let [a, b, c, d] = parse_ipv4(group)?;
+            pieces.push(u16::from_be_bytes([a, b]));
+            pieces.push(u16::from_be_bytes([c, d]));
+        } else {
+            if group.is_empty() || group.len() > 4 {
+                return None;
+            }
+            pieces.push(u16::from_str_radix(group, 16).ok()?);
+        }
+    }
+    Some(pieces)
+}
+
 #[cfg(test)]
 mod tests {
-    use proptest::prelude::*;
-
     use super::*;
 
     #[test]
-    fn urls_and_encodings() {
-        let u = Url::parse("https://Api.Example.com/jmap/session?x=1#frag").unwrap();
-        assert_eq!((u.host.as_str(), u.port, u.path.as_str()), ("api.example.com", 443, "/jmap/session?x=1"));
-        assert_eq!(u.join("/api/").unwrap().full(), "https://api.example.com/api/");
-        assert_eq!(u.join("upload/").unwrap().full(), "https://api.example.com/jmap/upload/");
-        assert_eq!(u.join("http://other:8080/x").unwrap().full(), "http://other:8080/x");
-        for bad in ["ftp://x", "https://", "https://user@host/", "https://h:0/", "https://[::1/"] {
-            assert!(Url::parse(bad).is_err(), "{bad}");
-        }
-        assert_eq!(Url::parse("http://[::1]:8080").unwrap().origin(), "http://[::1]:8080");
-        assert_eq!(pct("a b/é"), "a%20b%2F%C3%A9");
-    }
-
-    #[test]
-    fn references_resolve_against_the_base() {
-        let base = Url::parse("https://h.example:8443/a/b/session?account=x").unwrap();
-        assert_eq!(base.join("//other.example/p").unwrap().full(), "https://other.example/p");
-        assert_eq!(base.join("/p?q=1").unwrap().full(), "https://h.example:8443/p?q=1");
-        assert_eq!(base.join("c").unwrap().full(), "https://h.example:8443/a/b/c");
-        assert_eq!(base.join(" https://x.example ").unwrap().full(), "https://x.example/");
-        // A query alone, or a fragment alone, keeps the path.
-        assert_eq!(base.join("?y=2").unwrap().full(), "https://h.example:8443/a/b/session?y=2");
-        assert_eq!(base.join("#top").unwrap().full(), "https://h.example:8443/a/b/session?account=x");
-        // The base's scheme is the reference's when it names none.
-        let plain = Url::parse("http://127.0.0.1:8080/s").unwrap();
-        assert_eq!(plain.join("//127.0.0.1:9/p").unwrap().full(), "http://127.0.0.1:9/p");
-        assert_eq!(Url::parse("HTTPS://H.Example").unwrap().full(), "https://h.example/");
-        assert_eq!(Url::parse("https://h.example?a=1").unwrap().path, "/?a=1");
-        // Another scheme is no path; a colon further into a path is none of a scheme's.
-        for other in ["ftp://h.example/x", "javascript:alert(1)", "mailto:a@b.example", "c:d", "https:x"] {
-            assert!(base.join(other).is_err(), "{other}");
-        }
-        assert_eq!(base.join("a/b:c").unwrap().full(), "https://h.example:8443/a/b/a/b:c");
-        assert_eq!(base.join("./c:d").unwrap().full(), "https://h.example:8443/a/b/./c:d");
-    }
-
-    #[test]
-    fn hostile_addresses_are_refused_without_being_echoed() {
+    fn ipv6_forms() {
+        assert_eq!(parse_ipv6("::"), Some([0; 8]));
+        assert_eq!(parse_ipv6("::1"), Some([0, 0, 0, 0, 0, 0, 0, 1]));
+        assert_eq!(parse_ipv6("1::"), Some([1, 0, 0, 0, 0, 0, 0, 0]));
+        assert_eq!(parse_ipv6("1:2:3:4:5:6:7:8"), Some([1, 2, 3, 4, 5, 6, 7, 8]));
+        assert_eq!(parse_ipv6("1:2:3:4:5:6:7::"), Some([1, 2, 3, 4, 5, 6, 7, 0]));
+        assert_eq!(parse_ipv6("::2:3:4:5:6:7:8"), Some([0, 2, 3, 4, 5, 6, 7, 8]));
+        assert_eq!(parse_ipv6("::ffff:192.0.2.1"), Some([0, 0, 0, 0, 0, 0xffff, 0xc000, 0x0201]));
+        assert_eq!(parse_ipv6("1:2:3:4:5:6:1.2.3.4"), Some([1, 2, 3, 4, 5, 6, 0x0102, 0x0304]));
+        assert_eq!(parse_ipv6("2001:DB8::abcd"), Some([0x2001, 0xdb8, 0, 0, 0, 0, 0, 0xabcd]));
         for bad in [
-            "https://user:secret@host.example/",
-            "https://host.example\\@evil.example/",
-            "https://good.example\\.evil.example/",
-            "https://good.example\\path",
-            "https://ho st.example/",
-            "https://host.example:99999/",
-            "https://host.example:/",
-            "https://host.example:+443/",
-            "https://host.example:4 43/",
-            "https://host.example:80:80/",
-            "https://::1/",
-            "https://[]/",
-            "https://[::1]x/",
-            "https://[evil.example]/",
-            "https://[localhost]/",
-            "https://[::1%25eth0]/",
-            "https://\u{7}host/",
-            "https://h\u{f6}st.example/",
-            "https://host_name.example/",
-            "https://%65vil.example/",
-            "https://host.example%2f@evil.example/",
-            "javascript:alert(1)",
             "",
+            ":",
+            ":::",
+            "1",
+            "1:2",
+            "1:2:3:4:5:6:7",
+            "1:2:3:4:5:6:7:8:9",
+            "1:2:3:4:5:6:7:8::",
+            "::1:2:3:4:5:6:7:8",
+            "1::2::3",
+            ":1::",
+            "1::2:",
+            "12345::",
+            "1.2.3.4",
+            "1.2.3.4::",
+            "::1.2.3",
+            "::1.2.3.256",
+            "::01.2.3.4",
+            "1:2:3:4:5:6:7:1.2.3.4",
         ] {
-            let err = Url::parse(bad).unwrap_err().to_string();
-            assert!(!err.contains("secret") && !err.contains("host"), "{bad}: {err}");
+            assert_eq!(parse_ipv6(bad), None, "{bad:?}");
         }
-        let long = format!("https://h.example/{}", "a".repeat(MAX_URL));
-        assert!(Url::parse(&long).is_err());
-        let long_host = format!("https://{}.example/", "a".repeat(MAX_HOST));
-        assert!(Url::parse(&long_host).is_err());
-        // A path or query is plain ASCII on one line: controls, blanks and what is beyond ASCII are
-        // encoded whole, however many bytes their UTF-8 takes.
-        let u = Url::parse("https://h.example/a b\r\nc\u{85}d?e=f g\u{3000}h\u{1F600}").unwrap();
-        assert_eq!(u.path, "/a%20b%0D%0Ac%C2%85d?e=f%20g%E3%80%80h%F0%9F%98%80");
-        assert!(u.full().bytes().all(|b| b.is_ascii_graphic()));
-        // The name of a host in a form some resolvers take (a trailing dot, upper case) is kept as it is.
-        assert_eq!(Url::parse("https://H.Example./x").unwrap().host, "h.example.");
-        // Brackets hold an IPv6 address and nothing else.
-        assert_eq!(Url::parse("http://[0:0:0:0:0:0:0:1]/").unwrap().host, "0:0:0:0:0:0:0:1");
-        assert!(Url::parse("http://[0:0:0:0:0:0:0:1]/").unwrap().is_loopback());
     }
 
     #[test]
-    fn only_this_computer_is_loopback() {
-        for yes in ["http://localhost/", "http://127.0.0.1:8080/", "http://127.9.9.9/", "http://[::1]/", "https://LOCALHOST/"] {
-            assert!(Url::parse(yes).unwrap().is_loopback(), "{yes}");
-        }
-        for no in [
-            "http://127.0.0.1.evil.example/",
-            "http://localhost.evil.example/",
-            "http://10.0.0.1/",
-            "http://128.0.0.1/",
-            "http://[::2]/",
-            "http://127.1/",
-            "http://example.org/",
+    fn dot_segments() {
+        for (input, expected) in [
+            ("", "/"),
+            ("/", "/"),
+            ("/.", "/"),
+            ("/..", "/"),
+            ("/a/b/c/./../../g", "/a/g"),
+            ("/a/b/c/..", "/a/b/"),
+            ("/a/b/c/.", "/a/b/c/"),
+            ("/a/./b", "/a/b"),
+            ("/a//b/../c", "/a//c"),
+            ("/../../g", "/g"),
+            ("/a/%2e%2E/b", "/b"),
+            ("/a/.%2e/b", "/b"),
+            ("/a/%2e./b", "/b"),
+            ("/a/%2E/b", "/a/b"),
+            ("/a/.../b", "/a/.../b"),
+            ("/a/.b/..c", "/a/.b/..c"),
         ] {
-            assert!(!Url::parse(no).unwrap().is_loopback(), "{no}");
+            assert_eq!(remove_dot_segments(input), expected, "{input:?}");
         }
     }
 
     #[test]
-    fn what_is_shown_of_an_address_is_its_server() {
-        let u = Url::parse("https://jmap.example.org/jmap/session?account=ada%40example.org").unwrap();
-        let shown = format!("{u:?}");
-        assert!(shown.contains("https://jmap.example.org") && !shown.contains("ada") && !shown.contains("session"), "{shown}");
-    }
-
-    #[test]
-    fn escapes_are_undone() {
-        assert_eq!(pct_decode("ada%40example.org"), "ada@example.org");
-        assert_eq!(pct_decode("a%20b%2Fc%C3%A9"), "a b/cé");
-        assert_eq!(pct_decode("100%"), "100%");
-        assert_eq!(pct_decode("%4"), "%4");
-        assert_eq!(pct_decode("%zz%+1%-1"), "%zz%+1%-1", "only two hexadecimal digits make an escape");
-        assert_eq!(pct_decode("%ff%fe"), "\u{fffd}\u{fffd}", "what is no UTF-8 is replaced");
-        assert_eq!(pct_decode(&pct("any text é\n%41")), "any text é\n%41");
-    }
-
-    /// Strings that are nearly addresses, so that parsing is tried on more than text that never starts like one.
-    fn address_like() -> impl Strategy<Value = String> {
-        let scheme = prop_oneof![Just("https://"), Just("http://"), Just("HTTPS://"), Just("ftp://"), Just("")];
-        let host = prop_oneof![
-            "[a-zA-Z0-9.-]{0,20}",
-            Just("localhost".to_string()),
-            Just("[::1]".to_string()),
-            Just("[fe80::1]".to_string()),
-            "[ -~]{0,20}",
-            ".{0,10}",
-        ];
-        let port = prop_oneof![Just(String::new()), "[0-9]{1,6}".prop_map(|p| format!(":{p}")), ".{0,5}".prop_map(|p| format!(":{p}"))];
-        let tail = prop_oneof![Just(String::new()), "/[ -~]{0,30}", ".{0,30}", "[?#/][ -~\u{80}-\u{3000}]{0,20}"];
-        (scheme, host, port, tail).prop_map(|(scheme, host, port, tail)| format!("{scheme}{host}{port}{tail}"))
-    }
-
-    proptest! {
-        #[test]
-        fn any_address_parses_or_is_refused(s in prop_oneof![address_like(), ".{0,300}"], rel in prop_oneof![address_like(), ".{0,100}"]) {
-            if let Ok(u) = Url::parse(&s) {
-                prop_assert!(!u.host.is_empty() && u.port != 0 && u.path.starts_with('/'));
-                prop_assert!(u.full().bytes().all(|b| b.is_ascii_graphic()));
-                // What was parsed parses again to the same address.
-                prop_assert_eq!(Url::parse(&u.full()).ok(), Some(u.clone()));
-                let _ = u.is_loopback();
-                if let Ok(joined) = u.join(&rel) {
-                    prop_assert!(joined.full().bytes().all(|b| b.is_ascii_graphic()));
-                    prop_assert_eq!(Url::parse(&joined.full()).ok(), Some(joined));
-                }
-            }
-            let _ = pct(&s);
-            prop_assert_eq!(pct_decode(&pct(&s)), s);
-        }
-    }
-
-    #[test]
-    fn the_generator_reaches_addresses_that_parse() {
-        use proptest::strategy::ValueTree;
-        let mut runner = proptest::test_runner::TestRunner::default();
-        let strategy = address_like();
-        let parsed = (0..500).filter(|_| Url::parse(&strategy.new_tree(&mut runner).unwrap().current()).is_ok()).count();
-        assert!(parsed > 50, "only {parsed} of 500 parsed: the property above would test too little");
+    fn number_endings() {
+        assert!(ends_in_number("1.2.3.4"));
+        assert!(ends_in_number("example.123"));
+        assert!(ends_in_number("example.0x1f"));
+        assert!(ends_in_number("example.0x"));
+        assert!(ends_in_number("1.2.3.4."));
+        assert!(!ends_in_number("example.com"));
+        assert!(!ends_in_number("example.0xg"));
+        assert!(!ends_in_number("123.example"));
+        assert!(!ends_in_number("."));
     }
 }

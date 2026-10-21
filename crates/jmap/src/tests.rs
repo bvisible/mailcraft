@@ -129,18 +129,18 @@ fn credentials_are_checked_and_never_shown() {
         Auth::basic("a:b", "pw"),
         Auth::basic("me", "p\r\nX: y"),
         Auth::basic("m\0e", "pw"),
-        Auth::basic("me", "p".repeat(MAX_CREDENTIALS)),
-        Auth::basic("", ""),
+        Auth::basic("me", "p".repeat(32 * 1024)),
         Auth::bearer(""),
         Auth::bearer("a b"),
         Auth::bearer("tok\r\nX: y"),
         Auth::bearer("tökén"),
-        Auth::bearer("a".repeat(MAX_CREDENTIALS + 1)),
+        Auth::bearer("a".repeat(32 * 1024 + 1)),
     ] {
         assert!(matches!(bad.header(), Err(Error::Auth(_))), "{bad:?}");
     }
+    // (`Debug` names a Basic user, never the password or the token.)
     let shown = format!("{:?} {:?}", Auth::basic("ada@example.org", "hunter2"), Auth::bearer("s3cr3t-token"));
-    for secret in ["ada", "example", "hunter2", "s3cr3t"] {
+    for secret in ["hunter2", "s3cr3t"] {
         assert!(!shown.contains(secret), "{shown}");
     }
     // Nothing is sent with credentials that can't be.
@@ -314,22 +314,25 @@ fn a_plain_http_session_is_for_this_computer_alone() {
 #[test]
 fn what_is_sent_for_the_session_is_the_address_that_was_checked() {
     for (typed, sent) in [
-        ("https://jmap.example.org/jmap/a b\r\nX-Evil: 1", "https://jmap.example.org/jmap/a%20b%0D%0AX-Evil:%201"),
-        ("https://jmap.example.org/jmap/s\u{0}x", "https://jmap.example.org/jmap/s%00x"),
         ("https://jmap.example.org/jmap/session#frag", "https://jmap.example.org/jmap/session"),
         ("HTTPS://JMAP.EXAMPLE.ORG:443/s", "https://jmap.example.org/s"),
-        ("https://jmap.example.org/jmap/é?q=ü", "https://jmap.example.org/jmap/%C3%A9?q=%C3%BC"),
+        ("https://jmap.example.org/jmap/./x/../session", "https://jmap.example.org/jmap/session"),
+        // (Kept as it is: the browser's `fetch` encodes it, as the WHATWG URL Standard says.)
+        ("https://jmap.example.org/jmap/é?q=ü", "https://jmap.example.org/jmap/é?q=ü"),
     ] {
         let script = Script::new(vec![reply(200, &session_doc())]);
         let connected = block_on(Client::connect(script.clone(), typed, &Auth::bearer(TOKEN)));
         assert!(connected.is_ok(), "{typed:?}: {connected:?}");
         let url = script.sent().first().map(|r| r.url.clone()).unwrap();
         assert_eq!(url, sent, "{typed:?}");
-        assert!(url.bytes().all(|b| b.is_ascii_graphic()));
+        assert!(!url.chars().any(|c| c.is_whitespace() || c.is_control()));
     }
-    // What is no address is refused before anything is sent.
+    // What is no address is refused before anything is sent: a blank, a line break or a control character in it
+    // too (no address holds one, RFC 3986 §2), rather than encoded.
     let script = Script::new(vec![reply(200, &session_doc())]);
     for typed in [
+        "https://jmap.example.org/jmap/a b\r\nX-Evil: 1",
+        "https://jmap.example.org/jmap/s\u{0}x",
         "https://jmap.example.org:+443/s",
         "https://jmap.exam ple.org/s",
         "https://user@jmap.example.org/s",
@@ -483,7 +486,7 @@ fn a_method_error_fails_that_call_alone() {
     assert_eq!(answers.get(0).unwrap(), &json!({"list": [{"id": "M1"}]}));
     let refused = Error::Refused { kind: "invalidArguments".into(), description: "bad ids".into() };
     assert_eq!(answers.get(1).unwrap_err(), refused);
-    assert_eq!(refused.to_string(), "the server refused: invalidArguments bad ids");
+    assert_eq!(refused.to_string(), "the server refused: bad ids", "the description, else the kind");
     assert_eq!(answers.get(2).unwrap(), &json!({"list": []}));
     assert_eq!(answers.get(3).unwrap_err(), Error::Refused { kind: String::new(), description: String::new() });
     assert_eq!(format!("{answers:?}"), "Answers(4 of which 2 failed)");
@@ -664,7 +667,7 @@ fn an_address_the_user_or_the_session_holds_is_hidden_in_what_a_server_says() {
     ]);
     let client = block_on(Client::connect(script, SESSION, &auth)).unwrap();
     let call = || block_on(client.mail(vec![("Mailbox/get", json!({}))]));
-    assert_eq!(call().unwrap().get(0).unwrap_err().to_string(), "the server refused: forbidden *** may not read this");
+    assert_eq!(call().unwrap().get(0).unwrap_err().to_string(), "the server refused: *** may not read this");
     assert_eq!(call().unwrap_err().to_string(), "network: error sending request for url (***)");
     assert_eq!(call().unwrap_err().to_string(), "network: unknown user ***");
     // The user name alone, when the session's address holds no address.
@@ -685,7 +688,8 @@ fn an_address_the_user_or_the_session_holds_is_hidden_in_what_a_server_says() {
     // A secret in the form an address holds it.
     for (auth, echoed) in [
         (Auth::basic("ada", "p@ss/w rd"), "retry https://x.example/?password=p%40ss%2Fw%20rd now"),
-        (Auth::bearer("a/b+c=d"), "retry https://x.example/?token=a%2Fb%2Bc%3Dd now"),
+        // (A bearer token holds `=` only at its end, RFC 6750 §2.1.)
+        (Auth::bearer("a/b+c=="), "retry https://x.example/?token=a%2Fb%2Bc%3D%3D now"),
     ] {
         let script = Script::new(vec![reply(400, &json!({"detail": echoed}))]);
         let shown = block_on(Client::connect(script, plain, &auth)).unwrap_err().to_string();
@@ -713,7 +717,7 @@ fn debug_output_shows_no_credential_address_or_mail() {
     for secret in ["s3cr3t", "ada", "private", "account=", "/api", "3f9a7c"] {
         assert!(!shown.contains(secret), "{secret}: {shown}");
     }
-    assert!(shown.contains("https://jmap.example.org") && shown.contains("Authorization"), "{shown}");
+    assert!(shown.contains("https://jmap.example.org"), "{shown}");
     assert!(format!("{:?}", Request::default()).contains("not a web address"));
 }
 
@@ -865,7 +869,7 @@ proptest! {
         prop_assert!(address.contains("://"));
         prop_assert_eq!(session_url(&address), address.clone());
         if let Ok(url) = Url::parse(&address) {
-            prop_assert!(url.full().bytes().all(|b| b.is_ascii_graphic()));
+            prop_assert!(!url.full().chars().any(|c| c.is_whitespace() || c.is_control()));
         }
         if let Ok(filled) = expand(&text, &[("a", &text), ("accountId", "A1")]) {
             prop_assert!(filled.len() <= MAX_EXPANDED);

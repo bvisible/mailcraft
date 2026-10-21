@@ -30,6 +30,10 @@ mod renewal;
 mod credentials;
 #[cfg(target_arch = "wasm32")]
 mod fetch;
+// //// Neoffice — the browser-free half of fetch.rs (what a request is built from, how a failure reads, the body's
+// size): compiled for the web build, and natively so that its tests run.
+#[cfg(any(test, target_arch = "wasm32"))]
+mod fetch_rules;
 // //// Neoffice — what makes a tab a hosting page's (its runners, and nothing kept between visits), built everywhere so
 // that it is tested natively.
 mod hosted;

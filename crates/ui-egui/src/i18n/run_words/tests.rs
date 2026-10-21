@@ -359,10 +359,12 @@ fn every_row_has_french_of_its_own() {
 fn the_crates_lines_read_in_french() {
     let mb = mailbox();
     let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
+    // The browser's own words stay as they came; the transport's are read.
     assert_eq!(
-        fr("Couldn't reach the server: network: Failed to fetch (the server may not let this page reach it)").as_deref(),
-        Some("Impossible de joindre le serveur : réseau : Failed to fetch (le serveur ne permet peut-être pas à cette page de l’atteindre)")
+        fr("Couldn't reach the server: network: Failed to fetch").as_deref(),
+        Some("Impossible de joindre le serveur : réseau : Failed to fetch")
     );
+    assert_eq!(fr("Couldn't reach the server: network: timed out").as_deref(), Some("Impossible de joindre le serveur : réseau : délai dépassé"));
     assert_eq!(
         fr("Couldn't read the mail in 3 mailboxes: the server refused: serverFail this mailbox can't be read just now").as_deref(),
         Some("Impossible de lire le courrier de 3 dossiers : le serveur a refusé : serverFail this mailbox can't be read just now")
@@ -495,10 +497,12 @@ fn a_line_is_read_off_its_end_only_where_what_comes_before_reads_too() {
 /// The files whose every sentence a person can be shown has a row (or is on [`NOT_READ`]).
 const CENSUS: &[&str] = &[
     "crates/jmap/src/lib.rs",
+    "crates/jmap/src/http.rs",
     "crates/jmap/src/mail.rs",
     "crates/jmap/src/mail/up.rs",
     "crates/jmap/src/url.rs",
     "apps/mailcraft-web/src/fetch.rs",
+    "apps/mailcraft-web/src/fetch_rules.rs",
     "crates/jmap/src/send.rs",
     "crates/jmap/src/mail/outgoing.rs",
     "crates/engine/src/cmd/jmap_send.rs",
@@ -520,10 +524,12 @@ const CENSUS: &[&str] = &[
 /// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.
 const NOT_READ: &[(&str, &str)] = &[
     ("sign-in failed: {0}", "a refused sign-in ends the run as `auth_refused`, with no line (the engine says STA1)"),
-    ("the user name, password or access token has a character that can't be sent", "an `Error::Auth`, as above"),
-    ("the user name, password or access token is too long to be sent", "an `Error::Auth`, as above"),
-    ("there is no user name or password to sign in with", "an `Error::Auth`, as above"),
-    ("there is no access token to sign in with", "an `Error::Auth`, as above"),
+    ("the user name and password are too long", "an `Error::Auth`, as above"),
+    ("the user name or password holds a control character", "an `Error::Auth`, as above"),
+    ("the user name holds a colon, which Basic sign-in cannot send", "an `Error::Auth`, as above"),
+    ("the token is too long", "an `Error::Auth`, as above"),
+    ("the token holds a control character", "an `Error::Auth`, as above"),
+    ("the token holds characters a bearer token cannot", "an `Error::Auth`, as above"),
     ("the server refused the credentials", "an `Error::Auth`, as above"),
     ("JMAP: there is no such call", "the callers take only the answers they asked for"),
     ("JMAP: that answer was taken", "as above"),

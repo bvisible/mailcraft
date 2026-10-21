@@ -46,7 +46,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`fetch`), the sending of what waits in an account's Outbox and the filing of its drafts on the server (`send`,
   with a run's part of it in `mail/outgoing`), and an in-process server for the tests of the crates that sit on it
   (the `stand-in` feature). A crate with no upstream equivalent, written so that it can be offered upstream: nothing
-  in it names this fork's products.
+  in it names this fork's products. Its URL and HTTP helpers (`src/url.rs`, `src/http.rs`) and the browser build's
+  `fetch` transport (`apps/mailcraft-web/src/fetch.rs`, `fetch_rules.rs`) are written fresh from RFC 3986, 6570, 7617,
+  6750, 8620 and 9110 and the WHATWG URL and Fetch Standards.
 - Nora, the assistant of the Neoffice server, when a page that hosts the browser build reaches her (nothing of her
   anywhere else): `crates/ui-egui/src/nora.rs` and `nora/` (her answers read as a stranger's bytes, what she is given,
   seven window commands `ui.nora*` that agents may never run, her band under the subject of a message being written,
