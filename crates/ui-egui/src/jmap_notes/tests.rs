@@ -298,3 +298,62 @@ fn a_hosting_tab_keeps_notes_a_server_stopped_keeping_and_asks_before_it_is_left
     assert!(app.session.mailbox.notes.changes.is_empty());
     assert!(app.notes_unsent(), "on this page alone: leaving it asks");
 }
+
+#[test]
+fn a_change_waiting_for_its_version_has_the_notes_read_once_every_two_minutes_not_at_every_look() {
+    let (mut app, id, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    if let Some(note) = app.session.mailbox.notes.note_mut(groceries) {
+        note.version.clear();
+    }
+    app.execute("notes.edit", json!({"id": groceries, "text": "Mine"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    let before = jobs(&asked);
+    // Four minutes of looks, every five seconds; each read comes back cut short, without the note.
+    let mut t = T0 + 5.0 * SECOND;
+    while t < T0 + 4.0 * MINUTE {
+        if app.jmap_pim_tick_at(true, t) {
+            let cut = NotesDownload { account: id, email: ME.into(), offered: true, complete: false, ..Default::default() };
+            answer(&mut app, &asked, id, Some(NotesAnswer { download: Some(cut), ..Default::default() }));
+        }
+        t += 5.0 * SECOND;
+    }
+    assert_eq!(jobs(&asked) - before, 2, "at once, then two minutes later");
+}
+
+#[test]
+fn what_goes_is_kept_as_sent_when_its_job_starts_and_the_mailbox_says_so() {
+    let (mut app, _, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    app.execute("notes.edit", json!({"id": groceries, "text": "Mine"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    let rev = app.session.rev();
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    assert!(last(&asked).notes.is_some_and(|ask| ask.changes.is_some()));
+    let sent = &app.session.mailbox.notes.changes[0].sent;
+    assert_eq!(sent.first().and_then(|sent| sent.text.as_deref()), Some("Mine"));
+    assert!(app.session.rev() > rev, "a change of the mailbox: it is saved with it");
+    // (And that alone sends nothing again.)
+    app.notes_look(true, T0 + 6.0 * SECOND);
+    let id = app.session.mailbox.notes.changes[0].account;
+    assert!(app.notes_push(id, T0 + 20.0 * SECOND).is_none());
+}
+
+#[test]
+fn a_hosting_tab_asks_before_it_is_left_while_a_note_has_no_name_on_its_server() {
+    let (mut app, id, asked) = read_once();
+    app.session.keeps_local = false;
+    app.execute("notes.new", json!({"title": "Lunch"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    assert!(app.jmap_pim_tick_at(true, T0 + 5.0 * SECOND));
+    let op = last(&asked).notes.unwrap().changes.unwrap().ops[0].clone();
+    // Made, the answer says, under a name it doesn't say: nothing waits, and the note has no name of the server's.
+    let done = NoteOutcome { op, result: NoteResult::Done, note: None, ..Default::default() };
+    let notes = NotesAnswer {
+        uploaded: Some(NotesUploaded { account: id, email: ME.into(), outcomes: vec![done], ..Default::default() }),
+        ..Default::default()
+    };
+    answer(&mut app, &asked, id, Some(notes));
+    assert!(app.session.mailbox.notes.changes.is_empty());
+    assert!(app.notes_unsent(), "as far as this page knows, nowhere but here");
+}

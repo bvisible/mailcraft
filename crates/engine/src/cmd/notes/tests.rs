@@ -202,6 +202,9 @@ fn agents_read_freely_writes_to_a_servers_note_ask_and_deletes_are_delete_class(
     // The window's opening of a note's link in the system's browser is the owner's to allow, as a meeting's is.
     assert_eq!(agent::access("ui.openNote"), Some(Access::Owner(Class::Send)));
     assert!(agent::describe(&s, "ui.openNote", &json!({"id": theirs})).contains("on the web"));
+    // Words typed into notes given up on the way out: the owner's click alone, never an agent's.
+    assert_eq!(agent::access("ui.dropNoteDrafts"), Some(Access::Never));
+    assert_eq!(agent::classify(&s, "ui.dropNoteDrafts", &json!({"then": "quit"})), Access::Never);
 }
 
 #[test]

@@ -300,20 +300,21 @@ fn changed_of(id: &str, value: &Value) -> Option<RemoteNote> {
     note_of(&Value::Object(said))
 }
 
-/// Whether `note` (the server's) has exactly what an earlier sending of `op` carried, and every part `op` names went
+/// Whether `note` (the server's) has exactly what one earlier sending of `op` carried, and every part `op` names went
 /// then: its version is her own write, not someone else's.
 fn ours(op: &NoteOp, note: &RemoteNote) -> bool {
-    let Some(earlier) = &op.earlier else { return false };
     let fields = &op.fields;
-    let named = (fields.title.is_none() || earlier.title.is_some())
-        && (fields.text.is_none() || earlier.text.is_some())
-        && (fields.pinned.is_none() || earlier.pinned.is_some())
-        && (fields.archived.is_none() || earlier.archived.is_some());
-    named
-        && earlier.title.as_ref().is_none_or(|title| *title == note.title)
-        && earlier.text.as_ref().is_none_or(|text| *text == note.text)
-        && earlier.pinned.is_none_or(|pinned| pinned == note.pinned)
-        && earlier.archived.is_none_or(|archived| archived == note.archived)
+    op.earlier.iter().any(|earlier| {
+        let named = (fields.title.is_none() || earlier.title.is_some())
+            && (fields.text.is_none() || earlier.text.is_some())
+            && (fields.pinned.is_none() || earlier.pinned.is_some())
+            && (fields.archived.is_none() || earlier.archived.is_some());
+        named
+            && earlier.title.as_ref().is_none_or(|title| *title == note.title)
+            && earlier.text.as_ref().is_none_or(|text| *text == note.text)
+            && earlier.pinned.is_none_or(|pinned| pinned == note.pinned)
+            && earlier.archived.is_none_or(|archived| archived == note.archived)
+    })
 }
 
 /// Text from a server with its markup taken out.
@@ -526,8 +527,9 @@ impl<H: Http> Job<'_, H> {
 
     /// Of the changes at `tried`, those refused as stale whose very words the note there has were written by an earlier
     /// try whose answer was lost (the server wrote it, the connection broke): they are done, with the note as it is
-    /// there, never a conflict with themselves. (When the note can't be read now, they stay stale: the person's words
-    /// are kept as a note of their own.)
+    /// there, never a conflict with themselves. When the note can't be read now, one that went before without an answer
+    /// is tried again later (the server's newer version may be her own write); the others stay stale, and the person's
+    /// words are kept as a note of their own.
     async fn done_after_all(&self, tried: &[usize], w: &mut Writes) {
         let stale = |at: &usize| {
             w.outcomes
@@ -541,8 +543,22 @@ impl<H: Http> Job<'_, H> {
         }
         let ids: Vec<String> = stale.iter().filter_map(|at| w.ops.get(*at).map(|op| op.remote.clone())).collect();
         let get = json!({"accountId": self.account, "ids": ids, "properties": NOTE_PROPERTIES});
-        let Ok(mut answers) = self.client.call_within(&USING, vec![("Note/get", get)], ITEMS_BYTES).await else { return };
-        let Ok(answer) = answers.take(0) else { return };
+        let answer = match self.client.call_within(&USING, vec![("Note/get", get)], ITEMS_BYTES).await {
+            Ok(mut answers) => answers.take(0),
+            Err(error) => Err(error),
+        };
+        let answer = match answer {
+            Ok(answer) => answer,
+            Err(error) => {
+                let words = said(&self.secrets, &error);
+                for at in stale {
+                    if w.ops.get(at).is_some_and(|op| !op.earlier.is_empty()) {
+                        Self::again_later(w, at, &words);
+                    }
+                }
+                return;
+            }
+        };
         let there: Vec<RemoteNote> = answer.get("list").and_then(Value::as_array).into_iter().flatten().filter_map(note_of).collect();
         for at in stale {
             let Some(op) = w.ops.get(at).cloned() else { continue };
@@ -566,18 +582,43 @@ impl<H: Http> Job<'_, H> {
     }
 
     /// The change at `at` sent again over the version `version`, the server's copy of her own earlier write: done when
-    /// the server takes it; stale as before otherwise.
+    /// the server takes it; stale as before when the server refuses it (someone wrote meanwhile); and tried again later
+    /// when no answer says what came of it (the server may have written it: never a conflict with herself).
     async fn send_again(&self, at: usize, op: &NoteOp, version: &str, w: &mut Writes) {
         let again = NoteOp { version: version.to_string(), ..op.clone() };
         let args = json!({"accountId": self.account, "update": {op.remote.clone(): note_json(&again)}});
-        let Ok(mut answers) = self.client.call_within(&USING, vec![("Note/set", args)], ITEMS_BYTES).await else { return };
-        let Ok(answer) = answers.take(0) else { return };
+        let answer = match self.client.call_within(&USING, vec![("Note/set", args)], ITEMS_BYTES).await {
+            Ok(mut answers) => answers.take(0),
+            Err(error) => Err(error),
+        };
+        let answer = match answer {
+            Ok(answer) => answer,
+            Err(error) => {
+                w.chained = false;
+                Self::again_later(w, at, &said(&self.secrets, &error));
+                return;
+            }
+        };
         w.states(&answer);
-        let Some(said) = answer.get("updated").and_then(|updated| updated.get(&op.remote)) else { return };
+        if let Some(said) = answer.get("updated").and_then(|updated| updated.get(&op.remote)) {
+            if let Some(slot) = w.outcomes.get_mut(at) {
+                *slot = None;
+            }
+            w.answer(at, NoteResult::Done, changed_of(&op.remote, said), "", None);
+            return;
+        }
+        // Refused: stale as before (her words are kept as a note of their own). Neither: nothing is known.
+        if answer.get("notUpdated").and_then(|refused| refused.get(&op.remote)).is_none() {
+            Self::again_later(w, at, UNSAID);
+        }
+    }
+
+    /// The change at `at`, answered already, tried again later instead.
+    fn again_later(w: &mut Writes, at: usize, words: &str) {
         if let Some(slot) = w.outcomes.get_mut(at) {
             *slot = None;
         }
-        w.answer(at, NoteResult::Done, changed_of(&op.remote, said), "", None);
+        w.failed(at, words, None);
     }
 
     /// Read the notes into `got` (see the module): only whether the server still says `held`, when there is one.

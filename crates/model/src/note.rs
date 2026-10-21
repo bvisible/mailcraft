@@ -38,6 +38,8 @@ pub const MAX_NOTE_TEXT: usize = 100_000;
 /// Most changes of notes that may wait for servers at once, and most that one [`NotesUpload`] carries.
 pub const MAX_NOTE_CHANGES: usize = 500;
 pub const MAX_NOTE_OPS: usize = 50;
+/// Most sendings of one change kept that no answer came for.
+pub const MAX_UNANSWERED: usize = 3;
 /// The longest version of a server's note kept ([`Note::version`]), mark a new one is sent with, category, name of an
 /// owner, and words of why a change didn't go.
 const MAX_VERSION: usize = 64;
@@ -59,6 +61,10 @@ fn is_zero(n: &u32) -> bool {
 
 fn is_zero_time(t: &Timestamp) -> bool {
     *t == 0
+}
+
+fn is_zero_id(id: &Id) -> bool {
+    *id == 0
 }
 
 fn is_true(b: &bool) -> bool {
@@ -185,6 +191,10 @@ pub struct Note {
     /// Why its last change could not be saved, for the person to read; empty when nothing is wrong.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
+    /// For one of the mailbox's own on a page that keeps none of its own: the account whose server it was to go to when
+    /// that server stopped keeping notes (it goes there when it keeps them again); 0 for none.
+    #[serde(skip_serializing_if = "is_zero_id")]
+    pub held_for: Id,
 }
 
 /// What may be shown of a note: what it is, never what it says.
@@ -231,6 +241,9 @@ impl Note {
         self.web_url = OnlineMeeting::clean_link(&self.web_url).unwrap_or_default();
         self.token = clean_token(&self.token);
         self.error = one_line(&self.error, MAX_WHY).0;
+        if self.origin.is_remote() {
+            self.held_for = 0;
+        }
         if self.origin.is_local() {
             // (The mailbox's own: nobody else's, and all the person's to change.)
             (self.shared, self.rich, self.rights) = (false, false, NoteRights::default());
@@ -330,10 +343,10 @@ pub struct NoteChange {
     /// Why it didn't go through the last time.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
-    /// What of it was last sent and not answered (the answer was lost, or never came): what the server may have
-    /// written already, so that its own write is never taken for someone else's.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sent: Option<NoteFields>,
+    /// What of it was sent and not answered (the answer was lost, or never came), the last [`MAX_UNANSWERED`] sendings:
+    /// what the server may have written already, so that its own write is never taken for someone else's.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sent: Vec<NoteFields>,
 }
 
 impl std::fmt::Debug for NoteChange {
@@ -409,9 +422,10 @@ pub struct NoteOp {
     /// For a change of its words: the version it was made from; empty otherwise (a pin or an archive carries none).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub version: String,
-    /// What an earlier sending of this change carried that no answer came for: what the server may hold already.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub earlier: Option<NoteFields>,
+    /// What earlier sendings of this change carried that no answer came for ([`NoteChange::sent`]): what the server may
+    /// hold already.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub earlier: Vec<NoteFields>,
 }
 
 impl NoteOp {
@@ -421,9 +435,10 @@ impl NoteOp {
         self.token = clean_token(&self.token);
         self.fields.tidy();
         self.version = clean_version(&self.version);
-        if let Some(earlier) = &mut self.earlier {
-            earlier.tidy();
+        if self.earlier.len() > MAX_UNANSWERED {
+            self.earlier.drain(..self.earlier.len() - MAX_UNANSWERED);
         }
+        self.earlier.iter_mut().for_each(NoteFields::tidy);
     }
 }
 
@@ -640,6 +655,7 @@ impl RemoteNote {
             web_url: self.web_url.clone(),
             token: String::new(),
             error: String::new(),
+            held_for: 0,
         }
     }
 }

@@ -401,9 +401,63 @@ fn closing_saves_what_was_typed_and_asks_about_what_can_not_be_saved_yet() {
     click_into(&mut window, "noteText", id);
     text(&mut window, " and eggs");
     assert!(!window.state_mut().close_requested(), "held: the words would be lost");
-    assert!(window.state().dialog.is_some());
+    window.run_steps(3);
+    assert!(window.state().hit.rect("notesCloseAnyway", 0).is_some(), "the question");
+    assert!(window.query_all_by_label_contains("longer than its server takes").next().is_some(), "and why");
     window.state_mut().execute("ui.dropNoteDrafts", json!({"then": "quit"})).unwrap();
     assert!(window.state().quit_requested && !window.state().notes_unsent());
+}
+
+/// Groceries typed into while too many changes wait to go (it can't be saved yet), and the window asked to close.
+fn typed_with_changes_full() -> (Harness<'static, MailApp>, Id) {
+    let mut window = window(false, "view.mail");
+    let id = groceries(&mut window);
+    let account = note(&window, id).origin.account;
+    let changes = &mut window.state_mut().session.mailbox.notes.changes;
+    for n in changes.len()..mailcraft_model::note::MAX_NOTE_CHANGES {
+        changes.push(mailcraft_model::note::NoteChange {
+            account,
+            kind: mailcraft_model::note::NoteChangeKind::Delete,
+            remote: format!("VN-gone-{n}"),
+            ..Default::default()
+        });
+    }
+    click_into(&mut window, "noteText", id);
+    text(&mut window, " and eggs");
+    assert!(!window.state_mut().close_requested(), "held: the words can't be saved yet");
+    window.run_steps(3);
+    (window, id)
+}
+
+#[test]
+fn the_close_question_says_why_the_words_cant_be_saved_and_holds_the_keyboard() {
+    let (mut window, id) = typed_with_changes_full();
+    assert!(window.query_all_by_label_contains("can't be saved yet: Too many note changes are waiting").next().is_some(), "the real reason");
+    // Typing goes nowhere while it is asked.
+    text(&mut window, " more");
+    assert_eq!(drafts(&window.ctx).get(&id).map(|draft| draft.text.clone()).as_deref(), Some("Milk and eggs"));
+    // Cancel: the window stays, the words too.
+    let cancel = window.state().hit.rect("notesCloseCancel", 0).expect("Cancel");
+    click(&mut window, cancel.center(), PointerButton::Primary, 1);
+    assert!(window.state().hit.rect("notesCloseAnyway", 0).is_none() && !window.state().quit_requested);
+    assert!(typed(&window.ctx));
+}
+
+#[test]
+fn close_anyway_saves_what_can_be_saved_by_then_and_gives_up_only_the_rest() {
+    let (mut window, id) = typed_with_changes_full();
+    // The changes got through meanwhile: there is room again.
+    window.state_mut().session.mailbox.notes.changes.clear();
+    window.state_mut().execute("ui.dropNoteDrafts", json!({"then": "quit"})).unwrap();
+    assert!(window.state().quit_requested);
+    assert_eq!(note(&window, id).text, "Milk and eggs", "saved, not given up");
+    // (The button runs it.)
+    let (mut window, id) = typed_with_changes_full();
+    window.state_mut().session.mailbox.notes.changes.clear();
+    let anyway = window.state().hit.rect("notesCloseAnyway", 0).expect("Close Anyway");
+    click(&mut window, anyway.center(), PointerButton::Primary, 1);
+    assert!(window.state().quit_requested);
+    assert_eq!(note(&window, id).text, "Milk and eggs");
 }
 
 #[test]

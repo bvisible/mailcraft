@@ -1541,7 +1541,9 @@ impl Session {
     /// the server last said is kept, so the next run sends the reverse ([`crate::undo`]).
     fn swap(&mut self, u: Undo) -> Undo {
         let now = std::mem::take(&mut self.mailbox);
-        let (back, said) = crate::undo::keep_in_step(u.mailbox, &u.touched, &now);
+        // //// Neoffice — and a change of a server's note that went unanswered stays noted, so that the words undone go there over what it may have written (cmd/notes/server.rs).
+        let (mut back, said) = crate::undo::keep_in_step(u.mailbox, &u.touched, &now);
+        crate::cmd::notes::server::keep_unanswered(&mut back, &now);
         // Undone, the step is to be done again from here: what that does is the way back.
         let touched = crate::undo::touched(&now, &back);
         self.mailbox = back;

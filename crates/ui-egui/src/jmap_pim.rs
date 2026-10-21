@@ -409,7 +409,10 @@ impl MailApp {
         }
         let Some(start) = &self.services.jmap_pim else { return false };
         let names: Vec<String> = request.asks.iter().map(|ask| ask.calendar.clone()).collect();
+        let notes = request.notes.clone();
         let rx = start(JmapPimJob { request, secret, cancel: cancel.clone() });
+        // What it asks of the notes, noted now that it is on its way.
+        self.notes_started(account, notes.as_ref(), now);
         self.jmap_pim.asked.insert(account, names);
         let carried = changes.is_some() || cards.is_some();
         if let Some(changes) = changes {

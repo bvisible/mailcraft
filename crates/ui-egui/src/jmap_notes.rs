@@ -45,8 +45,10 @@ struct NotesJob {
     state: Option<(String, Timestamp)>,
     /// Read at the next job: Notes came to the front.
     due: bool,
-    /// When the notes were last asked to be read (milliseconds).
+    /// When the notes were last asked to be read (milliseconds); and last read for a change of words waiting for its
+    /// version.
     read: Option<f64>,
+    read_for_version: Option<f64>,
     /// What was last sent, and when (milliseconds); and the state of the mailbox then.
     sent: Option<(NotesUpload, f64)>,
     sent_rev: Option<u64>,
@@ -116,13 +118,14 @@ impl MailApp {
     }
 
     /// Whether `account`'s notes are to be read by a job that is not the wide one: Notes came to the front, or has been
-    /// in front long enough, and its server keeps notes.
+    /// in front long enough, or a change of words waits for the version a read brings (at once, then once in that while
+    /// at most, not at every look); and its server keeps notes.
     fn notes_read_due(&self, account: Id, now: f64) -> bool {
         let job = self.jmap_pim.notes.accounts.get(&account);
         let kept = self.session.mailbox.notes.server(account).is_some();
         let every = self.jmap_pim.notes.in_front && job.and_then(|job| job.read).is_none_or(|at| now - at >= IN_FRONT_MS);
-        // (A change of words waits for the version a read brings.)
-        kept && (job.is_some_and(|job| job.due) || every || notes_need_read(&self.session, account))
+        let for_version = job.and_then(|job| job.read_for_version).is_none_or(|at| now - at >= IN_FRONT_MS);
+        kept && (job.is_some_and(|job| job.due) || every || (for_version && notes_need_read(&self.session, account)))
     }
 
     /// Whether a job of `account` is wanted for its notes alone: a change to send, or a read that is due.
@@ -135,37 +138,48 @@ impl MailApp {
         notes_waiting(&self.session, account).due > 0
     }
 
-    /// What the job of `account` about to start asks of its notes (none for the days `around` an invitation), noted as
-    /// asked: read with the `wide` job and when due; the changes to send.
-    pub(crate) fn notes_ask(&mut self, account: Id, wide: bool, around: bool, now: f64) -> Option<NotesAsk> {
+    /// What the job of `account` about to start asks of its notes (none for the days `around` an invitation): read with
+    /// the `wide` job and when due; the changes to send. Noted as asked once the job starts ([`Self::notes_started`]).
+    pub(crate) fn notes_ask(&self, account: Id, wide: bool, around: bool, now: f64) -> Option<NotesAsk> {
         if around {
             return None;
         }
         let read = wide || self.notes_read_due(account, now);
-        // A change waiting for the version of its words: the notes are read whole, the state held says nothing of it.
-        let need = notes_need_read(&self.session, account);
         let changes = self.notes_push(account, now);
-        // What goes is on its way: kept with each change until an answer comes (what the server may write already).
-        if let Some(changes) = &changes {
-            notes_sending(&mut self.session, changes);
-        }
         if !read && changes.is_none() {
             return None;
         }
+        // A change waiting for the version of its words: the notes are read whole, the state held says nothing of it.
+        // (Otherwise the state goes with changes alone too: the host keeps it when the server took them from that very
+        // state.)
+        let held = self.jmap_pim.notes.accounts.get(&account).and_then(|job| job.state.clone());
+        let (state, read_at) = if notes_need_read(&self.session, account) { Default::default() } else { held.unwrap_or_default() };
+        Some(NotesAsk { read, state, read_at, changes })
+    }
+
+    /// The job of `account` that asks `ask` of its notes started at `now`: what it reads and sends is noted, and what goes
+    /// is on its way, kept with each change until an answer comes (what the server may write already).
+    pub(crate) fn notes_started(&mut self, account: Id, ask: Option<&NotesAsk>, now: f64) {
+        let Some(ask) = ask else { return };
+        let for_version = ask.read && notes_need_read(&self.session, account);
+        if let Some(changes) = &ask.changes {
+            notes_sending(&mut self.session, changes);
+        }
         let asked_at = self.session.now();
+        let rev = self.session.rev();
         let job = self.jmap_pim.notes.accounts.entry(account).or_default();
-        // (The state goes with changes alone too: the host keeps it when the server took them from that very state.)
-        let (state, read_at) = if need { Default::default() } else { job.state.clone().unwrap_or_default() };
-        if read {
+        if ask.read {
             (job.read, job.due) = (Some(now), false);
         }
-        if let Some(changes) = &changes {
-            job.sent = Some((changes.clone(), now));
-            // (The state of the mailbox when they went: while it is the same, so are they.)
-            job.sent_rev = Some(self.session.rev());
+        if for_version {
+            job.read_for_version = Some(now);
         }
-        self.jmap_pim.notes.flight = Some(Flight { account, read, carried: changes.is_some(), asked_at });
-        Some(NotesAsk { read, state, read_at, changes })
+        if let Some(changes) = &ask.changes {
+            job.sent = Some((changes.clone(), now));
+            // (The state of the mailbox when they went, with them kept as sent: while it is the same, so are they.)
+            job.sent_rev = Some(rev);
+        }
+        self.jmap_pim.notes.flight = Some(Flight { account, read: ask.read, carried: ask.changes.is_some(), asked_at });
     }
 
     /// Take in what the job of `account` brought of its notes (taken out of `result`), as the module says. Whether it went
@@ -238,12 +252,12 @@ impl MailApp {
     /// a change of a note waits to go to its server, or words typed into a note are not in it yet. A hosting page asks
     /// before it is left while there is one.
     pub fn notes_unsent(&self) -> bool {
-        // (A new note the server refused waits nowhere: it is here alone, with why; and in such a tab, a note of the
-        // page's own is one a server stopped keeping.)
-        let refused_new =
-            self.session.mailbox.notes.items.values().any(|note| note.origin.is_local() || (note.origin.id.is_empty() && !note.error.is_empty()));
+        // (A note without a name of its server's is here alone, as far as this tab knows: one whose making waits, one the
+        // server refused, one made under a name it didn't say; and in such a tab, a note of the page's own is one a server
+        // stopped keeping.)
+        let here_alone = self.session.mailbox.notes.items.values().any(|note| note.origin.id.is_empty());
         !self.session.keeps_local
-            && (!self.session.mailbox.notes.changes.is_empty() || refused_new || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
+            && (!self.session.mailbox.notes.changes.is_empty() || here_alone || self.ctx.as_ref().is_some_and(crate::notes_view::typed))
     }
 
     /// The state of `account`'s notes that the window holds, and when the job that said it was asked for. (Public for a

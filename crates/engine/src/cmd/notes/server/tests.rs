@@ -603,6 +603,7 @@ fn an_answer_to_a_change_without_its_words_leaves_no_version_and_the_notes_are_r
     run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
     assert!(ops(&mut s, account).is_empty(), "not sent without a version");
     assert!(super::notes_need_read(&s, account), "the notes are read for it");
+    assert_eq!(run(&mut s, "sync.noteChanges", json!({"account": account}))["needRead"], true, "and a host is told so");
     // The read gives it the version of the words it was made over.
     let read = RemoteNote { text: "Milk".into(), ..remote("VN-2", "Groceries", "v5") };
     run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z"), read])}));
@@ -641,13 +642,150 @@ fn what_was_sent_of_a_change_goes_with_it_until_an_answer_comes() {
     s.clock.now = s.clock.now.map(|now| now + 600);
     run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
     let going = ops(&mut s, account);
-    assert_eq!(going[0].earlier.as_ref().and_then(|earlier| earlier.text.as_deref()), Some("Milk"), "what may be on the server already");
+    assert_eq!(going[0].earlier.first().and_then(|earlier| earlier.text.as_deref()), Some("Milk"), "what may be on the server already");
     // An answer settles it.
     let said = RemoteNote { text: "Milk\nEggs".into(), ..remote("VN-2", "Groceries", "v9") };
     answer(&mut s, account, NoteResult::Done, "", Some(said));
-    assert!(s.mailbox.notes.changes.iter().all(|change| change.sent.is_none()));
+    assert!(s.mailbox.notes.changes.iter().all(|change| change.sent.is_empty()));
 }
 
 fn note_upload_now(s: &mut Session, account: u64) -> mailcraft_model::note::NotesUpload {
     serde_json::from_value(run(s, "sync.noteChanges", json!({"account": account}))).unwrap()
+}
+
+#[test]
+fn a_change_of_words_without_a_version_of_a_note_gone_from_the_server_goes_and_is_kept() {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    answer(&mut s, account, NoteResult::Done, "", None);
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
+    assert!(ops(&mut s, account).is_empty(), "it waits for the version a read brings");
+    // A whole read without it: deleted there meanwhile, and no read will ever bring its version.
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z")])}));
+    assert!(!super::notes_need_read(&s, account), "no read is waited for again");
+    let going = ops(&mut s, account);
+    assert_eq!((going.len(), going[0].version.as_str()), (1, super::OLDEST_VERSION), "it goes, never over other words");
+    let said = answer(&mut s, account, NoteResult::Gone, "", None);
+    let kept = note(&s, groceries);
+    assert_eq!((kept.text.as_str(), kept.origin.id.as_str()), ("Milk\nEggs", ""), "her words, a note of her own: {said}");
+    assert_eq!(kinds(&s), [NoteChangeKind::Create]);
+}
+
+/// Groceries' text changed to "Milk" and sent, its answer lost (the server may have written it); ten minutes later.
+fn milk_sent_and_lost() -> (Session, u64, u64) {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    let first = note_upload_now(&mut s, account);
+    super::notes_sending(&mut s, &first);
+    answer(&mut s, account, NoteResult::Failed, "network: the connection broke", None);
+    s.clock.now = s.clock.now.map(|now| now + 600);
+    (s, account, groceries)
+}
+
+#[test]
+fn a_change_typed_back_after_a_lost_answer_still_goes_over_what_may_be_there() {
+    let (mut s, account, groceries) = milk_sent_and_lost();
+    // She types the words back as she read them.
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Groceries words"}));
+    let going = ops(&mut s, account);
+    assert_eq!(going.len(), 1, "never dropped: the server may hold what she took back");
+    assert_eq!(
+        (going[0].fields.text.as_deref(), going[0].version.as_str(), going[0].earlier.len()),
+        (Some("Groceries words"), "2026-10-20T08:00:00.200Z", 1)
+    );
+    let said = RemoteNote { text: "Groceries words".into(), ..remote("VN-2", "Groceries", "v4") };
+    answer(&mut s, account, NoteResult::Done, "", Some(said));
+    assert!(s.mailbox.notes.changes.is_empty());
+}
+
+#[test]
+fn an_undo_after_a_lost_answer_still_goes_over_what_may_be_there() {
+    let (mut s, account, groceries) = milk_sent_and_lost();
+    assert!(s.undo());
+    assert_eq!(note(&s, groceries).text, "Groceries words");
+    let going = ops(&mut s, account);
+    assert_eq!(going.len(), 1, "the undo goes there too: the server may hold the words undone");
+    assert_eq!((going[0].fields.text.as_deref(), going[0].earlier.len()), (Some("Groceries words"), 1));
+    // Redone: her words again, and what went before still with them.
+    assert!(s.redo());
+    let going = ops(&mut s, account);
+    assert_eq!((going[0].fields.text.as_deref(), going[0].earlier.len()), (Some("Milk"), 1));
+}
+
+#[test]
+fn every_sending_unanswered_goes_with_a_change_and_a_stale_answer_keeps_those_before_it() {
+    let (mut s, account, groceries) = milk_sent_and_lost();
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
+    let second = note_upload_now(&mut s, account);
+    super::notes_sending(&mut s, &second);
+    let texts = |sent: &[mailcraft_model::note::NoteFields]| sent.iter().filter_map(|sent| sent.text.clone()).collect::<Vec<_>>();
+    assert_eq!(texts(&s.mailbox.notes.changes[0].sent), ["Milk", "Milk\nEggs"], "either may be there");
+    // The second is refused as stale, and there is no room for a copy: the first may still be there.
+    while s.mailbox.notes.items.len() < mailcraft_model::note::MAX_NOTES {
+        let id = s.mailbox.alloc_id();
+        s.mailbox.notes.items.insert(id, std::sync::Arc::new(mailcraft_model::note::Note { id, ..Default::default() }));
+    }
+    let stale = NoteOutcome { op: second.ops[0].clone(), result: NoteResult::Stale, error: "changed elsewhere".into(), ..Default::default() };
+    run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![stale], ..Default::default() }}));
+    assert_eq!(texts(&s.mailbox.notes.changes[0].sent), ["Milk"], "what went before and was never answered");
+}
+
+#[test]
+fn a_title_the_server_gave_a_new_note_stays_when_more_was_typed_before_the_answer() {
+    let (mut s, account) = session();
+    let id = run(&mut s, "notes.new", json!({"text": "Milk"}))["id"].as_u64().unwrap();
+    let first = ops(&mut s, account);
+    run(&mut s, "notes.edit", json!({"id": id, "text": "Milk\nEggs"}));
+    // The server titled it from its first line.
+    let made = RemoteNote { id: "VN-9".into(), title: "Milk".into(), text: "Milk".into(), version: "v1".into(), ..Default::default() };
+    let done = NoteOutcome { op: first[0].clone(), result: NoteResult::Done, note: Some(made), ..Default::default() };
+    run(&mut s, "sync.applyNoteChanges", json!({"result": NotesUploaded { account, email: ME.into(), outcomes: vec![done], ..Default::default() }}));
+    let kept = note(&s, id);
+    assert_eq!((kept.title.as_str(), kept.text.as_str()), ("Milk", "Milk\nEggs"));
+    let going = ops(&mut s, account);
+    assert_eq!(going.len(), 1);
+    assert_eq!(
+        (going[0].fields.title.as_deref(), going[0].fields.text.as_deref(), going[0].version.as_str()),
+        (None, Some("Milk\nEggs"), "v1"),
+        "what she typed goes; the server's title is never wiped"
+    );
+}
+
+#[test]
+fn notes_a_page_kept_when_its_server_stopped_go_there_again_when_it_keeps_notes_again() {
+    for keeps_local in [false, true] {
+        let (mut s, account) = session();
+        s.keeps_local = keeps_local;
+        let id = run(&mut s, "notes.new", json!({"title": "Lunch", "text": "Friday"}))["id"].as_u64().unwrap();
+        let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+        run(&mut s, "sync.applyNotes", json!({"download": gone}));
+        assert!(note(&s, id).origin.is_local());
+        run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "v")])}));
+        let back = note(&s, id);
+        if keeps_local {
+            assert!(back.origin.is_local() && s.mailbox.notes.changes.is_empty(), "this computer keeps it as its own");
+            continue;
+        }
+        assert_eq!((back.origin.account, back.origin.id.as_str()), (account, ""), "the server's again");
+        let going = ops(&mut s, account);
+        assert_eq!((going.len(), going[0].kind, going[0].fields.text.as_deref()), (1, NoteChangeKind::Create, Some("Friday")));
+    }
+}
+
+#[test]
+fn a_read_before_the_resend_keeps_words_typed_back_over_her_own_lost_write() {
+    let (mut s, account, groceries) = milk_sent_and_lost();
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Groceries words"}));
+    // A read brings what the server wrote of the lost sending, before the change goes again.
+    let there = RemoteNote { text: "Milk".into(), ..remote("VN-2", "Groceries", "v4") };
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z"), there])}));
+    assert_eq!(note(&s, groceries).text, "Groceries words", "what she typed back stays");
+    let going = ops(&mut s, account);
+    assert_eq!(
+        (going.len(), going[0].fields.text.as_deref(), going[0].version.as_str()),
+        (1, Some("Groceries words"), "2026-10-20T08:00:00.200Z"),
+        "told against the words she read: the server's copy of her own write is known by what went"
+    );
 }

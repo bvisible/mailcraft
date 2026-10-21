@@ -98,18 +98,19 @@
 	Couldn't read the notes: {why}	Impossible de lire les notes : {why}
 	1 note couldn't be read: {why}	1 note n’a pas pu être lue : {why}
 	{n} notes couldn't be read: {why}	{n} notes n’ont pas pu être lues : {why}
-	the notes hold more text than one reading takes, and these are not shown	les notes contiennent plus de texte qu’une lecture ne peut en absorber, et ce texte n’est pas affiché
+	the notes hold more text than one reading takes, and these are not shown	les notes contiennent plus de texte qu’une lecture ne peut en absorber, et ces notes ne sont pas affichées
 	The notes couldn't be taken in	Les notes n’ont pas pu être prises en compte
 	{title} is no longer shared with you: your version is kept as a note of its own.	La note {title} n’est plus partagée avec vous : votre version est conservée sous forme de note distincte.
 	Unsaved Note	Note non enregistrée
 	A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.	Une note contient des mots qui ne peuvent pas encore être enregistrés : ils dépassent la longueur acceptée par son serveur. En fermant maintenant, ils seront perdus.
+	A note has words that can't be saved yet: {why} Closing now loses them.	Une note contient des mots qui ne peuvent pas encore être enregistrés : {why} En fermant maintenant, ils seront perdus.
 	Close Anyway	Fermer quand même
 	1,000	1'000
 	Discard Unsaved Note Words	Abandonner les mots non enregistrés de la note
 	A note's title holds {max} characters at most	Le titre d’une note contient au plus {max} caractères
-	The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}.	Le serveur n’a pas accepté la modification de {title} : {said}. Votre version est conservée comme une note à part, {copy}.
-	{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}.	{title} ne peut plus être modifiée ici ({why}) : votre version est conservée comme une note à part, {copy}.
-	{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent.	{title} n’a pas pu être enregistrée sur le serveur ({said}), et il n’y a pas de place pour une note à part : votre version reste ici, non envoyée.
+	The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}.	Le serveur n’a pas accepté la modification de {title} : {said}. Votre version est conservée sous forme de note distincte, {copy}.
+	{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}.	{title} ne peut plus être modifiée ici ({why}) : votre version est conservée sous forme de note distincte, {copy}.
+	{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent.	{title} n’a pas pu être enregistrée sur le serveur ({said}), et il n’y a pas de place pour une note distincte : votre version reste ici, non envoyée.
 	1 character too many	1 caractère de trop
 	{n} characters too many	{n} caractères de trop
 	Archived notes	Notes archivées

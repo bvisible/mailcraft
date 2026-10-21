@@ -3393,6 +3393,8 @@ impl MailApp {
         }
         sync_panel::show(self, &ctx);
         dialogs::show(self, &ctx);
+        // //// Neoffice — the question closing asks about words typed into a note that can't be saved yet, while it is up (notes_view.rs).
+        notes_view::close_question(self, &ctx);
         reminders::show(self, &ctx);
         // Over everything: what an agent wants that needs the owner.
         agent_gate::show(self, &ctx);

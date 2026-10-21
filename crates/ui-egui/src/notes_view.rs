@@ -41,6 +41,8 @@ const CARD_WORDS: usize = 400;
 const FILTER: &str = "notes_filter";
 const DRAFT: &str = "notes_draft";
 const FOCUS_TITLE: &str = "notes_focus_title";
+/// Where the window keeps the question closing asks, while it is up.
+const CLOSE_ASK: &str = "notes_close_ask";
 
 /// The list shown and the search.
 #[derive(Clone, Default)]
@@ -62,6 +64,9 @@ struct Draft {
     from_text: String,
     /// When the last key was typed (the window's time, seconds); `None`: nothing typed since it was saved.
     typed: Option<f64>,
+    /// Why it couldn't be saved the last time it was tried: the engine's words; empty when it was more than the note's
+    /// server takes, or nothing was tried.
+    why: String,
 }
 
 impl Draft {
@@ -74,6 +79,7 @@ impl Draft {
             from_title: note.title.clone(),
             from_text: note.text.clone(),
             typed: None,
+            why: String::new(),
         }
     }
 }
@@ -545,6 +551,7 @@ fn save(app: &mut MailApp, draft: &mut Draft, now: f64) -> bool {
     }
     let (max_title, max_text) = notes::limits(&app.session, if note.origin.is_remote() { note.origin.account } else { 0 });
     if draft.title.chars().count() > max_title || draft.text.chars().count() > max_text {
+        draft.why.clear();
         return false;
     }
     let mut params = json!({"id": note.id});
@@ -554,9 +561,9 @@ fn save(app: &mut MailApp, draft: &mut Draft, now: f64) -> bool {
     if wants_text {
         params["text"] = json!(draft.text);
     }
-    if app.run("notes.edit", params).is_err() {
+    if let Err(why) = app.run("notes.edit", params) {
         // (Said by the engine; tried again in a moment, the words kept.)
-        draft.typed = Some(now);
+        (draft.typed, draft.why) = (Some(now), why);
         return false;
     }
     if let Some(saved) = app.session.mailbox.notes.note(draft.note) {
@@ -584,6 +591,7 @@ fn keep_copy(app: &mut MailApp, draft: &mut Draft, why: Kept) -> bool {
     let to = if account != 0 && app.session.mailbox.notes.server(account).is_some() { account } else { 0 };
     let (max_title, max_text) = notes::limits(&app.session, to);
     if draft.text.chars().count() > max_text {
+        draft.why.clear();
         return false;
     }
     let heading = if draft.title.trim().is_empty() {
@@ -598,13 +606,15 @@ fn keep_copy(app: &mut MailApp, draft: &mut Draft, why: Kept) -> bool {
     // A title that had to be cut goes whole as the first line of the text (one from the text is in it already).
     let text = if cut && !draft.title.trim().is_empty() { format!("{}\n{}", draft.title.trim(), draft.text) } else { draft.text.clone() };
     if text.chars().count() > max_text {
+        draft.why.clear();
         return false;
     }
     let mut params = json!({"title": title, "text": text});
     if to != 0 {
         params["account"] = json!(to);
     }
-    if app.run("notes.new", params).is_err() {
+    if let Err(why) = app.run("notes.new", params) {
+        draft.why = why;
         return false;
     }
     let named = |words: &str| if words.trim().is_empty() { "\"\u{2026}\"".to_string() } else { format!("\"{}\"", words.trim()) };
@@ -641,25 +651,65 @@ pub(crate) fn flush(app: &mut MailApp, ctx: &egui::Context, always: bool) {
     keep_drafts(ctx, kept);
 }
 
-/// The window is asked to close: what was typed into notes goes into them first, and what still can't be saved (more
-/// than its server takes) holds the close with a question, as a message being written does. Whether it holds it.
+/// The window is asked to close: what was typed into notes goes into them first, and what still can't be saved holds the
+/// close with a question, as a message being written does ([`close_question`]). Whether it holds it.
 pub(crate) fn hold_quit(app: &mut MailApp) -> bool {
     let Some(ctx) = app.ctx.clone() else { return false };
     flush(app, &ctx, true);
-    let Some(first) = drafts(&ctx).values().find(|draft| draft.typed.is_some()).map(|draft| draft.note) else { return false };
-    // The note in front, for the owner to see what can't be saved; and the question.
+    let Some(first) = drafts(&ctx).values().find(|draft| draft.typed.is_some()).cloned() else { return false };
+    // The note in front, for the owner to see what can't be saved; and the question, saying why.
     let _ = app.run("view.notes", json!({}));
-    let _ = app.run("notes.select", json!({"id": first}));
-    let ask = crate::dialogs::Question {
-        title: tl!("Unsaved Note").to_string(),
-        text: tl!("A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.").to_string(),
-        action: tl!("Close Anyway").to_string(),
-        with: Value::Null,
-        more: Vec::new(),
-        note: None,
+    let _ = app.run("notes.select", json!({"id": first.note}));
+    let text = if first.why.is_empty() {
+        tl!("A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.").to_string()
+    } else {
+        let why = crate::i18n::run_words::refusal(&first.why, &app.session.mailbox).into_owned();
+        crate::i18n::fmt(tl!("A note has words that can't be saved yet: {why} Closing now loses them."), &[("why", why.trim())])
     };
-    app.dialog = Some(crate::dialogs::Dialog::Confirm { command: "ui.dropNoteDrafts".into(), params: json!({"then": "quit"}), ask });
+    // (While it is asked, the keyboard is the question's: nothing more is typed into the note.)
+    ctx.memory_mut(|m| m.stop_text_input());
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new(CLOSE_ASK), text));
     true
+}
+
+/// The question closing asks while words typed into a note can't be saved, when it is up: modal, over everything. Cancel
+/// (Escape, Enter) leaves the window open with the words; Close Anyway is `ui.dropNoteDrafts`. Drawn every frame, after
+/// the dialogs; gone on its own once nothing typed is left unsaved.
+pub(crate) fn close_question(app: &mut MailApp, ctx: &egui::Context) {
+    let Some(text) = ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK))) else { return };
+    if !typed(ctx) {
+        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
+        return;
+    }
+    let t = Tokens::get(ctx);
+    let frame = egui::Frame::window(&ctx.global_style()).fill(t.surface).inner_margin(egui::Margin::same(16));
+    let width = (ctx.content_rect().width() - 48.0).clamp(120.0, 420.0);
+    let (mut cancel, mut anyway) = (false, false);
+    egui::Modal::new(egui::Id::new(CLOSE_ASK)).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 110 } else { 60 })).show(
+        ctx,
+        |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+            ui.label(RichText::new(tl!("Unsaved Note")).font(semibold(14.0)));
+            ui.label(text.as_str());
+            ui.add_space(6.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let no = ui.add(egui::Button::new(tl!("Cancel")).min_size(vec2(72.0, 26.0)));
+                let yes = ui.add(egui::Button::new(tl!("Close Anyway")).min_size(vec2(72.0, 26.0)));
+                app.hit.add("notesCloseCancel", 0, no.rect);
+                app.hit.add("notesCloseAnyway", 0, yes.rect);
+                (cancel, anyway) = (no.clicked(), yes.clicked());
+            });
+        },
+    );
+    // Staying is what Escape and Enter mean: going ahead takes a deliberate click.
+    let (enter, escape) =
+        ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+    if anyway {
+        let _ = app.run("ui.dropNoteDrafts", json!({"then": "quit"}));
+    } else if cancel || enter || escape {
+        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
+    }
 }
 
 /// Whether words typed into a note are not in it yet.
@@ -672,14 +722,19 @@ pub(crate) fn typed(ctx: &egui::Context) -> bool {
 /// followed by.
 pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if id == "ui.dropNoteDrafts" {
-        // What was typed into notes and can't be saved, given up (the owner's answer to closing): then the close.
+        // What was typed into notes and can't be saved, given up (the owner's answer to closing): what can be saved by now
+        // goes into its note first, and only the rest is given up; then the close.
+        let mut dropped = 0;
         if let Some(ctx) = app.ctx.clone() {
+            flush(app, &ctx, true);
+            dropped = drafts(&ctx).values().filter(|draft| draft.typed.is_some()).count();
             keep_drafts(&ctx, Drafts::new());
+            ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
         }
         if p.get("then").and_then(Value::as_str) == Some("quit") {
             app.quit_requested = true;
         }
-        return Some(Ok(json!({"dropped": true})));
+        return Some(Ok(json!({"dropped": dropped})));
     }
     if id != "ui.openNote" {
         return None;

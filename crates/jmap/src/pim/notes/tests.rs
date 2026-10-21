@@ -501,7 +501,7 @@ fn more_typed_after_a_lost_answer_goes_over_the_servers_copy_of_her_own_write() 
     run(&server, &request(only(update("VN-2", NoteFields { text: Some("Milk".into()), ..Default::default() }, &read))));
     // She types more meanwhile: the change now carries "Milk\nEggs", and what went before.
     let more = NoteOp {
-        earlier: Some(NoteFields { text: Some("Milk".into()), ..Default::default() }),
+        earlier: vec![NoteFields { text: Some("Milk".into()), ..Default::default() }],
         ..update("VN-2", NoteFields { text: Some("Milk\nEggs".into()), ..Default::default() }, &read)
     };
     let again = run(&server, &request(only(more)));
@@ -511,9 +511,50 @@ fn more_typed_after_a_lost_answer_goes_over_the_servers_copy_of_her_own_write() 
     // Something else there (another device) still is one.
     server.with(|d| d.notes.change("VN-2", |note| note.text = "Phone".into()));
     let other = NoteOp {
-        earlier: Some(NoteFields { text: Some("Milk".into()), ..Default::default() }),
+        earlier: vec![NoteFields { text: Some("Milk".into()), ..Default::default() }],
         ..update("VN-2", NoteFields { text: Some("Milk\nEggs\nBread".into()), ..Default::default() }, &read)
     };
     let refused = run(&server, &request(only(other)));
     assert_eq!(outcomes(&refused)[0].0, NoteResult::Stale);
+}
+
+/// A server that wrote "Milk" into Groceries and lost its answer; the version Groceries was read at before.
+fn milk_written_answer_lost() -> (StandIn, String) {
+    let server = server();
+    let read = version_of(&server, "VN-2");
+    server.with(|d| d.lost_answers = 1);
+    run(&server, &request(only(update("VN-2", NoteFields { text: Some("Milk".into()), ..Default::default() }, &read))));
+    (server, read)
+}
+
+fn only(op: NoteOp) -> NotesAsk {
+    NotesAsk { changes: Some(NotesUpload { account: 7, email: ME.into(), ops: vec![op] }), ..Default::default() }
+}
+
+fn text(words: &str) -> NoteFields {
+    NoteFields { text: Some(words.into()), ..Default::default() }
+}
+
+#[test]
+fn a_lost_answer_to_the_resend_over_her_own_write_is_tried_again_never_a_conflict() {
+    let (server, read) = milk_written_answer_lost();
+    // The resend over her own write loses its answer too (the server wrote it).
+    server.with(|d| d.faults.push_back(Fault::later("Note/set", 1, Effect::LoseAnswer)));
+    let more = NoteOp { earlier: vec![text("Milk")], ..update("VN-2", text("Milk\nEggs"), &read) };
+    let again = run(&server, &request(only(more.clone())));
+    assert_eq!(outcomes(&again)[0].0, NoteResult::Failed, "tried again later, her words never a copy of their own: {again:?}");
+    // Nor when the note can't be read to see whose words are there.
+    server.with(|d| d.faults.push_back(Fault::on("Note/get", Effect::LoseAnswer)));
+    let unread = run(&server, &request(only(NoteOp { earlier: vec![text("Milk"), text("Milk\nEggs")], ..more })));
+    assert_eq!(outcomes(&unread)[0].0, NoteResult::Failed, "{unread:?}");
+}
+
+#[test]
+fn any_sending_unanswered_is_known_as_her_own_write() {
+    let (server, read) = milk_written_answer_lost();
+    // A second sending never got there (it failed before it went); a third carries both.
+    let third = NoteOp { earlier: vec![text("Milk"), text("Milk\nEggs")], ..update("VN-2", text("Milk\nEggs\nBread"), &read) };
+    let again = run(&server, &request(only(third)));
+    assert_eq!(outcomes(&again)[0].0, NoteResult::Done, "{again:?}");
+    assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk\nEggs\nBread".into()));
 }
