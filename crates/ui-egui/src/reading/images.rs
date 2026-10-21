@@ -147,6 +147,23 @@ pub fn decode(data: &[u8], max_side: u32, max_width: u32) -> Option<egui::ColorI
     (rgba.as_raw().len() == size[0].checked_mul(size[1])?.checked_mul(4)?).then(|| egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()))
 }
 
+// //// Neoffice — added: a dark logo with a see-through background is dark on the dark theme's window, where it can't be
+// read; the composer stands such a picture on a light plate (compose/editor.rs), on screen only.
+/// Whether `image` has see-through pixels and what it shows is, on average, too dark to be read on the dark theme's
+/// window: not [`super::colors::MIN_CONTRAST`] times lighter than it. At most 65,536 of its pixels are looked at.
+pub fn dark_on_clear(image: &egui::ColorImage) -> bool {
+    let (mut clear, mut ink, mut weight) = (false, 0.0f32, 0.0f32);
+    for c in image.pixels.iter().step_by((image.pixels.len() / 65_536).max(1)) {
+        let [r, g, b, a] = c.to_srgba_unmultiplied();
+        clear |= a < u8::MAX;
+        let a = f32::from(a) / 255.0;
+        ink += a * super::colors::luminance(egui::Color32::from_rgb(r, g, b));
+        weight += a;
+    }
+    let window = super::colors::luminance(crate::theme::Tokens::dark().surface);
+    clear && weight > 0.0 && (ink / weight + 0.05) / (window + 0.05) < super::colors::MIN_CONTRAST
+}
+
 /// What is known of one attachment as a picture.
 struct Entry {
     /// The bytes. Kept so that the address they are at stays theirs while the entry lives.
@@ -158,6 +175,9 @@ struct Entry {
     failed: bool,
     /// The frame it was last asked for.
     used: u64,
+    // //// Neoffice — what the composer needs to stand a dark logo on a light plate in the dark theme (dark_on_clear).
+    /// Once decoded: it is dark ink on nothing ([`dark_on_clear`]).
+    dark_on_clear: bool,
 }
 
 impl Entry {
@@ -265,7 +285,8 @@ impl Pictures {
         let index = match self.entries.iter().position(|e| Arc::ptr_eq(&e.data, data)) {
             Some(index) => index,
             None => {
-                self.entries.push(Entry { data: data.clone(), size: probe(data), texture: None, failed: false, used: frame });
+                // //// Neoffice — `dark_on_clear` is known once it is decoded
+                self.entries.push(Entry { data: data.clone(), size: probe(data), texture: None, failed: false, used: frame, dark_on_clear: false });
                 self.entries.len() - 1
             }
         };
@@ -326,6 +347,12 @@ impl Pictures {
         }
     }
 
+    // //// Neoffice — added: see dark_on_clear
+    /// Whether a picture that was decoded is dark ink on nothing ([`dark_on_clear`]); `false` until it is decoded.
+    pub fn dark_on_clear(&self, data: &Arc<Vec<u8>>) -> bool {
+        self.entries.iter().any(|e| Arc::ptr_eq(&e.data, data) && e.dark_on_clear)
+    }
+
     /// The texture of a picture, decoding it when no other picture was decoded in this frame.
     pub fn texture(&mut self, ctx: &egui::Context, data: &Arc<Vec<u8>>) -> Picture {
         let frame = frame(ctx);
@@ -345,6 +372,8 @@ impl Pictures {
         let max_width = (super::MAX_BODY_WIDTH * ctx.pixels_per_point()).ceil().clamp(1.0, MAX_TEXTURE_SIDE as f32) as u32;
         let picture = match decode(&entry.data, max_side, max_width) {
             Some(image) => {
+                // //// Neoffice — read while the pixels are at hand (dark_on_clear)
+                entry.dark_on_clear = dark_on_clear(&image);
                 let texture = ctx.load_texture("mailcraft-inline-picture", image, egui::TextureOptions::LINEAR);
                 entry.texture = Some(texture.clone());
                 Picture::Ready(texture)
@@ -432,6 +461,42 @@ mod tests {
         }
         // A picture is told by what its bytes are, whatever it was called on the way.
         assert!(webp(8, 8).starts_with(b"RIFF") && webp(8, 8).get(8..12) == Some(&b"WEBP"[..]));
+    }
+
+    // //// Neoffice — added: see dark_on_clear
+    #[test]
+    fn a_dark_picture_on_nothing_is_told_from_one_that_reads_on_the_dark_window() {
+        // Half see-through, half `ink`; or all `ink`.
+        let picture = |ink: [u8; 3], clear: bool| {
+            let pixels: Vec<u8> = (0..64u32).flat_map(|i| if clear && i % 8 < 4 { [0, 0, 0, 0] } else { [ink[0], ink[1], ink[2], 0xff] }).collect();
+            egui::ColorImage::from_rgba_unmultiplied([8, 8], &pixels)
+        };
+        let (black, navy, white, skin, teal) = ([0, 0, 0], [0x1f, 0x38, 0x64], [0xff; 3], [0xd8, 0xa8, 0x8c], [0x00, 0x9c, 0xb4]);
+        assert!(dark_on_clear(&picture(black, true)) && dark_on_clear(&picture(navy, true)), "a dark logo");
+        for (what, ink) in [("a white logo", white), ("a round photo", skin), ("a light logo", teal)] {
+            assert!(!dark_on_clear(&picture(ink, true)), "{what}");
+        }
+        assert!(!dark_on_clear(&picture(navy, false)), "nothing see-through: its own background goes with it");
+        assert!(!dark_on_clear(&egui::ColorImage::from_rgba_unmultiplied([2, 2], &[0; 16])), "nothing at all");
+        // Known once decoded, for the bytes it was decoded from.
+        let mut pictures = Pictures::default();
+        let clear = Arc::new(encode_png(picture(navy, true)));
+        assert!(!pictures.dark_on_clear(&clear));
+        let mut ready = false;
+        egui::Context::default()
+            .run_ui(egui::RawInput::default(), |ui| ready = matches!(pictures.texture(ui.ctx(), &clear), Picture::Ready(_)))
+            .drop_without_applying_deltas();
+        assert!(ready);
+        assert!(pictures.dark_on_clear(&clear) && !pictures.dark_on_clear(&Arc::new(encode_png(picture(navy, true)))));
+    }
+
+    // //// Neoffice — added: see dark_on_clear
+    fn encode_png(image: egui::ColorImage) -> Vec<u8> {
+        let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+        let rgba = image::RgbaImage::from_raw(8, 8, bytes).unwrap();
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(rgba).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
     }
 
     #[test]

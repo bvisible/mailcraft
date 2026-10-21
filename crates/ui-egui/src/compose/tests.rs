@@ -491,6 +491,48 @@ fn a_signature_is_edited_with_the_keyboard_and_the_pointer_as_a_message_is() {
     assert_eq!(h.state().session.mailbox.signature("Standard").unwrap().plain(), "Ms Avery Quinn\nLumen Studio");
 }
 
+// //// Neoffice — added: a dark logo on nothing stands on a light plate in the dark theme, and nowhere else (editor::plate).
+#[test]
+fn a_dark_logo_on_nothing_stands_on_a_light_plate_in_the_dark_theme_only() {
+    // Navy ink, on nothing or on white.
+    let logo = |clear: bool| {
+        let pixels = image::RgbaImage::from_fn(60, 24, |x, _| {
+            image::Rgba(if x >= 30 {
+                [0x1f, 0x38, 0x64, 0xff]
+            } else if clear {
+                [0; 4]
+            } else {
+                [0xff; 4]
+            })
+        });
+        let mut out = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::ImageRgba8(pixels).write_to(&mut out, image::ImageFormat::Png).unwrap();
+        crate::files::base64_lite::encode(&out.into_inner())
+    };
+    for (theme, clear, plated) in [("dark", true, true), ("light", true, false), ("dark", false, false)] {
+        let mut h = signature_page();
+        h.state_mut().execute("ui.theme", json!({"value": theme})).unwrap();
+        h.state_mut().execute("signature.picture.add", json!({"data": logo(clear), "file": "logo.png"})).unwrap();
+        h.run_steps(6);
+        let body = h.state().hit.rect("signatureBody", 0).unwrap();
+        let plates: Vec<egui::Rect> = h
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill == editor::PLATE && body.expand(4.0).contains_rect(r.rect) => Some(r.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(plates.len(), usize::from(plated), "{theme}, see-through: {clear}");
+        // A little wider than the picture, all round.
+        assert!(plates.iter().all(|r| (r.width() - 66.0).abs() < 0.5 && (r.height() - 30.0).abs() < 0.5), "{plates:?}");
+        // What is saved and sent is the picture's own bytes: the plate is only drawn.
+        let edit = h.state().session.signature_edit.as_ref().unwrap();
+        assert_eq!(edit.signature.pictures().last().map(|p| crate::files::base64_lite::encode(&p.data)), Some(logo(clear)));
+    }
+}
+
 #[test]
 fn typing_goes_on_after_the_window_was_left_and_came_back_to() {
     let mut h = writing();

@@ -427,6 +427,17 @@ fn size_of(ctx: &egui::Context, p: &Picture, room: f32) -> Vec2 {
     vec2(width, (width * h / w).clamp(4.0, 2000.0))
 }
 
+// //// Neoffice — added: the light plate a dark logo on nothing stands on in the dark theme (show_doc).
+/// The plate's colour: a light grey, which glares less than white on the dark window and keeps a dark logo readable.
+pub(crate) const PLATE: egui::Color32 = egui::Color32::from_gray(0xE0);
+
+// //// Neoffice — added: see PLATE
+/// Where the plate goes under a picture drawn at `r`, a little wider all round: only in a dark theme, and only for a
+/// picture that is dark ink on nothing (`reading::images::dark_on_clear`).
+fn plate(r: Rect, dark: bool, dark_on_clear: bool) -> Option<Rect> {
+    (dark && dark_on_clear).then(|| r.expand(3.0))
+}
+
 /// A short fingerprint of the pictures' ids and widths, so that the layout follows them.
 fn pictures_key(pictures: &[Picture]) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -711,6 +722,12 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
             let texture = picture.and_then(|x| cache.lock().ok().map(|mut c| c.texture(&ctx, &x.data)));
             match texture {
                 Some(crate::reading::images::Picture::Ready(tex)) => {
+                    // //// Neoffice — a dark logo on nothing stands on a light plate in the dark theme, where dark on dark can't be
+                    // read; on screen only, the message sent carries the picture as it is.
+                    let on_clear = picture.is_some_and(|x| cache.lock().is_ok_and(|c| c.dark_on_clear(&x.data)));
+                    if let Some(under) = plate(r, t.dark, on_clear) {
+                        painter.rect_filled(under, 4.0, PLATE);
+                    }
                     painter.image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), egui::Color32::WHITE);
                 }
                 Some(crate::reading::images::Picture::Pending) => {

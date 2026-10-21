@@ -161,7 +161,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   a link for one that has an `href` (the company's banner), as the owner would put them in. A picture that is a link is
   written inside it in the sent HTML, under a text link's rule (`crates/mime/src/rich.rs`, `linked_img`, the picture
   beside or above the words included), and says where it leads in the text part (`crates/model/src/rich.rs`,
-  `[alt] <url>`): upstream keeps the link in the model and dropped it there.
+  `[alt] <url>`): upstream keeps the link in the model and dropped it there. In the dark theme the composer and
+  File › Signatures stand a picture that is dark ink on nothing (a dark logo with a see-through background) on a light
+  plate, on screen only (`crates/ui-egui/src/compose/editor.rs`, `plate`; `reading/images.rs`, `dark_on_clear`).
 - This file.
 
 ## What cannot carry a comment
