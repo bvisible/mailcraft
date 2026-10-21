@@ -692,6 +692,9 @@ msgstr "Les notes ne sont pas conservées ici : le serveur de cette page n’en 
 msgid "Nothing came back from Microsoft's sign-in page"
 msgstr "Aucune réponse de la page de connexion de Microsoft"
 
+msgid "Nothing here takes a message to share."
+msgstr "Rien ici ne reçoit de message à partager."
+
 msgid "Off"
 msgstr "Désactivé"
 
@@ -703,6 +706,9 @@ msgstr "Une journée concernant {name} a été supprimée ici et {why}, mais le 
 
 msgid "Online Meeting"
 msgstr "Réunion en ligne"
+
+msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr "Seul un message d’une boîte aux lettres transmise par la page peut être partagé."
 
 msgid "Only its owner deletes a note: this one was shared with you"
 msgstr "Seul son propriétaire peut supprimer une note : celle-ci a été partagée avec vous"
@@ -820,6 +826,15 @@ msgstr "L’envoi de « {subject} » ne peut pas être annulé."
 
 msgid "Sending {n} messages can't be undone."
 msgstr "L’envoi de {n} messages ne peut pas être annulé."
+
+msgid "Share in Synk"
+msgstr "Partager dans Synk"
+
+msgid "Share this message in a Synk conversation"
+msgstr "Partager ce message dans une conversation Synk"
+
+msgid "Share\nin Synk"
+msgstr "Partager\ndans Synk"
 
 msgid "Shared by {name}"
 msgstr "Partagée par {name}"
@@ -1465,6 +1480,9 @@ msgstr "ce serveur JMAP ne propose pas de courrier"
 
 msgid "This mailbox isn't one the page handed over."
 msgstr "Cette boîte aux lettres n’est pas l’une de celles transmises par la page."
+
+msgid "This message isn't on its server yet."
+msgstr "Ce message n’est pas encore sur son serveur."
 
 msgid "This note has formatting, a checklist or attachments: change its text where it was written."
 msgstr "Cette note contient une mise en forme, une liste de contrôle ou des pièces jointes : modifiez son texte à l’endroit où elle a été écrite."

@@ -5738,6 +5738,11 @@ msgid "Nothing has been sent or received yet."
 msgstr "Es wurde noch nichts gesendet oder empfangen."
 
 #. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Nothing here takes a message to share."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "Nothing here yet."
@@ -5932,6 +5937,11 @@ msgstr "Onlinebesprechung"
 #, fuzzy
 msgid "Only a meeting you organize has a Scheduling Assistant"
 msgstr "Nur eine von Ihnen organisierte Besprechung hat einen Terminplanungs-Assistenten"
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
@@ -7400,7 +7410,7 @@ msgid "Select a meeting first"
 msgstr "Wählen Sie zuerst eine Besprechung aus"
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Select a message first"
 msgstr "Wählen Sie zuerst eine Nachricht aus"
@@ -7700,6 +7710,11 @@ msgstr "Einstellungen"
 #, fuzzy
 msgid "Share"
 msgstr "Freigeben"
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
+msgid "Share in Synk"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/notes_view.rs
@@ -9740,6 +9755,11 @@ msgstr "Diese Nachricht hat Bilder im Web. Dieser Build kann sie nicht herunterl
 #, fuzzy
 msgid "This message isn't an invitation that can be answered."
 msgstr "Diese Nachricht ist keine Einladung, die beantwortet werden kann."
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "This message isn't on its server yet."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/graph_fetch.rs crates/ui-egui/src/reading.rs

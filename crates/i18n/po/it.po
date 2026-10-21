@@ -5744,6 +5744,11 @@ msgid "Nothing has been sent or received yet."
 msgstr "Non è stato ancora inviato o ricevuto nulla."
 
 #. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Nothing here takes a message to share."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "Nothing here yet."
@@ -5938,6 +5943,11 @@ msgstr "Riunione online"
 #, fuzzy
 msgid "Only a meeting you organize has a Scheduling Assistant"
 msgstr "Solo una riunione organizzata da sé ha l'Assistente Pianificazione"
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
@@ -7412,7 +7422,7 @@ msgid "Select a meeting first"
 msgstr "Selezionare prima una riunione"
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Select a message first"
 msgstr "Selezionare prima un messaggio"
@@ -7712,6 +7722,11 @@ msgstr "Impostazioni"
 #, fuzzy
 msgid "Share"
 msgstr "Condividi"
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
+msgid "Share in Synk"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/notes_view.rs
@@ -9752,6 +9767,11 @@ msgstr "Questo messaggio contiene immagini sul web. Questa build non può scaric
 #, fuzzy
 msgid "This message isn't an invitation that can be answered."
 msgstr "Questo messaggio non è un invito a cui si possa rispondere."
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "This message isn't on its server yet."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/graph_fetch.rs crates/ui-egui/src/reading.rs

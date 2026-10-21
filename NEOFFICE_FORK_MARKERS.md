@@ -222,6 +222,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `[alt] <url>`): upstream keeps the link in the model and dropped it there. In the dark theme the composer and
   File › Signatures stand a picture that is dark ink on nothing (a dark logo with a see-through background) on a light
   plate, on screen only (`crates/ui-egui/src/compose/editor.rs`, `plate`; `reading/images.rs`, `dark_on_clear`).
+- A hosting page that takes a message to share in its team chat (Neoffice's desk at `/app/neomail`, which hands
+  `share: true`; its chat is Synk, the instance's Raven): Share in Synk, a button in the Respond group of Mail's Home
+  tab and an entry of a message's context menu after Forward, posts `{type: "mailcraft:share", account, email}` to
+  `window.parent` on the page's own origin for the message in the reading pane, by its mailbox's address (as the page
+  handed it over) and its id on the server alone, only on the person's click and only for a message of a mailbox the
+  page handed over that its server has (`crates/ui-egui/src/host_share.rs`, the window command `ui.shareMessage`,
+  tested with its window in `host_share/tests.rs`; `Services::share` and the command's hunks in `lib.rs`, the button's
+  in `ribbon.rs`, the entry's in `mail_view.rs`, its drawing `shareChat` in `icons.rs`). The browser's part is
+  `apps/mailcraft-web/src/host.rs` (`share`, and the contract in its comment), `host_menu.rs` (`tell`) and `web.rs`;
+  the French lines are in `crates/i18n/po/neoffice/fr.po`. Without `share: true` nothing is offered.
 - This file.
 
 ## What cannot carry a comment

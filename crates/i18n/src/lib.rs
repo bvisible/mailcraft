@@ -422,6 +422,8 @@ mod tests {
         assert_eq!(Lang::French.t("Reply"), catalogue(Lang::French).and_then(|c| c.get("Reply")).unwrap_or("Reply"));
         // And a text of the fork's.
         assert_eq!(Lang::French.t("select a note first"), "sélectionnez d’abord une note");
+        // And one the window looks up from a table of its own (a ribbon button's label), which the extractor doesn't see.
+        assert_eq!(Lang::French.t("Share\nin Synk"), "Partager\ndans Synk");
     }
 
     #[test]

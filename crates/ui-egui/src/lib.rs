@@ -70,6 +70,8 @@ pub mod graph_fetch;
 mod graph_switch;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
+// //// Neoffice — a hosting page that takes a message to share in its team chat (Synk, in Neoffice's desk).
+pub mod host_share;
 pub mod i18n;
 pub mod icons;
 // //// Neoffice — a JMAP account's Send/Receive in the window: the job the host is handed, starting a run, taking in its pieces.
@@ -210,6 +212,11 @@ pub struct Services {
     /// tells the page where it is and takes its menu's commands ([`host_menu`]); the shortcuts stay. Absent everywhere
     /// else: the window draws its navigation itself.
     pub host_menu: Option<host_menu::Menu>,
+    // //// Neoffice — a hosting page that takes a message to share in its team chat: Share in Synk hands it the message's mailbox and server id (host_share.rs).
+    /// Web, in a hosting page that takes a message to share in its team chat (`share: true`): the mailboxes it handed
+    /// over, and how a message is handed to it, by its mailbox and its id on the server alone ([`host_share`]). Absent
+    /// everywhere else: nothing is offered.
+    pub share: Option<host_share::Share>,
     /// Desktop: search a Microsoft mailbox on its server, one page, on a background thread
     /// (R6.2: More results on the server, only on the owner's click).
     pub graph_search: Option<Box<dyn Fn(server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
@@ -782,6 +789,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Learn My Writing Style",
         "Message › Nora",
         r#"{} — has Nora learn, on the server and in the background (about a minute), the writing style of the mailbox the message being written goes from, from its sent mail; only for a mailbox the hosting page handed over. Answers {"asked": number}"#,
+    ),
+    // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs): the owner's click only.
+    (
+        "ui.shareMessage",
+        "Share in Synk",
+        "Home › Respond",
+        r#"{} — hands the hosting page the message in the reading pane, by its mailbox's address and its id on the server alone, for the page to ask where to share it in its team chat; only a message of a mailbox the page handed over, that its server has. Answers {"shared": true}"#,
     ),
     ("ui.focusSearch", "Search", "Search", "{}"),
     (
@@ -1478,6 +1492,8 @@ impl MailApp {
             }
             // //// Neoffice — Nora's commands, when a host reaches her and what each needs is there (nora/flow.rs).
             None if id.starts_with("ui.nora") => nora::enabled(self, id),
+            // //// Neoffice — Share in Synk: a page takes messages to share, and the message in the reading pane is one (host_share.rs).
+            None if id == host_share::COMMAND => host_share::enabled(self),
             None if id == "ui.copySelection" => self.text_selection.any(),
             // //// Neoffice — Import is File › Import's (`kept_here`: refused where nothing is kept).
             None if id == "ui.import" => self.session.enabled("file.import"),
@@ -1734,6 +1750,8 @@ impl MailApp {
                 }
                 None => Err("`value` is a percentage from 80 to 200".into()),
             },
+            // //// Neoffice — Share in Synk: the message in the reading pane handed to the hosting page (host_share.rs).
+            host_share::COMMAND => host_share::run(self),
             "ui.focusSearch" => {
                 self.search_focus = true;
                 self.ui.backstage = false;

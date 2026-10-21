@@ -300,6 +300,8 @@ pub(crate) fn describe(app: &MailApp) -> Tab {
     };
     // //// Neoffice — Nora's place in the tab, when a host reaches her (nora/ribbon.rs).
     crate::nora::ribbon::add(app, &mut tab);
+    // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs).
+    crate::host_share::ribbon(app, &mut tab);
     tab
 }
 

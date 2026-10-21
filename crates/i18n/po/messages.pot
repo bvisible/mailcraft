@@ -4861,6 +4861,11 @@ msgid "Nothing has been sent or received yet."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Nothing here takes a message to share."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 msgid "Nothing here yet."
 msgstr ""
@@ -5023,6 +5028,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/windows.rs
 msgid "Only a meeting you organize has a Scheduling Assistant"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Only a message of a mailbox the page handed over can be shared."
 msgstr ""
 
 #. interface, what a command says
@@ -6250,7 +6260,7 @@ msgid "Select a meeting first"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 msgid "Select a message first"
 msgstr ""
 
@@ -6501,6 +6511,11 @@ msgstr ""
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid "Share"
+msgstr ""
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
+msgid "Share in Synk"
 msgstr ""
 
 #. interface
@@ -8272,6 +8287,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/calendar/invitation.rs
 msgid "This message isn't an invitation that can be answered."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "This message isn't on its server yet."
 msgstr ""
 
 #. interface

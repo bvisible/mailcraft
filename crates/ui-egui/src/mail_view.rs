@@ -956,6 +956,10 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, id: Id, m: &Message
         mi(ui, app, "Reply", "mail.reply", json!({}));
         mi(ui, app, "Reply All", "mail.replyAll", json!({}));
         mi(ui, app, "Forward", "mail.forward", json!({}));
+        // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs).
+        if app.services.share.is_some() {
+            mi(ui, app, "Share in Synk", crate::host_share::COMMAND, json!({}));
+        }
         ui.separator();
         mi(ui, app, if read { "Mark as Unread" } else { "Mark as Read" }, if read { "mail.markUnread" } else { "mail.markRead" }, json!({}));
         mi(ui, app, if flagged { "Clear Flag" } else { "Follow Up" }, if flagged { "mail.clearFlag" } else { "mail.flag" }, json!({}));
