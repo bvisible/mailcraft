@@ -251,10 +251,14 @@ the marker check does not know as one that takes comments:
   with upstream's 0.6.0 and are upstream's lines now.)
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
   `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
-  texts the extractor finds (new entries, untranslated in upstream's catalogues: their French is in the fork's
-  catalogue below; German, Spanish and Italian show them in English) and by the files named in the references of
+  texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's
+  catalogues below) and by the files named in the references of
   shared texts. At the next upstream merge: take upstream's, then run `cargo xtask i18n` again.
 - `crates/i18n/po/neoffice/fr.po`: the fork's own French catalogue, read over upstream's (above). Its first line is a
   `#` comment that says it is ours (the format has comments), but the check does not read `.po` comments. A catalogue
   added next to it for another language (`crates/i18n/po/neoffice/<code>.po`, read by the same `OVERLAYS`) is named
   here the same way.
+- `crates/i18n/po/neoffice/de.po`, `crates/i18n/po/neoffice/es.po` and `crates/i18n/po/neoffice/it.po`: the same
+  entries as `fr.po`, in German, Spanish and Italian (translated by Haiku), read over upstream's catalogues the same
+  way; `it.po` also writes a numeric date with dots, as in Switzerland (`crates/i18n/src/date.rs`, its test). When a
+  text is added to `fr.po`, it is added to these three too.

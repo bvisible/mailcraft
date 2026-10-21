@@ -380,7 +380,8 @@ mod tests {
         // //// Neoffice — French with dots, as in Switzerland (the fork's own catalogue, `po/neoffice/fr.po`).
         assert_eq!(said(Lang::French).1, "03.10.2025");
         assert_eq!(said(Lang::Spanish).1, "03/10/2025");
-        assert_eq!(said(Lang::Italian).1, "03/10/2025");
+        // //// Neoffice — Italian with dots too, as in Switzerland (the fork's own catalogue, `po/neoffice/it.po`).
+        assert_eq!(said(Lang::Italian).1, "03.10.2025");
         assert!(long(&Lang::Spanish, SUN).contains("domingo") && long(&Lang::Spanish, SUN).contains("octubre"));
         assert!(long(&Lang::Italian, SUN).contains("domenica") && long(&Lang::Italian, SUN).contains("ottobre"));
         assert!(long(&Lang::French, SUN).contains("dimanche") && long(&Lang::French, SUN).contains("octobre"));
