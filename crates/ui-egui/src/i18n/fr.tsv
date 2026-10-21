@@ -170,6 +170,7 @@
 	The message didn't come from the server in time.	Le message n’a pas été reçu du serveur à temps.
 	Too many messages are being opened at once.	Trop de messages sont en cours d’ouverture en même temps.
 	This window can't ask the server for the message.	Cette fenêtre ne peut pas demander le message au serveur.
+	The message's folder isn't known here yet: try again in a moment.	Le dossier du message n’est pas encore connu ici : réessayez dans un instant.
 # The sentences of a JMAP Send/Receive and of the engine, read back where they are drawn (crates/ui-egui/src/i18n/run_words.rs and run_words/rows.rs): kept together, near the top.
 	(address)	(adresse)
 # run_words, the frames a run puts round what went wrong, and its own reasons (crates/jmap/src/mail.rs, mail/up.rs).

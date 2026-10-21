@@ -37,7 +37,8 @@
 use std::collections::HashMap;
 
 use mailcraft_model::sync::{
-    JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, SendOutcome, SyncPhase,
+    GraphMessage, JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, MessagePage,
+    SendOutcome, SyncPhase,
 };
 use mailcraft_model::time::Timestamp;
 use mailcraft_model::{AccountKind, FolderKind, Id, Mailbox};
@@ -387,11 +388,15 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
 }
 
 /// Take in the emails a run read by their ids alone (`JmapMailRequest::emails`: a message a hosting page opens that
-/// no window has brought yet): each into the folder whose window lists it, as a window that is not the whole of its
-/// mailbox takes an email in. Nothing else of the result is read: it is no Send/Receive, so the account's progress
-/// and status are left as they are, and nothing is taken for gone. Not an undo step. What it came to:
-/// `{"new": n, "changed": n}`.
-pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> CmdResult {
+/// no window has brought yet), after the folder listing that run brought when it has one (an account whose folders
+/// aren't known yet): each email into the folder whose window lists it, as a window that is not the whole of its
+/// mailbox takes an email in, and only one this mailbox hasn't got: one that a Send/Receive brought meanwhile has
+/// what that run read, which is no older than this. Nothing else of the result is read: it is no Send/Receive, so the
+/// account's progress and status are left as they are, and nothing is taken for gone. Not an undo step.
+///
+/// The pages it could not take in, because their folder isn't here (yet: a Send/Receive lists it): the caller may
+/// hand them in again once it is.
+pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> Result<Vec<MessagePage>, CmdError> {
     let account = result.account;
     let a = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
     if a.kind != AccountKind::Jmap {
@@ -401,17 +406,34 @@ pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> CmdResult 
     if !result.email.is_empty() && !a.email.trim().eq_ignore_ascii_case(result.email.trim()) {
         return Err(fail(format!("this Send/Receive was for another account, not for {}", a.name)));
     }
+    let mut taken = Taken::default();
+    if let Some(listing) = &result.listing {
+        take_listing(&mut s.mailbox, account, listing, &mut taken);
+    }
     let mut down = Down::default();
     let mut index = std::mem::take(&mut s.graph_index);
+    let mut waiting = Vec::new();
     // (A page that would be the whole of its mailbox is no email read by its id: it would take the rest for gone.)
     for page in result.pages.iter().filter(|page| !page.afresh).take(MAX_PAGES) {
-        jmap_down::take_window(&mut s.mailbox, &mut index, account, page, &mut down);
+        if s.mailbox.folder_by_server(account, &page.folder).is_none() {
+            waiting.push(page.clone());
+            continue;
+        }
+        let new: Vec<GraphMessage> = page.messages.iter().filter(|m| index.find(&s.mailbox, account, &m.server.id).is_none()).cloned().collect();
+        if !new.is_empty() {
+            jmap_down::take_window(&mut s.mailbox, &mut index, account, &MessagePage { messages: new, ..page.clone() }, &mut down);
+        }
     }
     s.graph_index = index;
-    if down != Down::default() {
+    if down != Down::default() || taken != Taken::default() {
         s.mailbox_changed();
     }
-    Ok(json!({"new": down.new, "changed": down.changed}))
+    // The view stays on a folder that is there (a listing may have taken one away).
+    if s.mailbox.folder(s.view.folder).is_none() {
+        s.view.folder = s.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap_or(0);
+        s.sel.messages.clear();
+    }
+    Ok(waiting)
 }
 
 #[cfg(test)]

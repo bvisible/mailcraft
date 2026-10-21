@@ -5,6 +5,8 @@
 //! (The header fields are read by the program's MIME reader; what these tests hold is that a server's raw
 //! fields, folds and all, come out as what a message list shows, and that no field can be made to say more.)
 
+use std::collections::HashSet;
+
 use serde_json::json;
 
 use super::*;
@@ -339,4 +341,19 @@ fn the_rest_of_an_email_is_read_as_the_server_says_it() {
         had,
         GraphMessage { server: ServerMessage { id: "E2".into(), folder: "M3".into(), read: true, ..Default::default() }, ..Default::default() }
     );
+}
+
+#[test]
+fn an_email_s_home_is_the_mailbox_whose_window_lists_it_and_none_when_it_names_none_that_counts() {
+    let ids = json!({"M3": true, "M1": true, "M0": false, "not an id!": true});
+    let all: HashSet<String> = ["M1", "M3"].iter().map(|id| id.to_string()).collect();
+    assert_eq!(home(Some(&ids), Some(&all)), Some("M1"));
+    assert_eq!(home(Some(&ids), None), Some("M1"));
+    // In no mailbox of the list: none, unless any will do (a run by ids then puts it in the first it names).
+    let other: HashSet<String> = ["M9"].iter().map(|id| id.to_string()).collect();
+    assert_eq!(home(Some(&ids), Some(&other)), None);
+    assert_eq!(home(Some(&json!({"M0": false})), None), None);
+    assert_eq!(home(None, None), None);
+    // `claims` is what `home` says: the one mailbox that lists it.
+    assert!(claims("M1", Some(&ids), Some(&all)) && !claims("M3", Some(&ids), Some(&all)));
 }

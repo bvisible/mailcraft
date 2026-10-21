@@ -307,18 +307,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_message_no_window_brought_is_read_from_its_server_by_the_browser_s_runner_and_shown() {
-        use mailcraft_engine::cmd::jmap_mail::apply_jmap_mail;
+    const ADA: &str = "ada@example.org";
+
+    /// A hosting page's window whose JMAP runs go to the in-process server through the browser's runner, with the
+    /// page's token: Ada's mailbox, with "Old plans" and "Newer plans" in Projects; the account, Projects' id and the
+    /// old message's.
+    fn served() -> (mailcraft_ui_egui::MailApp, u64, String, String) {
         use mailcraft_jmap::block_on;
         use mailcraft_jmap::standin::{SESSION, StandIn};
         use mailcraft_model::Mailbox;
-        use mailcraft_model::sync::{JmapMailRequest, JmapScope};
         use mailcraft_ui_egui::MailApp;
-        use mailcraft_ui_egui::host_menu::{Handed, Menu, answer, poll};
+        use mailcraft_ui_egui::host_menu::{Handed, Menu};
         use mailcraft_ui_egui::jmap_job::JmapJob;
 
-        const ME: &str = "ada@example.org";
+        const ME: &str = ADA;
         let server = StandIn::new();
         let (projects, old) = server.with(|d| {
             d.mailbox("Inbox", None, Some("inbox"));
@@ -342,6 +344,42 @@ mod tests {
         }));
         let added = app.execute("account.add", json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}}));
         let account = added.unwrap()["id"].as_u64().unwrap();
+        app.services.host_menu = Some(Menu::new(vec![Handed { email: ME.into(), name: String::new() }]));
+        (app, account, projects, old)
+    }
+
+    fn message_of(app: &mailcraft_ui_egui::MailApp, id: &str) -> Option<u64> {
+        app.session.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == id)).map(|m| m.id)
+    }
+
+    fn opening(id: &str) -> String {
+        json!({"type": "mailcraft:command", "id": 3, "name": "message.open", "params": {"account": ADA, "id": id}}).to_string()
+    }
+
+    #[test]
+    fn a_link_followed_as_the_tab_opens_brings_the_folders_and_the_message_by_the_browser_s_runner() {
+        use mailcraft_ui_egui::host_menu::{answer, poll};
+
+        // No Send/Receive has listed the folders yet.
+        let (mut app, account, projects, old) = served();
+        assert!(app.session.mailbox.folder_by_server(account, &projects).is_none());
+        assert_eq!(answer(&mut app, &opening(&old)), None);
+        assert_eq!(poll(&mut app), vec![json!({"type": "mailcraft:command-done", "id": 3, "ok": true})]);
+        let shown = message_of(&app, &old).unwrap();
+        assert_eq!(app.session.view.folder, app.session.mailbox.folder_by_server(account, &projects).unwrap());
+        assert_eq!(app.session.sel.messages, vec![shown]);
+    }
+
+    #[test]
+    fn a_message_no_window_brought_is_read_from_its_server_by_the_browser_s_runner_and_shown() {
+        use mailcraft_engine::cmd::jmap_mail::apply_jmap_mail;
+        use mailcraft_jmap::standin::SESSION;
+        use mailcraft_model::sync::{JmapMailRequest, JmapScope};
+        use mailcraft_ui_egui::host_menu::{answer, poll};
+        use mailcraft_ui_egui::jmap_job::JmapJob;
+
+        const ME: &str = ADA;
+        let (mut app, account, projects, old) = served();
         // A Send/Receive: the mailboxes, and the newest message of each.
         let request = JmapMailRequest {
             account,
@@ -357,11 +395,8 @@ mod tests {
         for piece in pieces.try_iter() {
             apply_jmap_mail(&mut app.session, piece).unwrap();
         }
-        let message =
-            |app: &MailApp, id: &str| app.session.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == id)).map(|m| m.id);
+        let (message, open) = (message_of, opening);
         assert!(message(&app, &old).is_none(), "past the window");
-        app.services.host_menu = Some(Menu::new(vec![Handed { email: ME.into(), name: String::new() }]));
-        let open = |id: &str| json!({"type": "mailcraft:command", "id": 3, "name": "message.open", "params": {"account": ME, "id": id}}).to_string();
         assert_eq!(answer(&mut app, &open(&old)), None, "answered once it has come");
         assert_eq!(poll(&mut app), vec![json!({"type": "mailcraft:command-done", "id": 3, "ok": true})]);
         let shown = message(&app, &old).unwrap();

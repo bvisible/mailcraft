@@ -175,10 +175,10 @@ pub(crate) fn secrets_of(request: &JmapPimRequest, client: &Secrets, account_id:
 }
 
 /// `error` as a line of at most [`MAX_LINE`] characters, the secrets hidden before it is cut, and any word that holds
-/// an `@` (or the `%40` it is written as in an address) hidden after.
+/// an `@` (or the `%40`, or `%2540`, it is written as in an address) hidden after.
 pub(crate) fn said(secrets: &Secrets, error: &Error) -> String {
     let cut = crate::tidy(&secrets.hide(&error.to_string()), MAX_LINE);
-    cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
+    cut.split(' ').map(|word| if crate::names_an_address(word) { "***" } else { word }).collect::<Vec<&str>>().join(" ")
 }
 
 /// "1 contact", "3 contacts".

@@ -413,8 +413,7 @@ fn emails_read_by_their_ids_are_taken_in_as_no_send_receive_takes_them() {
         whole: true,
         ..Default::default()
     };
-    let said = apply_jmap_opened(&mut s, &read).unwrap();
-    assert_eq!(said["new"], 1);
+    assert!(apply_jmap_opened(&mut s, &read).unwrap().is_empty(), "every page taken in");
     assert_eq!(in_folder(&s, account, "Map").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Old plans"]);
     // No Send/Receive: its status stays, and nothing the page didn't list is taken for gone.
     assert_eq!(s.sync_status, status);
@@ -425,4 +424,52 @@ fn emails_read_by_their_ids_are_taken_in_as_no_send_receive_takes_them() {
     assert!(in_folder(&s, account, "Min").iter().all(|m| !m.server.as_ref().is_some_and(|server| server.gone)));
     assert_eq!(in_folder(&s, account, "Min").len(), 1);
     assert!(apply_jmap_opened(&mut s, &JmapMailResult { account, email: "eve@example.org".into(), ..read.clone() }).is_err());
+}
+
+#[test]
+fn an_email_read_by_its_id_never_takes_the_place_of_what_a_send_receive_read_since() {
+    let (mut s, account) = session();
+    take(&mut s, account, Some(server()), vec![window("Min", Vec::new(), true)], true);
+    // A Send/Receive brought it meanwhile, read on the server.
+    let mut newer = mail("E9", "<9@example.org>", "Old plans", 50);
+    newer.server.read = true;
+    take(&mut s, account, None, vec![window("Map", vec![newer], false)], false);
+    // The answer to the reading by its id, older, says it is unread: it is not taken.
+    let older = JmapMailResult {
+        account,
+        email: ME.into(),
+        pages: vec![window("Map", vec![mail("E9", "<9@example.org>", "Old plans", 50)], false)],
+        ..Default::default()
+    };
+    assert!(apply_jmap_opened(&mut s, &older).unwrap().is_empty());
+    let here = in_folder(&s, account, "Map");
+    assert_eq!(here.len(), 1);
+    assert!(here[0].read, "what the Send/Receive read stays");
+}
+
+#[test]
+fn an_email_read_by_its_id_before_the_folders_are_known_waits_for_them_or_comes_with_its_listing() {
+    // A tab that has just opened: no Send/Receive has listed the mailboxes yet.
+    let (mut s, account) = session();
+    let page = window("Map", vec![mail("E9", "<9@example.org>", "Old plans", 50)], false);
+    let alone = JmapMailResult { account, email: ME.into(), pages: vec![page.clone()], ..Default::default() };
+    // Its folder isn't here: the page is handed back, and nothing is taken in.
+    assert_eq!(apply_jmap_opened(&mut s, &alone).unwrap(), vec![page.clone()]);
+    assert!(s.mailbox.messages.values().all(|m| m.subject != "Old plans"));
+    // Once a Send/Receive has listed them, the page handed in again is taken.
+    take(&mut s, account, Some(server()), Vec::new(), false);
+    assert!(apply_jmap_opened(&mut s, &alone).unwrap().is_empty());
+    assert_eq!(in_folder(&s, account, "Map").len(), 1);
+
+    // A run by id that brings the listing itself (the folders weren't known when it was asked for).
+    let (mut s, account) = session();
+    let listed = JmapMailResult {
+        account,
+        email: ME.into(),
+        listing: Some(FolderListing { folders: server(), complete: true }),
+        pages: vec![page],
+        ..Default::default()
+    };
+    assert!(apply_jmap_opened(&mut s, &listed).unwrap().is_empty());
+    assert_eq!(in_folder(&s, account, "Map").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Old plans"]);
 }

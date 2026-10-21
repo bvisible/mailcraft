@@ -2068,6 +2068,14 @@ fn a_run_for_emails_by_their_ids_takes_ten_at_most_and_one_the_server_hasnt_got_
     let pieces = by_ids(&stand_in, &asked);
     let read: usize = pieces.iter().flat_map(|piece| &piece.pages).map(|page| page.messages.len()).sum();
     assert_eq!(read, MAX_JMAP_EMAILS);
+    // With the listing, asked for when the account's folders aren't known yet: first, then the emails.
+    asked.list_folders = true;
+    asked.emails = vec![all[0].clone()];
+    let pieces = by_ids(&stand_in, &asked);
+    assert_eq!(pieces.len(), 3, "{pieces:?}");
+    assert!(pieces[0].listing.as_ref().is_some_and(|listing| listing.folders.iter().any(|f| f.id == ids.inbox)) && pieces[0].pages.is_empty());
+    assert_eq!(pieces[1].pages.iter().map(|page| page.messages.len()).sum::<usize>(), 1);
+    asked.list_folders = false;
     // None the server has.
     asked.emails = vec!["Enone".into()];
     let pieces = by_ids(&stand_in, &asked);

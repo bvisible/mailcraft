@@ -48,8 +48,9 @@ pub const MAX_BATCH_OCTETS: usize = 64 << 20;
 const _: () = assert!(MAX_BATCH_OCTETS >= MAX_MESSAGE);
 /// Messages the server wouldn't give, one after another, before the batch stops.
 const MAX_FAILED_IN_A_ROW: usize = 3;
-/// Largest answer taken to one `Email/get` of where messages are: a thousand ids with their blobs and
-/// sizes come to well under this, and what is parsed of an answer takes much more memory than the answer.
+/// Largest answer taken to one `Email/get` of where messages are: a batch's hundred ids ([`MAX_BATCH`]), or as
+/// many as a server takes in a `get` when that is fewer, with their blobs and sizes come to well under this, and
+/// what is parsed of an answer takes much more memory than the answer.
 const LOCATE_BYTES: usize = 2 << 20;
 /// The type and the file name a download is asked for: a server may put them in its answer.
 const MESSAGE_TYPE: &str = "message/rfc822";

@@ -581,7 +581,7 @@ impl<'a, H: Http> Outgoing<'a, H> {
     /// word with an `@` too, and cut.
     fn said(&self, text: &str) -> String {
         let cut = tidy(&self.secrets.hide(text), MAX_SAID);
-        cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
+        cut.split(' ').map(|word| if crate::names_an_address(word) { "***" } else { word }).collect::<Vec<&str>>().join(" ")
     }
 
     /// Who the account may send as, asked for once.

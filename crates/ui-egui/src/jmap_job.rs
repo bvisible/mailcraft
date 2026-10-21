@@ -278,6 +278,8 @@ impl MailApp {
         if !piece.pages.is_empty() {
             self.fetching.wake();
         }
+        // A folder a message read by its id went into since the run began is not emptied of it (host_menu.rs).
+        crate::host_menu::spare(self, account, &mut piece);
         match apply_jmap_mail(&mut self.session, piece) {
             Ok(said) => {
                 let errors = said["errors"].as_array().map(|all| all.iter().filter_map(Value::as_str).map(str::to_string));
@@ -311,6 +313,7 @@ impl MailApp {
     /// what still waits to go to the server doesn't start another run every few seconds.
     fn finish_jmap_run(&mut self, account: Id, stopped: bool) {
         self.jmap_rx = None;
+        crate::host_menu::run_over(self, account);
         // Its part of the run is over, however its last piece went in.
         self.session.sync_progress.end(account, stopped);
         let mut errors = std::mem::take(&mut self.jmap_problems);
@@ -360,6 +363,7 @@ impl MailApp {
     fn jmap_run_stopped_early(&mut self, account: Id) {
         log::warn!("jmap, account {account}: the run stopped without its last piece (its task ended early)");
         self.jmap_rx = None;
+        crate::host_menu::run_over(self, account);
         self.session.sync_progress.end(account, true);
         let said = tl!("Send/Receive stopped unexpectedly").to_string();
         let mut errors = std::mem::take(&mut self.jmap_problems);

@@ -411,6 +411,8 @@ impl std::fmt::Debug for JmapMailRequest {
             // //// Neoffice — (the drafts filed with the run)
             .field("drafts", &self.drafts.len())
             .field("background", &self.background)
+            // //// Neoffice — (the emails read by their ids alone)
+            .field("emails", &self.emails.len())
             .finish()
     }
 }
@@ -752,7 +754,8 @@ mod tests {
         // //// Neoffice — (with the drafts filed, and the copies nobody wants)
         assert_eq!(
             format!("{request:?}"),
-            "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, drafts: 1, background: true }"
+            // //// Neoffice — (with the emails read by their ids alone)
+            "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, drafts: 1, background: true, emails: 1 }"
         );
         // //// Neoffice — (likewise)
         assert_eq!(

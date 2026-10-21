@@ -737,3 +737,160 @@ fn message_open_names_a_mailbox_the_page_handed_over_and_an_email_s_id() {
     let (mut alone, _, _, _) = page();
     assert_eq!(open(&mut alone, ADA, "A9"), Some(open_refused("This window can't ask the server for the message.")));
 }
+
+/// A runner of the window's JMAP jobs that answers nothing by itself: each job's request and the way to answer it are
+/// kept, for the test to answer as it likes, in the order it likes.
+#[derive(Clone, Default)]
+struct Hand {
+    jobs: std::rc::Rc<std::cell::RefCell<Vec<(mailcraft_model::sync::JmapMailRequest, std::sync::mpsc::Sender<JmapMailResult>)>>>,
+}
+
+impl Hand {
+    fn serve(app: &mut MailApp) -> Hand {
+        let hand = Hand::default();
+        let kept = hand.clone();
+        app.services.jmap = Some(Box::new(move |job: crate::jmap_job::JmapJob| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            kept.jobs.borrow_mut().push((job.request, tx));
+            rx
+        }));
+        hand
+    }
+
+    fn request(&self, job: usize) -> mailcraft_model::sync::JmapMailRequest {
+        self.jobs.borrow()[job].0.clone()
+    }
+
+    /// Answer the job `job` with `piece`.
+    fn send(&self, job: usize, piece: JmapMailResult) {
+        self.jobs.borrow()[job].1.send(JmapMailResult { email: ADA.into(), ..piece }).unwrap();
+    }
+}
+
+fn last_piece() -> JmapMailResult {
+    JmapMailResult { partial: false, ..Default::default() }
+}
+
+fn piece_of(pages: Vec<MessagePage>) -> JmapMailResult {
+    JmapMailResult { pages, partial: true, ..Default::default() }
+}
+
+/// A hosting page's window that has just opened: Ada's mailbox handed over, and no Send/Receive has listed its
+/// folders yet.
+fn cold() -> (MailApp, Id) {
+    let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
+    app.autosave = false;
+    app.auto_sync = false;
+    app.services.jmap_host_credentials = true;
+    app.session.keeps_local = false;
+    let added = app.execute("account.add", json!({"email": ADA, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
+    app.services.host_menu = Some(Menu::new(vec![Handed { email: ADA.into(), name: String::new() }]));
+    (app, added["id"].as_u64().unwrap())
+}
+
+fn ada_folders() -> Vec<GraphFolder> {
+    vec![
+        listed("Min", "", "INBOX", FolderKind::Inbox),
+        listed("Mpr", "", "Projects", FolderKind::Custom),
+        listed("Map", "Mpr", "Apollo", FolderKind::Custom),
+    ]
+}
+
+#[test]
+fn a_link_followed_as_the_tab_opens_lists_the_folders_with_the_message() {
+    let (mut app, ada) = cold();
+    assert!(!app.session.mailbox.folders.iter().any(|f| f.account == ada && f.server.is_some()), "no folder is known");
+    let hand = Hand::serve(&mut app);
+    assert_eq!(open(&mut app, ADA, "A9"), None);
+    // The run asks for the folders too, as none is known.
+    assert!(hand.request(0).list_folders && hand.request(0).emails == ["A9"]);
+    hand.send(0, JmapMailResult { listing: Some(FolderListing { folders: ada_folders(), complete: true }), partial: true, ..Default::default() });
+    hand.send(0, piece_of(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }]));
+    hand.send(0, last_piece());
+    assert_eq!(poll(&mut app), vec![opened()]);
+    let message = super::here(&app, ada, "A9").unwrap();
+    assert_eq!(app.session.view.folder, folder_of(&app, ada, "Map"));
+    assert_eq!(app.session.sel.messages, vec![message]);
+}
+
+#[test]
+fn a_message_whose_folder_isnt_known_yet_waits_for_the_send_receive_that_lists_it() {
+    let (mut app, ada) = cold();
+    let hand = Hand::serve(&mut app);
+    assert_eq!(open(&mut app, ADA, "A9"), None);
+    // The server has it, but the run brought no listing (it failed to): its folder isn't here.
+    hand.send(0, piece_of(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }]));
+    hand.send(0, last_piece());
+    assert!(poll(&mut app).is_empty(), "it waits, the run over");
+    assert!(super::here(&app, ada, "A9").is_none() && super::waiting(&app));
+    // The tab's first Send/Receive lists the folders: the message goes in, and is shown.
+    let listing = JmapMailResult {
+        account: ada,
+        email: ADA.into(),
+        listing: Some(FolderListing { folders: ada_folders(), complete: true }),
+        ..Default::default()
+    };
+    apply_jmap_mail(&mut app.session, listing).unwrap();
+    assert_eq!(poll(&mut app), vec![opened()]);
+    assert_eq!(app.session.view.folder, folder_of(&app, ada, "Map"));
+
+    // One whose folder never comes is said to be so, not missing from the server.
+    let (mut app, _) = cold();
+    let hand = Hand::serve(&mut app);
+    assert_eq!(open(&mut app, ADA, "A9"), None);
+    hand.send(0, piece_of(vec![MessagePage { folder: "Mxx".into(), messages: vec![mail("A9", "Mxx", false)], ..Default::default() }]));
+    hand.send(0, last_piece());
+    assert!(poll(&mut app).is_empty());
+    if let Some(menu) = app.services.host_menu.as_mut() {
+        menu.opening[0].until = 0.0;
+    }
+    assert_eq!(poll(&mut app), vec![open_refused("The message's folder isn't known here yet: try again in a moment.")]);
+}
+
+#[test]
+fn a_send_receive_under_way_doesnt_take_a_message_read_by_its_id_for_gone() {
+    let (mut app, ada, _, _) = page();
+    let hand = Hand::serve(&mut app);
+    // A Send/Receive of Ada's mailbox begins: it reads Apollo as it is now, without A9.
+    app.start_jmap_mail(ada, true).unwrap();
+    let run = 0;
+    // Meanwhile A9 arrives in Apollo, and the page opens it by its id.
+    assert_eq!(open(&mut app, ADA, "A9"), None);
+    let by_id = 1;
+    assert_eq!(hand.request(by_id).emails, ["A9"]);
+    hand.send(by_id, piece_of(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }]));
+    hand.send(by_id, last_piece());
+    assert_eq!(poll(&mut app), vec![opened()]);
+    let a9 = super::here(&app, ada, "A9").unwrap();
+    // The run's window of Apollo, whole as it read it before A9 came, then its end, whole.
+    let window = MessagePage { folder: "Map".into(), messages: vec![mail("A4", "Map", false)], afresh: true, ..Default::default() };
+    hand.send(run, JmapMailResult { pages: vec![window.clone()], partial: true, ..Default::default() });
+    hand.send(run, JmapMailResult { partial: false, whole: true, ..Default::default() });
+    for _ in 0..4 {
+        app.poll_jmap();
+    }
+    assert!(app.session.mailbox.message(a9).is_some_and(|m| !m.server.as_ref().is_some_and(|s| s.gone)), "not taken for gone, nor swept");
+    assert!(app.services.host_menu.as_ref().is_some_and(|menu| menu.spared.is_empty()), "the run is over: the next one reads it");
+
+    // The next run reads Apollo after A9 came: a window that doesn't list it is believed, as ever.
+    app.start_jmap_mail(ada, true).unwrap();
+    hand.send(2, JmapMailResult { pages: vec![window], partial: true, ..Default::default() });
+    hand.send(2, JmapMailResult { partial: false, whole: true, ..Default::default() });
+    for _ in 0..4 {
+        app.poll_jmap();
+    }
+    assert!(app.session.mailbox.message(a9).is_none(), "gone from the server since");
+}
+
+#[test]
+fn a_message_asked_for_twice_while_it_is_on_its_way_is_fetched_once_and_both_are_answered() {
+    let (mut app, _, _, _) = page();
+    let hand = Hand::serve(&mut app);
+    assert_eq!(open(&mut app, ADA, "A9"), None);
+    let again = answer(&mut app, &command(json!("second"), "message.open", json!({"account": ADA, "id": "A9"})));
+    assert_eq!(again, None);
+    assert_eq!(hand.jobs.borrow().len(), 1, "one run");
+    hand.send(0, piece_of(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }]));
+    hand.send(0, last_piece());
+    assert_eq!(poll(&mut app), vec![opened(), json!({"type": DONE, "id": "second", "ok": true})]);
+}

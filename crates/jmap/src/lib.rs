@@ -207,6 +207,12 @@ impl Secrets {
     }
 }
 
+/// Whether a word of a line may name an address, whose it may be: it holds an `@`, or the `%40` an address is written
+/// with in a URL, encoded once or twice (`%2540`). Such a word is hidden in the lines a person is shown.
+pub(crate) fn names_an_address(word: &str) -> bool {
+    word.contains('@') || word.contains("%40") || word.contains("%2540")
+}
+
 /// Server text made fit for an error message: one line, no control characters, not too long.
 fn tidy(text: &str, max_chars: usize) -> String {
     let mut out = String::new();

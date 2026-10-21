@@ -317,13 +317,14 @@ fn a_batch_that_stops_says_why_without_the_account_s_address() {
     // same, and another person's too.
     let asked =
         JmapFetchRequest { account: 7, email: "bo@example.org".into(), session: SESSION.into(), ids: vec!["E1".into()], ..Default::default() };
-    let said = "no mailbox for bo@example.org (bo%40example.org), ask zoe@example.net";
+    // (Its address written in a URL, too, once or twice encoded.)
+    let said = "no mailbox for bo@example.org (bo%40example.org, bo%2540example.org), ask zoe@example.net";
     let (client, _) = connected(vec![reply(500, &json!({"detail": said}))]);
     let got = block_on(fetch_messages(&client, &asked, &AtomicBool::new(false)));
     assert_eq!(got.errors.len(), 1, "{:?}", got.errors);
     let line = &got.errors[0];
     assert!(line.starts_with("Couldn't download the messages from the server: ") && line.contains("no mailbox for"), "{line}");
-    for shown in ["bo@", "bo%40", "zoe@", "example"] {
+    for shown in ["bo@", "bo%40", "bo%25", "zoe@", "example"] {
         assert!(!line.contains(shown), "{shown} in {line}");
     }
     // And when the batch could not begin.

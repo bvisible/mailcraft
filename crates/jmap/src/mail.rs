@@ -47,8 +47,9 @@
 //! was set, which is looked at before every request.
 //!
 //! **Emails by their ids.** A request that names `emails` (a message opened from elsewhere that no window has
-//! brought yet) is a run of its own: `Mailbox/get`, then one `Email/get` of those emails, ten at most, each read
-//! as a window reads an email it has not got and put in the mailbox whose window would list it, in one piece of
+//! brought yet) is a run of its own: `Mailbox/get` (a piece of the listing when the request asks for one), then one
+//! `Email/get` of those emails, ten at most, each read as a window reads an email it has not got and put in the
+//! mailbox whose window would list it (one that lies in none of the list's, in the first it names), in one piece of
 //! pages that are not the whole of their mailboxes; nothing goes up, nothing is sent, no window is read, and the
 //! last piece is never `whole` (it read no mailbox to its end).
 //!
@@ -121,10 +122,12 @@ const MAX_LINE: usize = 300;
 const SECRET_ID: usize = 8;
 /// The most an answer may be, in bytes, by what is asked: what is parsed out of an answer takes many times
 /// its size in memory, so a request is given no more than it can need. A list of mailboxes (10,000 at the
-/// most), the ids and keywords of a window (500), and the header fields of 200 emails.
+/// most), the ids and keywords of a window (500), the header fields of 200 emails, and those of the ten emails
+/// at most that a run reads by their ids.
 const LIST_BYTES: usize = 4 << 20;
 const WINDOW_BYTES: usize = 2 << 20;
 const DETAILS_BYTES: usize = 8 << 20;
+const BY_ID_BYTES: usize = 1 << 20;
 
 /// What the mailboxes' list asks for, and what an email is read for in the window and for a message list.
 const MAILBOX_PROPERTIES: [&str; 6] = ["id", "name", "parentId", "role", "totalEmails", "unreadEmails"];
@@ -387,6 +390,12 @@ impl<'a, H: Http> Run<'a, H> {
     async fn all(&self, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
         if !self.request.emails.is_empty() {
             let places = self.list(out).await?;
+            // (Asked for when the account's folders aren't known yet: the emails need their folders to be put in.)
+            if self.request.list_folders
+                && let Some(places) = &places
+            {
+                emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
+            }
             return self.by_id(places.as_ref(), out, emit).await;
         }
         // What was changed here goes up first: what is read then is the server after it.
@@ -451,7 +460,7 @@ impl<'a, H: Http> Run<'a, H> {
             return Ok(());
         }
         let args = json!({"accountId": self.client.account_id(), "ids": ids, "properties": EMAIL_PROPERTIES});
-        let mut answers = self.client.mail_within(vec![("Email/get", args)], DETAILS_BYTES).await.map_err(|e| self.call_stop(e))?;
+        let mut answers = self.client.mail_within(vec![("Email/get", args)], BY_ID_BYTES).await.map_err(|e| self.call_stop(e))?;
         let got = answers.take(0).map_err(Self::method_stop)?;
         let Some(list) = got.get("list").and_then(Value::as_array) else {
             out.details = (ids.len(), Some(self.said(&Error::Protocol("the answer has no list of emails".into()))));
@@ -463,7 +472,9 @@ impl<'a, H: Http> Run<'a, H> {
         for email in list.iter().take(ids.len()) {
             // Only what was asked for, once.
             let Some(id) = email.get("id").and_then(Value::as_str).filter(|id| ids.contains(id) && !taken.contains(*id)) else { continue };
-            let Some(mailbox) = home(email.get("mailboxIds"), claimable) else { continue };
+            // (One that lies in no mailbox of the list goes to the first mailbox it names: this window doesn't show
+            // it, and says so rather than that the server hasn't got it.)
+            let Some(mailbox) = home(email.get("mailboxIds"), claimable).or_else(|| home(email.get("mailboxIds"), None)) else { continue };
             taken.insert(id);
             let message = message::whole(id, mailbox, email, Marks::of(email.get("keywords")));
             match pages.iter_mut().find(|page| page.folder == mailbox) {
@@ -815,5 +826,5 @@ pub(crate) fn secrets_of(email: &str, session: &str, client: &Secrets, account_i
 /// that holds an `@` (an address, whose it may be), or the `%40` it is written as in an address, hidden after.
 pub(crate) fn said(secrets: &Secrets, error: &Error) -> String {
     let cut = message::line(&secrets.hide(&error.to_string()), MAX_LINE);
-    cut.split(' ').map(|word| if word.contains('@') || word.contains("%40") { "***" } else { word }).collect::<Vec<&str>>().join(" ")
+    cut.split(' ').map(|word| if crate::names_an_address(word) { "***" } else { word }).collect::<Vec<&str>>().join(" ")
 }

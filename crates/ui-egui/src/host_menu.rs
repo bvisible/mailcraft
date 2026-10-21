@@ -29,7 +29,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use mailcraft_engine::Scope;
 use mailcraft_engine::cmd::jmap_down::plausible_id;
 use mailcraft_engine::cmd::jmap_mail::apply_jmap_opened;
-use mailcraft_model::sync::{JmapMailRequest, JmapMailResult, JmapScope};
+use mailcraft_model::sync::{JmapMailRequest, JmapMailResult, JmapScope, MessagePage};
 use mailcraft_model::{AccountKind, Folder, FolderKind, Id, Mailbox};
 use serde_json::{Map, Value, json};
 
@@ -60,26 +60,31 @@ const MAX_QUERY: usize = 2_000;
 pub const OPEN_WAIT_MS: f64 = 30_000.0;
 const MAX_OPENING: usize = 8;
 
-/// What a hosting page that draws the navigation in its own menu handed over, and the messages it opened that are on
-/// their way from their server.
+/// What a hosting page that draws the navigation in its own menu handed over, the messages it opened that are on
+/// their way from their server, and the folders a Send/Receive under way must not empty of them.
 #[derive(Default)]
 pub struct Menu {
     /// The mailboxes, in the page's order.
     pub mailboxes: Vec<Handed>,
     opening: Vec<Opening>,
+    /// The account and the server id of each folder a message read by its id went into while a Send/Receive of that
+    /// account was under way: that run read the folder before the message was there, perhaps, and its window of it,
+    /// whole as it may be, is not taken for the whole of the folder ([`spare`]) until the run is over ([`run_over`]).
+    spared: Vec<(Id, String)>,
 }
 
 impl Menu {
     /// The menu of a page that handed over `mailboxes`, in its order.
     pub fn new(mailboxes: Vec<Handed>) -> Menu {
-        Menu { mailboxes, opening: Vec::new() }
+        Menu { mailboxes, ..Default::default() }
     }
 }
 
-/// A message the page opened that is on its way from its server: the command's id, the account and the email's id,
-/// the run that reads it, and until when it is waited for.
+/// A message the page opened that is on its way from its server: the ids of the commands that wait for it (the page
+/// may ask again before it comes), the account and the email's id, the run that reads it, and until when it is waited
+/// for.
 struct Opening {
-    id: Value,
+    ids: Vec<Value>,
     account: Id,
     email: String,
     pieces: Receiver<JmapMailResult>,
@@ -88,6 +93,11 @@ struct Opening {
     /// What the run said went wrong, and whether the server refused the sign-in.
     errors: Vec<String>,
     refused: bool,
+    /// The run is over (its last piece came, or it went).
+    over: bool,
+    /// What it brought for a folder that isn't here yet (a tab whose first Send/Receive hasn't listed the folders):
+    /// handed in again at each look, until it is.
+    held: Vec<MessagePage>,
 }
 
 /// A mailbox the page handed over, as it said it.
@@ -240,7 +250,7 @@ pub enum Incoming {
     Refused { id: Value, reason: String },
 }
 
-/// The page's message `text` (its JSON): a command of the seven, with what it names, or why it is refused.
+/// The page's message `text` (its JSON): a command of the eight, with what it names, or why it is refused.
 pub fn read(text: &str) -> Incoming {
     if text.len() > MAX_MESSAGE {
         return Incoming::Ignored;
@@ -275,7 +285,7 @@ fn unknown() -> String {
     tl!("MailCraft doesn't take this command from the page.").to_string()
 }
 
-/// The command `name` with `params`, when it is one of the seven and they are what it takes (nothing more).
+/// The command `name` with `params`, when it is one of the eight and they are what it takes (nothing more).
 fn command(name: &str, params: &Map<String, Value>) -> Result<Command, String> {
     let only = |keys: &[&str]| params.keys().all(|k| keys.contains(&k.as_str()));
     let text = |key: &str, max: usize| params.get(key).and_then(Value::as_str).filter(|v| v.chars().count() <= max);
@@ -386,12 +396,16 @@ fn fetch(app: &mut MailApp, account: Id, id: &str) -> Result<Fetching, String> {
     if !app.services.jmap_host_credentials {
         return Err(cannot());
     }
+    // The run lists the folders too when none of the account's is known yet (a tab that has just opened): the email
+    // is put in its folder.
+    let tied = app.session.mailbox.folders.iter().any(|f| f.account == account && f.server.is_some());
     let request = JmapMailRequest {
         account,
         email: a.email.clone(),
         session: server.session.clone(),
         bearer: server.bearer,
         window: 1,
+        list_folders: !tied,
         scope: JmapScope::Light { also: Vec::new() },
         emails: vec![id.to_string()],
         ..Default::default()
@@ -401,17 +415,33 @@ fn fetch(app: &mut MailApp, account: Id, id: &str) -> Result<Fetching, String> {
     Ok((account, runner(JmapJob { request, secret: None, cancel: cancel.clone() }), cancel))
 }
 
-/// `message.open`: the message shown at once when this window has it (`None`), else the run that brings it from its
-/// server.
-fn open(app: &mut MailApp, account: &str, email: &str) -> Result<Option<Fetching>, String> {
+/// What `message.open` comes to at once.
+enum Opened {
+    /// The window has the message: shown.
+    Shown,
+    /// The message is on its way already, for an earlier command: this one waits with it.
+    Joined,
+    /// The run that brings it from its server.
+    Fetching(Fetching),
+}
+
+/// `message.open`: the message shown at once when this window has it, else the run that brings it from its server
+/// (one for each message: a second command for one on its way waits with the first).
+fn open(app: &mut MailApp, account: &str, email: &str, id: &Value) -> Result<Opened, String> {
     let account = named_account(app, account)?;
     if let Some(message) = here(app, account, email) {
-        return show(app, message).map(|()| None);
+        return show(app, message).map(|()| Opened::Shown);
+    }
+    if let Some(menu) = app.services.host_menu.as_mut()
+        && let Some(on_its_way) = menu.opening.iter_mut().find(|o| o.account == account && o.email == email)
+    {
+        on_its_way.ids.push(id.clone());
+        return Ok(Opened::Joined);
     }
     if app.services.host_menu.as_ref().is_some_and(|menu| menu.opening.len() >= MAX_OPENING) {
         return Err(tl!("Too many messages are being opened at once.").to_string());
     }
-    fetch(app, account, email).map(Some)
+    fetch(app, account, email).map(Opened::Fetching)
 }
 
 /// The answer to a command: done, or why not.
@@ -430,16 +460,19 @@ pub fn answer(app: &mut MailApp, text: &str) -> Option<Value> {
         Incoming::Ignored => return None,
         Incoming::Refused { id, reason } => (id, Err(reason)),
         // A message no window has brought yet: read from its server first, and answered once it is here ([`poll`]).
-        Incoming::Command { id, command: Command::Message { account, id: email } } => match open(app, &account, &email) {
-            Ok(Some((account, pieces, cancel))) => {
+        Incoming::Command { id, command: Command::Message { account, id: email } } => match open(app, &account, &email, &id) {
+            Ok(Opened::Fetching((account, pieces, cancel))) => {
                 let until = crate::now_ms() + OPEN_WAIT_MS;
-                let opening = Opening { id, account, email, pieces, cancel, until, errors: Vec::new(), refused: false };
+                let ids = vec![id];
+                let opening =
+                    Opening { ids, account, email, pieces, cancel, until, errors: Vec::new(), refused: false, over: false, held: Vec::new() };
                 if let Some(menu) = app.services.host_menu.as_mut() {
                     menu.opening.push(opening);
                 }
                 return None;
             }
-            Ok(None) => (id, Ok(())),
+            Ok(Opened::Joined) => return None,
+            Ok(Opened::Shown) => (id, Ok(())),
             Err(reason) => (id, Err(reason)),
         },
         Incoming::Command { id, command } => (id, run(app, &command)),
@@ -454,55 +487,101 @@ pub fn waiting(app: &MailApp) -> bool {
 }
 
 /// Once a frame: take in what the runs of the messages the page opened brought, and the answers of those that are
-/// over: shown, not on the server, or not come in time (that run is stopped).
+/// over: shown, not on the server, not placed in time (its folder isn't known here yet), or not come in time (that
+/// run is stopped).
 pub fn poll(app: &mut MailApp) -> Vec<Value> {
     let Some(menu) = app.services.host_menu.as_mut() else { return Vec::new() };
     let opening = std::mem::take(&mut menu.opening);
     let now = crate::now_ms();
     let (mut answers, mut waits) = (Vec::new(), Vec::new());
     for mut o in opening {
-        let mut over = false;
-        loop {
+        while !o.over {
             match o.pieces.try_recv() {
                 Ok(mut piece) => {
-                    over |= !piece.partial;
+                    o.over = !piece.partial;
                     o.refused |= piece.auth_refused;
                     o.errors.extend(piece.errors.iter().take(4).cloned());
                     // The run's pieces are for its account, whatever they name; the engine still checks the address.
                     piece.account = o.account;
-                    let _ = apply_jmap_opened(&mut app.session, &piece);
-                    if over {
-                        break;
-                    }
+                    take_in(app, &mut o, &piece);
                 }
                 Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    over = true;
-                    break;
-                }
+                Err(TryRecvError::Disconnected) => o.over = true,
             }
         }
-        match here(app, o.account, &o.email) {
-            Some(message) => answers.push(done(o.id, show(app, message))),
-            None if over => {
-                let why = match o.errors.first() {
-                    Some(line) => crate::i18n::run_words::refusal(line, &app.session.mailbox).into_owned(),
-                    None if o.refused => crate::i18n::run_words::refusal("The server refused the sign-in", &app.session.mailbox).into_owned(),
-                    None => tl!("That mailbox has no such message.").to_string(),
-                };
-                answers.push(done(o.id, Err(why)));
+        // What waited for its folder, once a Send/Receive has listed it.
+        if !o.held.is_empty() {
+            let held = JmapMailResult { account: o.account, pages: std::mem::take(&mut o.held), ..Default::default() };
+            take_in(app, &mut o, &held);
+        }
+        let answer = match here(app, o.account, &o.email) {
+            Some(message) => show(app, message),
+            // The server has it, in a folder this window doesn't know yet: a Send/Receive may list it in time.
+            None if !o.held.is_empty() && now < o.until => {
+                waits.push(o);
+                continue;
             }
+            None if !o.held.is_empty() => Err(tl!("The message's folder isn't known here yet: try again in a moment.").to_string()),
+            None if o.over => Err(match o.errors.first() {
+                Some(line) => crate::i18n::run_words::refusal(line, &app.session.mailbox).into_owned(),
+                None if o.refused => crate::i18n::run_words::refusal("The server refused the sign-in", &app.session.mailbox).into_owned(),
+                None => tl!("That mailbox has no such message.").to_string(),
+            }),
             None if now >= o.until => {
                 o.cancel.store(true, Ordering::Relaxed);
-                answers.push(done(o.id, Err(tl!("The message didn't come from the server in time.").to_string())));
+                Err(tl!("The message didn't come from the server in time.").to_string())
             }
-            None => waits.push(o),
-        }
+            None => {
+                waits.push(o);
+                continue;
+            }
+        };
+        answers.extend(o.ids.into_iter().map(|id| done(id, answer.clone())));
     }
     if let Some(menu) = app.services.host_menu.as_mut() {
         menu.opening.extend(waits);
     }
     answers
+}
+
+/// Take in a piece of the run of `o`: what it brought for a folder that isn't here yet is held for the next look, and
+/// a folder a message went into while a Send/Receive of the account is under way is spared by that run ([`spare`]).
+fn take_in(app: &mut MailApp, o: &mut Opening, piece: &JmapMailResult) {
+    let waiting = match apply_jmap_opened(&mut app.session, piece) {
+        Ok(waiting) => waiting,
+        Err(e) => {
+            o.errors.push(e.to_string());
+            return;
+        }
+    };
+    let running = app.jmap_rx.as_ref().is_some_and(|(account, _, _)| *account == o.account);
+    if running && let Some(menu) = app.services.host_menu.as_mut() {
+        for page in piece.pages.iter().filter(|page| !waiting.iter().any(|w| w.folder == page.folder)) {
+            if !menu.spared.iter().any(|(account, folder)| *account == o.account && *folder == page.folder) {
+                menu.spared.push((o.account, page.folder.clone()));
+            }
+        }
+    }
+    o.held.extend(waiting);
+}
+
+/// A piece of the Send/Receive of `account` under way, before the window takes it in: a window of a folder that a
+/// message read by its id went into since the run began is not the whole of the folder (the message may have come
+/// after the run read it), so that nothing of the folder is taken for gone by this run.
+pub(crate) fn spare(app: &MailApp, account: Id, piece: &mut JmapMailResult) {
+    let Some(menu) = app.services.host_menu.as_ref() else { return };
+    for page in piece.pages.iter_mut().filter(|page| page.afresh) {
+        if menu.spared.iter().any(|(spared, folder)| *spared == account && *folder == page.folder) {
+            page.afresh = false;
+        }
+    }
+}
+
+/// The Send/Receive of `account` is over: the next one reads the folders after the messages read by their ids.
+pub(crate) fn run_over(app: &mut MailApp, account: Id) {
+    if let Some(menu) = app.services.host_menu.as_mut() {
+        menu.spared.retain(|(spared, _)| *spared != account);
+    }
 }
 
 #[cfg(test)]
