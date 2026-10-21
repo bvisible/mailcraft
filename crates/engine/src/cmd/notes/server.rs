@@ -19,16 +19,21 @@
 //!   the mailbox no longer says, so the opposite is noted.
 //! - **A change that went and got no answer** stays noted with what went ([`NoteChange::sent`]), through an undo and
 //!   words typed back: the server may have written it, so what the note says goes there over it, and a read takes the
-//!   server's copy of what went for hers, never for someone else's words.
+//!   server's copy of what went for hers, never for someone else's words. A deletion that went without an answer and
+//!   was undone waits to know whether the server deleted the note ([`NoteChange::undeleted`]): if it did, the note is
+//!   made there anew.
+//! - **A server that stops keeping notes**, or an account whose address or server is changed, lets its notes go; what
+//!   waited to go stays, as this computer's own, or held by a page that keeps none ([`NoteHold`]) until the very same
+//!   server keeps notes again: then each goes back as the change of that very note it was, never as a copy.
 //!
 //! Like mail that arrives, taking a server's answer or its notes in is not an undo step; once a server was told
 //! anything, the undo history is forgotten.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use mailcraft_model::note::{
-    MAX_NOTE_CHANGES, MAX_NOTE_OPS, MAX_NOTES, Note, NoteChange, NoteChangeKind, NoteFields, NoteOp, NoteOutcome, NoteResult, NoteRights,
+    MAX_NOTE_CHANGES, MAX_NOTE_OPS, MAX_NOTES, Note, NoteChange, NoteChangeKind, NoteFields, NoteHold, NoteOp, NoteOutcome, NoteResult, NoteRights,
     NotesDownload, NotesUpload, NotesUploaded, RemoteNote,
 };
 use mailcraft_model::{Id, Mailbox, Origin};
@@ -290,8 +295,12 @@ pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
             continue;
         }
         let same = |kept: &&mut NoteChange| kept.kind == NoteChangeKind::Update && kept.note == id && kept.remote == change.remote;
+        let full = back.notes.changes.len() >= MAX_NOTE_CHANGES;
         match back.notes.changes.iter_mut().find(same) {
             Some(kept) => (kept.undeleted, kept.retry_at) = (true, 0),
+            None if full => {
+                log::warn!("notes: a deletion undone after it went unanswered couldn't be noted: too many changes wait");
+            }
             None => {
                 let base = change.base.clone().or_else(|| back.notes.note(id).map(|note| Box::new(note.clone())));
                 back.notes.changes.push(NoteChange {
@@ -312,6 +321,7 @@ pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
             continue;
         }
         let same = |kept: &&mut NoteChange| kept.kind == NoteChangeKind::Update && kept.note == change.note && kept.remote == change.remote;
+        let full = back.notes.changes.len() >= MAX_NOTE_CHANGES;
         match back.notes.changes.iter_mut().find(same) {
             Some(kept) => {
                 for sent in &change.sent {
@@ -322,6 +332,9 @@ pub(crate) fn keep_unanswered(back: &mut Mailbox, now: &Mailbox) {
                 let over = kept.sent.len().saturating_sub(mailcraft_model::note::MAX_UNANSWERED);
                 kept.sent.drain(..over);
                 kept.retry_at = 0;
+            }
+            None if full => {
+                log::warn!("notes: a change undone after it went unanswered couldn't be noted: too many changes wait");
             }
             None => back.notes.changes.push(NoteChange { retry_at: 0, ..change.clone() }),
         }
@@ -361,13 +374,27 @@ pub fn settle_note_changes(s: &mut Session) -> usize {
     dropped
 }
 
+/// Whether a change waits for a read rather than for a moment: a change of words whose version isn't known, or one of
+/// a note whose deletion was undone with nothing more to tell ([`notes_need_read`]).
+fn waits_for_read(mailbox: &Mailbox, change: &NoteChange) -> bool {
+    if change.kind != NoteChangeKind::Update {
+        return false;
+    }
+    let (Some(note), Some(base)) = (mailbox.notes.note(change.note), change.base.as_deref()) else { return false };
+    let fields = with(changed(base, note), unanswered(change, note));
+    (fields.has_words() && base.version.is_empty()) || (change.undeleted && fields.is_empty())
+}
+
 /// How much of an account's notes waits to go to its server: due now, all of it, and when the next held back is due.
+/// (What waits for a read is not due: [`notes_need_read`].)
 pub fn notes_waiting(s: &Session, account: Id) -> EventsWaiting {
     let mut waiting = EventsWaiting::default();
     let now = s.now();
     for change in s.mailbox.notes.changes.iter().filter(|change| change.account == account && fits(&s.mailbox, change)) {
         waiting.total += 1;
-        if change.retry_at <= now {
+        if waits_for_read(&s.mailbox, change) {
+            // (Not due: nothing of it can go before a read, which [`notes_need_read`] asks for.)
+        } else if change.retry_at <= now {
             waiting.due += 1;
         } else {
             waiting.next = Some(waiting.next.map_or(change.retry_at, |next| next.min(change.retry_at)));
@@ -481,6 +508,127 @@ impl NotesMerged {
     }
 }
 
+/// The server of `account` keeps no notes (any more), or the account is now another's (its address or server changed):
+/// its notes go, and what waited to go there is kept, never dropped: on this computer as its own, or, on a page that
+/// keeps none of its own, held until the page is left (it asks before) or the very same server keeps notes again
+/// ([`NoteHold`]).
+fn let_go(s: &mut Session, account: Id) -> NotesMerged {
+    let mut merged = NotesMerged::default();
+    let keeps_local = s.keeps_local;
+    let (email, session) = s.mailbox.account(account).map(|a| (a.email.trim().to_string(), session_of(a))).unwrap_or_default();
+    let notes = &mut s.mailbox.notes;
+    let had = notes.servers.iter().any(|server| server.account == account) || notes.items.values().any(|note| note.origin.account == account);
+    if !had {
+        return merged;
+    }
+    // (A new note, one changed here, and one the server refused to make, here alone: the words that waited to go; and
+    // what each change was made over.)
+    let mut waiting: HashMap<Id, Option<Box<Note>>> = HashMap::new();
+    for change in notes.changes.iter().filter(|change| change.account == account && change.kind != NoteChangeKind::Delete) {
+        let base = if change.kind == NoteChangeKind::Update { change.base.clone() } else { None };
+        waiting.insert(change.note, base);
+    }
+    for note in notes.items.values().filter(|note| note.origin.account == account && note.origin.id.is_empty()) {
+        waiting.entry(note.id).or_insert(None);
+    }
+    notes.servers.retain(|server| server.account != account);
+    notes.changes.retain(|change| change.account != account);
+    let ours: Vec<Id> = notes.items.values().filter(|note| note.origin.account == account).map(|note| note.id).collect();
+    for id in ours {
+        let Some(base) = waiting.get(&id) else {
+            notes.items.remove(&id);
+            merged.removed += 1;
+            continue;
+        };
+        if let Some(note) = notes.note_mut(id) {
+            let held = (!keeps_local).then(|| {
+                let remote = if base.is_some() { note.origin.id.clone() } else { String::new() };
+                Box::new(NoteHold { account, email: email.clone(), session: session.clone(), remote, base: base.clone() })
+            });
+            let mut own = Note {
+                id,
+                title: note.title.clone(),
+                text: note.text.clone(),
+                pinned: note.pinned,
+                archived: note.archived,
+                held,
+                ..Default::default()
+            };
+            (own.created, own.updated) = (note.created, note.updated);
+            *note = own;
+        }
+    }
+    if !waiting.is_empty() {
+        merged.messages.push(if keeps_local { NO_LONGER_KEPT } else { NO_LONGER_KEPT_PAGE }.to_string());
+    }
+    s.mailbox_changed();
+    merged
+}
+
+/// What a hold says the server of an account is: its JMAP session, or none.
+fn session_of(account: &mailcraft_model::Account) -> String {
+    account.jmap.as_ref().map(|jmap| jmap.session.trim().to_string()).unwrap_or_default()
+}
+
+/// The notes a page held of `account`'s server, given back to it now that it keeps notes again, when it is the very same
+/// server (the account's address and session as they were): a new one is to be made there; one it had, a change of it
+/// that waits to know whether it is still there ([`NoteChange::undeleted`], [`NoteChange::resumed`]), told against the
+/// oldest version so that it never goes over other words. As many as there is room to note; how many.
+fn give_back(mailbox: &mut Mailbox, account: Id, salt: u64) -> usize {
+    let Some(owner) = mailbox.account(account) else { return 0 };
+    let (email, session) = (owner.email.trim().to_string(), session_of(owner));
+    let same = |hold: &NoteHold| hold.account == account && hold.email.eq_ignore_ascii_case(&email) && hold.session == session;
+    let mut held: Vec<Id> =
+        mailbox.notes.items.values().filter(|note| note.origin.is_local() && note.held.as_deref().is_some_and(same)).map(|note| note.id).collect();
+    held.sort_unstable();
+    let mut given = 0;
+    for id in held {
+        if mailbox.notes.changes.len() >= MAX_NOTE_CHANGES {
+            break;
+        }
+        let Some(hold) = mailbox.notes.note_mut(id).and_then(|note| note.held.take()) else { continue };
+        let NoteHold { remote, base, .. } = *hold;
+        let had = !remote.is_empty() && mailbox.notes.by_remote(account, &remote).is_none();
+        match base.filter(|_| had) {
+            Some(mut base) => {
+                if let Some(note) = mailbox.notes.note_mut(id) {
+                    // Hers as she left it, the server's as it was.
+                    let mut back = Note { id, origin: Origin { account, id: remote.clone(), ..Default::default() }, ..(*base).clone() };
+                    (back.title, back.text, back.pinned, back.archived) = (note.title.clone(), note.text.clone(), note.pinned, note.archived);
+                    (back.created, back.updated) = (note.created, note.updated);
+                    back.token.clear();
+                    *note = back;
+                }
+                base.version = OLDEST_VERSION.to_string();
+                mailbox.notes.changes.push(NoteChange {
+                    account,
+                    kind: NoteChangeKind::Update,
+                    note: id,
+                    remote,
+                    base: Some(base),
+                    undeleted: true,
+                    resumed: true,
+                    ..Default::default()
+                });
+            }
+            None => {
+                if let Some(note) = mailbox.notes.note_mut(id) {
+                    note.origin.account = account;
+                }
+                note_created(mailbox, id, salt);
+            }
+        }
+        given += 1;
+    }
+    given
+}
+
+/// `account`'s address or server was changed: it is another's now, and what was the old server's of notes is let go as
+/// when a server stops keeping notes ([`let_go`]); nothing of it goes to the new one. What is said of it, for the log.
+pub fn account_moved(s: &mut Session, account: Id) -> Vec<String> {
+    let_go(s, account).messages
+}
+
 /// Take in what a server has of an account's notes ([`NotesDownload`]): see the module. Nothing is changed when this
 /// returns an error.
 pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMerged, CmdError> {
@@ -489,59 +637,19 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
     download.tidy();
     let mut merged = NotesMerged::default();
     let keeps_local = s.keeps_local;
-    let notes = &mut s.mailbox.notes;
     if !download.offered {
-        // The server no longer keeps notes (or never did): its notes go, and what waited to be made there is kept on
-        // this computer where that is kept.
-        let had = notes.servers.iter().any(|server| server.account == account) || notes.items.values().any(|note| note.origin.account == account);
-        if !had {
-            return Ok(merged);
-        }
-        // (A new note, one changed here, and one the server refused to make, here alone: the words that waited to go.)
-        let mut waiting: HashSet<Id> = notes
-            .changes
-            .iter()
-            .filter(|change| change.account == account && change.kind != NoteChangeKind::Delete)
-            .map(|change| change.note)
-            .collect();
-        waiting.extend(notes.items.values().filter(|note| note.origin.account == account && note.origin.id.is_empty()).map(|note| note.id));
-        notes.servers.retain(|server| server.account != account);
-        notes.changes.retain(|change| change.account != account);
-        let ours: Vec<Id> = notes.items.values().filter(|note| note.origin.account == account).map(|note| note.id).collect();
-        for id in ours {
-            // Kept, never dropped: on this computer, or on this page until it is left (it asks before).
-            if waiting.contains(&id) {
-                if let Some(note) = notes.note_mut(id) {
-                    let mut own = Note {
-                        id,
-                        title: note.title.clone(),
-                        text: note.text.clone(),
-                        pinned: note.pinned,
-                        archived: note.archived,
-                        // (A page keeps none of its own: the server's again once it keeps notes again.)
-                        held_for: if keeps_local { 0 } else { account },
-                        ..Default::default()
-                    };
-                    (own.created, own.updated) = (note.created, note.updated);
-                    *note = own;
-                }
-            } else {
-                notes.items.remove(&id);
-                merged.removed += 1;
-            }
-        }
-        if !waiting.is_empty() {
-            merged.messages.push(if keeps_local { NO_LONGER_KEPT } else { NO_LONGER_KEPT_PAGE }.to_string());
-        }
-        s.mailbox_changed();
-        return Ok(merged);
+        return Ok(let_go(s, account));
     }
     let mut server = download.server.clone();
     server.account = account;
-    match notes.servers.iter_mut().find(|kept| kept.account == account) {
+    match s.mailbox.notes.servers.iter_mut().find(|kept| kept.account == account) {
         Some(kept) => *kept = server,
-        None => notes.servers.push(server),
+        None => s.mailbox.notes.servers.push(server),
     }
+    // The notes a page held when this very server stopped keeping notes (it keeps none of its own) go back to it.
+    let salt = s.rev();
+    let held = if keeps_local { 0 } else { give_back(&mut s.mailbox, account, salt) };
+    let notes = &s.mailbox.notes;
     // The notes a change of waits for (they are as they are here), and those deleted here (they stay deleted).
     let waiting: HashSet<Id> = notes.changes.iter().filter(|change| change.account == account).map(|change| change.note).collect();
     let deleted: HashSet<String> = notes
@@ -550,20 +658,6 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
         .filter(|change| change.account == account && change.kind == NoteChangeKind::Delete)
         .map(|change| change.remote.clone())
         .collect();
-    // The notes a page kept when this server stopped keeping notes (it keeps none of its own) are the server's again,
-    // to be made there.
-    let held: Vec<Id> = if keeps_local {
-        Vec::new()
-    } else {
-        notes.items.values().filter(|note| note.origin.is_local() && note.held_for == account).map(|note| note.id).collect()
-    };
-    let salt = s.rev();
-    for id in &held {
-        if let Some(note) = s.mailbox.notes.note_mut(*id) {
-            (note.origin.account, note.held_for) = (account, 0);
-        }
-        note_created(&mut s.mailbox, *id, salt);
-    }
     let mut seen: HashSet<String> = HashSet::new();
     for remote in &download.notes {
         seen.insert(remote.id.clone());
@@ -615,14 +709,19 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             merged.updated += 1;
         }
     }
-    // A note whose deletion was undone after it went without an answer, in the read: the server never deleted it, and
-    // nothing is made anew. What was changed of it since still goes; a change with nothing to tell goes.
+    // (No longer there: not in a whole read, or not in a list read whole, whether or not all its notes could be read.)
+    let listed: Option<HashSet<String>> = download.listed.as_ref().map(|listed| listed.iter().cloned().collect());
+    let there = |remote: &str| seen.contains(remote) || listed.as_ref().is_some_and(|listed| listed.contains(remote));
+    let gone_there = |remote: &str| (download.complete && !seen.contains(remote)) || listed.as_ref().is_some_and(|listed| !listed.contains(remote));
+    // A note whose deletion was undone after it went without an answer (or that a page held), still there: the server
+    // never deleted it, and nothing is made anew. What was changed of it since still goes; a change with nothing to
+    // tell goes.
     let kept_there: Vec<Id> = s
         .mailbox
         .notes
         .changes
         .iter()
-        .filter(|change| change.account == account && change.undeleted && seen.contains(&change.remote))
+        .filter(|change| change.account == account && change.undeleted && there(&change.remote))
         .map(|change| change.note)
         .collect();
     for id in &kept_there {
@@ -653,8 +752,9 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
             // A change of words waiting for the version a read brings, of a note a whole read no longer finds (deleted
             // there, or no longer shared): no read brings one. It goes with the oldest version, never over other words;
             // the server says the note is gone, and her words are kept as a note of her own.
-            if download.complete && !seen.contains(&remote) {
-                // (One whose deletion she undid, deleted there after all: made anew with her words, below.)
+            if gone_there(&remote) {
+                // (One whose deletion she undid, or that a page held, deleted there after all: made anew with her
+                // words, below.)
                 if notes.changes.iter().any(|change| change.account == account && change.note == id && change.undeleted) {
                     deleted_there.push(id);
                     kept_names.insert(remote);
@@ -680,12 +780,20 @@ pub fn merge_notes(s: &mut Session, download: &NotesDownload) -> Result<NotesMer
     }
     for id in &deleted_there {
         let title = called(s.mailbox.notes.note(*id));
+        // (Held by a page, and changed there by her: her version, kept; a deletion she undid: made anew.)
+        let held = s.mailbox.notes.changes.iter().any(|change| change.note == *id && change.resumed);
+        let shared = s.mailbox.notes.note(*id).is_some_and(|note| note.shared);
         s.mailbox.notes.changes.retain(|change| change.note != *id);
         anew(&mut s.mailbox, *id, salt);
-        merged.messages.push(fill(MADE_ANEW, &[("title", &title)]));
+        let line = match (held, shared) {
+            (false, _) => MADE_ANEW,
+            (true, true) => KEPT_WHEN_UNSHARED,
+            (true, false) => KEPT_WHEN_GONE,
+        };
+        merged.messages.push(fill(line, &[("title", &title)]));
     }
     let undeleted = !kept_there.is_empty() || !deleted_there.is_empty();
-    if merged.added + merged.updated + merged.removed > 0 || versioned || !held.is_empty() || undeleted {
+    if merged.added + merged.updated + merged.removed > 0 || versioned || held > 0 || undeleted {
         s.mailbox_changed();
     }
     Ok(merged)
@@ -1044,7 +1152,7 @@ impl Taking<'_> {
                         // to be made there anew (and so is one whose deletion she undid).
                         self.applied.done += 1;
                         anew(self.mailbox, op.note, self.salt);
-                        let line = if !words {
+                        let line = if !words && !change.resumed {
                             MADE_ANEW
                         } else if here.shared {
                             KEPT_WHEN_UNSHARED

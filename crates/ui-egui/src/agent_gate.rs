@@ -64,7 +64,8 @@ pub fn screen(app: &mut MailApp, req: &ControlRequest, allow: &[Class]) -> Optio
                     "clicking and typing in the window needs the owner: {}. Only the owner can let an agent do this, by starting the bridge with `mailcraft-cli mcp --allow input`",
                     Class::Input.what()
                 )))
-            } else if !app.asking.is_empty() {
+            } else if !app.asking.is_empty() || crate::notes_view::asking_to_close(app) {
+                // //// Neoffice — and while closing asks about words typed into a note that can't be saved: Close Anyway is the owner's click alone (notes_view.rs).
                 Some(err("the owner is being asked something: no input reaches the window until they answer"))
             } else {
                 None

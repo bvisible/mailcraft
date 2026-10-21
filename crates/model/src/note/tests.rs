@@ -238,3 +238,22 @@ fn the_state_of_the_notes_is_asked_about_while_it_is_less_than_an_hour_old() {
         assert_eq!(ask(state, ago).state_to_ask(now), None, "{state:?} {ago}");
     }
 }
+
+#[test]
+fn a_change_written_with_one_sending_still_reads() {
+    let one: NoteChange = serde_json::from_value(json!({"account": 1, "kind": "update", "note": 2, "sent": {"text": "Milk"}})).unwrap();
+    assert_eq!(one.sent, [NoteFields { text: Some("Milk".into()), ..Default::default() }]);
+    let more: NoteChange = serde_json::from_value(json!({"kind": "update", "sent": [{"text": "Milk"}, {"title": "Shop"}]})).unwrap();
+    assert_eq!(more.sent.len(), 2);
+    let none: NoteChange = serde_json::from_value(json!({"kind": "update", "sent": null})).unwrap();
+    assert!(none.sent.is_empty());
+    let op: NoteOp = serde_json::from_value(json!({"kind": "update", "earlier": {"text": "Milk"}})).unwrap();
+    assert_eq!(op.earlier.len(), 1);
+    // So does a mailbox that holds one.
+    let (mut mb, account) = mailbox();
+    mb.notes.changes.push(NoteChange { account, kind: NoteChangeKind::Update, note: 9, sent: vec![NoteFields::default()], ..Default::default() });
+    let mut file = serde_json::to_value(&mb).unwrap();
+    file["notes"]["changes"][0]["sent"] = json!({"pinned": true});
+    let read: Mailbox = serde_json::from_value(file).unwrap();
+    assert_eq!(read.notes.changes[0].sent, [NoteFields { pinned: Some(true), ..Default::default() }]);
+}

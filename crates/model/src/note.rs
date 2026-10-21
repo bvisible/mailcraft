@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use mailcraft_time::Timestamp;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::remote::clean_key;
 use crate::{Id, Mailbox, OnlineMeeting, Origin};
@@ -46,6 +46,8 @@ const MAX_VERSION: usize = 64;
 const MAX_TOKEN: usize = 64;
 const MAX_CATEGORY: usize = 140;
 const MAX_OWNER: usize = 200;
+/// The longest JMAP session address a hold keeps.
+const MAX_SESSION: usize = 2_000;
 const MAX_WHY: usize = 300;
 /// Most properties a server says it writes of a note, and the longest name of one.
 const MAX_WRITABLE: usize = 20;
@@ -63,8 +65,19 @@ fn is_zero_time(t: &Timestamp) -> bool {
     *t == 0
 }
 
-fn is_zero_id(id: &Id) -> bool {
-    *id == 0
+/// What went of a change: a list, or one sending as a mailbox written before several were kept has it (or none).
+fn one_or_more<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<NoteFields>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMore {
+        More(Vec<NoteFields>),
+        One(NoteFields),
+    }
+    Ok(match Option::<OneOrMore>::deserialize(d)? {
+        Some(OneOrMore::More(more)) => more,
+        Some(OneOrMore::One(one)) => vec![one],
+        None => Vec::new(),
+    })
 }
 
 fn is_true(b: &bool) -> bool {
@@ -191,10 +204,36 @@ pub struct Note {
     /// Why its last change could not be saved, for the person to read; empty when nothing is wrong.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub error: String,
-    /// For one of the mailbox's own on a page that keeps none of its own: the account whose server it was to go to when
-    /// that server stopped keeping notes (it goes there when it keeps them again); 0 for none.
-    #[serde(skip_serializing_if = "is_zero_id")]
-    pub held_for: Id,
+    /// For one of the mailbox's own on a page that keeps none of its own: whose it was when its server stopped keeping
+    /// notes (it goes back there, and only there, when that server keeps them again).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub held: Option<Box<NoteHold>>,
+}
+
+/// What a page that keeps no notes of its own holds of a note whose server stopped keeping notes while a change of it
+/// waited to go: whose it was, so that it goes back to that very server, as the change of that very note it was.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NoteHold {
+    pub account: Id,
+    /// The account's address and JMAP session then: another is another server's, and nothing goes there.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub email: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub session: String,
+    /// What the server called it, and its copy as the change that waited was made over; neither for a new note the
+    /// server didn't have yet.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remote: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<Box<Note>>,
+}
+
+/// What may be shown of a hold: whose, never what the note said.
+impl std::fmt::Debug for NoteHold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NoteHold").field("account", &self.account).field("base", &self.base.is_some()).finish_non_exhaustive()
+    }
 }
 
 /// What may be shown of a note: what it is, never what it says.
@@ -242,7 +281,16 @@ impl Note {
         self.token = clean_token(&self.token);
         self.error = one_line(&self.error, MAX_WHY).0;
         if self.origin.is_remote() {
-            self.held_for = 0;
+            self.held = None;
+        }
+        if let Some(held) = &mut self.held {
+            held.remote = clean_key(&held.remote);
+            held.email = one_line(&held.email, MAX_OWNER).0;
+            held.session = one_line(&held.session, MAX_SESSION).0;
+            if let Some(base) = &mut held.base {
+                base.held = None;
+                base.tidy();
+            }
         }
         if self.origin.is_local() {
             // (The mailbox's own: nobody else's, and all the person's to change.)
@@ -346,12 +394,16 @@ pub struct NoteChange {
     /// What of it was sent and not answered (the answer was lost, or never came), the last [`MAX_UNANSWERED`] sendings:
     /// what the server may have written already, so that its own write is never taken for someone else's. A deletion's
     /// that went holds one entry that names nothing.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "one_or_more")]
     pub sent: Vec<NoteFields>,
     /// For a change: a deletion of the note went without an answer and was undone here. Whether the server deleted it is
     /// learnt at the next whole read (or from the answer to what goes of it); if it did, the note is made there anew.
     #[serde(skip_serializing_if = "is_false")]
     pub undeleted: bool,
+    /// For a change: of a note a page held while its server kept no notes ([`NoteHold`]), given back to that server.
+    /// Whether the server still has it is not known either ([`NoteChange::undeleted`] too).
+    #[serde(skip_serializing_if = "is_false")]
+    pub resumed: bool,
 }
 
 impl std::fmt::Debug for NoteChange {
@@ -430,7 +482,7 @@ pub struct NoteOp {
     pub version: String,
     /// What earlier sendings of this change carried that no answer came for ([`NoteChange::sent`]): what the server may
     /// hold already.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "one_or_more")]
     pub earlier: Vec<NoteFields>,
 }
 
@@ -661,7 +713,7 @@ impl RemoteNote {
             web_url: self.web_url.clone(),
             token: String::new(),
             error: String::new(),
-            held_for: 0,
+            held: None,
         }
     }
 }
@@ -681,6 +733,10 @@ pub struct NotesDownload {
     #[serde(skip_serializing_if = "is_false")]
     pub complete: bool,
     pub notes: Vec<RemoteNote>,
+    /// What every note it has is called, when its list was read whole (to its end, at one state), even if some of them
+    /// couldn't be read: one not in it is no longer there. `None` when the list wasn't read whole.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub listed: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for NotesDownload {
@@ -690,6 +746,7 @@ impl std::fmt::Debug for NotesDownload {
             .field("offered", &self.offered)
             .field("complete", &self.complete)
             .field("notes", &self.notes.len())
+            .field("listed", &self.listed.as_ref().map(Vec::len))
             .finish()
     }
 }
@@ -707,6 +764,14 @@ impl NotesDownload {
             note.tidy();
         }
         self.notes.retain(|note| !note.id.is_empty() && seen.insert(note.id.clone()));
+        // (A list longer than is kept, or with a name that can't be one, says nothing of what isn't in it.)
+        let whole = self
+            .listed
+            .as_ref()
+            .is_some_and(|listed| listed.len() <= MAX_SERVER_NOTES && listed.iter().all(|id| clean_key(id) == *id && !id.is_empty()));
+        if !whole {
+            self.listed = None;
+        }
     }
 }
 

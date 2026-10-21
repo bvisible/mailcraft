@@ -22,7 +22,7 @@ fn remote(id: &str, title: &str, version: &str) -> RemoteNote {
 }
 
 fn download(account: u64, notes: Vec<RemoteNote>) -> NotesDownload {
-    NotesDownload { account, email: ME.into(), offered: true, server: NoteServer::default(), complete: true, notes }
+    NotesDownload { account, email: ME.into(), offered: true, server: NoteServer::default(), complete: true, notes, listed: None }
 }
 
 /// A session whose account's server keeps two notes, "Offsite" and "Groceries"; the account.
@@ -853,4 +853,128 @@ fn a_deletion_undone_after_its_answer_was_lost_and_typed_into_keeps_her_words_ei
     let mine = note(&s, offsite);
     assert_eq!((mine.origin.id.as_str(), mine.text.as_str()), ("", "Lake walk"));
     assert_eq!(kinds(&s), [NoteChangeKind::Create]);
+}
+
+/// Groceries changed here after an answer that left it no version: a change of words that waits for one.
+fn waiting_for_a_version() -> (Session, u64, u64) {
+    let (mut s, account) = session();
+    let groceries = by_remote(&s, "VN-2");
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    answer(&mut s, account, NoteResult::Done, "", None);
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk\nEggs"}));
+    assert!(super::notes_need_read(&s, account));
+    (s, account, groceries)
+}
+
+#[test]
+fn a_change_without_a_version_of_a_note_a_whole_list_no_longer_has_goes_though_some_note_could_not_be_read() {
+    let (mut s, account, _) = waiting_for_a_version();
+    // A read cut short whose list wasn't whole either: nothing is known of it.
+    let mut cut = download(account, vec![]);
+    cut.complete = false;
+    run(&mut s, "sync.applyNotes", json!({"download": cut}));
+    assert!(super::notes_need_read(&s, account) && ops(&mut s, account).is_empty(), "still waiting");
+    // A read whose list is whole, without Groceries, though Offsite couldn't be read: deleted there.
+    let mut cut = download(account, vec![]);
+    (cut.complete, cut.listed) = (false, Some(vec!["VN-1".into()]));
+    run(&mut s, "sync.applyNotes", json!({"download": cut}));
+    assert!(!super::notes_need_read(&s, account));
+    let going = ops(&mut s, account);
+    assert_eq!((going.len(), going[0].version.as_str()), (1, super::OLDEST_VERSION));
+}
+
+#[test]
+fn a_page_holding_notes_of_a_server_that_stopped_gives_them_back_as_they_were_never_as_copies() {
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    let (offsite, groceries) = (by_remote(&s, "VN-1"), by_remote(&s, "VN-2"));
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+    run(&mut s, "notes.pin", json!({"id": groceries}));
+    let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+    run(&mut s, "sync.applyNotes", json!({"download": gone}));
+    assert!(note(&s, offsite).origin.is_local() && note(&s, groceries).origin.is_local(), "held on the page");
+    // Offered again: the server still has both, as they were.
+    let both = vec![remote("VN-1", "Offsite", "2026-10-20T08:00:00.100Z"), remote("VN-2", "Groceries", "2026-10-20T08:00:00.200Z")];
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, both)}));
+    assert_eq!(s.mailbox.notes.items.len(), 2, "no copies");
+    assert_eq!((note(&s, offsite).origin.id.as_str(), note(&s, groceries).origin.id.as_str()), ("VN-1", "VN-2"));
+    let mut going = ops(&mut s, account);
+    going.sort_by_key(|op| op.remote.clone());
+    let said: Vec<_> = going.iter().map(|op| (op.kind, op.fields.text.as_deref(), op.fields.pinned, op.version.as_str())).collect();
+    assert_eq!(
+        said,
+        [(NoteChangeKind::Update, Some("Mine"), None, "2026-10-20T08:00:00.100Z"), (NoteChangeKind::Update, None, Some(true), ""),],
+        "her changes, to the very notes"
+    );
+}
+
+#[test]
+fn a_held_note_its_server_deleted_meanwhile_is_made_anew_and_one_changed_there_is_a_copy() {
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    let (offsite, groceries) = (by_remote(&s, "VN-1"), by_remote(&s, "VN-2"));
+    run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+    run(&mut s, "notes.edit", json!({"id": groceries, "text": "Milk"}));
+    let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+    run(&mut s, "sync.applyNotes", json!({"download": gone}));
+    // Offsite deleted there; Groceries changed there by the phone.
+    let phone = RemoteNote { text: "Phone".into(), ..remote("VN-2", "Groceries", "v9") };
+    let said = run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![phone])}));
+    let made = note(&s, offsite);
+    assert_eq!((made.origin.id.as_str(), made.text.as_str()), ("", "Mine"), "made anew: {said}");
+    assert_eq!(said["messages"], json!(["\"Offsite\" was deleted elsewhere meanwhile: your version is kept as a note of its own."]));
+    assert_eq!(note(&s, groceries).text, "Milk", "her words stay until the server says");
+    let mut going = ops(&mut s, account);
+    going.sort_by_key(|op| op.kind == NoteChangeKind::Update);
+    assert_eq!((going[0].kind, going[0].fields.text.as_deref()), (NoteChangeKind::Create, Some("Mine")));
+    assert_eq!(
+        (going[1].kind, going[1].fields.text.as_deref(), going[1].version.as_str()),
+        (NoteChangeKind::Update, Some("Milk"), super::OLDEST_VERSION),
+        "never over the phone's: stale there, and kept as a copy"
+    );
+}
+
+#[test]
+fn another_address_for_an_account_lets_its_notes_go_and_never_sends_hers_to_the_other() {
+    for keeps_local in [false, true] {
+        let (mut s, account) = session();
+        s.keeps_local = keeps_local;
+        let offsite = by_remote(&s, "VN-1");
+        run(&mut s, "notes.edit", json!({"id": offsite, "text": "Mine"}));
+        run(&mut s, "account.edit", json!({"id": account, "email": "grace@example.org"}));
+        assert!(s.mailbox.notes.changes.is_empty(), "nothing waits for another person's server");
+        let kept = note(&s, offsite);
+        assert!(kept.origin.is_local() && kept.text == "Mine", "her words kept: {keeps_local}");
+        assert!(s.mailbox.notes.server(account).is_none());
+        // The other address's server offers notes: hers don't go there.
+        let other = NotesDownload { account, email: "grace@example.org".into(), offered: true, complete: true, ..Default::default() };
+        run(&mut s, "sync.applyNotes", json!({"download": other}));
+        assert!(note(&s, offsite).origin.is_local() && s.mailbox.notes.changes.is_empty(), "{keeps_local}");
+    }
+}
+
+#[test]
+fn a_held_note_waits_while_too_many_changes_wait_and_goes_back_once_there_is_room() {
+    let (mut s, account) = session();
+    s.keeps_local = false;
+    let id = run(&mut s, "notes.new", json!({"title": "Lunch", "text": "Friday"}))["id"].as_u64().unwrap();
+    let gone = NotesDownload { account, email: ME.into(), offered: false, ..Default::default() };
+    run(&mut s, "sync.applyNotes", json!({"download": gone}));
+    let full: Vec<mailcraft_model::note::NoteChange> = (0..mailcraft_model::note::MAX_NOTE_CHANGES)
+        .map(|n| mailcraft_model::note::NoteChange { account, kind: NoteChangeKind::Delete, remote: format!("VN-x{n}"), ..Default::default() })
+        .collect();
+    s.mailbox.notes.changes = full;
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![])}));
+    assert!(s.mailbox.notes.changes.len() <= mailcraft_model::note::MAX_NOTE_CHANGES);
+    assert!(note(&s, id).origin.is_local(), "still held: no room to note it");
+    s.mailbox.notes.changes.clear();
+    run(&mut s, "sync.applyNotes", json!({"download": download(account, vec![])}));
+    assert_eq!((note(&s, id).origin.account, kinds(&s)), (account, vec![NoteChangeKind::Create]));
+}
+
+#[test]
+fn a_change_waiting_for_a_read_is_not_due_and_the_window_does_not_look_every_second_for_it() {
+    let (s, account, _) = waiting_for_a_version();
+    let waiting = super::notes_waiting(&s, account);
+    assert_eq!((waiting.total, waiting.due), (1, 0), "it waits, for a read, not for a moment");
 }

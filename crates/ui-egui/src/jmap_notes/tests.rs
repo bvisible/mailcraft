@@ -388,3 +388,26 @@ fn a_deletion_undone_after_its_answer_was_lost_has_the_notes_read_and_the_note_m
     let made = last(&asked).notes.unwrap().changes.unwrap().ops;
     assert_eq!((made.len(), made[0].kind, made[0].note), (1, mailcraft_model::note::NoteChangeKind::Create, groceries), "made there anew");
 }
+
+#[test]
+fn reads_for_a_version_that_none_brings_come_less_and_less_often() {
+    let (mut app, id, asked) = read_once();
+    let groceries = app.session.mailbox.notes.items.values().find(|note| note.origin.id == "VN-2").map(|note| note.id).unwrap();
+    if let Some(note) = app.session.mailbox.notes.note_mut(groceries) {
+        note.version.clear();
+    }
+    app.execute("notes.edit", json!({"id": groceries, "text": "Mine"})).unwrap();
+    app.notes_look(true, T0 + SECOND);
+    let mut at = Vec::new();
+    // Nine and a half minutes of looks (before the wide job), every five seconds; each read is cut short.
+    let mut t = T0 + 5.0 * SECOND;
+    while t < T0 + 9.5 * MINUTE {
+        if app.jmap_pim_tick_at(true, t) {
+            at.push(((t - T0) / SECOND).round());
+            let cut = NotesDownload { account: id, email: ME.into(), offered: true, complete: false, ..Default::default() };
+            answer(&mut app, &asked, id, Some(NotesAnswer { download: Some(cut), ..Default::default() }));
+        }
+        t += 5.0 * SECOND;
+    }
+    assert_eq!(at, [5.0, 125.0, 365.0], "at once, then two minutes, then four");
+}

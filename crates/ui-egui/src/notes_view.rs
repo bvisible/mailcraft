@@ -656,20 +656,31 @@ pub(crate) fn flush(app: &mut MailApp, ctx: &egui::Context, always: bool) {
 pub(crate) fn hold_quit(app: &mut MailApp) -> bool {
     let Some(ctx) = app.ctx.clone() else { return false };
     flush(app, &ctx, true);
-    let Some(first) = drafts(&ctx).values().find(|draft| draft.typed.is_some()).cloned() else { return false };
+    // (The first by the note's id: the same reason each time it is asked.)
+    let Some(first) = drafts(&ctx).values().filter(|draft| draft.typed.is_some()).min_by_key(|draft| draft.note).cloned() else { return false };
     // The note in front, for the owner to see what can't be saved; and the question, saying why.
     let _ = app.run("view.notes", json!({}));
     let _ = app.run("notes.select", json!({"id": first.note}));
-    let text = if first.why.is_empty() {
-        tl!("A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.").to_string()
-    } else {
-        let why = crate::i18n::run_words::refusal(&first.why, &app.session.mailbox).into_owned();
-        crate::i18n::fmt(tl!("A note has words that can't be saved yet: {why} Closing now loses them."), &[("why", why.trim())])
-    };
+    let text = close_text(&first.why, &app.session.mailbox);
     // (While it is asked, the keyboard is the question's: nothing more is typed into the note.)
     ctx.memory_mut(|m| m.stop_text_input());
     ctx.data_mut(|d| d.insert_temp(egui::Id::new(CLOSE_ASK), text));
     true
+}
+
+/// What the question closing asks says of why words typed into a note can't be saved: `why`, the engine's words, or the
+/// server's limit when there are none.
+fn close_text(why: &str, mailbox: &mailcraft_model::Mailbox) -> String {
+    if why.is_empty() {
+        return tl!("A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them.").to_string();
+    }
+    let why = crate::i18n::run_words::refusal(why, mailbox).into_owned();
+    let mut why = why.trim().to_string();
+    // (A sentence, ended as one, whatever words it was said in.)
+    if !why.ends_with(['.', '!', '?', '\u{2026}']) {
+        why.push('.');
+    }
+    crate::i18n::fmt(tl!("A note has words that can't be saved yet: {why} Closing now loses them."), &[("why", &why)])
 }
 
 /// The question closing asks while words typed into a note can't be saved, when it is up: modal, over everything. Cancel
@@ -738,6 +749,12 @@ pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::di
     })
 }
 
+/// Whether the question closing asks about words that can't be saved is up: nothing but the owner's answer reaches the
+/// window meanwhile (an agent's clicks and keys are refused).
+pub(crate) fn asking_to_close(app: &MailApp) -> bool {
+    app.ctx.as_ref().is_some_and(|ctx| ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK)).is_some()))
+}
+
 /// Whether words typed into a note are not in it yet.
 pub(crate) fn typed(ctx: &egui::Context) -> bool {
     ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).values().any(|draft| draft.typed.is_some()))
@@ -760,7 +777,7 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
         if p.get("then").and_then(Value::as_str) == Some("quit") {
             app.quit_requested = true;
         }
-        return Some(Ok(json!({"dropped": dropped})));
+        return Some(Ok(json!({"dropped": true, "notes": dropped})));
     }
     if id != "ui.openNote" {
         return None;

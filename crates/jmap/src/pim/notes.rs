@@ -37,8 +37,10 @@
 //! 3. **What comes back** ([`NotesAnswer`]): the outcomes of the changes, with the server's states before and after
 //!    them; the notes read ([`NotesDownload`]), complete when the query was read whole, every note it found was read
 //!    (or the server said it was gone since), the budget was not reached, the server said the same state on every page,
-//!    and the job was not stopped; and the state the window's notes are at now: the one they were all read at, or the
-//!    one held, still the server's. After any trouble no state comes, and the next job reads everything.
+//!    and the job was not stopped; with what the list called them when it was read whole at one state, even if some
+//!    couldn't be read (`listed`: one not in it is gone); and the state the window's notes are at now: the one they were
+//!    all read at, or the one held, still the server's. After any trouble no state comes, and the next job reads
+//!    everything.
 //!
 //! **The lines** of trouble name no note: "Couldn't send the note changes: …", "Couldn't read the notes: …", "3 notes
 //! couldn't be read: …".
@@ -333,6 +335,18 @@ fn strip_tags(text: &str) -> String {
 }
 
 /// Whether a server's refusal is one that asking again later may get past.
+/// What comes of a resend over her own write ([`Job::send_again`]) that the server refused with a SetError of `kind`:
+/// `None` leaves it stale, as it was (a newer version there); trouble for now is tried again later.
+fn after_resend(kind: &str) -> Option<NoteResult> {
+    match kind {
+        // Someone wrote meanwhile: a conflict, as it was.
+        "stateMismatch" => None,
+        "notFound" => Some(NoteResult::Gone),
+        kind if failed_for_now(kind) => Some(NoteResult::Failed),
+        _ => Some(NoteResult::Refused),
+    }
+}
+
 fn failed_for_now(kind: &str) -> bool {
     matches!(kind, "rateLimit" | "serverFail" | "serverUnavailable" | "serverPartialFail" | "tooManyRequests" | "overQuota")
 }
@@ -574,9 +588,16 @@ impl<H: Http> Job<'_, H> {
                 continue;
             }
             // The note there has exactly what an earlier sending of it carried (its answer lost) and every part this
-            // one names went then: the server's newer version is her own write. What she typed since goes over it.
+            // one names went then: the server's newer version is her own write. What she typed since goes over it,
+            // checked against that version; never without one (it would be written over whatever is there by then).
             if ours(&op, note) {
-                self.send_again(at, &op, &note.version, w).await;
+                let mut said = note.clone();
+                said.tidy();
+                if said.version.is_empty() {
+                    Self::again_later(w, at, VERSION_UNKNOWN);
+                } else {
+                    self.send_again(at, &op, &said.version, w).await;
+                }
             }
         }
     }
@@ -608,8 +629,17 @@ impl<H: Http> Job<'_, H> {
             return;
         }
         // Refused: stale as before (her words are kept as a note of their own). Neither: nothing is known.
-        if answer.get("notUpdated").and_then(|refused| refused.get(&op.remote)).is_none() {
+        let Some(error) = answer.get("notUpdated").and_then(|refused| refused.get(&op.remote)) else {
             Self::again_later(w, at, UNSAID);
+            return;
+        };
+        let kind = error.get("type").and_then(Value::as_str).unwrap_or_default();
+        if let Some(result) = after_resend(kind) {
+            if let Some(slot) = w.outcomes.get_mut(at) {
+                *slot = None;
+            }
+            let words = self.words(error);
+            if result == NoteResult::Failed { w.failed(at, &words, None) } else { w.answer(at, result, None, &words, None) }
         }
     }
 
@@ -739,6 +769,8 @@ impl<H: Http> Job<'_, H> {
             && !got.moved
             && !got.over_budget
             && !self.cancel.load(Ordering::Relaxed);
+        // The list read whole, at one state, even when some of its notes couldn't be read: one not in it is gone.
+        let listed = (got.pager.done() == Some(true) && !got.moved && !self.cancel.load(Ordering::Relaxed)).then(|| got.pager.ids().to_vec());
         let (max_title, max_text) = self.client.notes_limits();
         let server = NoteServer {
             account: request.account,
@@ -746,7 +778,8 @@ impl<H: Http> Job<'_, H> {
             max_text,
             writable: self.client.notes_writable().map(<[String]>::to_vec).unwrap_or_default(),
         };
-        *download = Some(NotesDownload { account: request.account, email: request.email.clone(), offered: true, server, complete, notes: got.notes });
+        *download =
+            Some(NotesDownload { account: request.account, email: request.email.clone(), offered: true, server, complete, notes: got.notes, listed });
         got.state.filter(|_| complete)
     }
 }

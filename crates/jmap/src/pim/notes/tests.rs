@@ -558,3 +558,37 @@ fn any_sending_unanswered_is_known_as_her_own_write() {
     assert_eq!(outcomes(&again)[0].0, NoteResult::Done, "{again:?}");
     assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk\nEggs\nBread".into()));
 }
+
+#[test]
+fn a_resend_over_her_own_write_never_goes_without_the_version_the_server_says() {
+    let (server, read) = milk_written_answer_lost();
+    // The server's read of the note says no version of it.
+    server.with(|d| d.notes.unversioned.insert("VN-2".into()));
+    let more = NoteOp { earlier: vec![text("Milk")], ..update("VN-2", text("Milk\nEggs"), &read) };
+    let again = run(&server, &request(only(more)));
+    assert_eq!(outcomes(&again)[0].0, NoteResult::Failed, "tried again later: {again:?}");
+    assert_eq!(server.with(|d| d.notes.note("VN-2").map(|note| note.text.clone())), Some("Milk".into()), "never written unchecked");
+}
+
+#[test]
+fn a_resend_refused_for_now_is_tried_again_and_only_a_newer_version_is_a_conflict() {
+    assert_eq!(after_resend("stateMismatch"), None, "stale, as before");
+    assert_eq!(after_resend("serverFail"), Some(NoteResult::Failed));
+    assert_eq!(after_resend("rateLimit"), Some(NoteResult::Failed));
+    assert_eq!(after_resend("notFound"), Some(NoteResult::Gone));
+    assert_eq!(after_resend("forbidden"), Some(NoteResult::Refused));
+}
+
+#[test]
+fn a_whole_list_is_handed_over_even_when_a_note_of_it_can_not_be_read() {
+    let server = server();
+    server.with(|d| {
+        d.notes.broken.insert("VN-3".into());
+    });
+    let result = run(&server, &request(read()));
+    let got = download(&result);
+    assert!(!got.complete);
+    let mut listed = got.listed.clone().expect("the list was read whole");
+    listed.sort();
+    assert_eq!(listed, ["VN-1", "VN-2", "VN-3", "VN-4", "VN-5", "VN-6"]);
+}

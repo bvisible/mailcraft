@@ -36,6 +36,8 @@ use crate::MailApp;
 const QUIET_MS: f64 = 3_000.0;
 const SAME_AGAIN_MS: f64 = 30_000.0;
 const IN_FRONT_MS: f64 = 120_000.0;
+/// The longest a change of words waits between reads for its version that bring none (as long as the wide job's).
+const LONGEST_FOR_VERSION_MS: f64 = 600_000.0;
 
 /// What the window remembers of an account's notes.
 #[derive(Default)]
@@ -49,6 +51,8 @@ struct NotesJob {
     /// version.
     read: Option<f64>,
     read_for_version: Option<f64>,
+    /// How many reads for a version in a row brought none: each waits twice as long as the one before.
+    reads_for_version: u32,
     /// What was last sent, and when (milliseconds); and the state of the mailbox then.
     sent: Option<(NotesUpload, f64)>,
     sent_rev: Option<u64>,
@@ -118,13 +122,14 @@ impl MailApp {
     }
 
     /// Whether `account`'s notes are to be read by a job that is not the wide one: Notes came to the front, or has been
-    /// in front long enough, or a change of words waits for the version a read brings (at once, then once in that while
-    /// at most, not at every look); and its server keeps notes.
+    /// in front long enough, or a change of words waits for the version a read brings (at once, then after two minutes,
+    /// four, eight, and ten at most while reads bring none; not at every look); and its server keeps notes.
     fn notes_read_due(&self, account: Id, now: f64) -> bool {
         let job = self.jmap_pim.notes.accounts.get(&account);
         let kept = self.session.mailbox.notes.server(account).is_some();
         let every = self.jmap_pim.notes.in_front && job.and_then(|job| job.read).is_none_or(|at| now - at >= IN_FRONT_MS);
-        let for_version = job.and_then(|job| job.read_for_version).is_none_or(|at| now - at >= IN_FRONT_MS);
+        let wait = job.map_or(IN_FRONT_MS, |job| IN_FRONT_MS * f64::from(1u32 << job.reads_for_version.saturating_sub(1).min(4)));
+        let for_version = job.and_then(|job| job.read_for_version).is_none_or(|at| now - at >= wait.min(LONGEST_FOR_VERSION_MS));
         kept && (job.is_some_and(|job| job.due) || every || (for_version && notes_need_read(&self.session, account)))
     }
 
@@ -173,6 +178,7 @@ impl MailApp {
         }
         if for_version {
             job.read_for_version = Some(now);
+            job.reads_for_version = job.reads_for_version.saturating_add(1);
         }
         if let Some(changes) = &ask.changes {
             job.sent = Some((changes.clone(), now));
@@ -244,6 +250,10 @@ impl MailApp {
         if other {
             job.state = None;
             job.due = true;
+        }
+        // A version no read brought is waited for less and less often; once none is waited for, at once again.
+        if !notes_need_read(&self.session, account) {
+            (job.read_for_version, job.reads_for_version) = (None, 0);
         }
         !flight.carried || answered
     }

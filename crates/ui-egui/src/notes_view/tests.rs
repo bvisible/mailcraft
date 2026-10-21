@@ -433,6 +433,13 @@ fn typed_with_changes_full() -> (Harness<'static, MailApp>, Id) {
 fn the_close_question_says_why_the_words_cant_be_saved_and_holds_the_keyboard() {
     let (mut window, id) = typed_with_changes_full();
     assert!(window.query_all_by_label_contains("can't be saved yet: Too many note changes are waiting").next().is_some(), "the real reason");
+    // Nor does an agent's click or key, whatever it was let do: Close Anyway is the owner's click alone.
+    for method in ["ui.click", "ui.key"] {
+        let (request, _answer) = crate::ControlRequest::new(method, json!({"x": 1, "y": 1, "key": "Enter"}));
+        let request = request.from_agent(vec![mailcraft_engine::agent::Class::Input]);
+        let settled = crate::agent_gate::screen(window.state_mut(), &request, &[mailcraft_engine::agent::Class::Input]);
+        assert!(matches!(settled, Some(crate::control::Outcome::Done(ref reply)) if reply["ok"] == false), "{method}");
+    }
     // Typing goes nowhere while it is asked.
     text(&mut window, " more");
     assert_eq!(drafts(&window.ctx).get(&id).map(|draft| draft.text.clone()).as_deref(), Some("Milk and eggs"));
@@ -448,7 +455,8 @@ fn close_anyway_saves_what_can_be_saved_by_then_and_gives_up_only_the_rest() {
     let (mut window, id) = typed_with_changes_full();
     // The changes got through meanwhile: there is room again.
     window.state_mut().session.mailbox.notes.changes.clear();
-    window.state_mut().execute("ui.dropNoteDrafts", json!({"then": "quit"})).unwrap();
+    let said = window.state_mut().execute("ui.dropNoteDrafts", json!({"then": "quit"})).unwrap();
+    assert_eq!(said["dropped"], true, "{said}");
     assert!(window.state().quit_requested);
     assert_eq!(note(&window, id).text, "Milk and eggs", "saved, not given up");
     // (The button runs it.)
@@ -526,4 +534,19 @@ fn deleting_a_note_the_server_keeps_asks_first_and_escape_or_cancel_deletes_noth
     );
     assert!(window.state_mut().run("notes.delete", json!({"id": theirs})).is_err());
     assert!(window.state().dialog.is_none() && window.state().session.mailbox.notes.note(theirs).is_some());
+}
+
+#[test]
+fn the_close_question_ends_the_reason_as_a_sentence() {
+    let window = window(false, "view.mail");
+    let mailbox = &window.state().session.mailbox;
+    assert_eq!(
+        close_text("Your rights do not let you change this note", mailbox),
+        "A note has words that can't be saved yet: Your rights do not let you change this note. Closing now loses them."
+    );
+    assert_eq!(
+        close_text("Too many note changes are waiting to be sent. Let them get through first.", mailbox),
+        "A note has words that can't be saved yet: Too many note changes are waiting to be sent. Let them get through first. Closing now loses them."
+    );
+    assert!(close_text("", mailbox).contains("longer than its server takes"));
 }
