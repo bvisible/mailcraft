@@ -190,6 +190,13 @@ pub(crate) fn tallies(mailbox: &Mailbox) -> HashMap<Id, (usize, usize)> {
     out
 }
 
+// //// Neoffice — the number beside a folder, from the tallies, in one place: the pane shows it, and a hosting page that lists the folders in its own menu is told it (host_menu.rs), so that the two never disagree.
+/// What the pane shows beside `f`, with the mailbox's [`tallies`].
+pub(crate) fn shown_count(counts: &HashMap<Id, (usize, usize)>, f: &Folder) -> Count {
+    let (total, unread) = counts.get(&f.id).copied().unwrap_or_default();
+    Count::of(f.kind, total, unread)
+}
+
 /// A chevron centred on `c`, `half` its half-width when it points down (what is under it shows);
 /// it points right when that is folded away.
 fn chevron(painter: &Painter, c: Pos2, half: f32, open: bool, color: Color32) {
@@ -499,10 +506,8 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
         pane_top(app, ui, &t);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             let counts = tallies(&app.session.mailbox);
-            let count = |f: &Folder| {
-                let (total, unread) = counts.get(&f.id).copied().unwrap_or_default();
-                Count::of(f.kind, total, unread)
-            };
+            // //// Neoffice — by the one rule a hosting page's menu is told too (`shown_count`, host_menu.rs).
+            let count = |f: &Folder| shown_count(&counts, f);
             // What is listed: the favourites, and under each account what isn't folded away.
             let folded = app.ui.collapsed_folders.clone();
             // The favourites as the engine lists them: Outlook's own, in Outlook's order, for an

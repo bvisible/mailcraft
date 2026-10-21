@@ -48,13 +48,18 @@
 //!   favorites: [{ account, folder, name, unread }],      // the Favourites of these mailboxes, as the pane lists them
 //!   accounts: [{ email, name,     // the mailboxes handed over, in the page's order (no other: none added by hand),
 //!     unread,                     //   as the page wrote them; the unread mail of the Inbox
-//!     folders: [{ id, name, role, parent, unread, selectable }] }] }  // every folder, in the pane's order
+//!     folders: [{ id, name, role, parent, unread, selectable, count }] }],  // every folder, in the pane's order
+//!   views: ["mail", "calendar", "people", "notes"] }     // the views offered here, in MailCraft's order
 //! ```
 //!
 //! A folder's `name` is the one MailCraft shows (a special folder's in the interface's language), its `role` one of
 //! `inbox`, `sent`, `drafts`, `archive`, `spam`, `trash`, `outbox` or null, its `parent` its parent's `id` or null,
-//! `unread` the unread messages MailCraft knows of (not the server's count), and `id` its server's id, or `local:<n>`
-//! for a folder only MailCraft has so far (an Outbox, one made here the server is yet to hear of). Nothing else
+//! `unread` the unread messages MailCraft knows of (not the server's count), `count` the number MailCraft's pane shows
+//! beside it, by the pane's own rule (`{ value, kind: "unread" }` for most folders, `{ value, kind: "total" }` for
+//! Drafts, Outbox and Junk Email, whose every message the pane counts in brackets, or null when the pane shows none:
+//! the page shows this one, so that its menu and the pane never disagree), and `id` its server's id, or `local:<n>`
+//! for a folder only MailCraft has so far (an Outbox, one made here the server is yet to hear of). `views` has
+//! `notes` only where Notes are offered (where `view.notes` is not refused). Nothing else
 //! leaves: no message, no address but the mailboxes' own, no token. The page drives MailCraft by posting to the
 //! frame, on its own origin:
 //!

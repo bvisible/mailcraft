@@ -188,7 +188,17 @@ fn page() -> (MailApp, Id, Id, Id) {
             listed("Mpr", "", "Projects", FolderKind::Custom),
             listed("Map", "Mpr", "Apollo", FolderKind::Custom),
         ],
-        vec![mail("A1", "Min", false), mail("A2", "Min", false), mail("A3", "Min", true), mail("A4", "Map", false)],
+        vec![
+            mail("A1", "Min", false),
+            mail("A2", "Min", false),
+            mail("A3", "Min", true),
+            mail("A4", "Map", false),
+            // Two drafts, read; a message sent and left unread; one in Junk Email, unread.
+            mail("A5", "Mdr", true),
+            mail("A6", "Mdr", true),
+            mail("A7", "Mse", false),
+            mail("A8", "Mju", false),
+        ],
     );
     let team = mailbox(&mut app, TEAM, vec![listed("Tin", "", "INBOX", FolderKind::Inbox)], vec![mail("T1", "Tin", false)]);
     let bob = mailbox(&mut app, BOB, vec![listed("Bin", "", "INBOX", FolderKind::Inbox)], vec![mail("B1", "Bin", false)]);
@@ -248,10 +258,10 @@ fn the_page_is_told_its_mailboxes_folders_and_favourites_and_where_the_window_is
         [
             row("Min", "Inbox", json!("inbox"), Value::Null, 2),
             row("Mdr", "Drafts", json!("drafts"), Value::Null, 0),
-            row("Mse", "Sent Items", json!("sent"), Value::Null, 0),
+            row("Mse", "Sent Items", json!("sent"), Value::Null, 1),
             row("Mtr", "Deleted Items", json!("trash"), Value::Null, 0),
             row("Mar", "Archive", json!("archive"), Value::Null, 0),
-            row("Mju", "Junk Email", json!("spam"), Value::Null, 0),
+            row("Mju", "Junk Email", json!("spam"), Value::Null, 1),
             row(&local, "Outbox", json!("outbox"), Value::Null, 0),
             row("Mpr", "Projects", Value::Null, Value::Null, 0),
             row("Map", "Apollo", Value::Null, json!("Mpr"), 1),
@@ -286,6 +296,53 @@ fn the_page_is_told_its_mailboxes_folders_and_favourites_and_where_the_window_is
         french["favorites"].as_array().unwrap().iter().find(|f| f["folder"] == "Tin").unwrap()["name"],
         "Boîte de réception - team@example.org"
     );
+}
+
+#[test]
+fn each_folder_comes_with_the_number_the_pane_shows_beside_it() {
+    let (app, _, _, _) = page();
+    let told = state(&app).unwrap();
+    let count = |id: &str| told["accounts"][1]["folders"].as_array().unwrap().iter().find(|f| f["id"] == id).unwrap()["count"].clone();
+    // Most folders: their unread messages.
+    assert_eq!(count("Min"), json!({"value": 2, "kind": "unread"}));
+    assert_eq!(count("Map"), json!({"value": 1, "kind": "unread"}));
+    // Drafts and Junk Email: everything in them, which the pane puts in brackets, read or not.
+    assert_eq!(count("Mdr"), json!({"value": 2, "kind": "total"}));
+    assert_eq!(count("Mju"), json!({"value": 1, "kind": "total"}));
+    // Nothing beside an empty folder, nor beside sent mail, unread or not; `unread` still says what is unread.
+    for quiet in ["Mar", "Mpr", "Mtr"] {
+        assert_eq!(count(quiet), Value::Null, "{quiet}");
+    }
+    assert_eq!(count("Mse"), Value::Null);
+    let sent = told["accounts"][1]["folders"].as_array().unwrap().iter().find(|f| f["id"] == "Mse").unwrap()["unread"].clone();
+    assert_eq!(sent, 1);
+
+    // Every folder of both mailboxes, against the pane's rule over the mailbox's own counting.
+    let mb = &app.session.mailbox;
+    for account in told["accounts"].as_array().unwrap() {
+        for f in account["folders"].as_array().unwrap() {
+            let id = f["id"].as_str().unwrap();
+            let folder = mb.folders.iter().find(|folder| super::folder_id(folder) == id).unwrap();
+            let pane = crate::nav::Count::of(folder.kind, mb.count(folder.id), mb.unread_count(folder.id));
+            assert_eq!(f["count"], super::pane_count(pane), "{id}");
+        }
+    }
+}
+
+#[test]
+fn the_views_are_those_offered_here_notes_only_where_they_are() {
+    let (mut app, ada, _, _) = page();
+    // A hosting page's tab whose server keeps no notes: `view.notes` is refused there, and Notes is not offered.
+    assert!(!app.session.enabled("view.notes"));
+    assert_eq!(state(&app).unwrap()["views"], json!(["mail", "calendar", "people"]));
+    // Once its server keeps notes.
+    app.session.mailbox.notes.servers.push(NoteServer { account: ada, ..Default::default() });
+    assert_eq!(state(&app).unwrap()["views"], json!(["mail", "calendar", "people", "notes"]));
+    // A window that keeps its own (Notes and Tasks offered): the four the page can bring to the front, never Tasks.
+    let sample = sample(true);
+    let told = state(sample.state()).unwrap();
+    assert_eq!(told["views"], json!(["mail", "calendar", "people", "notes"]));
+    assert!(sample.state().session.enabled("view.tasks"));
 }
 
 #[test]
@@ -327,9 +384,9 @@ fn nothing_of_a_message_nor_another_address_nor_a_secret_is_told() {
     // Only these fields, at every level.
     let state = state(&app).unwrap();
     let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<BTreeSet<String>>();
-    assert_eq!(keys(&state), names(&["type", "module", "account", "folder", "favorites", "accounts"]));
+    assert_eq!(keys(&state), names(&["type", "module", "account", "folder", "favorites", "accounts", "views"]));
     assert_eq!(keys(&state["accounts"][0]), names(&["email", "name", "unread", "folders"]));
-    assert_eq!(keys(&state["accounts"][0]["folders"][0]), names(&["id", "name", "role", "parent", "unread", "selectable"]));
+    assert_eq!(keys(&state["accounts"][0]["folders"][0]), names(&["id", "name", "role", "parent", "unread", "selectable", "count"]));
     assert_eq!(keys(&state["favorites"][0]), names(&["account", "folder", "name", "unread"]));
     assert!(state["favorites"].as_array().unwrap().iter().all(|f| f["account"] != BOB));
 }

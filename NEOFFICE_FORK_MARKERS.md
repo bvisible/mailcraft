@@ -156,8 +156,11 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `window.parent` on the page's own origin, `{type: "mailcraft:ready", version}` once, then
   `{type: "mailcraft:state", module, account, folder, favorites, accounts}` at each change, at most every 250 ms and
   never twice the same, of the mailboxes the page handed over alone (their folders in the pane's order with the name
-  shown, the role, the parent, the unread mail known here and the server's id, `local:<n>` for one only MailCraft has;
-  their Favourites as the pane lists them; the mailbox and folder in view; no message, no other address, no token);
+  shown, the role, the parent, the unread mail known here, the number the pane shows beside each (`count`: unread,
+  or the total it puts in brackets for Drafts, Outbox and Junk Email, or null), by the pane's own rule, which
+  `nav.rs` keeps in one place for both (`shown_count`), and the server's id, `local:<n>` for one only MailCraft has;
+  their Favourites as the pane lists them; the mailbox and folder in view; the views offered, `notes` only where
+  Notes are; no message, no other address, no token);
   and seven commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
   `view.mail`, `view.calendar`, `view.people`, `view.notes`, `folder.select {account, folder}`, `mail.new` and
   `search {query}` (the search box's), each run as the window's own button or box runs it and answered

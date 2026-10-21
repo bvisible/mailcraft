@@ -10,8 +10,9 @@
 //! ([`state`]) and its menu drives it ([`answer`]); the host carries the messages both ways.
 //!
 //! **What the page is told** is of the mailboxes it handed over alone: their folders as the pane lists them (the
-//! name shown, the role, the parent, the unread mail this window knows of), the Favourites the pane lists that are
-//! theirs, which of their folders is in view and the module in front. No message, no address but the mailboxes' own,
+//! name shown, the role, the parent, the unread mail this window knows of, and the number the pane shows beside
+//! each, by the pane's own rule), the Favourites the pane lists that are theirs, which of their folders is in view,
+//! the module in front and the modules offered. No message, no address but the mailboxes' own,
 //! no token; a mailbox the person added by hand in the window, or a shared one, is not named.
 //!
 //! **What the page may ask** is seven commands and no other, each run as the window's own button or box runs it, and
@@ -23,6 +24,7 @@ use mailcraft_model::{AccountKind, Folder, FolderKind, Id, Mailbox};
 use serde_json::{Map, Value, json};
 
 use crate::MailApp;
+use crate::nav::Count;
 
 /// What each message is called (`type`): the window has started, where it is, a command of the page's, its answer.
 pub const READY: &str = "mailcraft:ready";
@@ -140,6 +142,8 @@ pub fn state(app: &MailApp) -> Option<Value> {
                         "unread": unread(f.id),
                         // Every folder the pane lists can be shown.
                         "selectable": true,
+                        // What the pane shows beside it, by the pane's own rule.
+                        "count": pane_count(crate::nav::shown_count(&counts, f)),
                     })
                 })
                 .collect();
@@ -147,7 +151,27 @@ pub fn state(app: &MailApp) -> Option<Value> {
             json!({"email": h.email, "name": h.name, "unread": inbox, "folders": folders})
         })
         .collect();
-    Some(json!({"type": STATE, "module": s.view.module, "account": account, "folder": folder, "favorites": favorites, "accounts": accounts}))
+    // The views offered here, in the module bar's order: Notes only where `view.notes` runs.
+    let views: Vec<&str> = VIEWS.iter().filter(|view| s.enabled(view)).filter_map(|view| view.strip_prefix("view.")).collect();
+    Some(json!({
+        "type": STATE,
+        "module": s.view.module,
+        "account": account,
+        "folder": folder,
+        "favorites": favorites,
+        "accounts": accounts,
+        "views": views,
+    }))
+}
+
+/// The number the pane shows beside a folder, as the page is told it: unread messages, or all of them (what the pane
+/// puts in brackets: Drafts, Outbox, Junk Email), or `null` when the pane shows none.
+fn pane_count(count: Count) -> Value {
+    match count {
+        Count::Unread(n) => json!({"value": n, "kind": "unread"}),
+        Count::Total(n) => json!({"value": n, "kind": "total"}),
+        Count::Nothing => Value::Null,
+    }
 }
 
 /// A command the page may send.
