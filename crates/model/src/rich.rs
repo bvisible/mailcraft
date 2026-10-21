@@ -554,6 +554,11 @@ impl RichText {
                 if let Some(id) = run.picture {
                     if let Some(text) = describe(id).map(|t| clean_line(&t)).filter(|t| !t.trim().is_empty()) {
                         out.push_str(&format!("[{}]", text.trim()));
+                        // //// Neoffice — a described picture that is a link (a signature's banner) says where it leads, as
+                        // linked words do: the HTML part now writes the link around the picture (mime's linked_img).
+                        if let Some(url) = run.style.link.as_deref().and_then(safe_link) {
+                            out.push_str(&format!(" <{url}>"));
+                        }
                     }
                     continue;
                 }

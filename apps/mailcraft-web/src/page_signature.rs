@@ -5,14 +5,16 @@
 //! The signature a hosting page gives a mailbox it hands over (host.rs), set up in the session MailCraft starts
 //! with ([`set_up`]): its HTML, or its text, and for a company's signature its pictures by their bytes: the first beside
 //! or above the words when the company's layout puts it there, the others under the words in paragraphs of their own
-//! (the company's logo under a person's details), each where the company's template draws it. MailCraft keeps a signature's pictures by their bytes and takes none from its HTML
+//! (the company's logo under a person's details), each where the company's template draws it, and a link for the one
+//! that is one (the company's banner). MailCraft keeps a signature's pictures by their bytes and takes none from its HTML
 //! (`signature.set`), so the page hands the logo itself, and it goes in with `signature.picture.add`,
-//! `signature.picture.set` and `signature.layout`, as the owner would put it in. Built everywhere, so that it is
+//! `signature.picture.set`, `signature.layout` and `compose.link`, as the owner would put it in. Built everywhere, so that it is
 //! tested natively.
 // Outside the browser only the tests run it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use mailcraft_engine::Session;
+use mailcraft_model::rich::safe_link;
 use mailcraft_model::signature::{MAX_ALT, MAX_PICTURE_BYTES, MAX_WIDTH};
 use serde_json::json;
 
@@ -35,12 +37,19 @@ pub struct PagePicture {
     pub width: Option<u16>,
     /// The picture the company's layout puts beside or above the words: the first a page gives, when it says so.
     pub lead: bool,
+    /// Where it leads when it is a link (a company's banner), an address MailCraft writes a link to ([`link`]).
+    pub href: Option<String>,
 }
 
 impl std::fmt::Debug for PagePicture {
     // Its size, never its bytes.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PagePicture").field("base64", &self.data.len()).field("width", &self.width).field("lead", &self.lead).finish_non_exhaustive()
+        f.debug_struct("PagePicture")
+            .field("base64", &self.data.len())
+            .field("width", &self.width)
+            .field("lead", &self.lead)
+            .field("href", &self.href.is_some())
+            .finish_non_exhaustive()
     }
 }
 
@@ -83,7 +92,14 @@ pub fn picture(data: &str, name: &str, alt: &str, width: Option<f64>) -> Option<
         alt: alt.trim().chars().take(MAX_ALT).collect(),
         width: width.filter(|w| (1.0..=f64::from(MAX_WIDTH)).contains(w)).map(|w| w.round() as u16),
         lead: false,
+        href: None,
     })
+}
+
+/// Where a page says a picture leads, if MailCraft writes a link there: an `http`, `https`, `mailto` or `tel` address
+/// (`compose.link` takes no other, and the sent message's HTML writes no other); none else.
+pub fn link(given: &str) -> Option<String> {
+    safe_link(given.trim())
 }
 
 /// The place a page gives a logo, if MailCraft knows it.
@@ -93,9 +109,10 @@ pub fn layout(given: &str) -> String {
 
 /// Make `signature` the signature of `account` (named after its address, `email`), for its new messages and its
 /// replies and forwards: its HTML, else its text, then its pictures as the owner would put them in: the one beside or
-/// above the words at the start, with its place; each other one under the words, in a paragraph of its own. A page
-/// that gives no `pictures` gives its logo the first way. Whether a signature was made. A picture the engine does not
-/// take (no picture by its own bytes) leaves the signature without it; nothing here stops the mailbox from opening.
+/// above the words at the start, with its place; each other one under the words, in a paragraph of its own; and each
+/// that is a link, a link. A page that gives no `pictures` gives its logo the first way. Whether a signature was made.
+/// A picture the engine does not take (no picture by its own bytes) leaves the signature without it, and a link it
+/// does not take leaves the picture without a link; nothing here stops the mailbox from opening.
 pub fn set_up(session: &mut Session, account: u64, email: &str, signature: &PageSignature) -> bool {
     let mut made = json!({"name": email, "default": true, "account": account});
     if !signature.html.trim().is_empty() {
@@ -140,11 +157,29 @@ fn put_at_start(session: &mut Session, email: &str, picture: &PagePicture, place
     if !place.is_empty() && session.run("signature.layout", &json!({"name": email, "value": place})).is_err() {
         log::warn!("the place of a signature's picture couldn't be set");
     }
+    // The picture is the signature's first character: a link there is made in the signature opened for it.
+    if let Some(url) = &picture.href
+        && session.run("signature.open", &json!({"name": email})).is_ok()
+    {
+        let saved = linked(session, 0, url) && session.run("signature.save", &json!({})).is_ok();
+        let _ = session.run("signature.close", &json!({"discard": !saved}));
+    }
 }
 
-/// `pictures` under the words of the signature `email`, each in a paragraph of its own at the end, in order: the
-/// signature is opened, a new line typed at its end and the picture pasted there, as the owner would, then saved.
-/// Whatever goes wrong closes it unsaved: the signature stays as `signature.set` and the first picture made it.
+/// The picture at `at` of the open signature made a link to `url`, as the owner would (Link over the picture); whether
+/// it was.
+fn linked(session: &mut Session, at: usize, url: &str) -> bool {
+    let made = session.run("compose.link", &json!({"url": url, "from": at, "to": at + 1})).is_ok();
+    if !made {
+        log::warn!("the link of a signature's picture couldn't be set");
+    }
+    made
+}
+
+/// `pictures` under the words of the signature `email`, each in a paragraph of its own at the end, in order, and a
+/// link for the one that is one: the signature is opened, a new line typed at its end and the picture pasted there, as
+/// the owner would, then saved. Whatever goes wrong with a picture closes it unsaved: the signature stays as
+/// `signature.set` and the first picture made it. A link that can't be made leaves its picture without one.
 fn put_under(session: &mut Session, email: &str, pictures: &[&PagePicture]) {
     if session.run("signature.open", &json!({"name": email})).is_err() {
         log::warn!("a signature the page handed over couldn't be opened for its pictures");
@@ -153,6 +188,8 @@ fn put_under(session: &mut Session, email: &str, pictures: &[&PagePicture]) {
     for picture in pictures {
         let end = session.signature_edit.as_ref().map_or(0, |edit| edit.body.text().len());
         let placed = session.run("compose.select", &json!({"from": end})).is_ok() && session.run("compose.type", &json!({"text": "\n"})).is_ok();
+        // The picture goes in at the caret, the start of the new line.
+        let at = session.signature_edit.as_ref().map_or(end, |edit| edit.body.selection().head);
         let added = placed
             .then(|| session.run("signature.picture.add", &json!({"name": email, "data": picture.data, "file": picture.name, "alt": picture.alt})))
             .and_then(Result::ok)
@@ -166,6 +203,9 @@ fn put_under(session: &mut Session, email: &str, pictures: &[&PagePicture]) {
             && session.run("signature.picture.set", &json!({"name": email, "id": id, "width": width})).is_err()
         {
             log::warn!("the width of a signature's picture couldn't be set");
+        }
+        if let Some(url) = &picture.href {
+            linked(session, at, url);
         }
     }
     if session.run("signature.save", &json!({})).is_err() {
@@ -339,6 +379,63 @@ mod tests {
         let both = PageSignature { logo: picture(PIXEL, "old.png", "Old", None), ..photo_left(vec![given("Example Ltd", false)], "") };
         assert!(set_up(&mut session, id, ME, &both));
         assert_eq!(read(&session), [("Example Ltd".to_string(), true)], "the old key is not read beside the list");
+    }
+
+    /// The message `account` sends with its signature: its HTML part and its text part. (The window sends from a JMAP
+    /// account where its host runs one, as the browser build's does: `Session::jmap_runs`.)
+    fn sent(session: &mut Session, account: u64) -> (String, String) {
+        session.jmap_runs = true;
+        session.run("mail.new", &json!({"account": account, "to": "maya@example.org", "subject": "Plan", "body": "Hello"})).unwrap();
+        session.run("compose.formatHtml", &json!({})).unwrap();
+        let id = session.run("compose.send", &json!({})).unwrap()["id"].as_u64().unwrap();
+        let m = session.mailbox.message(id).unwrap();
+        (m.body.html.clone().unwrap(), m.body.text.clone())
+    }
+
+    fn banner(href: &str) -> PagePicture {
+        PagePicture { href: link(href), ..given("Spring fair", false) }
+    }
+
+    #[test]
+    fn a_banner_goes_out_inside_its_link_and_the_other_pictures_as_they_were() {
+        let (mut session, id) = hosted();
+        let pictures = vec![given("Ada", true), given("Example Ltd", false), banner(" https://example.org/fair?from=mail ")];
+        assert!(set_up(&mut session, id, ME, &photo_left(pictures, "pictureLeft")));
+        assert_eq!(read(&session).len(), 3);
+        assert!(session.signature_edit.is_none(), "the signature is closed again");
+        let (html, text) = sent(&mut session, id);
+        // The banner, third in reading order, inside its link; the photo and the logo with no link.
+        assert!(html.contains("<a href=\"https://example.org/fair?from=mail\"><img src=\"cid:sig-3."), "{html}");
+        assert_eq!(html.matches("<a href").count(), 1, "{html}");
+        assert!(html.contains("<img src=\"cid:sig-1.") && html.contains("<img src=\"cid:sig-2."), "{html}");
+        assert!(text.contains("[Spring fair] <https://example.org/fair?from=mail>"), "{text:?}");
+    }
+
+    #[test]
+    fn a_banner_without_a_link_or_with_one_mailcraft_does_not_write_goes_out_as_a_picture() {
+        for href in ["", "javascript:alert(1)", "data:text/html,x", "https://", "ftp://example.org/fair"] {
+            assert_eq!(link(href), None, "{href}");
+            let (mut session, id) = hosted();
+            // Even handed past `link`, the engine takes no such link.
+            let unsafe_banner = PagePicture { href: (!href.is_empty()).then(|| href.to_string()), ..given("Spring fair", false) };
+            assert!(set_up(&mut session, id, ME, &photo_left(vec![given("Ada", true), unsafe_banner], "pictureLeft")));
+            assert_eq!(read(&session), [("Ada".to_string(), false), ("Spring fair".to_string(), true)], "{href}: the banner stays");
+            assert!(session.signature_edit.is_none(), "{href}: closed");
+            let (html, text) = sent(&mut session, id);
+            assert!(!html.contains("<a ") && !html.contains("href"), "{href}: {html}");
+            assert!(html.contains("<img src=\"cid:sig-2."), "{href}: {html}");
+            assert!(text.contains("[Spring fair]") && !text.contains("[Spring fair] <"), "{href}: {text:?}");
+        }
+    }
+
+    #[test]
+    fn the_picture_beside_the_words_may_be_a_link_too() {
+        let (mut session, id) = hosted();
+        let logo = PagePicture { href: link("https://example.org/"), ..given("Example Ltd", true) };
+        assert!(set_up(&mut session, id, ME, &photo_left(vec![logo], "pictureLeft")));
+        assert!(session.signature_edit.is_none());
+        let (html, _) = sent(&mut session, id);
+        assert!(html.contains("padding-right:12px\"><a href=\"https://example.org/\"><img src=\"cid:sig-1."), "{html}");
     }
 
     #[test]

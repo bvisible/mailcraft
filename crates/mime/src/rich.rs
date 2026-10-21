@@ -131,6 +131,21 @@ fn img(out: &mut String, img: &Img) {
     out.push_str("\" style=\"border:0\">");
 }
 
+// //// Neoffice — added: a picture that is a link (a signature's banner) is written inside it; the model keeps a link on a
+// picture run (`compose.link` over its character) and this writer dropped it. Remove when upstream writes it.
+/// [`img`], inside `<a href>` when it has a link the model accepts ([`safe_link`], as for a text's link), escaped.
+fn linked_img(out: &mut String, found: &Img, link: Option<&str>) {
+    let Some(url) = link.and_then(safe_link) else {
+        img(out, found);
+        return;
+    };
+    out.push_str("<a href=\"");
+    out.push_str(&mailcraft_html::escape(&url));
+    out.push_str("\">");
+    img(out, found);
+    out.push_str("</a>");
+}
+
 /// A signature as HTML, its pictures written as `content_id` names them. Laid out with its first
 /// picture on the left of the text or above it when it asks for that: a two-cell table, or the
 /// picture in a paragraph of its own.
@@ -149,16 +164,20 @@ pub fn signature_html(sig: &Signature, content_id: &dyn Fn(&Picture) -> String) 
             .collect(),
     );
     let text = to_html_with(&rest, &pictures);
+    // //// Neoffice — the picture beside or above the text keeps its link too (linked_img).
+    let link = sig.body().paragraphs().iter().flat_map(|p| &p.runs).find(|r| r.picture == Some(first)).and_then(|r| r.style.link.as_deref());
     let mut out = String::new();
     if sig.layout == Layout::PictureLeft {
         out.push_str("<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"vertical-align:top;padding-right:12px\">");
-        img(&mut out, &lead);
+        // //// Neoffice — inside its link (linked_img)
+        linked_img(&mut out, &lead, link);
         out.push_str("</td><td style=\"vertical-align:top\">\r\n");
         out.push_str(&text);
         out.push_str("</td></tr></table>\r\n");
     } else {
         out.push_str("<div>");
-        img(&mut out, &lead);
+        // //// Neoffice — inside its link (linked_img)
+        linked_img(&mut out, &lead, link);
         out.push_str("</div>\r\n");
         out.push_str(&text);
     }
@@ -195,7 +214,8 @@ fn runs(out: &mut String, p: &Paragraph, pictures: &dyn Fn(u32) -> Option<Img>) 
             index += 1;
             after_space = false;
             if let Some(found) = pictures(id) {
-                img(out, &found);
+                // //// Neoffice — inside its link when it has one, under a text link's rule (linked_img)
+                linked_img(out, &found, style.link.as_deref());
             }
             continue;
         }

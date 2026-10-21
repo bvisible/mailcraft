@@ -392,6 +392,85 @@ fn a_signature_is_written_with_its_colours_fonts_and_pictures() {
     assert_eq!(back.style_at(3).color.as_deref(), Some("#1f6feb"));
 }
 
+// //// Neoffice — added: a signature's banner, a picture that is a link, under its words (the writer kept no link on a
+// picture); the logo beside or above them, linked or not.
+fn banner_signature(layout: Layout, banner: Option<&str>, logo: Option<&str>) -> Signature {
+    let mut sig = Signature::plain_text("Work", "Avery Quinn\nLumen Studio\n");
+    sig.add_picture("logo.png", png(), Some("Lumen Studio"), Some(0)).unwrap();
+    let at = sig.body().len();
+    sig.add_picture("banner.png", png(), Some("Spring fair"), Some(at)).unwrap();
+    let mut body = sig.body().clone();
+    for (link, from) in [(banner, at), (logo, 0)] {
+        if let Some(url) = link {
+            body.format(from, from + 1, &Format::Link(Some(url.into()))).unwrap();
+        }
+    }
+    sig.set_body(body).unwrap();
+    sig.layout = layout;
+    sig
+}
+
+// //// Neoffice — added: see banner_signature
+#[test]
+fn a_linked_picture_is_written_inside_its_link_and_one_without_a_link_as_before() {
+    let cid = |p: &mailcraft_model::signature::Picture| format!("sig-{}@mailcraft.invalid", p.id);
+    let banner = "<img src=\"cid:sig-2@mailcraft.invalid\" alt=\"Spring fair\" style=\"border:0\">";
+    for layout in [Layout::Inline, Layout::PictureLeft, Layout::PictureAbove] {
+        let sig = banner_signature(layout, Some("https://lumen.example/fair?a=1&b=\"2\""), None);
+        let html = signature_html(&sig, &cid);
+        assert!(
+            html.contains(&format!("<div><a href=\"https://lumen.example/fair?a=1&amp;b=&quot;2&quot;\">{banner}</a></div>")),
+            "{layout:?}: {html}"
+        );
+        assert_eq!(html.matches("<a href").count(), 1, "the logo has no link: {html}");
+        assert_in_set(&html);
+        // The text part says where it leads, as linked words do.
+        assert!(sig.plain().ends_with("[Spring fair] <https://lumen.example/fair?a=1&b=\"2\">"), "{:?}", sig.plain());
+        // Without a link, the picture is written as it always was.
+        let plain = banner_signature(layout, None, None);
+        let html = signature_html(&plain, &cid);
+        assert!(html.contains(&format!("<div>{banner}</div>")) && !html.contains("<a"), "{layout:?}: {html}");
+        assert!(plain.plain().ends_with("[Spring fair]"), "{:?}", plain.plain());
+    }
+    // The picture beside or above the words keeps its link too.
+    let logo = "<a href=\"https://lumen.example/\"><img src=\"cid:sig-1@mailcraft.invalid\" alt=\"Lumen Studio\" style=\"border:0\"></a>";
+    let left = signature_html(&banner_signature(Layout::PictureLeft, None, Some("https://lumen.example/")), &cid);
+    assert!(left.contains(&format!("<td style=\"vertical-align:top;padding-right:12px\">{logo}</td>")), "{left}");
+    let above = signature_html(&banner_signature(Layout::PictureAbove, None, Some("https://lumen.example/")), &cid);
+    assert!(above.starts_with(&format!("<div>{logo}</div>")), "{above}");
+}
+
+// //// Neoffice — added: see banner_signature
+#[test]
+fn a_picture_s_link_the_model_does_not_accept_is_never_written() {
+    let unsafe_links = ["javascript:alert(1)", "data:text/html,<b>x</b>", "vbscript:x", "https://", "https://a b", "file:///etc/passwd", " "];
+    // The model takes none of them: not as a format, not from a document made or read back.
+    for url in unsafe_links {
+        let mut sig = banner_signature(Layout::Inline, None, None);
+        let mut body = sig.body().clone();
+        assert!(body.format(0, 1, &Format::Link(Some(url.into()))).is_err(), "{url}");
+        let made = RichText::from_paragraphs(vec![Paragraph::new(
+            vec![Run::picture(1, Style { link: Some(url.into()), ..Style::default() })],
+            ListKind::None,
+        )]);
+        sig.set_body(made).unwrap();
+        let html = signature_html(&sig, &|p| format!("sig-{}@mailcraft.invalid", p.id));
+        assert!(!html.contains("<a") && html.contains("<img src=\"cid:sig-1@"), "{url}: {html}");
+    }
+    // And the writer checks again, whatever it is handed.
+    let found = Img { content_id: "sig-1@mailcraft.invalid".into(), width: None, alt: "Logo".into() };
+    let mut alone = String::new();
+    img(&mut alone, &found);
+    for url in unsafe_links {
+        let mut out = String::new();
+        linked_img(&mut out, &found, Some(url));
+        assert_eq!(out, alone, "{url}");
+    }
+    let mut out = String::new();
+    linked_img(&mut out, &found, Some("https://lumen.example/\"><script>"));
+    assert_eq!(out, format!("<a href=\"https://lumen.example/&quot;&gt;&lt;script&gt;\">{alone}</a>"));
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(200))]
 
