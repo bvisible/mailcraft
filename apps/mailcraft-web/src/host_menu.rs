@@ -17,6 +17,9 @@ use serde_json::Value;
 pub const EVERY_MS: f64 = 250.0;
 /// How many of the page's messages wait for the next frame at most: more are dropped unanswered.
 pub const MAX_WAITING: usize = 64;
+/// How often the window looks again at the messages the page opened that are on their way from their server, in
+/// milliseconds, when nothing else wakes it: one that doesn't come in time is answered within this of its time.
+pub const OPEN_LOOK_MS: u64 = 1_000;
 
 /// The version the page is told in `mailcraft:ready`: this build's, and the commit it was built from when the build
 /// knew it (`GITHUB_SHA`, which the web build's workflow has), as `0.5.2+8b7972c`.
@@ -76,7 +79,7 @@ mod page {
     use wasm_bindgen::JsCast as _;
     use wasm_bindgen::closure::Closure;
 
-    use super::{MAX_WAITING, Teller, accepted, version};
+    use super::{MAX_WAITING, OPEN_LOOK_MS, Teller, accepted, version};
 
     thread_local! {
         /// The page's messages (their JSON) that wait for the next frame.
@@ -153,6 +156,13 @@ mod page {
             if let Some(done) = host_menu::answer(app, &text) {
                 post(&done);
             }
+        }
+        // The messages it opened that had to come from their server, as they come (or don't, in time).
+        for done in host_menu::poll(app) {
+            post(&done);
+        }
+        if host_menu::waiting(app) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(OPEN_LOOK_MS));
         }
         let now = mailcraft_ui_egui::now_ms();
         if let Some(wait) = TOLD.with(|told| told.borrow().1.wait(now)) {
@@ -252,7 +262,7 @@ mod tests {
         let page = MessagePage { folder: "Min".into(), messages: vec![mail("E1"), mail("E2")], afresh: true, ..Default::default() };
         apply_jmap_mail(&mut app.session, JmapMailResult { account, email: email.into(), pages: vec![page], whole: true, ..Default::default() })
             .unwrap();
-        app.services.host_menu = Some(Menu { mailboxes: vec![Handed { email: email.into(), name: "Ada".into() }] });
+        app.services.host_menu = Some(Menu::new(vec![Handed { email: email.into(), name: "Ada".into() }]));
         app.execute("folder.select", json!({"kind": "inbox", "account": account})).unwrap();
         app
     }
@@ -282,5 +292,86 @@ mod tests {
         assert_eq!(teller.next(1_500.0, state(&app).unwrap()).unwrap()["module"], "calendar");
         assert!(teller.next(1_750.0, state(&app).unwrap()).is_none());
         assert!(!state(&app).unwrap().to_string().contains("Hello"), "nothing of a message");
+    }
+
+    /// The page's token, which the in-process server takes.
+    struct Token;
+
+    impl crate::credentials::Credentials for Token {
+        fn auth(&self, _email: &str) -> Option<mailcraft_jmap::Auth> {
+            Some(mailcraft_jmap::Auth::bearer(mailcraft_jmap::standin::TOKEN))
+        }
+
+        async fn renew(&self, _email: &str) -> crate::credentials::Renewal {
+            crate::credentials::Renewal::Reload
+        }
+    }
+
+    #[test]
+    fn a_message_no_window_brought_is_read_from_its_server_by_the_browser_s_runner_and_shown() {
+        use mailcraft_engine::cmd::jmap_mail::apply_jmap_mail;
+        use mailcraft_jmap::block_on;
+        use mailcraft_jmap::standin::{SESSION, StandIn};
+        use mailcraft_model::Mailbox;
+        use mailcraft_model::sync::{JmapMailRequest, JmapScope};
+        use mailcraft_ui_egui::MailApp;
+        use mailcraft_ui_egui::host_menu::{Handed, Menu, answer, poll};
+        use mailcraft_ui_egui::jmap_job::JmapJob;
+
+        const ME: &str = "ada@example.org";
+        let server = StandIn::new();
+        let (projects, old) = server.with(|d| {
+            d.mailbox("Inbox", None, Some("inbox"));
+            let projects = d.mailbox("Projects", None, None);
+            let old = d.deliver(&projects, b"From: Zoe <zoe@example.org>\r\nSubject: Old plans\r\n\r\nHi.\r\n", &[], "2026-01-01T09:00:00Z");
+            d.deliver(&projects, b"From: Zoe <zoe@example.org>\r\nSubject: Newer plans\r\n\r\nHi.\r\n", &[], "2026-02-01T09:00:00Z");
+            (projects, old)
+        });
+        let session = mailcraft_engine::Session::at(Mailbox::with_local_account("", ""), 1_791_993_600, 0);
+        let mut app = MailApp::new(session, mailcraft_ui_egui::Services::default());
+        (app.autosave, app.auto_sync, app.services.jmap_host_credentials) = (false, false, true);
+        // The window's runs go to the in-process server through the browser's runner, with the page's token.
+        let to = server.clone();
+        app.services.jmap = Some(Box::new(move |job: JmapJob| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let mut emit = |piece| {
+                let _ = tx.send(piece);
+            };
+            block_on(crate::jmap_services::run(to.clone(), &job, Some(&Token), |_| std::future::ready(()), &mut emit));
+            rx
+        }));
+        let added = app.execute("account.add", json!({"email": ME, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}}));
+        let account = added.unwrap()["id"].as_u64().unwrap();
+        // A Send/Receive: the mailboxes, and the newest message of each.
+        let request = JmapMailRequest {
+            account,
+            email: ME.into(),
+            session: SESSION.into(),
+            bearer: true,
+            window: 1,
+            list_folders: true,
+            scope: JmapScope::All,
+            ..Default::default()
+        };
+        let pieces = app.services.jmap.as_ref().map(|run| run(JmapJob { request, secret: None, cancel: Default::default() })).unwrap();
+        for piece in pieces.try_iter() {
+            apply_jmap_mail(&mut app.session, piece).unwrap();
+        }
+        let message =
+            |app: &MailApp, id: &str| app.session.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == id)).map(|m| m.id);
+        assert!(message(&app, &old).is_none(), "past the window");
+        app.services.host_menu = Some(Menu::new(vec![Handed { email: ME.into(), name: String::new() }]));
+        let open = |id: &str| json!({"type": "mailcraft:command", "id": 3, "name": "message.open", "params": {"account": ME, "id": id}}).to_string();
+        assert_eq!(answer(&mut app, &open(&old)), None, "answered once it has come");
+        assert_eq!(poll(&mut app), vec![json!({"type": "mailcraft:command-done", "id": 3, "ok": true})]);
+        let shown = message(&app, &old).unwrap();
+        assert_eq!(app.session.sel.messages, vec![shown]);
+        assert_eq!(app.session.view.folder, app.session.mailbox.folder_by_server(account, &projects).unwrap());
+        assert_eq!(app.session.mailbox.message(shown).unwrap().subject, "Old plans");
+        // One the server hasn't got.
+        assert_eq!(answer(&mut app, &open("Enone")), None);
+        let refused = poll(&mut app);
+        assert_eq!(refused[0]["ok"], false);
+        assert_eq!(refused[0]["error"], "That mailbox has no such message.");
     }
 }

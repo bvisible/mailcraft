@@ -202,9 +202,10 @@ fn page() -> (MailApp, Id, Id, Id) {
     );
     let team = mailbox(&mut app, TEAM, vec![listed("Tin", "", "INBOX", FolderKind::Inbox)], vec![mail("T1", "Tin", false)]);
     let bob = mailbox(&mut app, BOB, vec![listed("Bin", "", "INBOX", FolderKind::Inbox)], vec![mail("B1", "Bin", false)]);
-    app.services.host_menu = Some(Menu {
-        mailboxes: vec![Handed { email: "Team@Example.org".into(), name: String::new() }, Handed { email: ADA.into(), name: "Ada Marlow".into() }],
-    });
+    app.services.host_menu = Some(Menu::new(vec![
+        Handed { email: "Team@Example.org".into(), name: String::new() },
+        Handed { email: ADA.into(), name: "Ada Marlow".into() },
+    ]));
     app.execute("folder.select", json!({"kind": "inbox", "account": ada})).unwrap();
     (app, ada, team, bob)
 }
@@ -569,4 +570,170 @@ fn hostile_messages_never_panic() {
     let _ = answer(&mut app, &format!("{{\"type\": \"{COMMAND}\", \"id\": 1, \"name\": \"search\", \"params\": {{\"query\": {deep}}}}}"));
     let _ = answer(&mut app, &deep);
     assert!(state(&app).is_some());
+}
+
+/// A runner of the window's JMAP jobs that keeps each job's request and stop, and answers it with `pieces` (all of
+/// them at once, and the channel left open while `hold` is set, as a run still under way leaves it).
+#[derive(Clone, Default)]
+struct Runner {
+    asked: std::rc::Rc<std::cell::RefCell<Vec<(mailcraft_model::sync::JmapMailRequest, std::sync::Arc<std::sync::atomic::AtomicBool>)>>>,
+    pieces: std::rc::Rc<std::cell::RefCell<Vec<JmapMailResult>>>,
+    held: std::rc::Rc<std::cell::RefCell<Vec<std::sync::mpsc::Sender<JmapMailResult>>>>,
+    hold: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
+impl Runner {
+    fn serve(app: &mut MailApp) -> Runner {
+        let runner = Runner::default();
+        let kept = runner.clone();
+        app.services.jmap = Some(Box::new(move |job: crate::jmap_job::JmapJob| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            kept.asked.borrow_mut().push((job.request.clone(), job.cancel.clone()));
+            for piece in kept.pieces.borrow_mut().drain(..) {
+                let _ = tx.send(piece);
+            }
+            if kept.hold.get() {
+                kept.held.borrow_mut().push(tx);
+            }
+            rx
+        }));
+        runner
+    }
+
+    /// What the server answers to the next job: a piece with `pages`, then the last piece, with `errors`.
+    fn answers(&self, pages: Vec<MessagePage>, errors: &[&str]) {
+        let piece = |pages, partial, errors: Vec<String>| JmapMailResult { email: ADA.into(), pages, partial, errors, ..Default::default() };
+        let mut answers = self.pieces.borrow_mut();
+        if !pages.is_empty() {
+            answers.push(piece(pages, true, Vec::new()));
+        }
+        answers.push(piece(Vec::new(), false, errors.iter().map(|e| e.to_string()).collect()));
+    }
+}
+
+fn open(app: &mut MailApp, account: &str, id: &str) -> Option<Value> {
+    answer(app, &command(json!(9), "message.open", json!({"account": account, "id": id})))
+}
+
+fn opened() -> Value {
+    json!({"type": DONE, "id": 9, "ok": true})
+}
+
+fn open_refused(why: &str) -> Value {
+    json!({"type": DONE, "id": 9, "ok": false, "error": why})
+}
+
+#[test]
+fn a_message_the_window_has_is_shown_at_once_as_a_click_in_the_list_shows_it() {
+    let (mut app, ada, _, _) = page();
+    let runner = Runner::serve(&mut app);
+    app.execute("view.calendar", json!({})).unwrap();
+    app.execute("view.search", json!({"query": "nothing like it"})).unwrap();
+    assert_eq!(open(&mut app, "ADA@example.org", "A4"), Some(opened()));
+    let message = super::here(&app, ada, "A4").unwrap();
+    let v = &app.session.view;
+    assert_eq!((v.module, v.folder, v.search.as_str()), (Module::Mail, folder_of(&app, ada, "Map"), ""), "its folder, no search");
+    assert_eq!(app.session.sel.messages, vec![message]);
+    assert!(app.reveal_selection, "the list is brought round to it");
+    assert!(runner.asked.borrow().is_empty(), "nothing is asked of the server");
+}
+
+#[test]
+fn a_message_the_window_hasnt_got_is_read_from_its_server_by_its_id_and_then_shown() {
+    let (mut app, ada, _, _) = page();
+    let runner = Runner::serve(&mut app);
+    // The server has it in Apollo, past what any window brought.
+    runner.answers(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }], &[]);
+    assert!(super::here(&app, ada, "A9").is_none());
+    assert_eq!(open(&mut app, ADA, "A9"), None, "answered once it is here");
+    // What was asked: that email by its id, alone, with no change, message or draft, by the page's credentials.
+    {
+        let asked = runner.asked.borrow();
+        let (request, _) = asked.first().unwrap();
+        assert_eq!((request.account, request.email.as_str(), request.emails.clone()), (ada, ADA, vec!["A9".to_string()]));
+        assert!(request.changes.is_empty() && request.sends.is_empty() && request.drafts.is_empty() && request.known.is_empty());
+        assert!(!request.list_folders && request.scope == mailcraft_model::sync::JmapScope::Light { also: Vec::new() });
+    }
+    assert!(super::waiting(&app));
+    let status = app.session.sync_status.clone();
+    assert_eq!(poll(&mut app), vec![opened()]);
+    assert!(!super::waiting(&app));
+    let message = super::here(&app, ada, "A9").unwrap();
+    assert_eq!((app.session.view.module, app.session.view.folder), (Module::Mail, folder_of(&app, ada, "Map")));
+    assert_eq!(app.session.sel.messages, vec![message]);
+    assert_eq!(app.session.mailbox.message(message).unwrap().subject, SUBJECT);
+    // No Send/Receive was made of it: the status stays, and nothing else of the folder went.
+    assert_eq!(app.session.sync_status, status);
+    assert!(super::here(&app, ada, "A4").is_some());
+    // Opened again, it is here now: at once.
+    assert_eq!(open(&mut app, ADA, "A9"), Some(opened()));
+    assert_eq!(runner.asked.borrow().len(), 1);
+}
+
+#[test]
+fn a_message_its_server_hasnt_got_is_refused_with_a_reason() {
+    let (mut app, _, _, _) = page();
+    let runner = Runner::serve(&mut app);
+    runner.answers(Vec::new(), &[]);
+    assert_eq!(open(&mut app, ADA, "Mgone"), None);
+    assert_eq!(poll(&mut app), vec![open_refused("That mailbox has no such message.")]);
+    // A run that went wrong says why.
+    runner.answers(Vec::new(), &["Couldn't bring the mail down from the server: the server is down"]);
+    assert_eq!(open(&mut app, ADA, "Mgone"), None);
+    let said = poll(&mut app);
+    assert!(said[0]["error"].as_str().unwrap().starts_with("Couldn't bring the mail down from the server"), "{said:?}");
+    // In the interface's language.
+    runner.answers(Vec::new(), &[]);
+    assert_eq!(open(&mut app, ADA, "Mgone"), None);
+    set_current(Lang::from_tag("fr").unwrap());
+    let french = poll(&mut app);
+    set_current(Lang::English);
+    assert_ne!(french[0]["error"], "That mailbox has no such message.");
+    assert_eq!(app.session.view.module, Module::Mail);
+}
+
+#[test]
+fn a_message_that_doesnt_come_in_time_is_refused_and_its_run_stopped() {
+    let (mut app, _, _, _) = page();
+    let runner = Runner::serve(&mut app);
+    runner.hold.set(true);
+    assert_eq!(open(&mut app, ADA, "Mslow"), None);
+    assert!(poll(&mut app).is_empty(), "still on its way");
+    // Its time is up.
+    if let Some(menu) = app.services.host_menu.as_mut() {
+        menu.opening[0].until = 0.0;
+    }
+    assert_eq!(poll(&mut app), vec![open_refused("The message didn't come from the server in time.")]);
+    assert!(runner.asked.borrow()[0].1.load(std::sync::atomic::Ordering::Relaxed), "its run is stopped");
+    assert!(!super::waiting(&app));
+    // At most a few at once.
+    for n in 0..MAX_OPENING {
+        assert_eq!(open(&mut app, ADA, &format!("M{n}")), None);
+    }
+    assert_eq!(open(&mut app, ADA, "Mmore"), Some(open_refused("Too many messages are being opened at once.")));
+}
+
+#[test]
+fn message_open_names_a_mailbox_the_page_handed_over_and_an_email_s_id() {
+    let (mut app, _, _, _) = page();
+    let runner = Runner::serve(&mut app);
+    assert_eq!(open(&mut app, BOB, "B1"), Some(open_refused("This mailbox isn't one the page handed over.")));
+    assert_eq!(open(&mut app, "eve@example.org", "A1"), Some(open_refused("This mailbox isn't one the page handed over.")));
+    let bad = "The page's command has parameters it doesn't take.";
+    for params in [
+        json!({}),
+        json!({"account": ADA}),
+        json!({"id": "A1"}),
+        json!({"account": ADA, "id": ""}),
+        json!({"account": ADA, "id": "a b"}),
+        json!({"account": ADA, "id": "../A1"}),
+        json!({"account": ADA, "id": 7}),
+        json!({"account": ADA, "id": "A1", "folder": "Min"}),
+    ] {
+        assert_eq!(answer(&mut app, &command(json!(9), "message.open", params.clone())), Some(open_refused(bad)), "{params}");
+    }
+    assert!(runner.asked.borrow().is_empty());
+    // A window that can't reach the server says so.
+    let (mut alone, _, _, _) = page();
+    assert_eq!(open(&mut alone, ADA, "A9"), Some(open_refused("This window can't ask the server for the message.")));
 }

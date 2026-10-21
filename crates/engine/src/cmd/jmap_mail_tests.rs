@@ -399,3 +399,30 @@ ATTENDEE;PARTSTAT=NEEDS-ACTION;CN=Ada:mailto:{ME}\r\nDTSTART:20261015T160000Z\r\
     assert_eq!(request_of(&s, jmap).sends.len(), 2);
     assert!(request_of(&s, jmap).sends.iter().any(|send| send.message == answer.id));
 }
+
+#[test]
+fn emails_read_by_their_ids_are_taken_in_as_no_send_receive_takes_them() {
+    let (mut s, account) = session();
+    take(&mut s, account, Some(server()), vec![window("Min", vec![mail("E1", "<1@example.org>", "One", 100)], true)], true);
+    let status = s.sync_status.clone();
+    // A message of Apollo that no window brought, read by its id: the last piece of its run, said whole.
+    let read = JmapMailResult {
+        account,
+        email: ME.into(),
+        pages: vec![window("Map", vec![mail("E9", "<9@example.org>", "Old plans", 50)], false)],
+        whole: true,
+        ..Default::default()
+    };
+    let said = apply_jmap_opened(&mut s, &read).unwrap();
+    assert_eq!(said["new"], 1);
+    assert_eq!(in_folder(&s, account, "Map").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Old plans"]);
+    // No Send/Receive: its status stays, and nothing the page didn't list is taken for gone.
+    assert_eq!(s.sync_status, status);
+    assert!(in_folder(&s, account, "Min").iter().all(|m| !m.server.as_ref().is_some_and(|server| server.gone)));
+    // A page that would be the whole of its mailbox is not taken; an answer for another account is refused.
+    let whole = JmapMailResult { account, email: ME.into(), pages: vec![window("Min", Vec::new(), true)], ..Default::default() };
+    apply_jmap_opened(&mut s, &whole).unwrap();
+    assert!(in_folder(&s, account, "Min").iter().all(|m| !m.server.as_ref().is_some_and(|server| server.gone)));
+    assert_eq!(in_folder(&s, account, "Min").len(), 1);
+    assert!(apply_jmap_opened(&mut s, &JmapMailResult { account, email: "eve@example.org".into(), ..read.clone() }).is_err());
+}

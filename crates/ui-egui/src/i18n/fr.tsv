@@ -166,6 +166,10 @@
 	MailCraft doesn't take this command from the page.	MailCraft n’accepte pas cette commande de la page.
 	This mailbox isn't one the page handed over.	Cette boîte aux lettres n’est pas l’une de celles transmises par la page.
 	That mailbox has no such folder.	Cette boîte aux lettres n’a pas ce dossier.
+	That mailbox has no such message.	Cette boîte aux lettres ne contient pas ce message.
+	The message didn't come from the server in time.	Le message n’a pas été reçu du serveur à temps.
+	Too many messages are being opened at once.	Trop de messages sont en cours d’ouverture en même temps.
+	This window can't ask the server for the message.	Cette fenêtre ne peut pas demander le message au serveur.
 # The sentences of a JMAP Send/Receive and of the engine, read back where they are drawn (crates/ui-egui/src/i18n/run_words.rs and run_words/rows.rs): kept together, near the top.
 	(address)	(adresse)
 # run_words, the frames a run puts round what went wrong, and its own reasons (crates/jmap/src/mail.rs, mail/up.rs).

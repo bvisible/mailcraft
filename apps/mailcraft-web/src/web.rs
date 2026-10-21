@@ -282,7 +282,7 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     // //// Neoffice — a page that draws the navigation in its own menu (host.rs `chrome`): no module bar nor folder pane, and the mailboxes it handed over, in its order, for what it is told and what its menu asks (host_menu.rs).
     if crate::host::menu() {
         let mailboxes = accounts.iter().map(|a| mailcraft_ui_egui::host_menu::Handed { email: a.email.clone(), name: a.name.clone() }).collect();
-        services.host_menu = Some(mailcraft_ui_egui::host_menu::Menu { mailboxes });
+        services.host_menu = Some(mailcraft_ui_egui::host_menu::Menu::new(mailboxes));
         crate::host_menu::listen(ctx.clone());
     }
     // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).

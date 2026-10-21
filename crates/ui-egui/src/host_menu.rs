@@ -15,15 +15,26 @@
 //! the module in front and the modules offered. No message, no address but the mailboxes' own,
 //! no token; a mailbox the person added by hand in the window, or a shared one, is not named.
 //!
-//! **What the page may ask** is seven commands and no other, each run as the window's own button or box runs it, and
+//! **What the page may ask** is eight commands and no other, each run as the window's own button or box runs it, and
 //! answered: done, or refused with the reason in the interface's language. A message that is no command (another
-//! kind of message, or not one the window can read) is not answered.
+//! kind of message, or not one the window can read) is not answered. `message.open` names a message by its server's
+//! id: one that no window has brought yet (a link from a notification) is read from its server first, by its id alone
+//! (`JmapMailRequest::emails`, through [`Services::jmap`](crate::Services::jmap)), and the answer waits for it
+//! ([`poll`]), [`OPEN_WAIT_MS`] at most.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mailcraft_engine::Scope;
+use mailcraft_engine::cmd::jmap_down::plausible_id;
+use mailcraft_engine::cmd::jmap_mail::apply_jmap_opened;
+use mailcraft_model::sync::{JmapMailRequest, JmapMailResult, JmapScope};
 use mailcraft_model::{AccountKind, Folder, FolderKind, Id, Mailbox};
 use serde_json::{Map, Value, json};
 
 use crate::MailApp;
+use crate::jmap_job::JmapJob;
 use crate::nav::Count;
 
 /// What each message is called (`type`): the window has started, where it is, a command of the page's, its answer.
@@ -44,12 +55,39 @@ const MAX_MESSAGE: usize = 64 * 1024;
 const MAX_ID: usize = 64;
 const MAX_NAME: usize = 320;
 const MAX_QUERY: usize = 2_000;
+/// How long a message the page opens may take to come from its server, in milliseconds, and how many may be on their
+/// way at once.
+pub const OPEN_WAIT_MS: f64 = 30_000.0;
+const MAX_OPENING: usize = 8;
 
-/// What a hosting page that draws the navigation in its own menu handed over.
-#[derive(Clone, Default)]
+/// What a hosting page that draws the navigation in its own menu handed over, and the messages it opened that are on
+/// their way from their server.
+#[derive(Default)]
 pub struct Menu {
     /// The mailboxes, in the page's order.
     pub mailboxes: Vec<Handed>,
+    opening: Vec<Opening>,
+}
+
+impl Menu {
+    /// The menu of a page that handed over `mailboxes`, in its order.
+    pub fn new(mailboxes: Vec<Handed>) -> Menu {
+        Menu { mailboxes, opening: Vec::new() }
+    }
+}
+
+/// A message the page opened that is on its way from its server: the command's id, the account and the email's id,
+/// the run that reads it, and until when it is waited for.
+struct Opening {
+    id: Value,
+    account: Id,
+    email: String,
+    pieces: Receiver<JmapMailResult>,
+    cancel: Arc<AtomicBool>,
+    until: f64,
+    /// What the run said went wrong, and whether the server refused the sign-in.
+    errors: Vec<String>,
+    refused: bool,
 }
 
 /// A mailbox the page handed over, as it said it.
@@ -186,6 +224,9 @@ pub enum Command {
     NewMail,
     /// What the search box does with `query` as it is typed (empty: nothing is searched for any more).
     Search(String),
+    /// A message of a mailbox the page handed over, by the email's id on its server: Mail in front, its folder shown
+    /// and the message selected, as a click in the list does.
+    Message { account: String, id: String },
 }
 
 /// A message from the page, read.
@@ -250,24 +291,32 @@ fn command(name: &str, params: &Map<String, Value>) -> Result<Command, String> {
             _ => Err(bad_params()),
         },
         "search" if only(&["query"]) => text("query", MAX_QUERY).map(|query| Command::Search(query.to_string())).ok_or_else(bad_params),
-        "mail.new" | "folder.select" | "search" => Err(bad_params()),
+        "message.open" if only(&["account", "id"]) => match (text("account", MAX_NAME), text("id", MAX_NAME)) {
+            (Some(account), Some(id)) if account.contains('@') && plausible_id(id) => {
+                Ok(Command::Message { account: account.to_string(), id: id.to_string() })
+            }
+            _ => Err(bad_params()),
+        },
+        "mail.new" | "folder.select" | "search" | "message.open" => Err(bad_params()),
         _ => Err(unknown()),
     }
 }
 
-/// The folder a [`Command::Folder`] names: one of a mailbox the page handed over, by the id the state gives it.
-fn named_folder(app: &MailApp, account: &str, folder: &str) -> Result<Id, String> {
-    let mb = &app.session.mailbox;
+/// The account here of the mailbox the page names by `address`: one it handed over.
+fn named_account(app: &MailApp, address: &str) -> Result<Id, String> {
     let menu = app.services.host_menu.as_ref();
-    let Some(account) = menu
-        .map(|menu| handed(menu, mb))
+    menu.map(|menu| handed(menu, &app.session.mailbox))
         .unwrap_or_default()
         .into_iter()
-        .find(|(h, _)| h.email.trim().eq_ignore_ascii_case(account.trim()))
+        .find(|(h, _)| h.email.trim().eq_ignore_ascii_case(address.trim()))
         .map(|(_, id)| id)
-    else {
-        return Err(tl!("This mailbox isn't one the page handed over.").to_string());
-    };
+        .ok_or_else(|| tl!("This mailbox isn't one the page handed over.").to_string())
+}
+
+/// The folder a [`Command::Folder`] names: one of a mailbox the page handed over, by the id the state gives it.
+fn named_folder(app: &MailApp, account: &str, folder: &str) -> Result<Id, String> {
+    let account = named_account(app, account)?;
+    let mb = &app.session.mailbox;
     let here = || {
         let id = folder.strip_prefix(LOCAL)?.parse::<Id>().ok()?;
         mb.folder(id).filter(|f| f.account == account && folder_id(f) == folder).map(|f| f.id)
@@ -291,8 +340,78 @@ pub fn run(app: &mut MailApp, command: &Command) -> Result<(), String> {
             app.search_text = app.session.view.search.clone();
             ran
         }
+        // (One this window has: one it hasn't is read from its server first, by `answer`.)
+        Command::Message { account, id } => {
+            let account = named_account(app, account)?;
+            let message = here(app, account, id).ok_or_else(|| tl!("That mailbox has no such message.").to_string())?;
+            return show(app, message);
+        }
     };
+    refused(app, ran)
+}
+
+/// A command's refusal, in the interface's language.
+fn refused(app: &MailApp, ran: Result<Value, String>) -> Result<(), String> {
     ran.map(|_| ()).map_err(|e| crate::i18n::run_words::refusal(&e, &app.session.mailbox).into_owned())
+}
+
+/// The message of `account` whose server id is `id`, when this window has it.
+fn here(app: &MailApp, account: Id, id: &str) -> Option<Id> {
+    let mb = &app.session.mailbox;
+    mb.messages.values().find(|m| m.account == account && m.server.as_ref().is_some_and(|server| server.id == id && !server.gone)).map(|m| m.id)
+}
+
+/// The message `message` as a click in the list shows it: Mail in front, its folder in view (no search), the message
+/// selected and in the reading pane, and the list brought round to it.
+fn show(app: &mut MailApp, message: Id) -> Result<(), String> {
+    let folder = app.session.mailbox.message(message).map(|m| m.folder).ok_or_else(|| tl!("That mailbox has no such message.").to_string())?;
+    let ran = app.run("folder.select", json!({"id": folder}));
+    refused(app, ran)?;
+    let ran = app.run("mail.select", json!({"id": message}));
+    refused(app, ran)?;
+    app.reveal_selection = true;
+    Ok(())
+}
+
+/// What `message.open` gets on with when this window hasn't the message: the account, and the run that reads it.
+type Fetching = (Id, Receiver<JmapMailResult>, Arc<AtomicBool>);
+
+/// Ask the server of `account` for the email `id`, which this window hasn't got: by its id alone, in a run of its own
+/// beside any Send/Receive, with the page's credentials.
+fn fetch(app: &mut MailApp, account: Id, id: &str) -> Result<Fetching, String> {
+    let cannot = || tl!("This window can't ask the server for the message.").to_string();
+    let a = app.session.mailbox.account(account).ok_or_else(cannot)?;
+    let server = a.jmap.as_ref().filter(|server| server.problem().is_none()).ok_or_else(cannot)?;
+    // (A tab whose mailboxes a page handed over: the page holds the credentials, and no job carries a secret.)
+    if !app.services.jmap_host_credentials {
+        return Err(cannot());
+    }
+    let request = JmapMailRequest {
+        account,
+        email: a.email.clone(),
+        session: server.session.clone(),
+        bearer: server.bearer,
+        window: 1,
+        scope: JmapScope::Light { also: Vec::new() },
+        emails: vec![id.to_string()],
+        ..Default::default()
+    };
+    let cancel = Arc::new(AtomicBool::new(false));
+    let runner = app.services.jmap.as_ref().ok_or_else(cannot)?;
+    Ok((account, runner(JmapJob { request, secret: None, cancel: cancel.clone() }), cancel))
+}
+
+/// `message.open`: the message shown at once when this window has it (`None`), else the run that brings it from its
+/// server.
+fn open(app: &mut MailApp, account: &str, email: &str) -> Result<Option<Fetching>, String> {
+    let account = named_account(app, account)?;
+    if let Some(message) = here(app, account, email) {
+        return show(app, message).map(|()| None);
+    }
+    if app.services.host_menu.as_ref().is_some_and(|menu| menu.opening.len() >= MAX_OPENING) {
+        return Err(tl!("Too many messages are being opened at once.").to_string());
+    }
+    fetch(app, account, email).map(Some)
 }
 
 /// The answer to a command: done, or why not.
@@ -310,9 +429,80 @@ pub fn answer(app: &mut MailApp, text: &str) -> Option<Value> {
     let (id, result) = match read(text) {
         Incoming::Ignored => return None,
         Incoming::Refused { id, reason } => (id, Err(reason)),
+        // A message no window has brought yet: read from its server first, and answered once it is here ([`poll`]).
+        Incoming::Command { id, command: Command::Message { account, id: email } } => match open(app, &account, &email) {
+            Ok(Some((account, pieces, cancel))) => {
+                let until = crate::now_ms() + OPEN_WAIT_MS;
+                let opening = Opening { id, account, email, pieces, cancel, until, errors: Vec::new(), refused: false };
+                if let Some(menu) = app.services.host_menu.as_mut() {
+                    menu.opening.push(opening);
+                }
+                return None;
+            }
+            Ok(None) => (id, Ok(())),
+            Err(reason) => (id, Err(reason)),
+        },
         Incoming::Command { id, command } => (id, run(app, &command)),
     };
     Some(done(id, result))
+}
+
+/// Whether messages the page opened are on their way from their server: the host looks again ([`poll`]) a moment
+/// later even when nothing else happens, so that one that doesn't come in time is answered.
+pub fn waiting(app: &MailApp) -> bool {
+    app.services.host_menu.as_ref().is_some_and(|menu| !menu.opening.is_empty())
+}
+
+/// Once a frame: take in what the runs of the messages the page opened brought, and the answers of those that are
+/// over: shown, not on the server, or not come in time (that run is stopped).
+pub fn poll(app: &mut MailApp) -> Vec<Value> {
+    let Some(menu) = app.services.host_menu.as_mut() else { return Vec::new() };
+    let opening = std::mem::take(&mut menu.opening);
+    let now = crate::now_ms();
+    let (mut answers, mut waits) = (Vec::new(), Vec::new());
+    for mut o in opening {
+        let mut over = false;
+        loop {
+            match o.pieces.try_recv() {
+                Ok(mut piece) => {
+                    over |= !piece.partial;
+                    o.refused |= piece.auth_refused;
+                    o.errors.extend(piece.errors.iter().take(4).cloned());
+                    // The run's pieces are for its account, whatever they name; the engine still checks the address.
+                    piece.account = o.account;
+                    let _ = apply_jmap_opened(&mut app.session, &piece);
+                    if over {
+                        break;
+                    }
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    over = true;
+                    break;
+                }
+            }
+        }
+        match here(app, o.account, &o.email) {
+            Some(message) => answers.push(done(o.id, show(app, message))),
+            None if over => {
+                let why = match o.errors.first() {
+                    Some(line) => crate::i18n::run_words::refusal(line, &app.session.mailbox).into_owned(),
+                    None if o.refused => crate::i18n::run_words::refusal("The server refused the sign-in", &app.session.mailbox).into_owned(),
+                    None => tl!("That mailbox has no such message.").to_string(),
+                };
+                answers.push(done(o.id, Err(why)));
+            }
+            None if now >= o.until => {
+                o.cancel.store(true, Ordering::Relaxed);
+                answers.push(done(o.id, Err(tl!("The message didn't come from the server in time.").to_string())));
+            }
+            None => waits.push(o),
+        }
+    }
+    if let Some(menu) = app.services.host_menu.as_mut() {
+        menu.opening.extend(waits);
+    }
+    answers
 }
 
 #[cfg(test)]

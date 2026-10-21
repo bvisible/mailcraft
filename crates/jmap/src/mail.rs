@@ -46,6 +46,12 @@
 //! the run was not stopped, and the problems are in `errors`. [`JmapMailResult::stopped`]: the `cancel` flag
 //! was set, which is looked at before every request.
 //!
+//! **Emails by their ids.** A request that names `emails` (a message opened from elsewhere that no window has
+//! brought yet) is a run of its own: `Mailbox/get`, then one `Email/get` of those emails, ten at most, each read
+//! as a window reads an email it has not got and put in the mailbox whose window would list it, in one piece of
+//! pages that are not the whole of their mailboxes; nothing goes up, nothing is sent, no window is read, and the
+//! last piece is never `whole` (it read no mailbox to its end).
+//!
 //! **When something goes wrong.** The server refusing the credentials (401, 403) ends the run with
 //! `auth_refused`; one that is busy (429, 503) ends it with `busy_for`, as many seconds as it asked, or 30.
 //! A server that cannot be reached, or whose request fails as a whole (an HTTP error, an answer that is no
@@ -83,10 +89,12 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::FolderKind;
-use mailcraft_model::sync::{FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_WINDOW, MessagePage};
+use mailcraft_model::sync::{
+    FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_EMAILS, MAX_JMAP_WINDOW, MessagePage,
+};
 use serde_json::{Value, json};
 
-use self::message::{Marks, claims};
+use self::message::{Marks, claims, home};
 use crate::{Client, Error, Http, Secrets, result_of, valid_id};
 
 /// Emails asked for whole in one request.
@@ -149,7 +157,8 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
     emit(run.piece(JmapMailResult {
         errors: out.lines(),
         busy_for: out.busy_for,
-        whole: out.clean(),
+        // (A run for emails by their ids reads no window to its end: nothing it did not see is gone.)
+        whole: out.clean() && request.emails.is_empty(),
         stopped: out.stopped,
         auth_refused: out.auth_refused,
         ..Default::default()
@@ -373,8 +382,13 @@ impl<'a, H: Http> Run<'a, H> {
         if self.cancel.load(Ordering::Relaxed) { Err(Stop::Cancelled) } else { Ok(()) }
     }
 
-    /// The whole run: the changes made here, the mailboxes, then the windows.
+    /// The whole run: the changes made here, the mailboxes, then the windows; or the mailboxes and the emails the
+    /// request names by their ids, and nothing else.
     async fn all(&self, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
+        if !self.request.emails.is_empty() {
+            let places = self.list(out).await?;
+            return self.by_id(places.as_ref(), out, emit).await;
+        }
         // What was changed here goes up first: what is read then is the server after it.
         self.make_changes(out, emit).await?;
         let places = self.list(out).await?;
@@ -416,6 +430,50 @@ impl<'a, H: Http> Run<'a, H> {
                 }
                 Err(stop) => return Err(stop),
             }
+        }
+        Ok(())
+    }
+
+    /// `Email/get` of the emails the request names by their ids (a message opened from elsewhere that no window
+    /// has brought yet), [`MAX_JMAP_EMAILS`] at most: each one the server has, in the mailbox whose window would
+    /// list it ([`home`]), read as a window reads an email it has not got; the mailboxes it lands in, a page each
+    /// that is not the whole of the mailbox, in one piece. One the server doesn't have, or that lies in no mailbox
+    /// of the list, is in none.
+    async fn by_id(&self, places: Option<&Places>, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
+        self.check()?;
+        let mut ids: Vec<&str> = Vec::new();
+        for id in self.request.emails.iter().map(String::as_str).filter(|id| valid_id(id)) {
+            if ids.len() < MAX_JMAP_EMAILS && !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let args = json!({"accountId": self.client.account_id(), "ids": ids, "properties": EMAIL_PROPERTIES});
+        let mut answers = self.client.mail_within(vec![("Email/get", args)], DETAILS_BYTES).await.map_err(|e| self.call_stop(e))?;
+        let got = answers.take(0).map_err(Self::method_stop)?;
+        let Some(list) = got.get("list").and_then(Value::as_array) else {
+            out.details = (ids.len(), Some(self.said(&Error::Protocol("the answer has no list of emails".into()))));
+            return Ok(());
+        };
+        let claimable = places.map(|places| &places.claimable);
+        let mut pages: Vec<MessagePage> = Vec::new();
+        let mut taken: HashSet<&str> = HashSet::new();
+        for email in list.iter().take(ids.len()) {
+            // Only what was asked for, once.
+            let Some(id) = email.get("id").and_then(Value::as_str).filter(|id| ids.contains(id) && !taken.contains(*id)) else { continue };
+            let Some(mailbox) = home(email.get("mailboxIds"), claimable) else { continue };
+            taken.insert(id);
+            let message = message::whole(id, mailbox, email, Marks::of(email.get("keywords")));
+            match pages.iter_mut().find(|page| page.folder == mailbox) {
+                Some(page) => page.messages.push(message),
+                None => pages.push(MessagePage { folder: mailbox.to_string(), messages: vec![message], ..Default::default() }),
+            }
+        }
+        log::debug!("jmap mail: {} of {} emails read by their ids", taken.len(), ids.len());
+        if !pages.is_empty() {
+            emit(self.piece(JmapMailResult { pages, partial: true, ..Default::default() }));
         }
         Ok(())
     }

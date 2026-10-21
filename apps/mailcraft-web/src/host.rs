@@ -71,8 +71,12 @@
 //! `view.notes` (refused where Notes are not offered), `mail.new` (from the mailbox shown), all with `{}`;
 //! `folder.select` with `{ account, folder }` (a mailbox the page handed over, any case, and a folder's `id` from the
 //! state); `search` with `{ query }` (what the search box does with what is typed: Mail in front, empty text
-//! searches for nothing). Any other name, a parameter it doesn't take, or an `id` that is neither a number nor a text
-//! of 64 characters at most is refused. Each command is answered:
+//! searches for nothing); `message.open` with `{ account, id }` (a mailbox the page handed over and an email's id on
+//! its server, a JMAP id: Mail in front, the message's folder shown and the message selected and in the reading pane,
+//! as a click in the list does; one MailCraft hasn't got yet, a link from a notification, is read from its server
+//! first by its id alone, and the answer waits for it, 30 seconds at most: refused when the server hasn't got it, when
+//! it didn't come in time, or with what went wrong). Any other name, a parameter it doesn't take, or an `id` that is
+//! neither a number nor a text of 64 characters at most is refused. Each command is answered:
 //!
 //! ```js
 //! { type: "mailcraft:command-done", id: 7, ok: true }

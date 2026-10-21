@@ -89,10 +89,15 @@ impl Marks {
 /// An email that says nothing of where it lies (or only ids that mean nothing) belongs to the mailbox it
 /// was found in.
 pub(super) fn claims(mailbox: &str, mailbox_ids: Option<&Value>, claimable: Option<&HashSet<String>>) -> bool {
-    let Some(map) = mailbox_ids.and_then(Value::as_object) else { return true };
+    home(mailbox_ids, claimable).is_none_or(|smallest| smallest == mailbox)
+}
+
+/// The mailbox whose window lists an email whose `mailboxIds` are these ([`claims`]): the smallest of their ids that
+/// counts. `None` when they name none that does (or there are none to read).
+pub(super) fn home<'a>(mailbox_ids: Option<&'a Value>, claimable: Option<&HashSet<String>>) -> Option<&'a str> {
+    let map = mailbox_ids.and_then(Value::as_object)?;
     let counts = |id: &str| valid_id(id) && claimable.is_none_or(|all| all.contains(id));
-    let smallest = map.iter().filter(|(id, on)| **on == Value::Bool(true) && counts(id)).map(|(id, _)| id.as_str()).min();
-    smallest.is_none_or(|smallest| smallest == mailbox)
+    map.iter().filter(|(id, on)| **on == Value::Bool(true) && counts(id)).map(|(id, _)| id.as_str()).min()
 }
 
 /// What the server says of an email: its id, the mailbox it was listed in and its marks.

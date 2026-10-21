@@ -2020,3 +2020,57 @@ proptest! {
         }
     }
 }
+
+/// Every piece of a run over the stand-in, as they come: a run for emails by their ids is no run of windows, whose
+/// shape [`well_formed`] holds.
+fn by_ids(stand_in: &StandIn, request: &JmapMailRequest) -> Vec<JmapMailResult> {
+    let client = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
+    let mut pieces = Vec::new();
+    block_on(sync_mail(&client, request, &AtomicBool::new(false), &mut |piece| pieces.push(piece)));
+    assert!(pieces.iter().all(|piece| (piece.account, piece.email.as_str()) == (ID, ME)));
+    pieces
+}
+
+#[test]
+fn a_run_for_emails_by_their_ids_reads_those_alone_each_into_the_mailbox_whose_window_lists_it() {
+    let (stand_in, ids) = world();
+    let older = deliver(&stand_in, &ids.apollo, "Old plans", &["$seen"], 1);
+    let newer = deliver(&stand_in, &ids.inbox, "Fresh news", &[], 2);
+    deliver(&stand_in, &ids.inbox, "Not asked for", &[], 3);
+    let mut asked = light(1, &[]);
+    asked.emails = vec![older.clone(), newer.clone(), "Enone".into(), "not an id!".into(), older.clone()];
+    has(&mut asked, &ids.inbox, &["E-whatever"]);
+    let pieces = by_ids(&stand_in, &asked);
+    // One piece with the mailboxes they lie in, then the last; no window, and nothing taken for gone.
+    let (end, rest) = pieces.split_last().unwrap();
+    assert_eq!(rest.len(), 1, "{pieces:?}");
+    assert!(!end.partial && end.errors.is_empty() && !end.whole, "a run that read no window to its end: {end:?}");
+    let pages = &rest[0].pages;
+    assert!(rest[0].partial && rest[0].progress.is_none() && rest[0].listing.is_none());
+    let found: Vec<(&str, Vec<&str>, bool)> = pages.iter().map(|page| (page.folder.as_str(), subjects(page), page.afresh)).collect();
+    let mut expected = vec![(ids.apollo.as_str(), vec!["Old plans"], false), (ids.inbox.as_str(), vec!["Fresh news"], false)];
+    expected.sort_by_key(|(folder, _, _)| folder.to_string());
+    let mut found = found;
+    found.sort_by_key(|(folder, _, _)| folder.to_string());
+    assert_eq!(found, expected);
+    // Read as a window reads an email it hasn't got: its header and its marks.
+    let old = pages.iter().flat_map(|page| &page.messages).find(|m| m.server.id == older).unwrap();
+    assert!(old.server.read && old.from.email == "zoe@example.org" && old.received > 0);
+    assert_eq!(old.server.folder, ids.apollo);
+}
+
+#[test]
+fn a_run_for_emails_by_their_ids_takes_ten_at_most_and_one_the_server_hasnt_got_is_in_no_page() {
+    let (stand_in, ids) = world();
+    let all: Vec<String> = (0..12).map(|n| deliver(&stand_in, &ids.inbox, &format!("Mail {n}"), &[], n)).collect();
+    let mut asked = light(1, &[]);
+    asked.emails = all.clone();
+    let pieces = by_ids(&stand_in, &asked);
+    let read: usize = pieces.iter().flat_map(|piece| &piece.pages).map(|page| page.messages.len()).sum();
+    assert_eq!(read, MAX_JMAP_EMAILS);
+    // None the server has.
+    asked.emails = vec!["Enone".into()];
+    let pieces = by_ids(&stand_in, &asked);
+    assert_eq!(pieces.len(), 1, "the last piece alone: {pieces:?}");
+    assert!(pieces[0].pages.is_empty() && pieces[0].errors.is_empty());
+}

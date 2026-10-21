@@ -161,11 +161,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `nav.rs` keeps in one place for both (`shown_count`), and the server's id, `local:<n>` for one only MailCraft has;
   their Favourites as the pane lists them; the mailbox and folder in view; the views offered, `notes` only where
   Notes are; no message, no other address, no token);
-  and seven commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
-  `view.mail`, `view.calendar`, `view.people`, `view.notes`, `folder.select {account, folder}`, `mail.new` and
-  `search {query}` (the search box's), each run as the window's own button or box runs it and answered
+  and eight commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
+  `view.mail`, `view.calendar`, `view.people`, `view.notes`, `folder.select {account, folder}`, `mail.new`,
+  `search {query}` (the search box's) and `message.open {account, id}` (a message by its email id on the server,
+  shown as a click in the list shows it), each run as the window's own button or box runs it and answered
   `{type: "mailcraft:command-done", id, ok, error?}`, the reason in the interface's language; any other name, a
-  parameter it doesn't take or an id that is no number nor a short text is refused. The browser's part (the flag,
+  parameter it doesn't take or an id that is no number nor a short text is refused. A message `message.open` names
+  that no window has brought yet (a link from a notification) is read from its server by its id alone, and the
+  answer waits for it, 30 seconds at most: `JmapMailRequest::emails` (a marked hunk of `crates/model/src/sync/jmap.rs`,
+  ten at most), a run of `crates/jmap/src/mail.rs` that lists the mailboxes and reads those emails and nothing else,
+  each into the mailbox whose window lists it, and `apply_jmap_opened` (`crates/engine/src/cmd/jmap_mail.rs`), which
+  takes them in as no Send/Receive (the account's progress and status stay as they were, nothing is taken for gone). The browser's part (the flag,
   the listener, the posts, the throttle, the version with the commit the web build's workflow knows) is
   `apps/mailcraft-web/src/host.rs` (`menu`, and the contract in its comment), `host_menu.rs`, `main.rs`, `web.rs` and
   `Cargo.toml` (the `MessageEvent` feature of `web-sys`); the refusals' French lines are a block near the top of

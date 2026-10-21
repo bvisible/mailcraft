@@ -141,6 +141,8 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         sends,
         drafts,
         background,
+        // (A Send/Receive reads windows: no email by its id alone.)
+        emails: Vec::new(),
     })
 }
 
@@ -382,6 +384,34 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
         "summary": summary,
         "authRefused": result.auth_refused,
     }))
+}
+
+/// Take in the emails a run read by their ids alone (`JmapMailRequest::emails`: a message a hosting page opens that
+/// no window has brought yet): each into the folder whose window lists it, as a window that is not the whole of its
+/// mailbox takes an email in. Nothing else of the result is read: it is no Send/Receive, so the account's progress
+/// and status are left as they are, and nothing is taken for gone. Not an undo step. What it came to:
+/// `{"new": n, "changed": n}`.
+pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> CmdResult {
+    let account = result.account;
+    let a = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
+    if a.kind != AccountKind::Jmap {
+        return Err(fail(format!("{} isn't kept in step with a JMAP server", a.name)));
+    }
+    // (As for a run: an answer for another account would put a stranger's mail in this one.)
+    if !result.email.is_empty() && !a.email.trim().eq_ignore_ascii_case(result.email.trim()) {
+        return Err(fail(format!("this Send/Receive was for another account, not for {}", a.name)));
+    }
+    let mut down = Down::default();
+    let mut index = std::mem::take(&mut s.graph_index);
+    // (A page that would be the whole of its mailbox is no email read by its id: it would take the rest for gone.)
+    for page in result.pages.iter().filter(|page| !page.afresh).take(MAX_PAGES) {
+        jmap_down::take_window(&mut s.mailbox, &mut index, account, page, &mut down);
+    }
+    s.graph_index = index;
+    if down != Down::default() {
+        s.mailbox_changed();
+    }
+    Ok(json!({"new": down.new, "changed": down.changed}))
 }
 
 #[cfg(test)]

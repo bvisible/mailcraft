@@ -99,7 +99,18 @@ pub struct JmapMailRequest {
     /// Nobody is waiting for this run: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
+    // //// Neoffice — a message a hosting page opens that no window has brought yet (a link from a notification) is read
+    // by its id alone, in a run of its own (`mailcraft-jmap`'s `sync_mail`, the window's `host_menu.rs`).
+    /// Emails to read by their server ids, [`MAX_JMAP_EMAILS`] at most: a run that names any lists the mailboxes and
+    /// reads those emails, each into the mailbox whose window would list it, and does nothing else (no change goes up,
+    /// nothing is sent, no window is read).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub emails: Vec<String>,
 }
+
+// //// Neoffice — see `JmapMailRequest::emails`.
+/// Most emails a run reads by their ids alone ([`JmapMailRequest::emails`]).
+pub const MAX_JMAP_EMAILS: usize = 10;
 
 /// Messages of a JMAP account to fetch whole (their raw octets, which an email's blob holds), by
 /// server id, in this order: the counterpart of [`GraphFetchRequest`](super::GraphFetchRequest).
@@ -505,6 +516,8 @@ mod tests {
             sends: vec![JmapSend { message: 7, draft_copy: format!("E-draft-{ME}"), mime: Box::new(to_bob.clone()) }],
             drafts: vec![JmapDraftUp { message: 8, saves: 2, replaces: "E9".into(), mime: Box::new(to_bob) }],
             background: true,
+            // //// Neoffice — an email to read by its id alone (`emails`), the address in it too.
+            emails: vec![format!("E-{ME}")],
         }
     }
 
