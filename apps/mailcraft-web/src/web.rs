@@ -70,7 +70,8 @@ pub fn start() {
         if let Some(el) = document.get_element_by_id(LOADING_ID) {
             match result {
                 Ok(()) => el.remove(),
-                Err(e) => el.set_inner_html(&format!("<p>MailCraft failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
+                // //// Neoffice — under the name the page that loads it says (index.html): NeoMail, this build being Neoffice's.
+                Err(e) => el.set_inner_html(&format!("<p>NeoMail failed to start: {e:?}</p><p>A browser with WebGPU or WebGL2 is required.</p>")),
             }
         }
     });
