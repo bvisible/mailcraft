@@ -154,9 +154,14 @@ fn the_page_gives_its_module_a_badge_and_may_bring_it_into_view() {
     assert_eq!(app.services.modules.as_ref().unwrap().badge("other"), None);
     assert!(!hear(&mut app, &json!({"type": "mailcraft:command", "id": 1, "name": "view.mail"}).to_string()));
     assert!(!hear(&mut app, "not json"));
+    // The status bar while it is in view: its unread ones, or nothing, never the mail's counts
+    assert_eq!(status(&app), None, "the window's own module is in view");
     // Its module into view, on the page's word (a conversation it opens there)
     assert!(hear(&mut app, &json!({"type": SHOW_TYPE, "id": "synk"}).to_string()));
     assert!(shown(&app));
+    assert_eq!(status(&app), Some(None));
+    hear(&mut app, &json!({"type": BADGE_TYPE, "id": "synk", "badge": 4}).to_string());
+    assert!(status(&app).flatten().is_some_and(|said| said.contains('4')), "{:?}", status(&app));
     assert!(hear(&mut app, &json!({"type": SHOW_TYPE, "id": "other"}).to_string()));
     // Any of the window's own views brings it back
     app.run("view.calendar", json!({})).unwrap();

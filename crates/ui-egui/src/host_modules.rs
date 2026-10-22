@@ -97,6 +97,15 @@ pub fn shown(app: &MailApp) -> bool {
     app.services.modules.as_ref().is_some_and(|m| m.shown.is_some())
 }
 
+/// What the status bar says while a module of the page's is in view, in place of the counts of the window's own module
+/// behind it: its unread ones, as the badge the page gives it says (« Unread: 3 »), or nothing. `None` while the
+/// window's own module is in view.
+pub fn status(app: &MailApp) -> Option<Option<String>> {
+    let modules = app.services.modules.as_ref()?;
+    let id = modules.shown.as_deref()?;
+    Some(modules.badge(id).map(|n| crate::i18n::fmt(tl!("Unread: {n}"), &[("n", n)])))
+}
+
 /// Bring the page's module `id` into view: the window leaves it its place from the next frame.
 pub fn show(app: &mut MailApp, id: &str) -> bool {
     let Some(modules) = app.services.modules.as_mut() else { return false };

@@ -1097,6 +1097,26 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.rounded(&[(2.5, 3.0), (2.5, 10.0), (4.5, 10.0), (4.5, 12.5), (7.5, 10.0), (12.0, 10.0), (12.0, 3.0)], true, 1.5, c);
             pen.rounded(&[(8.5, 12.5), (8.5, 7.5), (17.5, 7.5), (17.5, 14.5), (15.5, 14.5), (15.5, 17.0), (12.5, 14.5), (8.5, 14.5)], true, 1.5, a);
         }
+        // //// Neoffice — Synk, Neodesk's chat drawn in NeoMail's window, uses NeoMail's icons, these three with them:
+        // dictation, a channel, a reaction (exported for it: examples/export_icons.rs).
+        "mic" | "dictate" => {
+            pen.rounded(&[(7.5, 2.5), (12.5, 2.5), (12.5, 10.5), (7.5, 10.5)], true, 2.5, c);
+            pen.arc(10.0, 9.5, 5.0, 0.0, 180.0, c);
+            pen.line(&[(10.0, 14.5), (10.0, 17.5)]);
+            pen.line(&[(7.0, 17.5), (13.0, 17.5)]);
+        }
+        "channel" => {
+            pen.line(&[(8.5, 3.5), (6.5, 16.5)]);
+            pen.line(&[(13.5, 3.5), (11.5, 16.5)]);
+            pen.line(&[(4.0, 7.5), (16.5, 7.5)]);
+            pen.line(&[(3.5, 12.5), (16.0, 12.5)]);
+        }
+        "emoji" | "react" => {
+            pen.circle(10.0, 10.0, 7.5, c);
+            pen.fcircle(7.5, 8.0, 1.0, c);
+            pen.fcircle(12.5, 8.0, 1.0, c);
+            pen.arc(10.0, 10.5, 3.5, 30.0, 150.0, a);
+        }
         // Anything else: a lettered tile, so a missing drawing is visible rather than empty.
         _ => {
             pen.rect(3.5, 3.5, 16.5, 16.5, c);
@@ -1268,6 +1288,12 @@ pub const NAMES: &[&str] = &[
     // //// Neoffice — Share in Synk and Chat in Synk (host_share.rs).
     "shareChat",
     "chatSynk",
+    // //// Neoffice — Synk's chat in NeoMail's window: dictation, a channel, a reaction.
+    "mic",
+    "dictate",
+    "channel",
+    "emoji",
+    "react",
     "notes",
     "description",
     "work",

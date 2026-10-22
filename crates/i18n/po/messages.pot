@@ -8767,7 +8767,7 @@ msgid "Unread/ Read"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/chrome.rs
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/host_modules.rs
 msgid "Unread: {n}"
 msgstr ""
 

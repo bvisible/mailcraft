@@ -10310,7 +10310,7 @@ msgid "Unread/ Read"
 msgstr "Da leggere/Letto"
 
 #. interface
-#: crates/ui-egui/src/chrome.rs
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/host_modules.rs
 #, fuzzy
 msgid "Unread: {n}"
 msgstr "Da leggere: {n}"

@@ -341,7 +341,15 @@ pub fn status_bar(app: &mut MailApp, ui: &mut Ui) {
                     if w + 0.5 < whole { resp.on_hover_text(s) } else { resp }
                 };
                 let st = |ui: &mut Ui, s: &str, color: egui::Color32| st_most(ui, s, color, f32::INFINITY);
+                // //// Neoffice — a module the page draws in the window's place (Neodesk's Synk) says its own unread ones,
+                // or nothing, not the counts of the window's module behind it (host_modules.rs).
+                let hosted = crate::host_modules::status(app);
+                if let Some(Some(said)) = &hosted {
+                    st(ui, said, t.text_dim);
+                }
                 match app.session.view.module {
+                    // //// Neoffice — the page's module in view said its own, above.
+                    _ if hosted.is_some() => {}
                     Module::Mail => {
                         let shown = app.session.rows().len();
                         let folder = app.session.view.folder;
