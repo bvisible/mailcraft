@@ -61,9 +61,10 @@ fn own_end(paragraphs: &[Paragraph]) -> usize {
     paragraphs.len()
 }
 
-/// The names a quoted mail's sender and date lines start with, as the server strips them from what it reads.
-const FROM: [&str; 5] = ["from", "de", "von", "da", "van"];
-const SENT: [&str; 9] = ["sent", "date", "envoyé", "envoye", "gesendet", "datum", "inviato", "data", "verzonden"];
+/// The names a quoted mail's sender and date lines start with, as the server strips them from what it reads (and
+/// Nora's pane from what she reads of a message, `observe.rs`).
+pub(crate) const FROM: [&str; 5] = ["from", "de", "von", "da", "van"];
+pub(crate) const SENT: [&str; 9] = ["sent", "date", "envoyé", "envoye", "gesendet", "datum", "inviato", "data", "verzonden"];
 
 /// A line `<name>:` (spaces before the colon allowed) of one of `names`, in any case.
 fn header(text: &str, names: &[&str]) -> bool {

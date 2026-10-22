@@ -814,6 +814,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Message › Nora",
         r#"{} — has Nora learn, on the server and in the background (about a minute), the writing style of the mailbox the message being written goes from, from its sent mail; only for a mailbox the hosting page handed over. Answers {"asked": number}"#,
     ),
+    (
+        "ui.noraAssistant",
+        "Ask Nora",
+        "Home › Respond",
+        r#"{"open"?: bool (default: the other way round)} — opens or closes Nora's pane at the right of the window, a conversation with her: she reads the message or conversation being read and the message being written, and writes into that message only (at its top, after or over the owner's text, into the reply she opens or a new message); nothing she writes is sent. Only where the hosting page reaches her conversation. Answers {"open": bool}"#,
+    ),
     // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs): the owner's click only.
     (
         "ui.shareMessage",
@@ -3686,6 +3692,8 @@ impl MailApp {
                 host_modules::place(self, ui);
             } else {
                 ribbon::show(self, ui);
+                // //// Neoffice — Nora's pane at the right of the window, while it is open (nora/assist.rs).
+                nora::assist::side(self, ui);
                 egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| match self.session.view.module {
                     mailcraft_engine::Module::Mail => mail_view::show(self, ui),
                     mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),

@@ -192,6 +192,8 @@ pub(crate) struct Nora {
     wanted: Option<Wanted>,
     pub(crate) translation: Option<Translation>,
     pub(crate) said: Option<Said>,
+    /// Her pane: the conversation with her beside the window ([`super::assist`]).
+    pub(crate) assist: super::assist::Assist,
 }
 
 impl Nora {
@@ -352,6 +354,7 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
         "ui.noraImprove" => rewrite(app, Rewrite::Improve),
         "ui.noraTranslateDraft" => chosen_language(p).and_then(|l| rewrite(app, Rewrite::Translate(l))),
         "ui.noraLearnStyle" => learn_style(app),
+        "ui.noraAssistant" => super::assist::toggle(app, p),
         _ => return None,
     })
 }
@@ -375,6 +378,7 @@ pub(crate) fn enabled(app: &MailApp, id: &str) -> bool {
             writing.is_some() && app.session.signature_edit.is_none() && !nora.asking(Kind::Rewrite) && !nora.asking(Kind::Reply)
         }
         "ui.noraLearnStyle" => writing.is_some_and(|c| page_mailbox(app, c.account).is_some()) && !nora.asking(Kind::Style),
+        "ui.noraAssistant" => super::assist::available(app),
         _ => false,
     }
 }

@@ -18,8 +18,10 @@
 //! the page's own origin ([`crate::nora_origin`]): an address can't send them anywhere else. Nothing
 //! secret travels in the address.
 //!
-//! Only the six methods the window calls go out ([`METHODS`]), each with a plain JSON object of
-//! arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
+//! Only the six methods the window calls go out ([`METHODS`]), and the five of Nora's conversation that
+//! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), these only where they
+//! can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), each with a plain JSON
+//! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
 //! [`MAX_ANSWER`] bytes, its text as UTF-8 with what isn't replaced; a call is given up after
 //! [`GIVE_UP_MS`]. A call that got no answer comes back with status 0 and why, which the window says.
 
@@ -27,7 +29,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use mailcraft_ui_egui::NoraCall;
-use mailcraft_ui_egui::nora::{METHODS, PageMailbox};
+use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox};
 
 use crate::hosted::HostAccount;
 
@@ -97,10 +99,10 @@ pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
     PageMailbox { address: handed.email.clone(), name: name.unwrap_or_else(|| handed.email.trim().to_string()) }
 }
 
-/// The body a call goes with, when it may go out at all: one of the six methods, a plain object of
-/// arguments without a `cmd` key, within 8 MB.
+/// The body a call goes with, when it may go out at all: one of the six methods or of the five of her
+/// conversation (her pane's, [`CHAT_METHODS`]), a plain object of arguments without a `cmd` key, within 8 MB.
 pub fn allowed(call: &NoraCall) -> Result<String, String> {
-    if !METHODS.contains(&call.method) {
+    if !METHODS.contains(&call.method) && !CHAT_METHODS.contains(&call.method) {
         return Err("that is not one of Nora's methods".into());
     }
     let Some(args) = call.args.as_object() else { return Err("the arguments are not a plain object".into()) };
@@ -140,7 +142,7 @@ fn too_late() -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::service;
+pub use browser::{chat, service};
 
 #[cfg(target_arch = "wasm32")]
 mod browser {
@@ -194,6 +196,8 @@ mod browser {
     async fn answer(origin: &str, call: &NoraCall) -> NoraAnswer {
         let reached = match allowed(call) {
             Err(why) => Err(why),
+            // Her conversation's calls only where they may go now (a host that came since must say it takes them).
+            Ok(_) if super::CHAT_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's conversation".to_string()),
             Ok(body) => match host_call() {
                 Some((owner, function)) => call_host(&owner, &function, call.method, &body).await,
                 None => fetch(origin, call.method, body).await,
@@ -202,6 +206,17 @@ mod browser {
         match reached {
             Ok((status, body)) => NoraAnswer { id: call.id, status, body },
             Err(why) => NoraAnswer { id: call.id, status: 0, body: why },
+        }
+    }
+
+    /// Whether the calls of Nora's conversation (her pane's, [`super::CHAT_METHODS`]) go out: always as the page's own
+    /// `fetch` (`/neomail`, its session, its origin); through a host that makes the calls itself only when it says it
+    /// takes them, with `window.mailcraftNoraChat === true` beside its `mailcraftNoraCall` (Neodesk's shell lets none of
+    /// them through yet).
+    pub fn chat() -> bool {
+        match host_call() {
+            None => true,
+            Some((owner, _)) => crate::host::get(&owner, "mailcraftNoraChat").and_then(|v| v.as_bool()) == Some(true),
         }
     }
 
@@ -413,14 +428,21 @@ mod tests {
     }
 
     #[test]
-    fn only_the_six_methods_go_out_with_a_plain_object() {
+    fn only_noras_methods_go_out_with_a_plain_object() {
         let call = |method: &'static str, args| NoraCall { id: 1, method, args };
         for method in METHODS {
             assert_eq!(allowed(&call(method, json!({"account_name": ""}))), Ok(r#"{"account_name":""}"#.to_string()));
         }
+        // Her pane's conversation: the five calls of craft-nora's protocol, and no other of the chat's.
+        for method in CHAT_METHODS {
+            assert_eq!(allowed(&call(method, json!({"thread_id": "t1"}))), Ok(r#"{"thread_id":"t1"}"#.to_string()));
+            assert!(allowed(&call(method, json!({"thread_id": "t1", "cmd": "frappe.client.delete"}))).is_err(), "{method}");
+        }
         for (method, args) in [
             ("nora.api.nora_webmail.get_style_profile", json!({})),
-            ("nora.api.chat.post_message", json!({})),
+            ("nora.api.chat.clear_thread", json!({})),
+            ("nora.api.chat.stop", json!({})),
+            ("frappe.client.get_list", json!({"doctype": "Webmail Account"})),
             ("", json!({})),
             (METHODS[0], json!(["account_name"])),
             (METHODS[0], json!("text")),

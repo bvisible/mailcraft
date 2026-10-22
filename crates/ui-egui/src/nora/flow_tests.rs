@@ -693,7 +693,7 @@ fn the_commands_take_anything_and_never_panic() {
         json!({"language": "de", "message": 3, "all": true}),
     ];
     let commands: Vec<&str> = crate::UI_COMMANDS.iter().map(|c| c.0).filter(|id| id.starts_with("ui.nora")).collect();
-    assert_eq!(commands.len(), 7);
+    assert_eq!(commands.len(), 8);
     let states: [fn() -> (MailApp, Calls); 3] = [
         || {
             let (mut app, calls, _) = sample(PLAIN);

@@ -1,0 +1,52 @@
+# //// Neoffice — added file (no upstream equivalent)
+# Why: `cargo xtask i18n` gathers the interface's English into crates/i18n/po/messages.pot and merges it into the four
+# catalogues upstream keeps beside it, and `cargo xtask ci` fails when they are out of date. The maintainer's Mac has too
+# little disk to build the extractor for every change, so this runs it on a GitHub runner, by hand, for the branch or
+# commit it is dispatched on (or `ref`), and keeps what it wrote as an artifact (the five files and the patch), to be
+# committed as they are. It writes nothing to the repository itself. Pinned as neoffice-ci.yml is.
+name: Neoffice i18n catalogues
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Another branch or commit of this fork to gather the texts of (empty: the one dispatched)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  i18n:
+    name: cargo xtask i18n
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: neoffice-i18n
+      - name: cargo xtask i18n
+        run: cargo xtask i18n
+      - name: What it changed
+        run: |
+          set -euo pipefail
+          git diff --stat -- crates/i18n/po
+          git diff -- crates/i18n/po > i18n.patch
+          mkdir -p out
+          cp crates/i18n/po/messages.pot crates/i18n/po/de.po crates/i18n/po/es.po crates/i18n/po/fr.po crates/i18n/po/it.po i18n.patch out/
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: i18n-catalogues
+          path: out/*
+          if-no-files-found: error

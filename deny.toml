@@ -76,4 +76,5 @@ wildcards = "allow"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/storytold/craft-libs", "https://github.com/UCS-Care-Group/winit"]
+# //// Neoffice — Neoffice's craft-libs fork too: Nora's client core and panel (craft-nora, craft-nora-ui), as the editors take them.
+allow-git = ["https://github.com/storytold/craft-libs", "https://github.com/UCS-Care-Group/winit", "https://github.com/bvisible/craft-libs"]

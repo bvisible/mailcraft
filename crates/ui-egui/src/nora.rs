@@ -8,6 +8,11 @@
 //! written has her correct, improve or translate the person's own text, and learn the writing style
 //! of the mailbox it goes from (My style).
 //!
+//! Her pane ([`assist`]) is a conversation with her, beside the window: she reads the message or the
+//! conversation being read and the message being written, and writes into that message, as she does in
+//! the documents of the editors (the same client core and panel, from craft-libs); nothing she writes
+//! there is sent either.
+//!
 //! Nora lives on the server. The window reaches her only through a host that says it can
 //! ([`crate::Services::nora`]): the browser build when a Neoffice page hosts it. A call names one of
 //! six methods of the server ([`METHODS`], the six Neodesk's shell lets through) with its arguments,
@@ -26,9 +31,11 @@
 //! person's own text, above the signature and the quoted original ([`own_text`]).
 
 mod answer;
+pub(crate) mod assist;
 mod band;
 mod flow;
 pub(crate) mod look;
+mod observe;
 mod own_text;
 pub(crate) mod pane;
 pub(crate) mod ribbon;
@@ -64,6 +71,16 @@ pub const SCAN_STYLE: &str = "nora.api.nora_webmail.scan_style";
 /// Every method the window calls: Neodesk's shell lets these six through and no other, so a new one
 /// waits for a release of Neodesk.
 pub const METHODS: [&str; 6] = [QUICK_REPLY, GENERATE_EMAIL, TRANSLATE, PROOFREAD, IMPROVE, SCAN_STYLE];
+/// The methods of Nora's conversation, which her pane calls ([`assist`]): craft-nora's protocol, the one the
+/// editors' panes speak (its paths, without `/api/method/`). Neodesk's shell lets none of them through yet, so a
+/// host that makes the calls itself says whether it takes them ([`Host::chat`]).
+pub const CHAT_METHODS: [&str; 5] = [
+    "nora.api.chat.start_or_resume_thread",
+    "nora.api.chat.post_message",
+    "nora.api.chat.get_messages",
+    "nora.api.chat.get_browser_actions",
+    "nora.api.page_observation.receive_observation",
+];
 
 /// The longest wait for an answer, in milliseconds: above the 180 s after which Neodesk's shell
 /// answers by itself that Nora could not be reached (each of the server's model calls may take a
@@ -116,6 +133,10 @@ pub struct Host {
     /// The mailboxes the hosting page handed over: a message of one of them is named to Nora by its
     /// id on the server, and only their style can be learnt there.
     pub mailboxes: Vec<PageMailbox>,
+    /// Whether the host takes the calls of Nora's conversation ([`CHAT_METHODS`]) too, and so her pane
+    /// ([`assist`]) can be opened: the page `/neomail` does (its own session, its own origin); Neodesk's
+    /// shell doesn't yet.
+    pub chat: bool,
 }
 
 /// A mailbox the hosting page handed over, as the server knows it.
@@ -131,9 +152,10 @@ pub struct PageMailbox {
 
 impl MailApp {
     /// Nora's answers that came, the reply that waits for its message, and the calls that took too
-    /// long: once a frame ([`flow`]).
+    /// long: once a frame ([`flow`]); and her conversation in her pane, open or not ([`assist`]).
     pub(crate) fn poll_nora(&mut self) {
         flow::poll(self);
+        assist::poll(self);
     }
 }
 

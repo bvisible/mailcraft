@@ -869,6 +869,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "craft-nora"
+version = "0.1.0"
+source = "git+https://github.com/bvisible/craft-libs?rev=57af0da52becd54ada310826f7f5a6048c7712b1#57af0da52becd54ada310826f7f5a6048c7712b1"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "craft-nora-ui"
+version = "0.1.0"
+source = "git+https://github.com/bvisible/craft-libs?rev=57af0da52becd54ada310826f7f5a6048c7712b1#57af0da52becd54ada310826f7f5a6048c7712b1"
+dependencies = [
+ "craft-nora",
+ "egui",
+]
+
+[[package]]
 name = "craft-quit"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=8f5a2831614e632f91ad367f7af2a6e5b61b9529#8f5a2831614e632f91ad367f7af2a6e5b61b9529"
@@ -2499,6 +2517,8 @@ dependencies = [
 name = "mailcraft-ui-egui"
 version = "0.6.0"
 dependencies = [
+ "craft-nora",
+ "craft-nora-ui",
  "egui",
  "egui_kittest",
  "image",

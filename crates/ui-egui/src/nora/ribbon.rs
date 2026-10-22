@@ -3,9 +3,9 @@
 // //// Neoffice — added file (no upstream equivalent): Nora's place in the ribbon.
 
 //! Nora's place in the ribbon, when a host reaches her, in both its layouts: a Nora button in the
-//! Respond group of Mail's Home tab, whose menu is the reading pane's button's (reply with her,
-//! translate the message), and a Nora group in the tab of a message being written (Correct, Improve,
-//! Translate and, for a mailbox the hosting page handed over, My style). So she can be reached with the
+//! Respond group of Mail's Home tab, whose menu is the reading pane's button's (her pane, reply with
+//! her, translate the message), and a Nora group in the tab of a message being written (her pane,
+//! Correct, Improve, Translate and, for a mailbox the hosting page handed over, My style). So she can be reached with the
 //! reading pane off, and from the ribbon's keys. The ribbon describes its controls as data; this adds
 //! hers to that description once it is made, so that the ribbon's own tabs stay as they are.
 
@@ -49,6 +49,17 @@ pub(crate) fn add(app: &MailApp, tab: &mut Tab) {
             },
             Item { menu: Some(Menu::NoraTranslate), section: 3, rank: 4, ..control("noraTranslate", "globe", "Translate", "", Size::Small) },
         ];
+        if super::assist::available(app) {
+            items.insert(
+                0,
+                Item {
+                    command: Some(("ui.noraAssistant", json!({"open": true}))),
+                    section: 3,
+                    rank: 4,
+                    ..control("ui.noraAssistant", "nora", "Ask Nora", "Nora, the Neoffice assistant", Size::Small)
+                },
+            );
+        }
         if page_mailbox(app, c.account).is_some() {
             items.push(Item {
                 command: Some(("ui.noraLearnStyle", json!({}))),
@@ -79,6 +90,11 @@ pub(crate) fn menu(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
     match menu {
         Menu::Nora => {
             let Some(message) = app.session.sel.focus() else {
+                // Her pane needs no message to be opened.
+                if super::assist::available(app) {
+                    crate::widgets::mi(ui, app, "Ask Nora", "ui.noraAssistant", json!({"open": true}));
+                    ui.separator();
+                }
                 ui.label(tl!("Select a message first"));
                 return;
             };

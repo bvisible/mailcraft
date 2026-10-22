@@ -158,6 +158,11 @@ fn module_delete(app: &MailApp) -> Option<&'static str> {
 /// Command shortcuts when no text field has the keyboard and no dialog is open. Keys with Mod (or
 /// function keys) also work while typing, except the ones text editing needs.
 pub fn global_shortcuts(app: &mut MailApp, ctx: &egui::Context) {
+    // //// Neoffice — what is typed into Nora's pane is hers: no shortcut of the window runs from it (Ctrl+Enter would send the
+    // message being written, Escape close it; nora/assist.rs).
+    if crate::nora::assist::has_keys(app) {
+        return;
+    }
     if !takes_commands(app) {
         if app.ui.backstage && ctx.input(|i| i.key_pressed(Key::Escape)) {
             app.ui.backstage = false;

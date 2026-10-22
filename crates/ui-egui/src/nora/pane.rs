@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora in the reading pane: her button, and a message she translated.
 
-//! Nora in the reading pane: her button beside the actions on the message (Reply with Nora, Reply
-//! All with Nora, Translate into French, German or English, and Show the Original while her
+//! Nora in the reading pane: her button beside the actions on the message (Ask Nora, which opens her
+//! pane, Reply with Nora, Reply All with Nora, Translate into French, German or English, and Show the Original while her
 //! translation is shown), and her translation in place of the message's body.
 //!
 //! A translation is shown as the message it is of, with her text for its body: laid out as any
@@ -53,6 +53,11 @@ pub(crate) fn button(app: &mut MailApp, ui: &mut Ui, m: &Message) {
 
 /// What Nora does on `message`, as a menu: her button's here, and the ribbon's.
 pub(crate) fn menu(ui: &mut Ui, app: &mut MailApp, message: mailcraft_model::Id) {
+    // Her pane first, where the hosting page reaches her conversation: a conversation about this message, and more.
+    if super::assist::available(app) {
+        crate::widgets::mi(ui, app, "Ask Nora", "ui.noraAssistant", json!({"open": true}));
+        ui.separator();
+    }
     crate::widgets::mi(ui, app, "Reply with Nora", "ui.noraReply", json!({"message": message}));
     crate::widgets::mi(ui, app, "Reply all with Nora", "ui.noraReply", json!({"message": message, "all": true}));
     ui.separator();

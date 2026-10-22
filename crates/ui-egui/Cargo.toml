@@ -23,6 +23,9 @@ log = { workspace = true }
 url = { workspace = true }
 # Window screenshots for the control channel are saved as PNG.
 image = { workspace = true }
+# //// Neoffice — Nora's pane (src/nora/assist.rs): her conversation (craft-nora) and the panel that draws it (craft-nora-ui).
+craft-nora = { workspace = true }
+craft-nora-ui = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 # The browser clock (the std clocks panic on wasm32).

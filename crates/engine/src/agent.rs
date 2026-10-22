@@ -408,6 +408,8 @@ const NEVER: &[&str] = &[
     "ui.noraImprove",
     "ui.noraTranslateDraft",
     "ui.noraLearnStyle",
+    // //// Neoffice — Nora's pane: a conversation with her, the owner's own (the window plays only what she asks there, nora/assist.rs).
+    "ui.noraAssistant",
     // //// Neoffice — Share in Synk hands a message to the hosting page, for other people to read it: the owner's own click only (ui-egui host_share.rs).
     "ui.shareMessage",
     // //// Neoffice — Chat in Synk opens a conversation with other people about a message: the owner's own click only (ui-egui host_share.rs).

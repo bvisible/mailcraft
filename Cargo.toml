@@ -85,6 +85,11 @@ url = "2.5"
 # than by closing its window, which can crash AppKit (its Touch Bar), and its app menu's Quit (⌘Q)
 # asks first, as the close button does. `menu` brings muda on macOS only. Needs Rust 1.95.
 craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529", features = ["menu"] }
+# //// Neoffice — Nora's pane (crates/ui-egui/src/nora/assist.rs): her client core and its egui panel, from Neoffice's
+# craft-libs fork at the revision that knows the mail program (`AppKind::Mail`), as the editors take them; both depend
+# on egui alone (the same 0.36 as here), serde and serde_json.
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "57af0da52becd54ada310826f7f5a6048c7712b1" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "57af0da52becd54ada310826f7f5a6048c7712b1" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

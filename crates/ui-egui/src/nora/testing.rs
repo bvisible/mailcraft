@@ -88,6 +88,8 @@ pub(crate) fn host(app: &mut MailApp, mailboxes: &[(&str, &str)]) -> Calls {
             rx
         }),
         mailboxes: mailboxes.iter().map(|(address, name)| PageMailbox { address: (*address).to_string(), name: (*name).to_string() }).collect(),
+        // Her pane's conversation goes out too, as from the page `/neomail`.
+        chat: true,
     });
     calls
 }
