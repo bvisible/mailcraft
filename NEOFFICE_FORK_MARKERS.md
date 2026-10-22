@@ -261,6 +261,13 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   and its tests, `Services::modules`, the layout's and `run`'s hunks in `lib.rs`, the button's in `nav.rs`). The
   browser's part: `apps/mailcraft-web/src/host.rs` (`modules`, the contract in its comment), `web.rs`, and
   `host_menu.rs` (the page's messages heard). Without `modules` nothing changes.
+- No Copy Diagnostics in a tab whose mailboxes a hosting page handed over (Neoffice's desk at `/app/neomail`,
+  Neodesk's NeoMail window, `Services::jmap_host_credentials`): the pill at the right of the title bar, beside the
+  account picture, and the button of the Help tab are for testers' problem reports on MailCraft's repository, of no use
+  to the people reading their mail there, and the browser keeps no log to copy (`crates/ui-egui/src/host_diagnostics.rs`
+  and its tests; the pill's hunk in `chrome.rs`, the Help tab's in `ribbon.rs`, `describe`). The command
+  `ui.copyDiagnostics` stays, as upstream has it; Search Commands never listed it, and no shortcut runs it. A window
+  without a hosting page, the desktop's among them, keeps both.
 - This file.
 
 ## What cannot carry a comment

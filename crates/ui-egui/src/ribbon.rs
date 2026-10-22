@@ -304,6 +304,8 @@ pub(crate) fn describe(app: &MailApp) -> Tab {
     crate::nora::ribbon::add(app, &mut tab);
     // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs).
     crate::host_share::ribbon(app, &mut tab);
+    // //// Neoffice — and no Copy Diagnostics in the Help tab of a hosting page's tab (host_diagnostics.rs).
+    crate::host_diagnostics::ribbon(app, &mut tab);
     tab
 }
 

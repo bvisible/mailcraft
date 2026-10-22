@@ -70,6 +70,8 @@ pub mod graph_fetch;
 mod graph_switch;
 // //// Neoffice — a hosting page that files a message's attachment: its Drive, its scanned documents, an editor.
 pub mod host_attachments;
+// //// Neoffice — no Copy Diagnostics in a hosting page's tab: its pill and Help's button are for testers of MailCraft.
+mod host_diagnostics;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
 // //// Neoffice — modules a hosting page draws itself, beside the window's own (Synk, in Neodesk's NeoMail window).

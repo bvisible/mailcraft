@@ -213,8 +213,11 @@ pub fn title_bar(app: &mut MailApp, ui: &mut Ui) {
                     if resp.on_hover_text(tip).clicked() {
                         let _ = app.run("ui.backstage", json!({"value": true, "page": "info"}));
                     }
-                    ui.add_space(8.0);
-                    diagnostics_pill(ui, app, avatar_h.min(26.0));
+                    // //// Neoffice — no Copy Diagnostics pill in a hosting page's tab: it is for problem reports on MailCraft's repository, of no use to the people reading their mail there (host_diagnostics.rs).
+                    if crate::host_diagnostics::offered(app) {
+                        ui.add_space(8.0);
+                        diagnostics_pill(ui, app, avatar_h.min(26.0));
+                    }
                     right_start = ui.min_rect().min.x;
                 });
             });
