@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use mailcraft_model::sync::{SyncPhase, SyncStage, SyncStep};
+use mailcraft_model::sync::{SyncPhase, SyncStage, SyncStep, Timings};
 use mailcraft_model::{AccountKind, Id, Mailbox};
 use serde_json::{Value, json};
 
@@ -24,7 +24,7 @@ use crate::{CmdResult, CommandSpec, Session};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![CommandSpec::new("sync.progress", "Show Progress", "Send / Receive", progress).pure().params(
-        r#"{} — answers {"running": bool, "accounts": [{"id", "name", "state": "waiting"|"running"|"done"|"stopped"|"skipped", "phase": "sending"|"folders"|"newMail"|"calendarAndContacts"|null, "folder", "done", "total", "new", "sent", "problems": [string], "kept": bool, "fullMessages": {"done", "total", "paused"}|null}]}; opens nothing"#,
+        r#"{} — answers {"running": bool, "accounts": [{"id", "name", "state": "waiting"|"running"|"done"|"stopped"|"skipped", "phase": "inbox"|"sending"|"folders"|"newMail"|"calendarAndContacts"|null, "folder", "done", "total", "new", "sent", "problems": [string], "kept": bool, "timings": {"millis", "requests", "skipped", "phases": [{"phase", "millis", "requests"}]}, "fullMessages": {"done", "total", "paused"}|null}]}; opens nothing"#,
     )]
 }
 
@@ -86,6 +86,9 @@ pub struct AccountRun {
     /// The run changed nothing for it (no new mail, nothing sent, no problems): what it shows is
     /// what the run before came to.
     pub kept: bool,
+    /// How long each phase of its part of the run took and how many requests it made (#276),
+    /// as the pieces said; reset when it starts a run.
+    pub timings: Timings,
 }
 
 impl AccountRun {
@@ -100,6 +103,7 @@ impl AccountRun {
             RunState::Done | RunState::Stopped | RunState::Skipped => 1.0,
             RunState::Running => match self.phase {
                 None => 0.0,
+                Some(SyncPhase::Inbox) => 0.02,
                 Some(SyncPhase::Sending) => 0.1 * part(self.done, self.total),
                 Some(SyncPhase::Folders) => 0.1,
                 Some(SyncPhase::NewMail) => {
@@ -171,6 +175,8 @@ pub(crate) struct Piece<'a> {
     /// The last piece of the account's part of the run.
     pub last: bool,
     pub stopped: bool,
+    /// Time and requests since the piece before (#276).
+    pub timings: Option<&'a Timings>,
 }
 
 impl SyncProgress {
@@ -231,6 +237,17 @@ impl SyncProgress {
         let stopped = self.held.remove(&account).unwrap_or(false) || stopped;
         if self.accounts.iter().any(|r| r.account == account && r.state.under_way()) {
             self.take(account, Piece { last: true, stopped, ..Default::default() });
+        }
+    }
+
+    /// The account's Inbox pass is over (#276): it waits for the rest of its part of the run,
+    /// which goes on from its numbers. Nothing for a row that isn't running its Inbox pass.
+    pub fn rest(&mut self, account: Id) {
+        if let Some(row) =
+            self.accounts.iter_mut().find(|r| r.account == account && r.state == RunState::Running && r.phase == Some(SyncPhase::Inbox))
+        {
+            (row.state, row.phase, row.folder) = (RunState::Waiting, None, String::new());
+            (row.done, row.total, row.folder_number, row.folders) = (0, 0, 0, 0);
         }
     }
 
@@ -297,6 +314,10 @@ impl SyncProgress {
         }
         let row = self.accounts.iter_mut().find(|r| r.account == account)?;
         if row.state != RunState::Running {
+            // (A row that waits has nothing but, perhaps, its Inbox pass: that stays.)
+            if row.state != RunState::Waiting {
+                row.timings = Timings::default();
+            }
             row.state = RunState::Running;
             row.kept = false;
         }
@@ -305,6 +326,17 @@ impl SyncProgress {
 
     /// Take in a piece of the account's part of a run.
     pub(crate) fn take(&mut self, account: Id, piece: Piece) {
+        // The Inbox pass is never left out: what it brings counts for an account the owner
+        // skipped, whose row stays skipped (#276).
+        if matches!(piece.step, Some((SyncPhase::Inbox, ..)))
+            && let Some(row) = self.accounts.iter_mut().find(|r| r.account == account && r.state == RunState::Skipped)
+        {
+            row.new = row.new.saturating_add(piece.new);
+            if let Some(timings) = piece.timings {
+                row.timings.absorb(timings);
+            }
+            return;
+        }
         let Some(row) = self.row(account) else { return };
         if let Some((phase, folder, done, total)) = piece.step {
             row.phase = Some(phase);
@@ -319,6 +351,9 @@ impl SyncProgress {
         }
         row.new = row.new.saturating_add(piece.new);
         row.sent = row.sent.saturating_add(piece.sent);
+        if let Some(timings) = piece.timings {
+            row.timings.absorb(timings);
+        }
         for problem in piece.problems {
             if row.problems.len() >= MAX_PROBLEMS {
                 break;
@@ -375,6 +410,7 @@ impl SyncProgress {
                     "sent": r.sent,
                     "problems": r.problems,
                     "kept": r.kept,
+                    "timings": timings_json(&r.timings),
                     "fullMessages": self.full(r.account).map(|f| json!({"done": f.done, "total": f.total, "paused": self.full_paused})),
                 }))
             })
@@ -383,8 +419,15 @@ impl SyncProgress {
     }
 }
 
+/// An account's timings for `sync.progress` (#276): numbers only, no address and no folder name.
+fn timings_json(t: &Timings) -> Value {
+    let phases: Vec<Value> = t.phases.iter().map(|p| json!({"phase": phase_id(p.phase), "millis": p.millis, "requests": p.requests})).collect();
+    json!({"millis": t.millis(), "requests": t.requests(), "skipped": t.skipped, "phases": phases})
+}
+
 fn phase_id(phase: SyncPhase) -> &'static str {
     match phase {
+        SyncPhase::Inbox => "inbox",
         SyncPhase::Sending => "sending",
         SyncPhase::Folders => "folders",
         SyncPhase::NewMail => "newMail",
@@ -733,5 +776,111 @@ mod tests {
         assert!(odd.fraction() <= 1.0);
         graph(&mut s, GraphMailResult { account: ms, ..Default::default() });
         assert_eq!(s.sync_progress.fraction(), None, "over");
+    }
+
+    /// #276: the time and requests the pieces carry add up on the account's row, by phase, and a
+    /// new run starts them again; `sync.progress` says them as numbers and nothing else.
+    #[test]
+    fn the_pieces_time_and_requests_add_up_on_the_row_and_start_again_with_a_run() {
+        use mailcraft_model::sync::{SyncPhase, Timings};
+        let (mut s, imap, ms) = session();
+        let timed = |phase, millis, requests, skipped| {
+            let mut t = Timings::default();
+            t.add(phase, millis, requests);
+            t.skipped = skipped;
+            t
+        };
+        let piece = |timings| SyncResult { account: imap, partial: true, timings, ..Default::default() };
+        s.sync_progress.begin(&[imap, ms]);
+        apply(&mut s, piece(timed(SyncPhase::Folders, 1_200, 3, 0)));
+        apply(&mut s, piece(timed(SyncPhase::NewMail, 800, 5, 2)));
+        apply(&mut s, piece(timed(SyncPhase::NewMail, 400, 2, 0)));
+        apply(&mut s, SyncResult { account: imap, timings: timed(SyncPhase::NewMail, 100, 1, 0), ..Default::default() });
+        let r = row(&mut s, imap);
+        assert_eq!(r["state"], json!("done"));
+        assert_eq!(
+            r["timings"],
+            json!({"millis": 2_500, "requests": 11, "skipped": 2, "phases": [
+                {"phase": "folders", "millis": 1_200, "requests": 3},
+                {"phase": "newMail", "millis": 1_300, "requests": 8},
+            ]})
+        );
+        // Another account has its own.
+        assert_eq!(row(&mut s, ms)["timings"]["requests"], json!(0));
+        graph(&mut s, GraphMailResult { account: ms, timings: timed(SyncPhase::Folders, 90, 4, 0), ..Default::default() });
+        assert_eq!(row(&mut s, ms)["timings"]["requests"], json!(4));
+        assert_eq!(row(&mut s, imap)["timings"]["requests"], json!(11), "not the other account's");
+        // The next run starts them again.
+        apply(&mut s, SyncResult { account: imap, timings: timed(SyncPhase::Folders, 10, 1, 0), ..Default::default() });
+        assert_eq!(
+            row(&mut s, imap)["timings"],
+            json!({"millis": 10, "requests": 1, "skipped": 0, "phases": [{"phase": "folders", "millis": 10, "requests": 1}]})
+        );
+        // Hostile numbers add up without overflow.
+        let huge = piece(timed(SyncPhase::NewMail, u64::MAX, u32::MAX, u32::MAX));
+        apply(&mut s, huge.clone());
+        apply(&mut s, huge);
+        assert_eq!(row(&mut s, imap)["timings"]["requests"], json!(u32::MAX));
+    }
+
+    /// #276: an Inbox pass is never the end of an account's part of the run; its time and new mail
+    /// stay with the row while the account waits for its run, which adds to them.
+    #[test]
+    fn an_inbox_pass_does_not_end_the_account_and_its_numbers_stay_for_the_run_after_it() {
+        use mailcraft_model::sync::{SyncPhase, Timings};
+        let (mut s, imap, ms) = session();
+        let timed = |phase, millis, requests| {
+            let mut t = Timings::default();
+            t.add(phase, millis, requests);
+            t
+        };
+        s.sync_progress.begin(&[imap, ms]);
+        // Even a piece that says it is the last.
+        graph(&mut s, GraphMailResult { account: ms, inbox_pass: true, timings: timed(SyncPhase::Inbox, 300, 1), ..Default::default() });
+        let r = row(&mut s, ms);
+        assert_eq!((r["state"].as_str(), r["phase"].as_str()), (Some("running"), Some("inbox")), "{r}");
+        s.sync_progress.rest(ms);
+        let r = row(&mut s, ms);
+        assert_eq!((r["state"].as_str(), r["phase"].as_str(), r["timings"]["requests"].as_u64()), (Some("waiting"), None, Some(1)), "{r}");
+        // `rest` leaves a row that isn't in its pass alone.
+        s.sync_progress.rest(imap);
+        assert_eq!(row(&mut s, imap)["state"], json!("waiting"));
+        // The run itself goes on from there and adds to it.
+        graph(&mut s, GraphMailResult { account: ms, timings: timed(SyncPhase::NewMail, 100, 2), ..Default::default() });
+        let r = row(&mut s, ms);
+        assert_eq!(r["state"], json!("done"));
+        assert_eq!(
+            r["timings"],
+            json!({"millis": 400, "requests": 3, "skipped": 0, "phases": [
+                {"phase": "inbox", "millis": 300, "requests": 1},
+                {"phase": "newMail", "millis": 100, "requests": 2},
+            ]})
+        );
+    }
+
+    /// #276: an account the owner skipped keeps its row skipped, with the pass it still had.
+    #[test]
+    fn a_skipped_account_keeps_its_pass_on_a_skipped_row() {
+        use mailcraft_model::sync::{SyncPhase, Timings};
+        let (mut s, imap, ms) = session();
+        s.sync_progress.begin(&[imap, ms]);
+        assert!(s.sync_progress.skip(ms));
+        let mut t = Timings::default();
+        t.add(SyncPhase::Inbox, 200, 1);
+        s.sync_progress.phase(ms, SyncPhase::Inbox);
+        graph(&mut s, GraphMailResult { account: ms, inbox_pass: true, partial: true, timings: t, ..Default::default() });
+        let r = row(&mut s, ms);
+        assert_eq!(r["state"], json!("skipped"));
+        assert_eq!(r["timings"]["requests"], json!(1));
+    }
+
+    /// #276: only a Microsoft account whose Inbox has been read to its end has an Inbox pass.
+    #[test]
+    fn only_an_account_in_step_through_graph_with_a_stored_inbox_link_has_an_inbox_pass() {
+        use super::super::graph_mail::graph_inbox_request;
+        let (s, imap, ms) = session();
+        assert!(graph_inbox_request(&s, imap).is_none(), "a mail server's account has none");
+        assert!(graph_inbox_request(&s, ms).is_none(), "no Inbox link yet");
+        assert!(graph_inbox_request(&s, 9_999).is_none());
     }
 }

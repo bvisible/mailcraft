@@ -61,6 +61,7 @@ pub mod chrome;
 pub mod compose;
 pub mod control;
 pub mod credits;
+pub mod data_removal;
 pub mod dates;
 pub mod dialogs;
 pub mod favorites_sync;
@@ -70,7 +71,7 @@ pub mod graph_fetch;
 mod graph_switch;
 // //// Neoffice — a hosting page that files a message's attachment: its Drive, its scanned documents, an editor.
 pub mod host_attachments;
-// //// Neoffice — no Copy Diagnostics in a hosting page's tab: its pill and Help's button are for testers of MailCraft.
+// //// Neoffice — no Copy Diagnostics nor Report a Problem in a hosting page's tab: their pills and Help's buttons are for testers of MailCraft.
 mod host_diagnostics;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
@@ -80,6 +81,7 @@ pub mod host_modules;
 pub mod host_share;
 pub mod i18n;
 pub mod icons;
+mod inbox_pass;
 // //// Neoffice — a JMAP account's Send/Receive in the window: the job the host is handed, starting a run, taking in its pieces.
 pub mod jmap_job;
 // //// Neoffice — a JMAP account's calendars, kept current by a job of their own beside its Send/Receive.
@@ -90,6 +92,7 @@ mod keep_offline;
 pub mod keys;
 pub mod mail_view;
 mod meeting_dialogs;
+pub mod menubar;
 pub mod nav;
 // //// Neoffice — Notes: the mailbox's own and a server's, as cards, typed into in place.
 pub mod notes_view;
@@ -100,6 +103,7 @@ pub mod people_view;
 pub mod pim_rights;
 pub mod reading;
 mod reminders;
+mod report_problem;
 pub mod ribbon;
 pub mod scheduling;
 mod search_pills;
@@ -276,6 +280,10 @@ pub struct Services {
     /// any download; this is only for saying how much is kept and for forgetting it. Absent
     /// where nothing is kept (the browser, the tests, the sample mailbox).
     pub picture_cache: Option<Box<dyn PictureCache>>,
+    /// Desktop: remove everything MailCraft keeps on this computer, in the folders the host
+    /// itself works in ([`data_removal::DataWipe`], File › Info › Remove MailCraft's data from
+    /// this computer, #177). Absent in the browser and the tests.
+    pub data_wipe: Option<Box<dyn data_removal::DataWipe>>,
     /// Desktop: ask an account's server when people are free and busy, on a background thread,
     /// for a meeting's Scheduling Assistant ([`scheduling`]). It reads and writes nothing. The
     /// answer, or why there is none, arrives through the channel and the host wakes the UI.
@@ -762,7 +770,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "ui.dialog",
         "Open Dialog",
         "Window",
-        r#"{"name": "commands"|"event"|"meeting"|"editEvent"|"contact"|"editContact"|"task"|"editTask"|"folder"|"goToDate"|"link"|"account"|"categories"|"rules"|"about"|"contributors"|"testers"|"proposeTime"|"forwardMeeting"|"proposals", …} (account: "email"?: string to start with, or "id": number for that account's settings, and with "page": "approval" the page that says what to do when its organisation has to approve MailCraft first (as `ui.approvalHelp` opens it); proposeTime: "id"?: number (an item of the calendar) | "message": number (an invitation in the mail); forwardMeeting: "id"?: number; proposals: "id"?: number | "message": number — the first two write to other people only from their own Propose and Send buttons)"#,
+        r#"{"name": "commands"|"event"|"meeting"|"editEvent"|"contact"|"editContact"|"task"|"editTask"|"folder"|"goToDate"|"link"|"account"|"categories"|"rules"|"about"|"contributors"|"testers"|"reportProblem"|"proposeTime"|"forwardMeeting"|"proposals", …} (account: "email"?: string to start with, or "id": number for that account's settings, and with "page": "approval" the page that says what to do when its organisation has to approve MailCraft first (as `ui.approvalHelp` opens it); proposeTime: "id"?: number (an item of the calendar) | "message": number (an invitation in the mail); forwardMeeting: "id"?: number; proposals: "id"?: number | "message": number — the first two write to other people only from their own Propose and Send buttons)"#,
     ),
     ("ui.closeDialog", "Close Dialog", "Window", "{}"),
     ("ui.theme", "Interface Theme", "File › Options", r#"{"value": "light"|"dark"|"system"}"#),
@@ -846,6 +854,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         r#"{"id"?: number, "index": number} — as ui.saveAttachmentToDrive, for the page to save a .docx, .xlsx, .pptx or .pdf in its Drive and open it in its editor (NeoDoc, NeoGrille, NeoPrés, NeoPDF). Answers {"handed": "edit"}"#,
     ),
     ("ui.focusSearch", "Search", "Search", "{}"),
+    (
+        "ui.removeAllData",
+        "Remove MailCraft's Data from This Computer",
+        "File › Info",
+        "{} — removes everything MailCraft keeps on this computer, for an installed or a portable copy alike: every account's mail and the settings (the mailbox file and its content, the settings, the logs), the sign-ins remembered in the system's credential store, the downloaded pictures and the opened attachments; then quits. Mail on the servers is not touched. By hand it asks first; never for an agent",
+    ),
     (
         "ui.sync",
         "Send/Receive All Folders",
@@ -1028,6 +1042,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Copy Diagnostics",
         "Help",
         r#"{} — the version, the platform and the end of the program's log, with addresses, names, paths, hosts, links, ids and quoted text taken out, to the clipboard for a problem report. Nothing is sent"#,
+    ),
+    (
+        "ui.reportProblem",
+        "Report a Problem",
+        "Help",
+        r#"{"what": string, "title"?: string, "expected"?: string, "via"?: "github"|"email" (default github), "diagnostics"?: bool, "path"?: string (github: where the diagnostics file is saved), "open"?: bool (default true)} — by hand without `what`: the Report a Problem window. github: opens the repository's new-issue page in the system's browser, filled in with the title, what was typed, the version and the platform, and nothing else (never the diagnostics, never more than 8,000 characters: text that doesn't fit is refused); with `diagnostics`, the same text as `ui.copyDiagnostics` is saved to `path` (without one it is answered as `name` and `data`), to attach on the page. email: starts a new message to MailCraft's maintainers from an account that sends mail, with the diagnostics attached when asked; nothing is sent until Send is pressed. `open: false` only answers what would be opened. MailCraft posts nothing itself. Answers {"via", "url"?, "length"?, "saved"?, "attached"?}"#,
     ),
     ("ui.copyLinkAddress", "Copy Link Address", "Message", r#"{"url": string} — a link's address (http, https, mailto or tel) to the clipboard"#),
     (
@@ -1240,6 +1260,9 @@ pub struct MailApp {
     /// The window title last sent; a viewport command schedules a repaint, so only send changes.
     sent_title: String,
     pub quit_requested: bool,
+    /// MailCraft's data was removed from this computer ([`data_removal`]): nothing is written
+    /// or remembered from here on, and the window goes when its report is read.
+    pub data_removed: bool,
     /// Save the mailbox by itself a moment after each change (on by default).
     pub autosave: bool,
     /// Open account setup when the app starts on a mailbox nobody has set up yet (the host turns
@@ -1263,10 +1286,21 @@ pub struct MailApp {
     /// Send/Receive by itself when the app starts and every few minutes (on by default; how often
     /// is the owner's `syncMinutes` option).
     pub auto_sync: bool,
+    /// Scroll bars float over what they scroll, slim, and show only while it moves or the pointer
+    /// is over it, as a Mac's do: the message list keeps no lane for its bar and has no arrows.
+    /// On a Mac only; tests and screenshots turn it on anywhere.
+    pub overlay_scroll_bars: bool,
     /// When the last round that started by itself began (milliseconds; 0 before the first).
     last_auto_sync: f64,
     /// Accounts waiting their turn in a Send/Receive round, and whether nobody asked for it.
     sync_queue: std::collections::VecDeque<(Id, bool)>,
+    /// Accounts whose Inbox pass is still to come, at the start of a round, and whether nobody
+    /// asked for it (#276).
+    inbox_queue: std::collections::VecDeque<(Id, bool)>,
+    /// The account whose Inbox pass is under way.
+    inbox_run: Option<Id>,
+    /// The Inbox checked by itself every minute, between rounds (#276, [`inbox_pass`]).
+    inbox_check: inbox_pass::InboxCheck,
     /// When it was last looked whether something made here waits to go to a server (milliseconds).
     push_checked: f64,
     /// Accounts whose next run that nobody asked for only tells the server what changed here
@@ -1428,6 +1462,7 @@ impl MailApp {
             sent_title: String::new(),
             shown_zone: None,
             quit_requested: false,
+            data_removed: false,
             autosave: true,
             offer_setup: false,
             offer_graph_switch: false,
@@ -1436,8 +1471,12 @@ impl MailApp {
             graph_switch_copy: None,
             graph_switch_waiting_shown: Default::default(),
             auto_sync: true,
+            overlay_scroll_bars: cfg!(target_os = "macos"),
             last_auto_sync: 0.0,
             sync_queue: Default::default(),
+            inbox_queue: Default::default(),
+            inbox_run: None,
+            inbox_check: Default::default(),
             push_checked: 0.0,
             push_only_next: Default::default(),
             push_seen: Default::default(),
@@ -1524,10 +1563,11 @@ impl MailApp {
             Some(s) => (s.enabled)(&self.session).is_none(),
             None if id == "ui.sync" => {
                 // //// Neoffice — a build with only a JMAP runner can synchronise too, and a JMAP run under way is a run under way.
-                self.session.enabled("sync.request")
+                !self.data_removed
+                    && self.session.enabled("sync.request")
                     && self.services.can_sync()
                     && self.sync_rx.is_none()
-                    && self.graph_rx.is_none()
+                    && (self.graph_rx.is_none() || self.inbox_check.under_way())
                     // //// Neoffice — see above.
                     && self.jmap_rx.is_none()
                     && self.signing_in.is_none()
@@ -1714,6 +1754,7 @@ impl MailApp {
         let s = |k: &str| p.get(k).and_then(Value::as_str);
         let b = |k: &str| p.get(k).and_then(Value::as_bool);
         Some(match id {
+            "ui.removeAllData" => self.remove_all_data(),
             "ui.tab" => {
                 let Some(tab) = s("tab") else { return Some(Err("missing `tab`".into())) };
                 if tab == "File" {
@@ -1820,15 +1861,7 @@ impl MailApp {
                 Ok(json!({}))
             }
             "ui.copyDiagnostics" => {
-                let text = match &self.services.diagnostics {
-                    Some(report) => report(),
-                    None => format!(
-                        "### MailCraft diagnostics\n\n- Version: {}\n- Platform: {} {}\n\nNo log is kept here.\n",
-                        env!("CARGO_PKG_VERSION"),
-                        std::env::consts::OS,
-                        std::env::consts::ARCH
-                    ),
-                };
+                let text = report_problem::diagnostics(self);
                 if let Some(ctx) = &self.ctx {
                     ctx.copy_text(text.clone());
                 }
@@ -1908,8 +1941,7 @@ impl MailApp {
                 Ok(json!({"pending": "serverSearch"}))
             }
             "ui.cancelSync" => {
-                // //// Neoffice — a JMAP run under way is one to cancel.
-                if self.sync_rx.is_none() && self.graph_pieces.is_none() && self.jmap_rx.is_none() {
+                if !self.syncing() {
                     return Some(Err(tl!("No Send/Receive is running").to_string()));
                 }
                 // The run stops at the next safe place; what it brought stays. The rest of a
@@ -1917,6 +1949,7 @@ impl MailApp {
                 self.services.sync_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                 self.pause_fetch();
                 self.sync_queue.clear();
+                self.inbox_queue.clear();
                 // (Nor does a run called off for something else go on after.)
                 if let Some((_, _, called_off, _)) = self.sync_run.as_mut() {
                     *called_off = false;
@@ -1993,6 +2026,7 @@ impl MailApp {
                     .or_else(|| graph_switch::ui_command(self, id, p))
                     .or_else(|| updates::ui_command(self, id, p))
                     .or_else(|| attachment_open::ui_command(self, id, p))
+                    .or_else(|| report_problem::ui_command(self, id, p))
                     // //// Neoffice — a note opened on the web (notes_view.rs).
                     .or_else(|| notes_view::ui_command(self, id, p));
             }
@@ -2013,7 +2047,7 @@ impl MailApp {
 
     /// Have the operating system remember a secret for `address`, when the owner wants that.
     fn remember(&self, kind: &str, address: &str, secret: &str) {
-        if !self.ui.remember_sign_in || secret.is_empty() {
+        if !self.ui.remember_sign_in || secret.is_empty() || self.data_removed {
             return;
         }
         if let Some(store) = &self.services.secrets
@@ -2158,6 +2192,11 @@ impl MailApp {
     /// password the first time, or has the owner sign in on the provider's page; the answer is
     /// kept in memory until the app closes, and by the operating system when that is wanted.
     fn start_sync(&mut self, p: &Value) -> Result<Value, String> {
+        if self.data_removed {
+            return Err(tl!("MailCraft's data has been removed: nothing is sent or received").to_string());
+        }
+        // The Inbox checked by itself gives way to a run (#276).
+        self.give_up_inbox_check();
         // //// Neoffice — a JMAP run under way is a run under way.
         if self.sync_rx.is_some() || self.graph_rx.is_some() || self.jmap_rx.is_some() {
             return Err(tl!("Send/Receive is already running").to_string());
@@ -2170,19 +2209,40 @@ impl MailApp {
             return Err(cant_connect());
         }
         let quiet = p.get("quiet").and_then(Value::as_bool).unwrap_or(false);
+        // Never two jobs for one account at once: the calendar's job (a short one, but the
+        // wide stretch every quarter of an hour is not) finishes first.
+        let target = p.get("account").and_then(Value::as_u64).or_else(|| self.server_accounts().first().copied());
+        if target.is_some_and(|account| self.calendar_job_for(account)) {
+            return Err(tl!("The calendar is being updated already.").to_string());
+        }
         // A run starts, the owner's or one by itself: full messages paused by Stop go on.
         self.resume_fetch();
+        // Send/Receive the owner asked for: the calendar and contacts follow the round.
+        if !quiet {
+            let accounts: Vec<Id> =
+                target.into_iter().chain(p.get("account").is_none().then(|| self.server_accounts()).into_iter().flatten()).collect();
+            for account in accounts {
+                self.calendar_after_round(account);
+            }
+        }
         let account = match p.get("account").and_then(Value::as_u64) {
             Some(account) => account,
             // Nobody in particular: every account with a server, one after the other.
             None => {
-                let mut all = self.server_accounts().into_iter();
-                let first = all.next().ok_or_else(|| tl!("No account is connected to a mail server (File › Add Account)").to_string())?;
-                self.sync_queue = all.map(|a| (a, quiet)).collect();
+                let round = self.server_accounts();
+                let none = || tl!("No account is connected to a mail server (File › Add Account)").to_string();
+                if round.is_empty() {
+                    return Err(none());
+                }
                 // One run of them all, in this order: the rest wait their turn.
-                let round: Vec<Id> = std::iter::once(first).chain(self.sync_queue.iter().map(|(a, _)| *a)).collect();
+                self.sync_queue = round.iter().map(|a| (*a, quiet)).collect();
                 self.session.sync_progress.begin(&round);
-                first
+                // The Inbox of every account kept in step through Graph comes first (#276).
+                self.queue_inbox_passes(&round, quiet);
+                if let Some(started) = self.start_next_inbox_pass() {
+                    return Ok(started);
+                }
+                self.sync_queue.pop_front().map(|(first, _)| first).ok_or_else(none)?
             }
         };
         // //// Neoffice — an account kept in step with a JMAP server has a run of its own (jmap_job.rs). A password the dialog hands over is kept for the session, as an IMAP account's is, unless the host holds the credential.
@@ -2225,52 +2285,43 @@ impl MailApp {
                 }
             }
             // Microsoft Graph first, for what it does better than the mail protocols: sending
-            // (the answer says what it sent, and this runs again for the mail itself) and the
-            // calendar and contacts, every quarter of an hour.
+            // (the answer says what it sent, and this runs again for the mail itself). The
+            // calendar and contacts are not part of it: they come in a job of their own after
+            // the round ([`calendar_sync`]), so that they never hold up the mail (#276).
             let after_graph = p.get("afterGraph").and_then(Value::as_bool).unwrap_or(false);
             let microsoft = oauth.provider == mailcraft_model::OAuthProvider::Microsoft;
-            if !after_graph && microsoft && !refresh.is_empty() && !self.graph_consent_needed.contains(&account) && self.services.graph.is_some() {
-                let now = now_ms();
-                // The calendar's part is left out while a calendar job of its own is at work
-                // ([`calendar_sync`]): the two answers would cross.
-                let free = !self.calendar_syncing();
-                let directory = free && self.graph_checked.get(&account).is_none_or(|at| now - at > 900_000.0);
-                // What was changed in the calendar here goes along; and a Send/Receive the owner
-                // asked for brings the days on screen when the wide stretch isn't due.
-                let changes = if free { self.calendar_changes(account) } else { None };
-                let calendar = (free && !directory && (!quiet || changes.is_some())).then(|| self.calendar_window());
-                if directory || !request.outbox.is_empty() || changes.is_some() || calendar.is_some() {
-                    // The Favorites as Outlook has them ride along: with a Send/Receive the owner
-                    // asked for, and otherwise when they are due ([`favorites_sync`]).
-                    let favorites = free && self.favorites_ask(account, now, !quiet);
-                    let access = self.graph_access_for(account, favorites);
-                    let ask = GraphRequest {
-                        account: request.account.clone(),
-                        oauth: self.effective_oauth(oauth),
-                        refresh,
-                        access,
-                        outbox: request.outbox.clone(),
-                        directory,
-                        calendar,
-                        changes,
-                        asks: self.calendar_asks(account, directory, calendar),
-                        // (The calendar's own job asks for them: [`calendar_sync`].)
-                        settings: false,
-                        favorites,
-                        favorites_scopes: favorites,
-                        mail: None,
-                        mail_pieces: None,
-                        cancel: Default::default(),
-                    };
-                    self.session.sync_status =
-                        if ask.outbox.is_empty() { tl!("Updating the calendar and contacts…") } else { tl!("Sending…") }.to_string();
-                    let phase = if ask.outbox.is_empty() { SyncPhase::CalendarAndContacts } else { SyncPhase::Sending };
-                    self.session.sync_progress.phase(account, phase);
-                    if let Some(graph) = &self.services.graph {
-                        self.graph_rx = Some((account, quiet, directory, graph(ask)));
-                    }
-                    return Ok(json!({"pending": "graph", "account": account}));
+            if !after_graph
+                && microsoft
+                && !refresh.is_empty()
+                && !self.graph_consent_needed.contains(&account)
+                && self.services.graph.is_some()
+                && !request.outbox.is_empty()
+            {
+                let access = self.graph_access_for(account, false);
+                let ask = GraphRequest {
+                    account: request.account.clone(),
+                    oauth: self.effective_oauth(oauth),
+                    refresh,
+                    access,
+                    outbox: request.outbox.clone(),
+                    directory: false,
+                    calendar: None,
+                    changes: None,
+                    asks: Vec::new(),
+                    // (The calendar's own job asks for these: [`calendar_sync`].)
+                    settings: false,
+                    favorites: false,
+                    favorites_scopes: false,
+                    mail: None,
+                    mail_pieces: None,
+                    cancel: Default::default(),
+                };
+                self.session.sync_status = tl!("Sending…").to_string();
+                self.session.sync_progress.phase(account, SyncPhase::Sending);
+                if let Some(graph) = &self.services.graph {
+                    self.graph_rx = Some((account, quiet, false, graph(ask)));
                 }
+                return Ok(json!({"pending": "graph", "account": account}));
             }
             // What Graph sent, or couldn't say whether it sent, is not sent again by SMTP.
             let skip: Vec<Id> = p.get("skip").and_then(Value::as_array).map(|ids| ids.iter().filter_map(Value::as_u64).collect()).unwrap_or_default();
@@ -2325,13 +2376,6 @@ impl MailApp {
         // The Outbox goes with the mail run itself (R3.4.2): sent as drafts or with `sendMail`,
         // and a message held there is not sent again by itself.
         let outbox: Vec<mailcraft_model::Message> = Vec::new();
-        // The calendar and the contacts as for any account that signs in with Microsoft: the
-        // wide stretch every quarter of an hour, and what was changed in the calendar here.
-        let now = now_ms();
-        let free = !self.calendar_syncing();
-        let directory = free && self.graph_checked.get(&account).is_none_or(|at| now - at > 900_000.0);
-        let changes = if free { self.calendar_changes(account) } else { None };
-        let calendar = (free && !directory && (!quiet || changes.is_some())).then(|| self.calendar_window());
         // The mail comes a piece at a time; a busy window holds the run back rather than letting
         // pieces pile up.
         let (pieces, taken) = std::sync::mpsc::sync_channel(8);
@@ -2342,10 +2386,12 @@ impl MailApp {
             // (Renewed for the job: a token kept from another job may not cover the mail.)
             access: String::new(),
             outbox,
-            directory,
-            calendar,
-            changes,
-            asks: self.calendar_asks(account, directory, calendar),
+            // The calendar and the contacts are a job of their own after the round, so that they
+            // never hold up the next mailbox's mail ([`calendar_sync`], #276).
+            directory: false,
+            calendar: None,
+            changes: None,
+            asks: Vec::new(),
             settings: false,
             // (The calendar's own job reads them, with a token that covers them.)
             favorites: false,
@@ -2360,12 +2406,8 @@ impl MailApp {
         self.graph_pieces = Some(taken);
         self.graph_problems.clear();
         self.graph_pieces_taken = 0;
-        // The calendar and contacts come after the mail: its last piece doesn't end the run.
-        if ask.directory || ask.calendar.is_some() || ask.changes.is_some() {
-            self.session.sync_progress.hold(account);
-        }
         self.sync_run = Some((account, None, false, quiet));
-        self.graph_rx = Some((account, quiet, directory, graph(ask)));
+        self.graph_rx = Some((account, quiet, false, graph(ask)));
         self.session.sync_status = tl!("Sending and receiving…").to_string();
         Ok(json!({"started": true, "account": account, "graph": true}))
     }
@@ -2454,6 +2496,14 @@ impl MailApp {
         if !self.services.can_sync() || busy || self.dialog.is_some() {
             return;
         }
+        // The round's Inbox passes come before anything else of it (#276); neither starts while
+        // the calendar's job is at work for the account: it is a short wait.
+        if self.inbox_queue.front().is_some_and(|(account, _)| self.calendar_job_for(*account)) || self.start_next_inbox_pass().is_some() {
+            return;
+        }
+        if self.sync_queue.front().is_some_and(|(account, _)| self.calendar_job_for(*account)) {
+            return;
+        }
         if let Some((account, quiet)) = self.sync_queue.pop_front() {
             // An account that would have to ask, or can't start, is left out of the run.
             let started = (!quiet || self.can_sync_quietly(account)) && self.start_sync(&json!({"account": account, "quiet": quiet})).is_ok();
@@ -2496,6 +2546,7 @@ impl MailApp {
         let round: Vec<Id> = self.sync_queue.iter().map(|(a, _)| *a).collect();
         if !round.is_empty() {
             self.session.sync_progress.begin(&round);
+            self.queue_inbox_passes(&round, true);
         }
     }
 
@@ -2557,6 +2608,9 @@ impl MailApp {
                 if let Some(why) = piece.refused {
                     self.shared_refused.insert(account, why);
                 }
+                // The Inbox checked by itself leaves Send/Receive Progress and the status as
+                // they were: it is quiet (#276).
+                let kept = self.inbox_check.under_way().then(|| (self.session.sync_progress.clone(), self.session.sync_status.clone()));
                 match mailcraft_engine::cmd::graph_mail::apply_graph_mail(&mut self.session, piece) {
                     Ok(said) => {
                         let errors =
@@ -2564,6 +2618,9 @@ impl MailApp {
                         self.graph_problems.extend(errors.unwrap_or_default());
                     }
                     Err(e) => self.graph_problems.push(e.to_string()),
+                }
+                if let Some((progress, status)) = kept {
+                    (self.session.sync_progress, self.session.sync_status) = (progress, status);
                 }
             }
             // Its first piece made the changes made here and sent the Outbox; what waits beyond
@@ -2575,13 +2632,15 @@ impl MailApp {
                 self.sync_run = Some((whose, Some(self.waiting_to_go(whose)), false, q));
             }
             // A shared mailbox being added is kept once its Inbox is read, not after all its mail.
-            self.shared_check_piece(account, over);
+            if self.inbox_run.is_none() {
+                self.shared_check_piece(account, over);
+            }
             if !over {
                 return;
             }
             self.graph_pieces = None;
-            // The mail is in; the calendar and contacts come next.
-            if self.session.sync_progress.holding(account) {
+            // The mail is in; the calendar and contacts come next (not after the Inbox pass).
+            if self.inbox_run.is_none() && self.session.sync_progress.holding(account) {
                 self.session.sync_progress.phase(account, SyncPhase::CalendarAndContacts);
             }
         }
@@ -2595,6 +2654,11 @@ impl MailApp {
             }
         };
         self.graph_rx = None;
+        // The Inbox pass is over: the round goes on (#276).
+        if self.inbox_run.take() == Some(account) {
+            self.graph_pieces_taken = 0;
+            return self.finish_inbox_pass(account, result);
+        }
         // Called off so that what the owner did could go out: it goes on at once, as it was.
         if self.sync_run.is_some_and(|(whose, ..)| whose == account)
             && let Some((whose, _, true, quiet)) = self.sync_run.take()
@@ -2986,8 +3050,9 @@ impl MailApp {
 
     /// Whether a Send/Receive is running.
     pub fn syncing(&self) -> bool {
+        // (The Inbox checked by itself is not one: it is quiet, #276.)
         // //// Neoffice — a JMAP run under way is a Send/Receive running.
-        self.sync_rx.is_some() || self.graph_pieces.is_some() || self.jmap_rx.is_some()
+        self.sync_rx.is_some() || (self.graph_pieces.is_some() && !self.inbox_check.under_way()) || self.jmap_rx.is_some()
     }
 
     /// Take in what a Send/Receive has brought so far. It arrives in pieces (what was sent, what
@@ -3203,15 +3268,24 @@ impl MailApp {
         self.poll_free_busy();
         self.poll_sync();
         // (Before any other run can start: a shared mailbox being added goes first.)
-        self.shared_check_tick();
+        // Once MailCraft's data is removed nothing starts by itself any more: no Send/Receive,
+        // no calendar run, no check for a new version (#177).
+        if !self.data_removed {
+            self.shared_check_tick();
+        }
         self.check_secret_store();
-        // Whether a new version is out, when the owner wants that known ([`updates`]).
-        self.updates_tick(ctx);
-        self.auto_sync();
-        // The calendar by itself, between Send/Receive runs ([`calendar_sync`]).
-        self.calendar_tick(ctx);
-        // //// Neoffice — and a JMAP account's calendars, by a job of their own (jmap_pim.rs).
-        self.jmap_pim_tick(ctx);
+        self.data_removal_tick();
+        if !self.data_removed {
+            // Whether a new version is out, when the owner wants that known ([`updates`]).
+            self.updates_tick(ctx);
+            self.auto_sync();
+            // The Inbox by itself every minute, between rounds (#276).
+            self.inbox_check_tick();
+            // The calendar by itself, between Send/Receive runs ([`calendar_sync`]).
+            self.calendar_tick(ctx);
+            // //// Neoffice — and a JMAP account's calendars, by a job of their own (jmap_pim.rs).
+            self.jmap_pim_tick(ctx);
+        }
         reminders::tick(self, ctx);
         if std::mem::take(&mut self.offer_setup) && self.dialog.is_none() && self.needs_setup() {
             self.dialog = dialogs::Dialog::open("account", self, &json!({}));
@@ -3697,6 +3771,10 @@ impl MailApp {
     /// already, [`MailApp::close_requested`]: what is left is what changed since, a short one).
     /// `Err` says why the mailbox couldn't be saved.
     pub fn save_on_exit(&mut self) -> Result<(), String> {
+        // Its data was removed from this computer: writing now would bring some of it back.
+        if self.data_removed {
+            return Ok(());
+        }
         let unsaved = self.autosave && self.session.path.is_some() && (self.session.dirty || self.session.rev() != self.saved_rev);
         if let (Some(saver), Some(path)) = (&self.services.saver, &self.session.path) {
             // Through the saver too, never in place: a save in place would wait out whatever the

@@ -1,11 +1,8 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! An email of a JMAP answer as a message: its marks, whose it is, and what the raw header fields make of it.
 //! (The header fields are read by the program's MIME reader; what these tests hold is that a server's raw
 //! fields, folds and all, come out as what a message list shows, and that no field can be made to say more.)
-
-use std::collections::HashSet;
 
 use serde_json::json;
 
@@ -53,7 +50,7 @@ fn the_marks_are_five_keywords_in_any_case_and_no_other() {
 }
 
 #[test]
-fn an_email_is_listed_by_the_smallest_of_the_mailboxes_it_lies_in() {
+fn without_a_list_an_email_is_listed_by_the_smallest_of_the_mailboxes_it_lies_in() {
     let lies_in = |ids: Value| claims("M2", Some(&ids), None);
     assert!(lies_in(json!({"M2": true})));
     assert!(lies_in(json!({"M2": true, "M3": true, "M9": true})));
@@ -71,11 +68,31 @@ fn an_email_is_listed_by_the_smallest_of_the_mailboxes_it_lies_in() {
     assert!(claims("M2", None, None));
     // Where the server's list of mailboxes is known, only those count: an id that is no mailbox of it (a view,
     // one it left out) claims nothing.
-    let list: HashSet<String> = ["M2", "M3"].into_iter().map(String::from).collect();
+    let list: HashMap<String, usize> = [("M2", 6), ("M3", 6)].into_iter().map(|(id, rank)| (id.to_string(), rank)).collect();
     assert!(claims("M2", Some(&json!({"A0": true, "M2": true})), Some(&list)));
     assert!(claims("M2", Some(&json!({"M1": true, "M2": true, "M3": true})), Some(&list)));
     assert!(!claims("M3", Some(&json!({"M1": true, "M2": true, "M3": true})), Some(&list)));
     assert!(claims("M3", Some(&json!({"M1": true})), Some(&list)), "none of its ids is a mailbox of the list: it stays where it was found");
+}
+
+#[test]
+fn with_a_list_an_email_is_listed_by_the_inbox_then_the_special_mailboxes_then_the_smallest_id() {
+    // The ranks a run gives: the Inbox 0, Sent 2, Junk 5, and the folders of the owner's own 6.
+    let list: HashMap<String, usize> = [("inbox-id-z", 0), ("sent-y", 2), ("junk-x", 5), ("label-a", 6), ("label-b", 6)]
+        .into_iter()
+        .map(|(id, rank)| (id.to_string(), rank))
+        .collect();
+    let lies_in = |mailbox: &str, ids: Value| claims(mailbox, Some(&ids), Some(&list));
+    // In the Inbox and a label whose id sorts first: the Inbox's.
+    assert!(lies_in("inbox-id-z", json!({"inbox-id-z": true, "label-a": true})));
+    assert!(!lies_in("label-a", json!({"inbox-id-z": true, "label-a": true})));
+    // A special mailbox before a label, and the first special mailbox of the pane's order before another.
+    assert!(lies_in("sent-y", json!({"label-a": true, "sent-y": true})));
+    assert!(lies_in("sent-y", json!({"junk-x": true, "sent-y": true})) && !lies_in("junk-x", json!({"junk-x": true, "sent-y": true})));
+    // Two of one rank: the smallest id.
+    assert!(lies_in("label-a", json!({"label-b": true, "label-a": true})) && !lies_in("label-b", json!({"label-b": true, "label-a": true})));
+    // The Inbox it is said not to lie in counts for nothing.
+    assert!(lies_in("label-a", json!({"inbox-id-z": false, "label-a": true})));
 }
 
 #[test]
@@ -265,7 +282,11 @@ fn every_field_a_list_shows_is_cut_to_a_size() {
     assert_eq!((m.to.len(), m.cc.len()), (500, 500));
     let m = read(&[("From", &format!(" \"{}\" <{}@example.org>", "n".repeat(400), "e".repeat(400)))]);
     assert_eq!((m.from.name.chars().count(), m.from.email.chars().count()), (256, 320));
-    // More than a field has room for is cut at the last address it holds whole, never in the middle of one.
+    // More than a field has room for is cut at the last address it holds whole, never in the middle of one;
+    // a first address longer than all the room is nothing.
+    let long = format!(" {}@example.org, ada@example.org", "a".repeat(30_000));
+    assert_eq!(read(&[("To", &long), ("Cc", " cy@example.org")]).to, Vec::<Address>::new());
+    assert_eq!(read(&[("To", &long), ("Cc", " cy@example.org")]).cc.len(), 1);
     let huge: Vec<String> = (0..6_000).map(|n| format!("person{n}@example.org")).collect();
     let m = read(&[("To", &format!(" {}", huge.join(", ")))]);
     assert_eq!(m.to.len(), 500);
@@ -341,19 +362,4 @@ fn the_rest_of_an_email_is_read_as_the_server_says_it() {
         had,
         GraphMessage { server: ServerMessage { id: "E2".into(), folder: "M3".into(), read: true, ..Default::default() }, ..Default::default() }
     );
-}
-
-#[test]
-fn an_email_s_home_is_the_mailbox_whose_window_lists_it_and_none_when_it_names_none_that_counts() {
-    let ids = json!({"M3": true, "M1": true, "M0": false, "not an id!": true});
-    let all: HashSet<String> = ["M1", "M3"].iter().map(|id| id.to_string()).collect();
-    assert_eq!(home(Some(&ids), Some(&all)), Some("M1"));
-    assert_eq!(home(Some(&ids), None), Some("M1"));
-    // In no mailbox of the list: none, unless any will do (a run by ids then puts it in the first it names).
-    let other: HashSet<String> = ["M9"].iter().map(|id| id.to_string()).collect();
-    assert_eq!(home(Some(&ids), Some(&other)), None);
-    assert_eq!(home(Some(&json!({"M0": false})), None), None);
-    assert_eq!(home(None, None), None);
-    // `claims` is what `home` says: the one mailbox that lists it.
-    assert!(claims("M1", Some(&ids), Some(&all)) && !claims("M3", Some(&ids), Some(&all)));
 }

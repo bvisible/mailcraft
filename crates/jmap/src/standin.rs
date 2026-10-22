@@ -1,19 +1,13 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! An in-process JMAP server for tests: no socket, no thread, nothing leaves the process. A
-//! [`StandIn`] is an [`Http`], so a [`Client`](crate::Client) connects to it as it would to a real server
-//! (`Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))`) while the test keeps a clone to
-//! fill it with mailboxes and mail and to look at what it was asked.
+//! [`StandIn`] is an [`HttpExchange`], so a [`Connection`](crate::Connection) connects to it as it would to a
+//! real server (`Connection::connect(stand_in.clone(), SESSION, Credentials::bearer(TOKEN)?)`) while the test
+//! keeps a clone to fill it with mailboxes and mail and to look at what it was asked.
 //!
 //! Where the other stand-ins of the tests answer whatever they are told and take whatever they are
 //! sent, this one holds a client to the standard (RFC 8620, 8621) as a real server does, for the part
-//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get`, `Email/set` and the download of a blob;
-//! and, so that mail can be sent and drafts saved, the upload of a message, `Email/import`, `Identity/get`
-//! and `EmailSubmission/set` (`outgoing.rs`); and, when a test turns them on, calendars: `Calendar/get`,
-//! `CalendarEvent/query`, `CalendarEvent/get` and `CalendarEvent/set`, and address books: `AddressBook/get`,
-//! `ContactCard/query`, `ContactCard/get` and `ContactCard/set` (`standin/pim.rs`, [`Pim`]); and a person's notes,
-//! `Note/query`, `Note/get` and `Note/set` (`standin/notes.rs`, [`Notes`]).
+//! it serves: the session, `Mailbox/get`, `Email/query`, `Email/get` and the download of a blob.
 //!
 //! - **Who.** `Authorization: Basic` with [`USER`] and [`PASSWORD`], or `Bearer` with the one token it
 //!   holds ([`Data::token`], [`TOKEN`] at first; a token it no longer holds is refused like any other:
@@ -26,9 +20,9 @@
 //! - **How.** The arguments are the ones a method has, of the right type (`invalidArguments`): all of
 //!   `Mailbox/get`'s, `Email/get`'s without the bodies, and `Email/query`'s but `anchor`, `anchorOffset`
 //!   and a `collapseThreads` that is true (it has no threads). The account is the one the session names
-//!   (`accountNotFound`). Ids are the URL-safe alphabet, `A-Z a-z 0-9 - _`, 1 to 512 characters (more than
-//!   the standard's 255, as a client must be ready to read), and no more than `maxObjectsInGet` are asked
-//!   for at a time (`requestTooLarge`); an id that names nothing is in `notFound`. Properties are among
+//!   (`accountNotFound`). Ids are the URL-safe alphabet, `A-Z a-z 0-9 - _`, 1 to 255 characters (RFC 8620
+//!   §1.2), and no more than `maxObjectsInGet` are asked for at a time (`requestTooLarge`); an id that names
+//!   nothing is in `notFound`. Properties are among
 //!   the ones the stand-in has. `Email/query` lists one mailbox (`{"inMailbox": id}`, `unsupportedFilter`)
 //!   sorted by `receivedAt` (`unsupportedSort`), at most 500 at a time (it says the `limit` it applied),
 //!   from a `position` that may be negative, and says the total when asked. `#`-arguments resolve a
@@ -37,36 +31,26 @@
 //! - **Blobs.** The session's `downloadUrl` (`/jmap/download/{accountId}/{blobId}/{name}?type={type}`) gives
 //!   the octets of an email's blob (`blobId`), as they were delivered, to the credentials it lets in
 //!   (RFC 8620 §6.2). An account or a blob it doesn't have, and a path that isn't that of a download, is a
-//!   404. Like any answer, one over the size the request asked for is no answer.
-//! - **Sending** (`outgoing.rs`). `POST /jmap/upload/{accountId}/` keeps a message until `Email/import` files it;
-//!   `EmailSubmission/set` sends an email it has to the recipients of an envelope, as an identity the account
-//!   may send as, and records what left ([`Data::delivered`]) without any Bcc field. A test turns sending off
-//!   with [`Data::submission`] (the session then offers none) and lines up one-off failures in [`Data::faults`].
-//! - **Changes.** `Email/set` updates and destroys emails (`standin/set.rs`): a patch is held to the grammar of
-//!   RFC 8620 §5.3 (a path of the object, `~0` and `~1` for `~` and `/`, no path inside another, `null` to
-//!   take away), what it makes of the email to RFC 8621 §4.1 (keywords of 1 to 255 allowed characters, an
-//!   email in at least one mailbox that exists, and in as many as the account allows), an email that is
-//!   no more is `notFound`, one that is both updated and destroyed is `willDestroy`, and `ifInState` is
-//!   held against the state. No more objects than `maxObjectsInSet` are in one call (`requestTooLarge`).
-//!   Each object has its own answer, `updated` or `notUpdated` with a SetError, `destroyed` or `notDestroyed`.
-//! - **Not there.** `Mailbox/set` (but where [`Profile`] refuses it), `*/changes`, threads, push. The session
+//!   404. Like any answer, one over the most the request may be answered with is no answer
+//!   ([`TransportError::BodyTooLarge`]).
+//! - **What it answers with.** JSON as `application/json`, a request refused as a whole as problem details
+//!   (`application/problem+json`, RFC 9457), a blob as `application/octet-stream`, and a `Retry-After` in
+//!   seconds when it asks to be left alone.
+//! - **Not there.** Anything that changes mail, uploads, sending, `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
 //! - **Kinds of server.** [`Data::profile`] makes it a store of the standard kind, which parses the header
 //!   fields of an email for a client (`subject`, `from`…), or a server that names a message by where it
 //!   is, which serves the raw fields only, keeps an email in one mailbox and refuses `Mailbox/set`
-//!   ([`Profile`], `standin/facade.rs`).
+//!   ([`Profile`], `standin/by_place.rs`).
 //! - **Trouble on demand.** A test makes the next requests to the API answer `429` or `503` with a
 //!   `Retry-After` ([`Data::refuse_next`]), makes a token expire in the middle of a run
 //!   ([`Data::drop_token_after`]), makes a mailbox, or the details of some emails, fail with a
 //!   method error ([`Data::broken_mailboxes`], [`Data::broken_emails`]), and makes a mailbox that it
 //!   can not open answer as if it held nothing, which is how a store that swallows the failure of its
 //!   `SELECT` answers ([`Data::hollow`], [`Data::forgetful`], [`Data::forgetful_headers`]), or leave out what it holds
-//!   ([`Data::uncounted`]). It makes an `Email/set` refuse to change some emails with a SetError of a
-//!   type the test names ([`Data::refused_sets`], and [`Data::refused_moves`] for the moves alone), and loses the answer to requests that it ran all the same,
-//!   as a connection does that drops after the server did its work ([`Data::lost_answers`]).
+//!   ([`Data::uncounted`]).
 //! - **What it was asked.** [`Seen::asked`] has, for every call it ran, the mailbox it listed, the number
-//!   of ids and the properties it was asked for, and the limit, and for an `Email/set` how many emails
-//!   it was to update and to destroy: what a test needs to count the work.
+//!   of ids and the properties it was asked for, and the limit: what a test needs to count the work.
 //!
 //! It never panics, whatever it is sent: there is no `unwrap` here, in a test build or in another
 //! crate's, which turns the `stand-in` feature on.
@@ -78,24 +62,11 @@ use base64::Engine as _;
 use mailcraft_model::{Address, Message};
 use serde_json::{Map, Value, json};
 
-use crate::{CALENDARS, CONTACTS, CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
+use crate::{CAPABILITY_CORE as CORE, CAPABILITY_MAIL as MAIL, HttpExchange, HttpRequest, HttpResponse, Id, TransportError};
 
-mod demo;
-mod facade;
-#[cfg(test)]
-mod loopback;
-mod notes;
-mod outgoing;
-mod pim;
-mod set;
+mod by_place;
 
-pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
-pub use facade::Profile;
-pub use notes::{Notes, StoredNote, WRITABLE_NOTE, crowd_notes, version as notes_version};
-pub use outgoing::{Delivery, Effect, Fault, Identity, Upload};
-pub use pim::{
-    Book, Calendar, Card, Event, MAX_EVENTS_PER_SET, MEET_ROOMS, ONLINE_MEETING_REQUEST, Pim, SERVER_SET, Scheduled, WRITABLE_CARD, WRITABLE_EVENT,
-};
+pub use by_place::Profile;
 
 /// The session's address, to connect to.
 pub const SESSION: &str = "https://jmap.standin.example/jmap/session";
@@ -110,7 +81,6 @@ const ORIGIN: &str = "https://jmap.standin.example";
 const SESSION_PATH: &str = "/jmap/session";
 const API_PATH: &str = "/jmap/api";
 const DOWNLOAD_PATH: &str = "/jmap/download/";
-const UPLOAD_PATH: &str = "/jmap/upload/";
 /// Largest request it reads (`maxSizeRequest`), and most ids one `Email/query` answers however many are asked.
 const MAX_REQUEST: usize = 10_000_000;
 const MAX_QUERY: usize = 500;
@@ -191,13 +161,6 @@ pub struct Asked {
     pub properties: Vec<String>,
     /// The `limit` of a query.
     pub limit: Option<usize>,
-    /// How many emails a `set` was to update, and how many to destroy.
-    pub updates: Option<usize>,
-    pub destroys: Option<usize>,
-    /// The stretch a query of events asked about (`after`, `before`), and whether a query asked for the total.
-    pub after: Option<String>,
-    pub before: Option<String>,
-    pub total: bool,
 }
 
 impl Asked {
@@ -213,11 +176,6 @@ impl Asked {
                 .map(|names| names.iter().filter_map(Value::as_str).map(str::to_string).collect())
                 .unwrap_or_default(),
             limit: args.get("limit").and_then(Value::as_u64).map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
-            updates: args.get("update").and_then(Value::as_object).map(Map::len),
-            destroys: args.get("destroy").and_then(Value::as_array).map(Vec::len),
-            after: text(args.get("filter").and_then(|filter| filter.get("after"))),
-            before: text(args.get("filter").and_then(|filter| filter.get("before"))),
-            total: args.get("calculateTotal").and_then(Value::as_bool) == Some(true),
         }
     }
 }
@@ -228,10 +186,9 @@ pub struct Data {
     pub emails: Vec<Email>,
     /// The requests it was sent, oldest first (the first 10,000).
     pub seen: Vec<Seen>,
-    /// What the session says it takes: method calls in a request, ids in a `get`, objects in a `set`.
+    /// What the session says it takes: method calls in a request, ids in a `get`.
     pub max_calls: usize,
     pub max_get: usize,
-    pub max_set: usize,
     /// The one bearer token it lets in; `None`: no bearer token.
     pub token: Option<String>,
     /// What kind of server it is.
@@ -263,38 +220,6 @@ pub struct Data {
     /// Mailboxes (ids) whose counts `Mailbox/get` leaves out (`totalEmails`, `unreadEmails`): a store that could
     /// not read them.
     pub uncounted: BTreeSet<String>,
-    /// The session offers sending (`urn:ietf:params:jmap:submission`): `Identity/get` and `EmailSubmission/set`.
-    pub submission: bool,
-    /// Who the account may send as ([`Data::identity`]).
-    pub identities: Vec<Identity>,
-    /// The messages uploaded that no `Email/import` has taken yet, by blob.
-    pub uploads: BTreeMap<String, Upload>,
-    /// What the server sent, in order.
-    pub delivered: Vec<Delivery>,
-    /// The largest upload it takes (`maxSizeUpload`).
-    pub max_upload: usize,
-    /// One-off failures to come, oldest first ([`Fault`]).
-    pub faults: VecDeque<Fault>,
-    /// A server of the by-place kind sends only an email that was just filed, once: the emails filed and not sent.
-    pub filed: BTreeSet<String>,
-    /// How many messages that kind of server has sent in the time it counts, which limits them.
-    pub sent_lately: u32,
-    /// What changes the answer being made, once the request is run.
-    after: Option<Effect>,
-    arrivals: u32,
-    /// Emails (ids) that an `Email/set` will not update or destroy, with the `type` of the SetError it answers
-    /// them with (`forbidden`, `rateLimit`, `serverFail`…).
-    pub refused_sets: BTreeMap<String, &'static str>,
-    /// As [`Data::refused_sets`], but only for an update that moves the email (a patch of `mailboxIds`): the marks of
-    /// the same email are made.
-    pub refused_moves: BTreeMap<String, &'static str>,
-    /// The next this many requests to the API are run, and then their answer is lost: the client gets a
-    /// network error, as when a connection drops after the server did its work.
-    pub lost_answers: usize,
-    /// What it offers besides mail: calendars and address books ([`Pim`], `standin/pim.rs`). Nothing at first.
-    pub pim: Pim,
-    /// A person's notes, when a test turns them on ([`Notes`], `standin/notes.rs`). Nothing at first.
-    pub notes: Notes,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -310,7 +235,6 @@ impl Data {
             seen: Vec::new(),
             max_calls: 16,
             max_get: 500,
-            max_set: 500,
             token: Some(TOKEN.into()),
             profile: Profile::standard(),
             refuse_next: VecDeque::new(),
@@ -321,21 +245,6 @@ impl Data {
             forgetful: BTreeSet::new(),
             forgetful_headers: BTreeSet::new(),
             uncounted: BTreeSet::new(),
-            submission: true,
-            identities: Vec::new(),
-            uploads: BTreeMap::new(),
-            delivered: Vec::new(),
-            max_upload: 25_000_000,
-            faults: VecDeque::new(),
-            filed: BTreeSet::new(),
-            sent_lately: 0,
-            after: None,
-            arrivals: 0,
-            refused_sets: BTreeMap::new(),
-            refused_moves: BTreeMap::new(),
-            lost_answers: 0,
-            pim: Pim::default(),
-            notes: Notes::default(),
             next: 0,
             version: 0,
             retry_after: None,
@@ -427,8 +336,6 @@ impl Data {
         self.emails.retain(|e| e.id != email);
         let removed = self.emails.len() < before;
         if removed {
-            // (An email that is no more can't be sent: a by-place server sends only what it has filed.)
-            self.filed.remove(email);
             self.changed();
         }
         removed
@@ -453,8 +360,8 @@ impl Data {
         true
     }
 
-    fn authorized(&self, headers: &[(String, String)]) -> bool {
-        let Some((scheme, credentials)) = header(headers, "authorization").and_then(|v| v.split_once(' ')) else {
+    fn authorized(&self, fields: &[(&str, &str)]) -> bool {
+        let Some((scheme, credentials)) = header(fields, "authorization").and_then(|v| v.split_once(' ')) else {
             return false;
         };
         if scheme.eq_ignore_ascii_case("bearer") {
@@ -467,45 +374,43 @@ impl Data {
         false
     }
 
-    fn handle(&mut self, req: &Request) -> Result<Response> {
-        let url = Url::parse(&req.url).map_err(|_| Error::Io("the stand-in was sent no web address".into()))?;
-        if url.origin() != ORIGIN {
-            return Err(Error::Io("no route to that host".into()));
+    /// One HTTP request, by its method, its address, its header fields and its body.
+    fn handle(&mut self, method: &str, url: &str, fields: &[(&str, &str)], body: &[u8]) -> Result<HttpResponse, TransportError> {
+        // No address, or another place: no route to that host.
+        let address = crate::Address::parse(url).map_err(|_| TransportError::Unreachable)?;
+        if address.origin().to_string() != ORIGIN {
+            return Err(TransportError::Unreachable);
         }
-        let path = url.path.split('?').next().unwrap_or_default().to_string();
+        let path = address.path().to_string();
         // A blob is the one answer that isn't JSON.
-        let (status, body, calls) = if req.method == "GET" && path.starts_with(DOWNLOAD_PATH) {
-            let (status, body) = self.download(req, &path);
-            (status, body, Vec::new())
-        } else if path.starts_with(UPLOAD_PATH) {
-            let (status, body) = self.upload(req, &path);
+        let (status, body, calls) = if method == "GET" && path.starts_with(DOWNLOAD_PATH) {
+            let (status, body) = self.download(fields, &path);
             (status, body, Vec::new())
         } else {
-            let (status, body, calls) = self.route(req, &path);
+            let (status, body, calls) = self.route(method, &path, fields, body);
             (status, serde_json::to_vec(&body).unwrap_or_default(), calls)
         };
-        // A fault may change the answer after the work is done: the status of a gateway that gave up, an answer
-        // that is none, one that never comes (the status the request is seen with is then 0).
-        let answered = outgoing::answer_after(self.after.take(), status, body);
         let (asked, retry_after) = (std::mem::take(&mut self.asked), self.retry_after.take());
-        // A request to the API that ran (it called methods) and whose answer the connection loses.
-        let lost = path == API_PATH && !calls.is_empty() && self.lost_answers > 0;
         if self.seen.len() < MAX_SEEN {
-            self.seen.push(Seen { method: req.method.clone(), path, status: answered.as_ref().map_or(0, |(status, _)| *status), calls, asked });
+            self.seen.push(Seen { method: method.to_string(), path: path.clone(), status, calls, asked });
         }
-        let (status, body) = answered?;
-        if lost {
-            self.lost_answers = self.lost_answers.saturating_sub(1);
-            return Err(Error::Io("the connection was lost before the answer came".into()));
+        let content_type = match status {
+            200 if path.starts_with(DOWNLOAD_PATH) => "application/octet-stream",
+            200 => "application/json",
+            _ => "application/problem+json",
+        };
+        let mut answer = HttpResponse::new(status, body).with_field("Content-Type", content_type);
+        if let Some(seconds) = retry_after {
+            answer.set_field("Retry-After", &seconds.to_string());
         }
-        Ok(Response { status, body, retry_after })
+        Ok(answer)
     }
 
     /// `GET /jmap/download/{accountId}/{blobId}/{name}` (RFC 8620 §6.2): the octets of a blob, as they
     /// were delivered. The credentials are asked for as for any other address.
-    fn download(&self, req: &Request, path: &str) -> (u16, Vec<u8>) {
+    fn download(&self, fields: &[(&str, &str)], path: &str) -> (u16, Vec<u8>) {
         let refused = |status: u16, detail: &str| (status, serde_json::to_vec(&problem(status, "about:blank", detail)).unwrap_or_default());
-        if !self.authorized(&req.headers) {
+        if !self.authorized(fields) {
             return refused(401, "the credentials were refused");
         }
         let mut parts = path.strip_prefix(DOWNLOAD_PATH).unwrap_or_default().split('/');
@@ -521,14 +426,14 @@ impl Data {
         }
     }
 
-    fn route(&mut self, req: &Request, path: &str) -> (u16, Value, Vec<String>) {
+    fn route(&mut self, method: &str, path: &str, fields: &[(&str, &str)], body: &[u8]) -> (u16, Value, Vec<String>) {
         if self.drop_token_after == Some(0) {
             (self.token, self.drop_token_after) = (None, None);
         }
-        if !self.authorized(&req.headers) {
+        if !self.authorized(fields) {
             return (401, problem(401, "about:blank", "the credentials were refused"), Vec::new());
         }
-        match (req.method.as_str(), path) {
+        match (method, path) {
             ("GET", SESSION_PATH) => (200, self.session(), Vec::new()),
             ("POST", API_PATH) => {
                 // A server that can't take this one just now (the queue holds `None` for one it can).
@@ -539,9 +444,9 @@ impl Data {
                 if let Some(left) = self.drop_token_after.as_mut() {
                     *left = left.saturating_sub(1);
                 }
-                let json = header(&req.headers, "content-type")
+                let json = header(fields, "content-type")
                     .is_some_and(|v| v.split(';').next().is_some_and(|m| m.trim().eq_ignore_ascii_case("application/json")));
-                if json { self.api(&req.body) } else { rejected("notJSON", "the request isn't application/json") }
+                if json { self.api(body) } else { rejected("notJSON", "the request isn't application/json") }
             }
             (_, SESSION_PATH | API_PATH) => (405, problem(405, "about:blank", "not a method of that address"), Vec::new()),
             _ => (404, problem(404, "about:blank", "no such address"), Vec::new()),
@@ -549,16 +454,16 @@ impl Data {
     }
 
     fn session(&self) -> Value {
-        let mut session = json!({
+        json!({
             "capabilities": {
                 CORE: {
-                    "maxSizeUpload": self.max_upload,
+                    "maxSizeUpload": 25_000_000,
                     "maxConcurrentUpload": 2,
                     "maxSizeRequest": MAX_REQUEST,
                     "maxConcurrentRequests": 2,
                     "maxCallsInRequest": self.max_calls,
                     "maxObjectsInGet": self.max_get,
-                    "maxObjectsInSet": self.max_set,
+                    "maxObjectsInSet": self.max_get,
                     "collationAlgorithms": ["i;ascii-casemap"],
                 },
                 MAIL: {},
@@ -580,17 +485,7 @@ impl Data {
             "downloadUrl": "/jmap/download/{accountId}/{blobId}/{name}?type={type}",
             "uploadUrl": "/jmap/upload/{accountId}/",
             "state": self.state(),
-        });
-        // Sending, when the server has it (RFC 8621 §1.3.2).
-        if self.submission {
-            session["capabilities"][SUBMISSION] = json!({});
-            session["accounts"][ACCOUNT]["accountCapabilities"][SUBMISSION] = json!({"maxDelayedSend": 0, "submissionExtensions": {}});
-            session["primaryAccounts"][SUBMISSION] = json!(ACCOUNT);
-        }
-        // Calendars and address books, when a test turns them on (`standin/pim.rs`).
-        self.pim.add_to(&mut session, ACCOUNT);
-        self.notes.add_to(&mut session, ACCOUNT);
-        session
+        })
     }
 
     /// A request of method calls: the status, the body, and the names of the methods it called.
@@ -605,13 +500,7 @@ impl Data {
         let (Some(using), Some(calls)) = (using, request.get("methodCalls").and_then(Value::as_array)) else {
             return rejected("notRequest", "a request has `using` (a list of names) and `methodCalls`");
         };
-        let known = |capability: &str| {
-            matches!(capability, CORE | MAIL)
-                || (capability == SUBMISSION && self.submission)
-                || self.pim.knows(capability)
-                || self.notes.knows(capability)
-        };
-        if using.iter().any(|capability| !known(capability)) {
+        if using.iter().any(|capability| !matches!(*capability, CORE | MAIL)) {
             return rejected("unknownCapability", "a capability this server doesn't have is in `using`");
         }
         if calls.len() > self.max_calls {
@@ -627,15 +516,6 @@ impl Data {
             };
             parsed.push((name, args, id));
         }
-        // A request a server is down for, or too busy to take, is not run at all.
-        let wanted: Vec<&str> = parsed.iter().map(|(name, ..)| *name).collect();
-        match self.request_fault(&wanted, |effect| matches!(effect, Effect::RefuseWith(_) | Effect::OverLimit)) {
-            Some(Effect::RefuseWith(status)) => {
-                return (status, problem(status, "about:blank", "the server can't take this request just now"), Vec::new());
-            }
-            Some(Effect::OverLimit) => return limit("maxSizeRequest", "the request is too large"),
-            _ => {}
-        }
         let (mut done, mut responses, mut names) = (Vec::new(), Vec::new(), Vec::new());
         for (name, args, id) in parsed {
             names.push(name.to_string());
@@ -650,65 +530,24 @@ impl Data {
             responses.push(response);
             done.push(Done { id: id.to_string(), name: name.to_string(), result });
         }
-        // The work is done; what the answer is may be a fault's to say.
-        if let Some(effect) =
-            self.request_fault(&wanted, |effect| matches!(effect, Effect::LoseAnswer | Effect::Status(_) | Effect::Garbage | Effect::Oversize))
-        {
-            self.after = Some(effect);
-        }
         (200, json!({"methodResponses": responses, "sessionState": self.state()}), names)
     }
 
-    /// The first fault lined up for one of `methods` that `fits`, taken.
-    fn request_fault(&mut self, methods: &[&str], fits: impl Fn(&Effect) -> bool) -> Option<Effect> {
-        let at = self.faults.iter().position(|fault| methods.contains(&fault.on) && fits(&fault.effect))?;
-        // (One that lets some requests through first counts this one.)
-        if let Some(fault) = self.faults.get_mut(at).filter(|fault| fault.skip > 0) {
-            fault.skip -= 1;
-            return None;
-        }
-        self.faults.remove(at).map(|fault| fault.effect)
-    }
-
-    fn method(&mut self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
-        // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2): the mail's for
-        // mail and sending (sending is a capability of its own too, in the session and in the request), the calendars'
-        // for calendars and the address books' for cards, when the session offers them (`standin/pim.rs`).
-        let needs = match name {
-            "Mailbox/get" | "Email/query" | "Email/get" | "Email/import" | "Email/set" => Some(MAIL),
-            "Mailbox/set" if self.profile.fixed_mailboxes => Some(MAIL),
-            "Identity/get" | "EmailSubmission/set" if self.submission && using.contains(&SUBMISSION) => Some(MAIL),
-            "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" | "CalendarEvent/set" if self.pim.calendars => Some(CALENDARS),
-            "ParticipantIdentity/get" if self.pim.calendars && self.pim.says_identities => Some(CALENDARS),
-            "AddressBook/get" | "ContactCard/query" | "ContactCard/get" | "ContactCard/set" if self.pim.contacts => Some(CONTACTS),
-            _ if self.notes.has(name) => Some(crate::pim::notes::NOTES),
-            _ => None,
+    fn method(&self, using: &[&str], name: &str, args: &Value, done: &[Done]) -> Outcome<Value> {
+        // A method whose capability the request doesn't name is unknown to the server (RFC 8620 §3.6.2).
+        let served = match name {
+            "Mailbox/get" | "Email/query" | "Email/get" => true,
+            "Mailbox/set" => self.profile.fixed_mailboxes,
+            _ => false,
         };
-        if needs.is_none_or(|capability| !using.contains(&capability)) {
+        if !served || !using.contains(&MAIL) {
             return Err(refuse("unknownMethod", format!("no method {}", name.chars().take(40).collect::<String>())));
-        }
-        if let Some(Effect::MethodError(kind)) = self.take_fault(name, |effect| matches!(effect, Effect::MethodError(_))) {
-            return Err(refuse(kind, "the server can't do this just now"));
         }
         let args = arguments(args, done)?;
         match name {
             "Mailbox/get" => self.mailbox_get(&args),
-            "Mailbox/set" => facade::mailbox_set(&args, &self.state()),
+            "Mailbox/set" => by_place::mailbox_set(&args, &self.state()),
             "Email/query" => self.email_query(&args),
-            "Email/import" => self.email_import(&args),
-            "Email/set" => self.email_set(&args),
-            "Identity/get" => self.identity_get(&args),
-            "EmailSubmission/set" => self.submission_set(&args),
-            "Calendar/get" => self.pim.calendar_get(&args),
-            "ParticipantIdentity/get" => self.pim.participant_identity_get(&args),
-            "CalendarEvent/query" => self.pim.event_query(&args),
-            "CalendarEvent/get" => self.pim.event_get(&args, self.max_get),
-            "CalendarEvent/set" => self.pim.event_set(&args, self.max_set),
-            "AddressBook/get" => self.pim.address_book_get(&args),
-            "ContactCard/query" => self.pim.card_query(&args),
-            "ContactCard/get" => self.pim.card_get(&args, self.max_get),
-            "ContactCard/set" => self.pim.card_set(&args, self.max_set),
-            _ if self.notes.has(name) => self.notes.method(name, &args, self.max_get, self.max_set),
             _ => self.email_get(&args),
         }
     }
@@ -763,7 +602,7 @@ impl Data {
             Some(Value::Object(filter)) if filter.len() == 1 => filter.get("inMailbox").and_then(Value::as_str).ok_or_else(unsupported)?,
             _ => return Err(unsupported()),
         };
-        if !valid_id(mailbox) {
+        if Id::new(mailbox).is_err() {
             return Err(invalid("not a mailbox id"));
         }
         if !self.mailboxes.iter().any(|m| m.id == mailbox) {
@@ -878,8 +717,8 @@ fn problem(status: u16, kind: &str, detail: &str) -> Value {
     json!({"type": kind, "status": status, "detail": detail})
 }
 
-fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
-    headers.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+fn header<'a>(fields: &[(&'a str, &'a str)], name: &str) -> Option<&'a str> {
+    fields.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| *v)
 }
 
 /// The arguments of a method call, with every `#name` replaced by the result it refers to.
@@ -967,10 +806,10 @@ fn ids(args: &Map<String, Value>, most: usize) -> Outcome<Option<Vec<String>>> {
         }
         Some(Value::Array(items)) => items
             .iter()
-            .map(|item| item.as_str().filter(|id| valid_id(id)).map(str::to_string))
+            .map(|item| item.as_str().filter(|id| Id::new(id).is_ok()).map(str::to_string))
             .collect::<Option<Vec<String>>>()
             .map(Some)
-            .ok_or_else(|| invalid("an id is 1 to 512 characters of A-Z a-z 0-9 - _")),
+            .ok_or_else(|| invalid("an id is 1 to 255 characters of A-Z a-z 0-9 - _")),
         Some(_) => Err(invalid("ids is a list, or null")),
     }
 }
@@ -1153,6 +992,13 @@ impl StandIn {
     pub fn api_requests(&self) -> usize {
         self.with(|d| d.seen.iter().filter(|s| s.path == API_PATH).count())
     }
+
+    /// Answer an HTTP request given by its parts (its method, its address, its header fields and its body), as
+    /// any client may send one: for the tests of the stand-in itself. What a [`Connection`](crate::Connection)
+    /// sends comes through [`HttpExchange`].
+    pub fn answer(&self, method: &str, url: &str, fields: &[(&str, &str)], body: &[u8]) -> Result<HttpResponse, TransportError> {
+        self.with(|d| d.handle(method, url, fields, body))
+    }
 }
 
 impl std::fmt::Debug for StandIn {
@@ -1161,14 +1007,15 @@ impl std::fmt::Debug for StandIn {
     }
 }
 
-impl Http for StandIn {
-    async fn send(&self, req: Request) -> Result<Response> {
-        let resp = self.with(|d| d.handle(&req))?;
-        // As an HTTP client does: an answer over the size asked for is no answer.
-        if resp.body.len() > req.max {
-            return Err(Error::TooLarge(format!("the answer is larger than {} bytes", req.max)));
+impl HttpExchange for StandIn {
+    async fn exchange(&self, req: &HttpRequest) -> Result<HttpResponse, TransportError> {
+        let fields: Vec<(&str, &str)> = req.fields().collect();
+        let answer = self.answer(req.method().as_str(), req.url(), &fields, req.body())?;
+        // As an exchange does: an answer over the most the request may be answered with is no answer.
+        if answer.body().len() > req.max_response_bytes() {
+            return Err(TransportError::BodyTooLarge);
         }
-        Ok(resp)
+        Ok(answer)
     }
 }
 

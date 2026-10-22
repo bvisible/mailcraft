@@ -89,6 +89,9 @@ pub enum Dialog {
         account: Id,
     },
     Form(Form),
+    /// Help › Report a Problem ([`crate::report_problem`]): it only collects what went wrong,
+    /// then runs `ui.reportProblem`.
+    ReportProblem(Box<crate::report_problem::Draft>),
     /// Propose New Time, Forward, or the list of what was proposed ([`crate::meeting_dialogs`]).
     Meeting(crate::meeting_dialogs::MeetingDialog),
 }
@@ -121,7 +124,7 @@ pub struct Question {
 
 impl Question {
     /// A question with one way of going ahead, which adds `with` to the parameters.
-    fn new(title: &str, text: String, action: &str, with: Value) -> Question {
+    pub(crate) fn new(title: &str, text: String, action: &str, with: Value) -> Question {
         Question { title: title.to_string(), text, action: action.to_string(), with, more: Vec::new(), note: None }
     }
 
@@ -157,6 +160,7 @@ impl Dialog {
             Dialog::About(AboutTab::Testers) => "testers",
             Dialog::GraphSwitch { .. } => "graphSwitch",
             Dialog::Form(f) => f.name(),
+            Dialog::ReportProblem(_) => "reportProblem",
             Dialog::Meeting(d) => d.name(),
         }
     }
@@ -207,6 +211,7 @@ impl Dialog {
                 _ => Dialog::About(AboutTab::About),
             },
             "contributors" => Dialog::About(AboutTab::Contributors),
+            "reportProblem" => Dialog::ReportProblem(Box::new(crate::report_problem::Draft::new(app, params))),
             "testers" => Dialog::About(AboutTab::Testers),
             // An item that repeats is asked about before it opens: just this one, or the series?
             "editEvent" if opening_question(app, params).is_some() => {
@@ -240,6 +245,8 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
     let server_too = |yes: bool| if yes { format!(" {}", tl!("They are removed from the mail server too.")) } else { String::new() };
     let question = |title: &str, text: String, action: &str| Some(Question::new(title, text, action, Value::Null));
     match id {
+        // Everything MailCraft keeps on this computer (#177).
+        "ui.removeAllData" if app.services.data_wipe.is_some() && !app.data_removed => Some(crate::data_removal::question()),
         // An Office file with macros, or a web page, from a message (#126).
         "mail.openAttachment" => {
             let (title, text, action) = crate::attachment_open::question(app, params)?;
@@ -352,6 +359,14 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
             let text = crate::i18n::fmt(
                 tl!("{address} and the mail kept for it on this device will be removed. Mail on the server is not touched."),
                 &[("address", &a.email)],
+            );
+            // Pictures and opened attachments are kept by their address and by file, not by account.
+            let text = format!(
+                "{text} {} {}",
+                tl!("Its messages, attachments, settings and remembered sign-in go with it."),
+                tl!(
+                    "Downloaded pictures and opened attachments can't be told apart by account: File › Info › Remove MailCraft's data from this computer clears them."
+                )
             );
             // (The shared mailboxes opened through it go with it, #70.)
             let shared = mb.shared_mailboxes(a.id).len();
@@ -781,6 +796,7 @@ pub fn input_dialog(id: &str, params: &Value) -> Option<&'static str> {
         "account.add" if !has("email") => Some("account"),
         "rules.list" => Some("rules"),
         "category.list" => Some("categories"),
+        "ui.reportProblem" if !has("what") => Some("reportProblem"),
         _ => None,
     }
 }
@@ -1353,6 +1369,12 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             let title = form.title();
             let mut done = false;
             let open = window(ctx, &title, form.width(), |ui| done = form.show(app, ui));
+            close |= !open || done;
+        }
+        // (Enter is nobody's in this one either: it has boxes of several lines.)
+        Dialog::ReportProblem(draft) => {
+            let mut done = false;
+            let open = window(ctx, tl!("Report a Problem"), crate::report_problem::WIDTH, |ui| done = draft.show(app, ui));
             close |= !open || done;
         }
         // (Enter is nobody's in these: what they send, they send from a button.)

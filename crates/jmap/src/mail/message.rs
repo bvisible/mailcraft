@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! One email of a JMAP answer as the message the engine takes in (RFC 8621 §4).
 //!
 //! A server that does not parse the header for a client serves the raw fields (`headers`, §4.1.2.2) and
@@ -11,14 +10,14 @@
 //! Everything here reads hostile JSON: a field of the wrong type is a field that is not there, every list
 //! and string is cut to a size, and nothing is indexed or unwrapped.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use mailcraft_model::sync::{GraphMessage, ServerMessage};
 use mailcraft_model::{Address, FlagStatus};
 use mailcraft_time::Timestamp;
 use serde_json::Value;
 
-use crate::valid_id;
+use crate::Id;
 
 /// Longest preview kept, in characters (RFC 8621 §4.1.4 allows a server up to 256).
 pub(super) const MAX_PREVIEW: usize = 256;
@@ -82,22 +81,23 @@ impl Marks {
 }
 
 /// Whether the window of `mailbox` lists an email whose `mailboxIds` are these: an email in several
-/// mailboxes is listed by the window of the smallest of their ids (by their bytes) and no other, so that
-/// the folders do not take it from one another run after run. Only the mailboxes of the list count
-/// (`claimable`, when the list could be had): a view that is no place for mail, or a mailbox the list
-/// does not have, claims nothing, or one with a small id would take every email from the one it is in.
+/// mailboxes is listed by the window of the first of them and no other, so that the folders do not take it
+/// from one another run after run. The first is the one of the lowest rank (`claimable` has the rank of each
+/// mailbox of the list: the Inbox, then the special mailboxes, then the rest), and among those of one rank
+/// the one with the smallest id (by its bytes); without a list, the smallest id. Only the mailboxes of the
+/// list count (`claimable`, when the list could be had): a view that is no place for mail, or a mailbox the
+/// list does not have, claims nothing, or one with a small id would take every email from the one it is in.
 /// An email that says nothing of where it lies (or only ids that mean nothing) belongs to the mailbox it
 /// was found in.
-pub(super) fn claims(mailbox: &str, mailbox_ids: Option<&Value>, claimable: Option<&HashSet<String>>) -> bool {
-    home(mailbox_ids, claimable).is_none_or(|smallest| smallest == mailbox)
-}
-
-/// The mailbox whose window lists an email whose `mailboxIds` are these ([`claims`]): the smallest of their ids that
-/// counts. `None` when they name none that does (or there are none to read).
-pub(super) fn home<'a>(mailbox_ids: Option<&'a Value>, claimable: Option<&HashSet<String>>) -> Option<&'a str> {
-    let map = mailbox_ids.and_then(Value::as_object)?;
-    let counts = |id: &str| valid_id(id) && claimable.is_none_or(|all| all.contains(id));
-    map.iter().filter(|(id, on)| **on == Value::Bool(true) && counts(id)).map(|(id, _)| id.as_str()).min()
+pub(super) fn claims(mailbox: &str, mailbox_ids: Option<&Value>, claimable: Option<&HashMap<String, usize>>) -> bool {
+    let Some(map) = mailbox_ids.and_then(Value::as_object) else { return true };
+    let rank = |id: &str| match claimable {
+        _ if Id::new(id).is_err() => None,
+        None => Some(0),
+        Some(all) => all.get(id).copied(),
+    };
+    let first = map.iter().filter(|(_, on)| **on == Value::Bool(true)).filter_map(|(id, _)| Some((rank(id)?, id.as_str()))).min();
+    first.is_none_or(|(_, first)| first == mailbox)
 }
 
 /// What the server says of an email: its id, the mailbox it was listed in and its marks.
@@ -242,7 +242,8 @@ fn block(headers: Option<&Value>) -> String {
 }
 
 /// `value` on one line (a fold or any control character is one blank, a run of blanks is one) of at most
-/// `room` bytes; a list of addresses that is cut loses the address it was cut in, not half of it.
+/// `room` bytes; a list of addresses that is cut loses the address it was cut in, not half of it (and so a
+/// list whose first address is longer than the room is nothing).
 fn folded(value: &str, room: usize, list: bool) -> String {
     let mut out = String::new();
     let mut blank = false;
@@ -253,8 +254,8 @@ fn folded(value: &str, room: usize, list: bool) -> String {
         }
         let gap = usize::from(blank);
         if out.len().saturating_add(gap).saturating_add(c.len_utf8()) > room {
-            if list && let Some(at) = out.rfind([',', ';']) {
-                out.truncate(at);
+            if list {
+                out.truncate(out.rfind([',', ';']).unwrap_or(0));
             }
             break;
         }

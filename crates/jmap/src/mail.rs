@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! A JMAP account's mailboxes and the newest messages in them (RFC 8620, RFC 8621), read for the engine.
 //!
 //! [`sync_mail`] takes the request the engine worked out ([`JmapMailRequest`]) and hands back what it
@@ -9,8 +8,6 @@
 //!
 //! **What is asked of the server**, in order, each in one request:
 //!
-//! 0. When the request holds changes of messages, `Email/set` for them, before anything is read, so that what
-//!    is read is the server after them ([`up`]). The answer to each change is a piece of its own.
 //! 1. `Mailbox/get`, always: the mailboxes (their roles say which is the Inbox, which a run that reads
 //!    only the Inbox and the mailboxes on screen needs as much as one that reads them all). It is the
 //!    folder list of the run when the request asks for one ([`JmapMailRequest::list_folders`]).
@@ -31,8 +28,9 @@
 //! holds none, as a number; none was left out because another mailbox lists it, and none could not be read
 //! whole.
 //! Anything less is a window read in part, which adds and updates and removes nothing. An email in several
-//! mailboxes is listed by the window of the smallest of their ids (of the mailboxes the server lists) and
-//! by no other, so that two folders never take it from one another. So an email that was moved, out of a
+//! mailboxes is listed by the window of the first of them (of the mailboxes the server lists) and by no other,
+//! so that two folders never take it from one another: the Inbox, then the special mailboxes in the order the
+//! folder pane lists them, then the one whose id is the smallest. So an email that was moved, out of a
 //! mailbox the run read completely and into one it did not read, is taken out of the first at once and
 //! comes in again, as a new message, when the second is read and its window reaches it: only a server that
 //! says what changed (`Email/changes`) tells a move from a removal, and this does not ask it. (Where a
@@ -40,21 +38,14 @@
 //! name the place, it is a removal and an arrival.) The header fields are read from the raw `headers`,
 //! whatever else the server serves.
 //!
-//! **Pieces**, in this order: what became of the changes of messages (when the request held any and some
-//! were answered), the folder list (when asked for), then one piece for each window read, then the last,
-//! which says how the run ended: `partial` is false only there, `whole` is true when nothing went wrong and
-//! the run was not stopped, and the problems are in `errors`. [`JmapMailResult::stopped`]: the `cancel` flag
-//! was set, which is looked at before every request.
+//! **Pieces**, in this order: the folder list (when asked for), then one piece for each window read, then
+//! the last, which says how the run ended: `partial` is false only there, `whole` is true when nothing
+//! went wrong and the run was not stopped, and the problems are in `errors`. [`JmapMailResult::stopped`]:
+//! the `cancel` flag was set, which is looked at before every request.
 //!
-//! **Emails by their ids.** A request that names `emails` (a message opened from elsewhere that no window has
-//! brought yet) is a run of its own: `Mailbox/get` (a piece of the listing when the request asks for one), then one
-//! `Email/get` of those emails, ten at most, each read as a window reads an email it has not got and put in the
-//! mailbox whose window would list it (one that lies in none of the list's, in the first it names), in one piece of
-//! pages that are not the whole of their mailboxes; nothing goes up, nothing is sent, no window is read, and the
-//! last piece is never `whole` (it read no mailbox to its end).
-//!
-//! **When something goes wrong.** The server refusing the credentials (401, 403) ends the run with
-//! `auth_refused`; one that is busy (429, 503) ends it with `busy_for`, as many seconds as it asked, or 30.
+//! **When something goes wrong.** The server refusing the credentials or the access (401, 403) ends the run
+//! with `auth_refused`; one that is busy (429, 503) ends it with `busy_for`, as many seconds as it asked, or
+//! 30. An exchange the program called off when the owner stopped the run is the run stopped.
 //! A server that cannot be reached, or whose request fails as a whole (an HTTP error, an answer that is no
 //! JMAP), or says it is unavailable, is a line in `errors` and the run goes on with the next mailbox, until
 //! three in a row have failed that way: then it ends. A mailbox the server answers an error for, or answers
@@ -67,13 +58,8 @@
 //! with no mailbox in it is a line as well: an account always has an Inbox. The lines written here name no
 //! mailbox, and what a server says in one is scrubbed of the session's address, the account's, the
 //! credentials and any word that holds an `@`. A window that a stop (cancel, a busy server, a refused
-//! sign-in) cuts between its requests is not handed on. Changes of messages that the server did not take are
-//! a line, and wait for the next run; they do not stop a run from being whole, but for a move that was not
-//! answered, which may have been made, and then a window of the mailbox it left would not list the message.
-//!
-//! **Sending** (`outgoing.rs`, `send.rs`): after the list of mailboxes and before any window, the messages
-//! the request names are sent and its drafts filed, a piece for each ([`JmapMailResult::sent`],
-//! [`JmapMailResult::drafts`]). A run with none makes no request for them.
+//! sign-in) cuts between its requests is not handed on. What the request asks that is not done here yet
+//! (`changes`, `sends`) gets no answer, so the engine asks again.
 //!
 //! **What comes back is hostile.** Counts, ids, names, previews, addresses and header fields are cut to
 //! sizes; an answer is held to the size its request can need; an entry that cannot be read is passed over;
@@ -81,22 +67,23 @@
 
 mod folders;
 mod message;
-mod outgoing;
 #[cfg(test)]
 mod tests;
-mod up;
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::FolderKind;
-use mailcraft_model::sync::{
-    FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_EMAILS, MAX_JMAP_WINDOW, MessagePage,
-};
-use serde_json::{Value, json};
+use mailcraft_model::sync::{FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_WINDOW, MessagePage};
+use serde_json::{Map, Value, json};
 
-use self::message::{Marks, claims, home};
-use crate::{Client, Error, Http, Secrets, result_of, valid_id};
+use self::message::{Marks, claims};
+use crate::connection::{busy_seconds, unusable};
+use crate::{
+    ApiRequest, ApiResponse, BuildError, CAPABILITY_MAIL, CallFailure, CallId, Connection, Error, Failure, HttpExchange, Id, Redactor,
+    TransportError, Unusable,
+};
 
 /// Emails asked for whole in one request.
 const MAX_CHUNK: usize = 200;
@@ -116,18 +103,14 @@ const MAX_SPLITS: usize = 32;
 const MAX_DOWN_SPLITS: usize = 4;
 /// How long a busy server is left alone when it does not say, in seconds.
 const BUSY_FOR: u32 = 30;
-/// Longest line of `errors`, in characters.
-const MAX_LINE: usize = 300;
 /// An account id this long or longer is hidden in what a server says (a shorter one would garble it).
 const SECRET_ID: usize = 8;
 /// The most an answer may be, in bytes, by what is asked: what is parsed out of an answer takes many times
 /// its size in memory, so a request is given no more than it can need. A list of mailboxes (10,000 at the
-/// most), the ids and keywords of a window (500), the header fields of 200 emails, and those of the ten emails
-/// at most that a run reads by their ids.
+/// most), the ids and keywords of a window (500), and the header fields of 200 emails.
 const LIST_BYTES: usize = 4 << 20;
 const WINDOW_BYTES: usize = 2 << 20;
 const DETAILS_BYTES: usize = 8 << 20;
-const BY_ID_BYTES: usize = 1 << 20;
 
 /// What the mailboxes' list asks for, and what an email is read for in the window and for a message list.
 const MAILBOX_PROPERTIES: [&str; 6] = ["id", "name", "parentId", "role", "totalEmails", "unreadEmails"];
@@ -138,15 +121,20 @@ const SPECIAL: [FolderKind; 5] = [FolderKind::Drafts, FolderKind::Sent, FolderKi
 
 /// Read the folders and the newest messages of a JMAP account as `request` says, and hand them to `emit`
 /// piece by piece (see the module documentation): the folder list when asked for, a piece for each window,
-/// and a last piece (the only one that is not `partial`) that says how the run ended. `client` is signed in
-/// already ([`Client::connect`]); a caller whose sign-in failed ends the run with [`failed_run`]. `cancel` is
-/// read before every request: set, the run ends there, with a last piece that says `stopped`.
+/// and a last piece (the only one that is not `partial`) that says how the run ended. `connection` is signed
+/// in already ([`Connection::connect`]); a caller whose sign-in failed ends the run with [`failed_run`]. `cancel`
+/// is read before every request: set, the run ends there, with a last piece that says `stopped`.
 ///
 /// The future need not be `Send`, and `emit` is called from the task that polls it, so a caller on one
 /// thread (the browser's) may hand pieces to the window with a plain channel. Nothing here waits: a busy
 /// server ends the run with the seconds it asked for, and it is the caller's to ask again after them.
-pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, cancel: &AtomicBool, emit: &mut dyn FnMut(JmapMailResult)) {
-    let run = Run::new(client, request, cancel);
+pub async fn sync_mail<H: HttpExchange>(
+    connection: &Connection<H>,
+    request: &JmapMailRequest,
+    cancel: &AtomicBool,
+    emit: &mut dyn FnMut(JmapMailResult),
+) {
+    let run = Run::new(connection, request, cancel);
     let mut out = Outcome::default();
     if let Err(stop) = run.all(&mut out, emit).await {
         match stop {
@@ -160,23 +148,23 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
     emit(run.piece(JmapMailResult {
         errors: out.lines(),
         busy_for: out.busy_for,
-        // (A run for emails by their ids reads no window to its end: nothing it did not see is gone.)
-        whole: out.clean() && request.emails.is_empty(),
+        whole: out.clean(),
         stopped: out.stopped,
         auth_refused: out.auth_refused,
         ..Default::default()
     }));
 }
 
-/// The end of a run that could not begin: signing in to the server (`Client::connect`) failed with `error`.
-/// What [`sync_mail`] would have said of the same trouble: the sign-in refused, the server busy, or a line.
+/// The end of a run that could not begin: signing in to the server ([`Connection::connect`]) failed with
+/// `error`. What [`sync_mail`] would have said of the same trouble: the sign-in refused, the server busy, or a
+/// line.
 pub fn failed_run(request: &JmapMailRequest, error: &Error) -> JmapMailResult {
-    let secrets = secrets_of(&request.email, &request.session, &Secrets::default(), "");
+    let secrets = secrets_of(&request.email, &request.session, &Redactor::new(), "");
     let mut result = JmapMailResult { account: request.account, email: request.email.clone(), ..Default::default() };
     match error {
-        Error::Auth(_) => result.auth_refused = true,
-        Error::Busy { retry_after, .. } => {
-            result.busy_for = Some(retry_after.unwrap_or(BUSY_FOR));
+        Error::CredentialsRefused | Error::Forbidden { .. } => result.auth_refused = true,
+        Error::Busy { .. } => {
+            result.busy_for = Some(busy_seconds(error).unwrap_or(BUSY_FOR));
             result.errors.push(format!("Couldn't reach the server: {}", said(&secrets, error)));
         }
         other => result.errors.push(format!("Couldn't reach the server: {}", said(&secrets, other))),
@@ -188,16 +176,23 @@ pub fn failed_run(request: &JmapMailRequest, error: &Error) -> JmapMailResult {
 enum Stop {
     /// The owner stopped the run.
     Cancelled,
-    /// The server refused the credentials: nothing more is asked.
+    /// The credentials, or the access, were refused: nothing more is asked.
     Auth,
     /// The server is busy: for this many seconds, and what it said.
     Busy(u32, String),
     /// The server can not be reached, or answers nonsense, or says it is unavailable: the next mailbox is
     /// tried, but not after three of these in a row.
-    Down(Error),
+    Down(Failure),
     /// The server answered, and this step failed (an error for a mailbox, a call that has no answer, an
-    /// answer that is too large): the next mailbox is tried.
-    Failed(Error),
+    /// answer that is too large, a request too large for the server): the next mailbox is tried.
+    Failed(Failure),
+}
+
+/// A request that could not be made is this step's trouble.
+impl From<BuildError> for Stop {
+    fn from(error: BuildError) -> Stop {
+        Stop::Failed(error.into())
+    }
 }
 
 /// What went wrong in a run, to be said in a few lines at its end.
@@ -211,13 +206,6 @@ struct Outcome {
     windows: (usize, Option<String>),
     /// How many emails could not be read whole, and why the first could not.
     details: (usize, Option<String>),
-    /// How many changes of messages the server did not take (they wait for the next run), and why the first
-    /// was not.
-    up: (usize, Option<String>),
-    /// The mailboxes that moves were made to, perhaps, without a word coming back (a call that failed, an answer that
-    /// leaves it out): a window of the mailbox such a move left would not list the message. (A mailbox that the listing
-    /// of the run does not have was moved to by none.)
-    unsure_to: Vec<String>,
     /// Mailboxes that were left for the next run: three failed in a row, or there were too many.
     gave_up: bool,
     left_out: usize,
@@ -235,7 +223,6 @@ impl Outcome {
             && self.halted.is_none()
             && self.windows.0 == 0
             && self.details.0 == 0
-            && self.unsure_to.is_empty()
             && !self.gave_up
             && self.left_out == 0
             && self.busy_for.is_none()
@@ -258,9 +245,6 @@ impl Outcome {
         if let (n @ 1.., Some(why)) = (self.details.0, &self.details.1) {
             lines.push(format!("Couldn't read {} in full: {why}", plural(n, "message", "messages")));
         }
-        if let (n @ 1.., Some(why)) = (self.up.0, &self.up.1) {
-            lines.push(format!("Couldn't send {} to the server: {why}", plural(n, "change", "changes")));
-        }
         if self.gave_up {
             lines.push(format!("The server failed {MAX_FAILURES} mailboxes in a row; the rest wait for the next run."));
         }
@@ -275,16 +259,30 @@ impl Outcome {
 struct Places {
     /// The listing, as the engine takes it in.
     listing: FolderListing,
-    /// The mailboxes that are places for mail: only they say where an email lies.
-    claimable: HashSet<String>,
+    /// The mailboxes that are places for mail (only they say where an email lies), each with its rank in
+    /// the order that says which of them lists an email that lies in several ([`rank`]).
+    claimable: HashMap<String, usize>,
     /// How many emails each says it holds, for those that say so with a number.
     counts: HashMap<String, u32>,
 }
 
 impl Places {
     fn of(listing: FolderListing, counts: HashMap<String, u32>) -> Places {
-        Places { claimable: listing.folders.iter().map(|f| f.id.clone()).collect(), counts, listing }
+        let mut claimable = HashMap::new();
+        for folder in &listing.folders {
+            claimable.entry(folder.id.clone()).or_insert_with(|| rank(folder.kind));
+        }
+        Places { claimable, counts, listing }
     }
+}
+
+/// Where a mailbox of a kind comes among those an email lies in, the first listing it: the Inbox, then the
+/// special mailboxes in the order the folder pane lists them ([`SPECIAL`]), then the rest (by id, there).
+fn rank(kind: FolderKind) -> usize {
+    if kind == FolderKind::Inbox {
+        return 0;
+    }
+    SPECIAL.iter().position(|special| *special == kind).map_or(SPECIAL.len().saturating_add(1), |at| at.saturating_add(1))
 }
 
 /// An email in a window: one the engine has, or one to be read whole.
@@ -311,22 +309,24 @@ struct Details {
     short: usize,
 }
 
-/// One run: the request, the client, and what is worked out once from them.
+/// One run: the request, the connection, and what is worked out once from them.
 struct Run<'a, H> {
-    client: &'a Client<H>,
+    connection: &'a Connection<H>,
     request: &'a JmapMailRequest,
     cancel: &'a AtomicBool,
     /// What an error line must not show.
-    secrets: Secrets,
+    secrets: Redactor,
     /// The most emails a window holds, and the most asked for whole at a time.
     window: usize,
     chunk: usize,
+    /// The server takes two calls (or more) in a request.
+    two_calls: bool,
     /// The ids the engine has, by mailbox.
     known: HashMap<&'a str, HashSet<&'a str>>,
 }
 
-impl<'a, H: Http> Run<'a, H> {
-    fn new(client: &'a Client<H>, request: &'a JmapMailRequest, cancel: &'a AtomicBool) -> Run<'a, H> {
+impl<'a, H: HttpExchange> Run<'a, H> {
+    fn new(connection: &'a Connection<H>, request: &'a JmapMailRequest, cancel: &'a AtomicBool) -> Run<'a, H> {
         let most = usize::try_from(MAX_JMAP_WINDOW).unwrap_or(500);
         // (No window asked for is the biggest.) Both are held to what the server takes in a `get`: the
         // window is read back by one.
@@ -334,20 +334,27 @@ impl<'a, H: Http> Run<'a, H> {
             0 => most,
             window => window.min(most),
         };
-        let take = client.max_objects_in_get();
+        let client = connection.client();
+        let take = usize::try_from(client.limits().max_objects_in_get()).unwrap_or(usize::MAX);
         let mut known: HashMap<&str, HashSet<&str>> = HashMap::new();
         for mailbox in &request.known {
             known.entry(mailbox.mailbox.as_str()).or_default().extend(mailbox.ids.iter().map(String::as_str));
         }
         Run {
-            client,
+            connection,
             request,
             cancel,
-            secrets: secrets_of(&request.email, &request.session, &client.secrets, client.account_id()),
+            secrets: secrets_of(&request.email, &request.session, client.redactor(), client.account_id().as_str()),
             window: asked.min(take),
-            chunk: MAX_CHUNK.min(take),
+            chunk: MAX_CHUNK.min(take).max(1),
+            two_calls: client.limits().max_calls_in_request() >= 2,
             known,
         }
+    }
+
+    /// The account's id, for the calls.
+    fn account(&self) -> &str {
+        self.connection.client().account_id().as_str()
     }
 
     /// A piece of the result, for this run's account.
@@ -356,28 +363,48 @@ impl<'a, H: Http> Run<'a, H> {
     }
 
     /// What `error` says, fit for a line: no credential and no address in it.
-    fn said(&self, error: &Error) -> String {
+    fn said(&self, error: &dyn fmt::Display) -> String {
         said(&self.secrets, error)
     }
 
-    /// Why a request failed as a whole: the credentials refused and the server busy end the run; an answer
-    /// too large is for the step; anything else says the server can not be had.
+    /// Why a request failed as a whole: the credentials or the access refused, the server busy, and the exchange
+    /// called off because the owner stopped the run, end it; a request too large for the server, or an answer too
+    /// large for it, is for the step; anything else says the server can not be had.
     fn call_stop(&self, error: Error) -> Stop {
         match error {
-            Error::Auth(_) => Stop::Auth,
-            Error::Busy { retry_after, .. } => Stop::Busy(retry_after.unwrap_or(BUSY_FOR), self.said(&error)),
-            Error::TooLarge(_) => Stop::Failed(error),
-            other => Stop::Down(other),
+            Error::CredentialsRefused | Error::Forbidden { .. } => Stop::Auth,
+            Error::Transport(TransportError::Aborted) if self.cancel.load(Ordering::Relaxed) => Stop::Cancelled,
+            Error::Busy { .. } => Stop::Busy(busy_seconds(&error).unwrap_or(BUSY_FOR), self.said(&error)),
+            Error::TooLarge { .. } | Error::Build(_) | Error::Unusable(Unusable::BodyTooLarge | Unusable::TooComplex) => Stop::Failed(error.into()),
+            other => Stop::Down(other.into()),
         }
     }
 
     /// Why one call of a request failed: the server saying it is unavailable is a server that can not be
     /// had; any other error is for the step.
-    fn method_stop(error: Error) -> Stop {
-        match error {
-            Error::Refused { ref kind, .. } if kind == "serverUnavailable" => Stop::Down(error),
-            other => Stop::Failed(other),
+    fn method_stop(failure: CallFailure) -> Stop {
+        match &failure {
+            CallFailure::Method(error) if error.kind().may_succeed_later() => Stop::Down(failure.into()),
+            _ => Stop::Failed(failure.into()),
         }
+    }
+
+    /// Send a request of mail's method calls, its answer held to the request's own limit.
+    async fn post(&self, request: &ApiRequest) -> Result<ApiResponse, Stop> {
+        self.connection.call(request, &self.secrets).await.map_err(|error| self.call_stop(error))
+    }
+
+    /// The answer to the call `call` of `method`, taken out of `answers`.
+    fn take(answers: &mut ApiResponse, call: &CallId, method: &str) -> Result<Value, Stop> {
+        answers.take_named(call, method).map(Value::Object).map_err(Self::method_stop)
+    }
+
+    /// A request of the one call `method` with `args`, and its answer, held to `most` bytes.
+    async fn one_call(&self, method: &str, args: Value, most: usize) -> Result<Value, Stop> {
+        let mut request = mail_request(most)?;
+        let call = request.add_call(method, arguments(args))?;
+        let mut answers = self.post(&request).await?;
+        Self::take(&mut answers, &call, method)
     }
 
     /// Whether the owner asked to stop.
@@ -385,35 +412,14 @@ impl<'a, H: Http> Run<'a, H> {
         if self.cancel.load(Ordering::Relaxed) { Err(Stop::Cancelled) } else { Ok(()) }
     }
 
-    /// The whole run: the changes made here, the mailboxes, then the windows; or the mailboxes and the emails the
-    /// request names by their ids, and nothing else.
+    /// The whole run: the mailboxes, then the windows.
     async fn all(&self, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
-        if !self.request.emails.is_empty() {
-            let places = self.list(out).await?;
-            // (Asked for when the account's folders aren't known yet: the emails need their folders to be put in.)
-            if self.request.list_folders
-                && let Some(places) = &places
-            {
-                emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
-            }
-            return self.by_id(places.as_ref(), out, emit).await;
-        }
-        // What was changed here goes up first: what is read then is the server after it.
-        self.make_changes(out, emit).await?;
         let places = self.list(out).await?;
-        // A move into a mailbox that the server does not have can not have been made.
-        if let Some(places) = places.as_ref().filter(|places| places.listing.complete) {
-            let known: HashSet<&str> = places.listing.folders.iter().map(|folder| folder.id.as_str()).collect();
-            out.unsure_to.retain(|to| known.contains(to.as_str()));
-        }
         if self.request.list_folders
             && let Some(places) = &places
         {
             emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
         }
-        // What waits to be sent, and the drafts that wait to go up, go before a window is read: the copy of a
-        // message that went is in the window of Sent, and a draft filed is in the window of Drafts (`outgoing.rs`).
-        self.outgoing(places.as_ref(), emit).await?;
         let targets = self.targets(places.as_ref().map(|places| &places.listing), out);
         let of = u32::try_from(targets.len()).unwrap_or(u32::MAX);
         log::debug!("jmap mail: {} mailboxes to read, a window of {}", targets.len(), self.window);
@@ -443,53 +449,7 @@ impl<'a, H: Http> Run<'a, H> {
         Ok(())
     }
 
-    /// `Email/get` of the emails the request names by their ids (a message opened from elsewhere that no window
-    /// has brought yet), [`MAX_JMAP_EMAILS`] at most: each one the server has, in the mailbox whose window would
-    /// list it ([`home`]), read as a window reads an email it has not got; the mailboxes it lands in, a page each
-    /// that is not the whole of the mailbox, in one piece. One the server doesn't have, or that lies in no mailbox
-    /// of the list, is in none.
-    async fn by_id(&self, places: Option<&Places>, out: &mut Outcome, emit: &mut dyn FnMut(JmapMailResult)) -> Result<(), Stop> {
-        self.check()?;
-        let mut ids: Vec<&str> = Vec::new();
-        for id in self.request.emails.iter().map(String::as_str).filter(|id| valid_id(id)) {
-            if ids.len() < MAX_JMAP_EMAILS && !ids.contains(&id) {
-                ids.push(id);
-            }
-        }
-        if ids.is_empty() {
-            return Ok(());
-        }
-        let args = json!({"accountId": self.client.account_id(), "ids": ids, "properties": EMAIL_PROPERTIES});
-        let mut answers = self.client.mail_within(vec![("Email/get", args)], BY_ID_BYTES).await.map_err(|e| self.call_stop(e))?;
-        let got = answers.take(0).map_err(Self::method_stop)?;
-        let Some(list) = got.get("list").and_then(Value::as_array) else {
-            out.details = (ids.len(), Some(self.said(&Error::Protocol("the answer has no list of emails".into()))));
-            return Ok(());
-        };
-        let claimable = places.map(|places| &places.claimable);
-        let mut pages: Vec<MessagePage> = Vec::new();
-        let mut taken: HashSet<&str> = HashSet::new();
-        for email in list.iter().take(ids.len()) {
-            // Only what was asked for, once.
-            let Some(id) = email.get("id").and_then(Value::as_str).filter(|id| ids.contains(id) && !taken.contains(*id)) else { continue };
-            // (One that lies in no mailbox of the list goes to the first mailbox it names: this window doesn't show
-            // it, and says so rather than that the server hasn't got it.)
-            let Some(mailbox) = home(email.get("mailboxIds"), claimable).or_else(|| home(email.get("mailboxIds"), None)) else { continue };
-            taken.insert(id);
-            let message = message::whole(id, mailbox, email, Marks::of(email.get("keywords")));
-            match pages.iter_mut().find(|page| page.folder == mailbox) {
-                Some(page) => page.messages.push(message),
-                None => pages.push(MessagePage { folder: mailbox.to_string(), messages: vec![message], ..Default::default() }),
-            }
-        }
-        log::debug!("jmap mail: {} of {} emails read by their ids", taken.len(), ids.len());
-        if !pages.is_empty() {
-            emit(self.piece(JmapMailResult { pages, partial: true, ..Default::default() }));
-        }
-        Ok(())
-    }
-
-    fn window_failed(&self, out: &mut Outcome, error: &Error) {
+    fn window_failed(&self, out: &mut Outcome, error: &Failure) {
         out.windows.0 = out.windows.0.saturating_add(1);
         out.windows.1.get_or_insert_with(|| self.said(error));
     }
@@ -498,41 +458,26 @@ impl<'a, H: Http> Run<'a, H> {
     /// without a listing; one that says the server can not be had ends the run.
     async fn list(&self, out: &mut Outcome) -> Result<Option<Places>, Stop> {
         self.check()?;
-        let args = json!({"accountId": self.client.account_id(), "properties": MAILBOX_PROPERTIES});
-        let told = |out: &mut Outcome, error: &Error| out.listing = Some(self.said(error));
-        let mut answers = match self.client.mail_within(vec![("Mailbox/get", args)], LIST_BYTES).await {
-            Ok(answers) => answers,
-            Err(error) => {
-                return match self.call_stop(error) {
-                    // (An answer too large: this step alone.)
-                    Stop::Failed(error) => {
-                        told(out, &error);
-                        Ok(None)
-                    }
-                    stop => Err(stop),
-                };
+        let args = json!({"accountId": self.account(), "properties": MAILBOX_PROPERTIES});
+        let told = |out: &mut Outcome, error: &dyn fmt::Display| out.listing = Some(self.said(error));
+        let answer = match self.one_call("Mailbox/get", args, LIST_BYTES).await {
+            Ok(answer) => answer,
+            // (An answer too large, an error for the call: this step alone.)
+            Err(Stop::Failed(error)) => {
+                told(out, &error);
+                return Ok(None);
             }
+            Err(stop) => return Err(stop),
         };
-        match answers.take(0) {
-            Ok(answer) => {
-                let places = folders::listing_with_counts(&answer).map(|(listing, counts)| Places::of(listing, counts));
-                match &places {
-                    None => told(out, &Error::Protocol("the answer has no list of mailboxes".into())),
-                    // (An account always has an Inbox: a server that lists none has not told the whole of it, and a run
-                    // that read nothing is not an "up to date".)
-                    Some(places) if places.listing.folders.is_empty() => told(out, &Error::Protocol("the answer lists no mailbox".into())),
-                    Some(_) => {}
-                }
-                Ok(places)
-            }
-            Err(error) => match Self::method_stop(error) {
-                Stop::Failed(error) => {
-                    told(out, &error);
-                    Ok(None)
-                }
-                stop => Err(stop),
-            },
+        let places = folders::listing_with_counts(&answer).map(|(listing, counts)| Places::of(listing, counts));
+        match &places {
+            None => told(out, &unusable("the answer has no list of mailboxes")),
+            // (An account always has an Inbox: a server that lists none has not told the whole of it, and a run
+            // that read nothing is not an "up to date".)
+            Some(places) if places.listing.folders.is_empty() => told(out, &unusable("the answer lists no mailbox")),
+            Some(_) => {}
         }
+        Ok(places)
     }
 
     /// The mailboxes to read, in order: the Inbox, then the ones the request names (a light run) or the
@@ -540,7 +485,7 @@ impl<'a, H: Http> Run<'a, H> {
     /// they are.
     fn targets(&self, listing: Option<&FolderListing>, out: &mut Outcome) -> Vec<String> {
         let also: Vec<&str> = match &self.request.scope {
-            JmapScope::Light { also } => also.iter().map(String::as_str).filter(|id| valid_id(id)).take(MAX_ALSO).collect(),
+            JmapScope::Light { also } => also.iter().map(String::as_str).filter(|id| Id::new(id).is_ok()).take(MAX_ALSO).collect(),
             JmapScope::All => Vec::new(),
         };
         let light = matches!(self.request.scope, JmapScope::Light { .. });
@@ -568,7 +513,7 @@ impl<'a, H: Http> Run<'a, H> {
             None => {}
         }
         if order.len() > MAX_MAILBOXES {
-            out.left_out = order.len() - MAX_MAILBOXES;
+            out.left_out = order.len().saturating_sub(MAX_MAILBOXES);
             order.truncate(MAX_MAILBOXES);
         }
         order
@@ -656,7 +601,7 @@ impl<'a, H: Http> Run<'a, H> {
     }
 
     /// Give up on `ids` and the `rest` of the calls for emails of a mailbox: how many emails that is.
-    fn give_up(&self, out: &mut Outcome, error: &Error, ids: &[&str], rest: &[&[&str]]) -> usize {
+    fn give_up(&self, out: &mut Outcome, error: &Failure, ids: &[&str], rest: &[&[&str]]) -> usize {
         let missed = ids.len().saturating_add(rest.iter().map(|ids| ids.len()).sum::<usize>());
         out.details.0 = out.details.0.saturating_add(missed);
         out.details.1.get_or_insert_with(|| self.said(error));
@@ -666,7 +611,7 @@ impl<'a, H: Http> Run<'a, H> {
     /// The first request of a window: the ids of the mailbox's newest emails and what they carry, the
     /// keywords and the mailboxes they lie in.
     async fn newest(&self, mailbox: &str, places: Option<&Places>) -> Result<Newest, Stop> {
-        let account = self.client.account_id();
+        let account = self.account();
         let query = json!({
             "accountId": account,
             "filter": {"inMailbox": mailbox},
@@ -674,15 +619,18 @@ impl<'a, H: Http> Run<'a, H> {
             "limit": self.window,
             "calculateTotal": true,
         });
-        let (found, marks) = if self.client.max_calls_in_request() >= 2 {
-            let get = json!({"accountId": account, "#ids": result_of(0, "Email/query", "/ids"), "properties": WINDOW_PROPERTIES});
-            let mut answers =
-                self.client.mail_within(vec![("Email/query", query), ("Email/get", get)], WINDOW_BYTES).await.map_err(|e| self.call_stop(e))?;
-            (answers.take(0).map_err(Self::method_stop)?, answers.take(1).map_err(Self::method_stop)?)
+        let (found, marks) = if self.two_calls {
+            // The get is given the ids the query finds (RFC 8620 §3.7).
+            let mut request = mail_request(WINDOW_BYTES)?;
+            let listed = request.add_call("Email/query", arguments(query))?;
+            let ids = request.reference(&listed, "Email/query", "/ids")?;
+            let get = json!({"accountId": account, "properties": WINDOW_PROPERTIES});
+            let read = request.add_call_with_references("Email/get", arguments(get), vec![("ids", ids)])?;
+            let mut answers = self.post(&request).await?;
+            (Self::take(&mut answers, &listed, "Email/query")?, Self::take(&mut answers, &read, "Email/get")?)
         } else {
             // A server that takes one call to a request: the ids first, then the emails by those.
-            let mut answers = self.client.mail_within(vec![("Email/query", query)], WINDOW_BYTES).await.map_err(|e| self.call_stop(e))?;
-            let found = answers.take(0).map_err(Self::method_stop)?;
+            let found = self.one_call("Email/query", query, WINDOW_BYTES).await?;
             self.check()?;
             // (The same entries of the list as the window is made of: the first `window`.)
             let ids: Vec<&str> = found
@@ -692,20 +640,19 @@ impl<'a, H: Http> Run<'a, H> {
                 .flatten()
                 .take(self.window)
                 .filter_map(Value::as_str)
-                .filter(|id| valid_id(id))
+                .filter(|id| Id::new(id).is_ok())
                 .collect();
             let get = json!({"accountId": account, "ids": ids, "properties": WINDOW_PROPERTIES});
-            let mut answers = self.client.mail_within(vec![("Email/get", get)], WINDOW_BYTES).await.map_err(|e| self.call_stop(e))?;
-            let marks = answers.take(0).map_err(Self::method_stop)?;
+            let marks = self.one_call("Email/get", get, WINDOW_BYTES).await?;
             (found, marks)
         };
-        self.newest_of(mailbox, &found, &marks, places).map_err(Stop::Failed)
+        self.newest_of(mailbox, &found, &marks, places).map_err(|error| Stop::Failed(error.into()))
     }
 
     /// What the answers to the window's two calls make of it.
     fn newest_of(&self, mailbox: &str, found: &Value, marks: &Value, places: Option<&Places>) -> Result<Newest, Error> {
-        let listed = found.get("ids").and_then(Value::as_array).ok_or_else(|| Error::Protocol("the answer has no list of ids".into()))?;
-        let emails = marks.get("list").and_then(Value::as_array).ok_or_else(|| Error::Protocol("the answer has no list of emails".into()))?;
+        let listed = found.get("ids").and_then(Value::as_array).ok_or_else(|| unusable("the answer has no list of ids"))?;
+        let emails = marks.get("list").and_then(Value::as_array).ok_or_else(|| unusable("the answer has no list of emails"))?;
         // What the server says has gone since it made the list.
         let gone: HashSet<&str> =
             marks.get("notFound").and_then(Value::as_array).into_iter().flatten().take(self.window).filter_map(Value::as_str).collect();
@@ -724,7 +671,7 @@ impl<'a, H: Http> Run<'a, H> {
         // another mailbox lists).
         let mut accounted = true;
         for id in listed.iter().take(self.window) {
-            let Some(id) = id.as_str().filter(|id| valid_id(id)) else {
+            let Some(id) = id.as_str().filter(|id| Id::new(id).is_ok()) else {
                 accounted = false;
                 continue;
             };
@@ -772,12 +719,10 @@ impl<'a, H: Http> Run<'a, H> {
     }
 
     /// `Email/get` of the emails `ids`, for what a message list shows of them.
-    async fn whole(&self, mailbox: &str, ids: &[&str], claimable: Option<&HashSet<String>>) -> Result<Details, Stop> {
-        let args = json!({"accountId": self.client.account_id(), "ids": ids, "properties": EMAIL_PROPERTIES});
-        let mut answers = self.client.mail_within(vec![("Email/get", args)], DETAILS_BYTES).await.map_err(|e| self.call_stop(e))?;
-        let got = answers.take(0).map_err(Self::method_stop)?;
-        let list =
-            got.get("list").and_then(Value::as_array).ok_or_else(|| Stop::Failed(Error::Protocol("the answer has no list of emails".into())))?;
+    async fn whole(&self, mailbox: &str, ids: &[&str], claimable: Option<&HashMap<String, usize>>) -> Result<Details, Stop> {
+        let args = json!({"accountId": self.account(), "ids": ids, "properties": EMAIL_PROPERTIES});
+        let got = self.one_call("Email/get", args, DETAILS_BYTES).await?;
+        let list = got.get("list").and_then(Value::as_array).ok_or_else(|| Stop::Failed(unusable("the answer has no list of emails").into()))?;
         let gone: HashSet<&str> =
             got.get("notFound").and_then(Value::as_array).into_iter().flatten().take(ids.len()).filter_map(Value::as_str).collect();
         let asked: HashSet<&str> = ids.iter().copied().collect();
@@ -809,22 +754,42 @@ fn halvable(stop: &Stop, count: usize, splits: usize) -> bool {
         }
 }
 
-/// What must not show in a line: what the client hides, the account's address `email` and the address of
-/// the session (with the addresses in its query), and the account's id when it is long enough to be one of
-/// the first (a server may make it of the address). Also for the lines of a fetch ([`crate::fetch`]).
-pub(crate) fn secrets_of(email: &str, session: &str, client: &Secrets, account_id: &str) -> Secrets {
+/// A request of mail's method calls, whose answer may be `most` bytes at the most: the capability of mail in
+/// `using`, beside the core's (RFC 8621 §1.3).
+fn mail_request(most: usize) -> Result<ApiRequest, BuildError> {
+    let mut request = ApiRequest::new();
+    request.using(CAPABILITY_MAIL)?;
+    request.set_response_limit(most);
+    Ok(request)
+}
+
+/// The arguments of a call, from the JSON object they are written as.
+fn arguments(args: Value) -> Map<String, Value> {
+    match args {
+        Value::Object(args) => args,
+        _ => Map::new(),
+    }
+}
+
+/// What must not show in a line: what the client hides (the credentials, the session's address and what its
+/// query holds), the account's address `email` and the session's address as the request has it, both in every
+/// form a redactor knows (as written, percent-encoded), and the account's id when it is long enough to be one
+/// of the first (a server may make it of the address). Also for the lines of a fetch ([`crate::fetch`]).
+pub(crate) fn secrets_of(email: &str, session: &str, client: &Redactor, account_id: &str) -> Redactor {
     let mut secrets = client.clone();
-    secrets.add(email);
-    secrets.add_address(session);
+    for personal in [email, session] {
+        secrets.add_personal(personal);
+    }
     if account_id.len() >= SECRET_ID {
-        secrets.add(account_id);
+        secrets.add_personal(account_id);
     }
     secrets
 }
 
-/// `error` as a line of at most [`MAX_LINE`] characters, the secrets hidden before it is cut, and any word
-/// that holds an `@` (an address, whose it may be), or the `%40` it is written as in an address, hidden after.
-pub(crate) fn said(secrets: &Secrets, error: &Error) -> String {
-    let cut = message::line(&secrets.hide(&error.to_string()), MAX_LINE);
-    cut.split(' ').map(|word| if crate::names_an_address(word) { "***" } else { word }).collect::<Vec<&str>>().join(" ")
+/// `error` as a line: one line, short, the secrets taken out before it is cut ([`Redactor::excerpt`]), and
+/// any word that holds an `@` (an address, whose it may be), or the `%40` it is written as in an address,
+/// taken out after.
+pub(crate) fn said(secrets: &Redactor, error: &dyn fmt::Display) -> String {
+    let cut = secrets.excerpt(&error.to_string());
+    cut.as_str().split(' ').map(|word| if word.contains('@') || word.contains("%40") { "[redacted]" } else { word }).collect::<Vec<&str>>().join(" ")
 }

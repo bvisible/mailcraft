@@ -1089,12 +1089,12 @@ const NOT_PROVOKED: &[(&str, &str)] = &[
 /// mail run's: the calendar and contact flows over the same in-process server make lines of them and read them in French
 /// (`jmap_pim_flow_tests`), and run_words' own tests read every row and hold it to its file.
 const PIM: &[&str] = &[
-    "crates/jmap/src/pim.rs",
-    "crates/jmap/src/pim/calendars.rs",
-    "crates/jmap/src/pim/contacts.rs",
-    "crates/jmap/src/pim/push.rs",
-    "crates/jmap/src/pim/contacts/push.rs",
-    "crates/jmap/src/pim/write.rs",
+    "crates/jmap-fork/src/pim.rs",
+    "crates/jmap-fork/src/pim/calendars.rs",
+    "crates/jmap-fork/src/pim/contacts.rs",
+    "crates/jmap-fork/src/pim/push.rs",
+    "crates/jmap-fork/src/pim/contacts/push.rs",
+    "crates/jmap-fork/src/pim/write.rs",
     "crates/engine/src/cmd/remote.rs",
     "crates/engine/src/cmd/remote_contacts.rs",
     "crates/engine/src/cmd/remote_contacts/written.rs",

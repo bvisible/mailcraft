@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! A run over the stand-in and over scripted servers: what is asked of the server and in how many
 //! requests, the pieces it comes in, how it ends, and what a hostile server makes of it. The reading of a
 //! mailbox list and of an email has tests of its own, beside each (`folders`, `message`).
@@ -16,8 +15,11 @@ use proptest::prelude::*;
 use serde_json::json;
 
 use super::*;
+use crate::connection::tests::any_json;
+use crate::http::API_RESPONSE_LIMIT;
 use crate::standin::{Profile, SESSION, StandIn, TOKEN};
-use crate::{Auth, CORE, MAIL, Request, Response, block_on};
+use crate::test_support::made_secret;
+use crate::{CAPABILITY_CORE as CORE, CAPABILITY_MAIL as MAIL, Credentials, HttpRequest, HttpResponse, Method, RetryAfter, block_on};
 
 const ME: &str = "ada@example.org";
 const ID: u64 = 3;
@@ -86,8 +88,8 @@ fn has(request: &mut JmapMailRequest, mailbox: &str, ids: &[&str]) {
 }
 
 /// Every piece of a run over `http`, signed in with the stand-in's token.
-fn run_over<H: Http>(http: H, session: &str, request: &JmapMailRequest, cancel: &AtomicBool) -> Vec<JmapMailResult> {
-    let client = block_on(Client::connect(http, session, &Auth::bearer(TOKEN))).unwrap();
+fn run_over<H: HttpExchange>(http: H, session: &str, request: &JmapMailRequest, cancel: &AtomicBool) -> Vec<JmapMailResult> {
+    let client = block_on(Connection::connect(http, session, Credentials::bearer(TOKEN).unwrap())).unwrap();
     let mut pieces = Vec::new();
     block_on(sync_mail(&client, request, cancel, &mut |piece| pieces.push(piece)));
     well_formed(&pieces);
@@ -115,6 +117,11 @@ fn well_formed(pieces: &[JmapMailResult]) {
         }
     }
     assert!(!(last.whole && (last.stopped || last.auth_refused || last.busy_for.is_some() || !last.errors.is_empty())), "{last:?}");
+}
+
+/// Whether `text` is an id a server may hand out.
+fn is_id(text: &str) -> bool {
+    Id::new(text).is_ok()
 }
 
 fn last(pieces: &[JmapMailResult]) -> &JmapMailResult {
@@ -408,10 +415,49 @@ fn an_email_in_several_mailboxes_is_listed_by_the_window_of_the_smallest_id() {
     assert_eq!(ids_of(page_of(&pieces, &ids.apollo)), [alone.as_str()]);
     assert!(!page_of(&pieces, &ids.apollo).afresh);
     // Ids are compared as text, not as numbers.
-    let claimable = |ids: &[&str]| -> HashSet<String> { ids.iter().map(|id| id.to_string()).collect() };
+    let claimable = |ids: &[&str]| -> HashMap<String, usize> { ids.iter().map(|id| (id.to_string(), 6)).collect() };
     let both_ids = Some(json!({"M10": true, "M2": true}));
     let all = claimable(&["M10", "M2"]);
     assert!(claims("M10", both_ids.as_ref(), Some(&all)) && !claims("M2", both_ids.as_ref(), Some(&all)));
+}
+
+#[test]
+fn a_message_in_the_inbox_and_a_label_is_the_inboxs_whatever_their_ids() {
+    // The Inbox's id sorts after the label's: the Inbox lists the message all the same, and its window is whole,
+    // so what it no longer holds is removed here.
+    let stand_in = StandIn::new();
+    // A mailbox whose id is the one given.
+    let named = |name: &str, role: Option<&str>, id: &str| {
+        stand_in.with(|d| {
+            let given = d.mailbox(name, None, role);
+            if let Some(mailbox) = d.mailboxes.iter_mut().find(|m| m.id == given) {
+                mailbox.id = id.into();
+            }
+        });
+        id.to_string()
+    };
+    let (inbox, label) = (named("Inbox", Some("inbox"), "inbox-id-z"), named("Label", None, "label-a"));
+    let both = deliver(&stand_in, &inbox, "both", &[], 1);
+    let alone = deliver(&stand_in, &inbox, "alone", &[], 2);
+    assert!(stand_in.with(|d| d.add_to_mailbox(&both, &label)));
+    for mut asked in [everything(500), light(500, &[&label])] {
+        // The engine has a message in the Inbox that the server no longer holds.
+        has(&mut asked, &inbox, &["Egone"]);
+        let pieces = run(&stand_in, &asked);
+        let page = page_of(&pieces, &inbox);
+        assert_eq!(ids_of(page), [alone.as_str(), both.as_str()]);
+        assert!(page.afresh, "the Inbox's window is whole: what it lacks is removed");
+        let labelled = page_of(&pieces, &label);
+        assert!(ids_of(labelled).is_empty() && !labelled.afresh, "the label leaves the message to the Inbox");
+        assert!(last(&pieces).whole, "{:?}", last(&pieces).errors);
+    }
+    // A special mailbox comes before a folder of the owner's own as well.
+    let (sent, mine) = (named("Sent", Some("sent"), "sent-z"), named("Mine", None, "mine-a"));
+    let sent_too = deliver(&stand_in, &mine, "sent too", &[], 3);
+    assert!(stand_in.with(|d| d.add_to_mailbox(&sent_too, &sent)));
+    let pieces = run(&stand_in, &everything(500));
+    assert_eq!(ids_of(page_of(&pieces, &sent)), [sent_too.as_str()]);
+    assert!(ids_of(page_of(&pieces, &mine)).is_empty());
 }
 
 #[test]
@@ -436,9 +482,9 @@ fn a_mailbox_that_is_no_place_for_mail_does_not_take_it_from_the_one_it_is_in() 
         assert!(inbox.afresh);
     }
     // Where the list could not be had, every id the email has counts.
-    let fake_list_failed = |claimable: Option<&HashSet<String>>| claims("M1", Some(&json!({"A0": true, "M1": true})), claimable);
+    let fake_list_failed = |claimable: Option<&HashMap<String, usize>>| claims("M1", Some(&json!({"A0": true, "M1": true})), claimable);
     assert!(!fake_list_failed(None));
-    assert!(fake_list_failed(Some(&["M1".to_string()].into())));
+    assert!(fake_list_failed(Some(&[("M1".to_string(), 0)].into())));
 }
 
 #[test]
@@ -529,21 +575,24 @@ fn a_mailbox_list_that_has_a_cycle_is_a_tree_when_it_leaves() {
     assert_eq!(folders_read(&pieces).len(), 6);
 }
 
-/// An `Http` that lets a function see each request before the server it wraps answers it.
+/// What a scripted server answers to one request.
+type Reply = Result<HttpResponse, TransportError>;
+
+/// An exchange that lets a function see each request before the server it wraps answers it.
 struct Hook<H> {
     inner: H,
-    see: Rc<dyn Fn(&Request)>,
+    see: Rc<dyn Fn(&HttpRequest)>,
 }
 
-impl<H: Http> Http for Hook<H> {
-    async fn send(&self, req: Request) -> crate::Result<Response> {
-        (self.see)(&req);
-        self.inner.send(req).await
+impl<H: HttpExchange> HttpExchange for Hook<H> {
+    async fn exchange(&self, req: &HttpRequest) -> Reply {
+        (self.see)(req);
+        self.inner.exchange(req).await
     }
 }
 
-fn is_query(req: &Request) -> bool {
-    String::from_utf8_lossy(&req.body).contains("Email/query")
+fn is_query(req: &HttpRequest) -> bool {
+    String::from_utf8_lossy(req.body()).contains("Email/query")
 }
 
 #[test]
@@ -588,7 +637,7 @@ fn a_run_stopped_after_a_piece_ends_there() {
     for mailbox in [&ids.inbox, &ids.drafts, &ids.sent] {
         deliver(&stand_in, mailbox, "m", &[], 1);
     }
-    let client = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
+    let client = block_on(Connection::connect(stand_in.clone(), SESSION, Credentials::bearer(TOKEN).unwrap())).unwrap();
     let cancel = AtomicBool::new(false);
     let mut pieces = Vec::new();
     // The owner presses Cancel when the first window arrives.
@@ -613,7 +662,7 @@ fn a_server_that_refuses_the_credentials_ends_the_run_with_a_word_for_the_engine
         deliver(&stand_in, mailbox, "m", &[], 1);
     }
     // Signed in, and then the token is no longer held.
-    let client = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
+    let client = block_on(Connection::connect(stand_in.clone(), SESSION, Credentials::bearer(TOKEN).unwrap())).unwrap();
     stand_in.with(|d| d.token = Some("rotated".into()));
     let mut pieces = Vec::new();
     block_on(sync_mail(&client, &everything(500), &AtomicBool::new(false), &mut |piece| pieces.push(piece)));
@@ -628,7 +677,7 @@ fn a_server_that_refuses_the_credentials_ends_the_run_with_a_word_for_the_engine
     let mut has_inbox = light(500, &[&ids.drafts, &ids.sent]);
     let inbox_ids: Vec<String> = stand_in.with(|d| d.emails.iter().filter(|e| e.mailboxes.contains(&ids.inbox)).map(|e| e.id.clone()).collect());
     has(&mut has_inbox, &ids.inbox, &inbox_ids.iter().map(String::as_str).collect::<Vec<_>>());
-    let client = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
+    let client = block_on(Connection::connect(stand_in.clone(), SESSION, Credentials::bearer(TOKEN).unwrap())).unwrap();
     // (The list and the Inbox are let through: the Drafts' window is the third request.)
     stand_in.with(|d| d.drop_token_after = Some(2));
     let mut pieces = Vec::new();
@@ -652,7 +701,7 @@ fn a_server_that_is_busy_ends_the_run_with_the_seconds_it_asked_for() {
         let end = last(&pieces);
         assert_eq!((end.busy_for, end.whole, end.auth_refused, end.stopped), (Some(waits), false, false, false), "{refused:?}");
         assert_eq!(end.errors.len(), 1);
-        assert!(end.errors[0].starts_with("Couldn't bring the mail down from the server: the server is busy (HTTP "), "{}", end.errors[0]);
+        assert!(end.errors[0].starts_with("Couldn't bring the mail down from the server: the server is busy "), "{}", end.errors[0]);
         assert_eq!(stand_in.api_requests(), 1, "the server is left alone");
     }
     // It is busy after it gave the list and a window: they are kept, and no more is asked.
@@ -680,11 +729,17 @@ fn a_method_error_in_one_mailbox_does_not_stop_the_others() {
     let end = last(&pieces);
     assert!(!end.whole && !end.stopped && !end.auth_refused && end.busy_for.is_none());
     // Said once, with the server's reason, and without a name or an id.
-    assert_eq!(end.errors, ["Couldn't read the mail in 1 mailbox: the server refused: this mailbox can't be read just now"]);
+    assert_eq!(
+        end.errors,
+        ["Couldn't read the mail in 1 mailbox: the server refused this call with the error serverFail: \"this mailbox can't be read just now\""]
+    );
     // Several are counted, and the first reason given.
     stand_in.with(|d| d.broken_mailboxes.insert(ids.apollo.clone(), "serverFail"));
     let end = last(&run(&stand_in, &everything(500))).errors.clone();
-    assert_eq!(end, ["Couldn't read the mail in 2 mailboxes: the server refused: this mailbox can't be read just now"]);
+    assert_eq!(
+        end,
+        ["Couldn't read the mail in 2 mailboxes: the server refused this call with the error serverFail: \"this mailbox can't be read just now\""]
+    );
 }
 
 #[test]
@@ -709,7 +764,7 @@ fn a_server_that_says_it_is_unavailable_three_mailboxes_in_a_row_is_left_alone()
     let end = last(&pieces);
     assert_eq!(end.errors.len(), 2);
     assert!(
-        end.errors[0].starts_with("Couldn't read the mail in 3 mailboxes: the server refused: this mailbox can't be read just now"),
+        end.errors[0].starts_with("Couldn't read the mail in 3 mailboxes: the server refused this call with the error serverUnavailable: "),
         "{:?}",
         end.errors
     );
@@ -746,7 +801,12 @@ fn requests_that_fail_whole_three_in_a_row_end_the_run_and_a_good_one_in_between
     assert_eq!(folders_read(&pieces), [&ids.inbox]);
     let end = last(&pieces);
     assert_eq!(end.errors.len(), 2, "{:?}", end.errors);
-    assert!(end.errors[0].starts_with("Couldn't read the mail in 3 mailboxes: the server rejected the request: HTTP 500"), "{:?}", end.errors);
+    assert!(
+        end.errors[0]
+            .starts_with("Couldn't read the mail in 3 mailboxes: the server answered with HTTP status 500, which this program cannot act on"),
+        "{:?}",
+        end.errors
+    );
     assert_eq!(end.errors[1], "The server failed 3 mailboxes in a row; the rest wait for the next run.");
     assert_eq!(stand_in.api_requests(), 5, "and no more was asked of it");
     // Refused twice, then well, then refused twice: the run goes on to the end.
@@ -777,7 +837,10 @@ fn one_email_that_breaks_a_call_is_found_by_halving_it_and_the_rest_are_read() {
     // The other mailboxes were read, and the trouble is said once.
     assert_eq!(subjects(page_of(&pieces, &ids.sent)), ["outgoing"]);
     let end = last(&pieces);
-    assert_eq!(end.errors, ["Couldn't read 1 message in full: the server refused: an email can't be read just now"]);
+    assert_eq!(
+        end.errors,
+        ["Couldn't read 1 message in full: the server refused this call with the error serverFail: \"an email can't be read just now\""]
+    );
     assert!(!end.whole);
     // Finding it took a few calls, not one for each email: the calls for emails are the three chunks, the halves
     // of the one that failed, and the Sent mailbox's; each level of halving makes one more that fails.
@@ -825,21 +888,21 @@ fn a_call_whose_answer_is_too_large_is_halved_too() {
     assert!(last(&pieces).whole, "{:?}", last(&pieces).errors);
 }
 
-/// An `Http` in front of a server, as a gateway is: it answers 502 to the requests a function picks, and
+/// An exchange in front of a server, as a gateway is: it answers 502 to the requests a function picks, and
 /// passes the rest on.
 struct Gateway<H> {
     inner: H,
-    gives_up_on: Rc<dyn Fn(&Request) -> bool>,
+    gives_up_on: Rc<dyn Fn(&HttpRequest) -> bool>,
     refused: Rc<Cell<usize>>,
 }
 
-impl<H: Http> Http for Gateway<H> {
-    async fn send(&self, req: Request) -> crate::Result<Response> {
-        if (self.gives_up_on)(&req) {
+impl<H: HttpExchange> HttpExchange for Gateway<H> {
+    async fn exchange(&self, req: &HttpRequest) -> Reply {
+        if (self.gives_up_on)(req) {
             self.refused.set(self.refused.get() + 1);
             return json_reply(502, &json!({}));
         }
-        self.inner.send(req).await
+        self.inner.exchange(req).await
     }
 }
 
@@ -849,7 +912,7 @@ fn wants_headers(args: &Value) -> bool {
 }
 
 /// How many emails a request asks for whole: none for any other request.
-fn details_asked(req: &Request) -> usize {
+fn details_asked(req: &HttpRequest) -> usize {
     calls_of(req)
         .iter()
         .filter(|(name, args, _)| name == "Email/get" && wants_headers(args))
@@ -925,38 +988,43 @@ const FAKE_SESSION: &str = "https://jmap.example.org/jmap/session?account=ada%40
 /// A server that answers as a function says, and keeps what it was sent.
 #[derive(Clone)]
 struct Fake {
-    answer: Rc<dyn Fn(&Request) -> crate::Result<Response>>,
-    sent: Rc<RefCell<Vec<Request>>>,
+    answer: Rc<dyn Fn(&HttpRequest) -> Reply>,
+    sent: Rc<RefCell<Vec<HttpRequest>>>,
 }
 
 impl Fake {
-    fn new(answer: impl Fn(&Request) -> crate::Result<Response> + 'static) -> Fake {
+    fn new(answer: impl Fn(&HttpRequest) -> Reply + 'static) -> Fake {
         Fake { answer: Rc::new(answer), sent: Rc::default() }
     }
 
     /// The arguments of each call to `method`, in the order they were made.
     fn args_of(&self, method: &str) -> Vec<Value> {
         let sent = self.sent.borrow();
-        sent.iter().filter(|req| req.method == "POST").flat_map(calls_of).filter(|(name, ..)| name == method).map(|(_, args, _)| args).collect()
+        sent.iter()
+            .filter(|req| req.method() == Method::Post)
+            .flat_map(calls_of)
+            .filter(|(name, ..)| name == method)
+            .map(|(_, args, _)| args)
+            .collect()
     }
 
     /// The methods each request to the API called.
     fn posts(&self) -> Vec<Vec<String>> {
         let sent = self.sent.borrow();
-        sent.iter().filter(|req| req.method == "POST").map(|req| calls_of(req).into_iter().map(|(name, _, _)| name).collect()).collect()
+        sent.iter().filter(|req| req.method() == Method::Post).map(|req| calls_of(req).into_iter().map(|(name, _, _)| name).collect()).collect()
     }
 }
 
-impl Http for Fake {
-    async fn send(&self, req: Request) -> crate::Result<Response> {
+impl HttpExchange for Fake {
+    async fn exchange(&self, req: &HttpRequest) -> Reply {
         self.sent.borrow_mut().push(req.clone());
-        (self.answer)(&req)
+        (self.answer)(req)
     }
 }
 
 /// The method calls of a request to the API: name, arguments, call id.
-fn calls_of(req: &Request) -> Vec<(String, Value, String)> {
-    let body: Value = serde_json::from_slice(&req.body).unwrap_or(Value::Null);
+fn calls_of(req: &HttpRequest) -> Vec<(String, Value, String)> {
+    let body: Value = serde_json::from_slice(req.body()).unwrap_or(Value::Null);
     let calls = body.get("methodCalls").and_then(Value::as_array).cloned().unwrap_or_default();
     calls
         .iter()
@@ -964,12 +1032,21 @@ fn calls_of(req: &Request) -> Vec<(String, Value, String)> {
         .collect()
 }
 
-fn json_reply(status: u16, body: &Value) -> crate::Result<Response> {
-    Ok(Response { status, body: serde_json::to_vec(body).unwrap(), retry_after: None })
+fn json_reply(status: u16, body: &Value) -> Reply {
+    Ok(HttpResponse::new(status, serde_json::to_vec(body).unwrap()).with_field("Content-Type", "application/json"))
+}
+
+/// An answer of `status` with no body, and a `Retry-After` of so many seconds.
+fn status_reply(status: u16, retry_after: Option<u32>) -> Reply {
+    let answer = HttpResponse::new(status, Vec::new());
+    Ok(match retry_after {
+        Some(seconds) => answer.with_field("Retry-After", &seconds.to_string()),
+        None => answer,
+    })
 }
 
 /// What a scripted server says to one method call.
-enum Reply {
+enum Answer {
     Is(Value),
     Error(&'static str, String),
     Missing,
@@ -977,16 +1054,16 @@ enum Reply {
 
 /// The session of a server of the standard kind, and for a request to the API each call answered by `f`
 /// (given its name and arguments).
-fn serve(req: &Request, f: impl Fn(&str, &Value) -> Reply) -> crate::Result<Response> {
+fn serve(req: &HttpRequest, f: impl Fn(&str, &Value) -> Answer) -> Reply {
     serve_with(16, req, f)
 }
 
 /// [`serve`] for a server that takes `max_calls` calls to a request.
-fn serve_with(max_calls: u32, req: &Request, f: impl Fn(&str, &Value) -> Reply) -> crate::Result<Response> {
-    if req.method == "GET" {
+fn serve_with(max_calls: u32, req: &HttpRequest, f: impl Fn(&str, &Value) -> Answer) -> Reply {
+    if req.method() == Method::Get {
         let session = json!({
             "capabilities": {CORE: {"maxCallsInRequest": max_calls, "maxObjectsInGet": 500}, MAIL: {}},
-            "accounts": {"A1": {"name": ME}},
+            "accounts": {"A1": {"name": ME, "isPersonal": true, "accountCapabilities": {MAIL: {}}}},
             "primaryAccounts": {MAIL: "A1"},
             "apiUrl": "https://jmap.example.org/jmap/api",
             "downloadUrl": "/jmap/download/{accountId}/{blobId}/{name}?type={type}",
@@ -998,9 +1075,9 @@ fn serve_with(max_calls: u32, req: &Request, f: impl Fn(&str, &Value) -> Reply) 
     let mut responses = Vec::new();
     for (name, args, id) in calls_of(req) {
         match f(&name, &args) {
-            Reply::Is(result) => responses.push(json!([name, result, id])),
-            Reply::Error(kind, why) => responses.push(json!(["error", {"type": kind, "description": why}, id])),
-            Reply::Missing => {}
+            Answer::Is(result) => responses.push(json!([name, result, id])),
+            Answer::Error(kind, why) => responses.push(json!(["error", {"type": kind, "description": why}, id])),
+            Answer::Missing => {}
         }
     }
     json_reply(200, &json!({"methodResponses": responses, "sessionState": "1"}))
@@ -1030,9 +1107,9 @@ fn emails(ids: &[&str]) -> Value {
 fn with_query(query: Value) -> Fake {
     Fake::new(move |req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Is(inbox_only()),
-            "Email/query" => Reply::Is(query.clone()),
-            _ => Reply::Is(emails(&["E1", "E2", "E3", "E4", "E5"])),
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(query.clone()),
+            _ => Answer::Is(emails(&["E1", "E2", "E3", "E4", "E5"])),
         })
     })
 }
@@ -1046,14 +1123,14 @@ fn an_email_that_the_call_for_emails_says_is_gone_is_no_loss() {
     // E3 was there when the window was made and gone when it was read whole, and the server says so.
     let server = Fake::new(|req| {
         serve(req, |name, args| match name {
-            "Mailbox/get" => Reply::Is(inbox_only()),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3, "position": 0})),
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3, "position": 0})),
             _ if wants_headers(args) => {
                 let mut got = emails(&["E1", "E2"]);
                 got["notFound"] = json!(["E3"]);
-                Reply::Is(got)
+                Answer::Is(got)
             }
-            _ => Reply::Is(emails(&["E1", "E2", "E3"])),
+            _ => Answer::Is(emails(&["E1", "E2", "E3"])),
         })
     });
     let pieces = run_fake(&server, &light(500, &[]));
@@ -1067,10 +1144,10 @@ fn a_server_that_takes_one_call_to_a_request_is_asked_for_the_ids_of_the_window_
     // Seven entries in the list, the window is four: the first four are looked at, and two of them are ids.
     let server = Fake::new(|req| {
         serve_with(1, req, |name, args| match name {
-            "Mailbox/get" => Reply::Is(inbox_only()),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1", "bad id", 5, "E2", "E3", "E4", "E5"], "total": 7, "position": 0})),
-            _ if wants_headers(args) => Reply::Is(emails(&["E1", "E2", "E3"])),
-            _ => Reply::Is(emails(&["E1", "E2", "E3", "E4"])),
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1", "bad id", 5, "E2", "E3", "E4", "E5"], "total": 7, "position": 0})),
+            _ if wants_headers(args) => Answer::Is(emails(&["E1", "E2", "E3"])),
+            _ => Answer::Is(emails(&["E1", "E2", "E3", "E4"])),
         })
     });
     let pieces = run_fake(&server, &light(4, &[]));
@@ -1153,9 +1230,9 @@ fn an_empty_window_is_the_whole_of_a_mailbox_only_when_the_list_of_mailboxes_say
                         Value::Null => drop(list["list"][0].as_object_mut().map(|inbox| inbox.remove("totalEmails"))),
                         count => list["list"][0]["totalEmails"] = count.clone(),
                     }
-                    Reply::Is(list)
+                    Answer::Is(list)
                 }
-                _ => Reply::Is(json!({"accountId": "A1", "ids": [], "total": 0, "position": 0, "list": [], "notFound": []})),
+                _ => Answer::Is(json!({"accountId": "A1", "ids": [], "total": 0, "position": 0, "list": [], "notFound": []})),
             })
         })
     };
@@ -1172,8 +1249,8 @@ fn an_empty_window_is_the_whole_of_a_mailbox_only_when_the_list_of_mailboxes_say
     // A list of mailboxes that could not be had says nothing at all, and so is no proof either.
     let broken_list = Fake::new(|req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Error("serverFail", "try later".into()),
-            _ => Reply::Is(json!({"accountId": "A1", "ids": [], "total": 0, "position": 0, "list": [], "notFound": []})),
+            "Mailbox/get" => Answer::Error("serverFail", "try later".into()),
+            _ => Answer::Is(json!({"accountId": "A1", "ids": [], "total": 0, "position": 0, "list": [], "notFound": []})),
         })
     });
     let pieces = run_fake(&broken_list, &light(500, &["M1"]));
@@ -1190,14 +1267,14 @@ fn a_call_for_emails_that_the_server_says_are_all_gone_is_not_taken_for_their_go
     let server = |named: &'static [&'static str], gone: &'static [&'static str]| {
         Fake::new(move |req| {
             serve(req, |name, args| match name {
-                "Mailbox/get" => Reply::Is(inbox_only()),
-                "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": named, "total": named.len(), "position": 0})),
+                "Mailbox/get" => Answer::Is(inbox_only()),
+                "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": named, "total": named.len(), "position": 0})),
                 _ if wants_headers(args) => {
                     let mut got = emails(&named.iter().copied().filter(|id| !gone.contains(id)).collect::<Vec<_>>());
                     got["notFound"] = json!(gone);
-                    Reply::Is(got)
+                    Answer::Is(got)
                 }
-                _ => Reply::Is(emails(named)),
+                _ => Answer::Is(emails(named)),
             })
         })
     };
@@ -1220,7 +1297,7 @@ fn a_call_for_emails_that_the_server_says_are_all_gone_is_not_taken_for_their_go
 #[test]
 fn a_list_with_no_mailbox_in_it_is_said_and_the_run_is_not_an_up_to_date() {
     // An account always has an Inbox: a server that lists none has not told the whole of it.
-    let server = Fake::new(|req| serve(req, |_, _| Reply::Is(json!({"accountId": "A1", "state": "1", "list": [], "notFound": []}))));
+    let server = Fake::new(|req| serve(req, |_, _| Answer::Is(json!({"accountId": "A1", "state": "1", "list": [], "notFound": []}))));
     for asked in [everything(500), light(500, &["M1"]), {
         let mut named = light(500, &["M1"]);
         named.list_folders = true;
@@ -1230,7 +1307,7 @@ fn a_list_with_no_mailbox_in_it_is_said_and_the_run_is_not_an_up_to_date() {
         assert!(pages(&pieces).is_empty(), "nothing is read");
         let end = last(&pieces);
         assert!(!end.whole);
-        assert_eq!(end.errors, ["Couldn't list the mailboxes on the server: unexpected server response: the answer lists no mailbox"]);
+        assert_eq!(end.errors, ["Couldn't list the mailboxes on the server: the server's answer cannot be used: the answer lists no mailbox"]);
         // What there is of a listing is not a complete one: no folder is removed on its word.
         for piece in &pieces {
             assert!(piece.listing.as_ref().is_none_or(|listing| listing.folders.is_empty() && !listing.complete));
@@ -1244,12 +1321,12 @@ fn an_email_the_list_names_and_the_second_answer_lacks_is_gone_only_when_the_ser
     let server = |not_found: Value| {
         Fake::new(move |req| {
             serve(req, |name, _| match name {
-                "Mailbox/get" => Reply::Is(inbox_only()),
-                "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3})),
+                "Mailbox/get" => Answer::Is(inbox_only()),
+                "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3})),
                 _ => {
                     let mut got = emails(&["E1", "E2"]);
                     got["notFound"] = not_found.clone();
-                    Reply::Is(got)
+                    Answer::Is(got)
                 }
             })
         })
@@ -1265,9 +1342,9 @@ fn an_email_the_list_names_and_the_second_answer_lacks_is_gone_only_when_the_ser
     // between the two calls of one request. Nothing is removed on its word.
     let everything_gone = Fake::new(|req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Is(inbox_only()),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1", "E2"], "total": 2})),
-            _ => Reply::Is(json!({"accountId": "A1", "list": [], "notFound": ["E1", "E2"]})),
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1", "E2"], "total": 2})),
+            _ => Answer::Is(json!({"accountId": "A1", "list": [], "notFound": ["E1", "E2"]})),
         })
     });
     let pieces = run_fake(&everything_gone, &light(500, &[]));
@@ -1299,17 +1376,17 @@ fn what_the_server_sends_that_was_not_asked_for_is_not_taken() {
     // The server lists E1 to E3, then answers a request for whole emails with those, a copy, and a stranger.
     let fake = Fake::new(|req| {
         serve(req, |name, args| match name {
-            // (M0 is a mailbox of the list, with a smaller id than the Inbox.)
-            "Mailbox/get" => Reply::Is(json!({"accountId": "A1", "list": [
+            // (M0 is a mailbox of the list.)
+            "Mailbox/get" => Answer::Is(json!({"accountId": "A1", "list": [
                 {"id": "M1", "name": "Inbox", "role": "inbox"}, {"id": "M0", "name": "Before"}]})),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3})),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1", "E2", "E3"], "total": 3})),
             _ if args.get("properties").is_some_and(|p| p.as_array().is_some_and(|p| p.iter().any(|n| n == "headers"))) => {
                 let mut list = emails(&["E1", "E2", "E9", "E1"]);
-                // E2 has gone to a mailbox with a smaller id meanwhile: that mailbox lists it.
-                list["list"][1]["mailboxIds"] = json!({"M0": true, "M1": true});
-                Reply::Is(list)
+                // E2 has gone to the other mailbox meanwhile: that mailbox lists it.
+                list["list"][1]["mailboxIds"] = json!({"M0": true});
+                Answer::Is(list)
             }
-            _ => Reply::Is(emails(&["E1", "E2", "E3"])),
+            _ => Answer::Is(emails(&["E1", "E2", "E3"])),
         })
     });
     let pieces = run_fake(&fake, &light(500, &[]));
@@ -1327,22 +1404,28 @@ fn what_the_server_sends_that_was_not_asked_for_is_not_taken() {
 
 #[test]
 fn a_mailbox_list_that_cannot_be_read_is_said_and_a_light_run_goes_on_with_the_mailboxes_it_was_told() {
-    let broken = |reply: fn() -> Reply| {
+    let broken = |reply: fn() -> Answer| {
         Fake::new(move |req| {
             serve(req, |name, _| match name {
                 "Mailbox/get" => reply(),
-                "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1})),
-                _ => Reply::Is(emails(&["E1"])),
+                "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1})),
+                _ => Answer::Is(emails(&["E1"])),
             })
         })
     };
-    let cases: [(fn() -> Reply, &str); 3] = [
-        (|| Reply::Error("serverFail", "try later".into()), "Couldn't list the mailboxes on the server: the server refused: try later"),
+    let cases: [(fn() -> Answer, &str); 3] = [
         (
-            || Reply::Is(json!({"accountId": "A1"})),
-            "Couldn't list the mailboxes on the server: unexpected server response: the answer has no list of mailboxes",
+            || Answer::Error("serverFail", "try later".into()),
+            "Couldn't list the mailboxes on the server: the server refused this call with the error serverFail: \"try later\"",
         ),
-        (|| Reply::Missing, "Couldn't list the mailboxes on the server: unexpected server response: JMAP: no answer to Mailbox/get"),
+        (
+            || Answer::Is(json!({"accountId": "A1"})),
+            "Couldn't list the mailboxes on the server: the server's answer cannot be used: the answer has no list of mailboxes",
+        ),
+        (
+            || Answer::Missing,
+            "Couldn't list the mailboxes on the server: the server's answer holds no result for this call; the server may have stopped before reaching it",
+        ),
     ];
     for (reply, said) in cases {
         // Asked for the list: there is none to hand on; the mailboxes it was told are read (the Inbox is not known).
@@ -1366,29 +1449,37 @@ fn a_call_the_server_does_not_answer_fails_its_mailbox_alone() {
     let fake = Fake::new(move |req| {
         let missed = missed.clone();
         serve(req, move |name, args| match name {
-            "Mailbox/get" => Reply::Is(json!({"accountId": "A1", "list": [
+            "Mailbox/get" => Answer::Is(json!({"accountId": "A1", "list": [
                 {"id": "M1", "name": "Inbox", "role": "inbox"}, {"id": "M2", "name": "Other"}]})),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1})),
-            _ if args.get("#ids").is_some() && !missed.replace(true) => Reply::Missing,
-            _ => Reply::Is(emails(&["E1"])),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1})),
+            _ if args.get("#ids").is_some() && !missed.replace(true) => Answer::Missing,
+            _ => Answer::Is(emails(&["E1"])),
         })
     });
     let pieces = run_fake(&fake, &everything(500));
     assert_eq!(folders_read(&pieces), ["M2"]);
-    assert_eq!(last(&pieces).errors, ["Couldn't read the mail in 1 mailbox: unexpected server response: JMAP: no answer to Email/get"]);
+    assert_eq!(
+        last(&pieces).errors,
+        ["Couldn't read the mail in 1 mailbox: the server's answer holds no result for this call; the server may have stopped before reaching it"]
+    );
 }
 
 #[test]
-fn a_server_that_refuses_with_403_or_is_busy_with_a_header_is_told_apart() {
+fn a_server_that_refuses_the_credentials_or_is_busy_with_a_header_is_told_apart() {
     let at = |status: u16, retry_after: Option<u32>| {
-        Fake::new(
-            move |req| if req.method == "GET" { serve(req, |_, _| Reply::Missing) } else { Ok(Response { status, body: Vec::new(), retry_after }) },
-        )
+        Fake::new(move |req| if req.method() == Method::Get { serve(req, |_, _| Answer::Missing) } else { status_reply(status, retry_after) })
     };
-    let end = last(&run_fake(&at(403, None), &everything(500))).clone();
+    let end = last(&run_fake(&at(401, None), &everything(500))).clone();
     assert!(end.auth_refused && end.errors.is_empty() && !end.whole);
     let end = last(&run_fake(&at(401, None), &light(500, &[]))).clone();
     assert!(end.auth_refused);
+    // A 403, whether the server says it is the credentials (RFC 9457 §3.1.2: what the origin meant) or not.
+    let token_refused = Fake::new(|req| {
+        if req.method() == Method::Get { serve(req, |_, _| Answer::Missing) } else { json_reply(403, &json!({"status": 401, "detail": "expired"})) }
+    });
+    assert!(last(&run_fake(&token_refused, &everything(500))).auth_refused);
+    let end = last(&run_fake(&at(403, None), &everything(500))).clone();
+    assert!(end.auth_refused && end.errors.is_empty() && !end.whole);
     let end = last(&run_fake(&at(429, Some(45)), &everything(500))).clone();
     assert_eq!((end.busy_for, end.auth_refused), (Some(45), false));
     let end = last(&run_fake(&at(503, None), &everything(500))).clone();
@@ -1398,7 +1489,10 @@ fn a_server_that_refuses_with_403_or_is_busy_with_a_header_is_told_apart() {
     let pieces = run_fake(&fake, &light(500, &["MA", "MB", "MC", "MD", "ME"]));
     let end = last(&pieces);
     assert_eq!(pieces.len(), 1);
-    assert_eq!(end.errors, ["Couldn't bring the mail down from the server: the server rejected the request: HTTP 500"]);
+    assert_eq!(
+        end.errors,
+        ["Couldn't bring the mail down from the server: the server answered with HTTP status 500, which this program cannot act on"]
+    );
     assert_eq!(fake.posts().len(), 1, "and no more was asked of it");
     assert!(!end.whole && end.busy_for.is_none() && !end.auth_refused);
 }
@@ -1406,10 +1500,15 @@ fn a_server_that_refuses_with_403_or_is_busy_with_a_header_is_told_apart() {
 #[test]
 fn a_network_that_goes_away_ends_the_run_at_the_list_or_after_three_mailboxes() {
     // Gone from the first request: the list is not had, and nothing more is asked.
-    let gone = Fake::new(|req| if req.method == "GET" { serve(req, |_, _| Reply::Missing) } else { Err(Error::Io("offline".into())) });
+    let gone = Fake::new(|req| if req.method() == Method::Get { serve(req, |_, _| Answer::Missing) } else { Err(TransportError::Unreachable) });
     let pieces = run_fake(&gone, &light(500, &["MA", "MB", "MC", "MD"]));
     assert_eq!(pieces.len(), 1);
-    assert_eq!(last(&pieces).errors, ["Couldn't bring the mail down from the server: network: offline"]);
+    assert_eq!(
+        last(&pieces).errors,
+        [
+            "Couldn't bring the mail down from the server: the request did not complete: the server could not be reached; check its address and the network connection"
+        ]
+    );
     assert_eq!(gone.posts().len(), 1);
     // Gone after the list: three mailboxes fail, and the fourth is not tried.
     let six: Vec<Value> = (1..=6)
@@ -1418,10 +1517,10 @@ fn a_network_that_goes_away_ends_the_run_at_the_list_or_after_three_mailboxes() 
     let later = Rc::new(std::cell::Cell::new(0));
     let fake = Fake::new(move |req| {
         let calls = later.replace(later.get() + 1);
-        match (req.method.as_str(), calls) {
-            ("GET", _) => serve(req, |_, _| Reply::Missing),
-            ("POST", 1) => serve(req, |_, _| Reply::Is(json!({"accountId": "A1", "list": six}))),
-            _ => Err(Error::Io("offline".into())),
+        match (req.method().as_str(), calls) {
+            ("GET", _) => serve(req, |_, _| Answer::Missing),
+            ("POST", 1) => serve(req, |_, _| Answer::Is(json!({"accountId": "A1", "list": six}))),
+            _ => Err(TransportError::Unreachable),
         }
     });
     let pieces = run_fake(&fake, &everything(500));
@@ -1429,10 +1528,35 @@ fn a_network_that_goes_away_ends_the_run_at_the_list_or_after_three_mailboxes() 
     let end = last(&pieces);
     assert_eq!(
         end.errors,
-        ["Couldn't read the mail in 3 mailboxes: network: offline", "The server failed 3 mailboxes in a row; the rest wait for the next run."]
+        [
+            "Couldn't read the mail in 3 mailboxes: the request did not complete: the server could not be reached; check its address and the network connection",
+            "The server failed 3 mailboxes in a row; the rest wait for the next run."
+        ]
     );
     assert!(!end.whole);
     assert_eq!(fake.posts().len(), 1 + 3);
+    // An exchange the program called off because the owner pressed Cancel is the run stopped, and no trouble of the
+    // server's; one called off for another reason is a server that could not be had.
+    let cancel = Rc::new(AtomicBool::new(false));
+    let flag = cancel.clone();
+    let aborted = Fake::new(move |req| {
+        if req.method() == Method::Get {
+            return serve(req, |_, _| Answer::Missing);
+        }
+        flag.store(true, Ordering::Relaxed);
+        Err(TransportError::Aborted)
+    });
+    let pieces = run_over(aborted.clone(), FAKE_SESSION, &everything(500), &cancel);
+    let end = last(&pieces);
+    assert!(end.stopped && end.errors.is_empty() && !end.whole && !end.auth_refused, "{end:?}");
+    assert_eq!(aborted.posts().len(), 1);
+    let aborted = Fake::new(|req| if req.method() == Method::Get { serve(req, |_, _| Answer::Missing) } else { Err(TransportError::Aborted) });
+    let end = last(&run_fake(&aborted, &everything(500))).clone();
+    assert!(!end.stopped && !end.whole);
+    assert_eq!(
+        end.errors,
+        ["Couldn't bring the mail down from the server: the request did not complete: the request was cancelled before it completed"]
+    );
 }
 
 #[test]
@@ -1440,49 +1564,41 @@ fn no_line_of_a_run_shows_an_address_the_session_the_account_or_a_secret() {
     let account_id = "AYWRhQGV4YW1wbGUub3Jn";
     const LEAKY: &str = "no mailbox for ada@example.org (ada%40example.org) at https://jmap.example.org/jmap/session?account=ada%40example.org for AYWRhQGV4YW1wbGUub3Jn with hunter2 and tk-secret-123; ask bob@example.net or <carol@example.com> or dave%40example.edu";
     // (Each sign-in has its own secret to keep out of what the server echoes.)
-    for (auth, secret) in [(Auth::basic(ME, "hunter2"), "hunter2"), (Auth::bearer("tk-secret-123"), "tk-secret-123")] {
-        let doors: [(&str, Box<dyn Fn(&Request) -> crate::Result<Response>>); 4] = [
-            ("a method error", Box::new(|req| serve(req, |_, _| Reply::Error("serverFail", LEAKY.to_string())))),
-            (
-                "an HTTP error",
-                Box::new(|req| if req.method == "GET" { serve(req, |_, _| Reply::Missing) } else { json_reply(500, &json!({"detail": LEAKY})) }),
-            ),
-            (
-                "a transport error",
-                Box::new(|req| {
-                    if req.method == "GET" {
-                        serve(req, |_, _| Reply::Missing)
-                    } else {
-                        Err(Error::Io(format!("sending to {FAKE_SESSION}: {LEAKY}")))
-                    }
-                }),
-            ),
-            (
-                "a protocol error",
-                Box::new(|req| if req.method == "GET" { serve(req, |_, _| Reply::Missing) } else { Err(Error::Protocol(LEAKY.to_string())) }),
-            ),
+    for (credentials, secret) in
+        [(Credentials::basic(ME, &made_secret("hunter2")).unwrap(), "hunter2"), (Credentials::bearer("tk-secret-123").unwrap(), "tk-secret-123")]
+    {
+        let api = |answer: fn() -> Reply| -> Box<dyn Fn(&HttpRequest) -> Reply> {
+            Box::new(move |req| if req.method() == Method::Get { serve(req, |_, _| Answer::Missing) } else { answer() })
+        };
+        let doors: [(&str, Box<dyn Fn(&HttpRequest) -> Reply>); 5] = [
+            ("a method error", Box::new(|req| serve(req, |_, _| Answer::Error("serverFail", LEAKY.to_string())))),
+            ("an HTTP error", api(|| json_reply(500, &json!({"detail": LEAKY})))),
+            ("a conflict", api(|| json_reply(409, &json!({"detail": LEAKY})))),
+            ("a request refused", api(|| json_reply(400, &json!({"type": "urn:ietf:params:jmap:error:notRequest", "detail": LEAKY})))),
+            ("a limit", api(|| json_reply(400, &json!({"type": "urn:ietf:params:jmap:error:limit", "limit": "maxCallsInRequest", "detail": LEAKY})))),
         ];
         for (door, answer) in doors {
             let fake = Fake::new(move |req| {
                 // The account's id is made of the address, as some servers make it.
-                if req.method == "GET" {
-                    let mut session = serde_json::from_slice::<Value>(&serve(req, |_, _| Reply::Missing).unwrap().body).unwrap();
+                if req.method() == Method::Get {
+                    let mut session = serde_json::from_slice::<Value>(serve(req, |_, _| Answer::Missing).unwrap().body()).unwrap();
+                    session["accounts"] = json!({account_id: session["accounts"]["A1"].clone()});
                     session["primaryAccounts"][MAIL] = json!(account_id);
                     return json_reply(200, &session);
                 }
                 answer(req)
             });
-            let client = block_on(Client::connect(fake, FAKE_SESSION, &auth)).unwrap();
+            let client = block_on(Connection::connect(fake, FAKE_SESSION, credentials.clone())).unwrap();
             let mut asked = light(500, &["MA", "MB", "MC"]);
             asked.list_folders = true;
             let mut pieces = Vec::new();
             block_on(sync_mail(&client, &asked, &AtomicBool::new(false), &mut |piece| pieces.push(piece)));
             let shown = format!("{:?}", last(&pieces).errors);
             assert!(!last(&pieces).errors.is_empty(), "{door}");
-            for hidden in
-                ["ada", "example.org", "example.net", "example.com", "example.edu", secret, "account=", "AYWRhQ", "@", "%40", "jmap/session"]
-            {
-                assert!(!shown.contains(hidden), "{door}: {hidden} in {shown}");
+            let hidden =
+                ["ada", "example.org", "example.net", "example.com", "example.edu", secret, "account=", "AYWRhQ", "@", "%40", "jmap/session"];
+            for (n, hidden) in hidden.into_iter().enumerate() {
+                assert!(!shown.contains(hidden), "{door}: what is hidden ({n}) shows in a line");
             }
         }
     }
@@ -1490,20 +1606,21 @@ fn no_line_of_a_run_shows_an_address_the_session_the_account_or_a_secret() {
 
 #[test]
 fn an_answer_is_held_to_the_size_its_request_can_need() {
-    // The sizes asked for: the list of mailboxes, a window, the emails of a message list.
+    // The sizes asked for: the list of mailboxes, a window, the emails of a message list. Each request carries its
+    // own, which the exchange reads before the body, and each is less than the most any answer to the API may be.
     let seen = with_query(json!({"accountId": "A1", "ids": ["E1"], "total": 1}));
     run_fake(&seen, &light(500, &[]));
-    let posts: Vec<usize> = seen.sent.borrow().iter().filter(|req| req.method == "POST").map(|req| req.max).collect();
+    let posts: Vec<usize> = seen.sent.borrow().iter().filter(|req| req.method() == Method::Post).map(HttpRequest::max_response_bytes).collect();
     assert_eq!(posts, [LIST_BYTES, WINDOW_BYTES, DETAILS_BYTES]);
-    const { assert!(LIST_BYTES < crate::MAX_JSON && WINDOW_BYTES < LIST_BYTES && DETAILS_BYTES < crate::MAX_JSON) };
+    const { assert!(LIST_BYTES < API_RESPONSE_LIMIT && WINDOW_BYTES < LIST_BYTES && DETAILS_BYTES < API_RESPONSE_LIMIT) };
 
     // A list of mailboxes larger than that is no list: said, and the mailboxes the request names are read all the same.
     let padding = "x".repeat(LIST_BYTES + 1);
     let big_list = Fake::new(move |req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Is(json!({"accountId": "A1", "list": [], "padding": padding})),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": [], "total": 0})),
-            _ => Reply::Is(emails(&[])),
+            "Mailbox/get" => Answer::Is(json!({"accountId": "A1", "list": [], "padding": padding})),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": [], "total": 0})),
+            _ => Answer::Is(emails(&[])),
         })
     });
     let mut asked = light(500, &["MA"]);
@@ -1511,7 +1628,8 @@ fn an_answer_is_held_to_the_size_its_request_can_need() {
     let pieces = run_fake(&big_list, &asked);
     assert_eq!(folders_read(&pieces), ["MA"]);
     assert!(
-        last(&pieces).errors[0].starts_with("Couldn't list the mailboxes on the server: too large: the answer is larger than "),
+        last(&pieces).errors[0]
+            == "Couldn't list the mailboxes on the server: the server's answer cannot be used: it is larger than the size limit set for this request",
         "{:?}",
         last(&pieces).errors
     );
@@ -1520,34 +1638,70 @@ fn an_answer_is_held_to_the_size_its_request_can_need() {
     let padding = "x".repeat(WINDOW_BYTES + 1);
     let big_window = Fake::new(move |req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Is(inbox_only()),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1, "padding": padding})),
-            _ => Reply::Is(emails(&["E1"])),
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1, "padding": padding})),
+            _ => Answer::Is(emails(&["E1"])),
         })
     });
     let pieces = run_fake(&big_window, &light(500, &[]));
     assert!(pages(&pieces).is_empty());
-    assert!(last(&pieces).errors[0].starts_with("Couldn't read the mail in 1 mailbox: too large: "), "{:?}", last(&pieces).errors);
+    assert_eq!(
+        last(&pieces).errors,
+        ["Couldn't read the mail in 1 mailbox: the server's answer cannot be used: it is larger than the size limit set for this request"]
+    );
+    // And the emails of a message list.
+    let padding = "x".repeat(DETAILS_BYTES + 1);
+    let big_details = Fake::new(move |req| {
+        serve(req, |name, args| match name {
+            "Mailbox/get" => Answer::Is(inbox_only()),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": ["E1"], "total": 1})),
+            _ if wants_headers(args) => {
+                let mut got = emails(&["E1"]);
+                got["padding"] = json!(padding);
+                Answer::Is(got)
+            }
+            _ => Answer::Is(emails(&["E1"])),
+        })
+    });
+    let pieces = run_fake(&big_details, &light(500, &[]));
+    assert_eq!(
+        last(&pieces).errors,
+        ["Couldn't read 1 message in full: the server's answer cannot be used: it is larger than the size limit set for this request"]
+    );
 }
 
 #[test]
 fn a_run_that_could_not_begin_ends_as_a_run_would_have() {
     let asked = JmapMailRequest { account: ID, email: ME.into(), session: FAKE_SESSION.into(), ..Default::default() };
-    let refused = failed_run(&asked, &Error::Auth("the server refused the credentials".into()));
+    let refused = failed_run(&asked, &Error::CredentialsRefused);
     assert_eq!((refused.account, refused.email.as_str(), refused.auth_refused, refused.partial, refused.whole), (ID, ME, true, false, false));
     assert!(refused.errors.is_empty() && refused.busy_for.is_none());
-    let busy = failed_run(&asked, &Error::Busy { status: 429, retry_after: Some(9) });
+    let busy = failed_run(&asked, &Error::Busy { retry_after: RetryAfter::parse("9") });
     assert_eq!((busy.busy_for, busy.auth_refused), (Some(9), false));
-    assert_eq!(busy.errors, ["Couldn't reach the server: the server is busy (HTTP 429)"]);
-    assert_eq!(failed_run(&asked, &Error::Busy { status: 503, retry_after: None }).busy_for, Some(30));
-    // Anything else is a line, with no address in it.
-    let down = failed_run(&asked, &Error::Io(format!("no route to {FAKE_SESSION} for ada@example.org, ask bob@example.net")));
-    assert_eq!(down.errors, ["Couldn't reach the server: network: no route to *** for ***, ask ***"]);
+    assert_eq!(busy.errors, ["Couldn't reach the server: the server is busy and asks to wait 9 s before the next attempt"]);
+    assert_eq!(failed_run(&asked, &Error::Busy { retry_after: None }).busy_for, Some(30));
+    // A date can't be waited for here: the default wait.
+    assert_eq!(failed_run(&asked, &Error::Busy { retry_after: RetryAfter::parse("Sat, 29 Oct 1994 19:43:31 GMT") }).busy_for, Some(30));
+    // Anything else is a line, with no address in it: neither one the connection knows nor another.
+    let said = format!("no route to {FAKE_SESSION} for ada@example.org, ask bob@example.net");
+    let fake = Fake::new(move |_| json_reply(500, &json!({"detail": said})));
+    let error = block_on(Connection::connect(fake, FAKE_SESSION, Credentials::bearer(TOKEN).unwrap())).unwrap_err();
+    let down = failed_run(&asked, &error);
+    assert_eq!(
+        down.errors,
+        [
+            "Couldn't reach the server: the server answered with HTTP status 500, which this program cannot act on (server said: \"no route to [redacted] for [redacted], ask [redacted]"
+        ]
+    );
     assert!(!down.auth_refused && down.busy_for.is_none() && !down.whole);
     // And it is what the run of a client that signed in would have said.
-    let fake = Fake::new(|req| if req.method == "GET" { json_reply(403, &json!({})) } else { Err(Error::Io("never".into())) });
-    let error = block_on(Client::connect(fake, FAKE_SESSION, &Auth::bearer(TOKEN))).unwrap_err();
-    assert!(failed_run(&asked, &error).auth_refused);
+    for refused in
+        [json_reply(401, &json!({})), json_reply(403, &json!({})), json_reply(403, &json!({"type": "urn:ietf:params:oauth:error:invalid_token"}))]
+    {
+        let fake = Fake::new(move |_| refused.clone());
+        let error = block_on(Connection::connect(fake, FAKE_SESSION, Credentials::bearer(TOKEN).unwrap())).unwrap_err();
+        assert!(failed_run(&asked, &error).auth_refused, "{error:?}");
+    }
 }
 
 #[test]
@@ -1557,9 +1711,9 @@ fn a_run_reads_at_most_a_thousand_mailboxes() {
         .collect();
     let fake = Fake::new(move |req| {
         serve(req, |name, _| match name {
-            "Mailbox/get" => Reply::Is(json!({"accountId": "A1", "list": list})),
-            "Email/query" => Reply::Is(json!({"accountId": "A1", "ids": [], "total": 0})),
-            _ => Reply::Is(emails(&[])),
+            "Mailbox/get" => Answer::Is(json!({"accountId": "A1", "list": list})),
+            "Email/query" => Answer::Is(json!({"accountId": "A1", "ids": [], "total": 0})),
+            _ => Answer::Is(emails(&[])),
         })
     });
     let pieces = run_fake(&fake, &everything(500));
@@ -1575,7 +1729,7 @@ fn a_run_reads_at_most_a_thousand_mailboxes() {
 
 /// A value that is what it should be in most places and anything at all in the others.
 fn mostly(valid: Value) -> impl Strategy<Value = Value> {
-    prop_oneof![9 => Just(valid), 1 => crate::tests::any_json()]
+    prop_oneof![9 => Just(valid), 1 => any_json()]
 }
 
 fn one_of(words: &[&'static str]) -> BoxedStrategy<Value> {
@@ -1584,11 +1738,11 @@ fn one_of(words: &[&'static str]) -> BoxedStrategy<Value> {
 
 /// A mailbox with what it takes to be one in some places, and anything at all in the others.
 fn mailbox_like() -> impl Strategy<Value = Value> {
-    let id = prop_oneof![4 => one_of(&["M1", "M2", "M3", "M4", "M5", "bad id", ""]), 1 => crate::tests::any_json()].boxed();
+    let id = prop_oneof![4 => one_of(&["M1", "M2", "M3", "M4", "M5", "bad id", ""]), 1 => any_json()].boxed();
     let role = prop_oneof![
         4 => one_of(&["inbox", "sent", "drafts", "trash", "junk", "archive", "all", "flagged", "important", "subscribed", "other", "INBOX"]),
         2 => Just(Value::Null),
-        1 => crate::tests::any_json(),
+        1 => any_json(),
     ];
     (id.clone(), mostly(json!("A name")), id, role, mostly(json!(7)), mostly(json!(2)))
         .prop_map(|(id, name, parent, role, total, unread)| json!({"id": id, "name": name, "parentId": parent, "role": role, "totalEmails": total, "unreadEmails": unread}))
@@ -1597,7 +1751,7 @@ fn mailbox_like() -> impl Strategy<Value = Value> {
 /// Three mailboxes, `M1` to `M3`, whose other fields are what a hostile server makes of them, and some more
 /// that may be anything.
 fn mailboxes_like() -> impl Strategy<Value = Value> {
-    let more = proptest::collection::vec(prop_oneof![5 => mailbox_like(), 1 => crate::tests::any_json()], 0..5);
+    let more = proptest::collection::vec(prop_oneof![5 => mailbox_like(), 1 => any_json()], 0..5);
     (proptest::collection::vec(mailbox_like(), 3), more).prop_map(|(mut list, more)| {
         for (n, mailbox) in list.iter_mut().enumerate() {
             if let Some(map) = mailbox.as_object_mut() {
@@ -1613,8 +1767,8 @@ fn query_like() -> impl Strategy<Value = Value> {
     // Mostly some of the emails the other answers have, sometimes ids that are none, and sometimes anything.
     let ids = prop_oneof![
         6 => proptest::sample::subsequence(vec!["E1", "E2", "E3", "E4", "E5", "E6"], 0..=6).prop_map(|ids| json!(ids)),
-        1 => proptest::collection::vec(prop_oneof![one_of(&["E1", "E2", "E1", "bad id", ""]), crate::tests::any_json()], 0..9).prop_map(Value::Array),
-        1 => crate::tests::any_json(),
+        1 => proptest::collection::vec(prop_oneof![one_of(&["E1", "E2", "E1", "bad id", ""]), any_json()], 0..9).prop_map(Value::Array),
+        1 => any_json(),
     ];
     (ids, mostly(json!(9)), mostly(json!(4)), mostly(json!(0)))
         .prop_map(|(ids, total, limit, position)| json!({"accountId": "A1", "ids": ids, "total": total, "limit": limit, "position": position}))
@@ -1622,8 +1776,7 @@ fn query_like() -> impl Strategy<Value = Value> {
 
 /// The raw header fields of an email, with names that matter, values with folds and encoded words in them, and junk.
 fn headers_like() -> impl Strategy<Value = Value> {
-    let name =
-        prop_oneof![5 => one_of(&["Subject", "From", "To", "Cc", "Date", "Message-ID", "subject", "TO", "X-Other"]), 1 => crate::tests::any_json()];
+    let name = prop_oneof![5 => one_of(&["Subject", "From", "To", "Cc", "Date", "Message-ID", "subject", "TO", "X-Other"]), 1 => any_json()];
     let value = prop_oneof![
         3 => "[ -~]{0,60}".prop_map(Value::from),
         3 => one_of(&[
@@ -1631,15 +1784,14 @@ fn headers_like() -> impl Strategy<Value = Value> {
             " Thu, 15 Oct 2026 09:30:00 +0200", " <id@example.org>", " x\r\n\r\nSubject: evil", " \u{0}\u{7f}\u{85}",
         ]),
         1 => "(.|\n){0,3000}".prop_map(Value::from),
-        1 => crate::tests::any_json(),
+        1 => any_json(),
     ];
-    let entry = prop_oneof![5 => (name, value).prop_map(|(name, value)| json!({"name": name, "value": value})), 1 => crate::tests::any_json()];
-    prop_oneof![4 => proptest::collection::vec(entry, 0..14).prop_map(Value::Array), 1 => crate::tests::any_json()]
+    let entry = prop_oneof![5 => (name, value).prop_map(|(name, value)| json!({"name": name, "value": value})), 1 => any_json()];
+    prop_oneof![4 => proptest::collection::vec(entry, 0..14).prop_map(Value::Array), 1 => any_json()]
 }
 
 fn email_like() -> impl Strategy<Value = Value> {
-    let keywords =
-        prop_oneof![9 => Just(json!({"$seen": true, "$Flagged": true, "$answered": false, "$draft": true})), 1 => crate::tests::any_json()];
+    let keywords = prop_oneof![9 => Just(json!({"$seen": true, "$Flagged": true, "$answered": false, "$draft": true})), 1 => any_json()];
     // (Whose it is depends on the mailbox that is read: M1, M2 or M3, or none that is said, or any.)
     let mailbox_ids = prop_oneof![
         3 => Just(json!({"M1": true})),
@@ -1647,14 +1799,14 @@ fn email_like() -> impl Strategy<Value = Value> {
         2 => Just(Value::Null),
         1 => Just(json!({"M0": true, "M1": true})),
         1 => Just(json!({"M3": true, "M2": true})),
-        1 => crate::tests::any_json(),
+        1 => any_json(),
     ];
-    let preview = prop_oneof![9 => "(.|\n){0,400}".prop_map(Value::from), 1 => crate::tests::any_json()];
+    let preview = prop_oneof![9 => "(.|\n){0,400}".prop_map(Value::from), 1 => any_json()];
     let received = prop_oneof![
         7 => one_of(&["2026-10-15T07:30:00Z", "2026-10-15T09:30:00+02:00", "0001-01-01T00:00:00Z", "99999-01-01T00:00:00Z"]),
         // (Text that is not ASCII, cut anywhere, is no date and no crash.)
         2 => "\\PC{0,70}".prop_map(Value::from),
-        1 => crate::tests::any_json(),
+        1 => any_json(),
         1 => Just(Value::Null),
     ];
     ((keywords, mailbox_ids, preview), (mostly(json!(1234)), received, mostly(json!(true)), headers_like())).prop_map(
@@ -1666,7 +1818,7 @@ fn email_like() -> impl Strategy<Value = Value> {
 
 /// Six emails, `E1` to `E6`, whose contents are what a hostile server makes of them.
 fn emails_like() -> impl Strategy<Value = Value> {
-    proptest::collection::vec(prop_oneof![8 => email_like(), 1 => crate::tests::any_json()], 6).prop_map(|mut list| {
+    proptest::collection::vec(prop_oneof![8 => email_like(), 1 => any_json()], 6).prop_map(|mut list| {
         for (n, email) in list.iter_mut().enumerate() {
             if let Some(map) = email.as_object_mut() {
                 map.insert("id".into(), json!(format!("E{}", n + 1)));
@@ -1681,7 +1833,7 @@ fn check_listing(listing: &FolderListing) {
     assert!(listing.folders.len() <= mailcraft_model::sync::MAX_LISTED_FOLDERS);
     let mut index: HashMap<&str, usize> = HashMap::new();
     for (n, folder) in listing.folders.iter().enumerate() {
-        assert!(valid_id(&folder.id) && !folder.name.is_empty() && folder.name.chars().count() <= mailcraft_model::MAX_NAME);
+        assert!(is_id(&folder.id) && !folder.name.is_empty() && folder.name.chars().count() <= mailcraft_model::MAX_NAME);
         assert!(!folder.name.chars().any(char::is_control) && folder.name == folder.name.trim());
         assert!(index.insert(folder.id.as_str(), n).is_none(), "an id twice");
         assert!(folder.parent.is_empty() || index.get(folder.parent.as_str()).is_some_and(|parent| *parent < n), "a parent after what is in it");
@@ -1715,10 +1867,10 @@ fn sane(pieces: &[JmapMailResult]) {
         check_listing(listing);
     }
     for page in pages(pieces) {
-        assert!(valid_id(&page.folder) && page.messages.len() <= 500);
+        assert!(is_id(&page.folder) && page.messages.len() <= 500);
         let mut seen = HashSet::new();
         for m in &page.messages {
-            assert!(valid_id(&m.server.id) && seen.insert(m.server.id.as_str()), "an id that is none, or twice");
+            assert!(is_id(&m.server.id) && seen.insert(m.server.id.as_str()), "an id that is none, or twice");
             assert_eq!(m.server.folder, page.folder);
             check_message(m);
         }
@@ -1730,17 +1882,17 @@ proptest! {
 
     #[test]
     fn whatever_the_server_answers_a_run_ends_with_what_can_be_made_of_it(
-        mailboxes in prop_oneof![7 => mailboxes_like(), 1 => crate::tests::any_json()],
-        query in prop_oneof![7 => query_like(), 1 => crate::tests::any_json()],
-        emails in prop_oneof![7 => emails_like(), 1 => crate::tests::any_json()],
+        mailboxes in prop_oneof![7 => mailboxes_like(), 1 => any_json()],
+        query in prop_oneof![7 => query_like(), 1 => any_json()],
+        emails in prop_oneof![7 => emails_like(), 1 => any_json()],
         window in 0..700u32,
     ) {
         let fake = Fake::new(move |req| {
             serve(req, |name, _| match name {
-                "Mailbox/get" => Reply::Is(mailboxes.clone()),
-                "Email/query" => Reply::Is(query.clone()),
-                "Email/get" => Reply::Is(emails.clone()),
-                _ => Reply::Missing,
+                "Mailbox/get" => Answer::Is(mailboxes.clone()),
+                "Email/query" => Answer::Is(query.clone()),
+                "Email/get" => Answer::Is(emails.clone()),
+                _ => Answer::Missing,
             })
         });
         let mut everywhere = everything(window);
@@ -1754,7 +1906,7 @@ proptest! {
     }
 
     #[test]
-    fn any_email_is_a_message_within_its_sizes(entry in prop_oneof![7 => email_like(), 1 => crate::tests::any_json()], marks in any::<[bool; 5]>()) {
+    fn any_email_is_a_message_within_its_sizes(entry in prop_oneof![7 => email_like(), 1 => any_json()], marks in any::<[bool; 5]>()) {
         let marks = Marks { read: marks[0], flagged: marks[1], answered: marks[2], forwarded: marks[3], draft: marks[4] };
         let m = message::whole("E1", "M1", &entry, marks);
         check_message(&m);
@@ -1776,7 +1928,7 @@ proptest! {
     }
 
     #[test]
-    fn any_mailbox_list_is_a_tree_or_none(list in prop_oneof![7 => mailboxes_like(), 1 => crate::tests::any_json()]) {
+    fn any_mailbox_list_is_a_tree_or_none(list in prop_oneof![7 => mailboxes_like(), 1 => any_json()]) {
         if let Some(listing) = folders::listing(&list) {
             check_listing(&listing);
         }
@@ -1786,8 +1938,8 @@ proptest! {
     fn whatever_a_server_says_of_the_session_and_the_calls_a_run_ends(noise in proptest::collection::vec(any::<u8>(), 0..80), status in prop_oneof![Just(200u16), any::<u16>()]) {
         // Not JSON, or JSON of no shape: the run ends with a line or a word, never with a panic.
         let fake = Fake::new(move |req| {
-            if req.method == "GET" { return serve(req, |_, _| Reply::Missing); }
-            Ok(Response { status, body: noise.clone(), retry_after: None })
+            if req.method() == Method::Get { return serve(req, |_, _| Answer::Missing); }
+            Ok(HttpResponse::new(status, noise.clone()).with_field("Content-Type", "application/json"))
         });
         let pieces = run_fake(&fake, &everything(500));
         let end = last(&pieces);
@@ -1970,8 +2122,10 @@ proptest! {
             }
             d.refuse_next = world.refused.iter().map(|refused| refused.then_some((500, None))).collect();
         });
-        // The mailbox that lists an email is the one with the smallest id among those it lies in.
-        let owner_of = |n: usize| world.lies(n).into_iter().min_by(|a, b| boxes[*a].cmp(&boxes[*b])).unwrap_or(0);
+        // The mailbox that lists an email is the first of those it lies in: the Inbox, then the special ones in the
+        // folder pane's order (Drafts before Sent), then the one with the smallest id.
+        let ranks = [FolderKind::Inbox, FolderKind::Sent, FolderKind::Drafts, FolderKind::Custom, FolderKind::Custom].map(rank);
+        let owner_of = |n: usize| world.lies(n).into_iter().min_by(|a, b| (ranks[*a], &boxes[*a]).cmp(&(ranks[*b], &boxes[*b]))).unwrap_or(0);
         let mut request = if world.all {
             everything(world.window)
         } else {
@@ -2019,66 +2173,4 @@ proptest! {
             prop_assert!(last(&pieces).whole && last(&pieces).errors.is_empty(), "{:?}", last(&pieces).errors);
         }
     }
-}
-
-/// Every piece of a run over the stand-in, as they come: a run for emails by their ids is no run of windows, whose
-/// shape [`well_formed`] holds.
-fn by_ids(stand_in: &StandIn, request: &JmapMailRequest) -> Vec<JmapMailResult> {
-    let client = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap();
-    let mut pieces = Vec::new();
-    block_on(sync_mail(&client, request, &AtomicBool::new(false), &mut |piece| pieces.push(piece)));
-    assert!(pieces.iter().all(|piece| (piece.account, piece.email.as_str()) == (ID, ME)));
-    pieces
-}
-
-#[test]
-fn a_run_for_emails_by_their_ids_reads_those_alone_each_into_the_mailbox_whose_window_lists_it() {
-    let (stand_in, ids) = world();
-    let older = deliver(&stand_in, &ids.apollo, "Old plans", &["$seen"], 1);
-    let newer = deliver(&stand_in, &ids.inbox, "Fresh news", &[], 2);
-    deliver(&stand_in, &ids.inbox, "Not asked for", &[], 3);
-    let mut asked = light(1, &[]);
-    asked.emails = vec![older.clone(), newer.clone(), "Enone".into(), "not an id!".into(), older.clone()];
-    has(&mut asked, &ids.inbox, &["E-whatever"]);
-    let pieces = by_ids(&stand_in, &asked);
-    // One piece with the mailboxes they lie in, then the last; no window, and nothing taken for gone.
-    let (end, rest) = pieces.split_last().unwrap();
-    assert_eq!(rest.len(), 1, "{pieces:?}");
-    assert!(!end.partial && end.errors.is_empty() && !end.whole, "a run that read no window to its end: {end:?}");
-    let pages = &rest[0].pages;
-    assert!(rest[0].partial && rest[0].progress.is_none() && rest[0].listing.is_none());
-    let found: Vec<(&str, Vec<&str>, bool)> = pages.iter().map(|page| (page.folder.as_str(), subjects(page), page.afresh)).collect();
-    let mut expected = vec![(ids.apollo.as_str(), vec!["Old plans"], false), (ids.inbox.as_str(), vec!["Fresh news"], false)];
-    expected.sort_by_key(|(folder, _, _)| folder.to_string());
-    let mut found = found;
-    found.sort_by_key(|(folder, _, _)| folder.to_string());
-    assert_eq!(found, expected);
-    // Read as a window reads an email it hasn't got: its header and its marks.
-    let old = pages.iter().flat_map(|page| &page.messages).find(|m| m.server.id == older).unwrap();
-    assert!(old.server.read && old.from.email == "zoe@example.org" && old.received > 0);
-    assert_eq!(old.server.folder, ids.apollo);
-}
-
-#[test]
-fn a_run_for_emails_by_their_ids_takes_ten_at_most_and_one_the_server_hasnt_got_is_in_no_page() {
-    let (stand_in, ids) = world();
-    let all: Vec<String> = (0..12).map(|n| deliver(&stand_in, &ids.inbox, &format!("Mail {n}"), &[], n)).collect();
-    let mut asked = light(1, &[]);
-    asked.emails = all.clone();
-    let pieces = by_ids(&stand_in, &asked);
-    let read: usize = pieces.iter().flat_map(|piece| &piece.pages).map(|page| page.messages.len()).sum();
-    assert_eq!(read, MAX_JMAP_EMAILS);
-    // With the listing, asked for when the account's folders aren't known yet: first, then the emails.
-    asked.list_folders = true;
-    asked.emails = vec![all[0].clone()];
-    let pieces = by_ids(&stand_in, &asked);
-    assert_eq!(pieces.len(), 3, "{pieces:?}");
-    assert!(pieces[0].listing.as_ref().is_some_and(|listing| listing.folders.iter().any(|f| f.id == ids.inbox)) && pieces[0].pages.is_empty());
-    assert_eq!(pieces[1].pages.iter().map(|page| page.messages.len()).sum::<usize>(), 1);
-    asked.list_folders = false;
-    // None the server has.
-    asked.emails = vec!["Enone".into()];
-    let pieces = by_ids(&stand_in, &asked);
-    assert_eq!(pieces.len(), 1, "the last piece alone: {pieces:?}");
-    assert!(pieces[0].pages.is_empty() && pieces[0].errors.is_empty());
 }

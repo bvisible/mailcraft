@@ -15,12 +15,12 @@ const fn row(at: &'static str, family: Family, english: &'static str, reasons: &
 }
 
 // The files that write the sentences, from the workspace's root.
-const JMAP: &str = "crates/jmap/src/lib.rs";
-const HTTP: &str = "crates/jmap/src/http.rs";
-const MAIL: &str = "crates/jmap/src/mail.rs";
-const UP: &str = "crates/jmap/src/mail/up.rs";
-const URL: &str = "crates/jmap/src/url.rs";
-const SEND: &str = "crates/jmap/src/send.rs";
+const JMAP: &str = "crates/jmap-fork/src/lib.rs";
+const HTTP: &str = "crates/jmap-fork/src/http.rs";
+const MAIL: &str = "crates/jmap-fork/src/mail.rs";
+const UP: &str = "crates/jmap-fork/src/mail/up.rs";
+const URL: &str = "crates/jmap-fork/src/url.rs";
+const SEND: &str = "crates/jmap-fork/src/send.rs";
 const ENGINE: &str = "crates/engine/src/cmd/jmap_mail.rs";
 const SENDING: &str = "crates/engine/src/cmd/jmap_send.rs";
 const CHANGES: &str = "crates/engine/src/cmd/jmap_up.rs";
@@ -36,13 +36,13 @@ const CONTACTS: &str = "crates/engine/src/cmd/remote_contacts/written.rs";
 const MEETING: &str = "crates/engine/src/cmd/calendar/meeting.rs";
 const REMOTE: &str = "crates/engine/src/cmd/remote.rs";
 const NOTES: &str = "crates/engine/src/cmd/notes/words.rs";
-const NOTES_JOB: &str = "crates/jmap/src/pim/notes.rs";
-const PIM: &str = "crates/jmap/src/pim.rs";
-const CALENDARS: &str = "crates/jmap/src/pim/calendars.rs";
-const CARDS: &str = "crates/jmap/src/pim/contacts.rs";
-const EVENTS_UP: &str = "crates/jmap/src/pim/push.rs";
-const CARDS_UP: &str = "crates/jmap/src/pim/contacts/push.rs";
-const WRITE: &str = "crates/jmap/src/pim/write.rs";
+const NOTES_JOB: &str = "crates/jmap-fork/src/pim/notes.rs";
+const PIM: &str = "crates/jmap-fork/src/pim.rs";
+const CALENDARS: &str = "crates/jmap-fork/src/pim/calendars.rs";
+const CARDS: &str = "crates/jmap-fork/src/pim/contacts.rs";
+const EVENTS_UP: &str = "crates/jmap-fork/src/pim/push.rs";
+const CARDS_UP: &str = "crates/jmap-fork/src/pim/contacts/push.rs";
+const WRITE: &str = "crates/jmap-fork/src/pim/write.rs";
 const BOOKS: &str = "crates/engine/src/cmd/remote_contacts.rs";
 const CALENDAR: &str = "crates/engine/src/cmd/calendar.rs";
 const KEPT_HERE: &str = "crates/engine/src/cmd/kept_here.rs";

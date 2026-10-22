@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! The mailboxes of a server as the folders of the engine: roles, names, ids, the tree and its limits.
 
 use std::collections::HashMap;
@@ -127,8 +126,8 @@ fn an_id_that_is_none_passes_the_mailbox_over_and_an_id_twice_is_one_mailbox() {
         json!({"id": 5, "name": "A number"}),
         json!(null),
         json!("a string"),
-        mailbox(&"i".repeat(513), "Too long", None, None),
-        mailbox(&"i".repeat(512), "Long enough", None, None),
+        mailbox(&"i".repeat(256), "Too long", None, None),
+        mailbox(&"i".repeat(255), "Long enough", None, None),
     ];
     let listing = listing(&answer(list)).unwrap();
     assert_eq!(listing.folders.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["One", "Long enough"]);

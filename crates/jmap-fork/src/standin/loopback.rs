@@ -8,7 +8,7 @@
 //!
 //! ```text
 //! MAILCRAFT_STANDIN_PORT=8790 MAILCRAFT_STANDIN_TODAY=2026-10-20 \
-//!   cargo test -p mailcraft-jmap --features stand-in -- --ignored serve_the_stand_in_on_loopback --nocapture
+//!   cargo test -p mailcraft-jmap-fork --features stand-in -- --ignored serve_the_stand_in_on_loopback --nocapture
 //! ```
 //!
 //! It listens on `127.0.0.1` alone (the port from `MAILCRAFT_STANDIN_PORT`, 8790 when unset; the demo around the day

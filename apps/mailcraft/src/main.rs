@@ -43,6 +43,8 @@ mod graph_mail_flow;
 mod graphics;
 mod install;
 mod logging;
+#[cfg(target_os = "macos")]
+mod menubar;
 mod opened_files;
 mod picture_cache;
 mod quit;
@@ -52,8 +54,11 @@ mod self_update;
 mod shared_send_flow;
 mod single_instance;
 #[cfg(test)]
+mod token_renew_flow;
+#[cfg(test)]
 mod update_flow;
 mod updater;
+mod wipe;
 
 use std::path::PathBuf;
 
@@ -69,7 +74,7 @@ use mailcraft_ui_egui::{
 /// The app, the restored window geometry until the first frame has checked it, the control
 /// server's key file (removed on exit), the file dialogs the app asked for, the hold on the
 /// mailbox that later starts hand their files and links to, a copy that updates itself's part in
-/// that (installing at exit) and, on macOS, the files opened from Finder.
+/// that (installing at exit) and, on macOS, the files opened from Finder and the menu bar.
 struct App(
     MailApp,
     Option<WindowGeometry>,
@@ -78,6 +83,7 @@ struct App(
     Option<single_instance::Guard>,
     Option<HostUpdates>,
     #[cfg(target_os = "macos")] fmv_macos_events::Inbox,
+    #[cfg(target_os = "macos")] Option<menubar::MenuBar>,
 );
 
 /// A copy that updates itself (`self_update`): where it keeps what it needs, what it is, and what
@@ -118,6 +124,11 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
+        // The menu bar's choices run before the frame's own work (macOS).
+        #[cfg(target_os = "macos")]
+        if let Some(bar) = &mut self.7 {
+            bar.pump(&mut self.0, ctx);
+        }
         self.0.logic(ctx);
         self.3.show(frame);
         let prev = self.0.ui.window;
@@ -157,7 +168,7 @@ impl eframe::App for App {
             opened.clear();
         }
         // What is still to be noted of the pictures kept on disk.
-        if let Some(pictures) = PICTURES.get() {
+        if let Some(pictures) = PICTURES.get().filter(|_| !self.0.data_removed) {
             pictures.flush();
         }
         if let Some(key_file) = &self.2 {
@@ -168,7 +179,9 @@ impl eframe::App for App {
         }
         // A new version downloaded and checked is installed now (and started, when the owner
         // pressed Restart to update), or the version before is put back (`self_update`).
-        if let Some(updates) = &self.5 {
+        // (Not once MailCraft's data was removed: that would write into the folder again, and
+        // could install and start another version after the owner asked for everything to go.)
+        if let Some(updates) = self.5.as_ref().filter(|_| wipe::may_install_at_exit(self.0.data_removed)) {
             let running = env!("CARGO_PKG_VERSION");
             self_update::settle(&updates.folders, running);
             if let Some(what) = self.0.update_on_exit() {
@@ -285,7 +298,8 @@ fn saved_window() -> Option<WindowGeometry> {
 }
 
 fn save_prefs(app: &MailApp) {
-    if !prefs_enabled() {
+    // Its data was removed from this computer (File › Info): nothing is written back.
+    if !prefs_enabled() || app.data_removed {
         return;
     }
     if let Some(p) = prefs_path() {
@@ -767,7 +781,21 @@ fn graph_sending_with(mut request: GraphRequest, zone: &str, renew: Renew<'_>, r
         // window as each comes, or put together for a caller that takes it in at once.
         let mut result: Option<mailcraft_model::sync::GraphMailResult> = None;
         let (cancel, pieces) = (&request.cancel, &request.mail_pieces);
-        graph::sync_mail(&access, mail, cancel, &mut |piece| match pieces {
+        // When Graph stops taking the token part-way (it ran out during a long run, or while the
+        // computer slept), one new one from the refresh token, the newest there is (#306).
+        let renewed: std::cell::RefCell<Option<mailcraft_model::sync::Tokens>> = std::cell::RefCell::new(None);
+        let refresh = out.tokens.as_ref().map(|t| t.refresh.clone()).filter(|r| !r.is_empty()).unwrap_or_else(|| request.refresh.clone());
+        let again = || {
+            let got = if mail.shared && !mail.sends.is_empty() {
+                renew_send(&request.oauth, &refresh)?
+            } else {
+                renew(&request.oauth, &refresh, request.favorites_scopes)?
+            };
+            let access = got.tokens.access.clone();
+            *renewed.borrow_mut() = Some(got.tokens);
+            Ok(access)
+        };
+        graph::sync_mail_renewing(&access, &again, mail, cancel, &mut |piece| match pieces {
             Some(to) => {
                 let summary = (piece.listing.as_ref().map(|l| l.folders.len()), piece.errors.len());
                 // Nobody is listening any more (the window closed): stop.
@@ -793,6 +821,11 @@ fn graph_sending_with(mut request: GraphRequest, zone: &str, renew: Renew<'_>, r
                 result.errors.len()
             );
             out.mail = Some(result);
+        }
+        // A token renewed part-way is the one kept, and the one the rest of the run shows.
+        if let Some(tokens) = renewed.into_inner() {
+            access = tokens.access.clone();
+            out.tokens = Some(tokens);
         }
     }
     // What was made, moved, changed or deleted in the calendar here goes up before the calendar
@@ -1032,6 +1065,7 @@ fn services(
 ) -> Services {
     let pictures_ctx = ctx.clone();
     let pictures_kept = kept_pictures.clone();
+    let wipe_pictures = kept_pictures.clone();
     let busy_ctx = ctx.clone();
     let check_ctx = ctx.clone();
     let approval_ctx = ctx.clone();
@@ -1120,6 +1154,12 @@ fn services(
         open_file: opened_files()
             .map(|opened| Box::new(move |name: &str, bytes: &[u8]| opened.open(name, bytes)) as Box<dyn Fn(&str, &[u8]) -> Result<(), String>>),
         secrets: secrets::store(),
+        // File › Info › Remove MailCraft's data from this computer (#177): the folders this
+        // program works in, and no others. Not offered by a run that keeps nothing.
+        data_wipe: prefs_enabled().then(|| {
+            Box::new(wipe::Wipe { roots: wipe::Roots::of_this_program(), pictures: wipe_pictures })
+                as Box<dyn mailcraft_ui_egui::data_removal::DataWipe>
+        }),
         // Desktop alerts, through the system's notifications (`alerts`).
         alert: alerts::host(alert_ctx),
         clipboard: clipboard::board(),
@@ -1154,6 +1194,9 @@ fn update_download(
     Box::new(move |release: mailcraft_model::update::Release| {
         let updates = updates.clone();
         background(&ctx, "update download", move || {
+            if wipe::begun() {
+                return Err("MailCraft's data was removed from this computer".to_string());
+            }
             let dir = updates.folders.updates();
             // The SHA-256 noted is the signed list's, not the file's read back: what is
             // installed is checked against what the release signed.
@@ -1293,7 +1336,10 @@ fn main() -> eframe::Result {
             let folders = updates.folders.clone();
             let _ = std::thread::Builder::new().name("update settle".into()).spawn(move || {
                 std::thread::sleep(self_update::SETTLED_AFTER);
-                self_update::settle(&folders, env!("CARGO_PKG_VERSION"));
+                // Not into a folder MailCraft's data was removed from (#177).
+                if !wipe::begun() {
+                    self_update::settle(&folders, env!("CARGO_PKG_VERSION"));
+                }
             });
             start
         }
@@ -1430,12 +1476,21 @@ fn main() -> eframe::Result {
             if let Some(guard) = &guard {
                 guard.wake(&cc.egui_ctx);
             }
-            // macOS: an app menu whose Quit (⌘Q) asks the window to close, so a message being
+            // macOS: the menu bar (File, Edit, View, Folder, Message, Window, Help; every item a
+            // command), whose app menu's Quit (Cmd+Q) asks the window to close, so a message being
             // written is asked about first (winit's own quits without asking). Here, after winit
-            // has built its menu. Elsewhere it does nothing.
-            if let Err(e) = craft_quit::install_app_menu(&cc.egui_ctx, "MailCraft") {
-                log::warn!("the app menu couldn't be set up, so Quit won't ask about unsaved work: {e}");
-            }
+            // has built its menu. If it can't be made, the smaller app menu does the asking.
+            #[cfg(target_os = "macos")]
+            let menu_bar = match menubar::install(&cc.egui_ctx, &app) {
+                Ok(bar) => Some(bar),
+                Err(e) => {
+                    log::warn!("the menu bar couldn't be set up: {e}");
+                    if let Err(e) = craft_quit::install_app_menu(&cc.egui_ctx, "MailCraft") {
+                        log::warn!("the app menu couldn't be set up, so Quit won't ask about unsaved work: {e}");
+                    }
+                    None
+                }
+            };
             Ok(Box::new(App(
                 app,
                 restored,
@@ -1445,6 +1500,8 @@ fn main() -> eframe::Result {
                 updates,
                 #[cfg(target_os = "macos")]
                 apple_events.connect(&cc.egui_ctx),
+                #[cfg(target_os = "macos")]
+                menu_bar,
             )))
         }),
     )

@@ -12,7 +12,9 @@
 //! window is 1440×900 pt at 2× (override with `{"width": w, "height": h}` and `{"scale": s}` on
 //! any line; `{"scale": 1}` is a screen at 100 %, where the fonts' hinting shows) and opens the
 //! sample mailbox, as of a fixed Wednesday afternoon so shots compare, unless the first line is
-//! `{"empty": true}`. The computer is in UTC unless a line says where it is (`{"zone":
+//! `{"empty": true}`. `{"overlayScrollBars": true}` (or `false`) on any line has the message
+//! list's scroll bar float over the rows as on a Mac (or keep its lane as elsewhere), whatever
+//! the computer the shot is taken on. The computer is in UTC unless a line says where it is (`{"zone":
 //! "America/Chicago"}`: the calendar is then shown in that zone, and `view.timeZone` can show it
 //! in another).
 //!
@@ -202,6 +204,15 @@ impl mailcraft_ui_egui::SecretStore for StandInSecrets {
         Ok(())
     }
     fn delete(&self, _: &str) {}
+}
+
+/// Removing MailCraft's data: nothing is kept by this window, so nothing is removed.
+struct StandInWipe;
+
+impl mailcraft_ui_egui::data_removal::DataWipe for StandInWipe {
+    fn erase(&self, _: Option<&std::path::Path>) -> mailcraft_ui_egui::data_removal::WipeReport {
+        Default::default()
+    }
 }
 
 impl Host {
@@ -476,6 +487,8 @@ fn main() {
     let mut services = if stood_in { stand_in(&host) } else { Services::default() };
     // The system's notifications, always (File › Options shows its switches where there are some).
     services.alert = Some(Box::new(StandInAlerts(host.clone())));
+    // Remove MailCraft's data (#177): offered, and removes nothing here.
+    services.data_wipe = Some(Box::new(StandInWipe));
     // The organisation has turned updating by itself off for the computer.
     services.updates_turned_off_by_organisation = lines.iter().any(|l| l.pointer("/host/updates").and_then(|v| v.as_str()) == Some("organisation"));
     // A newly installed version that didn't start twice running, with the one before it kept.
@@ -488,6 +501,9 @@ fn main() {
     app.autosave = false;
     // (With a host that answers, nothing is to happen by itself: what a shot shows, its script asked for.)
     app.auto_sync = !stood_in;
+    if let Some(overlay) = lines.iter().find_map(|l| l.get("overlayScrollBars").and_then(|v| v.as_bool())) {
+        app.overlay_scroll_bars = overlay;
+    }
     let w = lines.iter().find_map(|l| l.get("width").and_then(|v| v.as_f64())).unwrap_or(1440.0) as f32;
     let h = lines.iter().find_map(|l| l.get("height").and_then(|v| v.as_f64())).unwrap_or(900.0) as f32;
     let scale = lines.iter().find_map(|l| l.get("scale").and_then(|v| v.as_f64())).unwrap_or(2.0).clamp(0.5, 4.0) as f32;

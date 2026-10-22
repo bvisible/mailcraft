@@ -9,7 +9,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `8ec913a` (upstream `main` on 2026-10-21 at noon: 0.6.0; the interface in French, German, Spanish and Italian by
+- `1ace451` (upstream `main` on 2026-10-22 in the afternoon: `mailcraft-jmap` in `crates/jmap`, the JMAP client this
+  fork offered upstream, its core written afresh in a clean room (M6 2/6, #278); messages arranged by size (#273); an
+  account's local copy wiped when it goes, and File › Info › Remove MailCraft's Data from This Computer (#177); a search
+  box in Move to Folder and the other folder menus (#74); padding, margins, lines, rounded corners and line height from
+  a message's inline styles (#71); Show in Groups and a single-line message list (#214); New Appointment, Meeting or All
+  Day Event from a right-click on a picked range of the calendar (#261); a Microsoft account's Send/Receive made
+  quicker and its Inbox checked every minute (#276, #305, #306); Report a Problem (#304); the macOS menu bar and its
+  floating scroll bars (#253)), merged into `version-15` on 2026-10-22. Upstream's `crates/jmap` is upstream's whole:
+  its core (addresses, HTTP without I/O, the session and its client, ids, what is hidden of a server's words) is not
+  the one this fork's JMAP client was written over, and that client also sends, tells a server of the changes made
+  here and keeps calendars, contacts and notes, which upstream's crate doesn't yet. So the fork's client, as it was in
+  `crates/jmap`, is now the fork's own crate `crates/jmap-fork` (`mailcraft-jmap-fork`, layer 3 beside upstream's,
+  a marked line of `xtask/src/layers.rs`), and the apps take it under the name `mailcraft-jmap` (a marked line of the
+  workspace's `Cargo.toml`), until its parts are written over upstream's crate; upstream's is built and tested as a
+  member of the workspace and used by nothing of the fork's. Report a Problem goes where Copy Diagnostics went: not in
+  a hosting page's tab (`host_diagnostics.rs`).
+- Before it: `8ec913a` (upstream `main` on 2026-10-21 at noon: 0.6.0; the interface in French, German, Spanish and Italian by
   upstream's own catalogues, the crate `mailcraft-i18n` with its `.po` files in `crates/i18n/po/`, the `tl!`, `tlc!`
   and `tln!` macros, `cargo xtask i18n` and its `--check`, the dates written by `crates/ui-egui/src/dates.rs` and the
   language followed by the week and the clock (`MailApp::apply_language`, `Services::system_locale`, #255, #258, #259,
@@ -59,16 +75,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   disabled on this fork.
 - `.github/workflows/neoffice-web.yml`: the browser build by upstream's packaging script, kept as an artifact or published
   as a release (`web-<version>-<short sha>`).
-- `crates/jmap/` (`mailcraft-jmap`, layer 3): JMAP (RFC 8620 and 8621) without sockets or browser APIs, so that mail can be
-  read over HTTPS in the browser, where IMAP and SMTP can't go. An async client over an `Http` trait, the address helpers,
-  `sync_mail` (an account's mailboxes and the newest messages of each, for the engine, after the changes made
-  here have been told to the server with `Email/set`), the raw octets of a message, fetched by its email id
-  (`fetch`), the sending of what waits in an account's Outbox and the filing of its drafts on the server (`send`,
-  with a run's part of it in `mail/outgoing`), and an in-process server for the tests of the crates that sit on it
-  (the `stand-in` feature). A crate with no upstream equivalent, written so that it can be offered upstream: nothing
-  in it names this fork's products. Its URL and HTTP helpers (`src/url.rs`, `src/http.rs`) and the browser build's
-  `fetch` transport (`apps/mailcraft-web/src/fetch.rs`, `fetch_rules.rs`) are written fresh from RFC 3986, 6570, 7617,
-  6750, 8620 and 9110 and the WHATWG URL and Fetch Standards.
+- `crates/jmap-fork/` (`mailcraft-jmap-fork`, layer 3, taken by the apps under the name `mailcraft-jmap`): this fork's
+  JMAP client (RFC 8620 and 8621) without sockets or browser APIs, so that mail can be read over HTTPS in the browser,
+  where IMAP and SMTP can't go: an async client over an `Http` trait, the address helpers, `sync_mail` (an account's
+  mailboxes and the newest messages of each, for the engine, after the changes made here have been told to the server
+  with `Email/set`), the raw octets of a message, fetched by its email id (`fetch`), the sending of what waits in an
+  account's Outbox and the filing of its drafts on the server (`send`, with a run's part of it in `mail/outgoing`), and
+  an in-process server for the tests of the crates that sit on it (the `stand-in` feature). It was `crates/jmap` until
+  upstream took its own there (#278, see the base above); its files are as they were, but for the crate's name and the
+  `counted` of a listed folder that upstream's model now asks for (#276). Its parts move over upstream's crate one by
+  one, each offered upstream as it goes, and the crate goes when the last has.
 - Nora, the assistant of the Neoffice server, when a page that hosts the browser build reaches her (nothing of her
   anywhere else): `crates/ui-egui/src/nora.rs` and `nora/` (her answers read as a stranger's bytes, what she is given,
   seven window commands `ui.nora*` that agents may never run, her band under the subject of a message being written,
@@ -110,7 +126,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`crates/ui-egui`'s `Services::system_locale`, from `apps/mailcraft-web/src/host.rs`) before the browser's (`web.rs`).
 - An online meeting in a JMAP account's calendar, made by its server (a room of its own, asked for by a virtual
   location whose address is `urn:x-online-meeting:new`, its link read back from the event's `virtualLocations`): the
-  reading and the writing are in `crates/jmap/` (`pim/jscalendar.rs`, `pim/calendars.rs`, `pim/write.rs`,
+  reading and the writing are in `crates/jmap-fork/` (`pim/jscalendar.rs`, `pim/calendars.rs`, `pim/write.rs`,
   `pim/push.rs`, and the stand-in's rooms in `standin/pim.rs` and `standin/pim/set.rs`); the marked hunks are in
   `crates/model/src/calendar.rs` (`Calendar::online_service`: Teams where allowed, else the server's own), the engine's
   `cmd/calendar.rs` (a plain calendar refuses one only where its server makes none, and a meeting made online here takes
@@ -122,8 +138,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - Notes, the mailbox's own and those of a server that keeps them (the hosting page's server, whose notes are the
   person's: one place for notes): the model (`crates/model/src/note.rs`), the commands, their refusals and what an agent
   may do (`crates/engine/src/cmd/notes.rs` and `notes/`, among them `notes/server.rs`, what is noted for the server and
-  taken back from it), the job's part (`crates/jmap/src/pim/notes.rs`, its capability's name the one place the crate
-  names that server) and the stand-in's notes (`crates/jmap/src/standin/notes.rs`), the window's job
+  taken back from it), the job's part (`crates/jmap-fork/src/pim/notes.rs`, its capability's name the one place the crate
+  names that server) and the stand-in's notes (`crates/jmap-fork/src/standin/notes.rs`), the window's job
   (`crates/ui-egui/src/jmap_notes.rs`), the module (`notes_view.rs`, `ribbon/notes_home.rs`), the browser's replay
   of a job done again (`apps/mailcraft-web/src/jmap_notes.rs`) and its question before a hosting page is left
   (`hosted/leave.rs`), and their tests (`apps/mailcraft-cli/tests/jmap_notes.rs`, `apps/mailcraft-web/src/jmap_notes_flow_tests.rs`).
@@ -192,7 +208,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   parameter it doesn't take or an id that is no number nor a short text is refused. A message `message.open` names
   that no window has brought yet (a link from a notification) is read from its server by its id alone, and the
   answer waits for it, 30 seconds at most: `JmapMailRequest::emails` (a marked hunk of `crates/model/src/sync/jmap.rs`,
-  ten at most), a run of `crates/jmap/src/mail.rs` that lists the mailboxes and reads those emails and nothing else,
+  ten at most), a run of `crates/jmap-fork/src/mail.rs` that lists the mailboxes and reads those emails and nothing else,
   each into the mailbox whose window lists it, and `apply_jmap_opened` (`crates/engine/src/cmd/jmap_mail.rs`), which
   takes them in as no Send/Receive (the account's progress and status stay as they were, nothing is taken for gone). The browser's part (the flag,
   the listener, the posts, the throttle, the version with the commit the web build's workflow knows) is
@@ -200,7 +216,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `Cargo.toml` (the `MessageEvent` feature of `web-sys`); the refusals' French lines are in
   `crates/i18n/po/neoffice/fr.po`.
 - The engine's and the JMAP crate's sentences about a JMAP account's calendars and address books, read back in the
-  interface's language by `run_words`: what a job says went wrong (`crates/jmap/src/pim.rs`, `pim/calendars.rs`,
+  interface's language by `run_words`: what a job says went wrong (`crates/jmap-fork/src/pim.rs`, `pim/calendars.rs`,
   `pim/contacts.rs`), why a server didn't take a change (`pim/push.rs`, `pim/contacts/push.rs`, `pim/write.rs`), what
   became of a change of an event or a contact (`crates/engine/src/cmd/remote.rs`, `cmd/remote_contacts/written.rs`)
   and the engine's refusals of their items (`cmd/remote_contacts.rs`, `cmd/calendar.rs`, `cmd/kept_here.rs`,
@@ -261,13 +277,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   and its tests, `Services::modules`, the layout's and `run`'s hunks in `lib.rs`, the button's in `nav.rs`). The
   browser's part: `apps/mailcraft-web/src/host.rs` (`modules`, the contract in its comment), `web.rs`, and
   `host_menu.rs` (the page's messages heard). Without `modules` nothing changes.
-- No Copy Diagnostics in a tab whose mailboxes a hosting page handed over (Neoffice's desk at `/app/neomail`,
-  Neodesk's NeoMail window, `Services::jmap_host_credentials`): the pill at the right of the title bar, beside the
-  account picture, and the button of the Help tab are for testers' problem reports on MailCraft's repository, of no use
-  to the people reading their mail there, and the browser keeps no log to copy (`crates/ui-egui/src/host_diagnostics.rs`
-  and its tests; the pill's hunk in `chrome.rs`, the Help tab's in `ribbon.rs`, `describe`). The command
-  `ui.copyDiagnostics` stays, as upstream has it; Search Commands never listed it, and no shortcut runs it. A window
-  without a hosting page, the desktop's among them, keeps both.
+- No Copy Diagnostics and no Report a Problem in a tab whose mailboxes a hosting page handed over (Neoffice's desk at
+  `/app/neomail`, Neodesk's NeoMail window, `Services::jmap_host_credentials`): the two pills at the right of the title
+  bar, beside the account picture, and the two buttons of the Help tab are for testers' problem reports to MailCraft's
+  makers (its repository, or a message to them), of no use to the people reading their mail there, and the browser
+  keeps no log to copy (`crates/ui-egui/src/host_diagnostics.rs` and its tests; the pills' hunk in `chrome.rs`, the
+  Help tab's in `ribbon.rs`, `describe`). The commands `ui.copyDiagnostics` and `ui.reportProblem` stay, as upstream
+  has them; Search Commands lists neither, and no shortcut runs them. A window without a hosting page, the desktop's
+  among them, keeps all four.
 - This file.
 
 ## What cannot carry a comment
@@ -275,10 +292,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap` package (0.6.0, the workspace's version, with its dependencies on `mailcraft-mime`,
-  `mailcraft-model` and `mailcraft-time`), the dependencies on it of the web app and, for its tests, the command line,
-  and nothing else. (The newer `rustls-webpki` and `webpki-roots` this fork took for RUSTSEC-2026-0381 and 0382 came
-  with upstream's 0.6.0 and are upstream's lines now.)
+- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.6.0, the workspace's version, with its dependencies on
+  `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
+  for its tests), and the dependencies on it of the web app and, for its tests, the command line; nothing else
+  (upstream's `mailcraft-jmap` has upstream's lines).
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
   `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's

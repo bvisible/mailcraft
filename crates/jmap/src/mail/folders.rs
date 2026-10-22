@@ -1,6 +1,5 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! The mailboxes a server lists (`Mailbox/get`, RFC 8621 §2) as the folders the engine takes in.
 //!
 //! - **Kind.** A mailbox's role gives the folder its kind: `inbox`, `sent`, `drafts`, `trash` (Deleted),
@@ -27,7 +26,7 @@ use mailcraft_model::sync::{FolderListing, GraphFolder, MAX_LISTED_FOLDERS};
 use mailcraft_model::{FolderKind, clean_name};
 use serde_json::Value;
 
-use crate::valid_id;
+use crate::Id;
 
 /// Deepest a mailbox may lie in the tree (the model's own limit for a folder tree).
 pub(super) const MAX_DEPTH: usize = 32;
@@ -82,7 +81,7 @@ pub(super) fn listing_with_counts(answer: &Value) -> Option<(FolderListing, Hash
             },
             None => FolderKind::Custom,
         };
-        let id = entry.get("id").and_then(Value::as_str).filter(|id| valid_id(id));
+        let id = entry.get("id").and_then(Value::as_str).filter(|id| Id::new(id).is_ok());
         let name = entry.get("name").and_then(Value::as_str).and_then(clean_name);
         let (Some(id), Some(name)) = (id, name) else {
             complete = false;
@@ -96,7 +95,7 @@ pub(super) fn listing_with_counts(answer: &Value) -> Option<(FolderListing, Hash
         }
         // One mailbox to a role.
         let kind = if kind != FolderKind::Custom && !roles.insert(kind) { FolderKind::Custom } else { kind };
-        let parent = entry.get("parentId").and_then(Value::as_str).filter(|id| valid_id(id)).unwrap_or_default();
+        let parent = entry.get("parentId").and_then(Value::as_str).filter(|id| Id::new(id).is_ok()).unwrap_or_default();
         taken.push(GraphFolder {
             id: id.to_string(),
             parent: parent.to_string(),
@@ -104,6 +103,8 @@ pub(super) fn listing_with_counts(answer: &Value) -> Option<(FolderListing, Hash
             kind,
             total: count(entry, "totalEmails"),
             unread: count(entry, "unreadEmails"),
+            // Only Graph's delta passes folders over by their counts (#276).
+            counted: false,
         });
     }
     // (A list with nothing in it is no listing of the account's mailboxes.)

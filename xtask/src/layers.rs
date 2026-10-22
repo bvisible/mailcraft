@@ -45,8 +45,10 @@ pub const TABLE: &[(&str, Class)] = &[
     ("ical", Class::Layer(2)),
     ("vcard", Class::Layer(2)),
     ("proto", Class::Layer(3)),
-    // //// Neoffice — the JMAP client sits beside `proto` and `net`: no sockets, no browser APIs, builds for wasm.
+    // JMAP over any HTTP, beside `proto` and `net`: no sockets and no browser APIs, so it builds for the browser too.
     ("jmap", Class::Layer(3)),
+    // //// Neoffice — the fork's JMAP client (crates/jmap-fork), at the same place, for the same reasons.
+    ("jmap-fork", Class::Layer(3)),
     ("net", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("mcp", Class::Layer(5)),
@@ -346,7 +348,7 @@ mod tests {
     fn the_browsers_apis_are_for_the_apps_alone() {
         for dep in ["web-sys", "wasm-bindgen", "wasm-bindgen-futures"] {
             assert!(check(&[c("mailcraft-web", &[(dep, Normal, false)])]).is_empty(), "{dep}");
-            for krate in ["mailcraft-jmap", "mailcraft-engine", "mailcraft-ui-egui", "mailcraft-time"] {
+            for krate in ["mailcraft-jmap", "mailcraft-jmap-fork", "mailcraft-engine", "mailcraft-ui-egui", "mailcraft-time"] {
                 let v = check(&[c(krate, &[(dep, Normal, false)])]);
                 assert!(matches!(&v[..], [Violation::AppOnly { dep: d, .. }] if d == dep), "{krate} {dep}: {v:?}");
             }
@@ -355,7 +357,15 @@ mod tests {
         assert!(check(&[c("mailcraft-time", &[("js-sys", Normal, false)])]).is_empty());
     }
 
-    // //// Neoffice — the JMAP client is registered at layer 3, beside `proto` and `net`.
+    // //// Neoffice — the fork's JMAP client sits where upstream's does, under the same rules.
+    #[test]
+    fn the_forks_jmap_client_sits_at_layer_3_too() {
+        assert_eq!(classify("mailcraft-jmap-fork"), Some(Class::Layer(3)));
+        let v = check(&[c("mailcraft-jmap-fork", &[("mailcraft-net", Normal, true)])]);
+        assert!(matches!(v[..], [Violation::Upward { from: 3, to: 3, .. }]), "{v:?}");
+        assert!(check(&[c("mailcraft-jmap-fork", &[("mailcraft-model", Normal, true)])]).is_empty());
+    }
+
     #[test]
     fn the_jmap_client_sits_at_layer_3() {
         assert_eq!(classify("mailcraft-jmap"), Some(Class::Layer(3)));

@@ -9,7 +9,7 @@ use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll, Waker};
 
-use mailcraft_jmap::http::{Auth, Error, Http, Request, Response, Result, retry_after};
+use mailcraft_jmap_fork::http::{Auth, Error, Http, Request, Response, Result, retry_after};
 
 const SECRET: &str = "SeCrEt-ToKeN";
 

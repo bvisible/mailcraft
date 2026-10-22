@@ -1,13 +1,14 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
 //! The stand-in held to the standard, and a client held to the stand-in.
 
 use proptest::prelude::*;
 use serde_json::json;
 
 use super::*;
-use crate::{Auth, Client, block_on, result_of};
+use crate::connection::tests::any_json;
+use crate::test_support::made_secret;
+use crate::{ApiRequest, CallFailure, Connection, Credentials, Error, block_on};
 
 fn mail(subject: &str) -> Vec<u8> {
     format!("From: Zoe Park <zoe@example.org>\r\nTo: {USER}\r\nSubject: {subject}\r\nMessage-ID: <{subject}@example.org>\r\n\r\nHello about {subject}.\r\n")
@@ -36,28 +37,54 @@ struct Ids {
     third: String,
 }
 
-fn connect(stand_in: &StandIn) -> Client<StandIn> {
-    block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN))).unwrap()
+fn connect(stand_in: &StandIn) -> Connection<StandIn> {
+    connect_with(stand_in, Credentials::bearer(TOKEN).unwrap()).unwrap()
+}
+
+fn connect_with(stand_in: &StandIn, credentials: Credentials) -> Result<Connection<StandIn>, Error> {
+    block_on(Connection::connect(stand_in.clone(), SESSION, credentials))
+}
+
+/// The answers to `calls` (each a method and its arguments), sent in one request of mail's, in order.
+fn run_calls(connection: &Connection<StandIn>, calls: Vec<(&str, Value)>) -> Result<Vec<Result<Value, CallFailure>>, Error> {
+    let mut request = ApiRequest::new();
+    request.using(MAIL).unwrap();
+    let ids: Vec<_> =
+        calls.into_iter().map(|(method, args)| (request.add_call(method, args.as_object().cloned().unwrap()).unwrap(), method)).collect();
+    let mut answers = block_on(connection.call(&request, connection.client().redactor()))?;
+    Ok(ids.iter().map(|(call, method)| answers.take_named(call, method).map(Value::Object)).collect())
+}
+
+/// A reference to what the call `call` of the same request answered (RFC 8620 §3.7).
+fn reference_to(call: usize, name: &str, path: &str) -> Value {
+    json!({"resultOf": format!("c{call}"), "name": name, "path": path})
 }
 
 fn bearer() -> String {
     format!("Bearer {TOKEN}")
 }
 
-/// A request to the API, signed in with the token, and what it was answered.
-fn post(stand_in: &StandIn, headers: &[(&str, &str)], body: &[u8]) -> Response {
-    let mut req = Request::post("https://jmap.standin.example/jmap/api", "application/json", body.to_vec(), 1 << 20);
-    for (name, value) in headers {
-        req = req.header(name, value);
-    }
-    block_on(stand_in.send(req)).unwrap()
+const API: &str = "https://jmap.standin.example/jmap/api";
+const SESSION_URL: &str = "https://jmap.standin.example/jmap/session";
+
+/// A GET of `url` with these header fields, and what it was answered.
+fn get(stand_in: &StandIn, url: &str, fields: &[(&str, &str)]) -> Result<HttpResponse, TransportError> {
+    stand_in.answer("GET", url, fields, b"")
+}
+
+/// A request to the API with these header fields after its `Content-Type: application/json`, and what it was
+/// answered.
+fn post(stand_in: &StandIn, headers: &[(&str, &str)], body: &[u8]) -> HttpResponse {
+    let mut fields = vec![("Content-Type", "application/json")];
+    fields.extend_from_slice(headers);
+    stand_in.answer("POST", API, &fields, body).unwrap()
 }
 
 /// Method calls as the API has them, and the answer as JSON.
 fn raw(stand_in: &StandIn, using: Value, calls: Value) -> (u16, Value) {
     let body = serde_json::to_vec(&json!({"using": using, "methodCalls": calls})).unwrap();
     let resp = post(stand_in, &[("Authorization", &bearer())], &body);
-    (resp.status, serde_json::from_slice(&resp.body).unwrap_or(Value::Null))
+    (resp.status(), serde_json::from_slice(resp.body()).unwrap_or(Value::Null))
 }
 
 /// What a method call came to: its result, or the `type` of its error.
@@ -74,23 +101,24 @@ fn one(stand_in: &StandIn, call: Value) -> Outcome {
 #[test]
 fn a_client_connects_with_either_kind_of_sign_in() {
     let (stand_in, _) = filled();
-    for auth in [Auth::bearer(TOKEN), Auth::basic(USER, PASSWORD)] {
-        let client = block_on(Client::connect(stand_in.clone(), SESSION, &auth)).unwrap();
-        assert_eq!(client.account_id(), ACCOUNT);
-        assert_eq!((client.max_objects_in_get(), client.max_calls_in_request()), (500, 16));
-        assert!(client.has_capability(MAIL) && client.has_capability(CORE) && client.has_capability(SUBMISSION));
+    for credentials in [Credentials::bearer(TOKEN).unwrap(), Credentials::basic(USER, &made_secret(PASSWORD)).unwrap()] {
+        let connection = connect_with(&stand_in, credentials).unwrap();
+        let client = connection.client();
+        assert_eq!(client.account_id().as_str(), ACCOUNT);
+        assert_eq!((client.limits().max_objects_in_get(), client.limits().max_calls_in_request()), (500, 16));
+        assert!(client.has_capability(MAIL) && client.has_capability(CORE) && !client.has_capability("urn:ietf:params:jmap:submission"));
         assert_eq!(
-            client.download_url("B1", "message/rfc822", "m.eml").unwrap(),
+            client.download_address(&Id::new("B1").unwrap(), "message/rfc822", "m.eml").unwrap().as_str(),
             "https://jmap.standin.example/jmap/download/A1/B1/m.eml?type=message%2Frfc822"
         );
-        assert_eq!(client.upload_url().unwrap(), "https://jmap.standin.example/jmap/upload/A1/");
+        assert_eq!(client.upload_address().unwrap().as_str(), "https://jmap.standin.example/jmap/upload/A1/");
     }
     let seen: Vec<(String, String, u16)> = stand_in.seen().into_iter().map(|s| (s.method, s.path, s.status)).collect();
     assert_eq!(seen, vec![("GET".to_string(), "/jmap/session".to_string(), 200); 2]);
     // The limits are the ones it was told to state.
     stand_in.with(|d| (d.max_calls, d.max_get) = (3, 100));
-    let client = connect(&stand_in);
-    assert_eq!((client.max_objects_in_get(), client.max_calls_in_request()), (100, 3));
+    let connection = connect(&stand_in);
+    assert_eq!((connection.client().limits().max_objects_in_get(), connection.client().limits().max_calls_in_request()), (100, 3));
     assert!(format!("{stand_in:?}").contains("emails: 3"));
 }
 
@@ -99,10 +127,7 @@ fn mailboxes_come_with_their_counts() {
     let (stand_in, ids) = filled();
     stand_in.with(|d| d.deliver(&ids.sent, &mail("draft"), &["$draft"], "2026-10-16T00:00:00Z"));
     let client = connect(&stand_in);
-    let get = |args: Value| {
-        let answers = block_on(client.mail(vec![("Mailbox/get", args)])).unwrap();
-        answers.get(0).cloned()
-    };
+    let get = |args: Value| run_calls(&client, vec![("Mailbox/get", args)]).unwrap().remove(0);
     let all = get(json!({"accountId": ACCOUNT, "ids": null})).unwrap();
     assert_eq!(
         all["list"],
@@ -136,14 +161,14 @@ fn the_newest_are_listed_and_read_in_one_request_by_a_reference() {
         ),
         (
             "Email/get",
-            json!({"accountId": ACCOUNT, "#ids": result_of(0, "Email/query", "/ids"), "properties": ["id", "keywords", "receivedAt", "size", "preview", "headers"]}),
+            json!({"accountId": ACCOUNT, "#ids": reference_to(0, "Email/query", "/ids"), "properties": ["id", "keywords", "receivedAt", "size", "preview", "headers"]}),
         ),
     ];
-    let answers = block_on(client.mail(calls)).unwrap();
-    let query = answers.get(0).unwrap();
+    let answers = run_calls(&client, calls).unwrap();
+    let query = answers[0].as_ref().unwrap();
     assert_eq!(query["ids"], json!([ids.third, ids.second]));
     assert_eq!((&query["total"], &query["position"], &query["canCalculateChanges"]), (&json!(3), &json!(0), &json!(false)));
-    let list = &answers.get(1).unwrap()["list"];
+    let list = &answers[1].as_ref().unwrap()["list"];
     assert_eq!(list[0]["id"], json!(ids.third));
     assert_eq!(list[0]["keywords"], json!({"$flagged": true}));
     assert_eq!(list[0]["receivedAt"], "2026-10-15T07:30:00Z");
@@ -244,7 +269,7 @@ fn messages_are_shown_as_a_server_shows_them() {
     );
     assert_eq!(email["preview"], "Body with gaps");
     assert_eq!(email["hasAttachment"], false);
-    assert!(email["blobId"].as_str().is_some_and(valid_id));
+    assert!(email["blobId"].as_str().is_some_and(|id| Id::new(id).is_ok()));
     assert_eq!(email["mailboxIds"].as_object().map(|m| m.len()), Some(1));
     assert_eq!((get(&lf)["headers"][0]["value"].clone(), get(&lf)["preview"].clone()), (json!(" lf"), json!("Body")));
     assert_eq!((get(&bare)["preview"].clone(), get(&bare)["headers"].as_array().map(Vec::len)), (json!(""), Some(1)));
@@ -284,7 +309,7 @@ fn a_call_that_is_wrong_is_refused_for_the_reason_a_server_gives() {
     let account = json!(ACCOUNT);
     let cases = vec![
         ("a method it has not", json!(["Foo/bar", {}, "c0"]), "unknownMethod"),
-        ("a method of another kind", json!(["Email/copy", {"accountId": account}, "c0"]), "unknownMethod"),
+        ("a method of another kind", json!(["Email/set", {"accountId": account}, "c0"]), "unknownMethod"),
         ("no account", json!(["Mailbox/get", {}, "c0"]), "invalidArguments"),
         ("another account", json!(["Mailbox/get", {"accountId": "A2"}, "c0"]), "accountNotFound"),
         ("an account that is no text", json!(["Mailbox/get", {"accountId": 1}, "c0"]), "invalidArguments"),
@@ -464,7 +489,7 @@ fn a_request_that_is_wrong_as_a_whole_is_refused_as_a_whole() {
     let auth = [("Authorization", bearer())];
     let send = |body: &[u8]| {
         let resp = post(&stand_in, &[("Authorization", &auth[0].1)], body);
-        (resp.status, serde_json::from_slice::<Value>(&resp.body).unwrap())
+        (resp.status(), serde_json::from_slice::<Value>(resp.body()).unwrap())
     };
     let kind = |body: &[u8]| {
         let (status, doc) = send(body);
@@ -515,12 +540,11 @@ fn the_address_the_method_and_the_content_type_are_held_to() {
     let (stand_in, _) = filled();
     let body = serde_json::to_vec(&json!({"using": [CORE, MAIL], "methodCalls": []})).unwrap();
     let status_of = |method: &str, address: &str, headers: &[(&str, &str)]| {
-        let mut req = Request { method: method.into(), url: address.into(), body: body.clone(), max: 1 << 20, ..Request::default() };
-        req.headers =
-            std::iter::once(("Authorization".to_string(), bearer())).chain(headers.iter().map(|(n, v)| (n.to_string(), v.to_string()))).collect();
-        block_on(stand_in.send(req)).map(|r| r.status)
+        let token = bearer();
+        let fields: Vec<(&str, &str)> = std::iter::once(("Authorization", token.as_str())).chain(headers.iter().copied()).collect();
+        stand_in.answer(method, address, &fields, &body).map(|r| r.status())
     };
-    let api = "https://jmap.standin.example/jmap/api";
+    let api = API;
     let json_type = [("Content-Type", "application/json")];
     assert_eq!(status_of("POST", api, &json_type), Ok(200));
     for ok in ["application/json", "Application/JSON", "application/json; charset=utf-8", " application/json ;charset=UTF-8"] {
@@ -531,11 +555,10 @@ fn the_address_the_method_and_the_content_type_are_held_to() {
     }
     assert_eq!(status_of("POST", api, &[]), Ok(400), "no content type at all");
     // ... and it says so as the standard has it (RFC 8620 §3.6.1).
-    let mut req = Request::post(api, "text/plain", body.clone(), 1 << 20);
-    req.headers.push(("Authorization".into(), bearer()));
-    let refused = block_on(stand_in.send(req)).unwrap();
-    let problem: Value = serde_json::from_slice(&refused.body).unwrap();
-    assert_eq!((refused.status, problem["type"].clone()), (400, json!("urn:ietf:params:jmap:error:notJSON")));
+    let refused = stand_in.answer("POST", api, &[("Content-Type", "text/plain"), ("Authorization", &bearer())], &body).unwrap();
+    let problem: Value = serde_json::from_slice(refused.body()).unwrap();
+    assert_eq!((refused.status(), problem["type"].clone()), (400, json!("urn:ietf:params:jmap:error:notJSON")));
+    assert_eq!(refused.content_type(), Some("application/problem+json"));
     assert_eq!(status_of("GET", api, &json_type), Ok(405));
     assert_eq!(status_of("POST", "https://jmap.standin.example/jmap/session", &json_type), Ok(405));
     assert_eq!(status_of("GET", "https://jmap.standin.example/jmap/session?account=x", &[]), Ok(200), "the query is not part of the path");
@@ -545,22 +568,19 @@ fn the_address_the_method_and_the_content_type_are_held_to() {
     for elsewhere in
         ["https://jmap.example.org/jmap/api", "http://jmap.standin.example/jmap/api", "https://jmap.standin.example:8443/jmap/api", "nonsense", ""]
     {
-        assert!(matches!(status_of("POST", elsewhere, &json_type), Err(Error::Io(_))), "{elsewhere}");
+        assert_eq!(status_of("POST", elsewhere, &json_type), Err(TransportError::Unreachable), "{elsewhere}");
     }
 }
 
 #[test]
 fn only_the_credentials_it_knows_are_let_in() {
     let (stand_in, _) = filled();
-    let basic = |user: &str, password: &str| format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}")));
+    let basic = |user: &str, pass: &str| format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{user}:{pass}")));
     let status_with = |authorization: Option<&str>| {
-        let mut req = Request::get("https://jmap.standin.example/jmap/session", 1 << 20);
-        if let Some(value) = authorization {
-            req = req.header("authorization", value);
-        }
-        block_on(stand_in.send(req)).unwrap().status
+        let fields: Vec<(&str, &str)> = authorization.map(|value| ("authorization", value)).into_iter().collect();
+        get(&stand_in, SESSION_URL, &fields).unwrap().status()
     };
-    for (credentials, expected) in [
+    for (n, (authorization, expected)) in [
         (None, 401),
         (Some(bearer()), 200),
         (Some(format!("bearer {TOKEN}")), 200),
@@ -576,13 +596,15 @@ fn only_the_credentials_it_knows_are_let_in() {
         (Some(format!("Basic {}", base64::engine::general_purpose::STANDARD.encode([0xff, b':', 0xfe]))), 401),
         (Some(format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(USER))), 401),
         (Some("Digest x".to_string()), 401),
-    ] {
-        assert_eq!(status_with(credentials.as_deref()), expected, "{credentials:?}");
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(status_with(authorization.as_deref()), expected, "case {n}");
     }
     // The API wants them too, and a request that was refused ran nothing.
-    let refused =
-        block_on(stand_in.send(Request::post("https://jmap.standin.example/jmap/api", "application/json", b"{}".to_vec(), 1 << 20))).unwrap();
-    assert_eq!(refused.status, 401);
+    let refused = post(&stand_in, &[], b"{}");
+    assert_eq!(refused.status(), 401);
     assert!(stand_in.calls().is_empty());
     // No bearer token held: only Basic.
     stand_in.with(|d| d.token = None);
@@ -596,12 +618,12 @@ fn a_token_that_is_no_longer_held_is_refused_with_401() {
     let client = connect(&stand_in);
     stand_in.with(|d| d.token = Some("rotated-token".into()));
     // A client that is connected finds out at its next request, and one that connects at once.
-    let refused = block_on(client.mail(vec![("Mailbox/get", json!({"accountId": ACCOUNT}))]));
-    assert!(matches!(refused, Err(Error::Auth(_))), "{refused:?}");
-    let refused = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer(TOKEN)));
-    assert!(matches!(refused, Err(Error::Auth(_))), "{refused:?}");
-    let renewed = block_on(Client::connect(stand_in.clone(), SESSION, &Auth::bearer("rotated-token"))).unwrap();
-    assert!(block_on(renewed.mail(vec![("Mailbox/get", json!({"accountId": ACCOUNT}))])).unwrap().get(0).is_ok());
+    let refused = run_calls(&client, vec![("Mailbox/get", json!({"accountId": ACCOUNT}))]);
+    assert!(matches!(refused, Err(Error::CredentialsRefused)), "{refused:?}");
+    let refused = connect_with(&stand_in, Credentials::bearer(TOKEN).unwrap());
+    assert!(matches!(refused, Err(Error::CredentialsRefused)), "{refused:?}");
+    let renewed = connect_with(&stand_in, Credentials::bearer("rotated-token").unwrap()).unwrap();
+    assert!(run_calls(&renewed, vec![("Mailbox/get", json!({"accountId": ACCOUNT}))]).unwrap()[0].is_ok());
     let statuses: Vec<u16> = stand_in.seen().iter().map(|s| s.status).collect();
     assert_eq!(statuses, [200, 401, 401, 200, 200]);
 }
@@ -613,10 +635,10 @@ fn the_stand_in_is_shared_with_a_thread_that_drives_a_client() {
     let (stand_in, ids) = filled();
     let (worker, inbox) = (stand_in.clone(), ids.inbox.clone());
     let listed = std::thread::spawn(move || {
-        let client = block_on(Client::connect(worker, SESSION, &Auth::bearer(TOKEN))).unwrap();
+        let client = connect(&worker);
         let args = json!({"accountId": ACCOUNT, "filter": {"inMailbox": inbox}});
-        let answers = block_on(client.mail(vec![("Email/query", args)])).unwrap();
-        answers.get(0).unwrap()["ids"].as_array().map(Vec::len)
+        let answers = run_calls(&client, vec![("Email/query", args)]).unwrap();
+        answers[0].as_ref().unwrap()["ids"].as_array().map(Vec::len)
     })
     .join()
     .unwrap();
@@ -625,29 +647,34 @@ fn the_stand_in_is_shared_with_a_thread_that_drives_a_client() {
 }
 
 #[test]
-fn an_answer_over_the_size_asked_for_is_no_answer() {
-    let (stand_in, _) = filled();
-    let req = Request::get("https://jmap.standin.example/jmap/session", 10).header("Authorization", &bearer());
-    assert!(matches!(block_on(stand_in.send(req)), Err(Error::TooLarge(_))));
+fn what_it_answers_says_what_it_is() {
+    let (stand_in, ids) = filled();
+    let session = get(&stand_in, SESSION_URL, &[("Authorization", &bearer())]).unwrap();
+    assert_eq!((session.status(), session.content_type(), session.retry_after()), (200, Some("application/json"), None));
+    let refused = get(&stand_in, SESSION_URL, &[]).unwrap();
+    assert_eq!((refused.status(), refused.content_type()), (401, Some("application/problem+json")));
+    let blob = blob_of(&stand_in, &ids.first);
+    let octets =
+        get(&stand_in, &format!("https://jmap.standin.example/jmap/download/{ACCOUNT}/{blob}/m.eml"), &[("Authorization", &bearer())]).unwrap();
+    assert_eq!((octets.status(), octets.content_type()), (200, Some("application/octet-stream")));
+    stand_in.with(|d| d.refuse_next = [Some((503, Some(7)))].into());
+    let busy = post(&stand_in, &[("Authorization", &bearer())], b"{}");
+    assert_eq!((busy.status(), busy.content_type(), busy.retry_after()), (503, Some("application/problem+json"), Some("7")));
 }
 
 #[test]
 fn what_it_remembers_of_the_requests_is_bounded() {
     let (stand_in, _) = filled();
     for _ in 0..MAX_SEEN + 10 {
-        let req = Request::get("https://jmap.standin.example/jmap/session", 1 << 20).header("Authorization", &bearer());
-        assert_eq!(block_on(stand_in.send(req)).unwrap().status, 200);
+        assert_eq!(get(&stand_in, SESSION_URL, &[("Authorization", &bearer())]).unwrap().status(), 200);
     }
     assert_eq!(stand_in.seen().len(), MAX_SEEN);
 }
 
-/// What a download of `path` came to, signed in as `authorization` says, for a request that takes at most `max` octets.
-fn download(stand_in: &StandIn, path: &str, authorization: Option<&str>, max: usize) -> Result<Response> {
-    let mut req = Request::get(&format!("https://jmap.standin.example{path}"), max);
-    if let Some(value) = authorization {
-        req = req.header("Authorization", value);
-    }
-    block_on(stand_in.send(req))
+/// What a download of `path` came to, signed in as `authorization` says.
+fn download(stand_in: &StandIn, path: &str, authorization: Option<&str>) -> Result<HttpResponse, TransportError> {
+    let fields: Vec<(&str, &str)> = authorization.map(|value| ("Authorization", value)).into_iter().collect();
+    get(stand_in, &format!("https://jmap.standin.example{path}"), &fields)
 }
 
 /// The blob of an email, as `Email/get` names it.
@@ -662,15 +689,15 @@ fn a_blob_is_the_octets_of_its_email_at_the_address_the_session_names() {
     let client = connect(&stand_in);
     for (id, subject) in [(&ids.first, "first"), (&ids.second, "second"), (&ids.third, "third")] {
         let blob = blob_of(&stand_in, id);
-        let address = client.download_url(&blob, "message/rfc822", "message.eml").unwrap();
-        let resp = block_on(stand_in.send(Request::get(&address, 1 << 20).header("Authorization", &bearer()))).unwrap();
-        assert_eq!((resp.status, resp.body), (200, mail(subject)), "{subject}");
+        let address = client.client().download_address(&Id::new(&blob).unwrap(), "message/rfc822", "message.eml").unwrap();
+        let resp = get(&stand_in, address.as_str(), &[("Authorization", &bearer())]).unwrap();
+        assert_eq!((resp.status(), resp.body()), (200, mail(subject).as_slice()), "{subject}");
     }
     // Either way of signing in is let in; the size `Email/get` states is the number of octets.
     let blob = blob_of(&stand_in, &ids.first);
     let path = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
     let basic = format!("Basic {}", base64::engine::general_purpose::STANDARD.encode(format!("{USER}:{PASSWORD}")));
-    assert_eq!(download(&stand_in, &path, Some(&basic), 1 << 20).unwrap().body.len(), mail("first").len());
+    assert_eq!(download(&stand_in, &path, Some(&basic)).unwrap().body().len(), mail("first").len());
     let sized = one(&stand_in, json!(["Email/get", {"accountId": ACCOUNT, "ids": [ids.first], "properties": ["size"]}, "c0"])).unwrap();
     assert_eq!(sized["list"][0]["size"], mail("first").len());
     // The octets are the ones that were delivered, whatever they are.
@@ -678,8 +705,8 @@ fn a_blob_is_the_octets_of_its_email_at_the_address_the_session_names() {
         let inbox = d.mailbox_named("Inbox").map(str::to_string).unwrap();
         d.deliver(&inbox, &[0xff, 0x00, b'\r', b'\n', 0xfe, b'\n', b'\n'], &[], "2026-10-16T00:00:00Z")
     });
-    let odd = download(&stand_in, &format!("/jmap/download/{ACCOUNT}/{}/m.eml?type=x", blob_of(&stand_in, &raw)), Some(&bearer()), 1 << 20).unwrap();
-    assert_eq!(odd.body, [0xff, 0x00, b'\r', b'\n', 0xfe, b'\n', b'\n']);
+    let odd = download(&stand_in, &format!("/jmap/download/{ACCOUNT}/{}/m.eml?type=x", blob_of(&stand_in, &raw)), Some(&bearer())).unwrap();
+    assert_eq!(odd.body(), [0xff, 0x00, b'\r', b'\n', 0xfe, b'\n', b'\n']);
     // The requests it was sent are listed with the address and its status, and no method called.
     let seen = stand_in.seen();
     let last = seen.last().unwrap();
@@ -691,14 +718,14 @@ fn a_blob_is_the_octets_of_its_email_at_the_address_the_session_names() {
 fn a_download_is_refused_or_not_found_as_the_standard_has_it() {
     let (stand_in, ids) = filled();
     let blob = blob_of(&stand_in, &ids.first);
-    let status = |path: &str, authorization: Option<&str>| download(&stand_in, path, authorization, 1 << 20).unwrap().status;
+    let status = |path: &str, authorization: Option<&str>| download(&stand_in, path, authorization).unwrap().status();
     let good = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
     assert_eq!(status(&good, Some(&bearer())), 200);
     // The credentials are asked for, as for any address: a request that has none learns nothing of the blob.
     assert_eq!(status(&good, None), 401);
     assert_eq!(status(&good, Some("Bearer wrong")), 401);
-    let refused = download(&stand_in, &good, None, 1 << 20).unwrap();
-    assert!(!String::from_utf8_lossy(&refused.body).contains("Hello"), "no octets of the message");
+    let refused = download(&stand_in, &good, None).unwrap();
+    assert!(!String::from_utf8_lossy(refused.body()).contains("Hello"), "no octets of the message");
     // Not an account it has, not a blob it has, the email's id for the blob's, no name, or an address of another shape.
     for (what, path) in [
         ("another account", format!("/jmap/download/A2/{blob}/message.eml")),
@@ -715,9 +742,13 @@ fn a_download_is_refused_or_not_found_as_the_standard_has_it() {
         assert_eq!(status(&path, Some(&bearer())), 404, "{what}");
     }
     // Only a GET fetches a blob.
-    let mut post = Request::post(&format!("https://jmap.standin.example{good}"), "application/json", b"{}".to_vec(), 1 << 20);
-    post.headers.push(("Authorization".into(), bearer()));
-    assert_eq!(block_on(stand_in.send(post)).unwrap().status, 404);
+    let post = stand_in.answer(
+        "POST",
+        &format!("https://jmap.standin.example{good}"),
+        &[("Content-Type", "application/json"), ("Authorization", &bearer())],
+        b"{}",
+    );
+    assert_eq!(post.unwrap().status(), 404);
     // A blob goes with its email.
     assert!(stand_in.with(|d| d.remove(&ids.first)));
     assert!(!stand_in.with(|d| d.remove(&ids.first)), "it was there once");
@@ -729,19 +760,21 @@ fn a_download_is_refused_or_not_found_as_the_standard_has_it() {
 #[test]
 fn a_blob_over_the_size_asked_for_is_no_answer() {
     let (stand_in, ids) = filled();
+    let connection = connect(&stand_in);
+    let secrets = connection.client().redactor().clone();
+    let fetch = |blob: &str, most: usize| block_on(connection.download(&Id::new(blob).unwrap(), "message/rfc822", "message.eml", most, &secrets));
     let blob = blob_of(&stand_in, &ids.first);
-    let path = format!("/jmap/download/{ACCOUNT}/{blob}/message.eml");
     let size = mail("first").len();
-    assert!(matches!(download(&stand_in, &path, Some(&bearer()), size - 1), Err(Error::TooLarge(_))));
-    assert_eq!(download(&stand_in, &path, Some(&bearer()), size).unwrap().body.len(), size);
+    assert_eq!(fetch(&blob, size - 1), Err(Error::Unusable(crate::Unusable::BodyTooLarge)));
+    assert_eq!(fetch(&blob, size).unwrap().len(), size);
     // An oversized blob, a real one: 3 MB come to a client that takes 2 MB at most only as an error.
     let big = stand_in.with(|d| {
         let inbox = d.mailbox_named("Inbox").map(str::to_string).unwrap();
         d.deliver(&inbox, &vec![b'x'; 3 << 20], &[], "2026-10-16T00:00:00Z")
     });
-    let path = format!("/jmap/download/{ACCOUNT}/{}/message.eml", blob_of(&stand_in, &big));
-    assert!(matches!(download(&stand_in, &path, Some(&bearer()), 2 << 20), Err(Error::TooLarge(_))));
-    assert_eq!(download(&stand_in, &path, Some(&bearer()), 3 << 20).unwrap().body.len(), 3 << 20);
+    let blob = blob_of(&stand_in, &big);
+    assert_eq!(fetch(&blob, 2 << 20), Err(Error::Unusable(crate::Unusable::BodyTooLarge)));
+    assert_eq!(fetch(&blob, 3 << 20).unwrap().len(), 3 << 20);
 }
 
 #[test]
@@ -806,9 +839,8 @@ fn a_standard_server_parses_the_header_for_a_client_and_one_that_names_by_place_
 fn a_server_that_names_by_place_keeps_an_email_in_one_mailbox_and_refuses_to_change_mailboxes() {
     let (stand_in, ids) = filled();
     let session = || -> Value {
-        let resp =
-            block_on(stand_in.send(Request::get("https://jmap.standin.example/jmap/session", 1 << 20).header("Authorization", &bearer()))).unwrap();
-        serde_json::from_slice::<Value>(&resp.body).unwrap()["accounts"][ACCOUNT]["accountCapabilities"][MAIL]["maxMailboxesPerEmail"].clone()
+        let resp = get(&stand_in, SESSION_URL, &[("Authorization", &bearer())]).unwrap();
+        serde_json::from_slice::<Value>(resp.body()).unwrap()["accounts"][ACCOUNT]["accountCapabilities"][MAIL]["maxMailboxesPerEmail"].clone()
     };
     // A store of the standard kind lets an email lie in several, and has no `Mailbox/set` here.
     assert_eq!(session(), Value::Null);
@@ -910,7 +942,7 @@ fn trouble_is_made_on_demand() {
         )
         .unwrap();
         let resp = post(stand_in, &[("Authorization", &bearer())], &body);
-        (resp.status, resp.retry_after)
+        (resp.status(), resp.retry_after().and_then(|seconds| seconds.parse::<u32>().ok()))
     };
     // The next requests to the API are refused, or let through, in turn; the session is not one of them.
     stand_in.with(|d| d.refuse_next = [Some((429, Some(5))), None, Some((503, None))].into());
@@ -943,10 +975,10 @@ fn what_each_call_asked_is_kept_with_its_references_resolved() {
     let (stand_in, ids) = filled();
     let client = connect(&stand_in);
     let query = json!({"accountId": ACCOUNT, "filter": {"inMailbox": ids.inbox}, "sort": [{"property": "receivedAt", "isAscending": false}], "limit": 2, "calculateTotal": true});
-    let get = json!({"accountId": ACCOUNT, "#ids": result_of(0, "Email/query", "/ids"), "properties": ["id", "keywords"]});
-    block_on(client.mail(vec![("Email/query", query), ("Email/get", get), ("Mailbox/get", json!({"accountId": ACCOUNT}))])).unwrap();
+    let get = json!({"accountId": ACCOUNT, "#ids": reference_to(0, "Email/query", "/ids"), "properties": ["id", "keywords"]});
+    run_calls(&client, vec![("Email/query", query), ("Email/get", get), ("Mailbox/get", json!({"accountId": ACCOUNT}))]).unwrap();
     // A call that refers to what isn't there has nothing resolved to keep.
-    block_on(client.mail(vec![("Email/get", json!({"accountId": ACCOUNT, "#ids": result_of(7, "Email/query", "/ids")}))])).unwrap();
+    run_calls(&client, vec![("Email/get", json!({"accountId": ACCOUNT, "#ids": reference_to(7, "Email/query", "/ids")}))]).unwrap();
     let asked = stand_in.asked();
     assert_eq!(asked.len(), 3);
     assert_eq!(
@@ -980,12 +1012,12 @@ fn request_like() -> impl Strategy<Value = Value> {
     let call = (
         proptest::sample::select(vec!["Mailbox/get", "Email/query", "Email/get", "Core/echo", "x"]),
         prop_oneof![
-            crate::tests::any_json(),
+            any_json(),
             proptest::collection::vec(
                 (
                     proptest::sample::select(vec!["accountId", "ids", "#ids", "filter", "sort", "position", "limit", "properties", "calculateTotal"]),
                     prop_oneof![
-                        crate::tests::any_json(),
+                        any_json(),
                         Just(json!(ACCOUNT)),
                         Just(json!({"inMailbox": "M1"})),
                         Just(json!([{"property": "receivedAt"}])),
@@ -1000,20 +1032,20 @@ fn request_like() -> impl Strategy<Value = Value> {
         ],
         proptest::sample::select(vec!["c0", "c1", "c2", "x"]),
     );
-    (prop_oneof![Just(json!([CORE, MAIL])), crate::tests::any_json()], proptest::collection::vec(call, 0..20)).prop_map(|(using, calls)| {
+    (prop_oneof![Just(json!([CORE, MAIL])), any_json()], proptest::collection::vec(call, 0..20)).prop_map(|(using, calls)| {
         json!({"using": using, "methodCalls": calls.into_iter().map(|(name, args, id)| json!([name, args, id])).collect::<Vec<_>>()})
     })
 }
 
 proptest! {
     #[test]
-    fn whatever_it_is_sent_it_answers_and_never_panics(request in prop_oneof![request_like(), crate::tests::any_json()], noise in proptest::collection::vec(any::<u8>(), 0..64)) {
+    fn whatever_it_is_sent_it_answers_and_never_panics(request in prop_oneof![request_like(), any_json()], noise in proptest::collection::vec(any::<u8>(), 0..64)) {
         let (stand_in, _) = filled();
         for body in [serde_json::to_vec(&request).unwrap(), noise] {
             let resp = post(&stand_in, &[("Authorization", &bearer())], &body);
-            prop_assert!(matches!(resp.status, 200 | 400), "{}", resp.status);
-            let doc: Value = serde_json::from_slice(&resp.body).unwrap();
-            if resp.status == 200 {
+            prop_assert!(matches!(resp.status(), 200 | 400), "{}", resp.status());
+            let doc: Value = serde_json::from_slice(resp.body()).unwrap();
+            if resp.status() == 200 {
                 let calls = request.get("methodCalls").and_then(Value::as_array).map_or(0, Vec::len);
                 prop_assert_eq!(doc["methodResponses"].as_array().map(Vec::len), Some(calls));
             } else {
@@ -1025,10 +1057,7 @@ proptest! {
     #[test]
     fn whatever_the_headers_say_it_lets_in_the_credentials_or_not(authorization in ".{0,80}", kind in ".{0,40}") {
         let (stand_in, _) = filled();
-        let req = Request::post("https://jmap.standin.example/jmap/api", "application/json", b"{}".to_vec(), 1 << 20)
-            .header("Authorization", &authorization)
-            .header("content-type", &kind);
-        let status = block_on(stand_in.send(req)).unwrap().status;
+        let status = post(&stand_in, &[("Authorization", &authorization), ("content-type", &kind)], b"{}").status();
         prop_assert!(matches!(status, 400 | 401 | 415));
     }
 }

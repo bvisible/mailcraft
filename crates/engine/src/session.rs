@@ -432,6 +432,11 @@ pub struct Prefs {
     pub quote_on_reply: bool,
     /// Lines of body text under each message in the list (0–3).
     pub preview_lines: u8,
+    /// The list has group headings (Today, Yesterday…; `view.groups`). Off: one continuous list.
+    pub show_groups: bool,
+    /// Each row of the list is one line: sender, subject, time and marks (`view.oneLine`).
+    #[serde(skip_serializing_if = "is_false")]
+    pub one_line: bool,
     /// Most messages one synchronisation downloads per folder (0: all).
     pub sync_limit: u32,
     /// Minutes between automatic Send/Receive runs (0: only when asked).
@@ -491,6 +496,8 @@ impl Default for Prefs {
             default_reminder: Some(15),
             quote_on_reply: true,
             preview_lines: 1,
+            show_groups: true,
+            one_line: false,
             sync_limit: 500,
             sync_minutes: 5,
             time_scale: 30,
@@ -605,6 +612,13 @@ pub struct Session {
     pub(crate) saved_whole: std::collections::HashSet<Id>,
     /// What the server refused in the Graph run under way, for the status at its end (S20).
     pub(crate) graph_said: Vec<String>,
+    /// When each Microsoft account last had every folder read in a Graph run, none passed over
+    /// for having the counts it had (#276): the next full sweep is due an hour later. Empty when
+    /// a mailbox is opened, so the first run reads everything. Never saved.
+    pub(crate) graph_swept: std::collections::HashMap<Id, Timestamp>,
+    /// Microsoft accounts whose last folder listing was cut short (#276): a folder it left out
+    /// wasn't read, so the run that follows is no full sweep.
+    pub(crate) graph_listed_short: std::collections::HashSet<Id>,
     /// Set while a command an agent asked for runs (with what the owner allowed it): what the
     /// command did is checked against that ([`crate::agent`]), and undone when it oversteps.
     pub agent: Option<Vec<crate::agent::Class>>,
@@ -752,6 +766,8 @@ impl Session {
             openings: 0,
             saved_whole: Default::default(),
             graph_said: Vec::new(),
+            graph_swept: Default::default(),
+            graph_listed_short: Default::default(),
             agent: None,
             graph_switch_backup: None,
             server_search: Default::default(),
@@ -956,8 +972,16 @@ impl Session {
     /// as [`Session::search_time`] allows; what it didn't get to is counted in
     /// [`Session::unsearched`].
     pub fn rows(&mut self) -> Arc<Vec<Row>> {
-        let list =
-            |s: &Session| format!("{}|{}|{}|{}", s.rev, s.today().to_days(), s.words_finished(), serde_json::to_string(&s.view).unwrap_or_default());
+        let list = |s: &Session| {
+            format!(
+                "{}|{}|{}|{}|{}",
+                s.rev,
+                s.today().to_days(),
+                s.words_finished(),
+                s.prefs.show_groups,
+                serde_json::to_string(&s.view).unwrap_or_default()
+            )
+        };
         let key = |s: &Session| format!("{}|{}", s.loads, list(s));
         if let Some((k, rows)) = &self.list_cache
             && *k == key(self)
@@ -1546,6 +1570,8 @@ impl Session {
         self.searched_for = None;
         self.saved_whole.clear();
         self.kept_for_now.clear();
+        self.graph_swept.clear();
+        self.graph_listed_short.clear();
         self.openings = self.openings.wrapping_add(1);
         self.history.clear();
         self.redo.clear();
@@ -1696,7 +1722,13 @@ impl Session {
                 if self.mailbox != before.mailbox {
                     self.hold_replaced(&before.mailbox);
                     self.rev += 1;
-                    if history {
+                    if history && wipes_history(id) {
+                        // The mail is gone from this computer (#177): no step brings it back,
+                        // and none holds its content on disk.
+                        self.dirty = true;
+                        self.history.clear();
+                        self.redo.clear();
+                    } else if history {
                         self.dirty = true;
                         let mut before = before;
                         before.touched = crate::undo::touched(&before.mailbox, &self.mailbox);
@@ -1722,6 +1754,12 @@ impl Session {
         }
         result
     }
+}
+
+/// Commands that remove what is kept of an account on this computer (#177): they leave nothing
+/// to undo, as the content they remove would have to stay on disk for it.
+fn wipes_history(id: &str) -> bool {
+    matches!(id, "account.remove" | "account.removeSharedMailbox")
 }
 
 /// Whether an attachment is a calendar part (an invitation, an answer to one).

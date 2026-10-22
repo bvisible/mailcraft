@@ -21,8 +21,9 @@ mailcraft-mime = { path = "crates/mime" }
 mailcraft-ical = { path = "crates/ical" }
 mailcraft-vcard = { path = "crates/vcard" }
 mailcraft-proto = { path = "crates/proto" }
-# //// Neoffice — the JMAP client (L3, no sockets): JMAP mail in the browser, where IMAP and SMTP can't go.
-mailcraft-jmap = { path = "crates/jmap" }
+# //// Neoffice — the apps take the fork's JMAP client (crates/jmap-fork) under the name of upstream's (crates/jmap, a member
+# //// Neoffice — built and tested as upstream has it): the mail it sends, calendars, contacts and notes are on it, not yet on upstream's.
+mailcraft-jmap = { path = "crates/jmap-fork", package = "mailcraft-jmap-fork" }
 mailcraft-net = { path = "crates/net" }
 mailcraft-engine = { path = "crates/engine" }
 mailcraft-mcp = { path = "crates/mcp" }

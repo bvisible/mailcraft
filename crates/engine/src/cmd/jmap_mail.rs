@@ -339,7 +339,8 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
         (None, None, true) => None,
     };
     let folders = result.progress.as_ref().map(|p| (p.number, p.folders));
-    let piece = Piece { step, folders, new: down.new, sent, problems: &errors, last: !result.partial, stopped: result.stopped };
+    // A JMAP run measures no phases of its own (`timings`, #276): its row shows none.
+    let piece = Piece { step, folders, new: down.new, sent, problems: &errors, last: !result.partial, stopped: result.stopped, timings: None };
     s.sync_progress.take(account, piece);
     let summary = match (errors.first(), taken.pushed + taken.added + taken.updated + taken.removed + down.new + down.changed + down.removed) {
         (Some(e), _) => e.clone(),

@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent): Copy Diagnostics is not offered in a hosting page's tab.
+// //// Neoffice — added file (no upstream equivalent): Copy Diagnostics and Report a Problem are not offered in a hosting page's tab.
 
-//! Copy Diagnostics (`ui.copyDiagnostics`) is what a tester pastes into a problem report on MailCraft's own repository.
+//! Copy Diagnostics (`ui.copyDiagnostics`) is what a tester pastes into a problem report on MailCraft's own repository,
+//! and Report a Problem (`ui.reportProblem`) starts such a report, on that repository or by mail to MailCraft's makers.
 //! In a tab whose mailboxes a hosting page handed over (Neoffice's desk at `/app/neomail`, Neodesk's NeoMail window),
-//! the people reading their mail have no use for it, and the browser keeps no log to copy: neither the title bar's pill
-//! (chrome.rs) nor the button of the Help tab ([`ribbon`]) is drawn there ([`offered`]). The command itself stays, as
-//! upstream has it, and Search Commands never listed it.
+//! the people reading their mail have no use for either (their problems go to whoever runs the page), and the browser
+//! keeps no log to copy: neither the title bar's two pills (chrome.rs) nor the buttons of the Help tab ([`ribbon`]) are
+//! drawn there ([`offered`]). The commands themselves stay, as upstream has them, and Search Commands lists neither.
 
 use crate::MailApp;
 use crate::ribbon::Tab;
@@ -14,19 +15,22 @@ use crate::ribbon::Tab;
 /// The window's command the pill and the button run.
 pub const COMMAND: &str = "ui.copyDiagnostics";
 
-/// Whether the window offers Copy Diagnostics: everywhere but a tab whose mailboxes a hosting page handed over (the page
+/// The window's command Report a Problem's pill and button run.
+pub const REPORT: &str = "ui.reportProblem";
+
+/// Whether the window offers Copy Diagnostics and Report a Problem: everywhere but a tab whose mailboxes a hosting page handed over (the page
 /// holds their credentials, [`crate::Services::jmap_host_credentials`]).
 pub(crate) fn offered(app: &MailApp) -> bool {
     !app.services.jmap_host_credentials
 }
 
-/// The Help tab's Copy Diagnostics taken out of `tab` where the window doesn't offer it.
+/// The Help tab's Copy Diagnostics and Report a Problem taken out of `tab` where the window doesn't offer them.
 pub(crate) fn ribbon(app: &MailApp, tab: &mut Tab) {
     if offered(app) {
         return;
     }
     for group in &mut tab.groups {
-        group.items.retain(|item| item.command.as_ref().is_none_or(|(id, _)| *id != COMMAND));
+        group.items.retain(|item| item.command.as_ref().is_none_or(|(id, _)| *id != COMMAND && *id != REPORT));
     }
 }
 
@@ -83,6 +87,19 @@ mod tests {
     fn upstreams_window_keeps_its_copy_diagnostics_pill() {
         let harness = window(app(false), "Home");
         assert!(harness.query_by_label("Copy Diagnostics").is_some());
+    }
+
+    #[test]
+    fn a_hosting_pages_tab_draws_no_report_a_problem_pill_and_upstreams_window_does() {
+        assert_eq!(window(app(true), "Home").query_all_by_label_contains("Report a Problem").count(), 0);
+        assert!(window(app(false), "Home").query_by_label("Report a Problem").is_some());
+    }
+
+    #[test]
+    fn the_help_tab_offers_report_a_problem_only_outside_a_hosting_page() {
+        assert!(help(app(false)).contains(&REPORT));
+        let hosted = help(app(true));
+        assert!(!hosted.contains(&REPORT), "{hosted:?}");
     }
 
     #[test]

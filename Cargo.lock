@@ -2301,7 +2301,9 @@ dependencies = [
  "mailcraft-proto",
  "mailcraft-time",
  "mailcraft-ui-egui",
+ "muda",
  "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "objc2-user-notifications 0.3.2",
  "open",
@@ -2334,7 +2336,7 @@ version = "0.6.0"
 dependencies = [
  "base64",
  "mailcraft-engine",
- "mailcraft-jmap",
+ "mailcraft-jmap-fork",
  "mailcraft-mcp",
  "mailcraft-model",
  "mailcraft-net",
@@ -2392,6 +2394,19 @@ dependencies = [
 
 [[package]]
 name = "mailcraft-jmap"
+version = "0.6.0"
+dependencies = [
+ "base64",
+ "log",
+ "mailcraft-mime",
+ "mailcraft-model",
+ "mailcraft-time",
+ "proptest",
+ "serde_json",
+]
+
+[[package]]
+name = "mailcraft-jmap-fork"
 version = "0.6.0"
 dependencies = [
  "base64",
@@ -2520,7 +2535,7 @@ dependencies = [
  "js-sys",
  "log",
  "mailcraft-engine",
- "mailcraft-jmap",
+ "mailcraft-jmap-fork",
  "mailcraft-model",
  "mailcraft-time",
  "mailcraft-ui-egui",

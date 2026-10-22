@@ -53,6 +53,11 @@ const SCROLL_TRACK: f32 = 17.0;
 const SCROLL_MARGIN: f32 = 5.0;
 /// The scroll bar's handle, in the middle of its lane.
 const SCROLL_HANDLE: f32 = 9.0;
+/// Where scroll bars float over what they scroll (a Mac's): the handle, a little wider while the
+/// pointer is on it, and how far it keeps from the list's right edge.
+const OVERLAY_HANDLE: f32 = 7.0;
+const OVERLAY_HANDLE_HOVERED: f32 = 9.0;
+const OVERLAY_MARGIN: f32 = 2.0;
 /// The ends of the lane, each with an arrow in it: the handle travels between them.
 const SCROLL_END: f32 = 19.0;
 /// The time ends this far from a row's right end. What is right of it is the flag's column.
@@ -156,6 +161,18 @@ fn row_height(preview_lines: u8) -> f32 {
     }
 }
 
+/// A row of the single-line list: the sender, the subject, the marks and the time on one line.
+const ONE_LINE_H: f32 = 32.0;
+
+/// The least a single-line row leaves for the sender's name.
+const ONE_LINE_SENDER_MIN: f32 = 70.0;
+
+/// How wide the sender's name is in a single-line row, of the room the row has for text: a third,
+/// not less than 90 or more than 220 (and never more than the room).
+fn one_line_sender_width(room: f32) -> f32 {
+    (room / 3.0).clamp(ONE_LINE_SENDER_MIN, 220.0).min(room.max(0.0))
+}
+
 /// A group heading of the list in the interface language: the engine's dates (`Today`) are
 /// names the catalogue has, and so is the heading of what is pinned.
 fn group_name(group: &str) -> &str {
@@ -193,7 +210,7 @@ fn direction_label(sort: SortBy, descending: bool) -> &'static str {
 fn list_header(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());
-    let rows_end = r.max.x - SCROLL_LANE;
+    let rows_end = r.max.x - lane_width(app);
 
     // The arrow: up while the list starts where its arrangement naturally starts (the newest,
     // A, the largest), down once it is turned over.
@@ -301,6 +318,40 @@ fn scroll_ink(t: &Tokens) -> Color32 {
     t.surface.lerp_to_gamma(t.text, 0.53)
 }
 
+/// How much of the list's right edge its scroll bar keeps for itself: the lane, or nothing where
+/// scroll bars float over what they scroll ([`MailApp::overlay_scroll_bars`]).
+fn lane_width(app: &MailApp) -> f32 {
+    if app.overlay_scroll_bars { 0.0 } else { SCROLL_LANE }
+}
+
+/// The list's scroll bar where scroll bars float over what they scroll, as a Mac's do: a slim
+/// rounded handle over the rows' right end, there while the list is scrolled or the pointer is
+/// over it and gone when it is left alone, with no lane and no arrows.
+fn overlay_scroll_style(ui: &mut Ui, t: &Tokens) {
+    let style = ui.style_mut();
+    style.spacing.scroll = egui::style::ScrollStyle {
+        bar_width: OVERLAY_HANDLE_HOVERED,
+        floating_width: OVERLAY_HANDLE,
+        bar_inner_margin: 0.0,
+        bar_outer_margin: OVERLAY_MARGIN,
+        handle_min_length: 24.0,
+        foreground_color: false,
+        dormant_background_opacity: 0.0,
+        active_background_opacity: 0.0,
+        interact_background_opacity: 0.0,
+        dormant_handle_opacity: 0.0,
+        active_handle_opacity: 0.85,
+        interact_handle_opacity: 1.0,
+        ..egui::style::ScrollStyle::floating()
+    };
+    let ink = scroll_ink(t);
+    let round = egui::CornerRadius::same(5);
+    let widgets = &mut style.visuals.widgets;
+    (widgets.inactive.bg_fill, widgets.inactive.corner_radius) = (ink, round);
+    (widgets.hovered.bg_fill, widgets.hovered.corner_radius) = (ink.lerp_to_gamma(t.text, 0.35), round);
+    (widgets.active.bg_fill, widgets.active.corner_radius) = (ink.lerp_to_gamma(t.text, 0.6), round);
+}
+
 /// The list's scroll bar: a slim rounded handle that is always there while the list is longer
 /// than its pane. Its lane and arrows are painted by [`scroll_lane`] and [`scroll_arrows`].
 fn scroll_style(ui: &mut Ui, t: &Tokens) {
@@ -395,7 +446,7 @@ fn search_bar(app: &mut MailApp, ui: &mut Ui, found: usize) {
         0 => crate::i18n::fmt(tl!("No results in {scope}"), &[("scope", &scope)]),
         n => crate::i18n::fmt(&tln!(n, "{n} result in {scope}", "{n} results in {scope}"), &[("scope", &scope)]),
     };
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width() - SCROLL_LANE, 30.0), Sense::hover());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width() - lane_width(app), 30.0), Sense::hover());
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, &said));
     let fill = t.selection.gamma_multiply(shown);
     ui.painter().rect_filled(r.shrink2(vec2(6.0, 3.0)), 4.0, fill);
@@ -461,12 +512,17 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
         );
         paint_clipped(ui.painter(), pos2(r.min.x + 10.0, r.min.y + 4.0), r.width() - 20.0, &text, regular(11.5), t.text_dim);
     }
-    let row_h = row_height(app.session.prefs.preview_lines);
+    let one_line = app.session.prefs.one_line;
+    // The rows of a search on the server keep the height the preview lines ask for.
+    let server_h = row_height(app.session.prefs.preview_lines);
+    let row_h = if one_line { ONE_LINE_H } else { server_h };
     // Below the local results of a search: More results on the server, and what came (R6.2).
     let searching = !app.session.view.search.trim().is_empty();
     let local: std::collections::HashSet<Id> =
         if searching { rows.iter().flat_map(|r| r.members.iter().copied()).collect() } else { Default::default() };
-    let below = if searching { server_rows::height(app, &local, row_h) } else { 0.0 };
+    let below = if searching { server_rows::height(app, &local, server_h) } else { 0.0 };
+    let overlay = app.overlay_scroll_bars;
+    let lane_w = lane_width(app);
     if rows.is_empty() {
         let r = ui.available_rect_before_wrap();
         let msg = if searching {
@@ -482,8 +538,8 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
             ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
                 egui::ScrollArea::vertical().id_salt("message_list_server").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
                     let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), below), Sense::hover());
-                    let width = (area.width() - SCROLL_LANE).max(0.0);
-                    server_rows::show(app, ui, &local, area.min.x, area.min.y, width, row_h, viewport.translate(area.min.to_vec2()));
+                    let width = (area.width() - lane_w).max(0.0);
+                    server_rows::show(app, ui, &local, area.min.x, area.min.y, width, server_h, viewport.translate(area.min.to_vec2()));
                 });
             });
         }
@@ -506,23 +562,29 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     let outer = ui.available_rect_before_wrap();
     let lane = scroll_lane(outer);
     let scrolls = total > outer.height();
-    if scrolls {
+    // (A bar that floats over the rows has no lane to paint and no arrows.)
+    if scrolls && !overlay {
         ui.painter().rect_filled(lane, SCROLL_TRACK / 2.0, if t.dark { t.panel } else { t.canvas });
     }
     // The handle keeps clear of the arrows at the ends of its lane (a lane too short for them
     // has none).
-    let arrows = scrolls && lane.height() >= 4.0 * SCROLL_END;
+    let arrows = scrolls && !overlay && lane.height() >= 4.0 * SCROLL_END;
     let travel = if arrows { outer.shrink2(vec2(0.0, SCROLL_END)) } else { outer };
     let plain = ui.style().clone();
-    scroll_style(ui, &t);
+    if overlay {
+        overlay_scroll_style(ui, &t);
+    } else {
+        scroll_style(ui, &t);
+    }
     let out =
         egui::ScrollArea::vertical().id_salt("message_list").auto_shrink([false, false]).scroll_bar_rect(travel).show_viewport(ui, |ui, viewport| {
             // The bar's looks are the bar's alone.
             ui.set_style(plain);
             let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
             let origin = area.min;
-            // Rows end where the scroll bar's lane starts, whether the list scrolls or not.
-            let width = (area.width() - SCROLL_LANE).max(0.0);
+            // Rows end where the scroll bar's lane starts, whether the list scrolls or not (at the
+            // list's right edge where the bar floats over them).
+            let width = (area.width() - lane_w).max(0.0);
             // Only the rows in view are laid out.
             let first = tops.partition_point(|top| top + row_h < viewport.min.y).saturating_sub(1);
             for (i, row) in rows.iter().enumerate().skip(first) {
@@ -561,7 +623,7 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
                 message_row(app, ui, row, rect);
             }
             if below > 0.0 {
-                server_rows::show(app, ui, &local, origin.x, origin.y + rows_end, width, row_h, viewport.translate(origin.to_vec2()));
+                server_rows::show(app, ui, &local, origin.x, origin.y + rows_end, width, server_h, viewport.translate(origin.to_vec2()));
             }
         });
     if arrows {
@@ -569,8 +631,6 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     }
 }
 
-/// Whether a row names the folder its message is in, before its preview: in a search of every
-/// mailbox, as Outlook's rows do (#195); in one folder the owner knows which it is.
 /// How wide the folder a search result is in may be drawn: the time's column.
 const FOLDER_W: f32 = TEXT_RIGHT - TIME_RIGHT;
 
@@ -599,6 +659,16 @@ fn paint_result_folder(p: &egui::Painter, end: egui::Pos2, label: &str, t: &Toke
     icon
 }
 
+/// What a row says of its message's size (#273): only while the list is arranged by size, and
+/// only when the size is known ([`Message::list_size`]); never "900 bytes", but KB at the least,
+/// as the size of a picture is said.
+fn size_label(s: &mailcraft_engine::Session, m: &Message) -> Option<String> {
+    let bytes = (s.view.sort == SortBy::Size).then(|| m.list_size()).flatten()?;
+    Some(mailcraft_model::size_label_in(crate::i18n::current(), bytes.max(1024)))
+}
+
+/// Whether a row names the folder its message is in, under the time: in a search of every
+/// mailbox, as Outlook's rows do (#195); in one folder the owner knows which it is.
 fn shows_folder(s: &mailcraft_engine::Session) -> bool {
     s.view.scope == mailcraft_engine::Scope::Everywhere && !mailcraft_model::search::Query::parse(&s.view.search).is_empty()
 }
@@ -711,8 +781,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .on_hover_text(if unread { tl!("Mark as read") } else { tl!("Mark as unread") });
     app.hit.add("messageRead", row.id, strip);
-    let line1 = rect.min.y + SENDER_Y;
-    let line2 = rect.min.y + SUBJECT_Y;
+    let one = app.session.prefs.one_line;
+    let line1 = if one { rect.center().y } else { rect.min.y + SENDER_Y };
+    let line2 = if one { rect.center().y } else { rect.min.y + SUBJECT_Y };
     // Quick actions on the row under the pointer, at the right of the sender's line: flag (where
     // a flagged message wears its flag) and delete. Like the read switch they sit on top of the
     // row and leave the selection alone.
@@ -786,6 +857,13 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
     // The sender's line. On its right, the marks: the flag in its own column at the row's end
     // (the quick actions take that place while the pointer is over the row), the others before it.
     let mut x = time_end;
+    let date =
+        crate::dates::list_label(mailcraft_engine::list::when(&m), app.session.now(), app.session.offset_at(m.date), app.session.prefs.twelve_hour);
+    let (date_font, date_color) = match (unread, overdue) {
+        (true, false) => (semibold(LIST_TEXT), t.accent_text),
+        (true, true) => (semibold(LIST_TEXT), t.overdue),
+        (false, _) => (regular(LIST_TEXT), if overdue { t.overdue } else { t.text }),
+    };
     if let Some((delete, flag)) = &quick {
         for (resp, at, icon, color) in
             [(delete, delete_rect, "delete", t.text_dim), (flag, flag_rect, "flag", if flagged { t.icon } else { t.text_dim })]
@@ -804,6 +882,13 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
             FlagStatus::Complete => icons::paint(p, flag, "complete", t.icon, t.accent),
             FlagStatus::None => {}
         }
+    }
+    // In a single line the time comes before the marks, and the quick actions take its place
+    // while the pointer is over the row.
+    let mut one_date_w = 0.0;
+    if one && quick.is_none() {
+        one_date_w = p.text(pos2(time_end, line1), Align2::RIGHT_CENTER, &date, date_font.clone(), date_color).width();
+        x = time_end - one_date_w - 10.0;
     }
     let mut marker = |icon: &str, color: Color32| {
         icons::paint(p, Rect::from_center_size(pos2(x - 6.0, line1), vec2(12.0, 12.0)), icon, color, t.accent);
@@ -830,36 +915,49 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
     } else if m.forwarded {
         marker("forward", t.text_dim);
     }
+    // Arranged by size, the message's size (#273); in a single line it comes before the marks, so
+    // the sender's name stops short of it there, and a line with no room for both keeps the name.
+    let size = size_label(&app.session, &m)
+        .map(|label| p.layout_no_wrap(label, regular(LIST_TEXT), t.text_dim))
+        .filter(|g| !one || x - 4.0 - (g.size().x + 6.0) >= left + ONE_LINE_SENDER_MIN);
+    let size_room = if one { size.as_ref().map_or(0.0, |g| g.size().x + 6.0) } else { 0.0 };
     let who_font = if unread { semibold(SENDER_TEXT) } else { regular(SENDER_TEXT) };
-    let who_end = text_end.min(x - 4.0);
+    let who_end = if one { (left + one_line_sender_width(time_end - left)).min(x - 4.0 - size_room) } else { text_end.min(x - 4.0) };
     let mut who_x = left;
     if m.draft {
         let w = paint_clipped(p, pos2(left, line1), (who_end - left).max(0.0), tl!("[Draft]"), regular(SENDER_TEXT), t.red);
         who_x += w + 5.0;
     }
-    paint_clipped(p, pos2(who_x, line1), (who_end - who_x).max(0.0), &who, who_font, if overdue { t.overdue } else { t.text });
+    let w = paint_clipped(p, pos2(who_x, line1), (who_end - who_x).max(0.0), &who, who_font, if overdue { t.overdue } else { t.text });
+    app.hit.add("messageSender", row.id, Rect::from_min_max(pos2(left, line1 - 7.0), pos2(who_x + w, line1 + 7.0)));
 
     // The subject's line, with the time at its end.
-    let date =
-        crate::dates::list_label(mailcraft_engine::list::when(&m), app.session.now(), app.session.offset_at(m.date), app.session.prefs.twelve_hour);
-    let (date_font, date_color) = match (unread, overdue) {
-        (true, false) => (semibold(LIST_TEXT), t.accent_text),
-        (true, true) => (semibold(LIST_TEXT), t.overdue),
-        (false, _) => (regular(LIST_TEXT), if overdue { t.overdue } else { t.text }),
-    };
-    let date_w = p.text(pos2(time_end, line2), Align2::RIGHT_CENTER, &date, date_font, date_color).width();
-    let mut subject_end = text_end.min(time_end - date_w - 8.0);
+    let date_w = if one { one_date_w } else { p.text(pos2(time_end, line2), Align2::RIGHT_CENTER, &date, date_font, date_color).width() };
+    let mut subject_end = if one { time_end } else { text_end.min(time_end - date_w - 8.0) };
 
-    // In a search of every mailbox the folder it is in, then category marks and the size of a
-    // conversation: at the right of the preview's first line, under the time, or before the time
-    // when no preview is shown.
-    let lines = app.session.prefs.preview_lines.min(3);
+    // The size; in a search of every mailbox the folder it is in; then category marks and the
+    // size of a conversation: at the right of the preview's first line, under the time, before
+    // the time when no preview is shown, or before the marks in a single line.
+    let lines = if one { 0 } else { app.session.prefs.preview_lines.min(3) };
     let preview_y = rect.min.y + PREVIEW_TOP + PREVIEW_PITCH / 2.0 + 0.5;
-    let (mut sx, tail_y) = if lines > 0 { (time_end, preview_y) } else { (time_end - date_w - 8.0, line2) };
+    let (mut sx, tail_y) = if one {
+        (x, line1)
+    } else if lines > 0 {
+        (time_end, preview_y)
+    } else {
+        (time_end - date_w - 8.0, line2)
+    };
+    if let Some(galley) = size {
+        let at = Align2::RIGHT_CENTER.anchor_size(pos2(sx, tail_y), galley.size());
+        p.galley(at.min, galley, t.text_dim);
+        app.hit.add("messageSize", row.id, at);
+        sx = at.min.x - 6.0;
+    }
     if let Some(folder) = shows_folder(&app.session).then(|| app.session.mailbox.folder(m.folder)).flatten() {
         let label = crate::nav::result_folder_label(&app.session.mailbox, folder);
-        sx = paint_result_folder(p, pos2(sx, tail_y), &label, &t) - 6.0;
-        app.hit.add("messageFolder", row.id, Rect::from_min_max(pos2(sx + 6.0, tail_y - 7.0), pos2(time_end, tail_y + 7.0)));
+        let end = sx;
+        sx = paint_result_folder(p, pos2(end, tail_y), &label, &t) - 6.0;
+        app.hit.add("messageFolder", row.id, Rect::from_min_max(pos2(sx + 6.0, tail_y - 7.0), pos2(end, tail_y + 7.0)));
     }
     for c in m.categories.iter().take(4) {
         let color = crate::theme::c32(app.session.mailbox.category_color(c));
@@ -883,7 +981,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
         (true, true) => (semibold(LIST_TEXT), t.overdue),
         (false, _) => (regular(LIST_TEXT), if overdue { t.overdue } else { t.text }),
     };
-    paint_clipped(p, pos2(left, line2), (subject_end - left).max(0.0), subject, sfont, scolor);
+    let subject_x = if one { who_end + 10.0 } else { left };
+    paint_clipped(p, pos2(subject_x, line2), (subject_end - subject_x).max(0.0), subject, sfont, scolor);
 
     // Then the preview: whole words, as many lines as asked for, and no mark where it stops.
     let preview_end = text_end.min(sx - 6.0);
@@ -999,6 +1098,9 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, id: Id, m: &Message
 }
 
 #[cfg(test)]
+mod overlay_scroll_tests;
+
+#[cfg(test)]
 mod tests {
     use egui_kittest::kittest::Queryable as _;
     use mailcraft_engine::Session;
@@ -1016,6 +1118,8 @@ mod tests {
         let mut app = MailApp::new(Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0), Services::default());
         app.autosave = false;
         app.auto_sync = false;
+        // The lane and its arrows, on a Mac too (`overlay_scroll_tests` has the bar that floats).
+        app.overlay_scroll_bars = false;
         app
     }
 
@@ -1073,6 +1177,31 @@ mod tests {
         assert_eq!([row_height(0), row_height(1), row_height(2), row_height(3)], [57.0, 72.0, 85.0, 98.0]);
         assert_eq!(row_height(200), row_height(3));
         assert_eq!(SCROLL_LANE, 29.0);
+    }
+
+    /// Show in Groups off draws no headings, and the single-line list draws every row as tall
+    /// as one line, with more rows in the same window.
+    #[test]
+    fn the_list_without_groups_and_in_a_single_line() {
+        let mut a = app();
+        a.execute("view.groups", json!({"value": false})).unwrap();
+        let mut harness = window(a, (1280.0, 1100.0));
+        let rows = drawn(&mut harness);
+        assert!(rows.len() >= 6);
+        assert!(rows.iter().all(|(row, _)| row.group.is_none()));
+        for pair in rows.windows(2) {
+            assert_eq!(pair[1].1.min.y - pair[0].1.min.y, row_height(1));
+        }
+        let before = rows.len();
+        harness.state_mut().execute("view.oneLine", json!({"value": true})).unwrap();
+        harness.run_steps(3);
+        let rows = drawn(&mut harness);
+        assert!(rows.len() >= before);
+        for (_, rect) in &rows {
+            assert_eq!(rect.height(), ONE_LINE_H);
+        }
+        assert_eq!(one_line_sender_width(0.0), 0.0);
+        assert_eq!(one_line_sender_width(10_000.0), 220.0);
     }
 
     /// Whatever a row shows (read or unread, flagged, with a file, with category marks, pinned,
@@ -1469,5 +1598,121 @@ mod tests {
         assert_eq!(crate::nav::result_folder_label(mb, mb.folder(second).unwrap()), "Inbox - Work");
         assert!(crate::nav::result_folder_label(mb, mb.folder(first).unwrap()).starts_with("Inbox - "));
         assert_eq!(crate::nav::result_folder_label(mb, mb.folder(projects).unwrap()), "Projects", "a name only one has");
+    }
+
+    /// #273: arranged by size, each row says its message's size where the folder of a search
+    /// result goes: under the time, or before it with no preview; in a search of every mailbox
+    /// the size is nearest the time and the folder before it. Otherwise no row says it.
+    #[test]
+    fn arranged_by_size_each_row_says_its_size() {
+        let mut a = app();
+        // Of a Microsoft account's message only the start is here; another has the mark of a
+        // message too large to download, which any sender could have written.
+        let ids: Vec<Id> = a.session.rows().iter().map(|row| row.id).collect();
+        let (partial, marked, whole) = (ids[1], ids[2], ids[3]);
+        let m = a.session.mailbox.message_mut(partial).unwrap();
+        m.body = mailcraft_model::Body { text: "Only the start".into(), html: None };
+        m.attachments.clear();
+        m.unfetched = true;
+        m.server = Some(mailcraft_model::sync::ServerMessage { size: 5 << 19, ..Default::default() });
+        a.session.mailbox.message_mut(marked).unwrap().headers.push((mailcraft_model::NOT_DOWNLOADED.into(), "62914560".into()));
+        let said = |a: &MailApp, id: Id| size_label(&a.session, a.session.mailbox.message(id).unwrap());
+        assert_eq!((said(&a, partial), said(&a, whole)), (None, None), "arranged by date");
+        a.execute("view.sort", json!({"by": "size", "descending": true})).unwrap();
+        assert_eq!((said(&a, partial), said(&a, marked), said(&a, whole)), (Some("2.5 MB".into()), None, Some("1 KB".into())));
+        a.execute("view.sort", json!({"by": "date"})).unwrap();
+
+        let mut harness = window(a, (1200.0, 800.0));
+        let sizes = |harness: &mut Window| -> Vec<(Row, Rect, Option<Rect>)> {
+            drawn(harness).into_iter().map(|(row, rect)| (row.clone(), rect, harness.state().hit.rect("messageSize", row.id))).collect()
+        };
+        assert!(sizes(&mut harness).iter().all(|(_, _, size)| size.is_none()), "arranged by date");
+
+        harness.state_mut().execute("view.sort", json!({"by": "size", "descending": true})).unwrap();
+        harness.run_steps(3);
+        let rows = sizes(&mut harness);
+        assert!(rows.len() > 3);
+        // Largest on top after what is pinned: the message whose server gave its size.
+        assert_eq!(rows.iter().find(|(row, _, _)| !message(&harness, row.id).pinned).map(|(row, _, _)| row.id), Some(partial));
+        // The one with the mark says nothing; every other row says its size.
+        assert!(harness.state().hit.rect("messageSize", marked).is_none());
+        for (row, rect, size) in rows.iter().filter(|(row, _, _)| row.id != marked) {
+            let size = size.unwrap_or_else(|| panic!("row {} says no size", row.id));
+            // Right-aligned at the time's end, on the preview's first line: under the time.
+            assert!((size.max.x - (rect.max.x - TIME_RIGHT)).abs() <= 1.0, "row {}: {size:?} in {rect:?}", row.id);
+            assert!(size.min.y > rect.min.y + PREVIEW_TOP - 2.0 && size.max.y < rect.max.y, "row {}", row.id);
+            assert!(size.width() < FOLDER_W, "row {}: the time's column", row.id);
+        }
+
+        // With no preview, on the subject's line before the time.
+        harness.state_mut().execute("view.previewLines", json!({"value": 0})).unwrap();
+        harness.run_steps(3);
+        for (row, rect, size) in sizes(&mut harness).into_iter().filter(|(row, _, _)| row.id != marked) {
+            let size = size.unwrap_or_else(|| panic!("row {} says no size", row.id));
+            assert!(size.max.x < rect.max.x - TIME_RIGHT - 20.0, "row {}: before the time", row.id);
+            assert!(size.center().y > rect.center().y, "row {}: on the subject's line", row.id);
+        }
+        harness.state_mut().execute("view.previewLines", json!({"value": 1})).unwrap();
+
+        // In a single line, on that line before the marks and the time.
+        harness.state_mut().execute("view.oneLine", json!({"value": true})).unwrap();
+        harness.run_steps(3);
+        for (row, rect, size) in sizes(&mut harness).into_iter().filter(|(row, _, _)| row.id != marked) {
+            let size = size.unwrap_or_else(|| panic!("row {} says no size", row.id));
+            assert!(size.max.x < rect.max.x - TIME_RIGHT - 20.0, "row {}: before the time", row.id);
+            assert!((size.center().y - rect.center().y).abs() <= 2.0, "row {}: on its one line", row.id);
+        }
+        harness.state_mut().execute("view.oneLine", json!({"value": false})).unwrap();
+
+        // A search of every mailbox: the size, then the folder before it.
+        harness.state_mut().execute("view.search", json!({"query": "the", "scope": "everywhere"})).unwrap();
+        harness.run_steps(3);
+        let rows = sizes(&mut harness);
+        assert!(!rows.is_empty());
+        for (row, _, size) in rows.iter().filter(|(row, _, _)| row.id != marked) {
+            let size = size.unwrap_or_else(|| panic!("row {} says no size", row.id));
+            let folder = at(&harness, "messageFolder", row.id);
+            assert!(folder.max.x <= size.min.x, "row {}: {folder:?} before {size:?}", row.id);
+        }
+    }
+
+    /// #273: in a single line, in a list as narrow as it goes, the sender's name stops short of
+    /// the size, and a row with every mark, which has no room for both, keeps the name.
+    #[test]
+    fn in_a_narrow_single_line_the_sender_stops_short_of_the_size() {
+        let mut a = app();
+        a.ui.list_width = 240.0;
+        let ids: Vec<Id> = a.session.rows().iter().map(|row| row.id).collect();
+        // Every other row with every mark.
+        for id in ids.iter().step_by(2) {
+            let m = a.session.mailbox.message_mut(*id).unwrap();
+            m.from.name = "Bartholomew Featherstonehaugh".into();
+            (m.importance, m.answered) = (Importance::High, true);
+            m.attachments.push(mailcraft_model::Attachment::new("a.pdf", "application/pdf", vec![1]));
+        }
+        a.execute("view.sort", json!({"by": "size", "descending": true})).unwrap();
+        a.execute("view.oneLine", json!({"value": true})).unwrap();
+        let mut harness = window(a, (760.0, 800.0));
+        let rows = drawn(&mut harness);
+        assert!(rows.len() > 3);
+        let (mut said, mut left_out) = (0, 0);
+        for (row, rect) in rows {
+            assert!(rect.width() < 260.0, "{rect:?}");
+            let sender = at(&harness, "messageSender", row.id);
+            if harness.state().hit.rect("messageSize", row.id).is_none() {
+                assert!(sender.width() > 0.0, "row {}: the name is drawn", row.id);
+                left_out += 1;
+            }
+            if let Some(size) = harness.state().hit.rect("messageSize", row.id) {
+                assert!(sender.max.x <= size.min.x, "row {}: {sender:?} runs into {size:?}", row.id);
+                // Never for less than a single line's least room for the name.
+                if message(&harness, row.id).answered {
+                    assert!(sender.width() >= ONE_LINE_SENDER_MIN - 12.0, "row {}: {sender:?}", row.id);
+                }
+                said += 1;
+            }
+        }
+        // Some rows have room for it, and some, crowded with marks, haven't.
+        assert!(said > 0 && left_out > 0, "{said} said, {left_out} left out");
     }
 }

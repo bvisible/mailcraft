@@ -28,7 +28,7 @@ fn run(server: &StandIn, links: Vec<GraphLink>, cancel: &AtomicBool) -> Vec<Grap
 fn links_after(pieces: &[GraphMailResult], mut links: Vec<GraphLink>) -> Vec<GraphLink> {
     for page in pieces.iter().flat_map(|p| &p.pages) {
         links.retain(|l| l.folder != page.folder);
-        links.push(GraphLink { folder: page.folder.clone(), link: page.link.clone(), caught_up: page.caught_up });
+        links.push(GraphLink { folder: page.folder.clone(), link: page.link.clone(), caught_up: page.caught_up, counts: page.counts });
     }
     links
 }
@@ -308,4 +308,145 @@ fn three_messages_refused_one_after_another_stop_the_batch() {
     assert!(ids.iter().all(|id| !got.errors[0].contains(id.as_str())));
     let asked = server.state().requests.iter().filter(|r| r.target.contains("$value")).count();
     assert_eq!(asked, 3, "the rest wait");
+}
+
+/// #276: every piece says how long its part took and how many requests it made, by phase: the
+/// folders in the first piece, the mail in each page's, and nothing in them names a folder.
+#[test]
+fn every_piece_of_a_run_carries_its_time_and_requests() {
+    use mailcraft_model::sync::SyncPhase;
+    let server = StandIn::start().unwrap();
+    let inbox = server.state().well_known("inbox");
+    server.state().mailbox.generate(&inbox, 250, NOW);
+    let pieces = run(&server, Vec::new(), &AtomicBool::new(false));
+    let phase = |piece: &GraphMailResult, phase: SyncPhase| piece.timings.phases.iter().find(|p| p.phase == phase).map_or(0, |p| p.requests);
+    // The folders' piece: the special folders and the listing are requests; nothing was sent.
+    let first = pieces.first().unwrap();
+    assert!(phase(first, SyncPhase::Folders) > 0, "{:?}", first.timings);
+    assert_eq!(phase(first, SyncPhase::Sending), 0);
+    assert_eq!(first.timings.skipped, 0);
+    // The mail: every delta request is counted against the new mail of some piece.
+    let counted: u32 = pieces.iter().map(|p| phase(p, SyncPhase::NewMail)).sum();
+    let asked = u32::try_from(server.state().requests.iter().filter(|r| r.target.contains("/messages/delta")).count()).unwrap();
+    assert!(asked >= 3, "250 messages in pages of 100, and the other folders");
+    assert_eq!(counted, asked);
+    // Taken in at once, as a host that waits for the whole run does, the numbers add up.
+    let mut whole = GraphMailResult::default();
+    for piece in pieces.iter().cloned() {
+        whole.absorb(piece);
+    }
+    assert_eq!(whole.timings.requests(), pieces.iter().map(|p| p.timings.requests()).sum::<u32>());
+    // Pages come with the page's own piece, the last with what was left over.
+    assert!(pieces.iter().filter(|p| !p.pages.is_empty()).all(|p| phase(p, SyncPhase::NewMail) >= 1));
+}
+
+/// #276: what is sent is timed apart from the listing of the folders.
+#[test]
+fn changes_made_here_are_timed_as_sending() {
+    use mailcraft_model::sync::{FolderChange, SyncPhase};
+    let server = StandIn::start().unwrap();
+    let mut asked = request(Vec::new());
+    asked.changes = vec![FolderChange::Create { folder: 9, name: "Projects".into(), parent: String::new(), parent_folder: None }];
+    let pieces = whole_run(&server.url(), TOKEN, &asked, Arc::new(Gate::new()), QUICK, &AtomicBool::new(false));
+    let first = pieces.first().unwrap();
+    let sending = first.timings.phases.iter().find(|p| p.phase == SyncPhase::Sending).map_or(0, |p| p.requests);
+    assert!(sending >= 1, "{:?} {:?}", first.timings, first.errors);
+    assert!(first.timings.phases.iter().any(|p| p.phase == SyncPhase::Folders && p.requests > 0));
+}
+
+/// The Inbox pass (#276): the Inbox's delta from its stored link, and nothing else.
+mod inbox_pass {
+    use super::*;
+    use mailcraft_model::FolderKind;
+    use mailcraft_model::sync::{GraphFolder, SyncPhase};
+
+    fn pass(server: &StandIn, inbox: &str, links: Vec<GraphLink>, cancel: &AtomicBool) -> Vec<GraphMailResult> {
+        let folder = GraphFolder { id: inbox.into(), name: "Inbox".into(), kind: FolderKind::Inbox, ..Default::default() };
+        let inbox_links = links.into_iter().filter(|l| l.folder == inbox).collect();
+        let request = GraphMailRequest { inbox_pass: Some(folder), ..request(inbox_links) };
+        whole_run(&server.url(), TOKEN, &request, Arc::new(Gate::new()), QUICK, cancel)
+    }
+
+    #[test]
+    fn it_reads_the_inboxs_delta_alone_and_the_run_after_it_reads_nothing_of_the_inbox_twice() {
+        let server = StandIn::start().unwrap();
+        let inbox = server.state().well_known("inbox");
+        let archive = server.state().well_known("archive");
+        {
+            let mut state = server.state();
+            state.mailbox.generate(&inbox, 30, NOW);
+            state.mailbox.generate(&archive, 10, NOW);
+        }
+        let first = run(&server, Vec::new(), &AtomicBool::new(false));
+        let links = links_after(&first, Vec::new());
+        // New mail in both folders since.
+        let (new_inbox, new_archive) = {
+            let mut state = server.state();
+            (state.mailbox.add(&inbox, "Fresh in the Inbox", NOW + 60), state.mailbox.add(&archive, "Fresh in the Archive", NOW + 60))
+        };
+
+        let before = server.state().requests.len();
+        let pieces = pass(&server, &inbox, links.clone(), &AtomicBool::new(false));
+        // Only the Inbox's delta was asked: no listing, no other folder, nothing else.
+        let asked: Vec<String> = server.state().requests[before..].iter().map(|r| format!("{} {}", r.method, r.target)).collect();
+        assert_eq!(asked.len(), 1, "{asked:?}");
+        assert!(asked[0].starts_with("GET ") && asked[0].contains("messages/delta"), "{asked:?}");
+        // Every piece is of the pass, partial, and none says the mailbox was read whole.
+        assert!(pieces.iter().all(|p| p.inbox_pass && p.partial && !p.whole && p.listing.is_none()), "{pieces:?}");
+        let got: Vec<&str> = pieces.iter().flat_map(|p| &p.pages).flat_map(|p| &p.messages).map(|m| m.server.id.as_str()).collect();
+        assert_eq!(got, [new_inbox.as_str()]);
+        assert!(pieces.iter().flat_map(|p| &p.pages).all(|p| p.folder == inbox && p.caught_up));
+        // Its time is the Inbox phase's, with its request.
+        let mut timings = mailcraft_model::sync::Timings::default();
+        pieces.iter().for_each(|p| timings.absorb(&p.timings));
+        assert_eq!(timings.phases.len(), 1);
+        assert_eq!((timings.phases[0].phase, timings.phases[0].requests), (SyncPhase::Inbox, 1));
+
+        // The run after it, from the links the pass moved on: the Inbox has nothing new.
+        let links = links_after(&pieces, links);
+        let rest = run(&server, links, &AtomicBool::new(false));
+        let inbox_news: usize = rest.iter().flat_map(|p| &p.pages).filter(|p| p.folder == inbox).map(|p| p.messages.len()).sum();
+        let archive_news: Vec<&str> =
+            rest.iter().flat_map(|p| &p.pages).filter(|p| p.folder == archive).flat_map(|p| &p.messages).map(|m| m.server.id.as_str()).collect();
+        assert_eq!(inbox_news, 0, "the Inbox was read by the pass");
+        assert_eq!(archive_news, [new_archive.as_str()]);
+        assert!(rest.last().unwrap().whole && rest.iter().all(|p| !p.inbox_pass));
+    }
+
+    #[test]
+    fn stop_ends_the_pass_after_the_page_in_hand_and_the_next_one_goes_on_from_there() {
+        let server = StandIn::start().unwrap();
+        let inbox = server.state().well_known("inbox");
+        server.state().mailbox.generate(&inbox, 20, NOW);
+        let links = links_after(&run(&server, Vec::new(), &AtomicBool::new(false)), Vec::new());
+        server.state().mailbox.generate(&inbox, 250, NOW + 3_600);
+        let cancel = AtomicBool::new(false);
+        let folder = GraphFolder { id: inbox.clone(), kind: FolderKind::Inbox, ..Default::default() };
+        let asked = GraphMailRequest { inbox_pass: Some(folder), ..request(links.clone()) };
+        let mut pieces = Vec::new();
+        super::super::sync_mail_with(&server.url(), TOKEN, &asked, Arc::new(Gate::new()), QUICK, &cancel, &mut |piece| {
+            cancel.store(true, Ordering::Relaxed);
+            pieces.push(piece);
+        });
+        let last = pieces.last().unwrap();
+        assert!(last.stopped && last.inbox_pass && !last.whole);
+        let got: usize = pieces.iter().flat_map(|p| &p.pages).map(|p| p.messages.len()).sum();
+        assert!(got > 0 && got < 250, "{got}");
+        // The next pass goes on from there: nothing twice, nothing missed.
+        let links = links_after(&pieces, links);
+        let more = pass(&server, &inbox, links, &AtomicBool::new(false));
+        let rest: usize = more.iter().flat_map(|p| &p.pages).map(|p| p.messages.len()).sum();
+        assert_eq!(got + rest, 250);
+    }
+
+    #[test]
+    fn a_server_that_wont_have_it_ends_the_pass_with_the_reason_and_nothing_else() {
+        let server = StandIn::start().unwrap();
+        let inbox = server.state().well_known("inbox");
+        let folder = GraphFolder { id: inbox.clone(), kind: FolderKind::Inbox, ..Default::default() };
+        let asked = GraphMailRequest { inbox_pass: Some(folder), ..request(Vec::new()) };
+        let pieces = whole_run(&server.url(), "not the token", &asked, Arc::new(Gate::new()), QUICK, &AtomicBool::new(false));
+        let last = pieces.last().unwrap();
+        assert!(last.partial && last.inbox_pass && !last.errors.is_empty() && last.pages.is_empty());
+    }
 }

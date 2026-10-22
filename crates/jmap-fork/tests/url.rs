@@ -5,8 +5,8 @@
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use mailcraft_jmap::http::Error;
-use mailcraft_jmap::url::{Url, default_port, pct, pct_decode};
+use mailcraft_jmap_fork::http::Error;
+use mailcraft_jmap_fork::url::{Url, default_port, pct, pct_decode};
 
 /// A secret-looking marker put in addresses, which no error or Debug output may repeat.
 const SECRET: &str = "SeCrEt-ToKeN";

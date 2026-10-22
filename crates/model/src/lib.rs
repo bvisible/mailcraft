@@ -43,14 +43,16 @@ pub use calendar::{
 pub use contact::{Contact, Labeled, PostalAddress};
 pub use jmap_server::JmapServer;
 pub use mailbox::{
-    Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderKind, GraphSwitch, IMPORTED, INTO_GRAPH,
-    MAX_SHARED, Mailbox, NOT_SENDING_YET, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server, ServerFavorites, ServerFolder,
+    Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderCounts, FolderKind, GraphSwitch, IMPORTED,
+    INTO_GRAPH, MAX_SHARED, Mailbox, NOT_SENDING_YET, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server, ServerFavorites,
+    ServerFolder,
 };
 // //// Neoffice — why mail isn't moved between a JMAP account and another account, nor copied to or from one, and how many deletes may wait for an id.
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES};
 pub use mailcraft_time as time;
 pub use message::{
-    Answers, Attachment, Body, ContentRef, FlagStatus, Importance, KeptBody, Message, normalize_subject, size_label, size_label_in, text_hash,
+    Answers, Attachment, Body, ContentRef, FlagStatus, Importance, KeptBody, Message, NOT_DOWNLOADED, normalize_subject, size_label, size_label_in,
+    text_hash,
 };
 // //// Neoffice — see `note`.
 pub use note::Note;

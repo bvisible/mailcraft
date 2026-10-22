@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Account, Address, FlagStatus, FolderKind, Id, Importance, Message};
+use crate::{Account, Address, FlagStatus, FolderCounts, FolderKind, Id, Importance, Message};
 use mailcraft_time::Timestamp;
 
 mod drafts;
@@ -162,10 +162,15 @@ pub struct Tokens {
     pub tenant: String,
 }
 
+/// How long before an access token runs out it is renewed rather than used (seconds).
+pub const FRESH_MARGIN: i64 = 300;
+
 impl Tokens {
-    /// Whether the access token is still good at `now` (Unix seconds), with a minute to spare.
+    /// Whether the access token is still good at `now` (Unix seconds), with five minutes to
+    /// spare: one that runs out sooner is renewed before a job starts with it, not during it
+    /// (#306). `now` is the wall clock, so time the computer spent asleep counts.
     pub fn fresh(&self, now: i64) -> bool {
-        !self.access.is_empty() && self.expires_at.saturating_sub(60) > now
+        !self.access.is_empty() && self.expires_at.saturating_sub(FRESH_MARGIN) > now
     }
 
     /// Whether these are somebody else's than the account's whose address is `email` and whose
@@ -568,6 +573,9 @@ pub struct SyncResult {
     /// The run was called off before it had done all there was to do (in the last piece).
     #[serde(skip_serializing_if = "is_false")]
     pub stopped: bool,
+    /// How long this piece's part of the run took, and how many requests it made (#276).
+    #[serde(skip_serializing_if = "Timings::is_empty")]
+    pub timings: Timings,
 }
 
 impl SyncResult {
@@ -597,6 +605,7 @@ impl SyncResult {
     pub fn absorb(&mut self, later: SyncResult) {
         (self.account, self.email) = (later.account, later.email);
         (self.partial, self.progress, self.step, self.stopped) = (later.partial, later.progress, later.step, later.stopped);
+        self.timings.absorb(&later.timings);
         if !later.listed.is_empty() {
             self.listed = later.listed;
         }
@@ -752,6 +761,15 @@ pub struct GraphMailRequest {
     /// owner's (#70).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub places: Vec<PlaceUp>,
+    /// The Inbox pass (#276): the run is only the delta of this folder (the Inbox, from its
+    /// stored delta link in `links`) and nothing else: no folder changes, no listing,
+    /// nothing sent. Every piece of it is partial; the host ends it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inbox_pass: Option<GraphFolder>,
+    /// A full sweep (#276): every folder's delta is read, none is passed over for having the
+    /// same counts as before. The first run after the mailbox is opened, then one an hour.
+    #[serde(skip_serializing_if = "is_false")]
+    pub full: bool,
 }
 
 /// Most changes of messages one Graph run is asked to make; more go over several runs.
@@ -894,6 +912,11 @@ pub struct GraphLink {
     /// It is a delta link (the folder's round has ended once), not the next page of a round.
     #[serde(skip_serializing_if = "is_false")]
     pub caught_up: bool,
+    /// The folder's counts when the round this delta link ended began
+    /// ([`crate::ServerFolder::counts`]): the same again in this run's listing, the folder may
+    /// be passed over (#276).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<FolderCounts>,
 }
 
 /// A message as a folder's delta gives it: what the message list needs (R3 spec S9).
@@ -946,6 +969,11 @@ pub struct MessagePage {
     /// (R3 spec S11).
     #[serde(skip_serializing_if = "is_false")]
     pub afresh: bool,
+    /// For a page that ends a round begun after this run's listing: the folder's counts in that
+    /// listing, kept with the link ([`crate::ServerFolder::counts`], #276). Otherwise `None`,
+    /// and the counts kept for the folder are forgotten with its old link.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<FolderCounts>,
 }
 
 /// A message's read state as a folder's delta says it alone.
@@ -976,6 +1004,10 @@ pub struct GraphFolder {
     pub total: u32,
     #[serde(skip_serializing_if = "is_zero_u32")]
     pub unread: u32,
+    /// The server gave both counts (#276). A count it didn't give reads as 0 above, so a folder
+    /// whose counts aren't known is never passed over as unchanged.
+    #[serde(skip_serializing_if = "is_false")]
+    pub counted: bool,
 }
 
 fn is_zero_u32(n: &u32) -> bool {
@@ -1056,8 +1088,9 @@ pub struct GraphMailResult {
     /// at a time), each taken in as it comes.
     #[serde(skip_serializing_if = "is_false")]
     pub partial: bool,
-    /// Every folder's delta reached its end in this run: a message the server said left its folder
-    /// and that turned up in no other is removed now (R3 spec S9, S11).
+    /// Every folder's delta reached its end in this run, and the run's listing of folders went to
+    /// its end: a message the server said left its folder and that turned up in no other is
+    /// removed now (R3 spec S9, S11). Never after a listing cut short (#305).
     #[serde(skip_serializing_if = "is_false")]
     pub whole: bool,
     /// How far the run has got, for the status bar (R3 spec S15).
@@ -1070,6 +1103,13 @@ pub struct GraphMailResult {
     /// own code ([`SharedRefusal`]). A host doesn't ask again by itself until the owner does.
     #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "lenient")]
     pub refused: Option<SharedRefusal>,
+    /// How long this piece's part of the run took, and how many requests it made (#276).
+    #[serde(skip_serializing_if = "Timings::is_empty")]
+    pub timings: Timings,
+    /// The piece is of the Inbox pass ([`GraphMailRequest::inbox_pass`], #276): it is never the
+    /// end of the account's part of the run, and never says the mailbox was read whole.
+    #[serde(skip_serializing_if = "is_false")]
+    pub inbox_pass: bool,
 }
 
 /// Why Microsoft won't open a shared mailbox for the owner of the token (#70), told apart by
@@ -1113,6 +1153,7 @@ impl GraphMailResult {
         self.pages.extend(piece.pages);
         (self.partial, self.whole, self.stopped) = (piece.partial, piece.whole, piece.stopped);
         self.refused = piece.refused.or(self.refused);
+        self.timings.absorb(&piece.timings);
         if piece.progress.is_some() {
             self.progress = piece.progress;
         }
@@ -1266,7 +1307,7 @@ mod tests {
         let tokens = Tokens { access: "tok-en-123".into(), refresh: "re-fresh-456".into(), expires_at: 1_000, ..Default::default() };
         let shown = format!("{tokens:?}");
         assert!(!shown.contains("tok-en-123") && !shown.contains("re-fresh-456"));
-        assert!(tokens.fresh(900) && !tokens.fresh(950) && !Tokens::default().fresh(0));
+        assert!(tokens.fresh(650) && !tokens.fresh(700) && !tokens.fresh(950) && !Tokens::default().fresh(0));
         // (#103) Who signed in, against the account.
         let ada = Tokens { email: " Ada@Example.org ".into(), ..Default::default() };
         assert!(!ada.someone_else("ada@example.org", "") && !ada.someone_else("ada.alias@example.org", "ADA@example.org"));
