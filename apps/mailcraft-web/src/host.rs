@@ -355,6 +355,8 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
             secret: text(&item, "secret"),
             bearer: text(&item, "scheme").eq_ignore_ascii_case("bearer"),
             signature,
+            // A mailbox shared with the person, as the page says (Nora asks before she writes in it).
+            shared: get(&item, "shared").and_then(|v| v.as_bool()) == Some(true),
         };
         if complete(&account) && !out.iter().any(|a| a.email.eq_ignore_ascii_case(&account.email)) {
             out.push(account);

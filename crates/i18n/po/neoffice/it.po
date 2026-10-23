@@ -1938,3 +1938,112 @@ msgstr "La tua sessione Neoffice è terminata: ricarica la pagina, poi chiedi di
 
 msgid "nothing hosting this window reaches Nora's conversation"
 msgstr "nulla di ciò che ospita questa finestra raggiunge la conversazione di Nora"
+
+msgid "Nora's pane needs a hosting page that reaches her conversation (NeoMail in Neoffice)."
+msgstr "Il pannello di Nora ha bisogno di una pagina ospitante che raggiunga la sua conversazione (NeoMail in Neoffice)."
+
+msgid "A mailbox shared with you"
+msgstr "Una casella condivisa con Lei"
+
+
+msgid "Write from {mailbox}"
+msgstr "Scrivi da {mailbox}"
+
+msgid "Nora is already waiting for your answer on the card of her pane."
+msgstr "Nora sta già aspettando la Sua risposta sulla scheda del suo pannello."
+
+msgid "You didn't let Nora write in {mailbox}: nothing was written."
+msgstr "Lei non ha permesso a Nora di scrivere in {mailbox}: non è stato scritto nulla."
+
+msgid "A signature is open in File › Signatures: what Nora does would go into it. Close it first."
+msgstr "Una firma è aperta in File › Firme: ciò che fa Nora finirebbe lì dentro. La chiuda prima."
+
+msgid "NeoMail takes one of Nora's commands at a time: draft.reply, draft.new or draft.write, each in a call of its own."
+msgstr "NeoMail accetta un solo comando di Nora alla volta: draft.reply, draft.new o draft.write, ciascuno in una chiamata a sé."
+
+msgid "A message has no pages to look at: Nora reads it with doc_observe."
+msgstr "Un messaggio non ha pagine da visualizzare: Nora lo legge con doc_observe."
+
+msgid "Saving or sending the message is yours: it is ready in your window."
+msgstr "Salvare o inviare il messaggio spetta a Lei: è pronto nella Sua finestra."
+
+msgid "`{command}` takes the text to write as `text`."
+msgstr "`{command}` riceve il testo da scrivere come `text`."
+
+msgid "`all` is true or false."
+msgstr "`all` è true o false."
+
+msgid "`at` is \"top\", \"end\" or \"replace\", not \"{value}\"."
+msgstr "`at` è \"top\", \"end\" o \"replace\", non « {value} »."
+
+msgid "`{command}` is not one of Nora's commands in NeoMail: she reads the window and writes into the message being written ({commands}); sending, deleting, moving, filing and flagging are yours."
+msgstr "`{command}` non è uno dei comandi di Nora in NeoMail: Nora legge la finestra e scrive nel messaggio in corso di redazione ({commands}); invio, eliminazione, spostamento, archiviazione e contrassegno spettano a Lei."
+
+msgid "No message is being written: Nora opens the reply with draft.reply (it writes the text too), or a new message with draft.new."
+msgstr "Nessun messaggio è in corso di redazione: Nora apre la risposta con draft.reply (scrive anche il testo), oppure un nuovo messaggio con draft.new."
+
+msgid "Say what to write: `text` is empty."
+msgstr "Indichi cosa scrivere: `text` è vuoto."
+
+msgid "That is too long to write in one go: {count} characters at most."
+msgstr "È troppo lungo da scrivere in una volta sola: al massimo {count} caratteri."
+
+msgid "A signature is open in File › Signatures: what Nora writes would go into it. Close it first."
+msgstr "Una firma è aperta in File › Firme: ciò che Nora scrive finirebbe lì dentro. La chiuda prima."
+
+msgid "Your text is longer than Nora reads of it ({count} characters): she can't write over it whole, only above or after it."
+msgstr "Il Suo testo è più lungo di quanto Nora ne legga ({count} caratteri): Nora non può scriverlo per intero sopra, solo prima o dopo."
+
+msgid "The message starts with its signature: leave a line above it for Nora's text."
+msgstr "Il messaggio inizia con la sua firma: lasci una riga sopra per il testo di Nora."
+
+msgid "Another message is being written: Nora writes into it with draft.write, or you close it first."
+msgstr "Un altro messaggio è in corso di redazione: Nora vi scrive con draft.write, oppure lo chiude prima Lei."
+
+msgid "No message is open: open the message to answer first."
+msgstr "Nessun messaggio è aperto: apra prima il messaggio a cui rispondere."
+
+msgid "The message is still being downloaded: ask again in a moment."
+msgstr "Il messaggio è ancora in fase di download: riprovi tra un momento."
+
+msgid "The reply could not be opened."
+msgstr "Non è stato possibile aprire la risposta."
+
+msgid "A message is being written already: Nora writes into it with draft.write, or you close it first."
+msgstr "Un messaggio è già in corso di redazione: Nora vi scrive con draft.write, oppure lo chiude prima Lei."
+
+msgid "`{field}` is too long."
+msgstr "`{field}` è troppo lungo."
+
+msgid "`{field}` is text."
+msgstr "`{field}` deve essere testo."
+
+msgid "The new message could not be opened."
+msgstr "Non è stato possibile aprire il nuovo messaggio."
+
+msgid "Selecting works in the message being written, and none is: Nora reads a message with doc_observe."
+msgstr "La selezione agisce sul messaggio in corso di redazione, e non ce n’è nessuno: Nora legge un messaggio con doc_observe."
+
+msgid "Say which text to select."
+msgstr "Indichi quale testo selezionare."
+
+msgid "Select at most {count} characters at a time."
+msgstr "Selezioni al massimo {count} caratteri alla volta."
+
+msgid "\"{text}\" is not in the message being written ({count} time(s))."
+msgstr "« {text} » non si trova nel messaggio in corso di redazione ({count} volta/e)."
+
+msgid "Nora wants to write in a message of {mailbox}, a mailbox shared with you: what she writes is kept in its drafts until you send it or discard it. Your yes holds for this mailbox until the conversation is new."
+msgstr "Nora vuole scrivere in un messaggio di {mailbox}, una casella condivisa con Lei: ciò che scrive viene conservato nelle sue Bozze finché non lo invia o lo scarta. Il Suo consenso vale per questa casella finché non avvia una nuova conversazione."
+
+msgid "You stopped Nora: nothing was written."
+msgstr "Lei ha fermato Nora: non è stato scritto nulla."
+
+msgid "The window changed since Nora asked: nothing was written. Ask her again."
+msgstr "La finestra è cambiata da quando Nora ha chiesto: non è stato scritto nulla. Chieda di nuovo a Nora."
+
+msgid "Nora's request waited too long for your answer: nothing was written."
+msgstr "La richiesta di Nora ha atteso troppo a lungo la Sua risposta: non è stato scritto nulla."
+
+msgid "NeoMail doesn't print or export a message for Nora: you print it from the message's own window."
+msgstr "NeoMail non stampa né esporta un messaggio per Nora: lo stampa Lei dalla finestra del messaggio stesso."

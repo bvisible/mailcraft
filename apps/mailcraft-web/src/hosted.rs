@@ -36,6 +36,9 @@ pub struct HostAccount {
     pub bearer: bool,
     /// Its signature in Neoffice, as the page gives it: its HTML, its text, and a company's logo with its place.
     pub signature: crate::page_signature::PageSignature,
+    /// Whether the page says it is shared with the person rather than theirs (`shared: true`): Nora writes into a
+    /// message of it only after the person's click on a card of her pane that names it (nora.rs).
+    pub shared: bool,
 }
 
 impl std::fmt::Debug for HostAccount {

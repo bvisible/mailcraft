@@ -27,6 +27,15 @@
 //!   nothing, saves nothing, touches no account, setting or file, opens no dialog. Any other command is
 //!   refused, by the conversation's policy for the window's own families and by the pane for the rest.
 //!
+//! A message of a mailbox shared with the person (the hosting page says which, [`super::PageMailbox::shared`]) is
+//! written into only after their click on a card of the pane that names the mailbox: what she writes there is kept in
+//! that mailbox's drafts (a draft being written goes up to its server by itself), never in silence. Their yes holds
+//! for that mailbox until the conversation is new; their no tells her nothing was written.
+//!
+//! The cards of her conversation (an appointment to put in their calendar, a mailbox to write a draft from) wait
+//! for the person's answer in the pane, and a card's Open or a link of a reply opens a page of the instance through
+//! the hosting page ([`super::Host::open`]). What she is refused is said in the interface's language.
+//!
 //! While she works, the panel's Ask button is a Stop button; a failure of the connection to her is said
 //! in the interface's language.
 
@@ -85,6 +94,10 @@ const MAX_SELECT: usize = 2_000;
 const MAX_SAID: usize = 300;
 /// The most writes of hers the pane's Undo can take back, the oldest forgotten first (the composer keeps 100 steps).
 const MAX_CHANGES: usize = 50;
+/// How long a write into a message of a shared mailbox waits for the person's click, in milliseconds: less than the ten
+/// minutes the server keeps her action's ticket (neoffice_theme.editor_actions, from when it was queued), after which
+/// her answer is refused and she might write it again.
+const HELD_MS: f64 = 540_000.0;
 
 /// What the pane keeps while the window runs: whether it is open, the conversation, the panel that draws
 /// it, the calls in flight, and what Nora changed. Nothing of it is kept between runs.
@@ -98,6 +111,30 @@ pub(crate) struct Assist {
     calls: Vec<Call>,
     /// Nora's writes that the pane's Undo can take back, the newest last.
     changes: Vec<Change>,
+    /// Her write into a message of a mailbox shared with the person, waiting for their click on the pane's card.
+    held: Option<Held>,
+    /// The shared mailboxes the person let her write in, in this conversation (their addresses).
+    trusted: Vec<String>,
+}
+
+/// A write of Nora's into a message of a mailbox shared with the person, held until they answer the card that names
+/// the mailbox: the conversation's action, the mailbox's address, where the write was to go when she asked, and since
+/// when it waits.
+struct Held {
+    id: u64,
+    kind: DocActionKind,
+    mailbox: String,
+    target: Option<(Id, Spot)>,
+    since: f64,
+}
+
+/// What a write of Nora's goes into: the message being written (its kind and source), the message being read that a
+/// reply opens from, or the folder in view that a new message opens from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Spot {
+    Writing(ComposeMode, Option<Id>),
+    Reading(Id),
+    Folder(Id),
 }
 
 /// A call the host is answering.
@@ -127,6 +164,8 @@ impl Default for Assist {
             panel: NoraPanel::new().with_error_words(error_words),
             calls: Vec::new(),
             changes: Vec::new(),
+            held: None,
+            trusted: Vec::new(),
         }
     }
 }
@@ -158,7 +197,7 @@ pub(crate) fn has_keys(app: &MailApp) -> bool {
 /// `ui.noraAssistant {"open"?: bool}`: open or close the pane (without `open`, the other way round).
 pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     if !available(app) {
-        return Err("Nora's pane needs a hosting page that reaches her conversation (NeoMail in Neoffice)".to_string());
+        return Err(tl!("Nora's pane needs a hosting page that reaches her conversation (NeoMail in Neoffice).").to_string());
     }
     let open = match p.get("open") {
         None | Some(Value::Null) => !app.nora.assist.open,
@@ -179,10 +218,12 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
 fn close(app: &mut MailApp) {
     app.nora.assist.open = false;
     app.nora.assist.typing = false;
+    // A write waiting for the person's click goes with what she was doing: she is told nothing was written.
+    let mut outputs = drop_held(app, tl!("You stopped Nora: nothing was written.").to_string());
     if app.nora.assist.session.is_busy() {
-        let outputs = app.nora.assist.session.handle(Input::Cancel);
-        perform(app, outputs);
+        outputs.extend(app.nora.assist.session.handle(Input::Cancel));
     }
+    perform(app, outputs);
 }
 
 /// The pane at the right of the window, while it is open: its title with a close button, then the
@@ -196,6 +237,9 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut actions = Vec::new();
     let mut closing = false;
     let mut typing = false;
+    let mut answered = None;
+    let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
+    let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
     egui::Panel::right("nora_assistant")
         .default_size(330.0)
         .resizable(true)
@@ -203,11 +247,16 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         .show(ui, |ui| {
             closing = title(ui, &t);
             ui.add_space(4.0);
+            if let Some(mailbox) = &held {
+                answered = shared_card(ui, &t, mailbox);
+                ui.add_space(6.0);
+            }
             // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
             let input = ui.id().with("nora").with("input");
             let assist = &mut app.nora.assist;
             assist.panel.labels = labels();
             assist.panel.style = style(&t);
+            assist.panel.open_links = opens;
             actions = assist.panel.show(ui, &assist.session);
             typing = ui.ctx().memory(|m| m.has_focus(input));
         });
@@ -216,6 +265,15 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         close(app);
         return;
     }
+    let outputs = on_actions(app, actions);
+    perform(app, outputs);
+    if let Some(yes) = answered {
+        answer_held(app, yes);
+    }
+}
+
+/// What the person did in the panel, for the conversation: what it asks next.
+fn on_actions(app: &mut MailApp, actions: Vec<PanelAction>) -> Vec<Output> {
     // The conversation's clock first: a message is stamped with it.
     let now = now_ms().max(0.0) as u64;
     let mut outputs = app.nora.assist.session.handle(Input::Tick { now_ms: now });
@@ -227,10 +285,127 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         }
         if action == PanelAction::NewConversation {
             app.nora.assist.changes.clear();
+            app.nora.assist.trusted.clear();
+        }
+        // A write waiting for the person's click goes with the turn it belongs to: she is told nothing was written.
+        if matches!(action, PanelAction::NewConversation | PanelAction::Stop) {
+            outputs.extend(drop_held(app, tl!("You stopped Nora: nothing was written.").to_string()));
         }
         outputs.extend(app.nora.assist.session.handle(action.into_input()));
     }
+    outputs
+}
+
+/// The card that waits for the person's click before Nora writes into a message of a mailbox shared with them, and
+/// names it: `Some(true)` for their yes, `Some(false)` for their no, `None` while they haven't answered.
+fn shared_card(ui: &mut Ui, t: &Tokens, mailbox: &str) -> Option<bool> {
+    let tone = look::tone(t);
+    let mut answer = None;
+    egui::Frame::NONE
+        .fill(tone.fill)
+        .stroke(Stroke::new(1.0, tone.border))
+        .corner_radius(egui::CornerRadius::same(6))
+        .inner_margin(Margin::same(8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.add(egui::Label::new(RichText::new(tl!("A mailbox shared with you")).font(semibold(12.5)).color(t.text)).wrap());
+            let said = fmt(
+                tl!("Nora wants to write in a message of {mailbox}, a mailbox shared with you: what she writes is kept in its drafts until you send it or discard it. Your yes holds for this mailbox until the conversation is new."),
+                &[("mailbox", mailbox)],
+            );
+            ui.add(egui::Label::new(RichText::new(said).color(t.text)).wrap());
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                if ui.button(fmt(tl!("Write from {mailbox}"), &[("mailbox", mailbox)])).clicked() {
+                    answer = Some(true);
+                }
+                if ui.button(tl!("Cancel")).clicked() {
+                    answer = Some(false);
+                }
+            });
+        });
+    answer
+}
+
+/// The mailbox shared with the person that what Nora asked would write into a message of, when they haven't let her
+/// write in it in this conversation: its address. `None` for what writes nothing, for a message of their own mailboxes,
+/// and for what the pane refuses anyway (a reply while another message is being written, a new one over it).
+fn shared_mailbox_of(app: &MailApp, kind: &DocActionKind) -> Option<String> {
+    let (account, _) = target_of(app, kind)?;
+    let host = app.services.nora.as_ref()?;
+    let email = app.session.mailbox.account(account)?.email.trim().to_string();
+    let shared = !email.is_empty() && host.mailboxes.iter().any(|m| m.shared && m.address.trim().eq_ignore_ascii_case(&email));
+    let trusted = app.nora.assist.trusted.iter().any(|m| m.eq_ignore_ascii_case(&email));
+    (shared && !trusted).then_some(email)
+}
+
+/// Where what Nora asked would write, as the window is now: the account of its mailbox and the message or folder it
+/// goes into. `None` for what writes nothing, and for what the pane refuses anyway (a reply while another message is
+/// being written, a new one over it).
+fn target_of(app: &MailApp, kind: &DocActionKind) -> Option<(Id, Spot)> {
+    let compose = app.session.compose.as_ref();
+    match kind {
+        DocActionKind::TypeText { .. } => compose.map(|c| (c.account, Spot::Writing(c.mode, c.source))),
+        DocActionKind::Execute { command, .. } => match command.as_str() {
+            "draft.write" => compose.map(|c| (c.account, Spot::Writing(c.mode, c.source))),
+            // The reply being written, or the one that opens from the mailbox of the message being read.
+            "draft.reply" => match compose {
+                Some(c) if matches!(c.mode, ComposeMode::Reply | ComposeMode::ReplyAll) => Some((c.account, Spot::Writing(c.mode, c.source))),
+                Some(_) => None,
+                None => {
+                    let message = app.session.sel.focus()?;
+                    Some((app.session.mailbox.message(message)?.account, Spot::Reading(message)))
+                }
+            },
+            // A new message opens from the mailbox of the folder in view (`mail.new`).
+            "draft.new" if compose.is_none() => {
+                let folder = app.session.view.folder;
+                Some((app.session.mailbox.folder(folder)?.account, Spot::Folder(folder)))
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Nora's write into a message of a shared mailbox waits for the person's answer on the pane's card, one at a time.
+fn hold(app: &mut MailApp, id: u64, kind: DocActionKind, mailbox: String) -> Vec<Output> {
+    if app.nora.assist.held.is_some() {
+        let refused = Err(tl!("Nora is already waiting for your answer on the card of her pane.").to_string());
+        return app.nora.assist.session.handle(Input::DocumentResult { id, result: refused });
+    }
+    let target = target_of(app, &kind);
+    app.nora.assist.held = Some(Held { id, kind, mailbox, target, since: now_ms() });
+    if let Some(ctx) = &app.ctx {
+        ctx.request_repaint();
+    }
+    Vec::new()
+}
+
+/// The person's answer on the card: their yes lets Nora write in that mailbox for the rest of the conversation, and
+/// her write goes in; their no tells her nothing was written.
+pub(crate) fn answer_held(app: &mut MailApp, yes: bool) {
+    let Some(held) = app.nora.assist.held.take() else { return };
+    let result = if !yes {
+        Err(fmt(tl!("You didn't let Nora write in {mailbox}: nothing was written."), &[("mailbox", &held.mailbox)]))
+    } else if target_of(app, &held.kind) != held.target {
+        // The card named where she was to write when she asked: another message or mailbox since is not what was let in.
+        Err(tl!("The window changed since Nora asked: nothing was written. Ask her again.").to_string())
+    } else {
+        app.nora.assist.trusted.push(held.mailbox.clone());
+        play(app, &held.kind)
+    };
+    let outputs = app.nora.assist.session.handle(Input::DocumentResult { id: held.id, result });
     perform(app, outputs);
+}
+
+/// A write waiting for the person's click that will not happen (they stopped her, started anew, closed the pane, or
+/// let it wait too long): Nora is told `why`, and nothing is written. What the conversation asks next.
+fn drop_held(app: &mut MailApp, why: String) -> Vec<Output> {
+    match app.nora.assist.held.take() {
+        Some(held) => app.nora.assist.session.handle(Input::DocumentResult { id: held.id, result: Err(why) }),
+        None => Vec::new(),
+    }
 }
 
 /// The pane's title: Nora's sphere and her name, and a button that closes the pane. Whether it was clicked.
@@ -265,6 +440,7 @@ fn labels() -> NoraLabels {
         confirm_heading: tl!("Nora wants to:").into(),
         allow: tl!("Allow").into(),
         refuse: tl!("Refuse").into(),
+        open: tl!("Open").into(),
         describe,
     }
 }
@@ -316,6 +492,9 @@ fn context_of(_app: &MailApp) -> PageContext {
 pub(crate) fn poll(app: &mut MailApp) {
     let now = now_ms();
     let mut outputs = deliver(app, now);
+    if app.nora.assist.held.as_ref().is_some_and(|held| now - held.since > HELD_MS) {
+        outputs.extend(drop_held(app, tl!("Nora's request waited too long for your answer: nothing was written.").to_string()));
+    }
     outputs.extend(app.nora.assist.session.handle(Input::Tick { now_ms: now.max(0.0) as u64 }));
     perform(app, outputs);
     // The host wakes the window when an answer comes; the conversation's own clock says when to read again.
@@ -369,13 +548,23 @@ fn perform(app: &mut MailApp, outputs: Vec<Output>) {
         for output in std::mem::take(&mut queue) {
             match output {
                 Output::Http(request) => next.extend(send(app, request)),
-                Output::Document(call) => {
-                    let result = play(app, &call.kind);
-                    next.extend(app.nora.assist.session.handle(Input::DocumentResult { id: call.id, result }));
-                }
+                // A write into a message of a mailbox shared with the person waits for their click on the pane's card.
+                Output::Document(call) => match shared_mailbox_of(app, &call.kind) {
+                    Some(mailbox) => next.extend(hold(app, call.id, call.kind, mailbox)),
+                    None => {
+                        let result = play(app, &call.kind);
+                        next.extend(app.nora.assist.session.handle(Input::DocumentResult { id: call.id, result }));
+                    }
+                },
                 Output::Changed => {
                     if let Some(ctx) = &app.ctx {
                         ctx.request_repaint();
+                    }
+                }
+                // A page of the instance (a card's Open, a link of a reply), on the person's click, by the hosting page.
+                Output::Open(path) => {
+                    if let Some(open) = app.services.nora.as_ref().and_then(|host| host.open.as_ref()) {
+                        open(&path);
                     }
                 }
             }
@@ -416,7 +605,7 @@ fn send(app: &mut MailApp, request: HttpRequest) -> Vec<Output> {
 fn play(app: &mut MailApp, kind: &DocActionKind) -> Result<Value, String> {
     // While a signature is open in File › Signatures, the composer's commands work in it.
     if app.session.signature_edit.is_some() && *kind != DocActionKind::Observe {
-        return Err("a signature is open in File › Signatures: what Nora does would go into it; the person closes it first".to_string());
+        return Err(tl!("A signature is open in File › Signatures: what Nora does would go into it. Close it first.").to_string());
     }
     match kind {
         DocActionKind::Observe => Ok(observe::observation(app)),
@@ -424,22 +613,27 @@ fn play(app: &mut MailApp, kind: &DocActionKind) -> Result<Value, String> {
         DocActionKind::SelectText { text, occurrence } => select(app, text, *occurrence),
         DocActionKind::Execute { command, params } => execute(app, command, params),
         DocActionKind::Batch { .. } => {
-            Err("NeoMail takes one command at a time: draft.reply, draft.new or draft.write, each in a call of its own".to_string())
+            Err(tl!("NeoMail takes one of Nora's commands at a time: draft.reply, draft.new or draft.write, each in a call of its own.").to_string())
         }
-        DocActionKind::RenderPage { .. } => Err("a message has no pages to look at: read it with doc_observe".to_string()),
-        DocActionKind::Save => Err("saving or sending the message is the person's: tell them it is ready in their window".to_string()),
+        DocActionKind::RenderPage { .. } => Err(tl!("A message has no pages to look at: Nora reads it with doc_observe.").to_string()),
+        DocActionKind::Save => Err(tl!("Saving or sending the message is yours: it is ready in your window.").to_string()),
+        DocActionKind::Print | DocActionKind::ExportPdf | DocActionKind::ExportFile => {
+            Err(tl!("NeoMail doesn't print or export a message for Nora: you print it from the message's own window.").to_string())
+        }
         DocActionKind::Undo => undo(app),
     }
 }
 
 /// One of Nora's [`COMMANDS`], with its parameters.
 fn execute(app: &mut MailApp, command: &str, params: &Value) -> Result<Value, String> {
-    let text = || params.get("text").and_then(Value::as_str).ok_or_else(|| format!("`{command}` takes the text to write as `text`"));
+    let text = || {
+        params.get("text").and_then(Value::as_str).ok_or_else(|| fmt(tl!("`{command}` takes the text to write as `text`."), &[("command", command)]))
+    };
     match command {
         "draft.reply" => {
             let all = match params.get("all") {
                 None | Some(Value::Null) => false,
-                Some(all) => all.as_bool().ok_or_else(|| "`all` is true or false".to_string())?,
+                Some(all) => all.as_bool().ok_or_else(|| tl!("`all` is true or false.").to_string())?,
             };
             reply(app, text()?, all)
         }
@@ -449,14 +643,15 @@ fn execute(app: &mut MailApp, command: &str, params: &Value) -> Result<Value, St
                 "top" | "start" => Place::Top,
                 "end" => Place::End,
                 "replace" => Place::Replace,
-                other => return Err(format!("`at` is \"top\", \"end\" or \"replace\", not {other:?}")),
+                other => return Err(fmt(tl!("`at` is \"top\", \"end\" or \"replace\", not \"{value}\"."), &[("value", other)])),
             };
             write(app, place, text()?)
         }
-        other => Err(format!(
-            "`{other}` is not one of Nora's commands in NeoMail: she reads the window and writes into the message being written \
-             ({}); sending, deleting, moving, filing and flagging are the person's",
-            COMMANDS.join(", ")
+        other => Err(fmt(
+            tl!(
+                "`{command}` is not one of Nora's commands in NeoMail: she reads the window and writes into the message being written ({commands}); sending, deleting, moving, filing and flagging are yours."
+            ),
+            &[("command", other), ("commands", &COMMANDS.join(", "))],
         )),
     }
 }
@@ -485,17 +680,20 @@ impl Place {
     }
 }
 
-const NO_DRAFT: &str = "no message is being written: open the reply with draft.reply (it writes the text too), or a new message with draft.new";
+/// What Nora is told, and the person sees, when she writes with no message being written.
+fn no_draft() -> String {
+    tl!("No message is being written: Nora opens the reply with draft.reply (it writes the text too), or a new message with draft.new.").to_string()
+}
 
 /// `text` as it goes into a message: line breaks and tabs, no other control characters, and not too much.
 fn written(text: &str) -> Result<String, String> {
     let text = observe::clean(text);
     let text = text.trim_matches('\n');
     if text.trim().is_empty() {
-        return Err("say what to write: `text` is empty".to_string());
+        return Err(tl!("Say what to write: `text` is empty.").to_string());
     }
     if text.chars().nth(MAX_REPLY).is_some() {
-        return Err(format!("that is too long to write in one go: {MAX_REPLY} characters at most"));
+        return Err(fmt(tl!("That is too long to write in one go: {count} characters at most."), &[("count", &MAX_REPLY.to_string())]));
     }
     Ok(text.to_string())
 }
@@ -504,9 +702,9 @@ fn written(text: &str) -> Result<String, String> {
 fn write(app: &mut MailApp, place: Place, text: &str) -> Result<Value, String> {
     let text = written(text)?;
     if app.session.signature_edit.is_some() {
-        return Err("a signature is open in File › Signatures: what Nora writes would go into it; the person closes it first".to_string());
+        return Err(tl!("A signature is open in File › Signatures: what Nora writes would go into it. Close it first.").to_string());
     }
-    let Some(c) = app.session.compose.as_ref() else { return Err(NO_DRAFT.to_string()) };
+    let Some(c) = app.session.compose.as_ref() else { return Err(no_draft()) };
     let (mode, source) = (c.mode, c.source);
     let before = c.body.text().clone();
     let kept = c.body.selection();
@@ -522,9 +720,9 @@ fn write(app: &mut MailApp, place: Place, text: &str) -> Result<Value, String> {
         Place::End if has_own => (own.chars, own.chars, format!("\n\n{text}")),
         // Over a text longer than she reads of it, her version would drop what she didn't read.
         Place::Replace if own.text.chars().nth(observe::MAX_DRAFT).is_some() => {
-            return Err(format!(
-                "the person's text is longer than Nora reads of it ({} characters): she can't write over it whole; write above or after it",
-                observe::MAX_DRAFT
+            return Err(fmt(
+                tl!("Your text is longer than Nora reads of it ({count} characters): she can't write over it whole, only above or after it."),
+                &[("count", &observe::MAX_DRAFT.to_string())],
             ));
         }
         Place::Replace if has_own => (0, own.chars, text),
@@ -532,7 +730,7 @@ fn write(app: &mut MailApp, place: Place, text: &str) -> Result<Value, String> {
         _ => match first {
             // Pasted into a paragraph of the signature, its first line would be the signature's.
             Some((true, _)) => {
-                return Err("the message starts with its signature: the person leaves a line above it for Nora's text".to_string());
+                return Err(tl!("The message starts with its signature: leave a line above it for Nora's text.").to_string());
             }
             Some((false, false)) => (0, 0, format!("{text}\n\n")),
             _ => (0, 0, text),
@@ -540,7 +738,7 @@ fn write(app: &mut MailApp, place: Place, text: &str) -> Result<Value, String> {
     };
     app.execute("compose.select", json!({"from": from, "to": to}))?;
     app.execute("edit.paste", json!({"text": put}))?;
-    let Some(after) = app.session.compose.as_ref().map(|c| c.body.text().clone()) else { return Err(NO_DRAFT.to_string()) };
+    let Some(after) = app.session.compose.as_ref().map(|c| c.body.text().clone()) else { return Err(no_draft()) };
     if after == before {
         return Ok(json!({"written": 0, "where": place.name(), "changed": false}));
     }
@@ -587,10 +785,10 @@ fn reply(app: &mut MailApp, text: &str, all: bool) -> Result<Value, String> {
         if matches!(c.mode, ComposeMode::Reply | ComposeMode::ReplyAll) {
             return write(app, Place::Top, &text);
         }
-        return Err("another message is being written: write into it with draft.write, or the person closes it first".to_string());
+        return Err(tl!("Another message is being written: Nora writes into it with draft.write, or you close it first.").to_string());
     }
     let Some(message) = app.session.sel.focus() else {
-        return Err("no message is open: the person opens the message to answer first".to_string());
+        return Err(tl!("No message is open: open the message to answer first.").to_string());
     };
     let opened = app.run(if all { "mail.replyAll" } else { "mail.reply" }, json!({"id": message}))?;
     let replying =
@@ -603,8 +801,8 @@ fn reply(app: &mut MailApp, text: &str, all: bool) -> Result<Value, String> {
         return Ok(answer);
     }
     match opened.get("pending").and_then(Value::as_str) {
-        Some(_) => Err("the message is still being downloaded: ask again in a moment".to_string()),
-        None => Err("the reply could not be opened".to_string()),
+        Some(_) => Err(tl!("The message is still being downloaded: ask again in a moment.").to_string()),
+        None => Err(tl!("The reply could not be opened.").to_string()),
     }
 }
 
@@ -613,7 +811,7 @@ fn reply(app: &mut MailApp, text: &str, all: bool) -> Result<Value, String> {
 fn new_message(app: &mut MailApp, text: &str, params: &Value) -> Result<Value, String> {
     let text = written(text)?;
     if app.session.compose.is_some() {
-        return Err("a message is being written already: write into it with draft.write, or the person closes it first".to_string());
+        return Err(tl!("A message is being written already: Nora writes into it with draft.write, or you close it first.").to_string());
     }
     let mut fields = serde_json::Map::new();
     for key in ["to", "cc", "subject"] {
@@ -623,18 +821,18 @@ fn new_message(app: &mut MailApp, text: &str, params: &Value) -> Result<Value, S
                 let one_line: String = value.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
                 let one_line = one_line.trim();
                 if one_line.chars().nth(MAX_FIELD).is_some() {
-                    return Err(format!("`{key}` is too long"));
+                    return Err(fmt(tl!("`{field}` is too long."), &[("field", key)]));
                 }
                 if !one_line.is_empty() {
                     fields.insert(key.to_string(), json!(one_line));
                 }
             }
-            Some(_) => return Err(format!("`{key}` is text")),
+            Some(_) => return Err(fmt(tl!("`{field}` is text."), &[("field", key)])),
         }
     }
     app.run("mail.new", Value::Object(fields))?;
     if app.session.compose.as_ref().is_none_or(|c| c.mode != ComposeMode::New) {
-        return Err("the new message could not be opened".to_string());
+        return Err(tl!("The new message could not be opened.").to_string());
     }
     let mut answer = write(app, Place::Top, &text)?;
     if let Some(o) = answer.as_object_mut() {
@@ -646,15 +844,15 @@ fn new_message(app: &mut MailApp, text: &str, params: &Value) -> Result<Value, S
 /// Select the `occurrence`-th time `text` is in the message being written, so that her next write goes over it.
 fn select(app: &mut MailApp, text: &str, occurrence: u32) -> Result<Value, String> {
     let Some(c) = app.session.compose.as_ref() else {
-        return Err("selecting works in the message being written, and none is: Nora reads a message with doc_observe".to_string());
+        return Err(tl!("Selecting works in the message being written, and none is: Nora reads a message with doc_observe.").to_string());
     };
     let body: Vec<char> = c.body.plain().chars().collect();
     let wanted: Vec<char> = text.chars().take(MAX_SELECT + 1).collect();
     if wanted.is_empty() {
-        return Err("say which text to select".to_string());
+        return Err(tl!("Say which text to select.").to_string());
     }
     if wanted.len() > MAX_SELECT {
-        return Err(format!("select at most {MAX_SELECT} characters at a time"));
+        return Err(fmt(tl!("Select at most {count} characters at a time."), &[("count", &MAX_SELECT.to_string())]));
     }
     let mut seen = 0;
     let mut at = None;
@@ -668,7 +866,7 @@ fn select(app: &mut MailApp, text: &str, occurrence: u32) -> Result<Value, Strin
         }
     }
     let Some(from) = at else {
-        return Err(format!("{text:?} is not in the message being written ({seen} time(s))"));
+        return Err(fmt(tl!("\"{text}\" is not in the message being written ({count} time(s))."), &[("text", text), ("count", &seen.to_string())]));
     };
     app.execute("compose.select", json!({"from": from, "to": from + wanted.len()}))?;
     Ok(json!({"selected": text, "from": from, "changed": false}))

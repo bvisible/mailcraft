@@ -104,16 +104,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - Nora's pane (`crates/ui-egui/src/nora/assist.rs`, what she reads of the window in `nora/observe.rs`, tests in
   `nora/assist_tests.rs`): a conversation with her at the right of the window, opened by `ui.noraAssistant` (Ask Nora,
   in her menus and in the Nora group of a message being written), on the client core and panel the editors take from
-  Neoffice's craft-libs fork (`craft-nora`, `craft-nora-ui`, at the revision that knows `AppKind::Mail`; the workspace's
-  `Cargo.toml`, `crates/ui-egui/Cargo.toml` and `deny.toml`, which lets that fork's git source in). Its calls are the five
-  of Nora's conversation (`nora::CHAT_METHODS`), only where the host takes them (`Host::chat`: the page's own `fetch`, or
-  a host that sets `window.mailcraftNoraChat`; Neodesk's shell doesn't yet). What she reads is the window's own: the
+  Neoffice's craft-libs fork (`craft-nora`, `craft-nora-ui`, at a revision that knows `AppKind::Mail`, the cards and links
+  of a conversation, Nora's Markdown and the appointment cards; the workspace's `Cargo.toml`, `crates/ui-egui/Cargo.toml`
+  and `deny.toml`, which lets that fork's git source in). Its calls are the seven of Nora's conversation
+  (`nora::CHAT_METHODS`: craft-nora's five, and the two doors that answer the person's own cards), only where the host
+  takes them (`Host::chat`: the page's own `fetch`, or a host that sets `window.mailcraftNoraChat`; Neodesk's shell
+  doesn't yet); a card's Open and a link of a reply open a page of the instance through the page
+  (`window.mailcraftNoraOpen`, `Host::open`). A write into a message of a mailbox the page says is shared with the
+  person (`shared`, `PageMailbox::shared`) waits for their click on a card of the pane that names it. What she reads is the window's own: the
   message being read and its conversation, the message being written, its selection (data, read by the server's guard
   before any model); what she writes goes into the message being written only (at the caret, at its top, after or over
   the owner's text, into the reply she opens or a new message), one step Undo takes back; her conversation's policy
   refuses the window's own command families and the pane every other command, a save, a batch and a page; nothing is
-  sent. Marked hunks: `crates/ui-egui/src/lib.rs` (the command, the pane drawn before the module's central panel),
-  `crates/engine/src/agent.rs` (`ui.noraAssistant` is never an agent's), `apps/mailcraft-web/src/nora.rs` and `web.rs`.
+  sent; what she is refused is said in the interface's language. Marked hunks: `crates/ui-egui/src/lib.rs` (the command,
+  the pane drawn before the module's central panel), `crates/engine/src/agent.rs` (`ui.noraAssistant` is never an
+  agent's), `apps/mailcraft-web/src/nora.rs` and `web.rs`, and `crates/ui-egui/src/compose.rs` (in a narrow window, or
+  beside her pane, Attach, Save draft and Discard are their icons, and the message's state is cut to the room left
+  rather than drawn over them).
 - `.github/workflows/neoffice-i18n.yml`: `cargo xtask i18n` on a runner, by hand, its catalogues kept as an artifact to
   commit (the maintainer's Mac can't build the extractor).
 - `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`

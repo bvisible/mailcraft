@@ -235,17 +235,30 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     {
         let ui = &mut actions;
         ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
+        // //// Neoffice — in a narrow window, or beside Nora's pane, Attach, Save draft and Discard are their icons (their
+        // words on hover): with their words they left no room for the message's state, which was drawn over them.
+        let narrow = bar.width() < 640.0;
+        let flat = |ui: &mut Ui, icon: &str, label: &str, enabled: bool| {
+            if narrow {
+                crate::widgets::icon_button(ui, icon, label, 16.0, enabled)
+            } else {
+                crate::widgets::icon_text_button(ui, icon, label, enabled)
+            }
+        };
         let sc = crate::widgets::shortcut_text(app, "compose.send");
         if crate::widgets::primary_button(ui, tl!("Send"), true).on_hover_text(format!("{} ({sc})", tl!("Send"))).clicked() {
             let _ = app.run("compose.send", json!({}));
         }
-        if crate::widgets::icon_text_button(ui, "attach", tl!("Attach"), true).clicked() {
+        // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
+        if flat(ui, "attach", tl!("Attach"), true).clicked() {
             let _ = app.run("ui.attach", json!({}));
         }
-        if crate::widgets::icon_text_button(ui, "saveDraft", tl!("Save draft"), c.dirty || !c.draft).clicked() {
+        // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
+        if flat(ui, "saveDraft", tl!("Save draft"), c.dirty || !c.draft).clicked() {
             let _ = app.run("compose.saveDraft", json!({}));
         }
-        if crate::widgets::icon_text_button(ui, "discard", tl!("Discard"), true).clicked() {
+        // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
+        if flat(ui, "discard", tl!("Discard"), true).clicked() {
             let _ = app.run("compose.discard", json!({}));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -259,7 +272,9 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
             } else {
                 ""
             };
-            ui.label(egui::RichText::new(format!("{title}  {state}")).font(regular(11.5)).color(t.text_dim));
+            // //// Neoffice — cut to the room left beside the buttons (its whole words on hover): in a narrow window, or
+            // beside Nora's pane, it was drawn over Save draft and Discard.
+            ui.add(egui::Label::new(egui::RichText::new(format!("{title}  {state}")).font(regular(11.5)).color(t.text_dim)).truncate());
         });
     }
     ui.painter().line_segment([pos2(bar.min.x, bar.max.y), pos2(bar.max.x, bar.max.y)], Stroke::new(1.0, t.border));

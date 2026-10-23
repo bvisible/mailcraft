@@ -181,8 +181,13 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
     // //// Neoffice — the pictures on the web a message links to, through the hosting page when it fetches them (host.rs): a browser tab can't read another site's bytes itself.
     let pictures = crate::host::fetches_urls().then(|| pictures(ctx.clone()));
     // //// Neoffice — Nora, the assistant of the Neoffice server, when the hosting page turns her on (nora.rs); the mailboxes it handed over are named in hosted_app;
-    // her pane's conversation where its calls can go (`nora::chat`).
-    let nora = crate::nora::service(ctx.clone()).map(|call| mailcraft_ui_egui::nora::Host { call, mailboxes: Vec::new(), chat: crate::nora::chat() });
+    // //// Neoffice — her pane's conversation where its calls can go (`nora::chat`), and the pages of the instance her cards lead to where the page opens them (`nora::opener`).
+    let nora = crate::nora::service(ctx.clone()).map(|call| mailcraft_ui_egui::nora::Host {
+        call,
+        mailboxes: Vec::new(),
+        chat: crate::nora::chat(),
+        open: crate::nora::opener(),
+    });
     Services {
         open_async: Some(Box::new(move |purpose: &str| {
             let inbox = open_inbox.clone();

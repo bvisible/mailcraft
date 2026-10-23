@@ -72,14 +72,18 @@ pub const SCAN_STYLE: &str = "nora.api.nora_webmail.scan_style";
 /// waits for a release of Neodesk.
 pub const METHODS: [&str; 6] = [QUICK_REPLY, GENERATE_EMAIL, TRANSLATE, PROOFREAD, IMPROVE, SCAN_STYLE];
 /// The methods of Nora's conversation, which her pane calls ([`assist`]): craft-nora's protocol, the one the
-/// editors' panes speak (its paths, without `/api/method/`). Neodesk's shell lets none of them through yet, so a
+/// editors' panes speak (its paths, without `/api/method/`), with the person's answer to a card of the conversation
+/// that waits for them (an appointment to put in their calendar, a mailbox to write a draft from, a letter template),
+/// through the two doors that answer only the person's own cards. Neodesk's shell lets none of them through yet, so a
 /// host that makes the calls itself says whether it takes them ([`Host::chat`]).
-pub const CHAT_METHODS: [&str; 5] = [
+pub const CHAT_METHODS: [&str; 7] = [
     "nora.api.chat.start_or_resume_thread",
     "nora.api.chat.post_message",
     "nora.api.chat.get_messages",
     "nora.api.chat.get_browser_actions",
     "nora.api.page_observation.receive_observation",
+    "nora.api.cards.answer_in_pane",
+    "nora.api.cards.confirm_template",
 ];
 
 /// The longest wait for an answer, in milliseconds: above the 180 s after which Neodesk's shell
@@ -137,6 +141,10 @@ pub struct Host {
     /// ([`assist`]) can be opened: the page `/neomail` does (its own session, its own origin); Neodesk's
     /// shell doesn't yet.
     pub chat: bool,
+    /// How the host opens a page of the person's instance (a path: `/app/…`, `/drive/f/…`) that a card or a link of
+    /// her pane leads to, on the person's click: the page `/neomail` in a new tab (`window.mailcraftNoraOpen`).
+    /// Without it, the pane shows a link as its words.
+    pub open: Option<Box<dyn Fn(&str)>>,
 }
 
 /// A mailbox the hosting page handed over, as the server knows it.
@@ -148,6 +156,9 @@ pub struct PageMailbox {
     /// kept under it too): the address it was made with, which stays its name when the address changes.
     /// Empty when the page didn't say: the address is then taken for it.
     pub name: String,
+    /// Whether it is a mailbox shared with the person rather than their own, as the page says (`shared`): what Nora
+    /// writes into a message of it waits for the person's click on a card of her pane that names it ([`assist`]).
+    pub shared: bool,
 }
 
 impl MailApp {

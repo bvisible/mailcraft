@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora's pane, with a host that keeps every call for the test to answer.
 //! Nora's pane with a host that keeps every call for the test to answer: her conversation goes out by its
-//! five calls only, she reads the window (the message being read, its conversation, the message being
+//! seven calls only, she reads the window (the message being read, its conversation, the message being
 //! written), she writes into the message being written and nowhere else, one undo step each, the pane's
 //! Undo takes back only hers, and whatever would send, delete, move or save is refused. A hosting page's
 //! mailbox of invented people at `example.org`.
@@ -86,7 +86,7 @@ fn a_message_opens_her_conversation_with_where_the_person_is() {
     let context: Value = serde_json::from_str(start[0]["context"].as_str().unwrap()).unwrap();
     // Nothing of the mail: a subject is its sender's words, and reaches her only through the server's guard.
     assert_eq!(context, json!({"surface": "editor", "app": "mail", "document": {"name": "NeoMail"}}));
-    // Every call is one of the five of her conversation, a plain object, never a `cmd`.
+    // Every call is one of the seven of her conversation, a plain object, never a `cmd`.
     for (call, _) in calls.0.borrow().iter() {
         assert!(CHAT_METHODS.contains(&call.method), "{}", call.method);
         assert!(call.args.as_object().is_some_and(|o| !o.contains_key("cmd")));
@@ -210,7 +210,7 @@ fn sending_deleting_moving_and_saving_are_refused() {
     // A save waits for the person's yes in craft-nora: the pane answers that question at once and refuses the save, so
     // that no question is shown whose yes would change nothing.
     assert!(app.nora.assist.session.confirmations().is_empty());
-    assert!(observed(&calls, "c5")["error"].as_str().unwrap().contains("the person's"));
+    assert!(observed(&calls, "c5")["error"].as_str().unwrap().contains("is yours"));
     assert!(observed(&calls, "c1")["error"].as_str().unwrap().contains("refused by the editor's policy"));
     assert!(observed(&calls, "c4")["error"].as_str().unwrap().contains("not one of Nora's commands in NeoMail"));
     assert_eq!(body(&app), before, "the message is as the person left it");
@@ -258,7 +258,7 @@ fn a_new_message_takes_her_recipients_subject_and_text_and_waits_for_the_person(
 #[test]
 fn writing_needs_a_message_being_written_and_text() {
     let (mut app, _calls, _) = page(true);
-    assert!(write(&mut app, Place::Caret, "Hello").unwrap_err().contains("no message is being written"));
+    assert!(write(&mut app, Place::Caret, "Hello").unwrap_err().contains("No message is being written"));
     assert!(select(&mut app, "Hello", 1).is_err());
     app.run("mail.reply", json!({})).unwrap();
     assert!(write(&mut app, Place::Top, "  \n ").is_err());
@@ -268,6 +268,128 @@ fn writing_needs_a_message_being_written_and_text() {
     // Control characters other than line breaks and tabs don't go in.
     write(&mut app, Place::Top, "A\u{0}B\u{1b}[31mC\tD").unwrap();
     assert!(body(&app).starts_with("AB[31mC\tD"), "{:?}", body(&app));
+}
+
+// //// Neoffice — a mailbox shared with the person is written into only on their click (23.10.2026).
+#[test]
+fn a_reply_in_a_mailbox_shared_with_the_person_waits_for_their_click_on_the_card_that_names_it() {
+    let reply = json!([{"action": "doc_execute", "callback_id": "c1", "command": "draft.reply", "params": {"text": "Hello Grace"}}]);
+    // Their no: nothing is opened or written, and Nora is told so.
+    let (mut app, calls, _) = page(true);
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = true;
+    queued(&mut app, &calls, reply.clone());
+    assert!(app.session.compose.is_none(), "nothing opened before the click");
+    assert_eq!(app.nora.assist.held.as_ref().map(|held| held.mailbox.as_str()), Some(ME), "the card names the mailbox");
+    assert!(made(&calls, "nora.api.page_observation.receive_observation").iter().all(|args| args["callback_id"] != "c1"));
+    answer_held(&mut app, false);
+    let seen = observed(&calls, "c1");
+    assert_eq!(seen["ok"], false, "{seen}");
+    assert!(seen["error"].as_str().unwrap().contains("nothing was written"));
+    assert!(app.session.compose.is_none() && app.nora.assist.held.is_none());
+    // Their yes: the reply opens with her text, and the mailbox needs no new click in this conversation.
+    let (mut app, calls, _) = page(true);
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = true;
+    queued(&mut app, &calls, reply);
+    answer_held(&mut app, true);
+    assert_eq!(observed(&calls, "c1")["ok"], true);
+    assert!(body(&app).starts_with("Hello Grace"), "{:?}", body(&app));
+    let again = DocActionKind::Execute { command: "draft.write".into(), params: json!({"text": "Bye"}) };
+    assert_eq!(shared_mailbox_of(&app, &again), None);
+    // A new conversation asks again; the person's own mailbox never asks.
+    app.nora.assist.trusted.clear();
+    assert_eq!(shared_mailbox_of(&app, &again).as_deref(), Some(ME));
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = false;
+    assert_eq!(shared_mailbox_of(&app, &again), None);
+    assert_eq!(shared_mailbox_of(&app, &DocActionKind::Observe), None, "reading writes nothing");
+}
+
+/// A hosting page's window whose mailbox the page says is shared with the person, Nora's reply to E1 waiting for
+/// their click on the card.
+fn waiting_reply() -> (MailApp, Calls) {
+    let (mut app, calls, _) = page(true);
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = true;
+    queued(&mut app, &calls, json!([{"action": "doc_execute", "callback_id": "c1", "command": "draft.reply", "params": {"text": "Hello Grace"}}]));
+    assert!(app.nora.assist.held.is_some());
+    (app, calls)
+}
+
+#[test]
+fn a_yes_on_the_card_writes_only_where_it_named_when_she_asked() {
+    let (mut app, calls) = waiting_reply();
+    // The person reads another message before clicking: the reply the card named is not the one that would open.
+    let e2 = id_of(&app, "E2");
+    app.execute("mail.select", json!({"id": e2})).unwrap();
+    answer_held(&mut app, true);
+    let seen = observed(&calls, "c1");
+    assert_eq!(seen["ok"], false, "{seen}");
+    assert!(seen["error"].as_str().unwrap().contains("window changed"));
+    assert!(app.session.compose.is_none(), "nothing opened");
+    assert!(app.nora.assist.trusted.is_empty(), "nothing let in");
+}
+
+#[test]
+fn stopping_closing_or_waiting_too_long_tells_her_nothing_was_written() {
+    // Closed while the card waits: she is answered, the turn can end.
+    let (mut app, calls) = waiting_reply();
+    close(&mut app);
+    assert!(app.nora.assist.held.is_none());
+    assert!(observed(&calls, "c1")["error"].as_str().unwrap().contains("You stopped Nora"));
+    assert!(app.session.compose.is_none());
+    // Stopped, or a new conversation, while the card waits: answered too, the panel's own way.
+    for action in [PanelAction::Stop, PanelAction::NewConversation] {
+        let (mut app, calls) = waiting_reply();
+        let outputs = on_actions(&mut app, vec![action.clone()]);
+        perform(&mut app, outputs);
+        assert!(app.nora.assist.held.is_none(), "{action:?}");
+        assert!(observed(&calls, "c1")["error"].as_str().unwrap().contains("You stopped Nora"), "{action:?}");
+        assert!(!app.nora.assist.busy(), "{action:?}: the turn ends");
+        assert!(app.session.compose.is_none());
+    }
+    // Left too long: dropped at the next look, never written later.
+    let (mut app, calls) = waiting_reply();
+    app.nora.assist.held.as_mut().unwrap().since -= HELD_MS + 1.0;
+    poll(&mut app);
+    assert!(app.nora.assist.held.is_none());
+    assert!(observed(&calls, "c1")["error"].as_str().unwrap().contains("waited too long"));
+    answer_held(&mut app, true);
+    assert!(app.session.compose.is_none(), "a late click writes nothing");
+}
+
+#[test]
+fn one_write_waits_at_a_time_and_every_way_into_a_shared_mailbox_asks() {
+    let (mut app, calls, _) = page(true);
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = true;
+    queued(
+        &mut app,
+        &calls,
+        json!([
+            {"action": "doc_execute", "callback_id": "c1", "command": "draft.reply", "params": {"text": "Hello Grace"}},
+            {"action": "doc_execute", "callback_id": "c2", "command": "draft.reply", "params": {"text": "Again"}},
+        ]),
+    );
+    assert!(observed(&calls, "c2")["error"].as_str().unwrap().contains("already waiting"));
+    // A new message from the folder in view, and typing into a reply being written, ask too.
+    let new = DocActionKind::Execute { command: "draft.new".into(), params: json!({"text": "Hi"}) };
+    let (mut app, _calls, account) = page(true);
+    app.services.nora.as_mut().unwrap().mailboxes[0].shared = true;
+    app.session.view.folder = app.session.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Inbox).unwrap();
+    assert_eq!(shared_mailbox_of(&app, &new).as_deref(), Some(ME));
+    app.run("mail.reply", json!({})).unwrap();
+    let typed = DocActionKind::TypeText { text: "Hi".into(), paragraphs: false };
+    assert_eq!(shared_mailbox_of(&app, &typed).as_deref(), Some(ME));
+    assert_eq!(shared_mailbox_of(&app, &new), None, "refused anyway over a message being written");
+    let print = play(&mut app, &DocActionKind::Print).unwrap_err();
+    assert!(print.contains("print"), "{print}");
+}
+
+#[test]
+fn a_refusal_is_said_in_the_interfaces_words() {
+    let (mut app, _calls, _) = page(true);
+    // The look-alike language turns every interface text it is given: a refusal that skipped translation stays English.
+    crate::i18n::set_current(crate::i18n::Lang::Pseudo);
+    let said = write(&mut app, Place::Caret, "Hello").unwrap_err();
+    crate::i18n::set_current(crate::i18n::Lang::English);
+    assert!(!said.contains("No message is being written"), "{said}");
 }
 
 #[test]

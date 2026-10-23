@@ -18,7 +18,7 @@
 //! the page's own origin ([`crate::nora_origin`]): an address can't send them anywhere else. Nothing
 //! secret travels in the address.
 //!
-//! Only the six methods the window calls go out ([`METHODS`]), and the five of Nora's conversation that
+//! Only the six methods the window calls go out ([`METHODS`]), and the seven of Nora's conversation that
 //! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), these only where they
 //! can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), each with a plain JSON
 //! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
@@ -96,10 +96,10 @@ pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
     };
     let said = || Some(handed.account.trim().chars().take(MAX_PARAM).collect::<String>());
     let name = from_session().filter(|n| !n.is_empty()).or_else(said).filter(|n| !n.is_empty());
-    PageMailbox { address: handed.email.clone(), name: name.unwrap_or_else(|| handed.email.trim().to_string()) }
+    PageMailbox { address: handed.email.clone(), name: name.unwrap_or_else(|| handed.email.trim().to_string()), shared: handed.shared }
 }
 
-/// The body a call goes with, when it may go out at all: one of the six methods or of the five of her
+/// The body a call goes with, when it may go out at all: one of the six methods or of the seven of her
 /// conversation (her pane's, [`CHAT_METHODS`]), a plain object of arguments without a `cmd` key, within 8 MB.
 pub fn allowed(call: &NoraCall) -> Result<String, String> {
     if !METHODS.contains(&call.method) && !CHAT_METHODS.contains(&call.method) {
@@ -142,7 +142,7 @@ fn too_late() -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::{chat, service};
+pub use browser::{chat, opener, service};
 
 #[cfg(target_arch = "wasm32")]
 mod browser {
@@ -218,6 +218,21 @@ mod browser {
             None => true,
             Some((owner, _)) => crate::host::get(&owner, "mailcraftNoraChat").and_then(|v| v.as_bool()) == Some(true),
         }
+    }
+
+    /// How the page opens a page of the person's instance that a card or a link of her pane leads to, on the person's
+    /// click (`mailcraftNoraOpen(path)`, on the page or on the page of the same origin that frames it: `/neomail` opens
+    /// it in a new tab); `None` when it offers none, and the pane then shows a link as its words. The path is one the
+    /// conversation let through (craft-nora: a page of the instance), which the page checks again.
+    pub fn opener() -> Option<Box<dyn Fn(&str)>> {
+        let (owner, open) = crate::host::windows()
+            .into_iter()
+            .find_map(|w| crate::host::get(&w, "mailcraftNoraOpen").filter(JsValue::is_function).map(|f| (w, js_sys::Function::from(f))))?;
+        Some(Box::new(move |path: &str| {
+            if let Err(error) = open.call1(&owner, &JsValue::from_str(path)) {
+                log::warn!("the page did not open a page of the instance: {}", reason(&error));
+            }
+        }))
     }
 
     /// The host's own way to Nora, when it offers one: the window that offers it, and the function.
@@ -419,8 +434,12 @@ mod tests {
             ("  ", "https://desk.example/s?accounts=x&xaccount=y#?account=z".to_string(), "Ada@Example.org"),
             ("", String::new(), "Ada@Example.org"),
         ] {
-            assert_eq!(named(account, &session), PageMailbox { address: "Ada@Example.org".into(), name: name.into() }, "{account:?} {session:?}");
+            let expected = PageMailbox { address: "Ada@Example.org".into(), name: name.into(), shared: false };
+            assert_eq!(named(account, &session), expected, "{account:?} {session:?}");
         }
+        // A mailbox shared with the person stays one for her pane, as the page said.
+        let shared = HostAccount { email: "Team@Example.org".into(), shared: true, ..Default::default() };
+        assert!(handed_mailbox(&shared).shared);
         // However long the address or the page makes it, the name taken is not longer than a query's value is read.
         for (account, session) in [(String::new(), format!("{facade}{}", "a".repeat(10_000))), ("a".repeat(10_000), String::new())] {
             assert_eq!(named(&account, &session).name.chars().count(), MAX_PARAM);
@@ -433,7 +452,7 @@ mod tests {
         for method in METHODS {
             assert_eq!(allowed(&call(method, json!({"account_name": ""}))), Ok(r#"{"account_name":""}"#.to_string()));
         }
-        // Her pane's conversation: the five calls of craft-nora's protocol, and no other of the chat's.
+        // Her pane's conversation: the five calls of craft-nora's protocol and the two doors of her cards, and no other of the chat's.
         for method in CHAT_METHODS {
             assert_eq!(allowed(&call(method, json!({"thread_id": "t1"}))), Ok(r#"{"thread_id":"t1"}"#.to_string()));
             assert!(allowed(&call(method, json!({"thread_id": "t1", "cmd": "frappe.client.delete"}))).is_err(), "{method}");

@@ -61,7 +61,7 @@ fn another_account_than_the_pages_is_refused() {
     // A JMAP mailbox the page didn't hand over (the person added it in the page).
     let (mut app, calls, _) = page(true);
     // A mailbox is the page's by its address: one the page named as this one's name is not this one.
-    app.services.nora.as_mut().unwrap().mailboxes = vec![PageMailbox { address: "someone.else@example.org".into(), name: ME.into() }];
+    app.services.nora.as_mut().unwrap().mailboxes = vec![PageMailbox { address: "someone.else@example.org".into(), name: ME.into(), shared: false }];
     let said = app.run("ui.noraReply", json!({})).unwrap_err();
     assert_eq!(said, "Nora works on the mailboxes of your Neoffice account only.");
     assert!(app.execute("ui.noraTranslate", json!({"language": "fr"})).is_err());
