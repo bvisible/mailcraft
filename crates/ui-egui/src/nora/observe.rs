@@ -36,7 +36,11 @@ const MAX_OTHERS: usize = 8;
 /// The most characters of `text` as a whole (the server keeps 12 000 of it).
 const MAX_TEXT: usize = 40_000;
 /// The most characters of the person's own text in the message being written.
-const MAX_DRAFT: usize = 8_000;
+pub(crate) const MAX_DRAFT: usize = 8_000;
+/// What the page context names the "document" in NeoMail: the program, never a message's subject.
+pub(crate) const DOCUMENT_NAME: &str = "NeoMail";
+/// The longest id of a message on the server handed over (JMAP's are at most 255 characters).
+const MAX_ID: usize = 512;
 /// The most characters of the selection.
 const MAX_SELECTION: usize = 2_000;
 /// The most attachments named, and the longest name, header line or subject kept.
@@ -86,6 +90,7 @@ pub(crate) fn observation(app: &MailApp) -> Value {
                 "cc": line(&c.cc),
                 "subject": line(&c.subject),
                 "text": cut(&clean(&own.text), MAX_DRAFT),
+                "truncated": own.text.chars().nth(MAX_DRAFT).is_some(),
                 "signature": c.body.text().signature().is_some(),
                 "quotesOriginal": c.quote.is_some() || own.chars < c.body.text().len(),
             }),
@@ -106,25 +111,6 @@ pub(crate) fn observation(app: &MailApp) -> Value {
     Value::Object(out)
 }
 
-/// What Nora is told of where the person is with each message (the page context): the subject of the message being
-/// written or read, and the selection in the message being written.
-pub(crate) fn document_name(app: &MailApp) -> String {
-    let writing = app.session.compose.as_ref().map(|c| c.subject.clone()).filter(|s| !s.trim().is_empty());
-    let reading = || app.session.sel.focus().and_then(|id| app.session.mailbox.messages.get(&id)).map(|m| m.subject.clone());
-    line(&writing.or_else(reading).unwrap_or_default())
-}
-
-/// The selection in the message being written, as the page context tells it, when there is one.
-pub(crate) fn draft_selection(app: &MailApp) -> Option<String> {
-    let c = app.session.compose.as_ref()?;
-    let s = c.body.selection();
-    if s.is_empty() {
-        return None;
-    }
-    let text = c.body.text().slice(s.start(), s.end()).map(|t| t.to_plain()).ok()?;
-    Some(cut(&clean(&text), MAX_SELECTION))
-}
-
 fn mode(mode: ComposeMode) -> &'static str {
     match mode {
         ComposeMode::New => "new",
@@ -141,7 +127,15 @@ fn header(app: &MailApp, m: &Message) -> Value {
     let files: Vec<String> = m.attachments.iter().filter(|a| !a.inline).take(MAX_FILES).map(|a| line(&a.name)).collect();
     let folder = app.session.mailbox.folder(m.folder).map(|f| line(&f.name)).unwrap_or_default();
     let mailbox = app.session.mailbox.account(m.account).map(|a| line(&a.email)).unwrap_or_default();
+    // Its key on the server, which Nora's mail tools take (`nora_mail_save_attachment`, `nora_mail_task`): an id as
+    // JMAP writes them, else none.
+    let key = m
+        .server
+        .as_ref()
+        .map(|s| s.id.as_str())
+        .filter(|id| !id.is_empty() && id.len() <= MAX_ID && id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_')));
     json!({
+        "message": key,
         "from": line(&m.from.full()),
         "to": line(&format_list(&m.to)),
         "cc": line(&format_list(&m.cc)),

@@ -84,7 +84,8 @@ fn a_message_opens_her_conversation_with_where_the_person_is() {
     assert_eq!(start[0]["message"], "Résume ce fil");
     assert_eq!(start[0]["block"], 0);
     let context: Value = serde_json::from_str(start[0]["context"].as_str().unwrap()).unwrap();
-    assert_eq!(context, json!({"surface": "editor", "app": "mail", "document": {"name": "The proof, E1"}}));
+    // Nothing of the mail: a subject is its sender's words, and reaches her only through the server's guard.
+    assert_eq!(context, json!({"surface": "editor", "app": "mail", "document": {"name": "NeoMail"}}));
     // Every call is one of the five of her conversation, a plain object, never a `cmd`.
     for (call, _) in calls.0.borrow().iter() {
         assert!(CHAT_METHODS.contains(&call.method), "{}", call.method);
@@ -106,6 +107,7 @@ fn she_reads_the_message_its_headers_and_its_text_as_data() {
     assert_eq!(result["message"]["from"], "Grace Hopper <grace@example.org>");
     assert_eq!(result["message"]["subject"], "The proof, E1");
     assert_eq!(result["message"]["whole"], true);
+    assert_eq!(result["message"]["message"], "E1", "its key on the server, for her mail tools");
     let text = result["text"].as_str().unwrap();
     assert!(text.starts_with("=== The message being read ===\nFrom: Grace Hopper <grace@example.org>\n"), "{text}");
     assert!(text.contains("Is the proof ready?"), "{text}");
@@ -174,9 +176,9 @@ fn what_she_reads_of_a_message_being_written_is_the_persons_text_and_selection()
     // The message answered is the one she is told about, with its text.
     assert_eq!(seen["message"]["subject"], "The proof, E1");
     assert!(seen["text"].as_str().unwrap().contains("Is the proof ready?"));
-    // The page context names the reply and says what is selected.
+    // The page context says nothing of it: what she reads goes through the server's guard.
     let context = context_of(&app);
-    assert_eq!(context.document.selection.map(|s| s.text), Some("ready".to_string()));
+    assert_eq!((context.document.name.as_str(), context.document.selection), ("NeoMail", None));
 }
 
 #[test]
@@ -205,11 +207,9 @@ fn sending_deleting_moving_and_saving_are_refused() {
         let seen = observed(&calls, callback);
         assert_eq!(seen["ok"], false, "{callback}: {seen}");
     }
-    // A save always waits for the person's yes in the panel (craft-nora), and a yes is refused all the same.
-    let waiting = app.nora.assist.session.confirmations();
-    assert_eq!(waiting.len(), 1);
-    let outputs = app.nora.assist.session.handle(Input::Confirm { id: waiting[0].id, accepted: true });
-    perform(&mut app, outputs);
+    // A save waits for the person's yes in craft-nora: the pane answers that question at once and refuses the save, so
+    // that no question is shown whose yes would change nothing.
+    assert!(app.nora.assist.session.confirmations().is_empty());
     assert!(observed(&calls, "c5")["error"].as_str().unwrap().contains("the person's"));
     assert!(observed(&calls, "c1")["error"].as_str().unwrap().contains("refused by the editor's policy"));
     assert!(observed(&calls, "c4")["error"].as_str().unwrap().contains("not one of Nora's commands in NeoMail"));

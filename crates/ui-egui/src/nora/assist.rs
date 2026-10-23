@@ -34,8 +34,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
 use craft_nora::{
-    AppKind, CommandPolicy, DocActionKind, DocumentInfo, HttpRequest, HttpResponse, Input, NoraError, NoraSession, Output, PageContext, Selection,
-    SessionConfig,
+    AppKind, CommandPolicy, DocActionKind, DocumentInfo, HttpRequest, HttpResponse, Input, NoraError, NoraSession, Output, PageContext, SessionConfig,
 };
 use craft_nora_ui::{NoraLabels, NoraPanel, NoraStyle, PanelAction};
 use egui::{Margin, RichText, Sense, Stroke, Ui, vec2};
@@ -304,12 +303,12 @@ fn said(text: &str) -> String {
     if flat.chars().count() > MAX_SAID { format!("{}…", flat.chars().take(MAX_SAID).collect::<String>()) } else { flat.to_string() }
 }
 
-/// Where the person is, as Nora is told with each message: NeoMail, the subject of the message being
-/// written or read, and the selection in the message being written.
-fn context_of(app: &MailApp) -> PageContext {
-    let mut document = DocumentInfo::named(observe::document_name(app));
-    document.selection = observe::draft_selection(app).map(|text| Selection { text });
-    PageContext::editor(AppKind::Mail, document)
+/// Where the person is, as Nora is told with each message: in NeoMail, and nothing of the mail. A received
+/// message's subject is its sender's words, and what is selected may be pasted from a mail: they reach her only
+/// when she reads the window ([`observe`]), through the server's guard, never in the page context, which the
+/// server hands on as it is.
+fn context_of(_app: &MailApp) -> PageContext {
+    PageContext::editor(AppKind::Mail, DocumentInfo::named(observe::DOCUMENT_NAME))
 }
 
 /// Once a frame, open or not: the answers that came are handed to the conversation, its clock moves on,
@@ -521,6 +520,13 @@ fn write(app: &mut MailApp, place: Place, text: &str) -> Result<Value, String> {
             (s.start(), s.end(), text)
         }
         Place::End if has_own => (own.chars, own.chars, format!("\n\n{text}")),
+        // Over a text longer than she reads of it, her version would drop what she didn't read.
+        Place::Replace if own.text.chars().nth(observe::MAX_DRAFT).is_some() => {
+            return Err(format!(
+                "the person's text is longer than Nora reads of it ({} characters): she can't write over it whole; write above or after it",
+                observe::MAX_DRAFT
+            ));
+        }
         Place::Replace if has_own => (0, own.chars, text),
         // At the top (or at the end, or over, a text that isn't there): above all of it.
         _ => match first {
