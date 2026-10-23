@@ -387,9 +387,9 @@ fn a_refusal_is_said_in_the_interfaces_words() {
     let (mut app, _calls, _) = page(true);
     // The look-alike language turns every interface text it is given: a refusal that skipped translation stays English.
     crate::i18n::set_current(crate::i18n::Lang::Pseudo);
-    let said = write(&mut app, Place::Caret, "Hello").unwrap_err();
+    let shown = write(&mut app, Place::Caret, "Hello").unwrap_err();
     crate::i18n::set_current(crate::i18n::Lang::English);
-    assert!(!said.contains("No message is being written"), "{said}");
+    assert!(!shown.contains("No message is being written"), "{shown}");
 }
 
 #[test]
