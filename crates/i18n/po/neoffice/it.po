@@ -1881,3 +1881,60 @@ msgstr "La pagina non offre questa operazione per un allegato."
 
 msgid "This message has no such attachment."
 msgstr "Questo messaggio non contiene un allegato del genere."
+
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr "Chiedi a Nora del messaggio che stai leggendo, o di scrivere la tua risposta. Nulla di ciò che scrive viene inviato: lo leggi e lo invii tu."
+
+msgid "Ask Nora"
+msgstr "Chiedi a Nora"
+
+msgid "Ask Nora…"
+msgstr "Chiedi a Nora…"
+
+msgid "Ask"
+msgstr "Chiedi"
+
+msgid "Change the message you are writing"
+msgstr "Modifica il messaggio che stai scrivendo"
+
+msgid "Close Nora's pane"
+msgstr "Chiudi il pannello di Nora"
+
+msgid "New conversation"
+msgstr "Nuova conversazione"
+
+msgid "Nora couldn't answer: {reason}"
+msgstr "Nora non ha potuto rispondere: {reason}"
+
+msgid "Nora did not answer in time: ask her again."
+msgstr "Nora non ha risposto in tempo: chiedile di nuovo."
+
+msgid "Nora has written nothing here to take back."
+msgstr "Nora non ha scritto nulla qui da annullare."
+
+msgid "Nora is working…"
+msgstr "Nora sta lavorando…"
+
+msgid "Nora wants to:"
+msgstr "Nora vuole:"
+
+msgid "Refuse"
+msgstr "Rifiuta"
+
+msgid "Save the message"
+msgstr "Salva il messaggio"
+
+msgid "Stopped."
+msgstr "Interrotto."
+
+msgid "Take back the last thing Nora wrote in your message"
+msgstr "Annulla l'ultima cosa che Nora ha scritto nel tuo messaggio"
+
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
+msgstr "Il messaggio è cambiato da quando Nora ci ha scritto: annulla a modo tuo con il pulsante Annulla del messaggio."
+
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
+msgstr "La tua sessione Neoffice è terminata: ricarica la pagina, poi chiedi di nuovo a Nora."
+
+msgid "nothing hosting this window reaches Nora's conversation"
+msgstr "nulla di ciò che ospita questa finestra raggiunge la conversazione di Nora"

@@ -802,7 +802,7 @@ msgid "All the conditions must hold"
 msgstr "Devono essere soddisfatte tutte le condizioni"
 
 #. interface
-#: crates/ui-egui/src/agent_gate.rs
+#: crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/nora/assist.rs
 #, fuzzy
 msgid "Allow"
 msgstr "Consenti"
@@ -1172,6 +1172,26 @@ msgstr "Come lo vedono i destinatari"
 #, fuzzy
 msgid "As the people you write to see it"
 msgstr "Come lo vedono le persone a cui si scrive"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask"
+msgstr ""
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/nora/ribbon.rs
+msgid "Ask Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora…"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/remote.rs
@@ -1566,6 +1586,11 @@ msgid "Change the colour"
 msgstr "Cambia il colore"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Change the message you are writing"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/hosted_signatures.rs
 msgid "Change them on the site"
 msgstr ""
@@ -1872,6 +1897,11 @@ msgstr "Chiude MailCraft, installa la nuova versione e lo riavvia. Altrimenti vi
 #, fuzzy
 msgid "Close Message"
 msgstr "Chiudi messaggio"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Close Nora's pane"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/view.rs
@@ -5344,6 +5374,11 @@ msgid "New category"
 msgstr "Nuova categoria"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "New conversation"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "New items go to the calendar that is picked here"
@@ -5668,12 +5703,17 @@ msgid "None"
 msgstr "Nessuno"
 
 #. interface, ribbon location
-#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
 msgid "Nora"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/answer.rs
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora couldn't answer: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs crates/ui-egui/src/nora/assist.rs
 msgid "Nora couldn't be reached: {reason}"
 msgstr ""
 
@@ -5703,8 +5743,18 @@ msgid "Nora couldn't write the reply: {reason}"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora did not answer in time: ask her again."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora found nothing to change."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora has written nothing here to take back."
 msgstr ""
 
 #. interface
@@ -5743,8 +5793,18 @@ msgid "Nora is translating the message…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is working…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
 msgid "Nora is writing the reply…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora wants to:"
 msgstr ""
 
 #. interface
@@ -6838,6 +6898,11 @@ msgstr "Ripeti digitazione"
 msgid "Redo {what}"
 msgstr "Ripeti {what}"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Refuse"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -7421,6 +7486,11 @@ msgstr "Salva bozza"
 #, fuzzy
 msgid "Save out"
 msgstr "Salva ed esporta"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Save the message"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/host_attachments.rs
@@ -8594,7 +8664,7 @@ msgid "Still indexing: some older mail is searched more slowly"
 msgstr "Indicizzazione ancora in corso: la ricerca in alcuni messaggi meno recenti è più lenta"
 
 #. interface
-#: crates/ui-egui/src/sync_panel.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/sync_panel.rs
 #, fuzzy
 msgid "Stop"
 msgstr "Interrompi"
@@ -8622,6 +8692,11 @@ msgstr "Interrotto"
 #, fuzzy
 msgid "Stopped ({line})"
 msgstr "Interrotto ({line})"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Stopped."
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/graph_mail.rs crates/ui-egui/src/i18n/run_words/rows.rs
@@ -8718,6 +8793,11 @@ msgstr "Tabella"
 #, fuzzy
 msgid "Tags"
 msgstr "Tag"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Take back the last thing Nora wrote in your message"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/data_removal.rs
@@ -9204,6 +9284,11 @@ msgstr "La cassetta postale {address} non è raggiungibile tramite Microsoft Gra
 #, fuzzy
 msgid "The meeting these proposals are for isn't on your calendar."
 msgstr "La riunione a cui si riferiscono queste proposte non è nel calendario."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/host_menu.rs
@@ -10536,8 +10621,8 @@ msgstr "Digitare il proprio indirizzo di posta elettronica e MailCraft trova il 
 msgid "Underline"
 msgstr "Sottolineato"
 
-#. command label, name
-#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs
+#. command label, interface, name
+#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs
 #, fuzzy
 msgid "Undo"
 msgstr "Annulla"
@@ -11143,6 +11228,11 @@ msgstr "È stato eseguito l'accesso come {signedIn}, non come {typed}."
 #, fuzzy
 msgid "You tentatively accepted this meeting."
 msgstr "Questa riunione è stata accettata come provvisoria."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
@@ -11784,7 +11874,7 @@ msgid "it stopped unexpectedly"
 msgstr "si è interrotto in modo imprevisto"
 
 #. interface
-#: crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/reading/remote.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "it took too long"
 msgstr "ha richiesto troppo tempo"
@@ -12073,6 +12163,11 @@ msgstr "nessuna cartella {folder}"
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "not available: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "nothing hosting this window reaches Nora's conversation"
 msgstr ""
 
 #. what a command says
@@ -12455,7 +12550,7 @@ msgid "the check stopped unexpectedly"
 msgstr "la verifica si è interrotta in modo imprevisto"
 
 #. interface
-#: crates/ui-egui/src/nora/flow.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs
 msgid "the connection stopped before Nora answered"
 msgstr ""
 

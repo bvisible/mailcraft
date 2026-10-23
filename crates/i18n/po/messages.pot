@@ -692,7 +692,7 @@ msgid "All the conditions must hold"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/agent_gate.rs
+#: crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/nora/assist.rs
 msgid "Allow"
 msgstr ""
 
@@ -1006,6 +1006,26 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/account_setup.rs
 msgid "As the people you write to see it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask"
+msgstr ""
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/nora/ribbon.rs
+msgid "Ask Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora…"
 msgstr ""
 
 #. interface
@@ -1336,6 +1356,11 @@ msgid "Change the colour"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Change the message you are writing"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/hosted_signatures.rs
 msgid "Change them on the site"
 msgstr ""
@@ -1595,6 +1620,11 @@ msgstr ""
 #. command label
 #: crates/engine/src/cmd/compose.rs
 msgid "Close Message"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Close Nora's pane"
 msgstr ""
 
 #. command label
@@ -4529,6 +4559,11 @@ msgid "New category"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "New conversation"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 msgid "New items go to the calendar that is picked here"
 msgstr ""
@@ -4801,12 +4836,17 @@ msgid "None"
 msgstr ""
 
 #. interface, ribbon location
-#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
 msgid "Nora"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/answer.rs
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora couldn't answer: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs crates/ui-egui/src/nora/assist.rs
 msgid "Nora couldn't be reached: {reason}"
 msgstr ""
 
@@ -4836,8 +4876,18 @@ msgid "Nora couldn't write the reply: {reason}"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora did not answer in time: ask her again."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora found nothing to change."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora has written nothing here to take back."
 msgstr ""
 
 #. interface
@@ -4876,8 +4926,18 @@ msgid "Nora is translating the message…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is working…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
 msgid "Nora is writing the reply…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora wants to:"
 msgstr ""
 
 #. interface
@@ -5817,6 +5877,11 @@ msgstr ""
 msgid "Redo {what}"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Refuse"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid "Related"
@@ -6297,6 +6362,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Save out"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Save the message"
 msgstr ""
 
 #. interface
@@ -7292,7 +7362,7 @@ msgid "Still indexing: some older mail is searched more slowly"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/sync_panel.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/sync_panel.rs
 msgid "Stop"
 msgstr ""
 
@@ -7314,6 +7384,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 msgid "Stopped ({line})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Stopped."
 msgstr ""
 
 #. interface, what a command says
@@ -7394,6 +7469,11 @@ msgstr ""
 #. ribbon, ribbon location
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/category.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/ribbon.rs
 msgid "Tags"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Take back the last thing Nora wrote in your message"
 msgstr ""
 
 #. interface
@@ -7819,6 +7899,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 msgid "The meeting these proposals are for isn't on your calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
 msgstr ""
 
 #. interface
@@ -9001,8 +9086,8 @@ msgstr ""
 msgid "Underline"
 msgstr ""
 
-#. command label, name
-#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs
+#. command label, interface, name
+#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs
 msgid "Undo"
 msgstr ""
 
@@ -9513,6 +9598,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/reading/invitation.rs
 msgid "You tentatively accepted this meeting."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
 msgstr ""
 
 #. interface
@@ -10084,7 +10174,7 @@ msgid "it stopped unexpectedly"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/reading/remote.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/reading/remote.rs
 msgid "it took too long"
 msgstr ""
 
@@ -10341,6 +10431,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "not available: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "nothing hosting this window reaches Nora's conversation"
 msgstr ""
 
 #. what a command says
@@ -10689,7 +10784,7 @@ msgid "the check stopped unexpectedly"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/flow.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs
 msgid "the connection stopped before Nora answered"
 msgstr ""
 

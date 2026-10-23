@@ -1865,3 +1865,60 @@ msgstr "Die Seite bietet dies für eine Anlage nicht an."
 
 msgid "This message has no such attachment."
 msgstr "Diese Nachricht enthält keine solche Anlage."
+
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr "Fragen Sie Nora zur Nachricht, die Sie lesen, oder bitten Sie sie, Ihre Antwort zu schreiben. Was sie schreibt, wird nicht gesendet: Sie lesen es und senden es selbst."
+
+msgid "Ask Nora"
+msgstr "Nora fragen"
+
+msgid "Ask Nora…"
+msgstr "Nora fragen…"
+
+msgid "Ask"
+msgstr "Fragen"
+
+msgid "Change the message you are writing"
+msgstr "Die Nachricht ändern, die Sie schreiben"
+
+msgid "Close Nora's pane"
+msgstr "Noras Panel schliessen"
+
+msgid "New conversation"
+msgstr "Neue Unterhaltung"
+
+msgid "Nora couldn't answer: {reason}"
+msgstr "Nora konnte nicht antworten: {reason}"
+
+msgid "Nora did not answer in time: ask her again."
+msgstr "Nora hat nicht rechtzeitig geantwortet: Fragen Sie sie erneut."
+
+msgid "Nora has written nothing here to take back."
+msgstr "Nora hat hier nichts geschrieben, das zurückgenommen werden könnte."
+
+msgid "Nora is working…"
+msgstr "Nora arbeitet…"
+
+msgid "Nora wants to:"
+msgstr "Nora will:"
+
+msgid "Refuse"
+msgstr "Ablehnen"
+
+msgid "Save the message"
+msgstr "Nachricht speichern"
+
+msgid "Stopped."
+msgstr "Gestoppt."
+
+msgid "Take back the last thing Nora wrote in your message"
+msgstr "Das Letzte zurücknehmen, das Nora in Ihrer Nachricht geschrieben hat"
+
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
+msgstr "Die Nachricht hat sich geändert, seit Nora darin geschrieben hat: Machen Sie es selbst rückgängig, mit «Rückgängig» der Nachricht."
+
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
+msgstr "Ihre Neoffice-Sitzung ist beendet: Laden Sie die Seite neu und fragen Sie Nora danach erneut."
+
+msgid "nothing hosting this window reaches Nora's conversation"
+msgstr "nichts, was dieses Fenster beherbergt, erreicht die Unterhaltung mit Nora"

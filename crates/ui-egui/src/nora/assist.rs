@@ -41,7 +41,7 @@ use craft_nora_ui::{NoraLabels, NoraPanel, NoraStyle, PanelAction};
 use egui::{Margin, RichText, Sense, Stroke, Ui, vec2};
 use mailcraft_engine::ComposeMode;
 use mailcraft_model::Id;
-use mailcraft_model::RichText;
+use mailcraft_model::RichText as MailText;
 use serde_json::{Value, json};
 
 use super::{CHAT_METHODS, DEADLINE_MS, MAX_REPLY, NoraAnswer, NoraCall, look, observe, own_text};
@@ -114,8 +114,8 @@ struct Call {
 struct Change {
     mode: ComposeMode,
     source: Option<Id>,
-    before: RichText,
-    after: RichText,
+    before: MailText,
+    after: MailText,
 }
 
 impl Default for Assist {

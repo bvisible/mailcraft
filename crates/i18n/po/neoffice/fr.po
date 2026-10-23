@@ -1899,3 +1899,60 @@ msgstr "sélectionnez d’abord une note"
 
 msgid "the note is gone"
 msgstr "la note n’existe plus"
+
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr "Demandez à Nora à propos du message que vous lisez, ou de rédiger votre réponse. Rien de ce qu’elle écrit n’est envoyé : vous le relisez et l’envoyez vous-même."
+
+msgid "Ask Nora"
+msgstr "Demander à Nora"
+
+msgid "Ask Nora…"
+msgstr "Demander à Nora…"
+
+msgid "Ask"
+msgstr "Demander"
+
+msgid "Change the message you are writing"
+msgstr "Modifier le message que vous rédigez"
+
+msgid "Close Nora's pane"
+msgstr "Fermer le panneau de Nora"
+
+msgid "New conversation"
+msgstr "Nouvelle conversation"
+
+msgid "Nora couldn't answer: {reason}"
+msgstr "Nora n’a pas pu répondre : {reason}"
+
+msgid "Nora did not answer in time: ask her again."
+msgstr "Nora n’a pas répondu à temps : redemandez-lui."
+
+msgid "Nora has written nothing here to take back."
+msgstr "Nora n’a rien écrit ici à reprendre."
+
+msgid "Nora is working…"
+msgstr "Nora travaille…"
+
+msgid "Nora wants to:"
+msgstr "Nora veut :"
+
+msgid "Refuse"
+msgstr "Refuser"
+
+msgid "Save the message"
+msgstr "Enregistrer le message"
+
+msgid "Stopped."
+msgstr "Arrêté."
+
+msgid "Take back the last thing Nora wrote in your message"
+msgstr "Reprendre ce que Nora a écrit en dernier dans votre message"
+
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
+msgstr "Le message a changé depuis que Nora y a écrit : annulez à votre manière, avec le bouton Annuler du message."
+
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
+msgstr "Votre session Neoffice a pris fin : rechargez la page, puis redemandez à Nora."
+
+msgid "nothing hosting this window reaches Nora's conversation"
+msgstr "rien de ce qui héberge cette fenêtre n’atteint la conversation de Nora"
