@@ -311,8 +311,9 @@ the marker check does not know as one that takes comments:
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`
-  under them) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); nothing else (upstream's
-  `mailcraft-jmap` has upstream's lines).
+  under them) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); `ctutils` 0.4.4 over upstream's
+  0.4.3 (RUSTSEC-2026-0385, which `cargo xtask deny` refuses: until upstream's lock moves past it); nothing else
+  (upstream's `mailcraft-jmap` has upstream's lines).
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
   `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's
