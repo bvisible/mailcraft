@@ -61,6 +61,11 @@ msgid "\"{shown}\" isn't an e-mail address"
 msgstr "«{shown}» no es una dirección de correo electrónico"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "\"{text}\" is not in the message being written ({count} time(s))."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "\"{title}\" on {day} will be removed from the calendar \"{calendar}\"."
 msgstr ""
@@ -357,6 +362,11 @@ msgstr "Un buzón grande tarda un rato. {account} pasará a Microsoft Graph en c
 msgid "A mailbox kept here, with no mail server"
 msgstr "Un buzón guardado aquí, sin servidor de correo"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A mailbox shared with you"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
@@ -374,6 +384,16 @@ msgstr "Una reunión se reenvía como máximo a {n} personas a la vez."
 #, fuzzy
 msgid "A meeting that repeats and skips some days can't be put on the server's calendar from here: everyone invited would get a cancellation for each skipped day. Keep it in a calendar on this computer, or make it again without the skipped days."
 msgstr "Una reunión periódica que omite algunos días no se puede poner en el calendario del servidor desde aquí: todos los invitados recibirían una cancelación por cada día omitido. Guárdela en un calendario de este equipo o vuelva a crearla sin los días omitidos."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A message has no pages to look at: Nora reads it with doc_observe."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A message is being written already: Nora writes into it with draft.write, or you close it first."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
@@ -468,6 +488,16 @@ msgstr ""
 #, fuzzy
 msgid "A series that the account's server keeps can't be moved to another calendar from here: the server has no way of moving one, and days of it that were changed on their own could be lost in making it again."
 msgstr "Una serie que guarda el servidor de la cuenta no se puede mover a otro calendario desde aquí: el servidor no tiene forma de moverla, y los días que se cambiaron por separado podrían perderse al volver a crearla."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A signature is open in File › Signatures: what Nora does would go into it. Close it first."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A signature is open in File › Signatures: what Nora writes would go into it. Close it first."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -918,6 +948,11 @@ msgstr "Un id. de aplicación consta de letras, dígitos, puntos y guiones"
 #, fuzzy
 msgid "An item that repeats can't be taken to another calendar this way. Hold Ctrl to copy this occurrence there, or use Move to Calendar in its menu for the whole series."
 msgstr "Un elemento periódico no se puede llevar a otro calendario de esta forma. Mantenga presionada Ctrl para copiar allí esta repetición, o use Mover al calendario en su menú para toda la serie."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Another message is being written: Nora writes into it with draft.write, or you close it first."
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/meeting_dialogs.rs
@@ -1490,7 +1525,7 @@ msgid "Calibri"
 msgstr "Calibri"
 
 #. interface
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "Cancel"
 msgstr "Cancelar"
@@ -5227,6 +5262,16 @@ msgstr "Necesario para las cuentas de Outlook.com y Microsoft 365"
 msgid "Needs Check for new versions."
 msgstr "Requiere Buscar nuevas versiones."
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "NeoMail doesn't print or export a message for Nora: you print it from the message's own window."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "NeoMail takes one of Nora's commands at a time: draft.reply, draft.new or draft.write, each in a call of its own."
+msgstr ""
+
 #. interface, ribbon, ribbon location
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs
 #, fuzzy
@@ -5591,6 +5636,16 @@ msgid "No message is being read there"
 msgstr "No se está leyendo ningún mensaje allí"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "No message is being written: Nora opens the reply with draft.reply (it writes the text too), or a new message with draft.new."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "No message is open: open the message to answer first."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/updates.rs
 #, fuzzy
 msgid "No new version is ready to install."
@@ -5773,6 +5828,11 @@ msgid "Nora is already translating a message."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is already waiting for your answer on the card of her pane."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora is already writing a reply."
 msgstr ""
@@ -5804,6 +5864,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
+msgid "Nora wants to write in a message of {mailbox}, a mailbox shared with you: what she writes is kept in its drafts until you send it or discard it. Your yes holds for this mailbox until the conversation is new."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
 msgid "Nora wants to:"
 msgstr ""
 
@@ -5815,6 +5880,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora's draft is in the reply: read it before sending."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora's pane needs a hosting page that reaches her conversation (NeoMail in Neoffice)."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora's request waited too long for your answer: nothing was written."
 msgstr ""
 
 #. interface
@@ -6210,7 +6285,7 @@ msgid "Only while MailCraft isn't the window in front, and only for the Inboxes 
 msgstr "Solo cuando MailCraft no es la ventana en primer plano, y solo para las Bandejas de entrada de sus propias cuentas."
 
 #. interface, ribbon
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Open"
 msgstr "Abrir"
@@ -7527,6 +7602,11 @@ msgid "Saving a copy of your mailbox before the switch…"
 msgstr "Guardando una copia de su buzón antes del cambio…"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Saving or sending the message is yours: it is ready in your window."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Saving the mailbox…"
@@ -7561,6 +7641,11 @@ msgid "Say what to open: `message` or `event` by its id, or `new` (\"appointment
 msgstr "Indique qué abrir: `message` o `event` por su id., o `new` (\"appointment\" o \"meeting\")"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Say what to write: `text` is empty."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/report_problem.rs
 msgid "Say what went wrong. MailCraft sends nothing by itself: you check the report and send it."
 msgstr ""
@@ -7582,6 +7667,11 @@ msgstr "Indique qué grupo de calendarios (`group`: su encabezado)"
 #, fuzzy
 msgid "Say which reminder (`event` and `occurrence`), or `all`"
 msgstr "Indique qué aviso (`event` y `occurrence`), o `all`"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Say which text to select."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -7776,10 +7866,20 @@ msgid "Select an item to read"
 msgstr "Seleccione un elemento para leerlo"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Select at most {count} characters at a time."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/select.rs
 #, fuzzy
 msgid "Select some text first"
 msgstr "Seleccione primero algo de texto"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Selecting works in the message being written, and none is: Nora reads a message with doc_observe."
+msgstr ""
 
 #. command label, interface, ribbon
 #: crates/engine/src/cmd/compose.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/ribbon.rs
@@ -8937,6 +9037,11 @@ msgid "That is too long for a report: shorten it"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "That is too long to write in one go: {count} characters at most."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/shared_mailboxes.rs
 #, fuzzy
 msgid "That isn't a shared mailbox"
@@ -9315,10 +9420,20 @@ msgid "The message is on the clipboard: paste it into mail or chat for your orga
 msgstr "El mensaje está en el Portapapeles: péguelo en un correo o un chat para el administrador de su organización"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message is still being downloaded: ask again in a moment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/attachment_open.rs
 #, fuzzy
 msgid "The message isn't there any more"
 msgstr "El mensaje ya no está ahí"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message starts with its signature: leave a line above it for Nora's text."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
@@ -9341,6 +9456,11 @@ msgstr ""
 #, fuzzy
 msgid "The messages of the folder in view, as .mbox"
 msgstr "Los mensajes de la carpeta mostrada, como .mbox"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The new message could not be opened."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
@@ -9413,6 +9533,11 @@ msgstr "El puerto; déjelo vacío para usar el habitual"
 #, fuzzy
 msgid "The proposed end has to be after the proposed start."
 msgstr "El fin propuesto debe ser posterior al inicio propuesto."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The reply could not be opened."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
@@ -9687,6 +9812,11 @@ msgstr "La cita de prueba ya se ha vuelto a quitar. No se leyó ni se cambió na
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "The undo couldn't keep a note in step with its server: too many note changes are waiting to be sent."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The window changed since Nora asked: nothing was written. Ask her again."
 msgstr ""
 
 #. interface
@@ -11074,6 +11204,11 @@ msgid "Working hours"
 msgstr "Horario laboral"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Write from {mailbox}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/people_view.rs
 #, fuzzy
 msgid "Write to {address}"
@@ -11155,6 +11290,11 @@ msgid "You declined this meeting."
 msgstr "Ha rechazado esta reunión."
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "You didn't let Nora write in {mailbox}: nothing was written."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/shared_mailboxes.rs
 #, fuzzy
 msgid "You don't have access to {address}. If access was just given, try again in an hour."
@@ -11224,6 +11364,11 @@ msgstr "Inició sesión como {signedIn}, pero esta cuenta es {account}. Vuelva a
 #, fuzzy
 msgid "You signed in as {signedIn}, not {typed}."
 msgstr "Inició sesión como {signedIn}, no como {typed}."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "You stopped Nora: nothing was written."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/invitation.rs
@@ -11332,6 +11477,11 @@ msgid "Your text changed meanwhile: Nora's version wasn't put in."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Your text is longer than Nora reads of it ({count} characters): she can't write over it whole, only above or after it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/own_text.rs
 msgid "Your text is too long for Nora: {n} characters at most."
 msgstr ""
@@ -11360,6 +11510,11 @@ msgid "`account` is required"
 msgstr "`account` es obligatorio"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`all` is true or false."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/favorites_sync.rs
 #, fuzzy
 msgid "`answer.folders` is a list of {path, kind}"
@@ -11370,6 +11525,11 @@ msgstr "`answer.folders` es una lista de {path, kind}"
 #, fuzzy
 msgid "`answer.outcome` is read, missing, notPermitted, refused, approval or failed"
 msgstr "`answer.outcome` es read, missing, notPermitted, refused, approval o failed"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`at` is \"top\", \"end\" or \"replace\", not \"{value}\"."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/keep_offline.rs
@@ -11400,6 +11560,26 @@ msgstr "`notice` es installsItself o didntStart"
 #, fuzzy
 msgid "`value` is true or false"
 msgstr "`value` es true o false"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{command}` is not one of Nora's commands in NeoMail: she reads the window and writes into the message being written ({commands}); sending, deleting, moving, filing and flagging are yours."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{command}` takes the text to write as `text`."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{field}` is text."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{field}` is too long."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
