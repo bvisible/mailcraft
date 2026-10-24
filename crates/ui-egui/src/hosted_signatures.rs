@@ -74,7 +74,8 @@ mod tests {
         let mut asked = Vec::new();
         for _ in 0..3 {
             harness.step();
-            asked.extend(harness.output().platform_output.commands.iter().cloned());
+            // (egui 0.37 also says when a selection of the label's text settles: not an address to open.)
+            asked.extend(harness.output().platform_output.commands.iter().filter(|c| matches!(c, egui::OutputCommand::OpenUrl(_))).cloned());
         }
         assert!(matches!(asked.as_slice(), [egui::OutputCommand::OpenUrl(open)] if open.url == HOME && open.new_tab), "{asked:?}");
     }
