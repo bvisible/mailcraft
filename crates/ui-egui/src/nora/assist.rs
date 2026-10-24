@@ -115,6 +115,9 @@ pub(crate) struct Assist {
     held: Option<Held>,
     /// The shared mailboxes the person let her write in, in this conversation (their addresses).
     trusted: Vec<String>,
+    /// The pane's width as the person left it (330 at first): a narrow window narrows the pane under another id, and
+    /// this width comes back once there is room again.
+    width: f32,
 }
 
 /// A write of Nora's into a message of a mailbox shared with the person, held until they answer the card that names
@@ -166,6 +169,7 @@ impl Default for Assist {
             changes: Vec::new(),
             held: None,
             trusted: Vec::new(),
+            width: 330.0,
         }
     }
 }
@@ -248,30 +252,35 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep
     // (`mail_view::message_room`): in a narrow window the pane narrows to 240 first, then the folder pane and the list make way.
     let widest = (ui.available_width() - crate::mail_view::LIST_MIN - crate::mail_view::READING_MIN).max(240.0);
-    egui::Panel::right("nora_assistant")
-        .default_size(330.0_f32.min(widest))
-        .size_range(240.0..=widest)
-        .resizable(true)
-        .frame(egui::Frame::NONE.fill(t.panel).inner_margin(Margin::same(10)).stroke(Stroke::new(1.0, t.border)))
-        .show(ui, |ui| {
-            closing = title(ui, &t);
-            ui.add_space(4.0);
-            if let Some(mailbox) = &held {
-                answered = shared_card(ui, &t, mailbox);
-                ui.add_space(6.0);
-            }
-            // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
-            let input = ui.scope_id().with("nora").with("input");
-            let assist = &mut app.nora.assist;
-            assist.panel.labels = labels();
-            assist.panel.style = style(&t);
-            assist.panel.open_links = opens;
-            // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
-            // come from a message rather than from her.
-            assist.panel.links_on_cards_only = true;
-            actions = assist.panel.show(ui, &assist.session);
-            typing = ui.ctx().memory(|m| m.has_focus(input));
-        });
+    // Narrower than the person left it: under another id and at that width, so that theirs (and egui's memory of it) stays.
+    let narrowed = app.nora.assist.width > widest + 0.5;
+    let panel = if narrowed {
+        egui::Panel::right("nora_assistant_narrowed").exact_size(widest).resizable(false)
+    } else {
+        egui::Panel::right("nora_assistant").default_size(app.nora.assist.width).size_range(240.0..=widest).resizable(true)
+    };
+    let drawn = panel.frame(egui::Frame::NONE.fill(t.panel).inner_margin(Margin::same(10)).stroke(Stroke::new(1.0, t.border))).show(ui, |ui| {
+        closing = title(ui, &t);
+        ui.add_space(4.0);
+        if let Some(mailbox) = &held {
+            answered = shared_card(ui, &t, mailbox);
+            ui.add_space(6.0);
+        }
+        // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
+        let input = ui.scope_id().with("nora").with("input");
+        let assist = &mut app.nora.assist;
+        assist.panel.labels = labels();
+        assist.panel.style = style(&t);
+        assist.panel.open_links = opens;
+        // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
+        // come from a message rather than from her.
+        assist.panel.links_on_cards_only = true;
+        actions = assist.panel.show(ui, &assist.session);
+        typing = ui.ctx().memory(|m| m.has_focus(input));
+    });
+    if !narrowed {
+        app.nora.assist.width = drawn.response.rect.width();
+    }
     app.nora.assist.typing = typing;
     if closing {
         close(app);
