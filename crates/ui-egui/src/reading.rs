@@ -299,8 +299,9 @@ pub(crate) const ACTIONS: [(&str, &str, &str); 4] = [
     ("delete", "Delete", "mail.delete"),
 ];
 
-// //// Neoffice — the least room a subject is laid out in beside the message's actions (`header`); with less, it goes under them.
-const SUBJECT_BESIDE_MIN: f32 = 160.0;
+// //// Neoffice — the least room a subject is laid out in beside the message's actions (`header`): with less, its words no
+// longer fit and it wrapped a letter at a time; it goes under them instead. (With more, it stays beside them, as upstream has it.)
+const SUBJECT_BESIDE_MIN: f32 = 100.0;
 
 fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictures: impl FnOnce(&mut MailApp, &mut Ui, &Tokens)) {
     let t = Tokens::get(ui.ctx());
