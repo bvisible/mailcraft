@@ -9,7 +9,19 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `1ace451` (upstream `main` on 2026-10-22 in the afternoon: `mailcraft-jmap` in `crates/jmap`, the JMAP client this
+- `1a04d46` (upstream `main` on 2026-10-24 in the morning, after the 0.7.0 release: egui and eframe 0.37 (#362); the
+  message list arranged by categories (#357); a calendar's owner and rights in the model (#70 cal 1, #380); remembered
+  sign-ins bound to the servers they go to, a mailbox opened from a file unconfirmed until its servers are, `.mailcraft`
+  attachments saved and never opened, more launchable kinds blocked, the agent's gate asking before deletes and undo
+  (C1, batches 4 to 7, #328 to #341); MailCraft's own quit on macOS, without craft-libs (#353); each message's size on
+  the server (#300); Messages from Sender (#301); the only account removable (#313)), merged into `version-15` on
+  2026-10-24. The fork keeps craft-libs for Nora's pane alone (Neoffice's fork, `craft-nora` and `craft-nora-ui`,
+  whose panel builds on egui 0.36 for the editors and 0.37 here). A JMAP account (the fork's) has no IMAP or SMTP
+  server: its remembered password is bound to its JMAP server's session address instead (a marked branch of
+  `MailApp::secret_key`, test `a_password_is_kept_for_the_jmap_server_it_goes_to`). The fork's own window code moved to
+  0.37's names (`Id::unique`, `Ui::scope_id`, `Role`), and its kittest harnesses keep the old checks, as upstream's do
+  (`with_accessibility_check(false)`, `allow_missing_glyphs()`).
+- Before it: `1ace451` (upstream `main` on 2026-10-22 in the afternoon: `mailcraft-jmap` in `crates/jmap`, the JMAP client this
   fork offered upstream, its core written afresh in a clean room (M6 2/6, #278); messages arranged by size (#273); an
   account's local copy wiped when it goes, and File › Info › Remove MailCraft's Data from This Computer (#177); a search
   box in Move to Folder and the other folder menus (#74); padding, margins, lines, rounded corners and line height from
@@ -314,13 +326,12 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.6.0, the workspace's version, with its dependencies on
+- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.7.0, the workspace's version, with its dependencies on
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`
-  under them) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); `ctutils` 0.4.4 over upstream's
-  0.4.3 (RUSTSEC-2026-0385, which `cargo xtask deny` refuses: until upstream's lock moves past it); nothing else
-  (upstream's `mailcraft-jmap` has upstream's lines).
+  under them, the workspace's egui 0.37) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); nothing
+  else (upstream's `mailcraft-jmap` has upstream's lines; upstream's lock has the `ctutils` past RUSTSEC-2026-0385 now).
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
   `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's

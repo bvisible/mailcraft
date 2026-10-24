@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! MailCraft desktop app.
 //!
-//! Usage: `mailcraft [--control <port>] [--sample] [--mailbox <file>] [files or mailto: links…]`
+//! Usage: `mailcraft [--control <port> [--control-agents-only]] [--sample] [--mailbox <file>] [files or mailto: links…]`
 //!
 //! The mailbox lives in `<settings>/mailbox.mailcraft` (or the file `--mailbox` names) and is saved
 //! as you go. `--sample` opens the sample mailbox instead and keeps nothing. Files on the command
@@ -13,7 +13,9 @@
 //! `--control <port>` (or `MAILCRAFT_CONTROL_PORT`) starts a localhost JSON-lines control server:
 //! `{"id":1,"key":"…","method":"engine.execute","params":{"command":"mail.markAllRead","params":{}}}`.
 //! Every request needs the key the app writes to `<settings>/control-key.<instance>` (mode 0600,
-//! removed on exit). See `docs/control-protocol.md`.
+//! removed on exit). See `docs/control-protocol.md`. `--control-agents-only` (or
+//! `MAILCRAFT_CONTROL_AGENTS_ONLY=1`) takes every request for an agent's, allowed nothing in
+//! advance, so that an agent that can read the key can't pass for the owner's script.
 #![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -22,6 +24,7 @@ mod alerts;
 mod apple_events;
 #[cfg(test)]
 mod approval_flow;
+mod block_on;
 mod browser;
 #[cfg(test)]
 mod calendar_flow;
@@ -35,6 +38,7 @@ mod favorites_flow;
 #[cfg(test)]
 mod favorites_organisation_flow;
 mod file_dialogs;
+mod file_launcher;
 #[cfg(test)]
 mod graph_folders_flow;
 #[cfg(test)]
@@ -48,13 +52,18 @@ mod menubar;
 mod opened_files;
 mod picture_cache;
 mod quit;
+#[cfg(target_os = "macos")]
+mod quit_macos;
 mod secrets;
 mod self_update;
 #[cfg(test)]
 mod shared_send_flow;
 mod single_instance;
+mod system_locale;
 #[cfg(test)]
 mod token_renew_flow;
+#[cfg(test)]
+mod unconfirmed_flow;
 #[cfg(test)]
 mod update_flow;
 mod updater;
@@ -1177,7 +1186,7 @@ fn services(
         update_download: updates.map(|updates| update_download(&download_ctx, updates.clone())),
         updates_turned_off_by_organisation: updater::turned_off_by_organisation(),
         // The system's language, for an interface language left on Automatic.
-        system_locale: sys_locale::get_locale(),
+        system_locale: system_locale::system_locale(),
         ..Default::default()
     }
 }
@@ -1305,6 +1314,7 @@ fn main() -> eframe::Result {
         std::process::exit(code);
     }
     let mut control_port: Option<u16> = std::env::var("MAILCRAFT_CONTROL_PORT").ok().and_then(|p| p.parse().ok());
+    let mut control_agents_only = std::env::var("MAILCRAFT_CONTROL_AGENTS_ONLY").is_ok_and(|v| v == "1");
     let mut files = Vec::new();
     let mut sample = false;
     let mut mailbox_path: Option<PathBuf> = None;
@@ -1313,6 +1323,7 @@ fn main() -> eframe::Result {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = args.next().and_then(|p| p.parse().ok()),
+            "--control-agents-only" => control_agents_only = true,
             "--sample" => sample = true,
             "--mailbox" => mailbox_path = args.next().map(PathBuf::from),
             // Started by the version this one replaced: it is let go first.
@@ -1465,7 +1476,8 @@ fn main() -> eframe::Result {
             app.integrated_titlebar = cfg!(target_os = "macos");
             let mut key_file = None;
             if let Some(port) = control_port
-                && let Some((rx, file)) = control_server::start(port, cc.egui_ctx.clone(), mailcraft_control_key::settings_dir().as_deref())
+                && let Some((rx, file)) =
+                    control_server::start(port, cc.egui_ctx.clone(), mailcraft_control_key::settings_dir().as_deref(), control_agents_only)
             {
                 app = app.with_control(rx);
                 key_file = file;
@@ -1485,7 +1497,7 @@ fn main() -> eframe::Result {
                 Ok(bar) => Some(bar),
                 Err(e) => {
                     log::warn!("the menu bar couldn't be set up: {e}");
-                    if let Err(e) = craft_quit::install_app_menu(&cc.egui_ctx, "MailCraft") {
+                    if let Err(e) = quit_macos::install_app_menu(&cc.egui_ctx, "MailCraft") {
                         log::warn!("the app menu couldn't be set up, so Quit won't ask about unsaved work: {e}");
                     }
                     None

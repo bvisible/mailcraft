@@ -96,7 +96,7 @@ fn the_calendars_and_their_rights_are_read() {
 #[test]
 fn a_calendar_is_writable_where_every_event_of_it_may_be_written() {
     let result = run(&server(), &request());
-    let rights: Vec<(String, bool)> = result.calendars.unwrap().calendars.into_iter().map(|c| (c.name, c.read_only)).collect();
+    let rights: Vec<(String, bool)> = result.calendars.unwrap().calendars.into_iter().map(|c| (c.name, !c.rights.can_edit())).collect();
     assert_eq!(
         rights,
         [("Ada".to_string(), false), ("Team".to_string(), true), ("Own".to_string(), true)],

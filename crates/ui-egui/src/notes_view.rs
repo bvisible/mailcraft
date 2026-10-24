@@ -132,7 +132,7 @@ pub(crate) fn card_text(app: &MailApp, note: &Note) -> CardText {
         badges.push(tl!("Formatted").to_string());
     }
     let typed_here = app.ctx.as_ref().is_some_and(|ctx| {
-        ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).get(&note.id).is_some_and(|draft| draft.typed.is_some()))
+        ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::unique(DRAFT)).get(&note.id).is_some_and(|draft| draft.typed.is_some()))
     });
     if !notes::saved(&app.session, note) || !note.error.is_empty() || typed_here {
         badges.push(tl!("Not saved").to_string());
@@ -185,7 +185,7 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let mut filter: Filter = ui.data(|d| d.get_temp(egui::Id::new(FILTER))).unwrap_or_default();
+    let mut filter: Filter = ui.data(|d| d.get_temp(egui::Id::unique(FILTER))).unwrap_or_default();
     let frame = egui::Frame::NONE.fill(t.surface).stroke(Stroke::new(1.0, t.border));
     egui::Panel::left("notes_pane").default_size(PANE_W).size_range(180.0..=320.0).resizable(true).frame(frame).show(ui, |ui| {
         pane(app, ui, &mut filter);
@@ -200,7 +200,7 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
         flush(app, ui.ctx(), true);
     }
     egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| cards(app, ui, &filter));
-    ui.data_mut(|d| d.insert_temp(egui::Id::new(FILTER), filter));
+    ui.data_mut(|d| d.insert_temp(egui::Id::unique(FILTER), filter));
 }
 
 // ---- the pane ----
@@ -219,7 +219,7 @@ fn pane(app: &mut MailApp, ui: &mut Ui, filter: &mut Filter) {
         if resp.clicked() && why.is_none() && app.run("notes.new", json!({})).is_ok() {
             filter.archived = false;
             filter.query.clear();
-            ui.data_mut(|d| d.insert_temp(egui::Id::new(FOCUS_TITLE), true));
+            ui.data_mut(|d| d.insert_temp(egui::Id::unique(FOCUS_TITLE), true));
         }
     });
     ui.add_space(10.0);
@@ -319,7 +319,7 @@ fn cards(app: &mut MailApp, ui: &mut Ui, filter: &Filter) {
 fn card(app: &mut MailApp, ui: &mut Ui, id: Id, rect: Rect) {
     let t = Tokens::get(ui.ctx());
     let Some(note) = app.session.mailbox.notes.note(id).cloned() else { return };
-    let resp = ui.interact(rect, ui.id().with(("note", id)), Sense::click());
+    let resp = ui.interact(rect, ui.scope_id().with(("note", id)), Sense::click());
     app.hit.add("note", id, rect);
     let selected = app.session.sel.note == Some(id);
     let said = card_text(app, &note);
@@ -394,7 +394,7 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
             .interactive(write);
         let resp = ui.add(title);
         app.hit.add("noteTitle", note.id, resp.rect);
-        if ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::new(FOCUS_TITLE))).unwrap_or(false) {
+        if ui.data_mut(|d| d.remove_temp::<bool>(egui::Id::unique(FOCUS_TITLE))).unwrap_or(false) {
             resp.request_focus();
         }
         if resp.changed() {
@@ -494,14 +494,14 @@ fn too_many(ui: &mut Ui, count: usize, most: usize) {
 }
 
 fn drafts(ctx: &egui::Context) -> Drafts {
-    ctx.data(|d| d.get_temp::<Drafts>(egui::Id::new(DRAFT))).unwrap_or_default()
+    ctx.data(|d| d.get_temp::<Drafts>(egui::Id::unique(DRAFT))).unwrap_or_default()
 }
 
 fn keep_drafts(ctx: &egui::Context, all: Drafts) {
     if all.is_empty() {
-        ctx.data_mut(|d| d.remove_temp::<Drafts>(egui::Id::new(DRAFT)));
+        ctx.data_mut(|d| d.remove_temp::<Drafts>(egui::Id::unique(DRAFT)));
     } else {
-        ctx.data_mut(|d| d.insert_temp(egui::Id::new(DRAFT), all));
+        ctx.data_mut(|d| d.insert_temp(egui::Id::unique(DRAFT), all));
     }
 }
 
@@ -664,7 +664,7 @@ pub(crate) fn hold_quit(app: &mut MailApp) -> bool {
     let text = close_text(&first.why, &app.session.mailbox);
     // (While it is asked, the keyboard is the question's: nothing more is typed into the note.)
     ctx.memory_mut(|m| m.stop_text_input());
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new(CLOSE_ASK), text));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique(CLOSE_ASK), text));
     true
 }
 
@@ -687,16 +687,16 @@ fn close_text(why: &str, mailbox: &mailcraft_model::Mailbox) -> String {
 /// (Escape, Enter) leaves the window open with the words; Close Anyway is `ui.dropNoteDrafts`. Drawn every frame, after
 /// the dialogs; gone on its own once nothing typed is left unsaved.
 pub(crate) fn close_question(app: &mut MailApp, ctx: &egui::Context) {
-    let Some(text) = ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK))) else { return };
+    let Some(text) = ctx.data(|d| d.get_temp::<String>(egui::Id::unique(CLOSE_ASK))) else { return };
     if !typed(ctx) {
-        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
+        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::unique(CLOSE_ASK)));
         return;
     }
     let t = Tokens::get(ctx);
     let frame = egui::Frame::window(&ctx.global_style()).fill(t.surface).inner_margin(egui::Margin::same(16));
     let width = (ctx.content_rect().width() - 48.0).clamp(120.0, 420.0);
     let (mut cancel, mut anyway) = (false, false);
-    egui::Modal::new(egui::Id::new(CLOSE_ASK)).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 110 } else { 60 })).show(
+    egui::Modal::new(egui::Id::unique(CLOSE_ASK)).frame(frame).backdrop_color(egui::Color32::from_black_alpha(if t.dark { 110 } else { 60 })).show(
         ctx,
         |ui| {
             ui.set_width(width);
@@ -719,7 +719,7 @@ pub(crate) fn close_question(app: &mut MailApp, ctx: &egui::Context) {
     if anyway {
         let _ = app.run("ui.dropNoteDrafts", json!({"then": "quit"}));
     } else if cancel || enter || escape {
-        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
+        ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::unique(CLOSE_ASK)));
     }
 }
 
@@ -758,7 +758,7 @@ pub(crate) fn delete_modal(app: &mut MailApp, ctx: &egui::Context, ask: &crate::
     let frame = egui::Frame::window(&ctx.global_style()).fill(t.surface).inner_margin(egui::Margin::same(16));
     let width = (ctx.content_rect().width() - 48.0).clamp(120.0, 420.0);
     let mut answer = None;
-    egui::Modal::new(egui::Id::new("notes_delete_ask")).frame(frame).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, |ui| {
+    egui::Modal::new(egui::Id::unique("notes_delete_ask")).frame(frame).backdrop_color(egui::Color32::TRANSPARENT).show(ctx, |ui| {
         ui.set_width(width);
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
         ui.label(RichText::new(ask.title.as_str()).font(semibold(14.0)));
@@ -786,12 +786,12 @@ pub(crate) fn delete_modal(app: &mut MailApp, ctx: &egui::Context, ask: &crate::
 /// but the owner's answer reaches the window meanwhile (an agent's clicks and keys are refused).
 pub(crate) fn asking(app: &MailApp) -> bool {
     let deleting = matches!(&app.dialog, Some(crate::dialogs::Dialog::Confirm { command, .. }) if command == "notes.delete");
-    deleting || app.ctx.as_ref().is_some_and(|ctx| ctx.data(|d| d.get_temp::<String>(egui::Id::new(CLOSE_ASK)).is_some()))
+    deleting || app.ctx.as_ref().is_some_and(|ctx| ctx.data(|d| d.get_temp::<String>(egui::Id::unique(CLOSE_ASK)).is_some()))
 }
 
 /// Whether words typed into a note are not in it yet.
 pub(crate) fn typed(ctx: &egui::Context) -> bool {
-    ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::new(DRAFT)).values().any(|draft| draft.typed.is_some()))
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<Drafts>(egui::Id::unique(DRAFT)).values().any(|draft| draft.typed.is_some()))
 }
 
 /// `ui.openNote`: open a note on the web, in the system's browser. The link came from the note's server: it is
@@ -806,7 +806,7 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
             flush(app, &ctx, true);
             dropped = drafts(&ctx).values().filter(|draft| draft.typed.is_some()).count();
             keep_drafts(&ctx, Drafts::new());
-            ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::new(CLOSE_ASK)));
+            ctx.data_mut(|d| d.remove_temp::<String>(egui::Id::unique(CLOSE_ASK)));
         }
         if p.get("then").and_then(Value::as_str) == Some("quit") {
             app.quit_requested = true;

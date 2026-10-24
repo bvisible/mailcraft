@@ -248,6 +248,44 @@ impl Credentials for Outrun<'_> {
     }
 }
 
+/// A host that handed its mailbox over on the server at [`SESSION`] alone, and counts how often its credential is asked for.
+struct OneServer<'a>(&'a Host, Cell<u32>);
+
+impl Credentials for OneServer<'_> {
+    fn auth(&self, email: &str) -> Option<Auth> {
+        self.1.set(self.1.get() + 1);
+        self.0.auth(email)
+    }
+
+    fn opens(&self, _email: &str, session: &str) -> bool {
+        session == SESSION
+    }
+
+    async fn renew(&self, email: &str) -> Renewal {
+        self.0.renew(email).await
+    }
+}
+
+/// A job for the address of a mailbox the host handed over, but on another server (a mailbox from a file that names
+/// it, say), is given nothing of the host's: neither its credential nor a new one. On the host's server it goes as ever.
+#[test]
+fn the_host_s_credential_goes_only_to_the_server_it_handed_the_mailbox_over_on() {
+    let server = server();
+    let host = Host::new(&server, Some(TOKEN), Vec::new());
+    let one = OneServer(&host, Cell::new(0));
+    let mut elsewhere = job(None);
+    elsewhere.request.session = "https://jmap.attacker.example/jmap/session".into();
+    let mut all = Vec::new();
+    block_on(run(server.clone(), &elsewhere, Some(&one), |_| std::future::ready(()), &mut |piece| all.push(piece)));
+    let end = last(&all);
+    assert!(!end.whole && messages(&all) == 0, "{end:?}");
+    assert_eq!((one.1.get(), host.asked.get()), (0, 0), "not asked for its credential, nor for a new one");
+    let mut all = Vec::new();
+    block_on(run(server.clone(), &job(None), Some(&one), |_| std::future::ready(()), &mut |piece| all.push(piece)));
+    assert!(last(&all).whole && messages(&all) == 2);
+    assert_eq!(one.1.get(), 1);
+}
+
 #[test]
 fn a_renewed_token_that_is_refused_too_is_not_renewed_again() {
     let server = server();

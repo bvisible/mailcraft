@@ -47,14 +47,18 @@ mod tests {
         let services = Services { signatures_home: home.map(str::to_string), ..Services::default() };
         let mut app = MailApp::new(session, services);
         app.autosave = false;
-        let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-            |ui, app: &mut MailApp| {
-                let ctx = ui.ctx().clone();
-                app.logic(&ctx);
-                app.ui(ui);
-            },
-            app,
-        );
+        let mut harness = egui_kittest::Harness::builder()
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .with_size(egui::vec2(1280.0, 800.0))
+            .build_ui_state(
+                |ui, app: &mut MailApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
         harness.state_mut().execute("ui.dismissReminder", json!({"all": true})).unwrap();
         harness.state_mut().execute("ui.backstage", json!({"value": true, "page": "signatures"})).unwrap();
         harness.run_steps(3);

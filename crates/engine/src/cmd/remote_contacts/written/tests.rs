@@ -576,7 +576,8 @@ fn the_contact_commands_are_never_for_an_agent_and_a_change_to_a_server_book_is_
     assert_eq!(classify(&s, "people.edit", json!({"id": bob.id, "title": "Joiner"})), Access::Owner(Class::Send));
     assert_eq!(classify(&s, "people.edit", json!({"id": own, "title": "Joiner"})), Access::Safe);
     assert_eq!(classify(&s, "people.delete", json!({"id": bob.id})), Access::Owner(Class::Delete));
-    assert_eq!(classify(&s, "people.delete", json!({"id": own})), Access::Safe);
+    // (A local one too, as upstream asks before deleting any contact: no Deleted Items to come back from.)
+    assert_eq!(classify(&s, "people.delete", json!({"id": own})), Access::Owner(Class::Delete));
     // A selected contact counts as a named one.
     s.sel.contact = Some(bob.id);
     assert_eq!(classify(&s, "people.delete", json!({})), Access::Owner(Class::Delete));

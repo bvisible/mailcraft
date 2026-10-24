@@ -7,8 +7,7 @@
 #   CLAUDE.md): a crate offered under "X OR GPL" is taken under X. The two non-OSI licences the
 #   tree needs are allowed for exactly the crate that needs them.
 # - bans: two versions of one crate warn (the GUI stack brings some).
-# - sources: crates.io, and craft-libs (the Craft apps' shared code) from its git repository alone,
-#   pinned by `rev` in Cargo.toml.
+# - sources: crates.io, and our fork of winit from its git repository alone.
 
 [graph]
 all-features = true
@@ -77,4 +76,4 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # //// Neoffice — Neoffice's craft-libs fork too: Nora's client core and panel (craft-nora, craft-nora-ui), as the editors take them.
-allow-git = ["https://github.com/storytold/craft-libs", "https://github.com/UCS-Care-Group/winit", "https://github.com/bvisible/craft-libs"]
+allow-git = ["https://github.com/UCS-Care-Group/winit", "https://github.com/bvisible/craft-libs"]

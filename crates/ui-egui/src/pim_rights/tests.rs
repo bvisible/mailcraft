@@ -64,7 +64,7 @@ fn dialog(s: Session, name: &str, params: serde_json::Value) -> Harness<'static,
     let mut p = params;
     p["name"] = json!(name);
     app.execute("ui.dialog", p).unwrap();
-    let mut harness = Harness::builder().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
+    let mut harness = Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
         |ui, app: &mut MailApp| {
             let ctx = ui.ctx().clone();
             app.logic(&ctx);
@@ -221,7 +221,7 @@ fn the_contact_form_names_the_categories_in_the_interfaces_language() {
     app.autosave = false;
     app.execute("ui.language", json!({"language": "fr"})).unwrap();
     app.execute("ui.dialog", json!({"name": "editContact", "id": bob})).unwrap();
-    let mut h = Harness::builder().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
+    let mut h = Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(1280.0, 900.0)).build_ui_state(
         |ui, app: &mut MailApp| {
             let ctx = ui.ctx().clone();
             app.logic(&ctx);

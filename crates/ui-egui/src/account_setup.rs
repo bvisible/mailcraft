@@ -23,9 +23,7 @@ mod help;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use egui::{
-    Align, Align2, Key, Layout, Margin, Rect, Response, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, WidgetInfo, WidgetType, pos2, vec2,
-};
+use egui::{Align, Align2, Key, Layout, Margin, Rect, Response, RichText, Role, Sense, Stroke, StrokeKind, TextEdit, Ui, WidgetInfo, pos2, vec2};
 use mailcraft_model::{Account, AccountKind, Directory, Id, KeepOffline, OAuth, OAuthProvider, Security, Server, provider};
 use serde_json::{Map, Value, json};
 
@@ -414,6 +412,9 @@ pub struct AccountSetup {
     /// and as the slider has it now (#143). Saved through `ui.keepOffline`, which asks first
     /// when it is shorter.
     keep_offline: Option<(KeepOffline, KeepOffline)>,
+    /// The settings are of an account kept in step through Microsoft Graph (R3): it has no user
+    /// name or mail servers to show, and the page says how its mail comes instead (#312).
+    graph: bool,
     /// The settings are of an account a newer MailCraft added: nothing of it can be changed
     /// here, and the page says why.
     newer: bool,
@@ -441,7 +442,7 @@ fn password_id() -> egui::Id {
 
 /// Where a wizard that went while its owner was in the browser says so.
 fn left_waiting() -> egui::Id {
-    egui::Id::new("account_setup_left_waiting")
+    egui::Id::unique("account_setup_left_waiting")
 }
 
 /// Drop what the password field keeps between frames: its undo history holds what was typed.
@@ -496,20 +497,22 @@ impl AccountSetup {
             directory: Directory::Unknown,
             edit: None,
             keep_offline: None,
+            graph: false,
             newer: false,
             ctx: None,
         }
     }
 
     /// The wizard, with `p.email` and `p.displayName` filled in when given; or, with `p.id`, the
-    /// settings of that account. `None` for an account that isn't there, and for the nameless
-    /// mailbox of a new installation, which has nothing to change until an address is added.
+    /// settings of that account. `None` for an account that isn't there, for the nameless
+    /// mailbox of a new installation, which has nothing to change until an address is added, and
+    /// for a shared mailbox, which has no settings of its own: its owner's sign-in reads it (#70).
     pub fn open(app: &MailApp, p: &Value) -> Option<AccountSetup> {
         match p.get("id").and_then(Value::as_u64).filter(|id| *id != 0) {
             // What to do when its organisation has to approve MailCraft first, for an account
             // that exists and signs in with Microsoft (`ui.approvalHelp`).
             Some(id) if p.get("page").and_then(Value::as_str) == Some("approval") => AccountSetup::approval_for(app, id),
-            Some(id) => app.session.mailbox.account(id).filter(|a| !a.email.is_empty()).map(AccountSetup::edit),
+            Some(id) => app.session.mailbox.account(id).filter(|a| !a.email.is_empty() && !a.is_shared()).map(AccountSetup::edit),
             None => Some(AccountSetup::new(app, p)),
         }
     }
@@ -542,6 +545,7 @@ impl AccountSetup {
         if a.kind == AccountKind::Microsoft && !a.is_shared() {
             w.keep_offline = Some((a.keep_offline, a.keep_offline));
         }
+        w.graph = a.kind == AccountKind::Microsoft;
         w.newer = a.kind == AccountKind::Unknown;
         w
     }
@@ -1464,14 +1468,18 @@ impl AccountSetup {
         page(ui, &t, |ui| {
             heading(ui, &shown(self.email.trim(), 120), &t);
             note(ui, &how, t.text_dim);
+            if self.graph {
+                note(ui, tl!("Its mail is kept in step through Microsoft Graph, without mail servers"), t.text_dim);
+            }
             field(ui, pass, "name", tl!("Your name"), &mut self.name, tl!("As the people you write to see it"), LINE);
             if asks {
                 self.password_field(ui, pass, tl!("Leave empty to keep the one in use"));
             }
+            // (An account still on IMAP that signs in with Microsoft keeps them: it uses them.)
             if jmap.is_some() {
                 // //// Neoffice — see above: the user name alone.
                 field(ui, pass, "username", tl!("User name"), &mut self.username, tl!("Usually the whole address"), LINE);
-            } else {
+            } else if !self.graph {
                 self.settings(ui, pass);
             }
             if self.oauth.is_some() {
@@ -1671,9 +1679,9 @@ fn encryption(ui: &mut Ui, key: &'static str, value: &mut Security, choices: &[(
     let gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, 0.0);
     for (i, (choice, label)) in choices.iter().enumerate() {
         let (_, r) = ui.allocate_space(vec2(78.0, height));
-        let resp = ui.interact(r, ui.id().with((key, choice.code())), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with((key, choice.code())), Sense::click());
         let on = *value == *choice;
-        resp.widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, true, on, *label));
+        resp.widget_info(|| WidgetInfo::selected(Role::RadioButton, true, on, *label));
         let (left, right) = (if i == 0 { 4 } else { 0 }, if i + 1 == choices.len() { 4 } else { 0 });
         let corners = egui::CornerRadius { nw: left, sw: left, ne: right, se: right };
         let fill = if on {
@@ -1736,8 +1744,8 @@ fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Response {
     let width = text_width(ui, label, medium(12.5)).max(52.0) + 30.0;
     let (_, r) = ui.allocate_space(vec2(width, 30.0));
     // Known by what it says, not by where it sits.
-    let resp = ui.interact(r, ui.id().with(label), if enabled { Sense::click() } else { Sense::hover() });
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, label));
+    let resp = ui.interact(r, ui.scope_id().with(label), if enabled { Sense::click() } else { Sense::hover() });
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
     let lit = if resp.hovered() { t.accent_text } else { t.accent };
     let (fill, edge, ink) = match (primary, enabled) {
         (_, false) => (t.pressed, t.pressed, t.text_disabled),
@@ -1756,7 +1764,7 @@ fn button(ui: &mut Ui, label: &str, primary: bool, enabled: bool) -> Response {
 fn disclosure(ui: &mut Ui, label: &str, open: &mut bool, t: &Tokens) {
     let width = text_width(ui, label, regular(12.5)) + 22.0;
     let (r, resp) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
     let ink = if resp.hovered() || resp.has_focus() { t.accent } else { t.accent_text };
     icons::paint(
         ui.painter(),
@@ -1775,7 +1783,7 @@ fn disclosure(ui: &mut Ui, label: &str, open: &mut bool, t: &Tokens) {
 fn tile(ui: &mut Ui, kind: Kind, width: f32, t: &Tokens) -> Response {
     let (title, detail) = (tl!(kind.title()), tl!(kind.detail()));
     let (r, resp) = ui.allocate_exact_size(vec2(width, 50.0), Sense::click());
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, title));
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, title));
     let lit = resp.hovered() || resp.has_focus();
     ui.painter().rect(r, 6.0, if lit { t.hover } else { t.panel }, Stroke::new(1.0, if lit { t.accent } else { t.border }), StrokeKind::Inside);
     icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 24.0, r.center().y), vec2(24.0, 24.0)), kind.icon(), t.icon, t.accent);
@@ -1909,14 +1917,15 @@ mod tests {
 
     /// The whole window, laid out a few frames so the dialog is up and its first field has the keyboard.
     fn window(app: MailApp, size: (f32, f32)) -> Harness<'static, MailApp> {
-        let mut harness = Harness::builder().with_size(egui::vec2(size.0, size.1)).build_ui_state(
-            |ui, app: &mut MailApp| {
-                let ctx = ui.ctx().clone();
-                app.logic(&ctx);
-                app.ui(ui);
-            },
-            app,
-        );
+        let mut harness =
+            Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(size.0, size.1)).build_ui_state(
+                |ui, app: &mut MailApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
         harness.run_steps(6);
         harness
     }
@@ -2633,7 +2642,7 @@ mod tests {
         assert!(account.incoming.is_none() && account.outgoing.is_none() && account.oauth.is_none() && account.username.is_empty());
         assert!(looked.lock().unwrap().is_empty() && tried.lock().unwrap().is_empty() && synced.lock().unwrap().is_empty() && !h.state().syncing());
         // One more: the wizard starts over, with the owner's name from the account just added.
-        h.get_by_role_and_label(Role::Label, "Add another account").click();
+        h.get_by_role_and_label(Role::Link, "Add another account").click();
         h.run_steps(4);
         assert_eq!(wizard(&h).map(|w| (w.page, w.email.as_str(), w.name.as_str(), w.manual)), Some((Page::Address, "", "Noor Haddad", false)));
         // The same address again is refused where it is asked for.
@@ -2966,6 +2975,8 @@ mod tests {
         assert_eq!(page(&h), Some(Page::Settings));
         assert!(says(&h, "Signs in on the Microsoft page") && says(&h, "Application (client) ID") && says(&h, "Tenant"));
         assert!(h.query_by_role(Role::PasswordInput).is_none());
+        // Still on IMAP, it keeps its servers (#312).
+        assert!(says(&h, "Incoming mail (IMAP)") && !says(&h, "through Microsoft Graph"));
         click(&mut h, "Cancel");
         assert_eq!(page(&h), None);
         // An account that isn't there has no settings to open.
@@ -3007,6 +3018,35 @@ mod tests {
         h.state_mut().execute("ui.dialog", json!({"name": "account", "id": id})).unwrap();
         h.run_steps(4);
         assert!(says(&h, "JMAP · no usable server address"));
+    }
+
+    /// (#312) The settings of an account kept in step through Microsoft Graph show what applies
+    /// to it: its name, its Microsoft sign-in and its mail to keep offline, and say how its mail
+    /// comes; no user name and no mail servers, which it doesn't have. Save keeps it on Graph. A
+    /// shared mailbox opened through it has no settings to open (#70).
+    #[test]
+    fn graph_account_settings_have_no_mail_servers() {
+        let mut a = app(true);
+        let id = a.execute("account.add", json!({"email": "ada@lumen.example", "kind": "microsoft"})).unwrap()["id"].as_u64().unwrap();
+        let mut h = open(a, json!({"id": id}));
+        assert_eq!(page(&h), Some(Page::Settings));
+        assert!(says(&h, "Signs in on the Microsoft page") && says(&h, "kept in step through Microsoft Graph"));
+        assert!(says(&h, "Application (client) ID") && says(&h, "Tenant") && says(&h, "Mail to keep offline"));
+        assert!(!says(&h, "User name") && !says(&h, "Incoming mail (IMAP)") && !says(&h, "Outgoing mail (SMTP)"));
+        assert!(h.query_by_role(Role::PasswordInput).is_none());
+        wizard_mut(&mut h).name = "Ada Lovelace".into();
+        click(&mut h, "Save");
+        assert_eq!(page(&h), None);
+        let account = h.state().session.mailbox.account(id).unwrap();
+        assert_eq!((account.display_name.as_str(), account.kind), ("Ada Lovelace", AccountKind::Microsoft));
+        assert_eq!((account.incoming.as_ref(), account.outgoing.as_ref()), (None, None));
+
+        let shared = h.state_mut().execute("account.addSharedMailbox", json!({"account": id, "address": "team@lumen.example"})).unwrap()["id"]
+            .as_u64()
+            .unwrap();
+        assert!(h.state_mut().execute("ui.dialog", json!({"name": "account", "id": shared})).is_err());
+        h.run_steps(4);
+        assert_eq!(page(&h), None);
     }
 
     /// The settings of an account a newer MailCraft added say what it is and offer nothing to

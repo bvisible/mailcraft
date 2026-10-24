@@ -143,7 +143,13 @@ fn delete_is_greyed_for_an_event_of_a_calendar_the_account_may_only_read() {
         account,
         email: "ada@example.org".into(),
         complete: true,
-        calendars: vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, read_only: true, ..Default::default() }],
+        calendars: vec![RemoteCalendar {
+            id: "C1".into(),
+            name: "Ada".into(),
+            main: true,
+            rights: mailcraft_model::Rights::Read,
+            ..Default::default()
+        }],
     };
     apply_calendars(&mut s, &list).unwrap();
     assert_eq!(greyed(&s), Some(super::READ_ONLY_CALENDAR));

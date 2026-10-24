@@ -469,6 +469,9 @@ pub struct HostCredentials {
     secrets: RefCell<HashMap<String, (String, bool)>>,
     /// Address (lower case) → the login name a password goes with.
     usernames: HashMap<String, String>,
+    /// Address (lower case) → the address of the session resource of the server the page handed the mailbox over on:
+    /// its credential opens that server and no other.
+    sessions: HashMap<String, String>,
 }
 
 impl HostCredentials {
@@ -476,11 +479,16 @@ impl HostCredentials {
         HostCredentials {
             secrets: RefCell::new(secrets(accounts)),
             usernames: accounts.iter().map(|a| (a.email.to_lowercase(), a.username.clone())).collect(),
+            sessions: accounts.iter().map(|a| (a.email.to_lowercase(), a.session.trim().to_string())).collect(),
         }
     }
 }
 
 impl Credentials for HostCredentials {
+    fn opens(&self, email: &str, session: &str) -> bool {
+        self.sessions.get(&email.to_lowercase()).is_some_and(|handed| handed == session.trim())
+    }
+
     fn auth(&self, email: &str) -> Option<Auth> {
         let email = email.to_lowercase();
         let (secret, bearer) = self.secrets.borrow().get(&email).cloned()?;

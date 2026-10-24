@@ -438,7 +438,7 @@ mod tests {
                 complete: true,
                 calendars: vec![
                     RemoteCalendar { id: "C1".into(), name: "Ada's calendar".into(), main: true, plain: true, ..Default::default() },
-                    RemoteCalendar { id: "C2".into(), name: "Team".into(), read_only: true, plain: true, ..Default::default() },
+                    RemoteCalendar { id: "C2".into(), name: "Team".into(), rights: crate::Rights::Read, plain: true, ..Default::default() },
                 ],
             }),
             events: Some(EventsDownload { account: 3, email: ME.into(), complete: true, events: vec![event.clone()], ..Default::default() }),
@@ -669,8 +669,8 @@ mod tests {
         assert!(!serde_json::to_string(&old).unwrap().contains("plain"));
         let plain = crate::Calendar { plain: true, ..old };
         assert!(round_trip(&plain).contains(r#""plain":true"#));
-        let listed: RemoteCalendar = serde_json::from_str(r#"{"id":"C1","name":"Team","readOnly":true}"#).unwrap();
-        assert!(!listed.plain && listed.read_only);
+        let listed: RemoteCalendar = serde_json::from_str(r#"{"id":"C1","name":"Team","rights":"read"}"#).unwrap();
+        assert!(!listed.plain && listed.rights == crate::Rights::Read);
         assert!(round_trip(&RemoteCalendar { plain: true, ..listed }).contains(r#""plain":true"#));
     }
 

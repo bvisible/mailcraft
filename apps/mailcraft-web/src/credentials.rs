@@ -25,6 +25,11 @@ pub enum Renewal {
 pub trait Credentials {
     /// The credential that opens the server of the account `email`, if the host has one.
     fn auth(&self, email: &str) -> Option<Auth>;
+    /// Whether what the host holds for the account `email` is for the server whose session resource is at `session`:
+    /// a job for an account of that address on another server (a mailbox from a file, say) is given nothing.
+    fn opens(&self, _email: &str, _session: &str) -> bool {
+        true
+    }
     /// The server refused the credential of the account `email`: a new one, or what to do instead.
     async fn renew(&self, email: &str) -> Renewal;
 }

@@ -252,7 +252,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                 ui.add_space(6.0);
             }
             // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
-            let input = ui.id().with("nora").with("input");
+            let input = ui.scope_id().with("nora").with("input");
             let assist = &mut app.nora.assist;
             assist.panel.labels = labels();
             assist.panel.style = style(&t);

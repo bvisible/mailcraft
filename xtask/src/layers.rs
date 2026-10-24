@@ -77,13 +77,13 @@ fn intra_layer_allowed(from: &str, to: &str) -> bool {
 /// Entries ending in `*` are prefixes.
 pub const UI_CRATES: &[&str] = &["egui", "eframe", "winit", "egui_kittest", "rfd", "bevy*"];
 
-/// External crates only the apps (the `Exempt` binaries) may use: craft-quit ends the process the
-/// platform's way (`-[NSApplication terminate:]` on macOS), which is the desktop app's decision,
-/// never a library's.
+/// External crates only the apps (the `Exempt` binaries) may use: dispatch2 (the main queue, used to
+/// quit the platform's way, `-[NSApplication terminate:]` on macOS) because ending the process is
+/// the desktop app's decision, never a library's.
 // //// Neoffice — and the browser's own APIs (`js-sys` stays allowed: the clock reads it): a library that
 // calls `web-sys` or `wasm-bindgen` is one that the desktop app and the CLI can't build, and a
 // `cargo check` for wasm32 can't tell, so the portable crates (the JMAP client among them) are held to it here.
-pub const APP_ONLY_CRATES: &[&str] = &["craft-quit", "web-sys", "wasm-bindgen", "wasm-bindgen-futures"];
+pub const APP_ONLY_CRATES: &[&str] = &["dispatch2", "web-sys", "wasm-bindgen", "wasm-bindgen-futures"];
 
 /// First layer allowed to use UI crates.
 pub const UI_MIN_LAYER: u8 = 6;
@@ -335,15 +335,15 @@ mod tests {
     }
 
     #[test]
-    fn craft_quit_is_for_the_apps_alone() {
-        assert!(check(&[c("mailcraft", &[("craft-quit", Normal, false)])]).is_empty());
+    fn dispatch2_is_for_the_apps_alone() {
+        assert!(check(&[c("mailcraft", &[("dispatch2", Normal, false)])]).is_empty());
         for krate in ["mailcraft-ui-egui", "mailcraft-engine", "mailcraft-time"] {
-            let v = check(&[c(krate, &[("craft-quit", Normal, false)])]);
-            assert!(matches!(&v[..], [Violation::AppOnly { dep, .. }] if dep == "craft-quit"), "{krate}: {v:?}");
+            let v = check(&[c(krate, &[("dispatch2", Normal, false)])]);
+            assert!(matches!(&v[..], [Violation::AppOnly { dep, .. }] if dep == "dispatch2"), "{krate}: {v:?}");
         }
     }
 
-    // //// Neoffice — the browser's APIs are for the apps alone, as craft-quit is.
+    // //// Neoffice — the browser's APIs are for the apps alone, as dispatch2 is.
     #[test]
     fn the_browsers_apis_are_for_the_apps_alone() {
         for dep in ["web-sys", "wasm-bindgen", "wasm-bindgen-futures"] {

@@ -264,8 +264,8 @@ pub(crate) mod kit {
     /// the same field of the same form in another window ([`hosted`]) has another.
     pub fn field_id(key: impl Hash + Debug) -> egui::Id {
         match host().id {
-            0 => egui::Id::new(("form", key)),
-            window => egui::Id::new(("form", window, key)),
+            0 => egui::Id::unique(("form", key)),
+            window => egui::Id::unique(("form", window, key)),
         }
     }
 
@@ -600,7 +600,7 @@ pub(crate) mod kit {
         }
         paint_clipped(ui.painter(), pos2(r.min.x + 22.0, r.center().y), text_w + 2.0, label, regular(11.5), if on { t.text } else { t.text_dim });
         // //// Neoffice — what a screen reader (and a test) reads of it: its name, and whether it is on.
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), on, label));
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), on, label));
         resp.clicked()
     }
 
@@ -946,7 +946,7 @@ pub(crate) mod kit {
                 }
                 let w = width(*i, *labelled);
                 let rect = Rect::from_min_size(pos2(x, area.min.y), vec2(w, area.height()));
-                let resp = ui.interact(rect, ui.id().with(("window_bar", window, item.key)), Sense::click());
+                let resp = ui.interact(rect, ui.scope_id().with(("window_bar", window, item.key)), Sense::click());
                 hit.add("windowBar", hit_id(window, item.key), rect);
                 let (ink, accent, text) = if !item.on {
                     (t.text_disabled, t.text_disabled, t.text_disabled)
@@ -987,7 +987,7 @@ pub(crate) mod kit {
             if !more.is_empty() {
                 // What didn't fit, behind `…` at the end of the row.
                 let rect = Rect::from_min_size(pos2(area.max.x - MORE_W, area.min.y), vec2(MORE_W, area.height()));
-                let resp = ui.interact(rect, ui.id().with(("window_bar_more", window)), Sense::click());
+                let resp = ui.interact(rect, ui.scope_id().with(("window_bar_more", window)), Sense::click());
                 hit.add("windowBar", hit_id(window, "more"), rect);
                 bg(ui, rect, &resp, false, &t);
                 icons::paint(ui.painter(), Rect::from_center_size(rect.center(), vec2(ICON, ICON)), "more", t.icon, t.accent);
@@ -3976,14 +3976,18 @@ mod event {
             let mut app = MailApp::new(s, crate::Services::default());
             app.autosave = false;
             app.execute("ui.dialog", json!({"name": "event", "calendar": jmap, "start": "2026-10-16T15:00", "title": "Visit"})).unwrap();
-            let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
-                |ui, app: &mut MailApp| {
-                    let ctx = ui.ctx().clone();
-                    app.logic(&ctx);
-                    app.ui(ui);
-                },
-                app,
-            );
+            let mut h = egui_kittest::Harness::builder()
+                .with_accessibility_check(false)
+                .allow_missing_glyphs()
+                .with_size(egui::vec2(1280.0, 800.0))
+                .build_ui_state(
+                    |ui, app: &mut MailApp| {
+                        let ctx = ui.ctx().clone();
+                        app.logic(&ctx);
+                        app.ui(ui);
+                    },
+                    app,
+                );
             h.run_steps(4);
             // Its calendar changed in the form (the combo), to the Microsoft account's.
             match &mut h.state_mut().dialog {
@@ -6689,14 +6693,15 @@ mod tests {
 
     /// The whole window, laid out a few frames so the dialog is up and its first field has the keyboard.
     fn window(app: MailApp, size: (f32, f32)) -> Harness<'static, MailApp> {
-        let mut harness = Harness::builder().with_size(egui::vec2(size.0, size.1)).build_ui_state(
-            |ui, app: &mut MailApp| {
-                let ctx = ui.ctx().clone();
-                app.logic(&ctx);
-                app.ui(ui);
-            },
-            app,
-        );
+        let mut harness =
+            Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(size.0, size.1)).build_ui_state(
+                |ui, app: &mut MailApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
         harness.run_steps(6);
         harness
     }

@@ -208,7 +208,8 @@ where
     W: Future<Output = ()>,
 {
     // The host's credential when the job carries none: the host may renew it, the owner's it can't.
-    let host = if job.secret.is_some() { None } else { credentials };
+    // (Only for the server the host handed the mailbox over on: `Credentials::opens`.)
+    let host = if job.secret.is_some() { None } else { credentials.filter(|c| c.opens(&job.request.email, &job.request.session)) };
     let auth = match &job.secret {
         Some(secret) => Some(own_auth(job.request.bearer, &job.request.email, secret)),
         None => host.and_then(|c| c.auth(&job.request.email)),
@@ -281,7 +282,8 @@ where
     W: Future<Output = ()>,
 {
     let request = &job.request;
-    let host = if job.secret.is_some() { None } else { credentials };
+    // (Only for the server the host handed the mailbox over on: `Credentials::opens`.)
+    let host = if job.secret.is_some() { None } else { credentials.filter(|c| c.opens(&request.email, &request.session)) };
     let auth = match &job.secret {
         Some(secret) => Some(own_auth(request.bearer, &request.email, secret)),
         None => host.and_then(|c| c.auth(&request.email)),
@@ -307,7 +309,8 @@ where
     W: Future<Output = ()>,
 {
     let request = &job.request;
-    let host = if job.secret.is_some() { None } else { credentials };
+    // (Only for the server the host handed the mailbox over on: `Credentials::opens`.)
+    let host = if job.secret.is_some() { None } else { credentials.filter(|c| c.opens(&request.email, &request.session)) };
     let auth = match &job.secret {
         Some(secret) => Some(own_auth(request.bearer, &request.email, secret)),
         None => host.and_then(|c| c.auth(&request.email)),

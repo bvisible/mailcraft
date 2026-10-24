@@ -121,9 +121,9 @@ fn a_first_read_brings_the_calendars_and_the_events_of_the_stretch() {
     // The main calendar under its name, Ada's to write, and the team's beside it, unticked and hers only to read; and
     // both keep only the basics of an event.
     let main = rig.calendar("");
-    assert_eq!((main.name.as_str(), main.visible, main.read_only, main.plain), ("Ada", true, false, true));
+    assert_eq!((main.name.as_str(), main.visible, !main.can_edit(), main.plain), ("Ada", true, false, true));
     let team = rig.calendar(&Pim::calendar_id("team"));
-    assert_eq!((team.name.as_str(), team.visible, team.read_only, team.plain), ("Team", false, true, true));
+    assert_eq!((team.name.as_str(), team.visible, !team.can_edit(), team.plain), ("Team", false, true, true));
     assert_eq!(rig.titles(""), ["Book fair", "Budget review"]);
     // A meeting at nine in Zurich, summer time: seven o'clock UTC, the zone kept.
     let budget = rig.s.mailbox.events.values().find(|e| e.title == "Budget review").unwrap();

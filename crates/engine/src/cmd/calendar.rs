@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use super::{bad, done, fail, needs_message, remote};
 use crate::{CmdError, CmdResult, CommandSpec, Module, Session, p};
 
+#[cfg(test)]
+mod hostile_tests;
 mod invitation;
 mod meeting;
 // //// Neoffice — what a calendar whose server keeps only the basics of an event refuses, tested apart.
@@ -287,7 +289,7 @@ pub const READ_ONLY_CALENDAR: &str = "This calendar can only be read";
 
 /// [`needs_event`], and the selected event in a calendar the account may change: what greys Delete, with the reason.
 pub(super) fn needs_changeable_event(s: &Session) -> Option<&'static str> {
-    let read_only = |e: &Event| s.mailbox.calendar(e.calendar).is_some_and(|c| c.read_only && remote::keeper(&s.mailbox, &c.origin).is_some());
+    let read_only = |e: &Event| s.mailbox.calendar(e.calendar).is_some_and(|c| !c.can_edit() && remote::keeper(&s.mailbox, &c.origin).is_some());
     needs_event(s).or_else(|| s.sel.event.and_then(|id| s.mailbox.event(id)).filter(|e| read_only(e)).map(|_| READ_ONLY_CALENDAR))
 }
 

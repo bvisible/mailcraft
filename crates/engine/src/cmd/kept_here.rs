@@ -96,8 +96,7 @@ mod tests {
             assert_eq!(s.registry.get(id).and_then(|spec| (spec.enabled)(&s)), Some(NO_MARKS_HERE), "{id}");
         }
         let card = "BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Gus Hale\r\nEMAIL:gus@example.org\r\nEND:VCARD\r\n";
-        use base64::Engine as _;
-        let data = base64::engine::general_purpose::STANDARD.encode(card);
+        let data = mailcraft_charset::base64::STANDARD.encode(card);
         let refused = s.run("file.import", &json!({"name": "gus.vcf", "data": data})).unwrap_err().to_string();
         assert!(refused.contains(NO_IMPORT_HERE), "{refused}");
         // Kept here, they go on as before.

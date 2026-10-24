@@ -81,7 +81,7 @@ fn event(app: &MailApp, title: &str) -> Id {
 }
 
 fn drawn(app: MailApp) -> Harness<'static, MailApp> {
-    let mut harness = Harness::builder().with_size(egui::vec2(1280.0, 860.0)).build_ui_state(
+    let mut harness = Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(1280.0, 860.0)).build_ui_state(
         |ui, app: &mut MailApp| {
             let ctx = ui.ctx().clone();
             app.logic(&ctx);
@@ -245,7 +245,14 @@ fn one_day_of_a_series_deleted_by_itself_asks_as_that_day() {
 #[test]
 fn an_event_of_a_calendar_the_account_may_only_read_asks_nothing_and_its_delete_is_greyed() {
     let (mut app, account) = window(true);
-    let calendars = vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, plain: true, read_only: true, ..Default::default() }];
+    let calendars = vec![RemoteCalendar {
+        id: "C1".into(),
+        name: "Ada".into(),
+        main: true,
+        plain: true,
+        rights: mailcraft_model::Rights::Read,
+        ..Default::default()
+    }];
     remote::apply_calendars(&mut app.session, &CalendarsDownload { account, email: ME.into(), complete: true, calendars }).unwrap();
     let budget = event(&app, "Budget review");
     app.execute("calendar.select", json!({"id": budget})).unwrap();
@@ -316,6 +323,8 @@ fn the_categorize_menu_names_the_starting_categories_in_the_interfaces_language(
     let bob = app.session.mailbox.contacts.values().find(|c| c.first == "Bob").map(|c| c.id).unwrap();
     app.execute("people.select", json!({"id": bob})).unwrap();
     let mut h = Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
         .with_size(egui::vec2(400.0, 400.0))
         .build_ui_state(|ui, app: &mut MailApp| crate::ribbon::category_menu(ui, app, "people.categorize", |_, _| false, None), app);
     h.run_steps(2);

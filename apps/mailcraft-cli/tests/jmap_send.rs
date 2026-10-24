@@ -427,10 +427,7 @@ fn a_message_with_a_file_goes_whole_and_a_hostile_server_gets_nothing_it_was_not
     let mut rig = Rig::new(Profile::by_place());
     rig.s.run("mail.new", &json!({"to": "bob@example.org", "subject": "Plan", "body": "See the file.", "account": rig.account})).unwrap();
     let data = (0..=255u8).cycle().take(5_000).collect::<Vec<u8>>();
-    let encoded = {
-        use base64::Engine as _;
-        base64::engine::general_purpose::STANDARD.encode(&data)
-    };
+    let encoded = mailcraft_charset::base64::STANDARD.encode(&data);
     rig.s.run("compose.attach", &json!({"name": "plan.bin", "mime": "application/octet-stream", "data": encoded})).unwrap();
     rig.s.run("compose.send", &json!({})).unwrap();
     rig.run(false);

@@ -574,7 +574,7 @@ impl<'a, H: Http> Job<'a, H> {
             let calendars = listed
                 .iter()
                 .map(|listed| mailcraft_model::remote::RemoteCalendar {
-                    read_only: !(listed.writable && WRITE_EVENTS),
+                    rights: if listed.writable && WRITE_EVENTS { mailcraft_model::Rights::Edit } else { mailcraft_model::Rights::Read },
                     main: main.as_deref() == Some(listed.calendar.id.as_str()),
                     plain,
                     online_providers: Some(services.clone()),

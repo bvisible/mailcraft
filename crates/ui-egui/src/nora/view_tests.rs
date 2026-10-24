@@ -17,14 +17,19 @@ type Window = egui_kittest::Harness<'static, MailApp>;
 
 /// The whole window, through real frames.
 fn window(app: MailApp, size: (f32, f32)) -> Window {
-    let mut harness = egui_kittest::Harness::builder().with_size(vec2(size.0, size.1)).with_step_dt(1.0 / 60.0).build_ui_state(
-        |ui, app: &mut MailApp| {
-            let ctx = ui.ctx().clone();
-            app.logic(&ctx);
-            app.ui(ui);
-        },
-        app,
-    );
+    let mut harness = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(vec2(size.0, size.1))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
     harness.run_steps(4);
     // The sample has reminders due, and their window would lie over the panes.
     let _ = harness.state_mut().execute("ui.dismissReminder", json!({"all": true}));
@@ -476,6 +481,8 @@ fn shots_of_nora() {
                 app.execute("view.folderPane", json!({"value": false})).unwrap();
             }
             let mut harness = egui_kittest::Harness::builder()
+                .with_accessibility_check(false)
+                .allow_missing_glyphs()
                 .with_size(vec2(width, height))
                 .with_pixels_per_point(2.0)
                 .with_step_dt(1.0 / 60.0)

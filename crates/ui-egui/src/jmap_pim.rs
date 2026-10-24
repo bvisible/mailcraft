@@ -350,7 +350,7 @@ impl MailApp {
         let secret = if self.services.jmap_host_credentials {
             None
         } else {
-            match self.jmap_secret(account, &owner.email, server.bearer) {
+            match self.jmap_secret(account, server.bearer) {
                 Some(secret) => Some(secret),
                 None => return false,
             }

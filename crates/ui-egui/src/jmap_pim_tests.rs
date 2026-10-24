@@ -94,8 +94,15 @@ fn answered(account: Id) -> JmapPimResult {
             email: ME.into(),
             complete: true,
             calendars: vec![
-                RemoteCalendar { id: "C-ada".into(), name: "Ada".into(), main: true, read_only: true, plain: true, ..Default::default() },
-                RemoteCalendar { id: "C-team".into(), name: "Team".into(), read_only: true, plain: true, ..Default::default() },
+                RemoteCalendar {
+                    id: "C-ada".into(),
+                    name: "Ada".into(),
+                    main: true,
+                    rights: mailcraft_model::Rights::Read,
+                    plain: true,
+                    ..Default::default()
+                },
+                RemoteCalendar { id: "C-team".into(), name: "Team".into(), rights: mailcraft_model::Rights::Read, plain: true, ..Default::default() },
             ],
         }),
         events: Some(EventsDownload {
@@ -652,7 +659,7 @@ fn writable_window() -> (MailApp, Id, Asked) {
     assert!(app.jmap_pim_tick_at(true, 0.0));
     let mut first = answered(id);
     for calendar in first.calendars.as_mut().map(|list| list.calendars.iter_mut()).into_iter().flatten() {
-        calendar.read_only = false;
+        calendar.rights = mailcraft_model::Rights::Edit;
     }
     answer(&mut app, &asked, first);
     (app, id, asked)

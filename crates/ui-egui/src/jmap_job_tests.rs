@@ -29,7 +29,8 @@ const NOW: i64 = 1_791_993_600;
 const ME: &str = "ada@example.org";
 /// The session address carries the account's own, as a server's may.
 const SESSION: &str = "https://mail.example.org/jmap/session?account=ada@example.org";
-const PASSWORD_KEY: &str = "password:ada@example.org";
+/// The name the password is kept under: the address and the JMAP server it goes to (`MailApp::secret_key`).
+const PASSWORD_KEY: &str = "password:ada@example.org|jmap=https://mail.example.org/jmap/session?account=ada@example.org";
 
 /// One run the host was asked for, and the way to answer it.
 struct Run {
@@ -416,6 +417,29 @@ fn without_the_host_holding_the_credential_a_password_is_asked_for_once_and_noth
     next.execute("ui.sync", json!({"account": id})).unwrap();
     assert!(next.dialog.is_none());
     assert_eq!(asked.lock().unwrap()[0].secret.as_deref(), Some("pw-one"));
+}
+
+/// A JMAP account's password is filed under the server it goes to: an account of the same address
+/// on another JMAP server (a mailbox from a file, say) is not given it, and one kept under the name
+/// of before secrets were bound to servers moves to the bound name.
+#[test]
+fn a_password_is_kept_for_the_jmap_server_it_goes_to() {
+    let (app, id, _) = window(false, false);
+    let account = app.session.mailbox.account(id).unwrap().clone();
+    assert_eq!(MailApp::secret_key("password", &account), PASSWORD_KEY);
+    let mut elsewhere = account.clone();
+    elsewhere.jmap = Some(mailcraft_model::JmapServer { session: "https://jmap.attacker.example/session".into(), bearer: false });
+    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=https://jmap.attacker.example/session");
+    elsewhere.jmap = None;
+    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=none");
+
+    let (mut app, _, _) = window(false, false);
+    let store = Store::default();
+    store.0.lock().unwrap().insert("password:ada@example.org".into(), "pw-before".into());
+    app.services.secrets = Some(Box::new(store.clone()));
+    app.migrate_secrets();
+    assert_eq!((store.kept("password:ada@example.org"), store.kept(PASSWORD_KEY).as_deref()), (None, Some("pw-before")));
+    assert_eq!(app.remembered("password", ME).as_deref(), Some("pw-before"));
 }
 
 #[test]

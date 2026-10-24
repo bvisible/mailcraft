@@ -135,7 +135,7 @@ pub(crate) fn pill(ui: &mut Ui, t: &Tokens, label: &str, mark: Mark, menu: bool,
         }
     }
     let live = state == State::Live && ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, live, label));
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, live, label));
     resp
 }
 

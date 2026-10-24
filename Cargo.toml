@@ -4,7 +4,7 @@ members = ["crates/*", "apps/*", "xtask"]
 default-members = ["crates/*", "apps/mailcraft", "apps/mailcraft-cli", "xtask"]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
@@ -41,7 +41,6 @@ base64 = "0.22"
 # (windows-1250, iso-8859-2, koi8-r, shift_jis, iso-2022-jp…), and vCard files: `mailcraft-charset`.
 # (Apache-2.0 OR MIT) AND BSD-3-Clause, Rust throughout, builds for the browser.
 encoding_rs = "0.8"
-getrandom = "0.3"
 # Time zones: the IANA Time Zone Database compiled in (`tzdb-bundle-always`: the same rules on
 # every platform and in the browser) and the system's own zone. Unlicense OR MIT; the database is
 # in the public domain. Used by `mailcraft-time` only, which wraps it (`Zone`); calendar maths is
@@ -61,36 +60,30 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # configuration of Outlook on the web, of which the list of Favorites is read:
 # `mailcraft-net`'s `graph::favorites`). MIT, Rust throughout, and nothing but `memchr` under it. It reads no DTD and expands no entity: a reference in the text is handed over as such.
 # Already in the tree (a build tool of the Linux windowing crates uses it); desktop and CLI only.
-quick-xml = { version = "0.41", default-features = false }
+quick-xml = { version = "0.42", default-features = false }
 
 # images (screenshots, inline pictures). WebP for the pictures of mail that are kept as nothing
 # else on the web; its decoder (image-webp) is Rust all the way down, like the others here.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # ui
-egui = "0.36"
-egui_extras = { version = "0.36", default-features = false }
-eframe = { version = "0.36", default-features = false }
-egui_kittest = "0.36"
+egui = "0.37"
+egui_extras = { version = "0.37", default-features = false }
+eframe = { version = "0.37", default-features = false }
+egui_kittest = "0.37"
 rfd = "0.17"
-arboard = { version = "3.6", default-features = false }
+arboard = { version = "3.7", default-features = false }
 # Reading a link's address the way a browser does (WHATWG URL), for the host it really goes to,
 # an international name in its ASCII (`xn--`) form: the tip over a link. MIT OR Apache-2.0, Rust
 # throughout, builds for the browser; already in the tree (the desktop's `webbrowser` uses it).
 url = "2.5"
 
-# craft-libs (https://github.com/storytold/craft-libs): code shared by the Craft apps, taken from
-# git pinned to one commit (`rev`); review the diff before moving the pin. Only `craft-quit`, in
-# the desktop app alone: on macOS MailCraft quits through `-[NSApplication terminate:]` rather
-# than by closing its window, which can crash AppKit (its Touch Bar), and its app menu's Quit (⌘Q)
-# asks first, as the close button does. `menu` brings muda on macOS only. Needs Rust 1.95.
-craft-quit = { git = "https://github.com/storytold/craft-libs", rev = "8f5a2831614e632f91ad367f7af2a6e5b61b9529", features = ["menu"] }
 # //// Neoffice — Nora's pane (crates/ui-egui/src/nora/assist.rs): her client core and its egui panel, from Neoffice's
-# craft-libs fork at a revision that knows the mail program (`AppKind::Mail`), the cards and the links of a conversation,
-# Nora's Markdown and the appointment cards, as the editors take them; both depend on egui alone (the same 0.36 as
-# here), serde and serde_json.
-craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "548a2149e63dc422032c7f515e678950e8f655e3" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "548a2149e63dc422032c7f515e678950e8f655e3" }
+# //// Neoffice — craft-libs fork at a revision that knows the mail program (`AppKind::Mail`), the cards and the links of a
+# //// Neoffice — conversation, Nora's Markdown and the appointment cards, as the editors take them, and whose panel builds on
+# //// Neoffice — egui 0.36 (the editors) or 0.37 (here); both depend on egui alone, serde and serde_json.
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "4f48d82591133e2ba10fc9850464fce6a8f046e4" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "4f48d82591133e2ba10fc9850464fce6a8f046e4" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

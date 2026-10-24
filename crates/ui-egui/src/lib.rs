@@ -107,6 +107,12 @@ mod report_problem;
 pub mod ribbon;
 pub mod scheduling;
 mod search_pills;
+#[cfg(test)]
+#[path = "secrets_bound_tests.rs"]
+mod secrets_bound_tests;
+#[cfg(test)]
+#[path = "secrets_replaced_tests.rs"]
+mod secrets_replaced_tests;
 pub mod server_search;
 mod shared_mailboxes;
 // //// Neoffice — File › Signatures in a tab of a hosting page: its site's signatures, and where they are written.
@@ -116,6 +122,7 @@ mod sync_panel;
 pub mod tasks_view;
 pub mod theme;
 // //// Neoffice — whether the window holds work that leaving would lose, for a hosting page that asks before it closes.
+pub mod unconfirmed;
 pub mod unsent;
 pub mod updates;
 pub mod widgets;
@@ -137,6 +144,7 @@ pub use files::FileDialogRequest;
 // //// Neoffice — what a host that reaches Nora is handed and hands back (nora.rs).
 pub use nora::{NoraAnswer, NoraCall};
 pub use scheduling::{FreeBusyRequest, FreeBusyResult};
+pub use unconfirmed::ConfirmedMailbox;
 
 /// Platform services injected by the host (file dialogs, downloads, servers, storage).
 #[derive(Default)]
@@ -674,6 +682,12 @@ pub struct UiState {
     pub microsoft_client_id: String,
     /// Keep passwords and sign-ins in the operating system's credential store between runs.
     pub remember_sign_in: bool,
+    /// Passwords and sign-ins kept by the system are filed under the servers they go to; the
+    /// ones kept before that were moved (once, for the mailbox opened at start).
+    pub sign_ins_bound: bool,
+    /// Mailbox files whose accounts' servers the owner confirmed, with a fingerprint of the
+    /// addresses and servers confirmed ([`unconfirmed`]).
+    pub confirmed_mailboxes: Vec<ConfirmedMailbox>,
     /// Reminders the owner dismissed (`event@occurrence`), so they don't come back at the next start.
     pub dismissed_reminders: Vec<String>,
     /// Download the pictures mail refers to on the web without being asked. Off unless the owner
@@ -736,6 +750,8 @@ impl Default for UiState {
             recent: Vec::new(),
             microsoft_client_id: String::new(),
             remember_sign_in: true,
+            sign_ins_bound: false,
+            confirmed_mailboxes: Vec::new(),
             dismissed_reminders: Vec::new(),
             download_pictures: false,
             picture_senders: Vec::new(),
@@ -865,6 +881,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Remove MailCraft's Data from This Computer",
         "File › Info",
         "{} — removes everything MailCraft keeps on this computer, for an installed or a portable copy alike: every account's mail and the settings (the mailbox file and its content, the settings, the logs), the sign-ins remembered in the system's credential store, the downloaded pictures and the opened attachments; then quits. Mail on the servers is not touched. By hand it asks first; never for an agent",
+    ),
+    (
+        "ui.confirmServers",
+        "Confirm Servers",
+        "File › Info",
+        "{} — the owner's yes to a mailbox opened from a file (File › Open, a double-click, a drop) once they have seen where each of its accounts connects to: until then nothing of it reaches a server (no Send/Receive, its Outbox stays, its changes wait, its rules don't run). Kept for that file while its accounts' addresses and servers stay the same. Asks first, listing the servers. Answers {\"confirmed\": bool, \"accounts\": [string]}",
     ),
     (
         "ui.sync",
@@ -1155,6 +1177,17 @@ pub struct MailApp {
     pub(crate) reveal_selection: bool,
     /// Passwords typed this session, per account. Never saved.
     passwords: std::collections::HashMap<Id, String>,
+    /// [`mailcraft_engine::Session::openings`] when the secrets in memory were last checked
+    /// against the mailbox they belong to.
+    secrets_opening: u64,
+    /// The open mailbox came from a file whose servers nobody has confirmed: nothing of it
+    /// reaches a server ([`unconfirmed`]).
+    pub(crate) unconfirmed: bool,
+    /// The jobs that reach servers, put aside while the mailbox is unconfirmed.
+    pub(crate) held: unconfirmed::Held,
+    /// The file the window started with (the owner's own mailbox, or the one `--mailbox` named),
+    /// which is never unconfirmed.
+    pub(crate) own_mailbox: Option<String>,
     /// Why the system's credential store couldn't be used this session, once that has been found
     /// out; the owner has been told.
     pub(crate) secrets_trouble: Option<StoreTrouble>,
@@ -1252,6 +1285,8 @@ pub struct MailApp {
     control_rx: Option<Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
+    /// Frames the integration handed back, by the token they were asked with.
+    shot_images: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<egui::ColorImage>)>>>,
     pending_shots: Vec<(u64, Option<String>, bool, std::sync::mpsc::Sender<Value>, f64)>,
     pub(crate) synthetic: Vec<egui::Event>,
     /// What agents want that waits for the owner's yes ([`agent_gate`]).
@@ -1396,6 +1431,7 @@ impl MailApp {
         // `execute` and each frame).
         let mut session = session;
         session.jmap_runs = services.can_run(mailcraft_model::AccountKind::Jmap);
+        let own_mailbox = session.path.as_ref().map(|p| unconfirmed::kept_path(&p.to_string_lossy()));
         MailApp {
             session,
             ui: UiState::default(),
@@ -1412,6 +1448,10 @@ impl MailApp {
             input_trail: std::collections::VecDeque::new(),
             reveal_selection: false,
             passwords: Default::default(),
+            secrets_opening: 0,
+            unconfirmed: false,
+            held: Default::default(),
+            own_mailbox,
             secrets_trouble: None,
             tokens: Default::default(),
             graph_tokens: Default::default(),
@@ -1457,6 +1497,7 @@ impl MailApp {
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),
+            shot_images: Default::default(),
             pending_shots: Vec::new(),
             synthetic: Vec::new(),
             asking: Default::default(),
@@ -1547,6 +1588,7 @@ impl MailApp {
         (self.ui.sync_panel_width, self.ui.sync_panel_height) = sync_panel::sane_size(self.ui.sync_panel_width, self.ui.sync_panel_height);
         self.ui.collapsed_folders.truncate(10_000);
         self.ui.recent.truncate(20);
+        self.ui.confirmed_mailboxes.truncate(200);
         self.ui.collapsed_calendar_groups.truncate(200);
         // //// Neoffice — the ticks of the server's calendars, as many as are kept, of the mailboxes handed over now (`calendar_ticks`).
         calendar_ticks::sanitize(&mut self.ui.calendar_ticks);
@@ -1710,14 +1752,17 @@ impl MailApp {
         let composing = self.session.compose.is_some();
         // An account that goes takes what was remembered for it along.
         let leaving = if id == "account.remove" {
-            params.get("id").and_then(Value::as_u64).and_then(|a| self.session.mailbox.account(a)).map(|a| (a.id, a.email.clone()))
+            params.get("id").and_then(Value::as_u64).and_then(|a| self.session.mailbox.account(a)).cloned()
         } else {
             None
         };
+        let edited =
+            if id == "account.edit" { params.get("id").and_then(Value::as_u64).and_then(|a| self.session.mailbox.account(a)).cloned() } else { None };
         if let Some(r) = self.through_saver(id, &params) {
             return r;
         }
         let r = self.session.run(id, &params);
+        self.drop_secrets_if_replaced();
         self.last_error = r.as_ref().err().cloned();
         let r = r.map_err(|e| e.to_string());
         // //// Neoffice — which of the servers' calendars are ticked is remembered for the next visit of a tab that keeps nothing (`calendar_ticks`).
@@ -1734,7 +1779,8 @@ impl MailApp {
                 self.favorites_due(account);
             }
         }
-        if let (Ok(_), Some((account, address))) = (&r, leaving) {
+        if let (Ok(_), Some(gone)) = (&r, leaving) {
+            let account = gone.id;
             // Its calendar and contacts were the server's, not the owner's own.
             let _ = mailcraft_engine::cmd::remote::forget(&mut self.session, account);
             self.forget_favorites(account);
@@ -1745,7 +1791,18 @@ impl MailApp {
             self.tokens.remove(&account);
             // //// Neoffice — and what was held against a JMAP account's server.
             self.jmap_refused.remove(&account);
-            self.forget_secrets(&address);
+            self.forget_account_secrets(&gone);
+        }
+        // Servers changed: what was kept for the old ones is not given to the new, and the owner
+        // is asked again.
+        if let (Ok(_), Some(before)) = (&r, edited)
+            && let Some(after) = self.session.mailbox.account(before.id).cloned()
+            && ["password", "refresh"].into_iter().any(|k| Self::secret_key(k, &before) != Self::secret_key(k, &after))
+        {
+            self.forget_account_secrets(&before);
+            self.passwords.remove(&before.id);
+            self.tokens.remove(&before.id);
+            self.graph_tokens.remove(&before.id);
         }
         // Starting to write brings up the Message tab; finishing goes back to Home.
         if r.is_ok() && composing != self.session.compose.is_some() {
@@ -1761,6 +1818,7 @@ impl MailApp {
         let b = |k: &str| p.get(k).and_then(Value::as_bool);
         Some(match id {
             "ui.removeAllData" => self.remove_all_data(),
+            "ui.confirmServers" => self.confirm_servers(),
             "ui.tab" => {
                 let Some(tab) = s("tab") else { return Some(Err("missing `tab`".into())) };
                 if tab == "File" {
@@ -2039,16 +2097,49 @@ impl MailApp {
         })
     }
 
-    fn secret_key(kind: &str, address: &str) -> String {
+    /// The name a secret is kept under in the system's credential store: its kind (`password` or
+    /// `refresh`), the account's address and the servers it goes to, so that an account that
+    /// names other servers (a mailbox from a file, a changed setting) is not given the secret.
+    /// A Microsoft account kept in step through Graph goes to Microsoft alone: its sign-in page
+    /// and Graph are fixed. The one place this name is made.
+    pub(crate) fn secret_key(kind: &str, a: &mailcraft_model::Account) -> String {
+        let address = a.email.trim().to_ascii_lowercase();
+        let server = |s: &Option<mailcraft_model::Server>| match s {
+            Some(s) => format!("{}:{}", s.host.trim().to_ascii_lowercase(), s.port),
+            None => "none".to_string(),
+        };
+        // //// Neoffice — a JMAP account (this fork's) has no IMAP or SMTP server: its secret is bound to the address of its
+        // //// Neoffice — JMAP server's session resource instead (first: a file may say it is a shared mailbox too), so that a
+        // //// Neoffice — mailbox from a file naming another server is not given it.
+        if a.kind == mailcraft_model::AccountKind::Jmap {
+            let jmap = a.jmap.as_ref().map_or_else(|| "none".to_string(), |server| server.session.trim().to_ascii_lowercase());
+            format!("{kind}:{address}|jmap={jmap}")
+        } else if a.kind == mailcraft_model::AccountKind::Microsoft || a.shared_of.is_some() {
+            format!("{kind}:{address}|graph")
+        } else {
+            format!("{kind}:{address}|imap={}|smtp={}", server(&a.incoming), server(&a.outgoing))
+        }
+    }
+
+    /// The name secrets were kept under before they were bound to servers.
+    pub(crate) fn legacy_secret_key(kind: &str, address: &str) -> String {
         format!("{kind}:{}", address.trim().to_ascii_lowercase())
     }
 
-    /// What the owner had the operating system remember for `address` (`password` or `refresh`).
+    /// The account in this mailbox with this address.
+    fn account_at(&self, address: &str) -> Option<&mailcraft_model::Account> {
+        let address = address.trim();
+        self.session.mailbox.accounts.iter().find(|a| a.email.trim().eq_ignore_ascii_case(address))
+    }
+
+    /// What the owner had the operating system remember for `address` (`password` or `refresh`),
+    /// for the account of that address with the servers it has now.
     fn remembered(&self, kind: &str, address: &str) -> Option<String> {
         if !self.ui.remember_sign_in {
             return None;
         }
-        self.services.secrets.as_ref()?.get(&Self::secret_key(kind, address)).filter(|secret| !secret.is_empty())
+        let key = Self::secret_key(kind, self.account_at(address)?);
+        self.services.secrets.as_ref()?.get(&key).filter(|secret| !secret.is_empty())
     }
 
     /// Have the operating system remember a secret for `address`, when the owner wants that.
@@ -2056,8 +2147,9 @@ impl MailApp {
         if !self.ui.remember_sign_in || secret.is_empty() || self.data_removed {
             return;
         }
+        let Some(account) = self.account_at(address) else { return };
         if let Some(store) = &self.services.secrets
-            && let Err(e) = store.set(&Self::secret_key(kind, address), secret)
+            && let Err(e) = store.set(&Self::secret_key(kind, account), secret)
         {
             log::warn!("couldn't keep the sign-in for next time: {e}");
         }
@@ -2077,11 +2169,44 @@ impl MailApp {
 
     /// Drop everything the operating system remembers for `address`.
     pub(crate) fn forget_secrets(&self, address: &str) {
+        if let Some(account) = self.account_at(address) {
+            self.forget_account_secrets(account);
+        }
+    }
+
+    /// Drop everything the operating system remembers for this account as it is, and under the
+    /// name from before secrets were bound to servers.
+    pub(crate) fn forget_account_secrets(&self, a: &mailcraft_model::Account) {
         if let Some(store) = &self.services.secrets {
             for kind in ["password", "refresh"] {
-                store.delete(&Self::secret_key(kind, address));
+                store.delete(&Self::secret_key(kind, a));
+                store.delete(&Self::legacy_secret_key(kind, &a.email));
             }
         }
+    }
+
+    /// Secrets kept before they were bound to servers move, once, to the name made from the
+    /// servers of the account in this mailbox, and the old name goes. Only for a mailbox the
+    /// owner has not been asked to confirm; the owner's setting says when it has been done.
+    pub(crate) fn migrate_secrets(&mut self) {
+        if self.ui.sign_ins_bound {
+            return;
+        }
+        if let Some(store) = &self.services.secrets {
+            for a in &self.session.mailbox.accounts {
+                for kind in ["password", "refresh"] {
+                    let old = Self::legacy_secret_key(kind, &a.email);
+                    if let Some(secret) = store.get(&old).filter(|s| !s.is_empty()) {
+                        if let Err(e) = store.set(&Self::secret_key(kind, a), &secret) {
+                            log::warn!("couldn't move a remembered sign-in: {e}");
+                            continue;
+                        }
+                        store.delete(&old);
+                    }
+                }
+            }
+        }
+        self.ui.sign_ins_bound = true;
     }
 
     /// The sign-in settings as the host should use them: an account that names no application id
@@ -2198,6 +2323,14 @@ impl MailApp {
     /// password the first time, or has the owner sign in on the provider's page; the answer is
     /// kept in memory until the app closes, and by the operating system when that is wanted.
     fn start_sync(&mut self, p: &Value) -> Result<Value, String> {
+        self.drop_secrets_if_replaced();
+        // A mailbox from a file: the owner confirms where it connects to first.
+        if self.unconfirmed {
+            if p.get("quiet").and_then(Value::as_bool) == Some(true) {
+                return Err(tl!("This mailbox was opened from a file: confirm its servers first").to_string());
+            }
+            return self.ask_to_confirm_servers();
+        }
         if self.data_removed {
             return Err(tl!("MailCraft's data has been removed: nothing is sent or received").to_string());
         }
@@ -2451,6 +2584,21 @@ impl MailApp {
         self.push_seen.insert(account, (self.waiting_to_go(account), now_ms()));
     }
 
+    /// The passwords and sign-ins in memory belong to the accounts of the mailbox they were given
+    /// for: a mailbox that takes its place (File › Open, File › New, whatever the way) drops them
+    /// all, since its accounts have ids of their own choosing and servers of their own naming.
+    pub(crate) fn drop_secrets_if_replaced(&mut self) {
+        let opening = self.session.openings();
+        if opening != self.secrets_opening {
+            self.secrets_opening = opening;
+            self.passwords.clear();
+            self.tokens.clear();
+            self.graph_tokens.clear();
+            // And a mailbox from a file is held back until its servers are confirmed.
+            self.judge_mailbox();
+        }
+    }
+
     /// Whether a Send/Receive for `account` can go ahead without asking anybody anything: its
     /// password or sign-in is at hand, in memory or with the operating system.
     fn can_sync_quietly(&self, account: Id) -> bool {
@@ -2464,9 +2612,8 @@ impl MailApp {
         // //// Neoffice — a JMAP account: the host holds its credential, or a password is at hand (a bearer token is only ever in memory); not when its server turned the secret down, until the owner asks.
         if a.kind == mailcraft_model::AccountKind::Jmap {
             let bearer = a.jmap.as_ref().is_some_and(|server| server.bearer);
-            let credential = self.services.jmap_host_credentials
-                || self.passwords.contains_key(&account)
-                || (!bearer && self.remembered("password", &a.email).is_some());
+            let credential =
+                self.services.jmap_host_credentials || self.passwords.contains_key(&account) || (!bearer && self.jmap_remembered(account).is_some());
             return self.services.jmap.is_some() && !self.jmap_refused.contains(&account) && credential;
         }
         if a.oauth.is_some() {
@@ -2986,8 +3133,8 @@ impl MailApp {
         out
     }
 
-    /// Keep what a Send/Receive said went wrong (and put it in the log); a run without problems
-    /// clears what was kept for its account.
+    /// Keep what a Send/Receive said went wrong (the log gets only how many); a run without
+    /// problems clears what was kept for its account.
     fn note_sync_problems(&mut self, account: Id, errors: &[String], finished: bool) {
         if errors.is_empty() {
             if finished {
@@ -2995,9 +3142,9 @@ impl MailApp {
             }
             return;
         }
-        for e in errors {
-            log::warn!("send/receive, account {account}: {e}");
-        }
+        // The lines name subjects, addresses and folders: they are for the owner to read in the
+        // problems report, and the log says only how many there were.
+        log::warn!("send/receive, account {account}: {} problem(s) reported", errors.len());
         self.keep_sync_problems(account, errors);
     }
 
@@ -3064,7 +3211,7 @@ impl MailApp {
     /// Take in what a Send/Receive has brought so far. It arrives in pieces (what was sent, what
     /// the server was told, then mail folder by folder, the Inbox first), each applied as it
     /// comes, so mail shows up while the rest is still on its way; the last piece ends the run.
-    fn poll_sync(&mut self) {
+    pub fn poll_sync(&mut self) {
         // A few pieces a frame: each one redraws the lists, and the window should stay quick.
         for _ in 0..4 {
             let Some(rx) = &self.sync_rx else { return };
@@ -3115,8 +3262,8 @@ impl MailApp {
                 // Forget the password so the next try asks again, and the access token so the
                 // next try renews it (the refresh token stays for that).
                 self.passwords.remove(&account);
-                if let Some(store) = &self.services.secrets {
-                    store.delete(&Self::secret_key("password", &address));
+                if let (Some(store), Some(a)) = (&self.services.secrets, self.account_at(&address)) {
+                    store.delete(&Self::secret_key("password", a));
                 }
                 if let Some(tokens) = self.tokens.get_mut(&account) {
                     tokens.access.clear();
@@ -3249,6 +3396,11 @@ impl MailApp {
         // An administrator's approval that was waited for ([`approval`]).
         self.poll_admin_consent();
         self.sweep_admin_consent();
+        self.drop_secrets_if_replaced();
+        // The mailbox the window started with: secrets kept the old way are filed under its servers.
+        if self.session.openings() == 0 && !self.unconfirmed {
+            self.migrate_secrets();
+        }
         self.poll_graph();
         // //// Neoffice — the pieces of a JMAP run, a few a frame.
         self.poll_jmap();
@@ -3302,7 +3454,7 @@ impl MailApp {
         files::drain_inbox(self);
         self.autosave_tick(ctx);
         self.draft_autosave_tick(ctx);
-        self.collect_screenshots(ctx);
+        self.collect_screenshots();
         self.issue_screenshots(ctx);
         // //// Neoffice — the pieces of a JMAP run may come without waking the window (the host's task is not always the one that knows it): it looks again soon while one is under way.
         let waiting = self.sync_rx.is_some() || self.graph_rx.is_some() || self.jmap_rx.is_some() || self.signing_in.is_some() || self.approving();
@@ -3441,6 +3593,12 @@ impl MailApp {
             });
         }
         if !self.autosave || self.session.rev() == self.saved_rev || self.after_save.is_some() {
+            return;
+        }
+        // //// Neoffice — a mailbox from a file whose servers aren't confirmed isn't written over the one the browser keeps (this
+        // //// Neoffice — fork's browser build reaches JMAP servers): kept there, it would be the next start's, and a starting
+        // //// Neoffice — mailbox is never asked about (`judge_mailbox`). It is written once its servers are confirmed.
+        if self.unconfirmed && self.services.persist.is_some() {
             return;
         }
         // From the first change on, whatever replaces the mailbox (File › Open, File › New)
@@ -3683,6 +3841,7 @@ impl MailApp {
             chrome::status_bar(self, ui);
             // The question about checking for new versions, at the first starts: above the status bar.
             updates::question(self, ui);
+            unconfirmed::bar(self, ui);
             // //// Neoffice — none where a hosting page draws the modules in its own menu (host_menu.rs); their shortcuts stay.
             if self.services.host_menu.is_none() {
                 nav::module_bar(self, ui);
@@ -3834,10 +3993,17 @@ impl MailApp {
 
     fn issue_screenshots(&mut self, ctx: &egui::Context) {
         let now = now_ms();
+        let sink = self.shot_images.clone();
         self.queued_shots.retain_mut(|(token, at, frames)| {
             *frames += 1;
             if now >= *at && *frames >= 3 {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(*token)));
+                let token = *token;
+                let sink = sink.clone();
+                let repaint = ctx.clone();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::ScreenshotCallback::new(move |image| {
+                    sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).push((token, image));
+                    repaint.request_repaint();
+                })));
                 false
             } else {
                 true
@@ -3848,23 +4014,11 @@ impl MailApp {
         }
     }
 
-    fn collect_screenshots(&mut self, ctx: &egui::Context) {
+    fn collect_screenshots(&mut self) {
         if self.pending_shots.is_empty() {
             return;
         }
-        let events: Vec<_> = ctx.input(|i| {
-            i.raw
-                .events
-                .iter()
-                .filter_map(|e| match e {
-                    egui::Event::Screenshot { user_data, image, .. } => {
-                        let token = user_data.data.as_ref().and_then(|d| d.downcast_ref::<u64>()).copied()?;
-                        Some((token, image.clone()))
-                    }
-                    _ => None,
-                })
-                .collect()
-        });
+        let events: Vec<_> = std::mem::take(&mut *self.shot_images.lock().unwrap_or_else(|poisoned| poisoned.into_inner()));
         for (token, image) in events {
             if let Some(i) = self.pending_shots.iter().position(|(t, ..)| *t == token) {
                 let (_, path, inline, reply, _) = self.pending_shots.remove(i);
@@ -3954,6 +4108,13 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
                     &[("what", &what)],
                 ));
             }
+            if let Some(c) = n("stoppedAfter") {
+                let count = tln!(c, "{n} message", "{n} messages");
+                return Some(i18n::fmt(
+                    tl!("Imported {what}; stopped after {count}: the file has more than one import takes"),
+                    &[("what", &what), ("count", &count)],
+                ));
+            }
             (!parts.is_empty()).then(|| i18n::fmt(tl!("Imported {what}"), &[("what", &what)]))
         }
         "people.fromMessage" if v.get("existing").and_then(Value::as_bool) == Some(true) => Some(tl!("Already in your contacts").to_string()),
@@ -3995,6 +4156,8 @@ pub fn now_ms() -> f64 {
     }
 }
 
+#[cfg(test)]
+mod privacy_tests;
 #[cfg(test)]
 mod tests;
 // //// Neoffice — a hosting page's tab in the window: what it doesn't offer, what it greys, what it asks first (kept_here_tests.rs).

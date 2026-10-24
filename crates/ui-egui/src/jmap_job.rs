@@ -178,7 +178,7 @@ impl MailApp {
         let bearer = owner.jmap.as_ref().is_some_and(|server| server.bearer);
         let secret = if self.services.jmap_host_credentials {
             None
-        } else if let Some(secret) = self.jmap_secret(account, &owner.email, bearer) {
+        } else if let Some(secret) = self.jmap_secret(account, bearer) {
             Some(secret)
         } else if quiet {
             // Nobody asked for this run: no dialog is put in front of the owner.
@@ -217,14 +217,39 @@ impl MailApp {
     /// The secret a JMAP account's run is opened with, when one is at hand: the one typed this
     /// session, else, for a password, the one the system remembers. A bearer token is only ever in
     /// memory.
-    pub(crate) fn jmap_secret(&mut self, account: Id, address: &str, bearer: bool) -> Option<String> {
+    pub(crate) fn jmap_secret(&mut self, account: Id, bearer: bool) -> Option<String> {
         if !bearer
             && !self.passwords.contains_key(&account)
-            && let Some(password) = self.remembered("password", address)
+            && let Some(password) = self.jmap_remembered(account)
         {
             self.passwords.insert(account, password);
         }
         self.passwords.get(&account).cloned()
+    }
+
+    /// What the system remembers of the password of the JMAP account `account`: under the name made of that account
+    /// itself (its address and its server, `MailApp::secret_key`), so that another account of the same address in the
+    /// mailbox (an IMAP one, say) is never asked in its place.
+    pub(crate) fn jmap_remembered(&self, account: Id) -> Option<String> {
+        if !self.ui.remember_sign_in {
+            return None;
+        }
+        let a = self.session.mailbox.account(account)?;
+        self.services.secrets.as_ref()?.get(&Self::secret_key("password", a)).filter(|secret| !secret.is_empty())
+    }
+
+    /// Have the system remember the password of the JMAP account `account`, when the owner wants that (see
+    /// [`MailApp::jmap_remembered`]).
+    fn jmap_remember(&self, account: Id, password: &str) {
+        if !self.ui.remember_sign_in || password.is_empty() || self.data_removed {
+            return;
+        }
+        let Some(a) = self.session.mailbox.account(account) else { return };
+        if let Some(store) = &self.services.secrets
+            && let Err(e) = store.set(&Self::secret_key("password", a), password)
+        {
+            log::warn!("couldn't keep the sign-in for next time: {e}");
+        }
     }
 
     /// Take in what the JMAP run under way has brought so far, a few pieces a frame. The pieces
@@ -318,17 +343,19 @@ impl MailApp {
         self.session.sync_progress.end(account, stopped);
         let mut errors = std::mem::take(&mut self.jmap_problems);
         errors.dedup();
-        let (address, bearer) = match self.session.mailbox.account(account) {
-            Some(a) => (a.email.clone(), a.jmap.as_ref().is_some_and(|server| server.bearer)),
-            None => (String::new(), false),
-        };
+        let bearer = self.session.mailbox.account(account).is_some_and(|a| a.jmap.as_ref().is_some_and(|server| server.bearer));
         if self.jmap_refused.contains(&account) {
             // The password is forgotten, so that the next try asks for it again; a sign-in that
             // the host holds is the host's to renew. No run starts by itself for this account
             // until the owner asks for one (`can_sync_quietly`).
             self.passwords.remove(&account);
-            if !bearer && let Some(store) = &self.services.secrets {
-                store.delete(&Self::secret_key("password", &address));
+            // Under the name bound to the account's server, and under the one from before secrets were bound.
+            if !bearer
+                && let Some(store) = &self.services.secrets
+                && let Some(a) = self.session.mailbox.account(account)
+            {
+                store.delete(&Self::secret_key("password", a));
+                store.delete(&Self::legacy_secret_key("password", &a.email));
             }
             let said = if self.services.jmap_host_credentials {
                 tl!("The server refused the sign-in. Sign in again, then use Send/Receive.")
@@ -351,7 +378,7 @@ impl MailApp {
                 && !bearer
                 && let Some(password) = self.passwords.get(&account)
             {
-                self.remember("password", &address, password);
+                self.jmap_remember(account, password);
             }
         }
         self.note_sync_problems(account, &errors, true);

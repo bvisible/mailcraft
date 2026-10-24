@@ -167,7 +167,7 @@ fn the_window_brings_the_servers_calendars_and_their_events_and_the_calendar_sho
     assert!(ada.origin.id.is_empty() && ada.visible, "the main one, ticked");
     assert!(!team.visible && !grace.visible, "the others wait to be ticked");
     assert!([ada, team, grace].iter().all(|c| c.plain));
-    assert_eq!([ada, team, grace].map(|c| c.read_only), [false, false, true], "Grace's she may only read");
+    assert_eq!([ada, team, grace].map(|c| !c.can_edit()), [false, false, true], "Grace's she may only read");
     // The main calendar's week shows.
     assert_eq!(flow.shown(), ["Book fair", "Budget review"]);
     let budget = flow.app.session.mailbox.events.values().find(|e| e.title == "Budget review").unwrap();
@@ -201,7 +201,7 @@ fn a_calendar_the_server_adds_arrives_unticked_and_the_main_one_is_ticked() {
     assert!(flow.calendar("Holidays").is_none());
     flow.look(2.0 * MINUTE + SECOND);
     let holidays = flow.calendar("Holidays").unwrap();
-    assert!(!holidays.visible && holidays.read_only);
+    assert!(!holidays.visible && !holidays.can_edit());
     assert!(flow.calendar("Ada").unwrap().visible);
 }
 
