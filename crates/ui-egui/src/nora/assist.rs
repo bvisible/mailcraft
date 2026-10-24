@@ -45,7 +45,7 @@ use std::time::Duration;
 use craft_nora::{
     AppKind, CommandPolicy, DocActionKind, DocumentInfo, HttpRequest, HttpResponse, Input, NoraError, NoraSession, Output, PageContext, SessionConfig,
 };
-use craft_nora_ui::{NoraLabels, NoraPanel, NoraStyle, PanelAction};
+use craft_nora_ui::{NoraLabels, NoraPanel, NoraStyle, PanelAction, ResumeWords};
 use egui::{Margin, RichText, Sense, Stroke, Ui, vec2};
 use mailcraft_engine::ComposeMode;
 use mailcraft_model::Id;
@@ -270,6 +270,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         let input = ui.scope_id().with("nora").with("input");
         let assist = &mut app.nora.assist;
         assist.panel.labels = labels();
+        assist.panel.resume_words = resume_words();
         assist.panel.style = style(&t);
         assist.panel.open_links = opens;
         // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
@@ -466,6 +467,11 @@ fn labels() -> NoraLabels {
     }
 }
 
+/// What the panel says under a request lost to a tab in the background, and its button, in the interface's language.
+fn resume_words() -> ResumeWords {
+    ResumeWords { said: tl!("This tab was in the background: Nora could not act in your message.").into(), resume: tl!("Resume").into() }
+}
+
 /// What an action that waits for the person's yes would do (none does in the pane today: she sends and
 /// saves nothing), in the interface's language.
 fn describe(kind: &DocActionKind) -> String {
@@ -512,11 +518,13 @@ fn context_of(_app: &MailApp) -> PageContext {
 /// and what it asks is done.
 pub(crate) fn poll(app: &mut MailApp) {
     let now = now_ms();
-    let mut outputs = deliver(app, now);
+    // The clock first, then the answers: after a gap without frames (a tab in the background) the conversation knows it
+    // before it reads an answer that waited in the page, whose action it then refuses rather than plays late.
+    let mut outputs = app.nora.assist.session.handle(Input::Tick { now_ms: now.max(0.0) as u64 });
+    outputs.extend(deliver(app, now));
     if app.nora.assist.held.as_ref().is_some_and(|held| now - held.since > HELD_MS) {
         outputs.extend(drop_held(app, tl!("Nora's request waited too long for your answer: nothing was written.").to_string()));
     }
-    outputs.extend(app.nora.assist.session.handle(Input::Tick { now_ms: now.max(0.0) as u64 }));
     perform(app, outputs);
     // The host wakes the window when an answer comes; the conversation's own clock says when to read again.
     let wake = app.nora.assist.session.next_wake_ms().map(|at| at.saturating_sub(now.max(0.0) as u64));

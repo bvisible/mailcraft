@@ -2065,3 +2065,9 @@ msgstr "La demande de Nora a attendu trop longtemps votre réponse : rien n’a 
 
 msgid "NeoMail doesn't print or export a message for Nora: you print it from the message's own window."
 msgstr "NeoMail n’imprime ni n’exporte un message pour Nora : vous l’imprimez depuis la fenêtre du message."
+
+msgid "This tab was in the background: Nora could not act in your message."
+msgstr "L’onglet était en arrière-plan : Nora n’a pas pu agir dans votre message."
+
+msgid "Resume"
+msgstr "Reprendre"

@@ -842,7 +842,7 @@ dependencies = [
 [[package]]
 name = "craft-nora"
 version = "0.1.0"
-source = "git+https://github.com/bvisible/craft-libs?rev=485e57bbe31b6dbd438df99663a1da5d58ad7b57#485e57bbe31b6dbd438df99663a1da5d58ad7b57"
+source = "git+https://github.com/bvisible/craft-libs?rev=1f01bcc9d5f868014499b4e6b4e617bd9e228c06#1f01bcc9d5f868014499b4e6b4e617bd9e228c06"
 dependencies = [
  "serde",
  "serde_json",
@@ -851,7 +851,7 @@ dependencies = [
 [[package]]
 name = "craft-nora-ui"
 version = "0.1.0"
-source = "git+https://github.com/bvisible/craft-libs?rev=485e57bbe31b6dbd438df99663a1da5d58ad7b57#485e57bbe31b6dbd438df99663a1da5d58ad7b57"
+source = "git+https://github.com/bvisible/craft-libs?rev=1f01bcc9d5f868014499b4e6b4e617bd9e228c06#1f01bcc9d5f868014499b4e6b4e617bd9e228c06"
 dependencies = [
  "craft-nora",
  "egui",
