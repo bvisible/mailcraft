@@ -240,8 +240,12 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut answered = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
+    // Never so wide that the mail beside it has less than a message being written keeps (`mail_view::writing_room`): in a
+    // narrow window the pane narrows to 240 first, then the folder pane and the list make way.
+    let widest = (ui.available_width() - crate::mail_view::WRITING_MIN).max(240.0);
     egui::Panel::right("nora_assistant")
-        .default_size(330.0)
+        .default_size(330.0_f32.min(widest))
+        .size_range(240.0..=widest)
         .resizable(true)
         .frame(egui::Frame::NONE.fill(t.panel).inner_margin(Margin::same(10)).stroke(Stroke::new(1.0, t.border)))
         .show(ui, |ui| {
@@ -257,6 +261,9 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
             assist.panel.labels = labels();
             assist.panel.style = style(&t);
             assist.panel.open_links = opens;
+            // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
+            // come from a message rather than from her.
+            assist.panel.links_on_cards_only = true;
             actions = assist.panel.show(ui, &assist.session);
             typing = ui.ctx().memory(|m| m.has_focus(input));
         });

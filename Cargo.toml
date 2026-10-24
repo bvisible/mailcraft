@@ -82,8 +82,8 @@ url = "2.5"
 # //// Neoffice — craft-libs fork at a revision that knows the mail program (`AppKind::Mail`), the cards and the links of a
 # //// Neoffice — conversation, Nora's Markdown and the appointment cards, as the editors take them, and whose panel builds on
 # //// Neoffice — egui 0.36 (the editors) or 0.37 (here); both depend on egui alone, serde and serde_json.
-craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "4f48d82591133e2ba10fc9850464fce6a8f046e4" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "4f48d82591133e2ba10fc9850464fce6a8f046e4" }
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "485e57bbe31b6dbd438df99663a1da5d58ad7b57" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "485e57bbe31b6dbd438df99663a1da5d58ad7b57" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

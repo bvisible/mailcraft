@@ -411,3 +411,23 @@ fn a_reply_is_read_without_the_history_it_quotes() {
     assert_eq!(observe::unquoted("> only a quote"), "> only a quote", "nothing of its own: the whole text");
     assert_eq!(observe::clean("a\r\nb\u{7}c"), "a\nbc");
 }
+
+/// In the window's pane, only a card's Open leads to a page of the instance: a link in a reply is its words, as a
+/// link Nora repeats may come from a message rather than from her (craft-nora-ui `links_on_cards_only`).
+#[test]
+fn in_the_pane_only_a_card_leads_to_a_page() {
+    let (mut app, _calls, _) = page(true);
+    app.run("ui.noraAssistant", json!({})).unwrap();
+    let mut harness =
+        egui_kittest::Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+    harness.run_steps(3);
+    let assist = &harness.state().nora.assist;
+    assert!(assist.open && assist.panel.links_on_cards_only);
+}

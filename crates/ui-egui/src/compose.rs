@@ -249,12 +249,14 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
         if crate::widgets::primary_button(ui, tl!("Send"), true).on_hover_text(format!("{} ({sc})", tl!("Send"))).clicked() {
             let _ = app.run("compose.send", json!({}));
         }
-        // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
-        if flat(ui, "attach", tl!("Attach"), true).clicked() {
+        // //// Neoffice — its icon alone in a narrow bar (`flat`, above); in a bar too narrow for all of them, Attach and
+        // //// Neoffice — Save draft give way (the ribbon's Message tab has both), so that Discard and Close always show.
+        let tight = bar.width() < 300.0;
+        if !tight && flat(ui, "attach", tl!("Attach"), true).clicked() {
             let _ = app.run("ui.attach", json!({}));
         }
-        // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
-        if flat(ui, "saveDraft", tl!("Save draft"), c.dirty || !c.draft).clicked() {
+        // //// Neoffice — its icon alone in a narrow bar (`flat`, above), and not in a tight one (above).
+        if !tight && flat(ui, "saveDraft", tl!("Save draft"), c.dirty || !c.draft).clicked() {
             let _ = app.run("compose.saveDraft", json!({}));
         }
         // //// Neoffice — its icon alone in a narrow bar (`flat`, above).
