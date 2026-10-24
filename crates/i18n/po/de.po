@@ -8232,13 +8232,13 @@ msgid "Share in Synk"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/notes_view.rs
-msgid "Shared by {name}"
+#: crates/ui-egui/src/calendar_view.rs
+msgid "Shared Calendars"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/calendar_view.rs
-msgid "Shared Calendars"
+#: crates/ui-egui/src/notes_view.rs
+msgid "Shared by {name}"
 msgstr ""
 
 #. interface
