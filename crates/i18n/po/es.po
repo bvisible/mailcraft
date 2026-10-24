@@ -7397,6 +7397,11 @@ msgstr "Reiniciar para actualizar"
 msgid "Restart to update"
 msgstr "Reiniciar para actualizar"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Resume"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -10557,6 +10562,11 @@ msgstr "La cuenta de este buzón compartido ya no existe"
 #, fuzzy
 msgid "This shared mailbox's account is gone: remove the shared mailbox and add it again"
 msgstr "La cuenta de este buzón compartido ya no existe: quite el buzón compartido y vuelva a agregarlo"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "This tab was in the background: Nora could not act in your message."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/host_menu.rs

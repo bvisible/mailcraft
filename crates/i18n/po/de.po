@@ -7387,6 +7387,11 @@ msgstr "Zum Aktualisieren neu starten"
 msgid "Restart to update"
 msgstr "Zum Aktualisieren neu starten"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Resume"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -10543,6 +10548,11 @@ msgstr "Das Konto dieses freigegebenen Postfachs ist nicht mehr vorhanden"
 #, fuzzy
 msgid "This shared mailbox's account is gone: remove the shared mailbox and add it again"
 msgstr "Das Konto dieses freigegebenen Postfachs ist nicht mehr vorhanden: Entfernen Sie das freigegebene Postfach und fügen Sie es erneut hinzu"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "This tab was in the background: Nora could not act in your message."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/host_menu.rs

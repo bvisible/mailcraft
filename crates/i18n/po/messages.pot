@@ -6314,6 +6314,11 @@ msgstr ""
 msgid "Restart to update"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Resume"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid ""
@@ -9059,6 +9064,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/shared_mailboxes.rs
 msgid "This shared mailbox's account is gone: remove the shared mailbox and add it again"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "This tab was in the background: Nora could not act in your message."
 msgstr ""
 
 #. interface
