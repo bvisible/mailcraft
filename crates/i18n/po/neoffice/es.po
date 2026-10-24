@@ -2055,3 +2055,9 @@ msgstr "La pestaña estaba en segundo plano: Nora no pudo actuar en su mensaje."
 
 msgid "Resume"
 msgstr "Reanudar"
+
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr "En su mensaje no se hizo nada: Nora no pudo actuar en él a tiempo. Vuelva a formular la petición si todavía la necesita."
+
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr "No se hizo todo: una parte no pudo ejecutarse en su mensaje a tiempo."

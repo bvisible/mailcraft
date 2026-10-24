@@ -45,7 +45,7 @@ use std::time::Duration;
 use craft_nora::{
     AppKind, CommandPolicy, DocActionKind, DocumentInfo, HttpRequest, HttpResponse, Input, NoraError, NoraSession, Output, PageContext, SessionConfig,
 };
-use craft_nora_ui::{NoraLabels, NoraPanel, NoraStyle, PanelAction, ResumeWords};
+use craft_nora_ui::{CorrectionWords, NoraLabels, NoraPanel, NoraStyle, PanelAction, ResumeWords};
 use egui::{Margin, RichText, Sense, Stroke, Ui, vec2};
 use mailcraft_engine::ComposeMode;
 use mailcraft_model::Id;
@@ -271,6 +271,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         let assist = &mut app.nora.assist;
         assist.panel.labels = labels();
         assist.panel.resume_words = resume_words();
+        assist.panel.correction_words = correction_words();
         assist.panel.style = style(&t);
         assist.panel.open_links = opens;
         // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
@@ -470,6 +471,15 @@ fn labels() -> NoraLabels {
 /// What the panel says under a request lost to a tab in the background, and its button, in the interface's language.
 fn resume_words() -> ResumeWords {
     ResumeWords { said: tl!("This tab was in the background: Nora could not act in your message.").into(), resume: tl!("Resume").into() }
+}
+
+/// What the panel says under a reply of Nora's that said done what could not run in the message in time (a tab in the
+/// background), in the interface's language.
+fn correction_words() -> CorrectionWords {
+    CorrectionWords {
+        nothing_done: tl!("Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it.").into(),
+        partly_done: tl!("Not all of this was done: part of it could not run in your message in time.").into(),
+    }
 }
 
 /// What an action that waits for the person's yes would do (none does in the pane today: she sends and

@@ -431,3 +431,42 @@ fn in_the_pane_only_a_card_leads_to_a_page() {
     let assist = &harness.state().nora.assist;
     assert!(assist.open && assist.panel.links_on_cards_only);
 }
+
+/// One read of the conversation at `now` on its clock, answered with `messages` (the replies, the cards, the server's word
+/// on the work still open) and an empty queue, handed over the window's way: the clock first, then the answers (`poll`).
+fn read_at(app: &mut MailApp, calls: &Calls, now: u64, messages: Value) {
+    let outputs = app.nora.assist.session.handle(Input::Tick { now_ms: now });
+    perform(app, outputs);
+    answer(calls, "nora.api.chat.get_messages", messages);
+    answer(calls, "nora.api.chat.get_browser_actions", json!({"actions": [], "timestamp": 0.0}));
+    let outputs = deliver(app, now_ms());
+    perform(app, outputs);
+}
+
+/// « Prends rendez-vous… » (24.10 on osiris): Nora's first answer may only hand the request over to a pole, whose
+/// appointment card comes seconds later. While the server says her work goes on, the pane reads on, and the card that
+/// comes after that first answer is shown under it; once the work is done, the turn ends without a failure.
+#[test]
+fn an_appointment_card_that_comes_after_her_first_answer_is_shown() {
+    let (mut app, calls, _) = page(true);
+    ask(&mut app, "Prends rendez-vous avec lui mardi à 14 h");
+    answer(&calls, "nora.api.chat.start_or_resume_thread", json!({"thread_id": "t1", "sent_at": 1_000.0}));
+    poll(&mut app);
+    let first = json!({"role": "assistant", "text": "La facture est dans votre Drive ; je prépare le rendez-vous.", "ts": 1_002.0});
+    let open = json!({"open": true, "at": 1_002.0});
+    let base = now_ms() as u64;
+    read_at(&mut app, &calls, base + 1_000, json!({"messages": [first], "cards": [], "work": open}));
+    // Long past the time a turn settles after its answer, the pane still reads.
+    read_at(&mut app, &calls, base + 6_000, json!({"messages": [first], "cards": [], "work": open}));
+    assert!(app.nora.assist.busy(), "the work goes on: the turn reads on");
+    let card = json!({"token": "c-evt", "kind": "Event", "status": "Pending", "title": "Rendez-vous · En parler", "conversation_id": "t1",
+        "payload": {"summary": "« En parler » le 27-10-2026 à 14:00", "confirm_label": "Ajouter à mon agenda", "refuse_label": "Annuler"}});
+    let done = json!({"role": "assistant", "text": "Le rendez-vous est prêt sur une carte.", "ts": 1_020.0});
+    read_at(&mut app, &calls, base + 21_000, json!({"messages": [first, done], "cards": [card], "work": {"open": false, "at": 1_020.0}}));
+    let shown: Vec<&str> = app.nora.assist.session.cards().iter().map(|shown| shown.card.kind.as_str()).collect();
+    assert_eq!(shown, vec!["Event"], "the card made after her first answer is shown");
+    // The work is over: the turn ends, without a failure.
+    let outputs = app.nora.assist.session.handle(Input::Tick { now_ms: base + 23_000 });
+    perform(&mut app, outputs);
+    assert!(!app.nora.assist.busy() && app.nora.assist.session.last_error().is_none());
+}

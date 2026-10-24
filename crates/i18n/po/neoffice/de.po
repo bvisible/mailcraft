@@ -2037,3 +2037,9 @@ msgstr "Der Tab war im Hintergrund: Nora konnte in Ihrer Nachricht nicht handeln
 
 msgid "Resume"
 msgstr "Fortfahren"
+
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr "In Ihrer Nachricht wurde nichts erledigt: Nora konnte rechtzeitig nicht darin handeln. Bitte stellen Sie die Anfrage erneut, falls Sie sie noch benötigen."
+
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr "Nicht alles wurde erledigt: Ein Teil konnte in Ihrer Nachricht rechtzeitig nicht ausgeführt werden."

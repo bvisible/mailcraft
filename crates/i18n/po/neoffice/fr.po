@@ -2071,3 +2071,9 @@ msgstr "L’onglet était en arrière-plan : Nora n’a pas pu agir dans votre m
 
 msgid "Resume"
 msgstr "Reprendre"
+
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr "Rien n’a été fait dans votre message : Nora n’a pas pu y agir à temps. Reformulez votre demande si vous en avez encore besoin."
+
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr "Tout n’a pas été fait : une partie n’a pas pu s’exécuter dans votre message à temps."

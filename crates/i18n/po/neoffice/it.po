@@ -2053,3 +2053,9 @@ msgstr "La scheda era in background: Nora non ha potuto intervenire nel suo mess
 
 msgid "Resume"
 msgstr "Riprendi"
+
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr "Nel suo messaggio non è stato fatto nulla: Nora non è riuscita ad agire in tempo. Riformuli la richiesta se ne ha ancora bisogno."
+
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr "Non tutto è stato fatto: una parte non ha potuto essere eseguita nel suo messaggio in tempo."
