@@ -245,9 +245,9 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut answered = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
-    // Never so wide that the mail beside it has less than a message being written keeps (`mail_view::message_room`): in a
-    // narrow window the pane narrows to 240 first, then the folder pane and the list make way.
-    let widest = (ui.available_width() - crate::mail_view::WRITING_MIN).max(240.0);
+    // Never so wide that the list at its narrowest and a message beside it would have less than they keep
+    // (`mail_view::message_room`): in a narrow window the pane narrows to 240 first, then the folder pane and the list make way.
+    let widest = (ui.available_width() - crate::mail_view::LIST_MIN - crate::mail_view::READING_MIN).max(240.0);
     egui::Panel::right("nora_assistant")
         .default_size(330.0_f32.min(widest))
         .size_range(240.0..=widest)

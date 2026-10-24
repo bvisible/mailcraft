@@ -109,6 +109,8 @@ fn drag_ghost(ui: &Ui) {
 pub(crate) const WRITING_MIN: f32 = 380.0;
 // //// Neoffice — (see `WRITING_MIN`.)
 pub(crate) const READING_MIN: f32 = 380.0;
+// //// Neoffice — the narrowest the list is made while the message beside it keeps its room (`message_room`).
+pub(crate) const LIST_MIN: f32 = 240.0;
 
 // //// Neoffice — what the message beside the list is doing, for the room it keeps (`message_room`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -139,7 +141,6 @@ pub(crate) struct MessageRoom {
 
 // //// Neoffice — see `MessageRoom`. `room`: the width the mail module has; `folders`: the folder pane's width when it is shown.
 pub(crate) fn message_room(room: f32, folders: Option<f32>, list_width: f32, beside: Beside) -> MessageRoom {
-    const LIST_MIN: f32 = 240.0;
     let keep = match beside {
         Beside::Nothing => return MessageRoom { folders: folders.is_some(), list: true, list_width: None },
         Beside::Reading => READING_MIN,
