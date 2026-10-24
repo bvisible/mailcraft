@@ -5096,6 +5096,11 @@ msgid "Not Junk"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/scheduling.rs
 msgid "Not an address"
 msgstr ""
@@ -5223,6 +5228,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/tasks_view.rs
 msgid "Nothing to do here."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
 msgstr ""
 
 #. date and time

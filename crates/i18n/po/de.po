@@ -5962,6 +5962,11 @@ msgid "Not Junk"
 msgstr "Keine Junk-E-Mail"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Not all of this was done: part of it could not run in your message in time."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/scheduling.rs
 #, fuzzy
 msgid "Not an address"
@@ -6110,6 +6115,11 @@ msgstr "Auf dem Server wurde nichts weiter gefunden"
 #, fuzzy
 msgid "Nothing to do here."
 msgstr "Hier gibt es nichts zu tun."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr ""
 
 #. date and time
 #: crates/i18n/src/date.rs
