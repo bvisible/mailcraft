@@ -188,6 +188,11 @@ pub(crate) fn available(app: &MailApp) -> bool {
     app.services.nora.as_ref().is_some_and(|host| host.chat)
 }
 
+/// Whether the pane is at the right of the window now (the mail beside it makes room: `mail_view::message_room`).
+pub(crate) fn shown(app: &MailApp) -> bool {
+    app.nora.assist.open && available(app)
+}
+
 /// Whether what is typed goes into the pane's text box: the window's shortcuts don't run from it (Ctrl+Enter
 /// would send the message being written, Escape close it).
 pub(crate) fn has_keys(app: &MailApp) -> bool {
@@ -240,7 +245,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut answered = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
-    // Never so wide that the mail beside it has less than a message being written keeps (`mail_view::writing_room`): in a
+    // Never so wide that the mail beside it has less than a message being written keeps (`mail_view::message_room`): in a
     // narrow window the pane narrows to 240 first, then the folder pane and the list make way.
     let widest = (ui.available_width() - crate::mail_view::WRITING_MIN).max(240.0);
     egui::Panel::right("nora_assistant")

@@ -299,6 +299,9 @@ pub(crate) const ACTIONS: [(&str, &str, &str); 4] = [
     ("delete", "Delete", "mail.delete"),
 ];
 
+// //// Neoffice — the least room a subject is laid out in beside the message's actions (`header`); with less, it goes under them.
+const SUBJECT_BESIDE_MIN: f32 = 160.0;
+
 fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictures: impl FnOnce(&mut MailApp, &mut Ui, &Tokens)) {
     let t = Tokens::get(ui.ctx());
     // The texts that can be selected are laid out here and painted once the pointer has had its
@@ -307,8 +310,11 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
     let around = egui::Frame::NONE.inner_margin(egui::Margin { left: 20, right: 12, top: 12, bottom: 10 }).show(ui, |ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
         // Subject, with the actions on the right (a window has them in its toolbar).
+        let subject = if m.subject.trim().is_empty() { tl!("(no subject)") } else { m.subject.as_str() };
+        // //// Neoffice — a subject left too little room beside the actions (a narrow pane, beside Nora's) goes under them,
+        // whole: beside them it wrapped a letter at a time.
+        let mut under = false;
         ui.horizontal(|ui| {
-            let subject = if m.subject.trim().is_empty() { tl!("(no subject)") } else { m.subject.as_str() };
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                 if place == Place::Pane {
@@ -321,11 +327,23 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
                     // //// Neoffice — Nora's button beside the actions, when a host reaches her: reply with her, or have her translate the message (nora/pane.rs).
                     crate::nora::pane::button(app, ui, m);
                 }
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                    fields.add(ui, select::Field::Subject, egui::Label::new(egui::RichText::new(subject).font(semibold(17.0)).color(t.text)).wrap());
-                });
+                // //// Neoffice — see `under` above.
+                under = ui.available_width() < SUBJECT_BESIDE_MIN;
+                if !under {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                        fields.add(
+                            ui,
+                            select::Field::Subject,
+                            egui::Label::new(egui::RichText::new(subject).font(semibold(17.0)).color(t.text)).wrap(),
+                        );
+                    });
+                }
             });
         });
+        // //// Neoffice — see `under` above.
+        if under {
+            fields.add(ui, select::Field::Subject, egui::Label::new(egui::RichText::new(subject).font(semibold(17.0)).color(t.text)).wrap());
+        }
         ui.add_space(4.0);
         // Who and when.
         ui.horizontal(|ui| {

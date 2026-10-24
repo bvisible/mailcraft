@@ -105,34 +105,51 @@ fn drag_ghost(ui: &Ui) {
     );
 }
 
-// //// Neoffice — the least a message being written beside the list is left of the window's width (`writing_room`).
+// //// Neoffice — the least a message being written, or read beside Nora's pane, is left of the window's width (`message_room`).
 pub(crate) const WRITING_MIN: f32 = 380.0;
+// //// Neoffice — (see `WRITING_MIN`.)
+pub(crate) const READING_MIN: f32 = 380.0;
 
-// //// Neoffice — how the folder pane and the list make room for a message being written in a narrow window (or beside
-// Nora's pane, which takes its share first): the message keeps `WRITING_MIN` to be written in. The folder pane gives way
-// first, then the list narrows to the room left, then the list gives way too, while the message is written; nothing of
-// the person's own widths changes, and all comes back once it is sent, saved or closed.
+// //// Neoffice — what the message beside the list is doing, for the room it keeps (`message_room`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Beside {
+    /// Nothing is kept: the list over the message (Bottom), or a message read with Nora's pane closed.
+    Nothing,
+    /// A message read beside Nora's pane: the folder pane gives way and the list narrows, never more (it is how the
+    /// person goes to another message).
+    Reading,
+    /// A message being written: the folder pane gives way, the list narrows, then gives way too.
+    Writing,
+}
+
+// //// Neoffice — how the folder pane and the list make room for the message beside them in a narrow window (or beside
+// Nora's pane, which takes its share first): a message being written keeps `WRITING_MIN` to be written in, one read beside
+// Nora's pane `READING_MIN` where the list can narrow that far. The folder pane gives way first, then the list narrows to
+// the room left, then (a message being written) gives way too; nothing of the person's own widths changes, and all comes
+// back once the message is sent, saved or closed, or the pane closed.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct WritingRoom {
+pub(crate) struct MessageRoom {
     /// The folder pane is drawn (it is shown and there is room for it).
     pub folders: bool,
     /// The list is drawn.
     pub list: bool,
-    /// The list's width while the message is written, when it is narrower than the person's own.
+    /// The list's width meanwhile, when it is narrower than the person's own.
     pub list_width: Option<f32>,
 }
 
-// //// Neoffice — see `WritingRoom`. `room`: the width the mail module has; `folders`: the folder pane's width when it is shown.
-pub(crate) fn writing_room(room: f32, folders: Option<f32>, list_width: f32, writing: bool) -> WritingRoom {
+// //// Neoffice — see `MessageRoom`. `room`: the width the mail module has; `folders`: the folder pane's width when it is shown.
+pub(crate) fn message_room(room: f32, folders: Option<f32>, list_width: f32, beside: Beside) -> MessageRoom {
     const LIST_MIN: f32 = 240.0;
-    if !writing {
-        return WritingRoom { folders: folders.is_some(), list: true, list_width: None };
-    }
-    let folders_shown = folders.is_some_and(|width| room - width >= LIST_MIN + WRITING_MIN);
+    let keep = match beside {
+        Beside::Nothing => return MessageRoom { folders: folders.is_some(), list: true, list_width: None },
+        Beside::Reading => READING_MIN,
+        Beside::Writing => WRITING_MIN,
+    };
+    let folders_shown = folders.is_some_and(|width| room - width >= LIST_MIN + keep);
     let left = room - if folders_shown { folders.unwrap_or_default() } else { 0.0 };
-    let list = left >= LIST_MIN + WRITING_MIN;
-    let list_width = (list && list_width > left - WRITING_MIN).then_some(left - WRITING_MIN);
-    WritingRoom { folders: folders_shown, list, list_width }
+    let list = beside == Beside::Reading || left >= LIST_MIN + keep;
+    let list_width = (list && list_width > left - keep).then_some((left - keep).max(LIST_MIN));
+    MessageRoom { folders: folders_shown, list, list_width }
 }
 
 pub fn show(app: &mut MailApp, ui: &mut Ui) {
@@ -140,19 +157,25 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     drag_ghost(ui);
     let composing = app.session.compose.is_some();
     let pane = app.session.view.reading_pane;
-    // //// Neoffice — the room a message being written keeps beside the list (`writing_room`); the list over it (Bottom)
-    // takes nothing of its width.
+    // //// Neoffice — the room the message beside the list keeps (`message_room`); the list over it (Bottom) takes nothing
+    // of its width.
     let shown_folders = (app.services.host_menu.is_none() && app.session.view.folder_pane).then_some(app.ui.folder_pane_width);
-    let room = writing_room(ui.available_width(), shown_folders, app.ui.list_width, composing && pane != Pane::Bottom);
+    let beside = match (pane, composing) {
+        (Pane::Bottom, _) => Beside::Nothing,
+        (_, true) => Beside::Writing,
+        (Pane::Right, false) if crate::nora::assist::shown(app) => Beside::Reading,
+        _ => Beside::Nothing,
+    };
+    let room = message_room(ui.available_width(), shown_folders, app.ui.list_width, beside);
     // //// Neoffice — neither the pane nor its strip where a hosting page lists the folders in its own menu: the list starts at the window's left edge (host_menu.rs).
-    // //// Neoffice — nor, while a message is written in a window too narrow for it beside them, the pane (`writing_room`).
+    // //// Neoffice — nor, while the message beside the list needs the room (`message_room`), the pane.
     if app.services.host_menu.is_none() && app.session.view.folder_pane && room.folders {
         crate::nav::folder_pane(app, ui);
     } else if app.services.host_menu.is_none() && !app.session.view.folder_pane {
         // Hidden: a narrow strip stays, with the button that brings the pane back.
         crate::nav::folder_pane_strip(app, ui);
     }
-    // //// Neoffice — (`composing` and `pane` are read above, for `writing_room`.)
+    // //// Neoffice — (`composing` and `pane` are read above, for `message_room`.)
     // The list takes the whole width when the reading pane is off, unless a message is being written.
     if pane == Pane::Off && !composing {
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.surface)).show(ui, |ui| list(app, ui));
@@ -168,9 +191,9 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
             .frame(frame)
             .show(ui, |ui| list(app, ui));
     } else if room.list {
-        // //// Neoffice — while a message is written in a window too narrow for the list beside it, the list narrows to the
-        // room left, under another id, so that the person's own width (the list's, and egui's memory of it) stays as it
-        // was; with less room still, it gives way (`writing_room`).
+        // //// Neoffice — while the message beside the list needs the room, the list narrows to what is left, under another id,
+        // so that the person's own width (the list's, and egui's memory of it) stays as it was; a message being written,
+        // with less room still, has it give way (`message_room`).
         if let Some(width) = room.list_width {
             egui::Panel::left("message_list_beside_writing").exact_size(width).resizable(false).frame(frame).show(ui, |ui| list(app, ui));
         } else {
@@ -1769,19 +1792,23 @@ mod tests {
         assert!(said > 0 && left_out > 0, "{said} said, {left_out} left out");
     }
 
-    // //// Neoffice — the room a message being written keeps beside the folder pane and the list (`writing_room`).
+    // //// Neoffice — the room the message keeps beside the folder pane and the list (`message_room`).
     #[test]
-    fn a_message_being_written_keeps_room_to_be_written_in() {
-        // Wide: nothing changes, nor does anything when nothing is being written.
-        assert_eq!(writing_room(1170.0, Some(230.0), 380.0, true), WritingRoom { folders: true, list: true, list_width: None });
-        assert_eq!(writing_room(400.0, Some(230.0), 380.0, false), WritingRoom { folders: true, list: true, list_width: None });
+    fn a_message_being_written_or_read_beside_nora_keeps_room() {
+        let w = Beside::Writing;
+        // Wide: nothing changes, nor does anything when nothing is kept.
+        assert_eq!(message_room(1170.0, Some(230.0), 380.0, w), MessageRoom { folders: true, list: true, list_width: None });
+        assert_eq!(message_room(400.0, Some(230.0), 380.0, Beside::Nothing), MessageRoom { folders: true, list: true, list_width: None });
         // The folder pane gives way first; the list keeps the person's width while there is room for it.
-        assert_eq!(writing_room(694.0, Some(230.0), 300.0, true), WritingRoom { folders: false, list: true, list_width: None });
+        assert_eq!(message_room(694.0, Some(230.0), 300.0, w), MessageRoom { folders: false, list: true, list_width: None });
         // Then the list narrows to what is left beside the message.
-        let room = writing_room(694.0, None, 380.0, true);
-        assert_eq!((room.folders, room.list), (false, true));
-        assert_eq!(room.list_width, Some(694.0 - WRITING_MIN));
+        assert_eq!(message_room(694.0, None, 380.0, w), MessageRoom { folders: false, list: true, list_width: Some(694.0 - WRITING_MIN) });
         // And gives way too, when even its narrowest would leave the message less than it keeps.
-        assert_eq!(writing_room(560.0, Some(230.0), 380.0, true), WritingRoom { folders: false, list: false, list_width: None });
+        assert_eq!(message_room(560.0, Some(230.0), 380.0, w), MessageRoom { folders: false, list: false, list_width: None });
+        // A message read beside Nora's pane: the same, but the list stays, at 240 at the least.
+        let r = Beside::Reading;
+        assert_eq!(message_room(802.0, Some(230.0), 500.0, r), MessageRoom { folders: false, list: true, list_width: Some(802.0 - READING_MIN) });
+        assert_eq!(message_room(422.0, Some(230.0), 380.0, r), MessageRoom { folders: false, list: true, list_width: Some(240.0) });
+        assert_eq!(message_room(1170.0, Some(230.0), 380.0, r), MessageRoom { folders: true, list: true, list_width: None });
     }
 }
