@@ -93,6 +93,7 @@ fn answered(account: Id) -> JmapPimResult {
             account,
             email: ME.into(),
             complete: true,
+            refused: Vec::new(),
             calendars: vec![
                 RemoteCalendar {
                     id: "C-ada".into(),

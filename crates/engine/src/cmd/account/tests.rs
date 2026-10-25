@@ -212,30 +212,31 @@ fn the_server_of_an_account_is_changed_by_editing_it() {
     assert_eq!(s.mailbox.account(id).map(|a| a.display_name.as_str()), Some("Ada"));
 }
 
+/// An account doesn't turn into a JMAP account or out of one (upstream's rule since M6 3/6, as this fork's PR 3 has it):
+/// a JMAP account's mail is known to its server by the ids it hands out, any other account's by paths and UIDs.
 #[test]
-fn the_kind_of_an_account_changes_with_its_server() {
+fn an_account_becomes_a_jmap_account_or_stops_being_one_only_by_being_added_again() {
     let mut s = Session::empty();
     let local = add(&mut s, json!({"email": ME})).unwrap();
-    // To JMAP: its server is required.
+    // To JMAP: its server is required, and even with it the account stays what it is.
     assert!(refusal(edit(&mut s, local, json!({"kind": "jmap"}))).contains("is required"));
-    assert_eq!(s.mailbox.account(local).map(|a| a.kind), Some(AccountKind::Local));
-    edit(&mut s, local, json!({"kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
-    assert_eq!((s.mailbox.account(local).map(|a| a.kind), server(&s, local).map(|j| j.bearer)), (Some(AccountKind::Jmap), Some(true)));
-    // From JMAP: the server is dropped with it.
-    edit(&mut s, local, json!({"kind": "imap", "incoming": {"host": "imap.example.org"}})).unwrap();
-    let a = s.mailbox.account(local).unwrap();
-    assert_eq!((a.kind, a.jmap.is_none(), a.incoming.is_some()), (AccountKind::Imap, true, true));
-    edit(&mut s, local, json!({"kind": "jmap", "jmap": {"session": SESSION}})).unwrap();
-    let a = s.mailbox.account(local).unwrap();
-    assert_eq!((a.kind, a.incoming.is_none(), a.outgoing.is_none()), (AccountKind::Jmap, true, true), "no mail servers of the account's past");
-    edit(&mut s, local, json!({"kind": "local"})).unwrap();
+    let why = edit(&mut s, local, json!({"kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap_err().to_string();
+    assert!(why.contains("only by being removed and added again"), "{why}");
     assert_eq!((s.mailbox.account(local).map(|a| a.kind), server(&s, local)), (Some(AccountKind::Local), None));
-    // A Microsoft account has no sign-in with Microsoft as a JMAP account.
+    // From JMAP: refused the same way, its server kept.
+    let jmap = add(&mut s, json!({"email": "grace@example.org", "kind": "jmap", "jmap": {"session": SESSION}})).unwrap();
+    let why = edit(&mut s, jmap, json!({"kind": "imap", "incoming": {"host": "imap.example.org"}})).unwrap_err().to_string();
+    assert!(why.contains("only by being removed and added again"), "{why}");
+    let a = s.mailbox.account(jmap).unwrap();
+    assert_eq!((a.kind, a.jmap.is_some(), a.incoming.is_none()), (AccountKind::Jmap, true, true));
+    assert!(edit(&mut s, jmap, json!({"kind": "local"})).unwrap_err().to_string().contains("only by being removed and added again"));
+    // A Microsoft account keeps its sign-in with Microsoft.
     let microsoft = add(&mut s, json!({"email": "noor@example.org", "kind": "microsoft"})).unwrap();
-    assert!(s.mailbox.account(microsoft).is_some_and(|a| a.oauth.is_some()));
-    edit(&mut s, microsoft, json!({"kind": "jmap", "jmap": {"session": SESSION}})).unwrap();
+    assert!(
+        edit(&mut s, microsoft, json!({"kind": "jmap", "jmap": {"session": SESSION}})).unwrap_err().to_string().contains("only by being removed")
+    );
     let a = s.mailbox.account(microsoft).unwrap();
-    assert_eq!((a.kind, a.oauth.is_none()), (AccountKind::Jmap, true));
+    assert_eq!((a.kind, a.oauth.is_some()), (AccountKind::Microsoft, true));
     // A shared mailbox is a Microsoft account's, whatever it is told.
     let owner = add(&mut s, json!({"email": "owner@example.org", "kind": "microsoft"})).unwrap();
     let shared = s.mailbox.add_shared_mailbox(owner, "support@example.org").unwrap();

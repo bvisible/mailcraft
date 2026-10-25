@@ -48,23 +48,20 @@ pub(crate) struct Held {
     jmap_pim: Option<Box<dyn Fn(crate::jmap_pim::JmapPimJob) -> Receiver<mailcraft_model::sync::JmapPimResult>>>,
 }
 
-/// A hash of what a mailbox's accounts connect to: each account's address, kind and servers,
-/// sorted, so the order in the file does not matter. SHA-256, so that a file cannot be made to
-/// match one the owner confirmed with other servers.
+/// A hash of what a mailbox's accounts connect to: each account's address, kind and servers (a JMAP
+/// account's session address too, and how its secret goes), sorted, so the order in the file does
+/// not matter. SHA-256, so that a file cannot be made to match one the owner confirmed with other
+/// servers.
 pub fn fingerprint(mailbox: &Mailbox) -> String {
     let server = |s: &Option<mailcraft_model::Server>| match s {
         Some(s) => format!("{}:{}:{:?}", s.host.trim().to_ascii_lowercase(), s.port, s.security),
         None => "-".to_string(),
     };
-    // //// Neoffice — and a JMAP account's server (the fork's): the whole address of its session resource.
-    let jmap = |a: &Account| match &a.jmap {
-        Some(jmap) if a.kind == mailcraft_model::AccountKind::Jmap => format!("\u{1}{}", jmap.session.trim().to_ascii_lowercase()),
-        _ => String::new(),
-    };
+    // (Only for an account that has one: what every other account's line was stays as it was.)
+    let jmap = |a: &Account| a.jmap.as_ref().map(|j| format!("\u{1}{}\u{1}{}", j.session.trim(), j.bearer)).unwrap_or_default();
     let mut lines: Vec<String> = mailbox
         .accounts
         .iter()
-        // //// Neoffice — `jmap(a)` at the end of each account's line (see above).
         .map(|a| {
             format!("{}\u{1}{:?}\u{1}{}\u{1}{}{}", a.email.trim().to_ascii_lowercase(), a.kind, server(&a.incoming), server(&a.outgoing), jmap(a))
         })

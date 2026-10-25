@@ -830,6 +830,9 @@ struct Item {
     pane: usize,
     /// Its calendar lies under another one: it is drawn dimmer.
     dim: bool,
+    /// Its calendar shows only when its owner is busy (#70): a block with no title of its own,
+    /// which says how the time shows.
+    free_busy: bool,
 }
 
 impl Item {
@@ -848,7 +851,13 @@ impl Item {
 
     fn title(&self) -> &str {
         let title = self.ev.title.trim();
-        if title.is_empty() { tl!("(No title)") } else { clip_text(title, 200) }
+        if !title.is_empty() {
+            clip_text(title, 200)
+        } else if self.free_busy {
+            tl!(self.ev.show_as.label())
+        } else {
+            tl!("(No title)")
+        }
     }
 
     fn times(&self, twelve: bool) -> String {
@@ -874,7 +883,8 @@ fn gather(app: &MailApp, from: Date, to: Date, t: &Tokens, panes: &[PaneView]) -
             let tags = ev.categories.iter().skip(1).take(3).map(|name| c32(mailbox.category_color(name))).collect();
             let pane = pane_of(panes, ev.calendar);
             let dim = panes.get(pane).is_some_and(|pane| pane.tabs.len() > 1 && pane.front != ev.calendar);
-            Some(Item { occ, ev, color, edge, tags, pane, dim })
+            let free_busy = mailbox.calendar(ev.calendar).is_some_and(|c| c.rights == mailcraft_model::Rights::FreeBusy);
+            Some(Item { occ, ev, color, edge, tags, pane, dim, free_busy })
         })
         .collect()
 }
@@ -1407,6 +1417,45 @@ fn calendar_menu(ui: &mut Ui, app: &mut MailApp, row: &CalendarRow, several: boo
             }
         }
     });
+    // One opened by address is the owner's own list's: it comes off it here (#70).
+    let opened = app.session.mailbox.calendar(row.id).is_some_and(|c| mailcraft_model::remote::opened_address(&c.origin.id).is_some());
+    if opened {
+        ui.separator();
+        mi(ui, app, "Remove Shared Calendar", "calendar.removeShared", json!({"id": row.id}));
+    }
+    // A shared mailbox's calendar that the server lists under Shared Calendars too (#70): the
+    // copy is hidden, or shown again, here.
+    match listed_twice(app, row.id) {
+        Some((address, true)) => {
+            ui.separator();
+            mi(ui, app, "Show the Copy under Shared Calendars", "calendar.hideListedCopy", json!({"address": address, "hide": false}));
+        }
+        Some((address, false)) => {
+            ui.separator();
+            mi(ui, app, "Hide This Copy", "calendar.hideListedCopy", json!({"address": address, "hide": true}));
+        }
+        None => {}
+    }
+}
+
+/// For a calendar of the list that is a shared mailbox's (#70): the mailbox's address and `true`
+/// when the copy of its calendar under Shared Calendars is hidden. For that copy itself: the
+/// mailbox's address and `false`. `None` for any other calendar.
+pub(crate) fn listed_twice(app: &MailApp, calendar: Id) -> Option<(String, bool)> {
+    let mailbox = &app.session.mailbox;
+    let calendar = mailbox.calendar(calendar)?;
+    let account = mailbox.account(calendar.origin.account)?;
+    if account.is_shared() {
+        let owner = mailbox.owner_of(account.id)?;
+        let address = account.email.trim().to_string();
+        return (owner.listed_twice_answer(&address) == Some(true)).then_some((address, true));
+    }
+    if calendar.origin.id.is_empty() || mailcraft_model::remote::opened_address(&calendar.origin.id).is_some() {
+        return None;
+    }
+    let by = calendar.owner.as_ref()?.address.trim().to_string();
+    let shared = mailbox.shared_mailboxes(account.id).into_iter().find(|s| s.email.trim().eq_ignore_ascii_case(&by))?;
+    Some((shared.email.trim().to_string(), false))
 }
 
 /// The account whose sign-in covers everything but the optional extras (the mailbox's own
@@ -7198,6 +7247,7 @@ mod tests {
                 RemoteCalendar { id: "c-main".into(), name: "Calendar".into(), main: true, ..Default::default() },
                 RemoteCalendar { id: "c-side".into(), name: "Side".into(), ..Default::default() },
             ],
+            ..Default::default()
         };
         mailcraft_engine::cmd::remote::apply_calendars(&mut rig.app.session, &list).unwrap();
         let of = |rig: &Rig, name: &str| {

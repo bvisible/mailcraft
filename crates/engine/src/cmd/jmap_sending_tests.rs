@@ -58,6 +58,8 @@ fn an_account_that_sends_its_mail_still_queues_it() {
 }
 
 #[test]
+// //// Neoffice — the fork's engine makes a JMAP account's run only where the host runs it (the tests at the end); elsewhere
+// //// Neoffice — none is made: this test in place of upstream's `a_send_receive_of_a_jmap_account_is_its_own_request`.
 fn no_send_receive_is_made_of_a_jmap_account_yet() {
     let (mut s, _, jmap, imap) = mailbox();
     // With none named, the IMAP account's, though the JMAP account comes before it.

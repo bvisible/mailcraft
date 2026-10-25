@@ -9,7 +9,33 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `1a04d46` (upstream `main` on 2026-10-24 in the morning, after the 0.7.0 release: egui and eframe 0.37 (#362); the
+- `a32c8b0` (upstream's v0.8.0, 2026-10-24 at night: the engine's commands for a JMAP account, what a run reads and
+  what it brings taken in (M6 3/6, #389, from this fork's PR 3); a JMAP server's folders kept as they are until changes
+  go up (#411); tests in files of their own and `cargo xtask test-files` (#394); People and Tasks arranged by categories
+  (#327); sender images in the message list (#363); Folder Properties (#314); a shared mailbox's calendars, read,
+  written, opened by address and moved between (#70 cal 1 to 5); rules, forwarding and automatic replies kept on the
+  server (#395); Escape and Enter only for what is on top (#393); SASL PLAIN for IMAP (#375); tokio 1.53.3), merged into
+  `version-15` on 2026-10-25. Where upstream's engine now does what the fork's does with `crates/jmap-fork`, the fork
+  keeps its own for now (the convergence comes after the PR series): the engine's JMAP files are the fork's whole
+  (`cmd/jmap_down.rs`, `cmd/jmap_mail.rs` and their tests `cmd/jmap_mail_tests.rs`, `cmd/jmap_sending_tests.rs`, and
+  the fork's registrations in `cmd/mod.rs`); upstream's JMAP account helpers of `cmd/account.rs` (`jmap_server`,
+  `jmap_shown`) give way to the fork's `cmd/account/jmap.rs` (marked); upstream's `apps/mailcraft-cli/tests/jmap_mail.rs`,
+  a test of upstream's client with the engine, is removed, since the command line takes the fork's client under that
+  name (its `tests/jmap_list.rs` and `tests/jmap_fetch.rs` test the same path); `crates/model/src/sync/jmap_tests.rs` is
+  the fork's (upstream's tests and the fork's). Upstream's engine keeps a JMAP account's mail where its server has it
+  until its moves go up (`Mailbox::stays_on_server`, M6 4/6 on): the fork's engine sends a JMAP account's moves and
+  deletions up already (`cmd/jmap_up.rs`), so that guard says nothing here (marked, back to upstream's line at the
+  convergence); a discarded JMAP draft is destroyed on the server by the fork's queue (`compose.rs`, marked). The guards
+  of a server's folders (#411) stay: the fork's client doesn't rename or move them either. With no account named, a
+  Send/Receive still takes an account a run is always made for before a JMAP account, whose run the fork's engine makes
+  only where the host runs it (`Session::jmap_runs`, a marked line of `request` in `cmd/account.rs`). Upstream's rule that
+  an account turns into a JMAP account or out of one only by being removed and added again (as the fork's PR 3 has it)
+  is taken, and the fork's test of a kind change says so (`cmd/account/tests.rs`). The fork's JMAP calendars give
+  upstream's new `CalendarsDownload::refused` empty (#70 cal 4). A fingerprint of a mailbox
+  opened from a file is upstream's, with the JMAP server in it (`unconfirmed.rs`; the fork's test and upstream's). The
+  fork's own files that had inline tests are listed in `xtask/inline-tests.txt` (a marked block), as upstream lists its
+  older ones. Nora's pane takes craft-libs `1ff4e9a` (a long action of Nora's is no frozen page).
+- Before it: `1a04d46` (upstream `main` on 2026-10-24 in the morning, after the 0.7.0 release: egui and eframe 0.37 (#362); the
   message list arranged by categories (#357); a calendar's owner and rights in the model (#70 cal 1, #380); remembered
   sign-ins bound to the servers they go to, a mailbox opened from a file unconfirmed until its servers are, `.mailcraft`
   attachments saved and never opened, more launchable kinds blocked, the agent's gate asking before deletes and undo
@@ -326,7 +352,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.7.0, the workspace's version, with its dependencies on
+- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.8.0, the workspace's version, with its dependencies on
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`

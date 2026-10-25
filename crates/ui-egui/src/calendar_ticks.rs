@@ -137,7 +137,13 @@ mod tests {
     fn list(app: &mut MailApp, account: Id, others: &[&str]) {
         let main = RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, ..Default::default() };
         let more = others.iter().map(|id| RemoteCalendar { id: (*id).into(), name: format!("Calendar {id}"), ..Default::default() });
-        let download = CalendarsDownload { account, email: ME.into(), complete: true, calendars: std::iter::once(main).chain(more).collect() };
+        let download = CalendarsDownload {
+            account,
+            email: ME.into(),
+            complete: true,
+            calendars: std::iter::once(main).chain(more).collect(),
+            refused: Vec::new(),
+        };
         let mut errors = Vec::new();
         app.take_in_calendar_list(account, Some(&download), None, false, &mut errors);
         assert!(errors.is_empty(), "{errors:?}");

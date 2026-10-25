@@ -3703,6 +3703,7 @@ mod event {
                 account,
                 email: "ada@example.org".into(),
                 complete: true,
+                refused: Vec::new(),
                 calendars: vec![mailcraft_model::remote::RemoteCalendar {
                     id: "C1".into(),
                     name: "Ada".into(),
@@ -3751,6 +3752,7 @@ mod event {
                 account,
                 email: "ada@example.org".into(),
                 complete: true,
+                refused: Vec::new(),
                 calendars: vec![mailcraft_model::remote::RemoteCalendar {
                     id: "C1".into(),
                     name: "Ada".into(),
@@ -3809,6 +3811,7 @@ mod event {
                 account,
                 email: email.into(),
                 complete: true,
+                refused: Vec::new(),
                 calendars: vec![mailcraft_model::remote::RemoteCalendar {
                     id: "C1".into(),
                     name: "Ada".into(),
@@ -3885,7 +3888,13 @@ mod event {
                     online_providers: services,
                     ..Default::default()
                 };
-                let list = mailcraft_model::remote::CalendarsDownload { account, email: email.into(), complete: true, calendars: vec![calendar] };
+                let list = mailcraft_model::remote::CalendarsDownload {
+                    account,
+                    email: email.into(),
+                    complete: true,
+                    calendars: vec![calendar],
+                    refused: Vec::new(),
+                };
                 mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
             }
             let of = |s: &Session, account: Id| s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
@@ -3958,8 +3967,13 @@ mod event {
                 online_providers: Some(Vec::new()),
                 ..Default::default()
             };
-            let list =
-                mailcraft_model::remote::CalendarsDownload { account, email: "ada@example.org".into(), complete: true, calendars: vec![calendar] };
+            let list = mailcraft_model::remote::CalendarsDownload {
+                account,
+                email: "ada@example.org".into(),
+                complete: true,
+                calendars: vec![calendar],
+                refused: Vec::new(),
+            };
             mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
             f.follow_calendar(&s);
             assert!(!f.online);

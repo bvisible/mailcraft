@@ -34,7 +34,7 @@ pub(crate) fn window(hosted: bool) -> (MailApp, Id) {
     let added = s.run("account.add", &json!({"email": ME, "kind": "jmap", "jmap": {"session": "https://mail.example.org/jmap/session"}}));
     let account = added.unwrap()["id"].as_u64().unwrap();
     let calendars = vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, plain: true, ..Default::default() }];
-    remote::apply_calendars(&mut s, &CalendarsDownload { account, email: ME.into(), complete: true, calendars }).unwrap();
+    remote::apply_calendars(&mut s, &CalendarsDownload { account, email: ME.into(), complete: true, calendars, refused: Vec::new() }).unwrap();
     let mine = |id: &str, title: &str, day: u8| RemoteEvent {
         id: id.into(),
         title: title.into(),
@@ -253,7 +253,8 @@ fn an_event_of_a_calendar_the_account_may_only_read_asks_nothing_and_its_delete_
         rights: mailcraft_model::Rights::Read,
         ..Default::default()
     }];
-    remote::apply_calendars(&mut app.session, &CalendarsDownload { account, email: ME.into(), complete: true, calendars }).unwrap();
+    remote::apply_calendars(&mut app.session, &CalendarsDownload { account, email: ME.into(), complete: true, calendars, refused: Vec::new() })
+        .unwrap();
     let budget = event(&app, "Budget review");
     app.execute("calendar.select", json!({"id": budget})).unwrap();
     assert!(!app.enabled("calendar.delete"));

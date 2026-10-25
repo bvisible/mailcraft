@@ -5,7 +5,7 @@
 use mailcraft_model::{FlagStatus, FolderKind, Id, Rgb};
 use serde_json::{Value, json};
 
-use super::{bad, deliver, done, fail, message_json, message_summary, needs_message, select_after_removal, targets};
+use super::{bad, deliver, done, fail, message_json, message_summary, needs_message, needs_movable, select_after_removal, targets};
 use crate::list::{listed, position, position_of};
 use crate::{CmdResult, CommandSpec, Session, p};
 
@@ -19,16 +19,16 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("mail.previous", "Previous Message", "Mail", previous).pure().key("ArrowUp"),
         CommandSpec::new("mail.get", "Get Message", "Mail", get).pure().params(r#"{"id"?: number} (default: the selected message)"#),
         CommandSpec::new("mail.list", "List Messages", "Mail", list).pure().params(r#"{"limit"?: number} — the message list in view"#),
-        CommandSpec::new("mail.delete", "Delete", "Home › Delete", delete).key("Delete / Mod+D").params(IDS).selection(needs_message),
+        CommandSpec::new("mail.delete", "Delete", "Home › Delete", delete).key("Delete / Mod+D").params(IDS).selection(needs_movable),
         CommandSpec::new("mail.deletePermanently", "Permanently Delete", "Home › Delete", delete_permanently)
             .key("Shift+Delete")
             .params(IDS)
-            .selection(needs_message),
-        CommandSpec::new("mail.archive", "Archive", "Home › Delete", archive).key("Backspace").params(IDS).selection(needs_message),
+            .selection(needs_movable),
+        CommandSpec::new("mail.archive", "Archive", "Home › Delete", archive).key("Backspace").params(IDS).selection(needs_movable),
         CommandSpec::new("mail.move", "Move to Folder", "Home › Move", move_to)
             .key("Mod+Shift+V")
             .params(r#"{"folder": number, "ids"?: [number]}"#)
-            .selection(needs_message),
+            .selection(needs_movable),
         CommandSpec::new("mail.copy", "Copy to Folder", "Home › Move", copy_to)
             .key("Mod+Shift+Y")
             .params(r#"{"folder": number, "ids"?: [number]}"#)
@@ -52,8 +52,8 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("mail.pin", "Pin", "Home › Tags", pin)
             .params(r#"{"value"?: bool (default: toggle), "ids"?: [number]}"#)
             .selection(needs_message),
-        CommandSpec::new("mail.junk", "Block Sender", "Home › Delete", junk).params(IDS).selection(needs_message),
-        CommandSpec::new("mail.notJunk", "Not Junk", "Home › Delete", not_junk).key("Mod+Alt+J").params(IDS).selection(needs_message),
+        CommandSpec::new("mail.junk", "Block Sender", "Home › Delete", junk).params(IDS).selection(needs_movable),
+        CommandSpec::new("mail.notJunk", "Not Junk", "Home › Delete", not_junk).key("Mod+Alt+J").params(IDS).selection(needs_movable),
         CommandSpec::new("mail.findRelated", "Find Related Messages", "Home › Find", find_related).pure().selection(needs_message),
         CommandSpec::new("mail.findFromSender", "Messages from Sender", "Home › Find", find_from_sender)
             .pure()
@@ -92,7 +92,7 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         // From the anchor (the first selected message) to this one, in list order.
         let rows = s.rows();
         let anchor = s.sel.messages.first().copied().unwrap_or(last);
-        if let (Some(a), Some(b)) = (position(&rows, anchor), position_of(&rows, last, copy)) {
+        if let (Some(a), Some(b)) = (position_of(&rows, anchor, s.sel.anchor_copy(anchor)), position_of(&rows, last, copy)) {
             let (lo, hi) = (a.min(b), a.max(b));
             let mut seen = std::collections::HashSet::new();
             let mut picked: Vec<Id> =
@@ -117,6 +117,10 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         s.sel.messages = ids;
     }
     s.sel.focus_row = s.sel.focus().map(|id| (id, copy));
+    // A range keeps its anchor; any other click is the next one's.
+    if p::bool(v, "range") != Some(true) || s.sel.anchor_row.is_none_or(|(id, _)| !s.sel.messages.contains(&id)) {
+        s.sel.anchor_row = s.sel.messages.first().map(|id| (*id, if Some(*id) == s.sel.focus() { copy } else { 0 }));
+    }
     // Follow the message to its folder (a search result, a conversation member elsewhere).
     if let Some(m) = s.sel.focus().and_then(|id| s.mailbox.message(id))
         && s.view.search.is_empty()
@@ -415,7 +419,7 @@ fn find_related(s: &mut Session, _: &Value) -> CmdResult {
     // closing quote from being read as part of it (#301).
     s.view.search = format!("subject:{}", mailcraft_model::search::keyword_value(&topic));
     s.view.scope = crate::Scope::Everywhere;
-    Ok(json!({"search": s.view.search, "found": s.rows().len()}))
+    Ok(json!({"search": s.view.search, "found": listed(&s.rows())}))
 }
 
 /// Mail from the sender of a message (the one in focus, or `id`), in every mailbox: a search for

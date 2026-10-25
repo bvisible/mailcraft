@@ -581,7 +581,13 @@ impl<'a, H: Http> Job<'a, H> {
                     ..listed.calendar.clone()
                 })
                 .collect();
-            out.calendars = Some(CalendarsDownload { account: self.request.account, email: self.request.email.clone(), complete: true, calendars });
+            out.calendars = Some(CalendarsDownload {
+                account: self.request.account,
+                email: self.request.email.clone(),
+                complete: true,
+                calendars,
+                refused: Vec::new(),
+            });
         }
         // The calendars asked for, each by its name on the server, the first ask of a name only.
         let mut wanted: Vec<(String, String)> = Vec::new();

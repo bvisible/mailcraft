@@ -32,6 +32,7 @@ fn session(plain: bool) -> (Session, Id, Id) {
         account,
         email: "ada@example.org".into(),
         complete: true,
+        refused: Vec::new(),
         calendars: vec![RemoteCalendar { id: "C1".into(), name: "Ada".into(), main: true, plain, ..Default::default() }],
     };
     apply_calendars(&mut s, &list).unwrap();
@@ -143,6 +144,7 @@ fn delete_is_greyed_for_an_event_of_a_calendar_the_account_may_only_read() {
         account,
         email: "ada@example.org".into(),
         complete: true,
+        refused: Vec::new(),
         calendars: vec![RemoteCalendar {
             id: "C1".into(),
             name: "Ada".into(),
@@ -345,6 +347,7 @@ fn served_online(services: Vec<mailcraft_model::OnlineProvider>) -> (Session, Id
         account,
         email: "ada@example.org".into(),
         complete: true,
+        refused: Vec::new(),
         calendars: vec![RemoteCalendar {
             id: "C1".into(),
             name: "Ada".into(),

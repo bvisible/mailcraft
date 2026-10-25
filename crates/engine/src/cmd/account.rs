@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use mailcraft_model::sync::{
     Deleted, FlagsPushed, FolderDelta, FolderState, Moved, RemoteFlags, RemoteOp, SyncRequest, SyncResult, SyncStage, summary_line_in,
 };
+// //// Neoffice — (no `JmapServer`: see `jmap_server` below)
 use mailcraft_model::{
     Account, AccountKind, Directory, FlagStatus, Folder, FolderKind, Id, Mailbox, Message, OAuth, OAuthProvider, Pending, Security, Server,
     clean_name,
@@ -246,6 +247,9 @@ fn apply_fields(a: &mut Account, v: &Value) -> Result<(), CmdError> {
     Ok(())
 }
 
+// //// Neoffice — upstream's `jmap_server` (a JMAP account's server from a command's params) is not here: the fork's
+// //// Neoffice — `account/jmap.rs` (`jmap::make`) does it, with its own checks, until the convergence with upstream's engine.
+
 /// The account `account.add` would make from these params (for the question put to the owner
 /// when an agent asks; `None` when they are not valid).
 pub(crate) fn from_params(v: &Value) -> Option<Account> {
@@ -271,16 +275,26 @@ pub fn servers_text(a: &Account) -> String {
     if a.kind == AccountKind::Microsoft {
         return "Microsoft".to_string();
     }
-    // //// Neoffice — a JMAP account (the fork's) connects to its JMAP server: its host (the session's address may carry the account's own).
     if a.kind == AccountKind::Jmap {
-        return match a.jmap.as_ref().and_then(mailcraft_model::JmapServer::host) {
-            Some(host) => format!("jmap {host}"),
-            None => "no server".to_string(),
+        return match a.jmap.as_ref().filter(|server| server.problem().is_none()) {
+            Some(server) => format!("jmap {}", jmap_origin(&server.session)),
+            None => "jmap, no server address that can be used".to_string(),
         };
     }
     let parts: Vec<String> = [one("imap", &a.incoming), one("smtp", &a.outgoing)].into_iter().flatten().collect();
     if parts.is_empty() { "no server".to_string() } else { parts.join(", ") }
 }
+
+/// The scheme and the server, with its port, of a JMAP session address that may be used
+/// (`https://mail.example.org:8443`): where the account connects, without the rest of the address,
+/// which may hold the account's own (no user name can be in front of the server's name).
+fn jmap_origin(session: &str) -> String {
+    let Some((scheme, rest)) = session.split_once("://") else { return String::new() };
+    let server = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    format!("{}://{}", scheme.to_ascii_lowercase(), server.to_ascii_lowercase())
+}
+
+// //// Neoffice — upstream's `jmap_shown` is not here: `account.list` lists a JMAP account's server the fork's way (`jmap`), until the convergence.
 
 fn add(s: &mut Session, v: &Value) -> CmdResult {
     // A new account keeps a year of mail in full (#143); one from before keeps all of it.
@@ -319,6 +333,23 @@ fn edit(s: &mut Session, v: &Value) -> CmdResult {
     }
     let before = a.clone();
     apply_fields(&mut a, v)?;
+    // A JMAP account's folders and mail are known to its server by the ids it hands out, and any
+    // other account's by paths and UIDs, or by nobody: an account doesn't turn from one to the other.
+    if (before.kind == AccountKind::Jmap) != (a.kind == AccountKind::Jmap) {
+        return Err(fail("an account becomes a JMAP account, or stops being one, only by being removed and added again"));
+    }
+    // And once its mail is here, those ids are one account's at one session: another session
+    // address, even on the same server, or another address of the owner's, may be another account
+    // under the same ids. (A session address that can't be used, as a mailbox file may bring, may
+    // be put right.)
+    let listed = s.mailbox.folders.iter().any(|f| f.account == id && f.server.is_some());
+    if listed && a.kind == AccountKind::Jmap {
+        let session = |x: &Account| x.jmap.as_ref().filter(|server| server.problem().is_none()).map(|server| server.session.trim().to_string());
+        let moved = session(&before).is_some_and(|was| Some(was) != session(&a));
+        if moved || !before.email.trim().eq_ignore_ascii_case(a.email.trim()) {
+            return Err(fail("a JMAP account's server and address can't be changed once its mail is here: remove it and add the other one"));
+        }
+    }
     // A shared mailbox is its address, read with its owner's sign-in (#70): another address
     // would be another mailbox under the same folders' ids.
     if before.is_shared() {
@@ -412,6 +443,12 @@ pub(crate) fn remove_within(s: &mut Session, id: Id, budget: u64) -> Result<usiz
         Vec::new()
     };
     let gone: HashSet<Id> = s.mailbox.messages.iter().filter(|(_, m)| going.contains(&m.account)).map(|(mid, _)| *mid).collect();
+    // A shared mailbox's calendars and their events go with it (#70): they are copies of what its
+    // server keeps, and nothing would ever update them again.
+    let shared: Vec<Id> = s.mailbox.accounts.iter().filter(|a| a.is_shared() && going.contains(&a.id)).map(|a| a.id).collect();
+    for account in shared {
+        super::remote::forget(s, account)?;
+    }
     s.mailbox.remove_account(id)?;
     // A mailbox always has an account (#313). The placeholder goes in before `mailbox_changed`,
     // whose `normalize` moves the folder on screen to its Inbox and a message being written to
@@ -457,8 +494,8 @@ pub fn sync_request(s: &Session, account: Id) -> Result<SyncRequest, CmdError> {
     if a.kind == AccountKind::Unknown {
         return Err(added_by_newer(a, "which sends and receives its mail: this version leaves it as it is"));
     }
-    // A JMAP account is kept in step over JMAP alone, and no run of it is made here yet: nothing
-    // is asked of IMAP or SMTP servers it doesn't have.
+    // A JMAP account is kept in step over JMAP alone (`sync.jmapRequest`), which neither the window
+    // nor the command line runs yet: nothing is asked of IMAP or SMTP servers it doesn't have.
     if a.kind == AccountKind::Jmap {
         return Err(failed!("{name} is a JMAP account, and this version doesn't send and receive with one yet", name = a.name));
     }
@@ -602,9 +639,9 @@ fn remote_ops(mb: &Mailbox, account: Id, limit: usize) -> (Vec<RemoteOp>, usize)
 }
 
 fn request(s: &mut Session, v: &Value) -> CmdResult {
-    // With none named, an account a run is made for comes before a JMAP account, for which none is
-    // made here yet (and `sync_request` says so).
-    // //// Neoffice — (a JMAP run is made of it below, `sync.jmapRequest`: named, or the only account with a server)
+    // //// Neoffice — with none named, an account a run is always made for comes before a JMAP account, whose run the fork's
+    // //// Neoffice — engine makes only where the host runs it (below, `Session::jmap_runs`): named, or the only account with a
+    // //// Neoffice — server, a JMAP one. (Upstream's engine runs every JMAP account; back to its line at the convergence.)
     let account = p::id(v, "account")
         .or_else(|| s.mailbox.accounts.iter().find(|a| a.kind.has_server() && a.kind != AccountKind::Jmap).map(|a| a.id))
         .or_else(|| s.mailbox.accounts.iter().find(|a| a.kind.has_server()).map(|a| a.id))

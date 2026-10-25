@@ -106,6 +106,50 @@ impl SortBy {
     }
 }
 
+/// How the contact list is arranged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PeopleSort {
+    /// A to Z by the name each is filed as, favourites first, under their first letters.
+    #[default]
+    Name,
+    /// A to Z by the categories each carries, those with none first, then by name.
+    Categories,
+}
+
+impl PeopleSort {
+    pub const ALL: [PeopleSort; 2] = [PeopleSort::Name, PeopleSort::Categories];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PeopleSort::Name => "Name",
+            PeopleSort::Categories => "Categories",
+        }
+    }
+}
+
+/// How the task list is arranged.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TaskSort {
+    /// By when each is due, under Overdue, Today, Tomorrow and the like.
+    #[default]
+    DueDate,
+    /// Under each of its categories, those with none first, then by when each is due.
+    Categories,
+}
+
+impl TaskSort {
+    pub const ALL: [TaskSort; 2] = [TaskSort::DueDate, TaskSort::Categories];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TaskSort::DueDate => "Due Date",
+            TaskSort::Categories => "Categories",
+        }
+    }
+}
+
 /// What the message list is narrowed to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -250,7 +294,9 @@ pub struct ViewState {
     /// for the first of them.
     pub overlay_front: Id,
     pub people_search: String,
+    pub people_sort: PeopleSort,
     pub task_filter: TaskFilter,
+    pub task_sort: TaskSort,
 }
 
 impl Default for ViewState {
@@ -273,7 +319,9 @@ impl Default for ViewState {
             overlay: Vec::new(),
             overlay_front: 0,
             people_search: String::new(),
+            people_sort: PeopleSort::Name,
             task_filter: TaskFilter::Active,
+            task_sort: TaskSort::DueDate,
         }
     }
 }
@@ -296,12 +344,24 @@ pub struct Selection {
     /// [`copy`](crate::list::Row::copy).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub focus_row: Option<(Id, u16)>,
+    /// The row a range (Shift-click) runs from: the message and the row's copy, for one listed
+    /// under several categories.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anchor_row: Option<(Id, u16)>,
 }
 
 impl Selection {
     /// The message in the reading pane.
     pub fn focus(&self) -> Option<Id> {
         self.messages.last().copied()
+    }
+
+    /// Which of `id`'s rows a range runs from: the anchor's chosen row, else its first.
+    pub fn anchor_copy(&self, id: Id) -> u16 {
+        match self.anchor_row {
+            Some((a, copy)) if a == id => copy,
+            _ => 0,
+        }
     }
 
     /// Which of the focused message's rows has the focus: its first unless another was chosen.
@@ -611,10 +671,11 @@ pub struct Session {
     /// Send/Receive Progress: the run under way, or the last one, account by account. Kept up
     /// to date by `sync.apply` and `sync.applyGraph`; in memory only, never saved.
     pub sync_progress: crate::cmd::sync_progress::SyncProgress,
-    /// Messages kept in step through Graph, by server id: kept between the pages of a run.
+    /// Messages kept in step by server id (through Graph, over JMAP): kept between the pages of a run.
     pub(crate) graph_index: crate::cmd::graph_down::ServerIndex,
-    /// Messages of Microsoft accounts the server wouldn't give whole this session, by account and
-    /// server id: the background passes them over (opening one still asks). Never saved.
+    /// Messages of Microsoft and JMAP accounts the server wouldn't give whole this session (or, for
+    /// JMAP, said it no longer has), by account and server id: the background passes them over
+    /// (opening one still asks). Never saved.
     pub(crate) graph_unfetchable: std::collections::HashSet<(Id, String)>,
     /// Messages fetched whole this session although they are outside their account's mail to
     /// keep offline (the owner opened, answered or saved one, #143): kept in full until the
@@ -622,6 +683,8 @@ pub struct Session {
     pub(crate) kept_for_now: std::collections::HashSet<Id>,
     /// How many times a mailbox took the place of the one before ([`Session::replace_mailbox`]).
     openings: u64,
+    /// How many times an undo or redo put another version of the mailbox in place.
+    restored: u64,
     /// Messages being moved out of a Microsoft account that were whole in the mailbox file when
     /// it was last saved: only for those is the server's copy removed (R3 spec S19). Never saved.
     pub(crate) saved_whole: std::collections::HashSet<Id>,
@@ -631,9 +694,13 @@ pub struct Session {
     /// for having the counts it had (#276): the next full sweep is due an hour later. Empty when
     /// a mailbox is opened, so the first run reads everything. Never saved.
     pub(crate) graph_swept: std::collections::HashMap<Id, Timestamp>,
-    /// Microsoft accounts whose last folder listing was cut short (#276): a folder it left out
-    /// wasn't read, so the run that follows is no full sweep.
+    /// Microsoft and JMAP accounts whose last folder listing was cut short (#276): a folder it left
+    /// out wasn't read, so the run that follows is no full sweep (and a JMAP run lists again).
     pub(crate) graph_listed_short: std::collections::HashSet<Id>,
+    /// The mailboxes of each JMAP account the run under way took in a window of (M6), and whether
+    /// that was the whole of the mailbox, once: at its end, only what those whole windows left out is
+    /// removed. Never saved.
+    pub(crate) jmap_read: std::collections::HashMap<Id, std::collections::HashMap<String, bool>>,
     /// Set while a command an agent asked for runs (with what the owner allowed it): what the
     /// command did is checked against that ([`crate::agent`]), and undone when it oversteps.
     pub agent: Option<Vec<crate::agent::Class>>,
@@ -779,10 +846,12 @@ impl Session {
             graph_unfetchable: Default::default(),
             kept_for_now: Default::default(),
             openings: 0,
+            restored: 0,
             saved_whole: Default::default(),
             graph_said: Vec::new(),
             graph_swept: Default::default(),
             graph_listed_short: Default::default(),
+            jmap_read: Default::default(),
             agent: None,
             graph_switch_backup: None,
             server_search: Default::default(),
@@ -951,6 +1020,12 @@ impl Session {
     /// something once a mailbox is opened looks for it to change.
     pub fn openings(&self) -> u64 {
         self.openings
+    }
+
+    /// Changes each time an undo or redo puts another version of the mailbox in place: what a
+    /// front end keeps up to date from the mailbox change by change is worked out afresh.
+    pub fn restored(&self) -> u64 {
+        self.restored
     }
 
     /// The message the reading pane shows.
@@ -1592,6 +1667,7 @@ impl Session {
         self.kept_for_now.clear();
         self.graph_swept.clear();
         self.graph_listed_short.clear();
+        self.jmap_read.clear();
         self.openings = self.openings.wrapping_add(1);
         self.history.clear();
         self.redo.clear();
@@ -1658,6 +1734,7 @@ impl Session {
         let cur = Undo { label: u.label, mailbox: now, touched, sel: std::mem::replace(&mut self.sel, u.sel), folder: self.view.folder };
         self.view.folder = u.folder;
         self.rev += 1;
+        self.restored = self.restored.wrapping_add(1);
         self.dirty = true;
         self.normalize();
         cur

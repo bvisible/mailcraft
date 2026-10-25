@@ -82,6 +82,11 @@ const PREVIEW_PITCH: f32 = 13.0;
 const ROW_H: f32 = 72.0;
 /// What a row loses without a preview: the preview's line and the gap above it.
 const PREVIEW_FIRST: f32 = 15.0;
+/// With sender images on, the picture before a row's text: its radius, its middle from the
+/// row's top (level between the sender's and the subject's lines), and the room after it.
+const AVATAR_RADIUS: f32 = 16.0;
+const AVATAR_Y: f32 = 29.0;
+const AVATAR_GAP: f32 = 10.0;
 
 /// While messages are being dragged: a small label by the pointer saying how many.
 fn drag_ghost(ui: &Ui) {
@@ -242,8 +247,17 @@ fn one_line_sender_width(room: f32) -> f32 {
 
 /// A group heading of the list in the interface language: the engine's dates (`Today`) are
 /// names the catalogue has, and so is the heading of what is pinned.
-fn group_name(group: &str) -> &str {
-    if group == "Pinned" { tl!("Pinned") } else { tl!(group) }
+/// The owner's category names are drawn as they are spelt, never through the catalogue.
+fn group_name(group: &str, category: bool) -> &str {
+    if category {
+        group
+    } else if group == "Pinned" {
+        tl!("Pinned")
+    } else if group == mailcraft_engine::list::NO_CATEGORY {
+        tl!("No category")
+    } else {
+        tl!(group)
+    }
 }
 
 /// What the arrangement is called in the list's header, in the interface language.
@@ -679,7 +693,14 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
                 if i == 0 {
                     ui.painter().line_segment([pos2(gr.min.x, top), pos2(gr.max.x, top)], line);
                 }
-                paint_clipped(ui.painter(), pos2(gr.min.x + 10.0, gr.center().y), gr.width() - 16.0, group_name(group), semibold(GROUP_TEXT), t.text);
+                paint_clipped(
+                    ui.painter(),
+                    pos2(gr.min.x + 10.0, gr.center().y),
+                    gr.width() - 16.0,
+                    group_name(group, row.category),
+                    semibold(GROUP_TEXT),
+                    t.text,
+                );
             }
             let rect = Rect::from_min_size(pos2(origin.x, origin.y + top), vec2(width, row_h));
             if reveal && Some((row.id, row.copy)) == focus {
@@ -917,7 +938,14 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
     } else {
         m.from.display().to_string()
     };
-    let left = rect.min.x + TEXT_LEFT;
+    // The picture (or the initials) of who wrote it, or of who it went to.
+    let pictured = app.ui.sender_images && !one;
+    if pictured {
+        let who = if outgoing { m.to.first().unwrap_or(&m.from) } else { &m.from };
+        let center = pos2(rect.min.x + TEXT_LEFT + AVATAR_RADIUS, rect.min.y + AVATAR_Y);
+        crate::sender_images::avatar(app, ui, center, AVATAR_RADIUS, &m, who);
+    }
+    let left = rect.min.x + TEXT_LEFT + if pictured { 2.0 * AVATAR_RADIUS + AVATAR_GAP } else { 0.0 };
     // Where the time ends, and where the text of every line does.
     let time_end = rect.max.x - TIME_RIGHT;
     let text_end = rect.max.x - TEXT_RIGHT;
@@ -1146,9 +1174,13 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
             );
         });
         ui.separator();
-        ui.menu_button(tl!("Move"), |ui| {
-            crate::ribbon::folder_menu(ui, app, |app, folder| {
-                let _ = app.run("mail.move", json!({"folder": folder}));
+        // (Greyed for mail a JMAP account's server has, which stays where it is for now.)
+        let movable = app.session.enabled("mail.move");
+        ui.add_enabled_ui(movable, |ui| {
+            ui.menu_button(tl!("Move"), |ui| {
+                crate::ribbon::folder_menu(ui, app, |app, folder| {
+                    let _ = app.run("mail.move", json!({"folder": folder}));
+                });
             });
         });
         mi(ui, app, "Archive", "mail.archive", json!({}));

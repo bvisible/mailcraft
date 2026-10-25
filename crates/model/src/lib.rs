@@ -38,16 +38,16 @@ pub use address::{Address, MAX_ADDRESS, format_list, format_list_capped, mailbox
 // //// Neoffice — see `book`.
 pub use book::AddressBook;
 pub use calendar::{
-    Attendee, Calendar, CalendarOwner, Event, Freq, MAX_JOIN_LINK, MAX_OPENED_CALENDARS, Occurrence, OnlineMeeting, OnlineProvider, OpenedCalendar,
-    Proposal, Recurrence, Response, ResponseOptions, Rights, ShowAs,
+    Attendee, Calendar, CalendarOwner, Event, Freq, ListedTwice, MAX_JOIN_LINK, MAX_OPENED_CALENDARS, Occurrence, OnlineMeeting, OnlineProvider,
+    OpenedCalendar, Proposal, Recurrence, Response, ResponseOptions, Rights, ShowAs,
 };
 pub use contact::{Contact, Labeled, PostalAddress};
 pub use jmap_server::JmapServer;
 pub use load_limit::{MIN_ITEM_BYTES, from_json};
 pub use mailbox::{
-    Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, Folder, FolderCounts, FolderKind, GraphSwitch, IMPORTED,
-    INTO_GRAPH, MAX_RULES, MAX_SHARED, Mailbox, NOT_SENDING_YET, OAuth, OAuthProvider, Pending, Queued, STAYS_LOCAL, Security, Server,
-    ServerFavorites, ServerFolder,
+    Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, Category, Directory, DownloadInFull, FOLDERS_STAY_YET, Folder, FolderCounts, FolderKind,
+    GraphSwitch, IMPORTED, INTO_GRAPH, MAX_RULES, MAX_SHARED, Mailbox, NOT_MOVING_YET, NOT_SENDING_YET, OAuth, OAuthProvider, Pending, Queued,
+    STAYS_LOCAL, Security, Server, ServerFavorites, ServerFolder,
 };
 // //// Neoffice — why mail isn't moved between a JMAP account and another account, nor copied to or from one, and how many deletes may wait for an id.
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES};

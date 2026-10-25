@@ -180,8 +180,29 @@ fn a_jmap_account_from_a_file_is_held_back_and_its_server_shown() {
     open(&mut a, &path);
     assert!(a.is_unconfirmed());
     assert!(a.services.jmap.is_none() && a.services.jmap_pim.is_none() && a.services.jmap_fetch.is_none());
-    assert_eq!(a.account_servers(), vec!["owner@example.org (jmap jmap.attacker.example)".to_string()]);
+    assert_eq!(a.account_servers(), vec!["owner@example.org (jmap https://jmap.attacker.example)".to_string()]);
     a.execute("ui.confirmServers", json!({})).unwrap();
     assert!(!a.is_unconfirmed() && a.services.jmap.is_some());
     let _ = std::fs::remove_dir_all(dir);
+}
+
+/// A JMAP account (M6): its session's address, and whether its secret is a bearer token, are part
+/// of what is confirmed, so that a file confirmed once can't be pointed at another server.
+#[test]
+fn the_fingerprint_follows_a_jmap_accounts_server() {
+    let jmap = |session: &str, bearer: bool| {
+        let mut s = Session::empty();
+        s.run("account.add", &json!({"email": "a@example.org", "kind": "jmap", "jmap": {"session": session, "bearer": bearer}})).unwrap();
+        fingerprint(&s.mailbox)
+    };
+    let first = jmap("https://jmap.example.org/jmap/session", true);
+    assert_eq!(first, jmap("https://jmap.example.org/jmap/session", true));
+    for other in [
+        jmap("https://jmap.attacker.example/jmap/session", true),
+        jmap("https://jmap.example.org:8443/jmap/session", true),
+        jmap("https://jmap.example.org/elsewhere", true),
+        jmap("https://jmap.example.org/jmap/session", false),
+    ] {
+        assert_ne!(first, other);
+    }
 }

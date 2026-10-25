@@ -436,6 +436,7 @@ mod tests {
                 account: 3,
                 email: ME.into(),
                 complete: true,
+                refused: Vec::new(),
                 calendars: vec![
                     RemoteCalendar { id: "C1".into(), name: "Ada's calendar".into(), main: true, plain: true, ..Default::default() },
                     RemoteCalendar { id: "C2".into(), name: "Team".into(), rights: crate::Rights::Read, plain: true, ..Default::default() },
