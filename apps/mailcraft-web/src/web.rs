@@ -32,7 +32,9 @@ pub fn start() {
             return;
         };
         let mut options = eframe::WebOptions::default();
-        if query().contains("webgl")
+        // //// Neoffice — and a browser whose WebGPU gives no adapter in time starts on WebGL2 at once, rather than waiting
+        // //// Neoffice — for an answer that may never come (gpu_probe.rs).
+        if (query().contains("webgl") || !crate::gpu_probe::answers().await)
             && let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup
         {
             create.instance_descriptor.backends = eframe::wgpu::Backends::GL;

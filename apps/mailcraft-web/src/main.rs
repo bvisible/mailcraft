@@ -48,6 +48,9 @@ mod nora_origin;
 // //// Neoffice — the signature a hosting page gives a mailbox, its logo by its bytes (built everywhere, so that it is
 // tested natively).
 mod page_signature;
+// //// Neoffice — whether the browser's WebGPU gives an adapter in time, asked before the window starts (web.rs).
+#[cfg(target_arch = "wasm32")]
+mod gpu_probe;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
