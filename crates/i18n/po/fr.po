@@ -1096,11 +1096,6 @@ msgid "Apply Downloaded Favorites"
 msgstr "Appliquer les favoris téléchargés"
 
 #. command label
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "Apply Downloaded JMAP Messages"
-msgstr ""
-
-#. command label
 #: crates/engine/src/cmd/calendar_settings.rs
 #, fuzzy
 msgid "Apply Downloaded Mailbox Settings"
@@ -2942,11 +2937,6 @@ msgstr "Terminé : {n} nouveau(x)"
 #, fuzzy
 msgid "Double-click to open {name}; right-click to save it"
 msgstr "Double-cliquez pour ouvrir {name} ; clic droit pour l'enregistrer"
-
-#. command label
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "Download JMAP Messages in Full"
-msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/graph_mail.rs
@@ -6609,7 +6599,7 @@ msgid "Only while MailCraft isn't the window in front, and only for the Inboxes 
 msgstr "Uniquement quand MailCraft n'est pas la fenêtre au premier plan, et uniquement pour les boîtes de réception de vos propres comptes."
 
 #. interface, ribbon
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Open"
 msgstr "Ouvrir"
@@ -8307,7 +8297,7 @@ msgid "Send & Receive"
 msgstr "Envoyer et recevoir"
 
 #. ribbon location
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/sync_progress.rs crates/ui-egui/src/lib.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_fetch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/notes/server.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/remote_contacts.rs crates/engine/src/cmd/sync_progress.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Send / Receive"
 msgstr "Envoi/réception"
@@ -9243,8 +9233,8 @@ msgstr "Arrêté ({line})"
 msgid "Stopped."
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_mail.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Stopped; carries on from here next time"
 msgstr "Arrêté ; reprendra d'ici la prochaine fois"
@@ -10084,11 +10074,6 @@ msgstr ""
 msgid "The server didn't say when other people are busy"
 msgstr "Le serveur n'a pas indiqué quand les autres personnes sont occupées"
 
-#. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "The server turned down the sign-in for {name}: sign in again"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "The server failed {n} mailboxes in a row; the rest wait for the next run."
@@ -10475,14 +10460,14 @@ msgstr "Ce compte n'a pas de serveur de messagerie par lequel envoyer la répons
 msgid "This account has no sign-in with Microsoft"
 msgstr "Ce compte n'a pas de connexion Microsoft"
 
-#. what a command says
-#: crates/engine/src/cmd/remote.rs
-msgid "This account may only read the shared mailbox's calendar \"{name}\": the mailbox's owner hasn't given it edit rights (or they haven't been read yet)."
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/jmap_job.rs
 msgid "This account isn't kept in step with a JMAP server"
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/remote.rs
+msgid "This account may only read the shared mailbox's calendar \"{name}\": the mailbox's owner hasn't given it edit rights (or they haven't been read yet)."
 msgstr ""
 
 #. interface
@@ -11467,8 +11452,8 @@ msgstr "Jusqu'à 25 Mo"
 msgid "Up to 50 MB"
 msgstr "Jusqu'à 50 Mo"
 
-#. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs crates/model/src/sync.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_mail.rs crates/model/src/sync.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Up to date"
 msgstr "À jour"
@@ -12234,14 +12219,14 @@ msgstr ""
 msgid "`{field}` is too long."
 msgstr ""
 
-#. interface
-#: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "a JMAP address is too long"
-msgstr ""
-
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 msgid "a JMAP account's server and address can't be changed once its mail is here: remove it and add the other one"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "a JMAP address is too long"
 msgstr ""
 
 #. what a command says
@@ -12368,14 +12353,14 @@ msgstr "ajoutez d'abord un compte (Fichier › Ajouter un compte)"
 msgid "add at least one recipient"
 msgstr "ajoutez au moins un destinataire"
 
-#. interface
-#: crates/ui-egui/src/i18n/run_words.rs
-msgid "an event"
-msgstr ""
-
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 msgid "an account becomes a JMAP account, or stops being one, only by being removed and added again"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "an event"
 msgstr ""
 
 #. what a command says
@@ -12854,11 +12839,6 @@ msgid "no account is connected to a mail server (File › Add Account)"
 msgstr "aucun compte n'est connecté à un serveur de messagerie (Fichier › Ajouter un compte)"
 
 #. what a command says, why a command can't run
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "no account is kept in step over JMAP"
-msgstr ""
-
-#. what a command says, why a command can't run
 #: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/offline.rs
 #, fuzzy
 msgid "no account is kept in step through Microsoft Graph"
@@ -12869,8 +12849,8 @@ msgstr "aucun compte n'est synchronisé via Microsoft Graph"
 msgid "no account is kept in step with a JMAP server"
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "no account with id {id}"
 msgstr "aucun compte avec l'id {id}"
@@ -12945,7 +12925,7 @@ msgid "no message with id {id} in {account}"
 msgstr ""
 
 #. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
+#: crates/engine/src/cmd/graph_mail.rs
 #, fuzzy
 msgid "no message with id {id} in {name}"
 msgstr "aucun message avec l'id {id} dans {name}"
@@ -14135,7 +14115,7 @@ msgid "this Send/Receive was for another account, not for {account}"
 msgstr ""
 
 #. what a command says
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/graph_mail.rs
 #, fuzzy
 msgid "this Send/Receive was for another account, not for {name}"
 msgstr "cet Envoyer/Recevoir était destiné à un autre compte, pas à {name}"
@@ -14681,11 +14661,6 @@ msgid "{name} has declined this meeting."
 msgstr "{name} a refusé cette réunion."
 
 #. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "{name} has no JMAP server address that can be used"
-msgstr ""
-
-#. what a command says
 #: crates/engine/src/io.rs
 #, fuzzy
 msgid "{name} has no contacts"
@@ -14784,11 +14759,6 @@ msgstr "{name} n'est pas une adresse à laquelle une boîte aux lettres partagé
 #, fuzzy
 msgid "{name} isn't connected to a mail server"
 msgstr "{name} n'est connecté à aucun serveur de messagerie"
-
-#. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "{name} isn't kept in step over JMAP"
-msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/offline.rs
