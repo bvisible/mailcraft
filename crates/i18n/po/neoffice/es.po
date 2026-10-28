@@ -2061,3 +2061,1353 @@ msgstr "En su mensaje no se hizo nada: Nora no pudo actuar en él a tiempo. Vuel
 
 msgid "Not all of this was done: part of it could not run in your message in time."
 msgstr "No se hizo todo: una parte no pudo ejecutarse en su mensaje a tiempo."
+
+# Upstream's texts of 0.8.1 and 0.8.2 that its own catalogue leaves untranslated (translated by Haiku, 2026-10-28).
+
+msgid "\"{name}\" is kept by the server of {who}. Changes made here are not sent back yet, so it can't be merged here."
+msgstr "«{name}» lo conserva el servidor de {who}. Los cambios hechos aquí todavía no se envían de vuelta, así que no se pueden fusionar aquí."
+
+msgid ", stopped at a limit"
+msgstr ", detenido al llegar a un límite"
+
+msgid "3D Models"
+msgstr "Modelos 3D"
+
+msgid "A change to a shared mailbox's calendar was refused: this account may not edit it. It is tried once more, and then put back."
+msgstr "Se rechazó un cambio en el calendario de un buzón compartido: es posible que esta cuenta no pueda editarlo. Se volverá a intentar una vez más y después se revertirá."
+
+msgid "A colleague's calendar, by their address, with your work or school account. Kept on this computer only"
+msgstr "El calendario de un compañero, por su dirección, con su cuenta de trabajo o de estudios. Solo se guarda en este equipo"
+
+msgid "A link asked for a new message, but the one you are writing couldn't be saved first: {why}"
+msgstr "Un enlace pidió un mensaje nuevo, pero el que está redactando no se pudo guardar antes: {why}"
+
+msgid "A link goes somewhere else."
+msgstr "Un enlace lleva a otro lugar."
+
+msgid "A link that reads {named} goes to {host}."
+msgstr "Un enlace con el texto {named} lleva a {host}."
+
+msgid "A link whose text is mostly characters that aren't shown goes to {host}."
+msgstr "Un enlace cuyo texto son sobre todo caracteres que no se muestran lleva a {host}."
+
+msgid "A meeting answer or invitation from this shared mailbox waits: sending from shared mailboxes needs your permission. Use Send/Receive."
+msgstr "Una respuesta o invitación a una reunión de este buzón compartido está en espera: enviar desde buzones compartidos requiere su permiso. Use Enviar y recibir."
+
+msgid "A meeting on your calendar has this ID but another organizer, so this invitation can't change it."
+msgstr "Una reunión de su calendario tiene este identificador pero otro organizador, así que esta invitación no puede cambiarla."
+
+msgid "A new message to MailCraft's maintainers, from your account: nothing is sent until you press Send."
+msgstr "Un mensaje nuevo a los mantenedores de MailCraft, desde su cuenta: no se envía nada hasta que pulse Enviar."
+
+msgid "A save of the mailbox is still running: try again in a moment"
+msgstr "Todavía se está guardando el buzón: inténtelo de nuevo en un momento"
+
+msgid "Access token for {account}"
+msgstr "Token de acceso de {account}"
+
+msgid "Accessibility"
+msgstr "Accesibilidad"
+
+msgid "Account"
+msgstr "Cuenta"
+
+msgid "Add an account that sends mail first (File › Add Account)."
+msgstr "Añada primero una cuenta que envíe correo (Archivo › Agregar cuenta)."
+
+msgid "Add filters"
+msgstr "Agregar filtros"
+
+msgid "Add to Safe or Blocked Senders"
+msgstr "Agregar a Remitentes seguros o bloqueados"
+
+msgid "Advanced Search"
+msgstr "Búsqueda avanzada"
+
+msgid "All of them"
+msgstr "Todos"
+
+msgid "Allow Keeping Tasks in Step with Microsoft To Do"
+msgstr "Permitir mantener las tareas sincronizadas con Microsoft To Do"
+
+msgid "Allow MailCraft to keep your tasks in step with Microsoft To Do on the page that opened in your browser…"
+msgstr "Permita que MailCraft mantenga sus tareas sincronizadas con Microsoft To Do en la página que se abrió en su navegador…"
+
+msgid "Allow MailCraft to read other people's calendars on the page that opened in your browser…"
+msgstr "Permita que MailCraft lea los calendarios de otras personas en la página que se abrió en su navegador…"
+
+msgid "Allow MailCraft to read shared mailboxes' calendars on the page that opened in your browser…"
+msgstr "Permita que MailCraft lea los calendarios de los buzones compartidos en la página que se abrió en su navegador…"
+
+msgid "Allow Reading Other People's Calendars"
+msgstr "Permitir leer los calendarios de otras personas"
+
+msgid "And {n} more link like it."
+msgid_plural "And {n} more links like it."
+msgstr[0] "Y {n} enlace más de este tipo."
+msgstr[1] "Y {n} enlaces más de este tipo."
+
+msgid "Apply Downloaded To-dos"
+msgstr "Aplicar las tareas descargadas"
+
+msgid "Apply Sent To-do Changes"
+msgstr "Aplicar los cambios de tareas enviados"
+
+msgid "Ask again"
+msgstr "Preguntar de nuevo"
+
+msgid "Ask for permission to read and change your To Do lists and tasks: Microsoft's page opens in your browser. Without it, tasks stay on this computer."
+msgstr "Pida permiso para leer y cambiar sus listas y tareas de To Do: se abre la página de Microsoft en su navegador. Sin él, las tareas se quedan en este equipo."
+
+msgid "Ask for permission to read the calendars of shared mailboxes: Microsoft's page opens in your browser. Without it, nothing of this mailbox's calendars is read."
+msgstr "Pida permiso para leer los calendarios de los buzones compartidos: se abre la página de Microsoft en su navegador. Sin él, no se lee ningún calendario de este buzón."
+
+msgid "At most {max} contacts can be merged at once."
+msgstr "Como máximo se pueden fusionar {max} contactos a la vez."
+
+msgid "At most {n} calendars can be opened by address: remove one first."
+msgstr "Como máximo {n} calendarios pueden abrirse por dirección: quite primero uno."
+
+msgid "Attachment keywords"
+msgstr "Palabras clave de datos adjuntos"
+
+msgid "AutoArchive"
+msgstr "Archivado automático"
+
+msgid "Available formats:"
+msgstr "Formatos disponibles:"
+
+msgid "Be careful with this message."
+msgstr "Tenga cuidado con este mensaje."
+
+msgid "Body"
+msgstr "Cuerpo"
+
+msgid "Bookmark"
+msgstr "Marcador"
+
+msgid "Business Card"
+msgstr "Tarjeta de visita"
+
+msgid "Calendar Listed Twice"
+msgstr "Calendario duplicado"
+
+msgid "Calendars you opened by address need your permission to be read: open one again to be asked"
+msgstr "Los calendarios que abrió por dirección necesitan su permiso para leerse: vuelva a abrir uno para que se le pida"
+
+msgid "Calendars: allowed"
+msgstr "Calendarios: permitidos"
+
+msgid "Calendars: allowed, reading them…"
+msgstr "Calendarios: permitidos, leyéndolos…"
+
+msgid "Calendars: asking for your permission…"
+msgstr "Calendarios: pidiendo su permiso…"
+
+msgid "Calendars: not allowed ({why})"
+msgstr "Calendarios: no permitidos ({why})"
+
+msgid "Calendars: not asked yet (ticking one of them asks)"
+msgstr "Calendarios: todavía no se ha pedido (marcar uno de ellos lo pide)"
+
+msgid "Calendars: waiting for your permission"
+msgstr "Calendarios: esperando su permiso"
+
+msgid "Cancel Opening the Mailbox"
+msgstr "Cancelar la apertura del buzón"
+
+msgid "Cc"
+msgstr "Cc"
+
+msgid "Characters (no spaces)"
+msgstr "Caracteres (sin espacios)"
+
+msgid "Characters (with spaces)"
+msgstr "Caracteres (con espacios)"
+
+msgid "Chart"
+msgstr "Gráfico"
+
+msgid "Check Accessibility"
+msgstr "Comprobar accesibilidad"
+
+msgid "Check daily for new versions of MailCraft, and download and install them when you quit? Only GitHub is asked; nothing about you or your mail is sent."
+msgstr "¿Buscar cada día nuevas versiones de MailCraft y descargarlas e instalarlas al salir? Solo se consulta GitHub; no se envía nada sobre usted ni sobre su correo."
+
+msgid "Choose where to save the diagnostics: GitHub's page opens once they are saved."
+msgstr "Elija dónde guardar el diagnóstico: se abre la página de GitHub cuando se guarde."
+
+msgid "Choose whether these tasks are sent to a Microsoft account's To Do. Nothing is sent unless you say so."
+msgstr "Elija si estas tareas se envían a To Do de una cuenta de Microsoft. No se envía nada salvo que lo indique."
+
+msgid "Clear filters"
+msgstr "Quitar filtros"
+
+msgid "Confirm Servers"
+msgstr "Confirmar servidores"
+
+msgid "Confirm servers"
+msgstr "Confirmar servidores"
+
+msgid "Couldn't open {name}: {error}"
+msgstr "No se pudo abrir {name}: {error}"
+
+msgid "Couldn't reach Microsoft to open the calendar of {address}. Try again in a moment."
+msgstr "No se pudo contactar con Microsoft para abrir el calendario de {address}. Inténtelo de nuevo en un momento."
+
+msgid "Current Mailbox"
+msgstr "Buzón actual"
+
+msgid "Data on this computer"
+msgstr "Datos en este equipo"
+
+msgid "Date &\nTime"
+msgstr "Fecha y\nhora"
+
+msgid "Date & Time"
+msgstr "Fecha y hora"
+
+msgid "Date and Time"
+msgstr "Fecha y hora"
+
+msgid "Date received"
+msgstr "Fecha de recepción"
+
+msgid "Diagram"
+msgstr "Diagrama"
+
+msgid "Dismiss Settings Notice"
+msgstr "Descartar el aviso de ajustes"
+
+msgid "Dismiss Warnings"
+msgstr "Descartar advertencias"
+
+msgid "Dismiss this warning for this message. It comes back if a new kind of warning appears."
+msgstr "Descartar esta advertencia para este mensaje. Volverá si aparece un tipo nuevo de advertencia."
+
+msgid "Downloaded pictures and opened attachments can't be told apart by account: File › Info › Remove MailCraft's data from this computer clears them."
+msgstr "Las imágenes descargadas y los adjuntos abiertos no se distinguen por cuenta: Archivo › Información › Quitar los datos de MailCraft de este equipo los borra."
+
+msgid "Drop Cap"
+msgstr "Letra capital"
+
+msgid "Emoji"
+msgstr "Emoji"
+
+msgid "Ends before it starts"
+msgstr "Termina antes de empezar"
+
+msgid "Equation"
+msgstr "Ecuación"
+
+msgid "Every mbox file under a folder, keeping its subfolders, into one new folder"
+msgstr "Cada archivo mbox de una carpeta, conservando sus subcarpetas, en una carpeta nueva"
+
+msgid "Everything else in it opens as usual."
+msgstr "Lo demás se abre como de costumbre."
+
+msgid "Everything else is gone. MailCraft quits when you close this."
+msgstr "Lo demás se pierde. MailCraft se cierra al cerrar esta ventana."
+
+msgid "External"
+msgstr "Externo"
+
+msgid "Failed check."
+msgstr "Comprobación fallida."
+
+msgid "Fewer than two of these contacts are still here, so there is nothing to merge."
+msgstr "Quedan menos de dos de estos contactos, así que no hay nada que fusionar."
+
+msgid "Find Duplicate Contacts"
+msgstr "Buscar contactos duplicados"
+
+msgid "Find a Time"
+msgstr "Buscar una hora"
+
+msgid "Finish or close the message you're writing first."
+msgstr "Termine o cierre primero el mensaje que está escribiendo."
+
+msgid "First Message"
+msgstr "Primer mensaje"
+
+msgid "Folder Size"
+msgstr "Tamaño de carpeta"
+
+msgid "Folder Size…"
+msgstr "Tamaño de carpeta…"
+
+msgid "Found in {path}. Nothing is imported until you press Import."
+msgstr "Encontrado en {path}. No se importa nada hasta que pulse Importar."
+
+msgid "From Sender"
+msgstr "Del remitente"
+
+msgid "From outside your organisation."
+msgstr "Desde fuera de su organización."
+
+msgid "Getting ready…"
+msgstr "Preparando…"
+
+msgid "GitHub is public and needs a GitHub account. Email is private and goes from your own account to MailCraft's maintainers."
+msgstr "GitHub es público y requiere una cuenta de GitHub. El correo es privado y va de su propia cuenta a los mantenedores de MailCraft."
+
+msgid "GitHub issues are public: don't put email addresses, names or anything from your messages in them. Describe what happened in your own words."
+msgstr "Las incidencias de GitHub son públicas: no ponga en ellas direcciones de correo, nombres ni nada de sus mensajes. Describa lo ocurrido con sus propias palabras."
+
+msgid "GitHub's page is open: attach the diagnostics file there, then submit. MailCraft sent nothing."
+msgstr "La página de GitHub está abierta: adjunte allí el archivo de diagnóstico y envíelo. MailCraft no ha enviado nada."
+
+msgid "GitHub's page is open: check it, then submit. MailCraft sent nothing."
+msgstr "La página de GitHub está abierta: revísela y envíela. MailCraft no ha enviado nada."
+
+msgid "Gravatar is asked for the sender's picture and told a hash of their address; else favicon.im, then Google, are asked for their website's icon and told the sender's domain. This tells those services whose pictures you look at. Only for the people you know (your contacts, and whoever you have written to) and the mail whose pictures you download, never for Junk E-mail, and a sender's picture only when your mail server confirms the mail is from them."
+msgstr "Se pide a Gravatar la imagen del remitente y se le indica un hash de su dirección; si no, se piden a favicon.im y luego a Google el icono del sitio web, indicándoles el dominio del remitente. Así estos servicios saben de qué personas miran las imágenes. Solo para las personas que conoce (sus contactos y a quienes les ha escrito) y para el correo cuyas imágenes descarga, nunca para Correo no deseado, y la imagen de un remitente solo cuando su servidor de correo confirma que el mensaje es suyo."
+
+msgid "Group {n} of {total}"
+msgstr "Grupo {n} de {total}"
+
+msgid "HTML Signature"
+msgstr "Firma HTML"
+
+msgid "Hide"
+msgstr "Ocultar"
+
+msgid "Hide Calendar Listed Twice"
+msgstr "Ocultar calendario duplicado"
+
+msgid "Hide This Copy"
+msgstr "Ocultar esta copia"
+
+msgid "Hide password"
+msgstr "Ocultar contraseña"
+
+msgid "Hide the Copy"
+msgstr "Ocultar la copia"
+
+msgid "Hide this message's warning again"
+msgstr "Volver a ocultar la advertencia de este mensaje"
+
+msgid "Horizontal Line"
+msgstr "Línea horizontal"
+
+msgid "How many messages each folder holds and the space they take"
+msgstr "Cuántos mensajes contiene cada carpeta y el espacio que ocupan"
+
+msgid "Icons"
+msgstr "Iconos"
+
+msgid "If no browser opened, check that this computer has a default browser (on Windows: Settings, Apps, Default apps), then press Open the page again."
+msgstr "Si no se abrió ningún navegador, compruebe que este equipo tiene un navegador predeterminado (en Windows: Configuración, Aplicaciones, Aplicaciones predeterminadas) y pulse de nuevo Abrir la página."
+
+msgid "Illustrations"
+msgstr "Ilustraciones"
+
+msgid "Import Calendar File"
+msgstr "Importar archivo de calendario"
+
+msgid "Import Contacts"
+msgstr "Importar contactos"
+
+msgid "Import a Folder of Mailboxes"
+msgstr "Importar una carpeta de buzones"
+
+msgid "Import the appointments and tasks in {name} into your calendar?"
+msgstr "¿Importar las citas y tareas de {name} a su calendario?"
+
+msgid "Import the contacts in {name} into Contacts?"
+msgstr "¿Importar los contactos de {name} a Contactos?"
+
+msgid "Imported {what} into the new folder {name}"
+msgstr "Se importó {what} en la carpeta nueva {name}"
+
+msgid "Imported {what}; stopped after {count}: the file has more than one import takes"
+msgstr "Se importó {what}; se detuvo tras {count}: el archivo tiene más de una importación"
+
+msgid "Importing… {messages} of {total}"
+msgstr "Importando… {messages} de {total}"
+
+msgid "In the message"
+msgstr "En el mensaje"
+
+msgid "In the selection"
+msgstr "En la selección"
+
+msgid "Include diagnostics"
+msgstr "Incluir diagnóstico"
+
+msgid "Info and File"
+msgstr "Información y archivo"
+
+msgid "Insert"
+msgstr "Insertar"
+
+msgid "It is kept by the server of {who}, and changes made here are not sent back yet, so it can't be merged here."
+msgstr "Lo conserva el servidor de {who}, y los cambios hechos aquí todavía no se envían de vuelta, así que no se puede fusionar aquí."
+
+msgid "It is the same for an installed and a portable copy. MailCraft quits afterwards."
+msgstr "Es igual para una copia instalada que para una portátil. MailCraft se cierra después."
+
+msgid "Item"
+msgstr "Elemento"
+
+msgid "Its messages, attachments, settings and remembered sign-in go with it, and so do the calendar, contacts, tasks and working hours that came from its server."
+msgstr "Con él se van sus mensajes, adjuntos, ajustes e inicio de sesión recordado, y también el calendario, los contactos, las tareas y el horario laboral que venían de su servidor."
+
+msgid "JMAP: {parser}"
+msgstr "JMAP: {parser}"
+
+msgid "Junk E-mail Options"
+msgstr "Opciones de Correo no deseado"
+
+msgid "Junk E-mail Options…"
+msgstr "Opciones de Correo no deseado…"
+
+msgid "Keep Both"
+msgstr "Conservar ambos"
+
+msgid "Keep Tasks in Step with Microsoft To Do"
+msgstr "Mantener las tareas sincronizadas con Microsoft To Do"
+
+msgid "Keep this one"
+msgstr "Conservar este"
+
+msgid "Last Message"
+msgstr "Último mensaje"
+
+msgid "Links"
+msgstr "Enlaces"
+
+msgid "Lookalike address."
+msgstr "Dirección parecida a otra conocida."
+
+msgid "Looking… {folders}, {files}, {messages} so far"
+msgstr "Buscando… {folders}, {files}, {messages} hasta ahora"
+
+msgid "Mail can't be imported into an Outbox: it would be sent."
+msgstr "El correo no se puede importar a una Bandeja de salida: se enviaría."
+
+msgid "Mail can't be imported into an Outbox: it would be sent. Choose another folder."
+msgstr "El correo no se puede importar a una Bandeja de salida: se enviaría. Elija otra carpeta."
+
+msgid "Mail folder"
+msgstr "Carpeta de correo"
+
+msgid "Mail folder: the account's {folder}"
+msgstr "Carpeta de correo: la {folder} de la cuenta"
+
+msgid "Mail on the servers is not touched."
+msgstr "El correo de los servidores no se toca."
+
+msgid "Mail on the servers is not touched. This can't be undone."
+msgstr "El correo de los servidores no se toca. Esta acción no se puede deshacer."
+
+msgid "MailCraft doesn't move or delete a JMAP account's mail yet: the next Send/Receive would bring it back"
+msgstr "MailCraft todavía no mueve ni elimina el correo de una cuenta JMAP: la próxima Enviar y recibir lo devolvería"
+
+msgid "MailCraft doesn't rename or move a JMAP account's folders yet: its server wouldn't be told"
+msgstr "MailCraft todavía no cambia el nombre ni mueve las carpetas de una cuenta JMAP: su servidor no sería informado"
+
+msgid "MailCraft isn't allowed to read other people's calendars yet."
+msgstr "MailCraft todavía no tiene permiso para leer los calendarios de otras personas."
+
+msgid "MailCraft starts with an empty mailbox and leaves the file as it is."
+msgstr "MailCraft empieza con un buzón vacío y deja el archivo como está."
+
+msgid "MailCraft stopped reading it before it was done."
+msgstr "MailCraft dejó de leerlo antes de terminar."
+
+msgid "MailCraft was started with {n} thing that isn't a mail link or a file it opens: it was left alone"
+msgid_plural "MailCraft was started with {n} things that aren't mail links or files it opens: they were left alone"
+msgstr[0] "MailCraft se inició con {n} elemento que no es un enlace de correo ni un archivo que abra: se dejó como estaba"
+msgstr[1] "MailCraft se inició con {n} elementos que no son enlaces de correo ni archivos que abra: se dejaron como estaban"
+
+msgid "MailCraft's data has been removed already"
+msgstr "Los datos de MailCraft ya se han eliminado"
+
+msgid "MailCraft's data has been removed: nothing is sent or received"
+msgstr "Los datos de MailCraft se han eliminado: no se envía ni se recibe nada"
+
+msgid "Merge"
+msgstr "Fusionar"
+
+msgid "Merge\nDuplicates"
+msgstr "Fusionar\nduplicados"
+
+msgid "Merge Contacts"
+msgstr "Fusionar contactos"
+
+msgid "Merge Duplicate Contacts"
+msgstr "Fusionar contactos duplicados"
+
+msgid "Merge this contact"
+msgstr "Fusionar este contacto"
+
+msgid "Merge {n} Contact…"
+msgid_plural "Merge {n} Contacts…"
+msgstr[0] "Fusionar {n} contacto…"
+msgstr[1] "Fusionar {n} contactos…"
+
+msgid "Messages from Sender"
+msgstr "Mensajes del remitente"
+
+msgid "Middle name"
+msgstr "Segundo nombre"
+
+msgid "Most of the sender's name is characters that aren't shown, and the message came from {real}."
+msgstr "La mayor parte del nombre del remitente son caracteres que no se muestran, y el mensaje llegó desde {real}."
+
+msgid "Move the message to a folder to open or save its attachments"
+msgstr "Mueva el mensaje a una carpeta para abrir o guardar sus datos adjuntos"
+
+msgid "Move to Junk"
+msgstr "Mover a Correo no deseado"
+
+msgid "Never Block Sender"
+msgstr "No bloquear nunca al remitente"
+
+msgid "Never Block Sender's Domain"
+msgstr "No bloquear nunca el dominio del remitente"
+
+msgid "New All Day Event"
+msgstr "Nuevo evento de todo el día"
+
+msgid "Nickname"
+msgstr "Apodo"
+
+msgid "No entries yet"
+msgstr "Todavía no hay entradas"
+
+msgid "No file manager could be started to show the folder."
+msgstr "No se pudo iniciar ningún gestor de archivos para mostrar la carpeta."
+
+msgid "No folders match"
+msgstr "Ninguna carpeta coincide"
+
+msgid "No mailbox is being opened"
+msgstr "No se está abriendo ningún buzón"
+
+msgid "No two contacts share an e-mail address or a phone number."
+msgstr "Ningún par de contactos comparte una dirección de correo o un número de teléfono."
+
+msgid "No window shows a message file"
+msgstr "Ninguna ventana muestra un archivo de mensaje"
+
+msgid "Nora"
+msgstr "Nora"
+
+msgid "Not a date"
+msgstr "No es una fecha"
+
+msgid "Nothing is added to your mail until it has all been read."
+msgstr "No se añade nada a su correo hasta que todo se haya leído."
+
+msgid "Object"
+msgstr "Objeto"
+
+msgid "On GitHub they are saved to a file you choose, which you attach to the issue; by email they are attached to the message. They are never put in the link."
+msgstr "En GitHub se guardan en un archivo que usted elige y adjunta a la incidencia; por correo se adjuntan al mensaje. Nunca se ponen en el enlace."
+
+msgid "Only a meeting you organize has Find a Time"
+msgstr "Solo una reunión que usted organiza tiene Buscar una hora"
+
+msgid "Only confirm if you know these servers."
+msgstr "Confirme solo si conoce estos servidores."
+
+msgid "Open\nCalendar"
+msgstr "Abrir\ncalendario"
+
+msgid "Open Data Folder"
+msgstr "Abrir carpeta de datos"
+
+msgid "Open MailCraft's data folder"
+msgstr "Abrir la carpeta de datos de MailCraft"
+
+msgid "Open Shared Calendar"
+msgstr "Abrir calendario compartido"
+
+msgid "Open on GitHub"
+msgstr "Abrir en GitHub"
+
+msgid "Open the mailbox's folder"
+msgstr "Abrir la carpeta del buzón"
+
+msgid "Open this calendar"
+msgstr "Abrir este calendario"
+
+msgid "Opened the calendar of {name}. It is listed under Shared Calendars, on this computer only."
+msgstr "Se abrió el calendario de {name}. Aparece en Calendarios compartidos, solo en este equipo."
+
+msgid "Opening your mailbox…"
+msgstr "Abriendo su buzón…"
+
+msgid "Opening {name}…"
+msgstr "Abriendo {name}…"
+
+msgid "Opening {name}… {percent}%"
+msgstr "Abriendo {name}… {percent} %"
+
+msgid "Opening…"
+msgstr "Abriendo…"
+
+msgid "Opens GitHub's page in your browser, filled in: you check it and submit it there."
+msgstr "Abre la página de GitHub en su navegador, con los datos ya rellenados: usted la revisa y la envía allí."
+
+msgid "Opens it by their address, on this computer only: it won't appear in Outlook or on your other devices"
+msgstr "Lo abre por su dirección, solo en este equipo: no aparecerá en Outlook ni en sus otros dispositivos"
+
+msgid "Other people's calendars can be opened under a Microsoft work or school account"
+msgstr "Los calendarios de otras personas se pueden abrir con una cuenta de trabajo o de estudios de Microsoft"
+
+msgid "Other people's calendars weren't allowed: {error}"
+msgstr "No se permitió leer los calendarios de otras personas: {error}"
+
+msgid "Page Down"
+msgstr "Re Pág"
+
+msgid "Page Up"
+msgstr "Av Pág"
+
+msgid "Paragraphs"
+msgstr "Párrafos"
+
+msgid "Part of your mailbox is damaged"
+msgstr "Parte de su buzón está dañada"
+
+msgid "Paste or write the signature's HTML"
+msgstr "Pegue o escriba el HTML de la firma"
+
+msgid "Pending development"
+msgstr "Desarrollo pendiente"
+
+msgid "Permissions"
+msgstr "Permisos"
+
+msgid "Pick a date"
+msgstr "Elija una fecha"
+
+msgid "Pick the first day"
+msgstr "Elija el primer día"
+
+msgid "Pick the last day"
+msgstr "Elija el último día"
+
+msgid "Pictures"
+msgstr "Imágenes"
+
+msgid "Pictures on the web aren't downloaded for a message that is not in your mailbox: move it to a folder first."
+msgstr "Las imágenes de la web no se descargan para un mensaje que no está en su buzón: muévalo primero a una carpeta."
+
+msgid "Point at a link to see where it goes."
+msgstr "Apunte a un enlace para ver adónde lleva."
+
+msgid "Policy"
+msgstr "Directiva"
+
+msgid "Proofing"
+msgstr "Revisión"
+
+msgid "Read"
+msgstr "Leído"
+
+msgid "Read status"
+msgstr "Estado de lectura"
+
+msgid "Read with {owner}'s sign-in, for as long as you keep it: the person has to have shared their calendar with you. It is kept on this computer only: it won't appear in Outlook or on your other devices. Microsoft asks you once to let MailCraft read other people's calendars."
+msgstr "Se lee con el inicio de sesión de {owner}, mientras lo conserve: la persona tiene que haber compartido su calendario con usted. Solo se guarda en este equipo: no aparecerá en Outlook ni en sus otros dispositivos. Microsoft le pide una vez que permita a MailCraft leer los calendarios de otras personas."
+
+msgid "Reading the calendar from Microsoft…"
+msgstr "Leyendo el calendario de Microsoft…"
+
+msgid "Remove Everything"
+msgstr "Eliminar todo"
+
+msgid "Remove MailCraft's Data"
+msgstr "Eliminar los datos de MailCraft"
+
+msgid "Remove MailCraft's Data from This Computer"
+msgstr "Eliminar los datos de MailCraft de este equipo"
+
+msgid "Remove MailCraft's data from this computer…"
+msgstr "Eliminar los datos de MailCraft de este equipo…"
+
+msgid "Remove Shared Calendar"
+msgstr "Quitar calendario compartido"
+
+msgid "Remove from Safe or Blocked Senders"
+msgstr "Quitar de Remitentes seguros o bloqueados"
+
+msgid "Removing MailCraft's data isn't available here"
+msgstr "Aquí no está disponible eliminar los datos de MailCraft"
+
+msgid "Report a\nProblem"
+msgstr "Notificar un\nproblema"
+
+msgid "Report a Problem"
+msgstr "Notificar un problema"
+
+msgid "Review"
+msgstr "Revisar"
+
+msgid "Rich text"
+msgstr "Texto enriquecido"
+
+msgid "Save Message File As"
+msgstr "Guardar archivo de mensaje como"
+
+msgid "Saved Text"
+msgstr "Texto guardado"
+
+msgid "Say that this is meant with \"confirmed\": true."
+msgstr "Indique que esto es intencionado con \"confirmed\": true."
+
+msgid "Say what happened (`what`)"
+msgstr "Indique qué ocurrió (`what`)"
+
+msgid "Say what went wrong. MailCraft sends nothing by itself: you check the report and send it."
+msgstr "Indique qué salió mal. MailCraft no envía nada por sí mismo: usted revisa el informe y lo envía."
+
+msgid "Screenshot"
+msgstr "Captura de pantalla"
+
+msgid "Search folders"
+msgstr "Buscar carpetas"
+
+msgid "Search in"
+msgstr "Buscar en"
+
+msgid "Send Local Tasks to To Do"
+msgstr "Enviar tareas locales a To Do"
+
+msgid "Send Tasks"
+msgstr "Enviar tareas"
+
+msgid "Send Your Local Tasks to To Do?"
+msgstr "¿Enviar sus tareas locales a To Do?"
+
+msgid "Send by Email"
+msgstr "Enviar por correo"
+
+msgid "Send to To Do…"
+msgstr "Enviar a To Do…"
+
+msgid "Send to {address}"
+msgstr "Enviar a {address}"
+
+msgid "Send your {n} local task to {address}'s To Do?"
+msgid_plural "Send your {n} local tasks to {address}'s To Do?"
+msgstr[0] "¿Enviar {n} tarea local al To Do de {address}?"
+msgstr[1] "¿Enviar {n} tareas locales al To Do de {address}?"
+
+msgid "Sent as written, without anything that runs or tracks. Pictures come from their web address, and recipients' programs decide whether to load them. A message you write shows a simpler copy of this signature; if you edit it there, that copy is sent instead."
+msgstr "Se envía tal cual, sin nada que se ejecute ni que haga seguimiento. Las imágenes se toman de su dirección web, y los programas de los destinatarios deciden si las cargan. Un mensaje que usted escribe muestra una copia más sencilla de esta firma; si la edita allí, se envía esa copia en su lugar."
+
+msgid "Shapes"
+msgstr "Formas"
+
+msgid "Shared Calendars"
+msgstr "Calendarios compartidos"
+
+msgid "Shared mailboxes' calendars weren't allowed: {error}"
+msgstr "No se permitió leer los calendarios de buzones compartidos: {error}"
+
+msgid "Show Sender Images"
+msgstr "Mostrar imágenes de remitentes"
+
+msgid "Show a Shared Mailbox's Calendars"
+msgstr "Mostrar los calendarios de un buzón compartido"
+
+msgid "Show password"
+msgstr "Mostrar contraseña"
+
+msgid "Show sender images from Gravatar, favicon.im and Google"
+msgstr "Mostrar imágenes de remitentes de Gravatar, favicon.im y Google"
+
+msgid "Show the Copy under Shared Calendars"
+msgstr "Mostrar la copia en Calendarios compartidos"
+
+msgid "Show this message's warning"
+msgstr "Mostrar la advertencia de este mensaje"
+
+msgid "Shows {path}, which holds the mailbox and the settings, in your file manager."
+msgstr "Muestra {path}, donde están el buzón y los ajustes, en su gestor de archivos."
+
+msgid "Shows {path}, which holds the mailbox open now, in your file manager. MailCraft's settings are in a folder of their own."
+msgstr "Muestra {path}, donde está el buzón abierto ahora, en su gestor de archivos. Los ajustes de MailCraft están en una carpeta propia."
+
+msgid "Some of it is still there, as listed above. MailCraft quits when you close this."
+msgstr "Parte de ello sigue ahí, como se indica arriba. MailCraft se cierra al cerrar esta ventana."
+
+msgid "Spelling & Grammar"
+msgstr "Ortografía y gramática"
+
+msgid "Status bar"
+msgstr "Barra de estado"
+
+msgid "Stop opening it; the mailbox that is open stays"
+msgstr "Dejar de abrirlo; el buzón abierto se mantiene"
+
+msgid "Subfolders"
+msgstr "Subcarpetas"
+
+msgid "Symbol"
+msgstr "Símbolo"
+
+msgid "Symbols"
+msgstr "Símbolos"
+
+msgid "Synchronization"
+msgstr "Sincronización"
+
+msgid "Tables"
+msgstr "Tablas"
+
+msgid "Take everything MailCraft keeps here with you when you are done: for a shared or work computer, or before deleting a portable copy."
+msgstr "Llévese consigo todo lo que MailCraft guarda aquí cuando termine: en un equipo compartido o de trabajo, o antes de eliminar una copia portátil."
+
+msgid "Tasks stay on this computer for now: {error}"
+msgstr "Por ahora las tareas siguen en este equipo: {error}"
+
+msgid "Tasks weren't allowed to be kept in step: {error}"
+msgstr "No se permitió mantener las tareas sincronizadas: {error}"
+
+msgid "Tasks: Microsoft no longer takes the sign-in"
+msgstr "Tareas: Microsoft ya no acepta el inicio de sesión"
+
+msgid "Tasks: asking for your permission…"
+msgstr "Tareas: pidiendo su permiso…"
+
+msgid "Tasks: kept in step with Microsoft To Do"
+msgstr "Tareas: sincronizadas con Microsoft To Do"
+
+msgid "Tasks: kept on this computer only (not allowed yet)"
+msgstr "Tareas: solo en este equipo (todavía no permitido)"
+
+msgid "Tasks: not allowed ({why})"
+msgstr "Tareas: no permitidas ({why})"
+
+msgid "Tasks: not asked yet"
+msgstr "Tareas: todavía no se ha pedido"
+
+msgid "Tasks: waiting for your permission"
+msgstr "Tareas: esperando su permiso"
+
+msgid "Tell MailCraft's makers what went wrong, on GitHub or by email. You check the report and send it yourself."
+msgstr "Cuente a los creadores de MailCraft qué salió mal, en GitHub o por correo. Usted revisa el informe y lo envía."
+
+msgid "Text"
+msgstr "Texto"
+
+msgid "Text Box"
+msgstr "Cuadro de texto"
+
+msgid "Text Effects"
+msgstr "Efectos de texto"
+
+msgid "That calendar wasn't opened by address: it is in the account's own list."
+msgstr "Ese calendario no se abrió por dirección: está en la lista propia de la cuenta."
+
+msgid "That is this account's own address: its own calendar is there already."
+msgstr "Esa es la dirección de esta cuenta: su propio calendario ya está ahí."
+
+msgid "That is too long for a report: shorten it"
+msgstr "Es demasiado largo para un informe: acórtelo"
+
+msgid "That's as much as a link to GitHub can carry: add the rest on GitHub once the page is open."
+msgstr "Es lo máximo que puede contener un enlace a GitHub: añada el resto en GitHub cuando se abra la página."
+
+msgid "The account {address} is opened through is gone."
+msgstr "Ya no existe la cuenta a través de la que se abre {address}."
+
+msgid "The browser opens no files from the system"
+msgstr "El navegador no abre archivos del sistema"
+
+msgid "The calendar \"{name}\" only shows when its owner is busy: this account can't change it."
+msgstr "El calendario «{name}» solo aparece cuando su propietario está ocupado: esta cuenta no puede cambiarlo."
+
+msgid "The calendar needs your permission first: File › Info › Connect calendar and contacts"
+msgstr "El calendario necesita antes su permiso: Archivo › Información › Conectar calendario y contactos"
+
+msgid "The calendar of the shared mailbox {address} is shown twice: under My Calendars with the shared mailbox, and under Shared Calendars as \"{name}\", because it was also shared with you and accepted.\n\nHide the copy under Shared Calendars? The shared mailbox's own calendar stays, and lets you change events, answer meeting requests and send from the mailbox where you may. Nothing on the server changes: right-click the shared mailbox's calendar to show the copy again."
+msgstr "El calendario del buzón compartido {address} aparece dos veces: en Mis calendarios con el buzón compartido, y en Calendarios compartidos como «{name}», porque también se compartió con usted y lo aceptó.\n\n¿Ocultar la copia en Calendarios compartidos? El calendario propio del buzón compartido se mantiene, y le permite cambiar eventos, responder invitaciones y enviar desde el buzón donde tiene permiso. No cambia nada en el servidor: haga clic con el botón derecho en el calendario del buzón compartido para volver a mostrar la copia."
+
+msgid "The calendar of {address} and its events kept on this computer will be removed. Their calendar on the server is not touched, and you can open it again."
+msgstr "Se eliminarán el calendario de {address} y sus eventos guardados en este equipo. Su calendario en el servidor no se toca, y puede volver a abrirlo."
+
+msgid "The calendar of {address} is in the list of calendars already: it was shared with you and accepted."
+msgstr "El calendario de {address} ya está en la lista de calendarios: se compartió con usted y lo aceptó."
+
+msgid "The calendar of {address} is open already."
+msgstr "El calendario de {address} ya está abierto."
+
+msgid "The calendar of {address} wasn't opened by address."
+msgstr "El calendario de {address} no se abrió por dirección."
+
+msgid "The calendar of {name} is in your calendar list now, because it was shared with you and accepted. You also opened it by address, so it is there twice.\n\nRemove the copy opened by address? The other one stays, and nothing on the server changes."
+msgstr "El calendario de {name} está ahora en su lista de calendarios, porque se compartió con usted y lo aceptó. Además lo abrió por dirección, así que aparece dos veces.\n\n¿Quitar la copia abierta por dirección? La otra se mantiene, y no cambia nada en el servidor."
+
+msgid "The calendars of the shared mailbox wait: {error}"
+msgstr "Los calendarios del buzón compartido esperan: {error}"
+
+msgid "The contact {id} chosen for a field is not one of those merged."
+msgstr "El contacto {id} elegido para un campo no es uno de los fusionados."
+
+msgid "The contact {id} is both kept and merged into itself."
+msgstr "El contacto {id} está a la vez conservado y fusionado en sí mismo."
+
+msgid "The contact {id} is named twice."
+msgstr "El contacto {id} figura dos veces."
+
+msgid "The contacts you picked"
+msgstr "Los contactos que eligió"
+
+msgid "The diagnostics couldn't be saved: {error}"
+msgstr "No se pudo guardar el diagnóstico: {error}"
+
+msgid "The diagnostics weren't saved, so GitHub's page wasn't opened. Try again, or untick Include diagnostics."
+msgstr "No se guardó el diagnóstico, así que no se abrió la página de GitHub. Inténtelo de nuevo o desmarque Incluir diagnóstico."
+
+msgid "The draft stays in Drafts. {why}"
+msgstr "El borrador sigue en Borradores. {why}"
+
+msgid "The e-mail address of the person whose calendar you want to open"
+msgstr "La dirección de correo de la persona cuyo calendario quiere abrir"
+
+msgid "The folder isn't there."
+msgstr "La carpeta no está."
+
+msgid "The kept contact is always merged"
+msgstr "El contacto conservado siempre se fusiona"
+
+msgid "The merged contact's {field} would be too large ({now}, at most {max}), so the contacts aren't merged. Choose one contact's {field} for it, or shorten them first."
+msgstr "El {field} del contacto fusionado sería demasiado largo ({now}, como máximo {max}), así que los contactos no se fusionan. Elija para él el {field} de un contacto, o acórtelos antes."
+
+msgid "The message wasn't filed"
+msgstr "No se pudo archivar el mensaje"
+
+msgid "The message you were writing was saved to Drafts; a link opened a new one"
+msgstr "El mensaje que estaba redactando se guardó en Borradores; un enlace abrió uno nuevo"
+
+msgid "The name hides another address."
+msgstr "El nombre oculta otra dirección."
+
+msgid "The name hides characters."
+msgstr "El nombre oculta caracteres."
+
+msgid "The name of someone you know."
+msgstr "El nombre de alguien que conoce."
+
+msgid "The sender uses your name, but this message came from {real}, which isn't one of your addresses."
+msgstr "El remitente usa su nombre, pero el mensaje llegó desde {real}, que no es una de sus direcciones."
+
+msgid "The sender's address is at {domain}."
+msgstr "La dirección del remitente está en {domain}."
+
+msgid "The sender's domain, {domain}, looks like {like}, which you correspond with, but it isn't the same."
+msgstr "El dominio del remitente, {domain}, se parece a {like}, con el que se corresponde, pero no es el mismo."
+
+msgid "The sender's name shows {shown}, but the message came from {real}."
+msgstr "El nombre del remitente muestra {shown}, pero el mensaje llegó desde {real}."
+
+msgid "The server turned down the sign-in for this account. Use Send/Receive to sign in again."
+msgstr "El servidor rechazó el inicio de sesión de esta cuenta. Use Enviar y recibir para volver a iniciar sesión."
+
+msgid "The settings file (ui.json) couldn't be read, so the default settings were restored. It couldn't be renamed, so it was left as it is and won't be overwritten."
+msgstr "No se pudo leer el archivo de ajustes (ui.json), así que se restauraron los ajustes predeterminados. No se pudo renombrar, así que se dejó como está y no se sobrescribirá."
+
+msgid "The settings file (ui.json) couldn't be read, so the default settings were restored. It was left as it is and won't be overwritten."
+msgstr "No se pudo leer el archivo de ajustes (ui.json), así que se restauraron los ajustes predeterminados. Se dejó como está y no se sobrescribirá."
+
+msgid "The settings file (ui.json) couldn't be read, so the default settings were restored. The old file was renamed {file}."
+msgstr "No se pudo leer el archivo de ajustes (ui.json), así que se restauraron los ajustes predeterminados. El archivo anterior se renombró como {file}."
+
+msgid "The shared mailbox's calendar \"{name}\" only shows when its owner is busy: this account can't change it."
+msgstr "El calendario del buzón compartido «{name}» solo aparece cuando su propietario está ocupado: esta cuenta no puede cambiarlo."
+
+msgid "The system's credential store"
+msgstr "El almacén de credenciales del sistema"
+
+msgid "The system's credential store: {key}"
+msgstr "El almacén de credenciales del sistema: {key}"
+
+msgid "The to-dos couldn't be kept in step: the job stopped unexpectedly"
+msgstr "No se pudieron mantener las tareas sincronizadas: la operación se detuvo inesperadamente"
+
+msgid "The to-dos couldn't be taken in: {error}"
+msgstr "No se pudieron incorporar las tareas: {error}"
+
+msgid "The to-dos sent couldn't be noted: {error}"
+msgstr "No se pudieron registrar las tareas enviadas: {error}"
+
+msgid "Their details are the same; the kept contact loses nothing."
+msgstr "Sus datos son los mismos; el contacto conservado no pierde nada."
+
+msgid "There is no data folder to open here"
+msgstr "No hay aquí ninguna carpeta de datos que abrir"
+
+msgid "There's no mailbox at {address}, or its calendar can't be reached through Microsoft."
+msgstr "No hay ningún buzón en {address}, o no se puede acceder a su calendario a través de Microsoft."
+
+msgid "Thesaurus"
+msgstr "Diccionario de sinónimos"
+
+msgid "These contacts can't be merged here: fewer than two of them can be changed."
+msgstr "Estos contactos no se pueden fusionar aquí: se podrían modificar menos de dos de ellos."
+
+msgid "These could not be removed. Remove them yourself:"
+msgstr "No se pudieron eliminar. Elimínelos usted mismo:"
+
+msgid "These tasks exist only on this computer. Choose the Microsoft account whose To Do gets them, and every task you make from now on. Until you choose, they stay here and nothing of them is sent."
+msgstr "Estas tareas existen solo en este equipo. Elija la cuenta de Microsoft cuyo To Do las recibirá, y todas las tareas que cree a partir de ahora. Hasta que elija, se quedan aquí y no se envía nada de ellas."
+
+msgid "These tasks exist only on this computer. If you send them, they and every task you make from now on are kept in step with Microsoft To Do. Until you do, they stay here and nothing of them is sent. File › Info offers this again."
+msgstr "Estas tareas existen solo en este equipo. Si las envía, ellas y todas las tareas que cree a partir de ahora se mantienen sincronizadas con Microsoft To Do. Hasta que lo haga, se quedan aquí y no se envía nada de ellas. Archivo › Información vuelve a ofrecerlo."
+
+msgid "These were left alone:"
+msgstr "Estos se dejaron como estaban:"
+
+msgid "They share {what}."
+msgstr "Comparten {what}."
+
+msgid "This account may not use its to-dos through Microsoft Graph"
+msgstr "Esta cuenta no puede usar sus tareas a través de Microsoft Graph"
+
+msgid "This account may only read the shared mailbox's calendar \"{name}\": the mailbox's owner hasn't given it edit rights (or they haven't been read yet)."
+msgstr "Esta cuenta solo puede leer el calendario del buzón compartido «{name}»: su propietario no le ha dado permisos de edición (o todavía no se han leído)."
+
+msgid "This copy of MailCraft has no address to send reports to."
+msgstr "Esta copia de MailCraft no tiene dirección a la que enviar los informes."
+
+msgid "This invitation has the ID of a meeting on your calendar but names another organizer, so it can't change that meeting."
+msgstr "Esta invitación tiene el identificador de una reunión de su calendario, pero indica otro organizador, así que no puede cambiar esa reunión."
+
+msgid "This link goes somewhere other than its text says."
+msgstr "Este enlace lleva a un lugar distinto del que indica su texto."
+
+msgid "This mailbox was opened from a file. Its accounts connect to:"
+msgstr "Este buzón se abrió desde un archivo. Sus cuentas se conectan a:"
+
+msgid "This mailbox was opened from a file: confirm its servers first"
+msgstr "Este buzón se abrió desde un archivo: confirme antes sus servidores"
+
+msgid "This message came from outside your organisation."
+msgstr "Este mensaje llegó desde fuera de su organización."
+
+msgid "This message isn't from the organizer of that meeting, so it can't call it off: take the meeting out of the calendar yourself."
+msgstr "Este mensaje no procede del organizador de esa reunión, así que no puede cancelarla: quite la reunión del calendario usted mismo."
+
+msgid "This message may not be what it seems."
+msgstr "Puede que este mensaje no sea lo que parece."
+
+msgid "This removes everything MailCraft keeps on this computer: every account's mail, attachments, contacts, calendar and settings, the sign-ins remembered in the system's credential store, downloaded pictures, opened attachments and logs."
+msgstr "Esto elimina todo lo que MailCraft guarda en este equipo: el correo, los adjuntos, los contactos, el calendario y los ajustes de cada cuenta, los inicios de sesión recordados en el almacén de credenciales del sistema, las imágenes descargadas, los adjuntos abiertos y los registros."
+
+msgid "Tick at least one more contact to merge into the kept one."
+msgstr "Marque al menos un contacto más para fusionarlo con el conservado."
+
+msgid "Tick the contacts that are the same person, and choose the one to keep:"
+msgstr "Marque los contactos que son la misma persona, y elija el que se conserva:"
+
+msgid "Tick this shared mailbox's calendar in the calendar's folder pane to answer its meeting requests."
+msgstr "Marque el calendario de este buzón compartido en el panel de carpetas del calendario para responder a sus solicitudes de reunión."
+
+msgid "To answer or send meetings from {address}, MailCraft needs your permission to send from shared mailboxes. Microsoft's page opens in your browser to ask you, once.\n\nWhether the answer goes as {address} or on its behalf is your organisation's choice. Until you allow it, the answer waits on this computer, and nothing is sent from your own address."
+msgstr "Para responder o enviar reuniones desde {address}, MailCraft necesita su permiso para enviar desde buzones compartidos. Se abre la página de Microsoft en su navegador para preguntárselo, una vez.\n\nSi la respuesta sale como {address} o en su nombre lo decide su organización. Hasta que lo permita, la respuesta espera en este equipo, y no se envía nada desde su propia dirección."
+
+msgid "To keep the tasks of {address} in step with Microsoft To Do, MailCraft needs your permission to read and change your To Do lists and tasks. Microsoft's page opens in your browser to ask you, once.\n\nUntil you allow it, tasks stay on this computer and nothing of them is sent to Microsoft."
+msgstr "Para mantener las tareas de {address} sincronizadas con Microsoft To Do, MailCraft necesita su permiso para leer y cambiar sus listas y tareas de To Do. Se abre la página de Microsoft en su navegador para preguntárselo, una vez.\n\nHasta que lo permita, las tareas se quedan en este equipo y no se envía nada de ellas a Microsoft."
+
+msgid "To open other people's calendars, MailCraft needs your permission to read the calendars people share with you. Microsoft's page opens in your browser to ask you, once.\n\nWhat you open is kept on this computer only: it doesn't appear in Outlook or on your other devices."
+msgstr "Para abrir los calendarios de otras personas, MailCraft necesita su permiso para leer los calendarios que le comparten. Se abre la página de Microsoft en su navegador para preguntárselo, una vez.\n\nLo que abra se guarda solo en este equipo: no aparece en Outlook ni en sus otros dispositivos."
+
+msgid "To show the calendars of {address}, MailCraft needs your permission to read the calendars of shared mailboxes. Microsoft's page opens in your browser to ask you, once.\n\nWhat you may see of a calendar is for its owner and your organisation to decide: this changes nothing about that. Until you allow it, nothing of {address}'s calendars is read."
+msgstr "Para mostrar los calendarios de {address}, MailCraft necesita su permiso para leer los calendarios de buzones compartidos. Se abre la página de Microsoft en su navegador para preguntárselo, una vez.\n\nLo que puede verse de un calendario lo deciden su propietario y su organización: esto no cambia nada de ello. Hasta que lo permita, no se lee nada de los calendarios de {address}."
+
+msgid "To-do Changes to Send"
+msgstr "Cambios de tareas por enviar"
+
+msgid "Too many shared mailboxes are listed twice"
+msgstr "Hay demasiados buzones compartidos listados dos veces"
+
+msgid "What happened"
+msgstr "Qué ocurrió"
+
+msgid "What you expected (optional)"
+msgstr "Lo que esperaba (opcional)"
+
+msgid "What you wrote is too long for a link to GitHub: shorten it, and add the rest on GitHub"
+msgstr "Lo que escribió es demasiado largo para un enlace a GitHub: acórtelo, y añada el resto en GitHub"
+
+msgid "Where they differ, the kept contact has:"
+msgstr "Donde difieren, el contacto conservado tiene:"
+
+msgid "Word\nCount"
+msgstr "Recuento de\npalabras"
+
+msgid "Word Count"
+msgstr "Recuento de palabras"
+
+msgid "Words"
+msgstr "Palabras"
+
+msgid "You always download this sender's pictures, but the mail server didn't confirm that this message came from them, so it is asked first."
+msgstr "Siempre descarga las imágenes de este remitente, pero el servidor de correo no confirmó que este mensaje llegara de él, así que se le pregunta antes."
+
+msgid "You don't have access to the calendar of {address}. They need to share it with you; if they just did, try again in an hour."
+msgstr "No tiene acceso al calendario de {address}. Tienen que compartirlo con usted; si acaban de hacerlo, inténtelo de nuevo dentro de una hora."
+
+msgid "Your mail server checked where this message came from, and the check failed, though the sender's domain asks for nothing to be done about it: the sender's address may be forged."
+msgstr "Su servidor de correo comprobó de dónde llegó este mensaje y la comprobación falló, aunque el dominio del remitente no pide hacer nada al respecto: la dirección del remitente puede estar falsificada."
+
+msgid "Your mail server checked where this message came from, and the check failed: the sender's address may be forged."
+msgstr "Su servidor de correo comprobó de dónde llegó este mensaje y la comprobación falló: la dirección del remitente puede estar falsificada."
+
+msgid "Your mailbox couldn't be opened"
+msgstr "No se pudo abrir su buzón"
+
+msgid "Your mailbox was repaired"
+msgstr "Su buzón se reparó"
+
+msgid "Your organisation doesn't allow MailCraft to keep tasks in step with Microsoft To Do"
+msgstr "Su organización no permite que MailCraft mantenga las tareas sincronizadas con Microsoft To Do"
+
+msgid "Your organisation doesn't allow MailCraft to read shared mailboxes' calendars"
+msgstr "Su organización no permite que MailCraft lea los calendarios de buzones compartidos"
+
+msgid "Your organisation's administrator has to approve keeping tasks in step with Microsoft To Do once: File › Info"
+msgstr "El administrador de su organización tiene que aprobar una vez mantener las tareas sincronizadas con Microsoft To Do: Archivo › Información"
+
+msgid "Your organisation's administrator has to approve reading other people's calendars once: File › Info"
+msgstr "El administrador de su organización tiene que aprobar una vez leer los calendarios de otras personas: Archivo › Información"
+
+msgid "Your organisation's administrator has to approve reading shared mailboxes' calendars once: File › Info"
+msgstr "El administrador de su organización tiene que aprobar una vez leer los calendarios de buzones compartidos: Archivo › Información"
+
+msgid "Your own name."
+msgstr "Su propio nombre."
+
+msgid "Your report is ready in a new message: check it, then press Send."
+msgstr "Su informe está listo en un mensaje nuevo: revíselo y pulse Enviar."
+
+msgid "a JMAP account's server and address can't be changed once its mail is here: remove it and add the other one"
+msgstr "El servidor y la dirección de una cuenta JMAP no se pueden cambiar una vez que su correo está aquí: elimínela y añada la otra"
+
+msgid "a list holds {n} entries at most"
+msgstr "una lista admite como máximo {n} entradas"
+
+msgid "a picture in a message is a PNG, JPEG, GIF or WebP file"
+msgstr "una imagen de un mensaje es un archivo PNG, JPEG, GIF o WebP"
+
+msgid "a picture in a message is at most {mb} MB"
+msgstr "una imagen de un mensaje pesa como máximo {mb} MB"
+
+msgid "a rule can't move mail to an Outbox: that would send it"
+msgstr "una regla no puede mover correo a una Bandeja de salida: eso lo enviaría"
+
+msgid "a signature is open: add its pictures with signature.picture.add"
+msgstr "una firma está abierta: añada sus imágenes con signature.picture.add"
+
+msgid "an HTML signature shows pictures from their web address only: remove this signature's pictures first"
+msgstr "una firma HTML muestra imágenes solo desde su dirección web: quite antes las imágenes de esta firma"
+
+msgid "an HTML signature shows pictures from their web address: switch it to rich text to add one"
+msgstr "una firma HTML muestra imágenes desde su dirección web: cámbiela a texto enriquecido para añadir una"
+
+msgid "an account becomes a JMAP account, or stops being one, only by being removed and added again"
+msgstr "una cuenta pasa a ser una cuenta JMAP, o deja de serlo, solo al eliminarla y volver a añadirla"
+
+msgid "and {n} more"
+msgid_plural "and {n} more"
+msgstr[0] "y {n} más"
+msgstr[1] "y {n} más"
+
+msgid "and {n} more folder"
+msgid_plural "and {n} more folders"
+msgstr[0] "y {n} carpeta más"
+msgstr[1] "y {n} carpetas más"
+
+msgid "and {n} more, not merged now"
+msgid_plural "and {n} more, not merged now"
+msgstr[0] "y {n} más, no fusionado por ahora"
+msgstr[1] "y {n} más, no fusionados por ahora"
+
+msgid "cancelled"
+msgstr "cancelado"
+
+msgid "has too many files: the rest was not removed"
+msgstr "tiene demasiados archivos: el resto no se eliminó"
+
+msgid "is a link: not followed, and nothing in it was removed"
+msgstr "es un enlace: no se siguió y no se eliminó nada de su contenido"
+
+msgid "is nested too deep: left alone"
+msgstr "está anidado demasiado profundo: se dejó como está"
+
+msgid "is outside the folder being cleared: left alone"
+msgstr "está fuera de la carpeta que se vacía: se dejó como está"
+
+msgid "is part of a mailbox you opened from outside MailCraft's own folder: it is yours and was not touched"
+msgstr "forma parte de un buzón que abrió desde fuera de la carpeta propia de MailCraft: es suyo y no se tocó"
+
+msgid "isn't a folder MailCraft keeps its data in: left alone"
+msgstr "no es una carpeta donde MailCraft guarda sus datos: se dejó como está"
+
+msgid "isn't a folder: left alone"
+msgstr "no es una carpeta: se dejó como está"
+
+msgid "it could not be removed"
+msgstr "no se pudo eliminar"
+
+msgid "larger than {mb} MB: bring it in with File › Import"
+msgstr "mayor que {mb} MB: impórtelo con Archivo › Importar"
+
+msgid "mismatch"
+msgstr "no coincide"
+
+msgid "no calendar was opened by address"
+msgstr "ningún calendario se abrió por dirección"
+
+msgid "no such account"
+msgstr "no existe esa cuenta"
+
+msgid "nothing is waiting to be imported"
+msgstr "no hay nada pendiente de importar"
+
+msgid "other people's calendars open under a Microsoft work or school account"
+msgstr "los calendarios de otras personas se abren con una cuenta de trabajo o de estudios de Microsoft"
+
+msgid "someone@example.org or @example.org"
+msgstr "alguien@ejemplo.org o @ejemplo.org"
+
+msgid "that isn't on the list"
+msgstr "no está en la lista"
+
+msgid "that was only looked at, not read in full"
+msgstr "solo se miró, no se leyó entero"
+
+msgid "the browser can't read folders by path"
+msgstr "el navegador no puede leer carpetas por ruta"
+
+msgid "the search can't look for this sender's address as a whole address"
+msgstr "la búsqueda no puede buscar la dirección de este remitente como dirección completa"
+
+msgid "the sender has no address to put on the list"
+msgstr "el remitente no tiene dirección que añadir a la lista"
+
+msgid "there is no account"
+msgstr "no hay ninguna cuenta"
+
+msgid "this Send/Receive was for the server {name} named before"
+msgstr "esta Enviar y recibir era para el servidor {name} nombrado antes"
+
+msgid "this message has had as many pictures as it can"
+msgstr "este mensaje ya tiene tantas imágenes como puede tener"
+
+msgid "this message has no sender address to look for"
+msgstr "este mensaje no tiene dirección de remitente que buscar"
+
+msgid "too many deletions are waiting to be sent to Microsoft To Do; wait for them to go first"
+msgstr "hay demasiadas eliminaciones pendientes de enviar a Microsoft To Do; espere a que se envíen primero"
+
+msgid "type an address, such as someone@example.org, or a domain, such as @example.org"
+msgstr "escriba una dirección, como alguien@ejemplo.org, o un dominio, como @ejemplo.org"
+
+msgid "was kept because the mailbox file beside it could not be removed: remove them together"
+msgstr "se conservó porque no se pudo eliminar el archivo de buzón que está junto a ella: elimínelos juntos"
+
+msgid "{address} is a shared mailbox that is open here: its calendars are listed with it."
+msgstr "{address} es un buzón compartido abierto aquí: sus calendarios aparecen con él."
+
+msgid "{address} is one of your own addresses: your own mail isn't blocked"
+msgstr "{address} es una de sus direcciones: su propio correo no está bloqueado"
+
+msgid "{address} isn't a shared mailbox open here."
+msgstr "{address} no es un buzón compartido abierto aquí."
+
+msgid "{address}: {error}. It will try again at the next Send/Receive."
+msgstr "{address}: {error}. Se volverá a intentar en la próxima Enviar y recibir."
+
+msgid "{address}: {error}. See File › Info."
+msgstr "{address}: {error}. Vea Archivo › Información."
+
+msgid "{folders} will be made under a new folder called {name} on this computer, with {messages}."
+msgstr "Se crearán {folders} en una carpeta nueva llamada {name} en este equipo, con {messages}."
+
+msgid "{folder} and its subfolders"
+msgstr "{folder} y sus subcarpetas"
+
+msgid "{name} is the name of someone you know, but this message came from {real}, which isn't one of their addresses."
+msgstr "{name} es el nombre de alguien que conoce, pero el mensaje llegó desde {real}, que no es una de sus direcciones."
+
+msgid "{name} isn't kept in step over JMAP"
+msgstr "{name} no se mantiene sincronizado por JMAP"
+
+msgid "{name} shared a calendar with you."
+msgstr "{name} compartió un calendario con usted."
+
+msgid "{name} shared a calendar with you. It is in your calendar list."
+msgstr "{name} compartió un calendario con usted. Está en su lista de calendarios."
+
+msgid "{name}, pending development"
+msgstr "{name}, desarrollo pendiente"
+
+msgid "{name}: not a message file"
+msgstr "{name}: no es un archivo de mensaje"
+
+msgid "{n} changes to the calendar \"{name}\" are held here, not sent: this account may no longer change it. They are sent if it may again."
+msgstr "{n} cambios en el calendario «{name}» se retienen aquí, sin enviarse: es posible que esta cuenta ya no pueda modificarlo. Se envían si vuelve a poder."
+
+msgid "{n} contact is deleted once the kept one is saved. Undo brings it back."
+msgid_plural "{n} contacts are deleted once the kept one is saved. Undo brings them back."
+msgstr[0] "{n} contacto se elimina cuando se guarda el conservado. Deshacer lo devuelve."
+msgstr[1] "{n} contactos se eliminan cuando se guarda el conservado. Deshacer los devuelve."
+
+msgid "{n} file left out"
+msgid_plural "{n} files left out"
+msgstr[0] "{n} archivo dejado fuera"
+msgstr[1] "{n} archivos dejados fuera"
+
+msgid "{n} file or folder is left out: not a mailbox file, a link, or over a limit"
+msgid_plural "{n} files or folders are left out: not mailbox files, links, or over a limit"
+msgstr[0] "{n} archivo o carpeta queda fuera: no es un archivo de buzón, un enlace ni supera un límite"
+msgstr[1] "{n} archivos o carpetas quedan fuera: no son archivos de buzón, enlaces ni superan un límite"
+
+msgid "{n} folder"
+msgid_plural "{n} folders"
+msgstr[0] "{n} carpeta"
+msgstr[1] "{n} carpetas"
+
+msgid "{n} group of contacts was merged."
+msgid_plural "{n} groups of contacts were merged."
+msgstr[0] "{n} grupo de contactos se fusionó."
+msgstr[1] "{n} grupos de contactos se fusionaron."
+
+msgid "{n} mailbox file"
+msgid_plural "{n} mailbox files"
+msgstr[0] "{n} archivo de buzón"
+msgstr[1] "{n} archivos de buzón"
+
+msgid "{n} message is already here and is left out"
+msgid_plural "{n} messages are already here and are left out"
+msgstr[0] "{n} mensaje ya está aquí y se deja fuera"
+msgstr[1] "{n} mensajes ya están aquí y se dejan fuera"
+
+msgid "{n} remembered sign-in could not be removed from the credential store"
+msgid_plural "{n} remembered sign-ins could not be removed from the credential store"
+msgstr[0] "{n} inicio de sesión recordado no se pudo eliminar del almacén de credenciales"
+msgstr[1] "{n} inicios de sesión recordados no se pudieron eliminar del almacén de credenciales"
+
+msgid "{n} task exists only on this computer"
+msgid_plural "{n} tasks exist only on this computer"
+msgstr[0] "{n} tarea existe solo en este equipo"
+msgstr[1] "{n} tareas existen solo en este equipo"
+
+msgid "{n} thing in it didn't fit with the rest and was put right."
+msgid_plural "{n} things in it didn't fit with the rest and were put right."
+msgstr[0] "{n} elemento que contenía no encajaba con el resto y se corrigió."
+msgstr[1] "{n} elementos que contenía no encajaban con el resto y se corrigieron."
+
+msgid "{read} of {total} MB"
+msgstr "{read} de {total} MB"
+
+msgid "{said}; {left}{more}"
+msgstr "{said}; {left}{more}"
