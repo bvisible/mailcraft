@@ -24,7 +24,7 @@ const RESPOND: &str = "Respond";
 
 /// A control of hers, before what it does and its place in the simplified row are said.
 fn control(key: &'static str, icon: &'static str, label: &'static str, tip: &'static str, size: Size) -> Item {
-    Item { key, icon, label, tip, command: None, menu: None, size, checked: false, section: 9, rank: 5, plain: false, under: None }
+    Item { key, icon, label, tip, command: None, menu: None, size, checked: false, section: 9, rank: 5, plain: false, under: None, pending: false }
 }
 
 /// Add Nora's controls to `tab`, the ribbon's description of the tab in view, when a host reaches her.

@@ -28,7 +28,7 @@ impl MailApp {
     /// Whether leaving the window now would lose work done here (see the module's documentation).
     pub fn unsent_work(&self) -> bool {
         let writing = self.session.compose.as_ref().is_some_and(|c| c.dirty);
-        let forms = self.windows.unsaved() > 0 || matches!(&self.dialog, Some(Dialog::Form(form)) if form.unsaved());
+        let forms = self.windows.unsaved() > 0 || matches!(&self.dialog, Some(Dialog::Form(form)) if form.holds_unsent());
         writing || forms || (!self.session.keeps_local && self.waits_to_go()) || self.notes_unsent()
     }
 

@@ -747,6 +747,7 @@ pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::di
         with: json!({"id": id, "confirmed": true}),
         more: Vec::new(),
         note: None,
+        cancel: None,
     })
 }
 

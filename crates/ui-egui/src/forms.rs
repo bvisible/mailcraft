@@ -194,7 +194,8 @@ impl Form {
     // //// Neoffice — what a hosting page asks about before it closes (`crate::unsent`): an appointment's changes, and a
     // contact's, which a dialog holds.
     /// Whether the form holds what was typed or changed and not saved: an appointment or a meeting, or a contact.
-    pub(crate) fn unsaved(&self) -> bool {
+    /// (`holds_unsent`, upstream's `unsaved` being what an agent's question names, since 0.8.2)
+    pub(crate) fn holds_unsent(&self) -> bool {
         match self {
             Form::Contact(f) => f.changed(),
             _ => self.dirty(),

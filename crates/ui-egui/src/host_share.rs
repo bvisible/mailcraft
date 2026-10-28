@@ -118,6 +118,7 @@ pub(crate) fn ribbon(app: &MailApp, tab: &mut Tab) {
         rank: 3,
         plain: false,
         under: None,
+        pending: false,
     });
     respond.items.push(Item {
         key: "hostChat",
@@ -132,6 +133,7 @@ pub(crate) fn ribbon(app: &MailApp, tab: &mut Tab) {
         rank: 3,
         plain: false,
         under: None,
+        pending: false,
     });
 }
 
