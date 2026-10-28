@@ -504,7 +504,7 @@ const CENSUS: &[&str] = &[
     "crates/jmap-fork/src/mail.rs",
     "crates/jmap-fork/src/mail/up.rs",
     "crates/jmap-fork/src/url.rs",
-    "apps/mailcraft-web/src/fetch.rs",
+    "apps/mailcraft-web/src/browser_fetch.rs",
     "apps/mailcraft-web/src/fetch_rules.rs",
     "crates/jmap-fork/src/send.rs",
     "crates/jmap-fork/src/mail/outgoing.rs",

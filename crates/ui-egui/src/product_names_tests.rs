@@ -61,6 +61,8 @@ const ALLOWED_PHRASES: &[(&str, &str)] = &[
     ("in step with Outlook", "says that signatures are not kept on the server"),
     ("what you see in Outlook", "an account kept in step through Microsoft Graph shows the same mail"),
     ("Out of Office", "the plain phrase for being away, a show-as state, not a product"),
+    // //// Neoffice — this fork's platform, whose name holds the word "office": the hosting page, its notes, contacts and Nora.
+    ("Neoffice", "the platform that hosts this build (its notes, contacts and assistant), not another company's product"),
 ];
 
 /// Every text the window shows through `tl!`, singular and plural, from the template.

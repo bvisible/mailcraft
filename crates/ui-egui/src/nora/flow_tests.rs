@@ -259,6 +259,14 @@ fn downloads(app: &mut MailApp) -> Downloads {
     asked
 }
 
+/// The answer of the download of the message `id` asked for at once: taken out of those asked (the background's own
+/// batches stay, whenever they were asked).
+fn download_of(asked: &Downloads, id: &str) -> mpsc::Sender<GraphFetchResult> {
+    let mut all = asked.borrow_mut();
+    let at = all.iter().position(|(job, _)| job.request.ids == [id]).unwrap_or_else(|| panic!("no download of {id} alone was asked"));
+    all.remove(at).1
+}
+
 fn whole_message(account: Id, id: &str) -> GraphFetchResult {
     let mime = format!(
         "From: Grace Hopper <grace@example.org>\r\nTo: {ME}\r\nSubject: The proof, {id}\r\nMessage-ID: <{id}@mail.example.org>\r\nDate: Wed, 14 Oct 2026 09:00:00 +0000\r\n\
@@ -282,7 +290,7 @@ fn a_reply_that_waits_for_its_download_is_asked_when_it_opens() {
     app.drive_fetch();
     assert_eq!(calls.count(), 0);
     // The message comes; the reply opens; she is asked, by its id.
-    let (_, to) = asked.borrow_mut().remove(0);
+    let to = download_of(&asked, "E3");
     to.send(whole_message(account, "E3")).unwrap();
     app.poll_nora();
     app.drive_fetch();
@@ -297,7 +305,7 @@ fn a_reply_that_waits_for_its_download_is_asked_when_it_opens() {
     app.session.compose = None;
     let e2 = id_of(&app, "E2");
     app.run("ui.noraReply", json!({"message": e2})).unwrap();
-    let (_, to) = asked.borrow_mut().remove(0);
+    let to = download_of(&asked, "E2");
     drop(to);
     app.drive_fetch();
     app.nora.age(5_000.0);

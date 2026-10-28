@@ -463,7 +463,8 @@ fn editor(app: &mut MailApp, ui: &mut Ui, note: &Note) {
         });
         too_many(ui, draft.text.chars().count(), max_text);
     });
-    let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+    // //// Neoffice — through the window's key gate (upstream's, 0.8.2): Escape for this layer, nothing over it.
+    let escape = crate::keys::escape(ui.ctx(), ui.layer_id());
     let quiet = draft.typed.is_some_and(|typed| now - typed >= SAVE_AFTER);
     if draft.typed.is_some() && (left || escape || quiet) {
         save(app, &mut draft, now);
@@ -714,8 +715,9 @@ pub(crate) fn close_question(app: &mut MailApp, ctx: &egui::Context) {
         },
     );
     // Staying is what Escape and Enter mean: going ahead takes a deliberate click.
-    let (enter, escape) =
-        ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+    // //// Neoffice — read through the window's key gate (upstream's, 0.8.2), for the question on top.
+    let layer = crate::keys::modal_layer(egui::Id::unique(CLOSE_ASK));
+    let (enter, escape) = (crate::keys::take_enter(ctx, layer), crate::keys::take_escape(ctx, layer));
     if anyway {
         let _ = app.run("ui.dropNoteDrafts", json!({"then": "quit"}));
     } else if cancel || enter || escape {
@@ -778,8 +780,9 @@ pub(crate) fn delete_modal(app: &mut MailApp, ctx: &egui::Context, ask: &crate::
             }
         });
     });
-    let (enter, escape) =
-        ctx.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::Enter), i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)));
+    // //// Neoffice — read through the window's key gate (upstream's, 0.8.2), for the question on top.
+    let layer = crate::keys::modal_layer(egui::Id::unique("notes_delete_ask"));
+    let (enter, escape) = (crate::keys::take_enter(ctx, layer), crate::keys::take_escape(ctx, layer));
     answer.or((enter || escape).then_some(false))
 }
 
