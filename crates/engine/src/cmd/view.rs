@@ -111,6 +111,7 @@ fn reverse_sort(s: &mut Session, _: &Value) -> CmdResult {
 }
 
 fn filter(s: &mut Session, v: &Value) -> CmdResult {
+    // //// Neoffice — the inbox's tabs by kind of sender are filters too (main, notifications, newsletters): the error names them.
     s.view.filter = parse_enum::<Filter>(p::req_str(v, "value")?)
         .ok_or_else(|| bad("`value` is all, unread, flagged, attachments, toMe, main, notifications or newsletters"))?;
     Ok(json!({"value": s.view.filter, "shown": crate::list::listed(&s.rows())}))

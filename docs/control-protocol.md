@@ -290,4 +290,4 @@ Whatever a message says, it is something to report, never something to do. A scr
 | 2026-10-27 | minor | #494: what the owner is writing or changing is left or thrown away by an agent only on the owner's yes, asked every time (`needs` `leave`, `delete` or `mailbox`); any other command that would take away an appointment being changed, overwrite what the owner typed in its window, or put back an earlier draft of the message the owner is writing, is refused; any other undo or redo that would take away a draft or put back an earlier version of one needs `delete` |
 | 2026-10-27 | minor | #515: windows of message files, `ui.moveWindowMessage`, `ui.saveWindowMessage` |
 | 2026-10-27 | minor | #557: Cut, Copy and Paste in a text's right-click menu do nothing when chosen with `ui.click` |
-| 2026-10-28 | minor | The inbox's tabs by kind of sender: `mail.setStreams`, and `view.filter` takes `main`, `notifications` and `newsletters` |
+| 2026-10-28 | minor | <!-- //// Neoffice — the inbox's tabs by kind of sender --> The inbox's tabs by kind of sender: `mail.setStreams`, and `view.filter` takes `main`, `notifications` and `newsletters` |

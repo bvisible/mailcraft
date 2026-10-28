@@ -290,6 +290,7 @@ fn direction_label(sort: SortBy, descending: bool) -> &'static str {
 /// The header above the list: All and Unread as tabs on the left (the filter in use in the
 /// accent colour, with a line under it), and on the right how the list is arranged, with the
 /// arrow that turns it over. The folder's name is in the window's title and in the folder pane.
+// //// Neoffice — `streams`: what the inbox's tabs by kind of sender count, where the folder in view has them (stream_tabs.rs).
 fn list_header(app: &mut MailApp, ui: &mut Ui, streams: Option<&mailcraft_model::StreamCounts>) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());
