@@ -195,6 +195,8 @@ impl eframe::App for WebShell {
             // //// Neoffice — and what it keeps on its server between two visits is put, and written when it changes; a change
             // //// Neoffice — that waits to be written is work that leaving would lose (kept.rs).
             crate::kept::frame(&mut self.app);
+            // //// Neoffice — and the kind of sender of the Inbox's messages, for the tabs, is asked of the server and put (streams.rs).
+            crate::streams::frame(&mut self.app);
             crate::host_dirty::tell(self.app.unsent_work() || crate::kept::pending());
         }
         // //// Neoffice — a page that draws the navigation in its own menu is told where the window is, and its menu's commands are run (host_menu.rs).
@@ -371,6 +373,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
     // //// Neoffice — the rules, categories and lists these mailboxes' server keeps are read now, and put when they come (kept.rs).
     crate::kept::start(accounts, credentials.clone(), ctx.clone());
+    // //// Neoffice — the kind of sender of these mailboxes' Inbox messages is asked of their server for the window's tabs (streams.rs).
+    crate::streams::start(accounts, credentials.clone(), ctx.clone());
     let gate = crate::jmap_services::Gate::default();
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs); each mailbox by the name of the server's account for it, which is not its address once that changed.
     if let Some(nora) = &mut services.nora {

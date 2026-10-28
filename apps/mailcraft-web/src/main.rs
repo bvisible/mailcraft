@@ -63,6 +63,9 @@ mod gpu_probe;
 mod page;
 #[cfg(test)]
 mod page_tests;
+// //// Neoffice — which kind of sender wrote the Inbox's messages, asked of the Neoffice server for the window's tabs (built
+// everywhere, so that its rules are tested natively).
+mod streams;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
