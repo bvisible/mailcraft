@@ -60,7 +60,8 @@ fn the_date_is_in_the_interface_language_and_its_clock() {
     s.interface_language = Lang::French;
     s.prefs.twelve_hour = false;
     assert_eq!(date_time_text(&s, "longDate", s.now()).unwrap(), "14 octobre 2026");
-    assert_eq!(date_time_text(&s, "numeric", s.now()).unwrap(), "14/10/2026");
+    // //// Neoffice — a numeric date is written day first with dots in French, as in Switzerland (crates/i18n/src/date.rs).
+    assert_eq!(date_time_text(&s, "numeric", s.now()).unwrap(), "14.10.2026");
     assert_eq!(date_time_text(&s, "time", s.now()).unwrap(), "16:05");
     // ISO is the same in every language.
     assert_eq!(date_time_text(&s, "iso", s.now()).unwrap(), "2026-10-14");
