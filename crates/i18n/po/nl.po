@@ -9,6 +9,16 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "\"{address}\" isn't an address mail can be sent from"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "\"{address}\" isn't an address mail can be sent to"
+msgstr ""
+
 #. interface, what a command says
 #: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/account_setup.rs
 #, fuzzy
@@ -44,11 +54,36 @@ msgstr "„{name}” maakt deel uit van een reeks. Bedoelt u alleen het exemplaa
 msgid "\"{name}\" will be deleted for good."
 msgstr "„{name}” wordt definitief verwijderd."
 
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "\"{name}\" will be deleted from the server's address book \"{book}\", for everyone who uses it."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
 msgid "\"{shown}\" isn't an e-mail address"
 msgstr "„{shown}” is geen e-mailadres"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "\"{text}\" is not in the message being written ({count} time(s))."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "\"{title}\" on {day} will be removed from the calendar \"{calendar}\"."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "\"{title}\" will be removed from Neoffice's notes."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "'{subject}' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/graph_send.rs
@@ -57,10 +92,30 @@ msgid "'{subject}' may have been sent: look in Sent Items. It is held in the Out
 msgstr "'{subject}' is mogelijk verzonden: kijk in Verzonden items. Het wordt vastgehouden in Postvak UIT."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "'{subject}' may have been sent: {doubt}. It is held in the Outbox."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "'{subject}' was deleted for good: that can't be undone here."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "'{subject}' was sent, although it was taken out of the Outbox meanwhile. Look in Sent."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "(No title)"
 msgstr "(Geen titel)"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "(address)"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/people_view.rs
@@ -75,7 +130,7 @@ msgid "(no recipients)"
 msgstr "(geen ontvangers)"
 
 #. interface, what a command says
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "(no subject)"
 msgstr "(geen onderwerp)"
@@ -134,10 +189,20 @@ msgid "-----Original Message-----"
 msgstr "-----Oorspronkelijk bericht-----"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "1 character too many"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reminders.rs
 #, fuzzy
 msgid "1 day"
 msgstr "1 dag"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "1 event from the server couldn't be read and was left out."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reminders.rs
@@ -145,11 +210,26 @@ msgstr "1 dag"
 msgid "1 hour"
 msgstr "1 uur"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "1 mailbox was not read: a run reads {max} at most."
+msgstr ""
+
 #. interface, name
 #: crates/model/src/offline.rs crates/ui-egui/src/keep_offline.rs
 #, fuzzy
 msgid "1 month"
 msgstr "1 maand"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "1 moved message can't be found on the server yet, so changes to it wait."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "1 note couldn't be read: {why}"
+msgstr ""
 
 #. interface, name
 #: crates/model/src/offline.rs crates/ui-egui/src/keep_offline.rs
@@ -222,11 +302,21 @@ msgstr "@{login}, aan het testen sinds {since}"
 msgid "@{login}: {prs} merged PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}"
 msgstr "@{login}: {prs} samengevoegde PR's, {commits} commits, +{added} / −{deleted} regels (Δ {delta}), +{binAdded} / −{binDeleted} binaire bestanden, {first} – {last}"
 
+#. interface, what a command says
+#: crates/engine/src/cmd/folder.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/calendar_sync.rs
 #, fuzzy
 msgid "A calendar change couldn't be sent yet and will be tried again: {error}"
 msgstr "Een agendawijziging kan nog niet worden verzonden en wordt opnieuw geprobeerd: {error}"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A calendar change that was waiting to be sent no longer matched the calendar. It was not sent."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/calendar_sync.rs
@@ -235,10 +325,45 @@ msgid "A change to a shared mailbox's calendar was refused: this account may not
 msgstr "Een wijziging van de agenda van een gedeeld postvak is geweigerd: dit account mag die niet bewerken. Er wordt nog één keer geprobeerd, en daarna wordt die teruggezet."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A change to {name} was not sent: it is no longer in the calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A change to {name} was not sent: it is no longer in the contacts."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "A clearer version of your text"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs
 #, fuzzy
 msgid "A colleague's calendar, by their address, with your work or school account. Kept on this computer only"
 msgstr "De agenda van een collega, op diens adres, met uw werk- of schoolaccount. Alleen op deze computer bewaard"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "A contact"
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/remote_contacts.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A contact can't be moved to another address book here"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_pim.rs
+msgid "A contact change couldn't be sent yet and will be tried again"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A contact change that was waiting to be sent no longer matched the contacts. It was not sent."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/graph_switch.rs
@@ -291,6 +416,11 @@ msgid "A mailbox kept here, with no mail server"
 msgstr "Een postvak dat hier wordt bewaard, zonder e-mailserver"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A mailbox shared with you"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/shared_calendars.rs
 #, fuzzy
 msgid "A meeting answer or invitation from this shared mailbox waits: sending from shared mailboxes needs your permission. Use Send/Receive."
@@ -327,6 +457,26 @@ msgid "A meeting that repeats and skips some days can't be put on the server's c
 msgstr "Een vergadering die wordt herhaald en sommige dagen overslaat, kan vanaf hier niet op de agenda van de server worden gezet: alle genodigden zouden voor elke overgeslagen dag een annulering ontvangen. Bewaar de vergadering in een agenda op deze computer, of maak de vergadering opnieuw zonder de overgeslagen dagen."
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A message has no pages to look at: Nora reads it with doc_observe."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A message is being written already: Nora writes into it with draft.write, or you close it first."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A message may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A message was sent, although it was taken out of the Outbox meanwhile. Look in Sent."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "A new message to MailCraft's maintainers, from your account: nothing is sent until you press Send."
@@ -339,6 +489,21 @@ msgid "A new version is downloaded in the background, kept only when MailCraft's
 msgstr "Een nieuwe versie wordt op de achtergrond gedownload, alleen bewaard wanneer de eigen releasesignatuur van MailCraft aangeeft dat die van ons is, en geïnstalleerd wanneer u opnieuw start om bij te werken of wanneer u afsluit."
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "A note has words that can't be saved yet: they are longer than its server takes. Closing now loses them."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "A note has words that can't be saved yet: {why} Closing now loses them."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A note holds {max} characters at most"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/reading/invitation.rs
 #, fuzzy
 msgid "A note to go with it (optional)"
@@ -349,6 +514,11 @@ msgstr "Een notitie erbij (optioneel)"
 #, fuzzy
 msgid "A note to the organizer (optional)"
 msgstr "Een notitie aan de organisator (optioneel)"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "A note's title holds {max} characters at most"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -397,6 +567,16 @@ msgstr "Het opslaan van het postvak is nog bezig: probeer het zo meteen opnieuw"
 #, fuzzy
 msgid "A series that the account's server keeps can't be moved to another calendar from here: the server has no way of moving one, and days of it that were changed on their own could be lost in making it again."
 msgstr "Een reeks die de server van het account bewaart, kan vanaf hier niet naar een andere agenda worden verplaatst: de server kan een reeks niet verplaatsen, en dagen die afzonderlijk zijn gewijzigd, kunnen verloren gaan bij het opnieuw maken."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A signature is open in File › Signatures: what Nora does would go into it. Close it first."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "A signature is open in File › Signatures: what Nora writes would go into it. Close it first."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -691,6 +871,11 @@ msgstr "Toegevoegd door een nieuwere versie van MailCraft: verzend en ontvang in
 msgid "Address"
 msgstr "Adres"
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Address book"
+msgstr ""
+
 #. command label, interface
 #: crates/ui-egui/src/chrome.rs crates/ui-egui/src/lib.rs
 msgid "Advanced Search"
@@ -762,7 +947,7 @@ msgid "All the conditions must hold"
 msgstr "Aan alle voorwaarden moet worden voldaan"
 
 #. interface
-#: crates/ui-egui/src/agent_gate.rs
+#: crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/nora/assist.rs
 #, fuzzy
 msgid "Allow"
 msgstr "Toestaan"
@@ -874,6 +1059,16 @@ msgid "An Agent Is Asking"
 msgstr "Een agent vraagt"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "An administrator can restore it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "An administrator of the server may be able to restore it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/agent_gate.rs
 #, fuzzy
 msgid "An agent wants to {what}."
@@ -909,6 +1104,11 @@ msgid "And {n} more link like it."
 msgid_plural "And {n} more links like it."
 msgstr[0] ""
 msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Another message is being written: Nora writes into it with draft.write, or you close it first."
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/meeting_dialogs.rs
@@ -971,6 +1171,11 @@ msgid "Apply"
 msgstr "Toepassen"
 
 #. command label
+#: crates/engine/src/cmd/remote_contacts.rs
+msgid "Apply Downloaded Address Books"
+msgstr ""
+
+#. command label
 #: crates/engine/src/cmd/remote.rs
 #, fuzzy
 msgid "Apply Downloaded Calendar"
@@ -1001,12 +1206,6 @@ msgid "Apply Downloaded Favorites"
 msgstr "Gedownloade favorieten toepassen"
 
 #. command label
-#: crates/engine/src/cmd/jmap_mail.rs
-#, fuzzy
-msgid "Apply Downloaded JMAP Messages"
-msgstr "Gedownloade JMAP-berichten toepassen"
-
-#. command label
 #: crates/engine/src/cmd/calendar_settings.rs
 #, fuzzy
 msgid "Apply Downloaded Mailbox Settings"
@@ -1017,6 +1216,16 @@ msgstr "Gedownloade postvakinstellingen toepassen"
 #, fuzzy
 msgid "Apply Downloaded Messages"
 msgstr "Gedownloade berichten toepassen"
+
+#. command label
+#: crates/engine/src/cmd/jmap_fetch.rs
+msgid "Apply Downloaded Messages with JMAP"
+msgstr ""
+
+#. command label
+#: crates/engine/src/cmd/notes/server.rs
+msgid "Apply Downloaded Notes"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/tasks_remote.rs
@@ -1052,6 +1261,16 @@ msgstr "Verzenden/ontvangen met Microsoft Graph toepassen"
 #, fuzzy
 msgid "Apply Sent Calendar Changes"
 msgstr "Verzonden agendawijzigingen toepassen"
+
+#. command label
+#: crates/engine/src/cmd/remote_contacts.rs
+msgid "Apply Sent Contact Changes"
+msgstr ""
+
+#. command label
+#: crates/engine/src/cmd/notes/server.rs
+msgid "Apply Sent Note Changes"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/tasks_remote.rs
@@ -1099,6 +1318,16 @@ msgstr "april"
 #, fuzzy
 msgid "Archive"
 msgstr "Archiveren"
+
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Archive Note"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Archived notes"
+msgstr ""
 
 #. name
 #: crates/model/src/rich.rs
@@ -1157,6 +1386,26 @@ msgstr "Zoals ontvangers het zien"
 #, fuzzy
 msgid "As the people you write to see it"
 msgstr "Zoals de personen aan wie u schrijft het zien"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask"
+msgstr ""
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/nora/ribbon.rs
+msgid "Ask Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora about the message you are reading, or to write your reply. Nothing she writes is sent: you read it and send it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Ask Nora…"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/backstage.rs
@@ -1268,6 +1517,11 @@ msgstr ""
 msgid "Attach File"
 msgstr "Bestand bijvoegen"
 
+#. ribbon location
+#: crates/ui-egui/src/lib.rs
+msgid "Attachment"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/advanced_search.rs
 msgid "Attachment keywords"
@@ -1366,6 +1620,11 @@ msgstr "Verjaardag"
 #, fuzzy
 msgid "Block Sender"
 msgstr "Afzender blokkeren"
+
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Blue category"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/advanced_search.rs
@@ -1563,7 +1822,7 @@ msgid "Calibri"
 msgstr "Calibri"
 
 #. interface
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "Cancel"
 msgstr "Annuleren"
@@ -1669,6 +1928,16 @@ msgid "Change the colour"
 msgstr "De kleur wijzigen"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Change the message you are writing"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/hosted_signatures.rs
+msgid "Change them on the site"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs
 #, fuzzy
 msgid "Change this account's name, servers and sign-in"
@@ -1679,6 +1948,11 @@ msgstr "De naam, de servers en de aanmelding van dit account wijzigen"
 #, fuzzy
 msgid "Change this account's name, sign-in and mail to keep offline"
 msgstr "De naam, de aanmelding en de offline te bewaren e-mail van dit account wijzigen"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Changed {when}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/signatures.rs
@@ -1711,6 +1985,26 @@ msgstr ""
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid "Chart"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view.rs
+msgid "Chat with Everyone"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Chat with Everyone in Synk"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view.rs
+msgid "Chat with the Sender"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Chat with the Sender in Synk"
 msgstr ""
 
 #. ribbon
@@ -1954,6 +2248,11 @@ msgstr "Klembord"
 msgid "Close"
 msgstr "Sluiten"
 
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Close Anyway"
+msgstr ""
+
 #. command label
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
@@ -1971,6 +2270,11 @@ msgstr "Sluit MailCraft, installeer de nieuwe versie en start het programma opni
 #, fuzzy
 msgid "Close Message"
 msgstr "Bericht sluiten"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Close Nora's pane"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/view.rs
@@ -2110,6 +2414,11 @@ msgstr "Bezig verbinding te maken met de e-mailserver"
 msgid "Contact"
 msgstr "Contactpersoon"
 
+#. command label
+#: crates/engine/src/cmd/remote_contacts.rs
+msgid "Contact Changes to Send"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/dialogs.rs
 #, fuzzy
@@ -2229,10 +2538,50 @@ msgid "Copy to Folder"
 msgstr "Kopiëren naar map"
 
 #. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "Correct"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Correct with Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't bring the calendar down from the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't bring the contacts down from the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't bring the mail down from the server: {why}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/updates.rs
 #, fuzzy
 msgid "Couldn't find out whether a new version is out: {why}."
 msgstr "Kan niet worden vastgesteld of er een nieuwe versie beschikbaar is: {why}."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't list the address books on the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't list the calendars on the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't list the mailboxes on the server: {why}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/opening.rs
@@ -2245,6 +2594,61 @@ msgstr ""
 msgid "Couldn't reach Microsoft to open the calendar of {address}. Try again in a moment."
 msgstr "Microsoft kon niet worden bereikt om de agenda van {address} te openen. Probeer het zo meteen opnieuw."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't reach the server of the calendars and contacts: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't reach the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read 1 contact of the address books: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read 1 event of the calendar: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read 1 message in full: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read the mail in 1 mailbox: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read the mail in {n} mailboxes: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read the notes: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read {n} contacts of the address books: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read {n} events of the calendar: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't read {n} messages in full: {why}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/graph_drafts.rs
 #, fuzzy
@@ -2252,16 +2656,46 @@ msgid "Couldn't save the draft '{subject}' on the server: the server says {why}.
 msgstr "Kan het concept '{subject}' niet opslaan op de server: de server meldt {why}."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't save the draft '{subject}' on the server: {why}. It stays here, and goes up the next time it is saved."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Couldn't save the mailbox: {error}"
 msgstr "Kan het postvak niet opslaan: {error}"
 
-#. what a command says
-#: crates/engine/src/cmd/graph_send.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Couldn't send '{subject}': {why}. It is held in the Outbox."
 msgstr "Kan '{subject}' niet verzenden: {why}. Het wordt vastgehouden in Postvak UIT."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't send 1 change to the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't send the note changes: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't send {n} changes to the server: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't {doing}: the server doesn't allow it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Couldn't {doing}: the server says {why}."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -2429,7 +2863,7 @@ msgid "Default"
 msgstr "Standaard"
 
 #. command label, interface, name, ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Delete"
 msgstr "Verwijderen"
@@ -2480,6 +2914,11 @@ msgstr "Vergaderverzoeken verwijderen na het reageren"
 msgid "Delete My Copy"
 msgstr "Mijn exemplaar verwijderen"
 
+#. command label, interface
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/notes_view.rs
+msgid "Delete Note"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/dialogs.rs
 #, fuzzy
@@ -2505,10 +2944,20 @@ msgid "Delete Text"
 msgstr "Tekst verwijderen"
 
 #. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "Delete This Event?"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "Delete This Occurrence"
 msgstr "Dit exemplaar verwijderen"
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "Delete This Occurrence?"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -2551,6 +3000,21 @@ msgstr "Verwijderde items"
 #, fuzzy
 msgid "Deleting it takes it out of your calendar only. The organizer is not told that you won't come, and the other people invited still have the meeting. An update from the organizer can put it back. Declining it tells the organizer, if you choose."
 msgstr "Als u dit verwijdert, verdwijnt het alleen uit uw agenda. De organisator wordt niet meegedeeld dat u niet komt, en de andere genodigden houden de vergadering. Een update van de organisator kan het terugzetten. Als u het afwijst, wordt de organisator geïnformeerd, als u daarvoor kiest."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Deleting {name} could not be sent: the server keeps failing with it ({why}). It comes back with the next read if the server still has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Deleting {name} could not be sent: the server keeps failing with it. It comes back with the next read if the server still has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Deleting {name} was not sent to the server: {why}. It is still there, and comes back into the calendar."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs crates/ui-egui/src/merge_contacts.rs
@@ -2622,6 +3086,11 @@ msgstr ""
 #, fuzzy
 msgid "Discard"
 msgstr "Verwerpen"
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Discard Unsaved Note Words"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs crates/ui-egui/src/reminders.rs
@@ -2735,16 +3204,15 @@ msgid "Double-click to open {name}; right-click to save it"
 msgstr "Dubbelklik om {name} te openen; klik met de rechtermuisknop om het op te slaan"
 
 #. command label
-#: crates/engine/src/cmd/jmap_mail.rs
-#, fuzzy
-msgid "Download JMAP Messages in Full"
-msgstr "JMAP-berichten volledig downloaden"
-
-#. command label
 #: crates/engine/src/cmd/graph_mail.rs
 #, fuzzy
 msgid "Download Messages in Full"
 msgstr "Berichten volledig downloaden"
+
+#. command label
+#: crates/engine/src/cmd/jmap_fetch.rs
+msgid "Download Messages in Full with JMAP"
+msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
@@ -2950,6 +3418,11 @@ msgstr "Gebeurtenis bewerken"
 #, fuzzy
 msgid "Edit Message"
 msgstr "Bericht bewerken"
+
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Edit Note"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/signature.rs
@@ -3306,6 +3779,11 @@ msgstr "Zoeken"
 msgid "Find Duplicate Contacts"
 msgstr ""
 
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Find Notes"
+msgstr ""
+
 #. command label, interface, ribbon
 #: crates/engine/src/cmd/mail.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -3438,8 +3916,8 @@ msgstr "Mapnaam"
 msgid "Folders"
 msgstr "Mappen"
 
-#. what a command says
-#: crates/engine/src/cmd/graph_mail.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_mail.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Folders up to date"
 msgstr "Mappen zijn bijgewerkt"
@@ -3535,6 +4013,11 @@ msgstr "Opmaken als HTML"
 #, fuzzy
 msgid "Format as Plain Text"
 msgstr "Opmaken als tekst zonder opmaak"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Formatted"
+msgstr ""
 
 #. command label, interface, name, ribbon
 #: crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/view.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/ribbon.rs
@@ -3796,6 +4279,11 @@ msgid "Gravatar is asked for the sender's picture and told a hash of their addre
 msgstr "Aan Gravatar wordt de afbeelding van de afzender gevraagd, en een hash van diens adres doorgegeven; anders wordt aan favicon.im, en daarna aan Google, het pictogram van diens website gevraagd, en het domein van de afzender doorgegeven. Dit vertelt die diensten van wie u afbeeldingen bekijkt. Alleen voor de personen die u kent (uw contactpersonen, en iedereen aan wie u hebt geschreven) en de e-mail waarvan u afbeeldingen downloadt, nooit voor Ongewenste e-mail, en een afbeelding van een afzender alleen wanneer uw e-mailserver bevestigt dat de e-mail van die afzender is."
 
 #. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Green category"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/merge_contacts.rs
 msgid "Group {n} of {total}"
 msgstr ""
@@ -3941,7 +4429,7 @@ msgid "Hold Unsent Mail"
 msgstr "Onverzonden e-mail vasthouden"
 
 #. interface, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_extra.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/category.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/tasks.rs crates/engine/src/cmd/view.rs crates/ui-egui/src/forms.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_extra.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/category.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/tasks.rs crates/engine/src/cmd/view.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Home"
 msgstr "Start"
@@ -4101,6 +4589,16 @@ msgstr "{what} geïmporteerd; gestopt na {count}: het bestand vergt meer dan é�
 #. interface
 #: crates/ui-egui/src/import_tree.rs
 msgid "Importing… {messages} of {total}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "Improve"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Improve with Nora"
 msgstr ""
 
 #. interface
@@ -4292,9 +4790,29 @@ msgstr "Het gaat als e-mail uit het Postvak UIT bij de volgende Verzenden/ontvan
 msgid "It is an identifier, not a secret. MailCraft keeps it in its settings (File › Options)."
 msgstr "Het is een identificatie, geen geheim. MailCraft bewaart het in de instellingen (Bestand › Opties)."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It is back in the calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It is back in the contacts."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/people_merge.rs
 msgid "It is kept by the server of {who}, and changes made here are not sent back yet, so it can't be merged here."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It is kept on this computer only."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It is kept on this device only."
 msgstr ""
 
 #. interface
@@ -4333,6 +4851,21 @@ msgstr "Het wordt ook van de e-mailserver verwijderd, en dat kan niet ongedaan w
 msgid "It is the same for an installed and a portable copy. MailCraft quits afterwards."
 msgstr "Het is hetzelfde voor een geïnstalleerde en een draagbare kopie. MailCraft sluit daarna af."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It may have been sent: {doubt}. Before you send it again, ask a recipient whether it arrived; the copy in Sent was filed first, so it doesn't tell."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It stays here until this tab is closed: copy what you need of it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It wasn't sent: {why}. Change it, or send it again."
+msgstr ""
+
 #. command label, ribbon
 #: crates/engine/src/cmd/format.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -4349,6 +4882,11 @@ msgstr ""
 #, fuzzy
 msgid "Items in this calendar are kept on this computer and nowhere else. Above the calendar you can move them to your account's calendar."
 msgstr "Items in deze agenda worden op deze computer bewaard en nergens anders. Boven de agenda kunt u ze verplaatsen naar de agenda van uw account."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs crates/ui-egui/src/pim_rights.rs
+msgid "Its address book keeps only a contact's name, company, job title, e-mail addresses and phone numbers"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup.rs
@@ -4385,6 +4923,26 @@ msgstr "JMAP {host}"
 msgid "JMAP · no usable server address"
 msgstr "JMAP · geen bruikbaar serveradres"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "JMAP: no answer to {method}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "JMAP: no methodResponses"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "JMAP: the answer isn't an object"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "JMAP: {parser}"
+msgstr ""
+
 #. date and time
 #: crates/i18n/src/date.rs
 #, fuzzy
@@ -4409,8 +4967,8 @@ msgstr "Functie"
 msgid "Join"
 msgstr "Deelnemen"
 
-#. command label, ribbon
-#: crates/engine/src/cmd/calendar/meeting.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/ribbon.rs
+#. command label, interface, ribbon
+#: crates/engine/src/cmd/calendar/meeting.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Join Online Meeting"
 msgstr "Deelnemen aan onlinevergadering"
@@ -4608,6 +5166,16 @@ msgstr "Deze agenda over de andere leggen"
 msgid "Layout"
 msgstr "Indeling"
 
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Learn My Writing Style"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "Learn my writing style from my sent emails"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/account_setup.rs
 #, fuzzy
@@ -4637,6 +5205,11 @@ msgstr "Licht"
 #, fuzzy
 msgid "Link"
 msgstr "Koppeling"
+
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Link to Note"
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -4761,6 +5334,11 @@ msgstr "Gemaakt door de bijdragers:"
 msgid "Mail"
 msgstr "E-mail"
 
+#. interface, what a command says
+#: crates/model/src/mailbox.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/io.rs
 msgid "Mail can't be imported into an Outbox: it would be sent."
@@ -4769,6 +5347,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/io.rs
 msgid "Mail can't be imported into an Outbox: it would be sent. Choose another folder."
+msgstr ""
+
+#. interface, what a command says
+#: crates/model/src/mailbox.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is"
 msgstr ""
 
 #. what a command says
@@ -4902,6 +5485,11 @@ msgstr "MailCraft verzendt nog geen e-mail vanuit een JMAP-account"
 #, fuzzy
 msgid "MailCraft doesn't support POP yet. Use your provider's IMAP server instead (usually imap.<your domain>, port 993)."
 msgstr "MailCraft ondersteunt POP nog niet. Gebruik in plaats daarvan de IMAP-server van uw provider (meestal imap.<uw domein>, poort 993)."
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "MailCraft doesn't take this command from the page."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/credits.rs
@@ -5548,6 +6136,11 @@ msgstr "Mijn taken"
 msgid "My organisation has to approve MailCraft first: what to do"
 msgstr "Mijn organisatie moet MailCraft eerst goedkeuren: wat u moet doen"
 
+#. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "My style"
+msgstr ""
+
 #. interface, name
 #: crates/engine/src/session.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs
 #, fuzzy
@@ -5585,7 +6178,7 @@ msgid "Names or addresses, separated by ;"
 msgstr "Namen of adressen, gescheiden door ;"
 
 #. ribbon location
-#: crates/engine/src/cmd/view.rs
+#: crates/engine/src/cmd/notes.rs crates/engine/src/cmd/view.rs
 #, fuzzy
 msgid "Navigation"
 msgstr "Navigatie"
@@ -5602,6 +6195,16 @@ msgstr "Nodig voor accounts van Outlook.com en Microsoft 365"
 msgid "Needs Check for new versions."
 msgstr "Controleren op nieuwe versies is nodig."
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "NeoMail doesn't print or export a message for Nora: you print it from the message's own window."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "NeoMail takes one of Nora's commands at a time: draft.reply, draft.new or draft.write, each in a call of its own."
+msgstr ""
+
 #. command label, interface
 #: crates/engine/src/cmd/junk.rs crates/ui-egui/src/ribbon.rs
 msgid "Never Block Sender"
@@ -5613,7 +6216,7 @@ msgid "Never Block Sender's Domain"
 msgstr ""
 
 #. interface, ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs
 #, fuzzy
 msgid "New"
 msgstr "Nieuw"
@@ -5743,6 +6346,11 @@ msgid "New Meeting"
 msgstr "Nieuwe vergadering"
 
 #. command label, interface
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/notes_view.rs
+msgid "New Note"
+msgstr ""
+
+#. command label, interface
 #: crates/engine/src/cmd/tasks.rs crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "New Task"
@@ -5753,6 +6361,11 @@ msgstr "Nieuwe taak"
 #, fuzzy
 msgid "New category"
 msgstr "Nieuwe categorie"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "New conversation"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/calendar_view.rs
@@ -5895,6 +6508,11 @@ msgid "No appointment is open in a window of its own"
 msgstr "Er is geen afspraak geopend in een eigen venster"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "No archived notes."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "No categories yet"
@@ -5994,10 +6612,30 @@ msgid "No message is being read there"
 msgstr "Er wordt daar geen bericht gelezen"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "No message is being written: Nora opens the reply with draft.reply (it writes the text too), or a new message with draft.new."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "No message is open: open the message to answer first."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/updates.rs
 #, fuzzy
 msgid "No new version is ready to install."
 msgstr "Er staat geen nieuwe versie klaar om te installeren."
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "No note matches."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "No notes yet: New Note starts one."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reminders.rs
@@ -6105,6 +6743,151 @@ msgstr "Niemand, of meer dan één van uw contactpersonen, komt overeen: {names}
 msgid "None"
 msgstr "Geen"
 
+#. interface, ribbon location
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
+msgid "Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora couldn't answer: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs crates/ui-egui/src/nora/assist.rs
+msgid "Nora couldn't be reached: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora couldn't find this message on the server: refresh the list and try again."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "Nora couldn't learn your style: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "Nora couldn't rewrite the text: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "Nora couldn't translate the message: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "Nora couldn't write the reply: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora did not answer in time: ask her again."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora found nothing to change."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora has written nothing here to take back."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora is already learning your writing style."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora is already rewriting the text."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora is already translating a message."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is already waiting for your answer on the card of her pane."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora is already writing a reply."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora is learning your writing style from your sent emails. This takes a minute."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
+msgid "Nora is rewriting the text…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/pane.rs
+msgid "Nora is translating the message…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is working…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
+msgid "Nora is writing the reply…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora wants to write in a message of {mailbox}, a mailbox shared with you: what she writes is kept in its drafts until you send it or discard it. Your yes holds for this mailbox until the conversation is new."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora wants to:"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora works on the mailboxes of your Neoffice account only."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora's draft is in the reply: read it before sending."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora's pane needs a hosting page that reaches her conversation (NeoMail in Neoffice)."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora's request waited too long for your answer: nothing was written."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Nora's version is in the message: Undo takes it back."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/pane.rs
+msgid "Nora, the Neoffice assistant"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/forms.rs
 #, fuzzy
@@ -6120,6 +6903,11 @@ msgstr "Geen ongewenste e-mail"
 #. interface
 #: crates/ui-egui/src/advanced_search.rs
 msgid "Not a date"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Not all of this was done: part of it could not run in your message in time."
 msgstr ""
 
 #. interface
@@ -6147,7 +6935,7 @@ msgid "Not available for this account"
 msgstr "Niet beschikbaar voor dit account"
 
 #. interface
-#: crates/ui-egui/src/widgets.rs
+#: crates/ui-egui/src/forms.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/widgets.rs
 #, fuzzy
 msgid "Not available: {reason}"
 msgstr "Niet beschikbaar: {reason}"
@@ -6189,16 +6977,36 @@ msgid "Not now: it is installed when you quit MailCraft."
 msgstr "Niet nu: het wordt geïnstalleerd wanneer u MailCraft afsluit."
 
 #. interface
-#: crates/ui-egui/src/compose.rs
+#: crates/ui-egui/src/compose.rs crates/ui-egui/src/notes_view.rs
 #, fuzzy
 msgid "Not saved"
 msgstr "Niet opgeslagen"
 
 #. interface
-#: crates/ui-egui/src/forms.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/tasks_view.rs
+#: crates/ui-egui/src/notes_view.rs
+msgid "Not saved yet: tried again shortly."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Not saved: {why}"
+msgstr ""
+
+#. command label
+#: crates/engine/src/cmd/notes/server.rs
+msgid "Note Changes to Send"
+msgstr ""
+
+#. command label, interface, name, ribbon location
+#: crates/engine/src/cmd/notes.rs crates/engine/src/session.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Notes"
 msgstr "Notities"
+
+#. interface, what a command says
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Notes aren't kept here: this page's server offers none."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/approval.rs
@@ -6217,6 +7025,16 @@ msgstr "Er staat verder niets in uw agenda op dat tijdstip."
 #, fuzzy
 msgid "Nothing has been sent or received yet."
 msgstr "Er is nog niets verzonden of ontvangen."
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Nothing here takes a message to share."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Nothing here takes an attachment."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -6258,6 +7076,11 @@ msgstr "Er is niets meer gevonden op de server"
 #, fuzzy
 msgid "Nothing to do here."
 msgstr "Hier is niets te doen."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr ""
 
 #. date and time
 #: crates/i18n/src/date.rs
@@ -6349,7 +7172,7 @@ msgid "On the server · Searching…"
 msgstr "Op de server · Zoeken…"
 
 #. interface
-#: crates/ui-egui/src/calendar_view.rs
+#: crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/pim_rights.rs
 #, fuzzy
 msgid "On this computer"
 msgstr "Op deze computer"
@@ -6384,6 +7207,11 @@ msgstr "Zodra een beheerder heeft goedgekeurd, probeert u het opnieuw: de aanmel
 msgid "Once it has worked, your system's credential store keeps it for next time. It is never written to the mailbox."
 msgstr "Zodra het heeft gewerkt, bewaart de referentieopslag van uw systeem het voor de volgende keer. Het wordt nooit naar het postvak geschreven."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "One day of {name} was deleted here and {why}, but it still has it. That day is back in the calendar."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
@@ -6409,10 +7237,25 @@ msgid "Online"
 msgstr "Online"
 
 #. interface
-#: crates/ui-egui/src/calendar_view.rs
+#: crates/ui-egui/src/forms.rs
+msgid "Online Meeting"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "Online meeting"
 msgstr "Onlinevergadering"
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a .docx, .xlsx, .pptx or .pdf file opens in an editor."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only a PDF or a picture goes to the scanned documents."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/windows.rs
@@ -6420,10 +7263,25 @@ msgid "Only a meeting you organize has Find a Time"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "Only a message of a mailbox the page handed over can be shared."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Only an attachment of a message of a mailbox the page handed over can be handed to it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/unconfirmed.rs
 #, fuzzy
 msgid "Only confirm if you know these servers."
 msgstr "Bevestig alleen als u deze servers kent."
+
+#. interface, what a command says
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Only its owner deletes a note: this one was shared with you"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -6462,7 +7320,7 @@ msgid "Only while MailCraft isn't the window in front, and only for the Inboxes 
 msgstr "Alleen wanneer MailCraft niet het voorste venster is, en alleen voor de Postvakken IN van uw eigen accounts."
 
 #. interface, ribbon
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Open"
 msgstr "Openen"
@@ -6488,6 +7346,11 @@ msgstr "Openen & exporteren"
 #, fuzzy
 msgid "Open Attachment"
 msgstr "Bijlage openen"
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Open Attachment in Its Editor"
+msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
@@ -6523,6 +7386,16 @@ msgstr "Postvak openen"
 msgid "Open Mailbox File"
 msgstr "Postvakbestand openen"
 
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Open Note"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Open Note on the Web"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/dialogs.rs
 #, fuzzy
@@ -6546,6 +7419,26 @@ msgstr "Gedeelde agenda openen"
 #, fuzzy
 msgid "Open a mailbox of your organisation that you were given Full Access to, such as a team's, under this account"
 msgstr "Een postvak van uw organisatie openen waartoe u Volledige toegang hebt gekregen, zoals dat van een team, onder dit account"
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoDoc"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoGrille"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPDF"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Open in NeoPrés"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -6679,6 +7572,11 @@ msgstr "Optioneel"
 #, fuzzy
 msgid "Options"
 msgstr "Opties"
+
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Orange category"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/invitation.rs
@@ -7000,6 +7898,11 @@ msgstr "Afbeeldingen: {n} KB van {max} KB"
 msgid "Pin"
 msgstr "Vastmaken"
 
+#. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Pin Note"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -7007,10 +7910,15 @@ msgid "Pin to the top of the list"
 msgstr "Bovenaan de lijst vastmaken"
 
 #. interface
-#: crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/mail_view.rs crates/ui-egui/src/notes_view.rs
 #, fuzzy
 msgid "Pinned"
 msgstr "Vastgemaakt"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Pinned notes"
+msgstr ""
 
 #. command label, ribbon
 #: crates/engine/src/cmd/format.rs crates/ui-egui/src/ribbon.rs
@@ -7154,6 +8062,11 @@ msgid "Proposed time"
 msgstr "Voorgestelde tijd"
 
 #. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Purple category"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "Put them into the calendar of your account, where Outlook and your other devices have them too. You are asked first."
@@ -7239,6 +8152,16 @@ msgstr "De agenda wordt van Microsoft gelezen…"
 msgid "Real name"
 msgstr "Echte naam"
 
+#. interface
+#: crates/ui-egui/src/chrome.rs
+msgid "Receiving {folder} · folder {number} of {folders}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/chrome.rs
+msgid "Receiving {folder}: {done} of {total} · folder {number} of {folders}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/graph_down.rs
 #, fuzzy
@@ -7269,6 +8192,11 @@ msgstr "Recente e-mail"
 msgid "Recurrence"
 msgstr "Terugkeerpatroon"
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Red category"
+msgstr ""
+
 #. command label, name
 #: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs
 #, fuzzy
@@ -7286,6 +8214,11 @@ msgstr "Typen opnieuw"
 #, fuzzy
 msgid "Redo {what}"
 msgstr "{what} opnieuw"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Refuse"
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -7572,11 +8505,21 @@ msgstr "Allen beantwoorden"
 msgid "Reply all"
 msgstr "Allen beantwoorden"
 
+#. interface
+#: crates/ui-egui/src/nora/pane.rs
+msgid "Reply all with Nora"
+msgstr ""
+
 #. command label, ribbon
 #: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Reply with Meeting"
 msgstr "Beantwoorden met vergadering"
+
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/pane.rs
+msgid "Reply with Nora"
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -7663,6 +8606,11 @@ msgstr "Opnieuw starten om bij te werken"
 #, fuzzy
 msgid "Restart to update is the owner's click."
 msgstr "Alleen de eigenaar kan op Opnieuw starten om bij te werken klikken."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Resume"
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -7832,6 +8780,11 @@ msgstr "Opslaan als…"
 msgid "Save Attachment"
 msgstr "Bijlage opslaan"
 
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Save Attachment to Drive"
+msgstr ""
+
 #. command label, interface, ribbon location
 #: crates/engine/src/cmd/file.rs crates/ui-egui/src/backstage.rs
 #, fuzzy
@@ -7897,6 +8850,21 @@ msgstr "Concept opslaan"
 msgid "Save out"
 msgstr "Wegschrijven"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Save the message"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Save to Drive…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Saved"
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid "Saved Text"
@@ -7927,6 +8895,11 @@ msgid "Saving a copy of your mailbox before the switch…"
 msgstr "Bezig met opslaan van een kopie van uw postvak vóór de overstap…"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Saving or sending the message is yours: it is ready in your window."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Saving the mailbox…"
@@ -7945,6 +8918,11 @@ msgid "Saving the mailbox… {done} of {total} messages"
 msgstr "Bezig met opslaan van het postvak… {done} van {total} berichten"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Saving…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Say that this is meant with \"confirmed\": true."
@@ -7961,6 +8939,11 @@ msgstr "Geef op wat er gebeurde (`what`)"
 #, fuzzy
 msgid "Say what to open: `message` or `event` by its id, or `new` (\"appointment\" or \"meeting\")"
 msgstr "Geef op wat u wilt openen: `message` of `event` op het id, of `new` („appointment” of „meeting”)"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Say what to write: `text` is empty."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/report_problem.rs
@@ -7985,6 +8968,11 @@ msgstr "Geef op welke groep agenda's (`group`: de kop)"
 #, fuzzy
 msgid "Say which reminder (`event` and `occurrence`), or `all`"
 msgstr "Geef op welke herinnering (`event` en `occurrence`), of `all`"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Say which text to select."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -8079,6 +9067,11 @@ msgid "Search mail (try from:, has:attachment, is:unread)"
 msgstr "E-mail zoeken (probeer from:, has:attachment, is:unread)"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Search notes"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/chrome.rs
 #, fuzzy
 msgid "Search people"
@@ -8139,6 +9132,11 @@ msgid "Select Message"
 msgstr "Bericht selecteren"
 
 #. command label
+#: crates/engine/src/cmd/notes.rs
+msgid "Select Note"
+msgstr ""
+
+#. command label
 #: crates/engine/src/cmd/tasks.rs
 #, fuzzy
 msgid "Select Task"
@@ -8163,10 +9161,15 @@ msgid "Select a meeting first"
 msgstr "Selecteer eerst een vergadering"
 
 #. interface
-#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/attachment_open.rs crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Select a message first"
 msgstr "Selecteer eerst een bericht"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Select a note first"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading.rs
@@ -8175,10 +9178,20 @@ msgid "Select an item to read"
 msgstr "Selecteer een item om te lezen"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Select at most {count} characters at a time."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/select.rs
 #, fuzzy
 msgid "Select some text first"
 msgstr "Selecteer eerst tekst"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Selecting works in the message being written, and none is: Nora reads a message with doc_observe."
+msgstr ""
 
 #. command label, interface, ribbon
 #: crates/engine/src/cmd/compose.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/ribbon.rs
@@ -8193,7 +9206,7 @@ msgid "Send & Receive"
 msgstr "Verzenden & ontvangen"
 
 #. ribbon location
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/sync_progress.rs crates/engine/src/cmd/tasks_remote.rs crates/ui-egui/src/lib.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_fetch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/notes/server.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/remote_contacts.rs crates/engine/src/cmd/sync_progress.rs crates/engine/src/cmd/tasks_remote.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Send / Receive"
 msgstr "Verzenden/ontvangen"
@@ -8203,6 +9216,11 @@ msgstr "Verzenden/ontvangen"
 #, fuzzy
 msgid "Send Again"
 msgstr "Opnieuw verzenden"
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Send Attachment to Scanned Documents"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -8292,6 +9310,11 @@ msgid "Send the update to them? The account's server sends them the change by ma
 msgstr "De update naar hen verzenden? De server van het account stuurt hun de wijziging per e-mail."
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "Send to Scanned Documents"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Send to To Do…"
 msgstr ""
@@ -8367,7 +9390,7 @@ msgid "Send/Receive signs in to Microsoft; then the server can be searched."
 msgstr "Verzenden/ontvangen meldt aan bij Microsoft; daarna kan de server worden doorzocht."
 
 #. interface
-#: crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/jmap_job.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Send/Receive stopped unexpectedly"
 msgstr "Verzenden/ontvangen is onverwacht gestopt"
@@ -8391,7 +9414,12 @@ msgid "Sending"
 msgstr "Bezig met verzenden"
 
 #. interface
-#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/inbox_pass.rs crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Sending '{subject}' can't be undone."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/inbox_pass.rs crates/ui-egui/src/jmap_job.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
 #, fuzzy
 msgid "Sending and receiving…"
 msgstr "Bezig met verzenden en ontvangen…"
@@ -8403,7 +9431,7 @@ msgid "Sending what is waiting for the server first; then {account} switches to 
 msgstr "Eerst wordt verzonden wat op de server wacht; daarna schakelt {account} over naar Microsoft Graph."
 
 #. interface
-#: crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/jmap_job.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Sending your changes…"
 msgstr "Bezig met verzenden van uw wijzigingen…"
@@ -8415,6 +9443,11 @@ msgid "Sending {n} message"
 msgid_plural "Sending {n} messages"
 msgstr[0] "Bezig met verzenden van {n} bericht"
 msgstr[1] "Bezig met verzenden van {n} berichten"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Sending {n} messages can't be undone."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -8504,11 +9537,21 @@ msgstr ""
 msgid "Share"
 msgstr "Delen"
 
+#. command label, interface
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
+msgid "Share in Synk"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "Shared Calendars"
 msgstr "Gedeelde agenda's"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Shared by {name}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/backstage.rs
@@ -8685,6 +9728,11 @@ msgstr "De kopie onder Gedeelde agenda's tonen"
 msgid "Show the Favorites from Outlook in the folder pane"
 msgstr "De favorieten uit Outlook weergeven in het mappenvenster"
 
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Show the Original"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
@@ -8702,6 +9750,11 @@ msgstr "De dag van deze vergadering weergeven in de agenda."
 #, fuzzy
 msgid "Show the folder pane"
 msgstr "Het mappenvenster weergeven"
+
+#. interface
+#: crates/ui-egui/src/nora/pane.rs
+msgid "Show the original"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/remote.rs
@@ -9064,6 +10117,11 @@ msgid "Spelling & Grammar"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/band.rs
+msgid "Spelling and grammar of your text"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "Stand this calendar beside the others"
@@ -9092,6 +10150,11 @@ msgstr "Begindatum"
 #, fuzzy
 msgid "Start over"
 msgstr "Opnieuw beginnen"
+
+#. interface
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
+msgid "Starting style analysis…"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/sync_panel.rs
@@ -9129,7 +10192,7 @@ msgid "Still indexing: some older mail is searched more slowly"
 msgstr "Nog bezig met indexeren: een deel van de oudere e-mail wordt trager doorzocht"
 
 #. interface
-#: crates/ui-egui/src/sync_panel.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/sync_panel.rs
 #, fuzzy
 msgid "Stop"
 msgstr "Stoppen"
@@ -9163,8 +10226,13 @@ msgstr "Gestopt"
 msgid "Stopped ({line})"
 msgstr "Gestopt ({line})"
 
-#. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Stopped."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_mail.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Stopped; carries on from here next time"
 msgstr "Gestopt; gaat de volgende keer vanaf hier verder"
@@ -9284,6 +10352,11 @@ msgstr ""
 #, fuzzy
 msgid "Tags"
 msgstr "Labels"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Take back the last thing Nora wrote in your message"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/data_removal.rs
@@ -9496,10 +10569,25 @@ msgid "That is too long for a report: shorten it"
 msgstr "Dat is te lang voor een rapport: maak het korter"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "That is too long to write in one go: {count} characters at most."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/shared_calendars.rs crates/ui-egui/src/shared_mailboxes.rs
 #, fuzzy
 msgid "That isn't a shared mailbox"
 msgstr "Dat is geen gedeeld postvak"
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "That mailbox has no such folder."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "That mailbox has no such message."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/report_problem.rs
@@ -9544,6 +10632,11 @@ msgid "The account {address} is opened through is gone."
 msgstr "Het account waarmee {address} is geopend, is verdwenen."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The account's server doesn't let it be changed, once a meeting is made, whether another time may be proposed for {name}. That option is as it was."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 #, fuzzy
 msgid "The account's server forwards it, and tells the meeting's organizer that you did."
@@ -9569,6 +10662,16 @@ msgstr "De server van het account heeft hiervan een Teams-vergadering gemaakt, e
 
 #. interface
 #: crates/ui-egui/src/forms.rs
+msgid "The account's server has made this an online meeting, and it stays one"
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/calendar/meeting.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The account's server has made this an online meeting, and it stays one: that can't be taken back from here."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "The account's server hasn't given it a link to join by yet."
 msgstr "De server van het account heeft nog geen koppeling gegeven om ermee deel te nemen."
@@ -9581,9 +10684,19 @@ msgstr "De server van het account heeft deze vergadering nog geen koppeling gege
 
 #. interface
 #: crates/ui-egui/src/forms.rs
+msgid "The account's server makes it when the appointment is saved; the link to join by comes back with it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "The account's server makes it when the meeting is sent; the link to join by comes back with it."
 msgstr "De server van het account maakt deze aan wanneer de vergadering wordt verzonden; de koppeling om deel te nemen komt daarbij terug."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The address books are still being read from the server"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/approval.rs
@@ -9596,8 +10709,8 @@ msgstr "De goedkeuring is niet doorgekomen."
 msgid "The browser opens no files from the system"
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/remote.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/remote.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "The calendar \"{name}\" can only be read: its owner hasn't let this account change it."
 msgstr "De agenda „{name}” kan alleen worden gelezen: de eigenaar heeft dit account niet toegestaan deze te wijzigen."
@@ -9651,7 +10764,7 @@ msgid "The calendar couldn't be taken in: {error}"
 msgstr "De agenda kon niet worden opgehaald: {error}"
 
 #. interface
-#: crates/ui-egui/src/calendar_sync.rs crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/calendar_sync.rs crates/ui-egui/src/jmap_pim.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "The calendar is being updated already."
 msgstr "De agenda wordt al bijgewerkt."
@@ -9728,11 +10841,51 @@ msgstr "De agenda's van het gedeelde postvak wachten: {error}"
 msgid "The categories couldn't be taken in: {error}"
 msgstr "De categorieën konden niet worden opgehaald: {error}"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to one day of {name} was not sent: {why}. It was put back to what the server has."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to {name} could not be sent: the server keeps failing with it ({why}). It was put back as the server has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to {name} could not be sent: the server keeps failing with it. It was put back as the server has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to {name} had already reached the server, and the people invited, when it was taken back here. It is shown as the server has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to {name} was not sent: {why}. It was put back to what the server has."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The change to {title} was put back as the server has it: {said}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/category.rs
 #, fuzzy
 msgid "The colour is set in Outlook"
 msgstr "De kleur wordt in Outlook ingesteld"
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "The command has no id."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_pim.rs
+msgid "The contact changes couldn't be taken in"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/people_merge.rs
@@ -9747,6 +10900,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/people_merge.rs
 msgid "The contact {id} is named twice."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_pim.rs
+msgid "The contacts couldn't be taken in"
 msgstr ""
 
 #. interface
@@ -9804,6 +10962,11 @@ msgstr "Het e-mailadres van de persoon van wie u de agenda wilt openen"
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
+msgid "The event \"{title}\" will be removed from the calendar \"{calendar}\"."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
 #, fuzzy
 msgid "The folder \"{folder}\" and everything in it will be deleted."
 msgstr "De map „{folder}” en alles daarin worden verwijderd."
@@ -9836,6 +10999,11 @@ msgstr "De lettertypen van de interface zijn Inter, Source Sans 3 en JetBrains M
 #, fuzzy
 msgid "The invitation doesn't say who to answer."
 msgstr "De uitnodiging vermeldt niet aan wie u moet antwoorden."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The invitations to \"{name}\" were already sent when it was taken back here. It is still on the server and comes back into the calendar: delete it there to call it off."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/merge_contacts.rs
@@ -9896,10 +11064,25 @@ msgid "The merged contact's {field} would be too large ({now}, at most {max}), s
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message changed since Nora wrote in it: undo your own way with the message's Undo."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "The message didn't come from the server in time."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/attachment_open.rs
 #, fuzzy
 msgid "The message has no such attachment"
 msgstr "Het bericht heeft niet zo'n bijlage"
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "The message is already in {language}."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/approval.rs
@@ -9908,10 +11091,25 @@ msgid "The message is on the clipboard: paste it into mail or chat for your orga
 msgstr "Het bericht staat op het klembord: plak het in e-mail of chat voor de beheerder van uw organisatie"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message is still being downloaded: ask again in a moment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/attachment_open.rs
 #, fuzzy
 msgid "The message isn't there any more"
 msgstr "Het bericht is er niet meer"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The message starts with its signature: leave a line above it for Nora's text."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "The message was closed before Nora's version came back."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/opened_message.rs crates/ui-egui/src/windows.rs
@@ -9927,6 +11125,11 @@ msgstr "Het bericht dat u aan het schrijven bent, heeft wijzigingen die niet zij
 #. interface
 #: crates/ui-egui/src/files.rs
 msgid "The message you were writing was saved to Drafts; a link opened a new one"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "The message's folder isn't known here yet: try again in a moment."
 msgstr ""
 
 #. interface
@@ -9948,6 +11151,21 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs
 msgid "The name of someone you know."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The new message could not be opened."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The next read brings the server's card too."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_notes.rs
+msgid "The notes couldn't be taken in"
 msgstr ""
 
 #. interface
@@ -9981,6 +11199,11 @@ msgid "The organizer of this meeting doesn't take proposals of another time."
 msgstr "De organisator van deze vergadering neemt geen voorstellen voor een andere tijd aan."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The other time proposed for {name} was not sent: that writes to its organizer, and nobody said to send it. The next Send/Receive shows the meeting as the server has it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup.rs
 #, fuzzy
 msgid "The outgoing mail server isn't a host name (letters, digits, dots and dashes)"
@@ -9991,6 +11214,16 @@ msgstr "De server voor uitgaande e-mail is geen hostnaam (letters, cijfers, punt
 #, fuzzy
 msgid "The owner hasn't allowed update checks."
 msgstr "De eigenaar heeft het zoeken naar updates niet toegestaan."
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "The page doesn't offer this for an attachment."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "The page's command has parameters it doesn't take."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/signatures.rs
@@ -10009,6 +11242,16 @@ msgstr "De poort; laat deze leeg voor de gebruikelijke"
 #, fuzzy
 msgid "The proposed end has to be after the proposed start."
 msgstr "Het voorgestelde einde moet na het voorgestelde begin liggen."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The reply could not be opened."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "The reply was closed before Nora's draft came back."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs
@@ -10031,6 +11274,16 @@ msgid "The sender's name shows {shown}, but the message came from {real}."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server can't file mail just now. What waits to go will go with a later Send/Receive."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server couldn't be reached. What waits to go will go with the next Send/Receive."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/scheduling.rs
 #, fuzzy
 msgid "The server didn't say when other people are busy"
@@ -10043,15 +11296,194 @@ msgid "The server didn't send the messages. Try again in a few minutes."
 msgstr "De server heeft de berichten niet verzonden. Probeer het over een paar minuten opnieuw."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server failed {n} mailboxes in a row; the rest wait for the next run."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server is busy. What waits to go will go with a later Send/Receive."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server limits how many messages can be sent in a short time. What waits to go will go with a later Send/Receive."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server may have it already: then the next read brings it too, as a contact of its own."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server no longer keeps notes here: the notes that waited to go are kept on this computer."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server no longer keeps notes here: the notes that waited to go stay on this page, unsent, until it is left."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server refused the sign-in"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_job.rs
+msgid "The server refused the sign-in. Sign in again, then use Send/Receive."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_job.rs
+msgid "The server refused the sign-in. Use Send/Receive to enter it again."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server took the change to {name} but has {parts} otherwise than it was sent. It is shown here as the server has it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/graph_fetch.rs crates/ui-egui/src/reading.rs
 msgid "The server turned down the sign-in for this account. Use Send/Receive to sign in again."
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-#, fuzzy
-msgid "The server turned down the sign-in for {name}: sign in again"
-msgstr "De server heeft de aanmelding voor {name} geweigerd: meld u opnieuw aan"
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't delete {name} ({why})."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't delete {name}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't delete {title}, which is back in the notes: {said}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't forward {name} ({why}). Nobody was written to."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't forward {name}. Nobody was written to."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take deleting one occurrence of {name} ({why}). It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take deleting one occurrence of {name}. It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take the change to one occurrence of {name} ({why}). It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take the change to one occurrence of {name}. It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take the change to {name} ({why}). It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take the change to {name}. It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take the change to {title}: {said}. Your version is kept as a note of its own, {copy}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take your answer to one occurrence of {name} ({why}). It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take your answer to one occurrence of {name}. It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take your answer to {name} ({why}). It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take your answer to {name}. It was put back as it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} ({why})."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} into the other calendar ({why}), so it wasn't moved: it is back where it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} into the other calendar, so it wasn't moved: it is back where it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} out of the calendar it was in ({why}), so it wasn't moved: it is back there, and the copy in the other calendar was removed."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} out of the calendar it was in ({why}). It is in both calendars now."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} out of the calendar it was in, so it wasn't moved: it is back there, and the copy in the other calendar was removed."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name} out of the calendar it was in. It is in both calendars now."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server wouldn't take {name}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server's mailbox is full: deleting {name} waits here and goes as soon as there is room."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server's mailbox is full: the change to {name} waits here and goes as soon as there is room."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The server's mailbox is full: {name} waits here and goes as soon as there is room."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup.rs
@@ -10173,7 +11605,17 @@ msgid "The to-dos sent couldn't be noted: {error}"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "The undo couldn't keep a note in step with its server: too many note changes are waiting to be sent."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The window changed since Nora asked: nothing was written. Ask her again."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "The window isn't up yet."
 msgstr "Het venster is nog niet verschenen."
@@ -10253,6 +11695,11 @@ msgid "These could not be removed. Remove them yourself:"
 msgstr "Deze konden niet worden verwijderd. Verwijder ze zelf:"
 
 #. interface
+#: crates/ui-egui/src/hosted_signatures.rs
+msgid "These mailboxes' signatures come from the site that opened them: a change made here is lost when this tab closes."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/task_sync.rs
 msgid "These tasks exist only on this computer. Choose the Microsoft account whose To Do gets them, and every task you make from now on. Until you choose, they stay here and nothing of them is sent."
 msgstr ""
@@ -10316,6 +11763,11 @@ msgid "This account has no sign-in with Microsoft"
 msgstr "Dit account heeft geen aanmelding bij Microsoft"
 
 #. interface
+#: crates/ui-egui/src/jmap_job.rs
+msgid "This account isn't kept in step with a JMAP server"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/task_sync.rs
 msgid "This account may not use its to-dos through Microsoft Graph"
 msgstr ""
@@ -10339,7 +11791,7 @@ msgid "This account's Favorites come from Outlook and are changed there (File �
 msgstr "De favorieten van dit account komen uit Outlook en worden daar gewijzigd (Bestand › Opties kan in plaats daarvan de favorieten weergeven die in MailCraft worden bewaard)"
 
 #. interface
-#: crates/ui-egui/src/calendar_sync.rs
+#: crates/ui-egui/src/calendar_sync.rs crates/ui-egui/src/jmap_pim.rs
 #, fuzzy
 msgid "This account's calendar can't be asked yet: Send/Receive signs it in first."
 msgstr "De agenda van dit account kan nog niet worden bevraagd: Verzenden/ontvangen meldt deze eerst aan."
@@ -10351,13 +11803,18 @@ msgid "This build can't ask a server when other people are busy: only your own c
 msgstr "Deze build kan een server niet vragen wanneer andere personen bezet zijn: alleen uw eigen agenda wordt weergegeven."
 
 #. interface
+#: crates/ui-egui/src/jmap_job.rs
+msgid "This build can't connect to JMAP servers"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
 #, fuzzy
 msgid "This build can't connect to Microsoft"
 msgstr "Deze build kan geen verbinding maken met Microsoft"
 
 #. interface
-#: crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "This build can't connect to mail servers"
 msgstr "Deze build kan geen verbinding maken met e-mailservers"
@@ -10405,7 +11862,7 @@ msgid "This build can't open Microsoft's approval page. Copy the message for an 
 msgstr "Deze build kan de goedkeuringspagina van Microsoft niet openen. Kopieer in plaats daarvan het bericht voor een beheerder."
 
 #. interface
-#: crates/ui-egui/src/calendar_sync.rs
+#: crates/ui-egui/src/calendar_sync.rs crates/ui-egui/src/jmap_pim.rs
 #, fuzzy
 msgid "This build can't reach the account's calendar."
 msgstr "Deze build kan de agenda van het account niet bereiken."
@@ -10429,6 +11886,11 @@ msgid "This build doesn't check for new versions."
 msgstr "Deze build controleert niet op nieuwe versies."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar can only be read"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "This calendar can only be read: new items can't go to it"
@@ -10439,6 +11901,31 @@ msgstr "Deze agenda kan alleen worden gelezen: nieuwe items kunnen er niet naart
 #, fuzzy
 msgid "This calendar isn't connected to your account yet. What changes elsewhere doesn't show here, and what you change here stays on this computer."
 msgstr "Deze agenda is nog niet verbonden met uw account. Wat elders verandert, wordt hier niet weergegeven, en wat u hier wijzigt, blijft op deze computer."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar's account can't make online meetings."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar's server answers an invitation as a whole: answer the whole series, or keep this answer here without sending it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar's server doesn't forward meetings."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This calendar's server keeps only Free and Busy."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/zones.rs
@@ -10457,6 +11944,16 @@ msgstr "Die van deze computer, waar die ook naartoe gaat"
 #, fuzzy
 msgid "This contact will be deleted for good."
 msgstr "Deze contactpersoon wordt definitief verwijderd."
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "This contact will be deleted from the server's address book \"{book}\", for everyone who uses it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "This contact's card will be removed from Neoffice's contacts for the whole team. An administrator can restore it."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/updates.rs
@@ -10481,6 +11978,16 @@ msgstr "Alleen dit apparaat"
 #, fuzzy
 msgid "This event is kept by the server of {who}. It can be moved to another calendar of that account, not out of it: taking it out would delete it there."
 msgstr "Deze gebeurtenis wordt bewaard door de server van {who}. Deze kan worden verplaatst naar een andere agenda van dat account, niet erbuiten: als u deze eruit haalt, wordt deze daar verwijderd."
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "This event on {day} will be removed from the calendar \"{calendar}\"."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "This event will be removed from the calendar \"{calendar}\"."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
@@ -10576,6 +12083,11 @@ msgstr ""
 #, fuzzy
 msgid "This mailbox is on this device only"
 msgstr "Dit postvak staat alleen op dit apparaat"
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "This mailbox isn't one the page handed over."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/unconfirmed.rs
@@ -10697,6 +12209,11 @@ msgid "This message downloads once the messages being downloaded now are here."
 msgstr "Dit bericht wordt gedownload zodra de berichten die nu worden gedownload er zijn."
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "This message has no such attachment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/view.rs
 #, fuzzy
 msgid "This message has no text."
@@ -10717,6 +12234,11 @@ msgstr "Dit bericht is geen uitnodiging die kan worden beantwoord."
 #. what a command says
 #: crates/engine/src/cmd/calendar/invitation.rs
 msgid "This message isn't from the organizer of that meeting, so it can't call it off: take the meeting out of the calendar yourself."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_attachments.rs crates/ui-egui/src/host_share.rs
+msgid "This message isn't on its server yet."
 msgstr ""
 
 #. interface
@@ -10747,6 +12269,46 @@ msgstr "Dit bericht is verzonden met Laag belang."
 #, fuzzy
 msgid "This message will be deleted for good."
 msgstr "Dit bericht wordt definitief verwijderd."
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "This note has formatting, a checklist or attachments: change its text where it was written."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This note has no web address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "This note will be removed from Neoffice's notes."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This note's text is changed where it was written: open it on the web"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs crates/ui-egui/src/pim_rights.rs
+msgid "This page keeps no categories or favorites: they would be gone at the next visit"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page keeps no contacts of its own, and its server has no address book to put new ones in"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page keeps no tasks: they would be gone at the next visit"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page keeps nothing of its own between visits: what is imported would be gone at the next one"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/view.rs
@@ -10807,6 +12369,16 @@ msgstr "Het account van dit gedeelde postvak is verdwenen"
 #, fuzzy
 msgid "This shared mailbox's account is gone: remove the shared mailbox and add it again"
 msgstr "Het account van dit gedeelde postvak is verdwenen: verwijder het gedeelde postvak en voeg het opnieuw toe"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "This tab was in the background: Nora could not act in your message."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "This window can't ask the server for the message."
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/remote.rs
@@ -11009,11 +12581,26 @@ msgstr "Vandaag"
 msgid "Tomorrow"
 msgstr "Morgen"
 
-#. what a command says
-#: crates/engine/src/cmd/remote.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/remote.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Too many calendar changes are waiting to be sent to the server. Let Send/Receive get them through first."
 msgstr "Te veel agendawijzigingen wachten om naar de server te worden verzonden. Laat ze eerst door Verzenden/ontvangen verwerken."
+
+#. interface, what a command says
+#: crates/engine/src/cmd/remote_contacts/written.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Too many contact changes are waiting to be sent to the server. Let Send/Receive get them through first."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "Too many messages are being opened at once."
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/notes/server.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Too many note changes are waiting to be sent. Let them get through first."
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/calendar_opened.rs
@@ -11045,9 +12632,24 @@ msgstr "Totaal aantal berichten"
 msgid "Total size"
 msgstr "Totale grootte"
 
-#. ribbon
-#: crates/ui-egui/src/ribbon.rs
+#. interface, ribbon
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/ribbon.rs
 msgid "Translate"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Translate Your Text with Nora"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Translate with Nora"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/pane.rs
+msgid "Translated by Nora into {language}"
 msgstr ""
 
 #. interface
@@ -11146,8 +12748,8 @@ msgstr "Typ uw e-mailadres en MailCraft zoekt de rest: Microsoft 365, Outlook.co
 msgid "Underline"
 msgstr "Onderstrepen"
 
-#. command label, name
-#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs
+#. command label, interface, name
+#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs
 #, fuzzy
 msgid "Undo"
 msgstr "Ongedaan maken"
@@ -11193,7 +12795,7 @@ msgid "Unread/ Read"
 msgstr "Ongelezen/ Gelezen"
 
 #. interface
-#: crates/ui-egui/src/chrome.rs
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/host_modules.rs
 #, fuzzy
 msgid "Unread: {n}"
 msgstr "Ongelezen: {n}"
@@ -11209,6 +12811,16 @@ msgstr "Niet-opgeslagen wijzigingen"
 #, fuzzy
 msgid "Unsaved Message"
 msgstr "Niet-opgeslagen bericht"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Unsaved Note"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Untitled"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/backstage.rs
@@ -11228,8 +12840,8 @@ msgstr "Tot 25 MB"
 msgid "Up to 50 MB"
 msgstr "Tot 50 MB"
 
-#. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs crates/model/src/sync.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/graph_mail.rs crates/model/src/sync.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "Up to date"
 msgstr "Actueel"
@@ -11257,6 +12869,11 @@ msgstr "Updates"
 #, fuzzy
 msgid "Updating {account}"
 msgstr "{account} wordt bijgewerkt"
+
+#. interface
+#: crates/ui-egui/src/jmap_job.rs
+msgid "Use Send/Receive to sign in to"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
@@ -11534,6 +13151,16 @@ msgid "Window"
 msgstr "Venster"
 
 #. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "With Everyone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/host_share.rs
+msgid "With the Sender"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_view.rs
 #, fuzzy
 msgid "Without this, the calendar uses the working hours your Microsoft 365 mailbox has, once MailCraft may read them. The ones above are used until then."
@@ -11609,6 +13236,11 @@ msgid "Working hours"
 msgstr "Werktijden"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Write from {mailbox}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/people_view.rs
 #, fuzzy
 msgid "Write to {address}"
@@ -11621,10 +13253,20 @@ msgid "Write your message"
 msgstr "Schrijf uw bericht"
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "Write your note…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/compose/editor.rs
 #, fuzzy
 msgid "Write your signature"
 msgstr "Schrijf uw handtekening"
+
+#. interface
+#: crates/ui-egui/src/nora/own_text.rs
+msgid "Write your text first: Nora works on it."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -11643,6 +13285,11 @@ msgstr "Yahoo"
 #, fuzzy
 msgid "Yahoo Mail"
 msgstr "Yahoo Mail"
+
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Yellow category"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/updates.rs
@@ -11681,6 +13328,11 @@ msgid "You declined this meeting."
 msgstr "U hebt deze vergadering geweigerd."
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "You didn't let Nora write in {mailbox}: nothing was written."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/open_shared.rs
 #, fuzzy
 msgid "You don't have access to the calendar of {address}. They need to share it with you; if they just did, try again in an hour."
@@ -11715,6 +13367,11 @@ msgstr "U hebt deze uitnodiging nog niet beantwoord."
 #, fuzzy
 msgid "You may be asked to sign in with Microsoft again, to let MailCraft read and change your mail there."
 msgstr "U wordt mogelijk gevraagd zich opnieuw aan te melden bij Microsoft, zodat MailCraft uw e-mail daar kan lezen en wijzigen."
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "You may read this note, not change it."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
@@ -11753,10 +13410,20 @@ msgid "You signed in as {signedIn}, not {typed}."
 msgstr "U bent aangemeld als {signedIn}, niet als {typed}."
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "You stopped Nora: nothing was written."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/invitation.rs
 #, fuzzy
 msgid "You tentatively accepted this meeting."
 msgstr "U hebt deze vergadering voorlopig geaccepteerd."
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Your Neoffice session has ended: reload the page, then ask Nora again."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
@@ -11896,10 +13563,50 @@ msgid "Your own name."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Your reply starts with its signature: leave a line above it for Nora's draft, and ask her again."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "Your report is ready in a new message: check it, then press Send."
 msgstr "Uw rapport staat klaar in een nieuw bericht: controleer het en druk daarna op Verzenden."
+
+#. interface, what a command says
+#: crates/engine/src/cmd/remote_contacts.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Your rights do not let you add contacts"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Your rights do not let you change this contact"
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/notes.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Your rights do not let you change this note"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Your rights do not let you delete this contact"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "Your text changed meanwhile: Nora's version wasn't put in."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Your text is longer than Nora reads of it ({count} characters): she can't write over it whole, only above or after it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/own_text.rs
+msgid "Your text is too long for Nora: {n} characters at most."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -11926,6 +13633,11 @@ msgid "`account` is required"
 msgstr "`account` is verplicht"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`all` is true or false."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/favorites_sync.rs
 #, fuzzy
 msgid "`answer.folders` is a list of {path, kind}"
@@ -11936,6 +13648,11 @@ msgstr "`answer.folders` is een lijst van {path, kind}"
 #, fuzzy
 msgid "`answer.outcome` is read, missing, notPermitted, refused, approval or failed"
 msgstr "`answer.outcome` is read, missing, notPermitted, refused, approval of failed"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`at` is \"top\", \"end\" or \"replace\", not \"{value}\"."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/keep_offline.rs
@@ -11967,11 +13684,36 @@ msgstr "`notice` is installsItself of didntStart"
 msgid "`value` is true or false"
 msgstr "`value` is true of false"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{command}` is not one of Nora's commands in NeoMail: she reads the window and writes into the message being written ({commands}); sending, deleting, moving, filing and flagging are yours."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{command}` takes the text to write as `text`."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{field}` is text."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "`{field}` is too long."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 #, fuzzy
 msgid "a JMAP account's server and address can't be changed once its mail is here: remove it and add the other one"
 msgstr "de server en het adres van een JMAP-account kunnen niet meer worden gewijzigd zodra de e-mail ervan hier is: verwijder het en voeg het andere toe"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "a JMAP address is too long"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs
@@ -11990,6 +13732,11 @@ msgstr "een categorie heeft een naam nodig"
 #, fuzzy
 msgid "a colour is written #rrggbb"
 msgstr "een kleur wordt geschreven als #rrggbb"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "a contact"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs
@@ -12129,6 +13876,11 @@ msgstr ""
 msgid "an account becomes a JMAP account, or stops being one, only by being removed and added again"
 msgstr "een account wordt een JMAP-account, of houdt op dat te zijn, alleen door het te verwijderen en opnieuw toe te voegen"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "an event"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs
 #, fuzzy
@@ -12180,6 +13932,41 @@ msgstr "agenda"
 msgid "cancelled"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "carries a user name or a password: the secret is given apart from the address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the flag of '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the flag of {n} messages"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the replied or forwarded mark of '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the replied or forwarded mark of {n} messages"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change {n} messages"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/people.rs
 #, fuzzy
@@ -12191,6 +13978,21 @@ msgstr "contact"
 #, fuzzy
 msgid "day"
 msgstr "dag"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "delete '{subject}' for good"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "delete a message for good"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "delete {n} messages for good"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/remote.rs
@@ -12261,6 +14063,21 @@ msgid "folders are nested too deeply"
 msgstr "mappen zijn te diep genest"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "has a backslash in it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "has a control character or a space in it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "has a port that isn't a number from 1 to 65535"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/data_removal.rs
 #, fuzzy
 msgid "has too many files: the rest was not removed"
@@ -12271,6 +14088,11 @@ msgstr "heeft te veel bestanden: de rest is niet verwijderd"
 #, fuzzy
 msgid "hours"
 msgstr "uur"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "how it shows"
+msgstr ""
 
 #. name
 #: crates/ui-egui/src/account_setup.rs
@@ -12303,6 +14125,21 @@ msgid "is a link: not followed, and nothing in it was removed"
 msgstr "is een koppeling: niet gevolgd, en er is niets in verwijderd"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "is a plain http:// address to a server that isn't on this computer: use https://"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "is empty"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "is longer than 2048 characters"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/data_removal.rs
 #, fuzzy
 msgid "is nested too deep: left alone"
@@ -12331,6 +14168,16 @@ msgstr "is geen map waarin MailCraft de gegevens bewaart: ongemoeid gelaten"
 #, fuzzy
 msgid "isn't a folder: left alone"
 msgstr "is geen map: ongemoeid gelaten"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "isn't an https:// address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "it can't make that change"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/graph_drafts.rs
@@ -12392,10 +14239,25 @@ msgid "it is damaged, or larger than can be shown"
 msgstr "het is beschadigd, of groter dan kan worden weergegeven"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "it is larger than the server takes ({size})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "it is too large for the server"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/images.rs crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "it is too large to show"
 msgstr "het is te groot om weer te geven"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "it no longer exists"
+msgstr ""
 
 #. name
 #: crates/engine/src/agent.rs
@@ -12416,10 +14278,15 @@ msgid "it takes the window off the message the owner is writing"
 msgstr "het haalt het venster weg bij het bericht dat de eigenaar aan het schrijven is"
 
 #. interface
-#: crates/ui-egui/src/reading/remote.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "it took too long"
 msgstr "het duurde te lang"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "it would have made the server write to the people invited, and nobody said to send that"
+msgstr ""
 
 #. name
 #: crates/engine/src/agent.rs
@@ -12428,8 +14295,38 @@ msgid "it writes to other people or reaches out to the web"
 msgstr "het schrijft naar andere mensen of benadert het web"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "its time"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "its title"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/opened_message.rs
 msgid "larger than {mb} MB: bring it in with File › Import"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "mark '{subject}' as read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "mark '{subject}' as unread"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "mark {n} messages as read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "mark {n} messages as unread"
 msgstr ""
 
 #. interface
@@ -12449,6 +14346,41 @@ msgstr "komt niet overeen"
 #, fuzzy
 msgid "month"
 msgstr "maand"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "move '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "move '{subject}' to {folder}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "move {n} messages"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "move {n} messages to {folder}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "names a server that isn't letters, digits, dots and dashes, or an IP address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "names no server"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "network: {text}"
+msgstr ""
 
 #. name
 #: crates/engine/src/agent.rs
@@ -12475,19 +14407,18 @@ msgid "no account is connected to a mail server (File › Add Account)"
 msgstr "geen account is verbonden met een e-mailserver (Bestand › Account toevoegen)"
 
 #. what a command says, why a command can't run
-#: crates/engine/src/cmd/jmap_mail.rs
-#, fuzzy
-msgid "no account is kept in step over JMAP"
-msgstr "geen account wordt via JMAP bijgehouden"
-
-#. what a command says, why a command can't run
 #: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/offline.rs
 #, fuzzy
 msgid "no account is kept in step through Microsoft Graph"
 msgstr "geen account wordt via Microsoft Graph bijgehouden"
 
-#. what a command says
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs
+#. what a command says, why a command can't run
+#: crates/engine/src/cmd/jmap_fetch.rs crates/engine/src/cmd/jmap_mail.rs
+msgid "no account is kept in step with a JMAP server"
+msgstr ""
+
+#. interface, what a command says
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs crates/ui-egui/src/i18n/run_words/rows.rs
 #, fuzzy
 msgid "no account with id {id}"
 msgstr "geen account met id {id}"
@@ -12540,6 +14471,11 @@ msgstr "geen map met id {id}"
 msgid "no incoming server"
 msgstr "geen inkomende server"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "no mail account in the JMAP session"
+msgstr ""
+
 #. what a command says, why a command can't run
 #: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/format.rs crates/engine/src/cmd/mod.rs crates/engine/src/cmd/picture.rs crates/engine/src/cmd/writing_tools.rs
 #, fuzzy
@@ -12552,8 +14488,13 @@ msgstr "er wordt geen bericht geschreven"
 msgid "no message with id {id}"
 msgstr "geen bericht met id {id}"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "no message with id {id} in {account}"
+msgstr ""
+
 #. what a command says
-#: crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
+#: crates/engine/src/cmd/graph_mail.rs
 #, fuzzy
 msgid "no message with id {id} in {name}"
 msgstr "geen bericht met id {id} in {name}"
@@ -12569,6 +14510,11 @@ msgstr "geen uitgaande server"
 #, fuzzy
 msgid "no picture {id} in this signature"
 msgstr "geen afbeelding {id} in deze handtekening"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words.rs
+msgid "no reason given"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/rules.rs
@@ -12629,11 +14575,26 @@ msgstr "geen dergelijke alinea"
 msgid "no task with id {id}"
 msgstr "geen taak met id {id}"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "no window to fetch from"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/folder.rs
 #, fuzzy
 msgid "no {folder} folder"
 msgstr "geen map {folder}"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "not available: {why}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "nothing hosting this window reaches Nora's conversation"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/format.rs
@@ -12760,6 +14721,11 @@ msgstr "sla de handtekening die wordt bewerkt eerst op of sluit die"
 msgid "save the mailbox to a file first: the switch keeps a copy of it beside that file"
 msgstr "sla het postvak eerst op in een bestand: bij het overschakelen blijft een kopie ervan naast dat bestand"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "secure connection: {text}"
+msgstr ""
+
 #. what a command says, why a command can't run
 #: crates/engine/src/cmd/people.rs
 #, fuzzy
@@ -12771,6 +14737,11 @@ msgstr "selecteer eerst een contact"
 #, fuzzy
 msgid "select a message first"
 msgstr "selecteer eerst een bericht"
+
+#. what a command says, why a command can't run
+#: crates/engine/src/cmd/notes.rs
+msgid "select a note first"
+msgstr ""
 
 #. what a command says, why a command can't run
 #: crates/engine/src/cmd/tasks.rs
@@ -12847,11 +14818,146 @@ msgstr "dat bericht wordt niet vastgehouden"
 msgid "that was only looked at, not read in full"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the IPv4 address is not four decimal numbers"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the IPv6 address holds characters it cannot"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the IPv6 address is not closed"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the IPv6 address is not valid"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the JMAP session has no `{key}`"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the JMAP session has no capabilities"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the JMAP {key} can't be used"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the JMAP {key} isn't https"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the JMAP {key} isn't on the server the session is served from"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/invitation.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/compose.rs
 #, fuzzy
 msgid "the account is gone"
 msgstr "het account is verdwenen"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address cannot be split"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address does not start with http:// or https://"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address has no host"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address holds a backslash"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address holds a space or a control character"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address holds user information"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the address is too long"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "the answer had no text"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of address books"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of calendars"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of cards"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of emails"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of events"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of ids"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer has no list of mailboxes"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer is larger than {max} bytes"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "the answer is too long"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the answer lists no mailbox"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/graph_switch.rs
@@ -12864,6 +14970,26 @@ msgstr "de browser kan geen kopie van het postvak ernaast bewaren: schakel over 
 msgid "the browser can't read folders by path"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the browser cannot limit the request's time"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the browser could not build the request"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the browser gave no response"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the browser refused a request header"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
@@ -12871,16 +14997,41 @@ msgid "the calendar is gone"
 msgstr "de agenda is verdwenen"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the card the server said it had is gone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the change says nothing that could be sent"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_sync.rs
 #, fuzzy
 msgid "the check stopped unexpectedly"
 msgstr "de controle is onverwacht gestopt"
 
+#. interface
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs
+msgid "the connection stopped before Nora answered"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the contact has no mark to be made with"
+msgstr ""
+
 #. what a command says
-#: crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs
+#: crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/remote_contacts.rs
 #, fuzzy
 msgid "the contact is gone"
 msgstr "het contact is verdwenen"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the contact's name on the server can't be read"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/images.rs
@@ -12900,6 +15051,16 @@ msgstr "de download is gestopt voordat die klaar was"
 msgid "the end is before the start"
 msgstr "het einde ligt vóór het begin"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the event has no mark or no time to be made with"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the event has no time to be made with"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/invitation.rs crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
@@ -12918,11 +15079,26 @@ msgstr "de map is al leeg"
 msgid "the folder this message is in isn't on this computer any more"
 msgstr "de map waarin dit bericht staat, is niet meer op deze computer"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the host holds characters a host cannot"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the host is too long"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs
 #, fuzzy
 msgid "the last calendar can't be deleted"
 msgstr "de laatste agenda kan niet worden verwijderd"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the link leads to a scheme other than http or https"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/file.rs
@@ -12942,11 +15118,21 @@ msgstr "het postvak heeft geen agenda"
 msgid "the mailbox has no folders"
 msgstr "het postvak heeft geen mappen"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the mailbox is full"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/session.rs
 #, fuzzy
 msgid "the mailbox isn't kept in a file, so content outside memory can't be read"
 msgstr "het postvak wordt niet in een bestand bewaard, dus inhoud buiten het geheugen kan niet worden gelezen"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the mailbox on the server is full"
+msgstr ""
 
 #. what a command says
 #: crates/model/src/rich.rs
@@ -12954,17 +15140,57 @@ msgstr "het postvak wordt niet in een bestand bewaard, dus inhoud buiten het geh
 msgid "the message can't hold that much text"
 msgstr "het bericht kan niet zoveel tekst bevatten"
 
+#. interface
+#: crates/ui-egui/src/nora/flow.rs
+msgid "the message didn't download"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message has more recipients than the server allows"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message has more recipients than the server allows ({most})"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/mail.rs crates/engine/src/session.rs
 #, fuzzy
 msgid "the message has no attachment {index}"
 msgstr "het bericht heeft geen bijlage {index}"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message has no recipients"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message has no sender"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message has too many recipients"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message is larger than the server takes ({size})"
+msgstr ""
+
 #. why a command can't run
 #: crates/engine/src/cmd/format.rs crates/engine/src/cmd/picture.rs
 #, fuzzy
 msgid "the message is plain text; switch it to HTML first"
 msgstr "het bericht is platte tekst; zet het eerst om naar HTML"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the message is too large for the server"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/compose.rs
@@ -12973,16 +15199,66 @@ msgid "the messages to forward are larger than {mb} MB together"
 msgstr "de door te sturen berichten zijn samen groter dan {mb} MB"
 
 #. what a command says
+#: crates/engine/src/cmd/notes.rs
+msgid "the note is gone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the notes hold more text than one reading takes, and these are not shown"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "the page is out of date. Reload it and try again."
+msgstr ""
+
+#. what a command says
 #: crates/model/src/mailbox.rs
 #, fuzzy
 msgid "the parent folder belongs to another account"
 msgstr "de bovenliggende map hoort bij een ander account"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the port is not valid"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/calendar/meeting.rs
 #, fuzzy
 msgid "the proposed end is not after the proposed start"
 msgstr "het voorgestelde einde ligt niet na het voorgestelde begin"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the request failed"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the request is over the server's limit"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the request is over the server's limit {limit}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the response body cannot be read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the response body is not bytes"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the response body is over {max} bytes"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/mail.rs
@@ -13020,16 +15296,226 @@ msgid "the series doesn't happen on {date}"
 msgstr "de reeks vindt niet plaats op {date}"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the series no longer has that occurrence"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered that it has no such day"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered that it has no such item"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered with something this program doesn't know"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered with something this program doesn't know ({kind})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered with something this program doesn't know ({kind}): {description}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server answered with something this program doesn't know: {description}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/calendar_sync.rs
 #, fuzzy
 msgid "the server answered {status}"
 msgstr "de server antwoordde {status}"
 
 #. interface
-#: crates/ui-egui/src/calendar_sync.rs
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server could not make them just now ({kind})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/calendar_sync.rs crates/ui-egui/src/jmap_pim.rs
 #, fuzzy
 msgid "the server couldn't be reached"
 msgstr "de server kon niet worden bereikt"
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "the server cut the text short"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server did not take them"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't accept an address the message is for"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't accept {addresses}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't let this account keep drafts there"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't let this account send as that address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't let this account send as {address}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't let this account send mail just now"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server doesn't send mail"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server failed after it was asked to send it (HTTP {status})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server failed while it was sending it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server failed while it was sending it: {description}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server found the message invalid"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server has another contact under its name now"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server has more than 1,000 people for this event, more than are rewritten from here"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server has no Drafts folder to keep it in"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server has no Sent folder to keep a copy of it in"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server has too many events around that time to find the occurrence among them just now"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server is busy (HTTP {status})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server lists no identity to send as {address}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server lost the message it was sent"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server no longer has its series"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server no longer has the card it made of it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server no longer has the contact"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server no longer has the event"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server no longer has the series"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server refused it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server refused it ({kind})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server refused it ({kind}): {description}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server refused it: {description}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server refused: {said}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server rejected the request: {said}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server said it deleted it too"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server says the event is one occurrence of a series, and doesn't say of which"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/images.rs
@@ -13043,11 +15529,86 @@ msgstr "de server stuurde een webpagina in plaats van een afbeelding"
 msgid "the server sent nothing"
 msgstr "de server stuurde niets"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server takes fewer objects in a call"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/compose.rs
 #, fuzzy
 msgid "the server wouldn't send “{subject}” whole, so it can't be forwarded as an attachment"
 msgstr "de server wilde ‘{subject}’ niet volledig verzenden, dus het kan niet als bijlage worden doorgestuurd"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server wouldn't take it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server wouldn't take it ({said})"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer did not have it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer did not have the series"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer did not have them"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer didn't say whether it was sent"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer said nothing of it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer to the look for its card can't be read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer was lost"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's answer wasn't understood"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's card couldn't be read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the server's copy of it couldn't be read"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the session address is too long"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "the session address isn't https"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/signature.rs
@@ -13150,6 +15711,11 @@ msgstr "er is geen vrije naam voor de kopie van het postvak ernaast"
 msgid "there is no search"
 msgstr "er is geen zoekopdracht"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "these messages were for another account, not for {account}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/graph_mail.rs
 #, fuzzy
@@ -13167,6 +15733,21 @@ msgstr "deze resultaten waren voor een ander postvak, niet voor {name}"
 #, fuzzy
 msgid "these settings are for another account, not for {who}"
 msgstr "deze instellingen zijn voor een ander account, niet voor {who}"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "they no longer exist"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "this JMAP server doesn't offer mail"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "this Send/Receive was for another account, not for {account}"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/account.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
@@ -13203,11 +15784,26 @@ msgstr "dit account heeft geen handtekening; voeg er een toe via Bestand › Opt
 msgid "this account has no {folder} folder"
 msgstr "dit account heeft geen map {folder}"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "this account may not change it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "this account may not change them"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/graph_drafts.rs
 #, fuzzy
 msgid "this account may not save it"
 msgstr "dit account mag het niet opslaan"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "this calendar's server keeps no categories, importance or proposed times, and everyone invited there is asked for an answer"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/people.rs
@@ -13276,6 +15872,21 @@ msgid_plural "times"
 msgstr[0] "keer"
 msgstr[1] "keer"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "timed out"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "too large: {text}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "too many changes at once"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/tasks.rs
 msgid "too many deletions are waiting to be sent to Microsoft To Do; wait for them to go first"
@@ -13284,6 +15895,16 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/junk.rs
 msgid "type an address, such as someone@example.org, or a domain, such as @example.org"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "unexpected characters after the host"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "unexpected server response: {text}"
 msgstr ""
 
 #. interface
@@ -13303,6 +15924,11 @@ msgstr "week"
 #, fuzzy
 msgid "what the server sent is not a picture"
 msgstr "wat de server stuurde, is geen afbeelding"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "whether it is private"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/account.rs
@@ -13341,10 +15967,20 @@ msgid "year"
 msgstr "jaar"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "you are not among the people invited to it"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup.rs
 #, fuzzy
 msgid "you@example.org"
 msgstr "naam@example.org"
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "your Neoffice session has ended. Reload the page and sign in again."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/graph_switch.rs
@@ -13353,10 +15989,20 @@ msgid "{account} couldn't switch to Microsoft Graph: {why}"
 msgstr "{account} kon niet overschakelen naar Microsoft Graph: {why}"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{account} has no JMAP server"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/graph_switch.rs
 #, fuzzy
 msgid "{account} is switching to Microsoft Graph, but MailCraft can't reach its IMAP server to send what is waiting there first."
 msgstr "{account} schakelt over naar Microsoft Graph, maar MailCraft kan de IMAP-server niet bereiken om eerst te verzenden wat daar wacht."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{account} isn't kept in step with a JMAP server"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/graph_switch.rs
@@ -13383,6 +16029,11 @@ msgstr "{account} blijft voorlopig op IMAP. Om later over te schakelen, zoekt u 
 #, fuzzy
 msgid "{account} · No access"
 msgstr "{account} · Geen toegang"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{account}'s JMAP server can't be reached: {why}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/signatures.rs
@@ -13632,6 +16283,51 @@ msgid "{name} answered this invitation."
 msgstr "{name} heeft deze uitnodiging beantwoord."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} could not be sent to the server, which keeps failing with it ({why})."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} could not be sent to the server, which keeps failing with it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made a Teams meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made a Teams meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made an online meeting: its account's server no longer makes them. The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made an online meeting: the account's server can't make more meeting rooms just now. The meeting itself is saved, without a link to join; turn it on again later."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made an online meeting: the account's server doesn't let you make meeting rooms. The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made an online meeting: the account's server wouldn't have it ({why}). The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} couldn't be made an online meeting: the account's server wouldn't have it. The meeting itself is saved, without a link to join."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/invitation.rs
 #, fuzzy
 msgid "{name} declined this meeting."
@@ -13648,12 +16344,6 @@ msgstr "{name} heeft deze vergadering geaccepteerd."
 #, fuzzy
 msgid "{name} has declined this meeting."
 msgstr "{name} heeft deze vergadering geweigerd."
-
-#. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-#, fuzzy
-msgid "{name} has no JMAP server address that can be used"
-msgstr "{name} heeft geen JMAP-serveradres dat kan worden gebruikt"
 
 #. what a command says
 #: crates/engine/src/io.rs
@@ -13702,6 +16392,16 @@ msgstr "{name} wordt nu verzonden en ontvangen. Gebruik Stoppen."
 #, fuzzy
 msgid "{name} is larger than {mb} MB"
 msgstr "{name} is groter dan {mb} MB"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} is no longer on the server, so it couldn't be changed there. It was removed here too."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} is no longer on the server, so it wasn't forwarded."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs
@@ -13811,8 +16511,98 @@ msgid "{name} tentatively accepted this meeting."
 msgstr "{name} heeft deze vergadering voorlopig geaccepteerd."
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was already deleted on the server when the deletion was undone here, so it is gone here too. The server may keep a copy of what was deleted."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was already deleted on the server when the deletion was undone here; it couldn't be brought back."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was changed here and the server said it took the change, but it still has {parts} as before. It was put back to what the server has."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was changed here and the server said it took the change, but the server's calendar doesn't have it where it is here. It was taken out here; the next Send/Receive shows it where the server has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was deleted here and {why}, but it still has it. It is back in the calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was made here and the server said it took it, but it is not in the server's calendar. It is kept on this computer only: it is not in your Outlook calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was made on the server, which doesn't say what it calls it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was moved to another calendar here and the server said it took it there, but that calendar doesn't have it. It wasn't moved: it is back where it was."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It is in both calendars now."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was moved to another calendar here, and when it was to be taken out of the one it was in {why}, but it still has it there. It wasn't moved: it is back there, and the copy in the other calendar was removed."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was not forwarded: it is no longer in the calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was not forwarded: that writes to other people, and nobody said to send it. Nobody was written to."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was not sent to the server: its address book can't be changed any more."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was not sent to the server: {why}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/dialogs.rs
+msgid "{name}'s card will be removed from Neoffice's contacts for the whole team. An administrator can restore it."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/ribbon.rs
 msgid "{name}, pending development"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name}: an online meeting is the whole series', so it was not made for that day alone. Turn it on for the whole series."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name}: its address book can't be changed any more, so it was not deleted there. It comes back with the next read if the server still has it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name}: its address book can't be changed any more, so the change made here was undone."
 msgstr ""
 
 #. what a command says
@@ -13905,6 +16695,11 @@ msgid "{n} changes to the calendar \"{name}\" are held here, not sent: this acco
 msgstr "{n} wijzigingen van de agenda „{name}” worden hier aangehouden, niet verzonden: dit account mag die niet meer wijzigen. Ze worden verzonden als dat weer mag."
 
 #. interface
+#: crates/ui-egui/src/notes_view.rs
+msgid "{n} characters too many"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "{n} contact"
@@ -13950,6 +16745,11 @@ msgid "{n} event in view"
 msgid_plural "{n} events in view"
 msgstr[0] "{n} gebeurtenis in beeld"
 msgstr[1] "{n} gebeurtenissen in beeld"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{n} events from the server couldn't be read and were left out."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -14035,6 +16835,11 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{n} mailboxes were not read: a run reads {max} at most."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "{n} message"
@@ -14097,6 +16902,11 @@ msgid_plural "{n} messages will be deleted for good."
 msgstr[0] "{n} bericht wordt definitief verwijderd."
 msgstr[1] "{n} berichten worden definitief verwijderd."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{n} messages were deleted for good: that can't be undone here."
+msgstr ""
+
 #. date and time, interface
 #: crates/i18n/src/date.rs crates/ui-egui/src/backstage.rs crates/ui-egui/src/reminders.rs
 #, fuzzy
@@ -14121,6 +16931,11 @@ msgid_plural "{n} more questions are waiting."
 msgstr[0] "{n} vraag wacht nog."
 msgstr[1] "{n} vragen wachten nog."
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{n} moved messages can't be found on the server yet, so changes to them wait."
+msgstr ""
+
 #. interface, what a command says
 #: crates/model/src/sync.rs crates/ui-egui/src/alerts.rs
 #, fuzzy
@@ -14136,6 +16951,18 @@ msgid "{n} new message, {sent} sent"
 msgid_plural "{n} new messages, {sent} sent"
 msgstr[0] "{n} nieuw bericht, {sent} verzonden"
 msgstr[1] "{n} nieuwe berichten, {sent} verzonden"
+
+#. interface
+#: crates/ui-egui/src/chrome.rs
+msgid "{n} note"
+msgid_plural "{n} notes"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{n} notes couldn't be read: {why}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -14326,6 +17153,21 @@ msgstr "{n},{tenth} GB"
 msgid "{n}.{tenth} MB"
 msgstr "{n},{tenth} MB"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{one} and {two}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{one}, {two} and {three}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{one}, {two}, {three} and {four}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/mod.rs
 #, fuzzy
@@ -14416,6 +17258,41 @@ msgstr "{time} geleden"
 msgid "{title} (all day)"
 msgstr "{title} (hele dag)"
 
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} can no longer be changed here ({why}): your version is kept as a note of its own, {copy}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} couldn't be saved on the server ({said}), and there is no room for a note of its own: your version stays here, unsent."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} couldn't be saved on the server: {said}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} is no longer shared with you: your version is kept as a note of its own."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} was already deleted on the server when its deletion was undone here: it is made there anew."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} was changed elsewhere meanwhile: your version is kept as a note of its own, {copy}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{title} was deleted elsewhere meanwhile: your version is kept as a note of its own."
+msgstr ""
+
 #. date and time
 #: crates/i18n/src/date.rs
 #, fuzzy
@@ -14453,6 +17330,11 @@ msgid "{who} was added by a newer version of MailCraft, {then}"
 msgstr "{who} is toegevoegd door een nieuwere versie van MailCraft, {then}"
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{why}, and forwards no meetings"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "{why}, so sign-ins aren't remembered: MailCraft asks again each time it starts."
@@ -14463,6 +17345,11 @@ msgstr "{why}, waardoor aanmeldingen niet worden onthouden: MailCraft vraagt het
 #, fuzzy
 msgid "{why}. {n} changes made in it here wait on this computer."
 msgstr "{why}. {n} wijzigingen die hierin zijn gemaakt, wachten op deze computer."
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{why}: answer without another time"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/compose.rs
@@ -14487,6 +17374,26 @@ msgstr "‘{subject}’ was te groot om te downloaden: alleen de kopregels zijn 
 #, fuzzy
 msgid "“{subject}” wasn't found on its server, so it can't be forwarded as an attachment"
 msgstr "‘{subject}’ is niet gevonden op de server, dus het kan niet als bijlage worden doorgestuurd"
+
+#, fuzzy
+#~ msgid "Apply Downloaded JMAP Messages"
+#~ msgstr "Gedownloade JMAP-berichten toepassen"
+
+#, fuzzy
+#~ msgid "Download JMAP Messages in Full"
+#~ msgstr "JMAP-berichten volledig downloaden"
+
+#, fuzzy
+#~ msgid "The server turned down the sign-in for {name}: sign in again"
+#~ msgstr "De server heeft de aanmelding voor {name} geweigerd: meld u opnieuw aan"
+
+#, fuzzy
+#~ msgid "no account is kept in step over JMAP"
+#~ msgstr "geen account wordt via JMAP bijgehouden"
+
+#, fuzzy
+#~ msgid "{name} has no JMAP server address that can be used"
+#~ msgstr "{name} heeft geen JMAP-serveradres dat kan worden gebruikt"
 
 #, fuzzy
 #~ msgid "Only a meeting you organize has a Scheduling Assistant"

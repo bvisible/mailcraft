@@ -119,7 +119,7 @@ msgid "(no recipients)"
 msgstr ""
 
 #. interface, what a command says
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 msgid "(no subject)"
 msgstr ""
 
@@ -761,14 +761,14 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
-#. command label, interface
-#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/lib.rs
-msgid "Advanced Search"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Address book"
+msgstr ""
+
+#. command label, interface
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/lib.rs
+msgid "Advanced Search"
 msgstr ""
 
 #. interface
@@ -1578,7 +1578,7 @@ msgid "Calibri"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
 msgid "Cancel"
 msgstr ""
 
@@ -2484,7 +2484,7 @@ msgid "Default"
 msgstr ""
 
 #. command label, interface, name, ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
 msgid "Delete"
 msgstr ""
 
@@ -3802,7 +3802,7 @@ msgid "Hold Unsent Mail"
 msgstr ""
 
 #. interface, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_extra.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/category.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/tasks.rs crates/engine/src/cmd/view.rs crates/ui-egui/src/forms.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_extra.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/category.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/tasks.rs crates/engine/src/cmd/view.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs
 msgid "Home"
 msgstr ""
 
@@ -4116,11 +4116,6 @@ msgstr ""
 msgid "It is an identifier, not a secret. MailCraft keeps it in its settings (File › Options)."
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/people_merge.rs
-msgid "It is kept by the server of {who}, and changes made here are not sent back yet, so it can't be merged here."
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "It is back in the calendar."
@@ -4129,6 +4124,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "It is back in the contacts."
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/people_merge.rs
+msgid "It is kept by the server of {who}, and changes made here are not sent back yet, so it can't be merged here."
 msgstr ""
 
 #. interface
@@ -4481,14 +4481,14 @@ msgstr ""
 msgid "Link"
 msgstr ""
 
-#. ribbon
-#: crates/ui-egui/src/ribbon.rs
-msgid "Links"
-msgstr ""
-
 #. command label
 #: crates/engine/src/cmd/notes.rs
 msgid "Link to Note"
+msgstr ""
+
+#. ribbon
+#: crates/ui-egui/src/ribbon.rs
+msgid "Links"
 msgstr ""
 
 #. command label
@@ -4596,11 +4596,6 @@ msgstr ""
 msgid "Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file"
 msgstr ""
 
-#. interface, what a command says
-#: crates/model/src/mailbox.rs crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is"
-msgstr ""
-
 #. what a command says
 #: crates/engine/src/io.rs
 msgid "Mail can't be imported into an Outbox: it would be sent."
@@ -4609,6 +4604,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/io.rs
 msgid "Mail can't be imported into an Outbox: it would be sent. Choose another folder."
+msgstr ""
+
+#. interface, what a command says
+#: crates/model/src/mailbox.rs crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "Mail can't be moved between a JMAP account and another account or a local folder yet: this version can't put a message on a JMAP server, and the server's copy would stay where it is"
 msgstr ""
 
 #. what a command says
@@ -5967,7 +5967,7 @@ msgid "Not available for this account"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/widgets.rs
+#: crates/ui-egui/src/forms.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/widgets.rs
 msgid "Not available: {reason}"
 msgstr ""
 
@@ -6021,8 +6021,8 @@ msgstr ""
 msgid "Note Changes to Send"
 msgstr ""
 
-#. interface
-#: crates/ui-egui/src/forms.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/tasks_view.rs
+#. command label, interface, name, ribbon location
+#: crates/engine/src/cmd/notes.rs crates/engine/src/session.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/tasks_view.rs
 msgid "Notes"
 msgstr ""
 
@@ -7597,11 +7597,6 @@ msgstr ""
 msgid "Save out"
 msgstr ""
 
-#. ribbon
-#: crates/ui-egui/src/ribbon.rs
-msgid "Saved Text"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Save the message"
@@ -7615,6 +7610,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/notes_view.rs
 msgid "Saved"
+msgstr ""
+
+#. ribbon
+#: crates/ui-egui/src/ribbon.rs
+msgid "Saved Text"
 msgstr ""
 
 #. interface
@@ -7905,7 +7905,7 @@ msgid "Send & Receive"
 msgstr ""
 
 #. ribbon location
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/sync_progress.rs crates/engine/src/cmd/tasks_remote.rs crates/ui-egui/src/lib.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/jmap_fetch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/notes/server.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/remote_contacts.rs crates/engine/src/cmd/sync_progress.rs crates/engine/src/cmd/tasks_remote.rs crates/ui-egui/src/lib.rs
 msgid "Send / Receive"
 msgstr ""
 
@@ -8064,7 +8064,7 @@ msgid "Send/Receive signs in to Microsoft; then the server can be searched."
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/jmap_job.rs crates/ui-egui/src/lib.rs
 msgid "Send/Receive stopped unexpectedly"
 msgstr ""
 
@@ -8089,7 +8089,7 @@ msgid "Sending '{subject}' can't be undone."
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/inbox_pass.rs crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/inbox_pass.rs crates/ui-egui/src/jmap_job.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/shared_mailboxes.rs
 msgid "Sending and receiving…"
 msgstr ""
 
@@ -9196,8 +9196,8 @@ msgstr ""
 msgid "The browser opens no files from the system"
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/remote.rs
+#. interface, what a command says
+#: crates/engine/src/cmd/remote.rs crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "The calendar \"{name}\" can only be read: its owner hasn't let this account change it."
 msgstr ""
 
@@ -9337,6 +9337,16 @@ msgstr ""
 msgid "The colour is set in Outlook"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/host_menu.rs
+msgid "The command has no id."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/jmap_pim.rs
+msgid "The contact changes couldn't be taken in"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/people_merge.rs
 msgid "The contact {id} chosen for a field is not one of those merged."
@@ -9350,16 +9360,6 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/people_merge.rs
 msgid "The contact {id} is named twice."
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/host_menu.rs
-msgid "The command has no id."
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/jmap_pim.rs
-msgid "The contact changes couldn't be taken in"
 msgstr ""
 
 #. interface
@@ -9772,11 +9772,6 @@ msgstr ""
 msgid "The server turned down the sign-in for this account. Use Send/Receive to sign in again."
 msgstr ""
 
-#. what a command says
-#: crates/engine/src/cmd/jmap_mail.rs
-msgid "The server turned down the sign-in for {name}: sign in again"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "The server wouldn't delete {name} ({why})."
@@ -10028,7 +10023,7 @@ msgid "The window changed since Nora asked: nothing was written. Ask her again."
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/report_problem.rs
 msgid "The window isn't up yet."
 msgstr ""
 
@@ -10203,7 +10198,7 @@ msgid "This build can't connect to Microsoft"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/jmap_mail.rs crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/lib.rs
 msgid "This build can't connect to mail servers"
 msgstr ""
 
@@ -10904,13 +10899,8 @@ msgstr ""
 msgid "Total size"
 msgstr ""
 
-#. ribbon
-#: crates/ui-egui/src/ribbon.rs
-msgid "Translate"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
+#. interface, ribbon
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/ribbon.rs
 msgid "Translate"
 msgstr ""
 
@@ -12031,6 +12021,11 @@ msgstr ""
 msgid "calendar"
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/import_tree.rs
+msgid "cancelled"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "carries a user name or a password: the secret is given apart from the address"
@@ -12064,11 +12059,6 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "change {n} messages"
-msgstr ""
-
-#. what a command says
-#: crates/engine/src/import_tree.rs
-msgid "cancelled"
 msgstr ""
 
 #. what a command says
@@ -12475,7 +12465,7 @@ msgid "no account is kept in step with a JMAP server"
 msgstr ""
 
 #. interface, what a command says
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs crates/ui-egui/src/i18n/run_words/rows.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/graph_switch.rs crates/engine/src/cmd/jmap_mail.rs crates/engine/src/cmd/offline.rs crates/engine/src/cmd/remote.rs crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/shared.rs crates/engine/src/cmd/signature.rs crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "no account with id {id}"
 msgstr ""
 
@@ -12814,6 +12804,11 @@ msgstr ""
 msgid "that message isn't held"
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/import_tree.rs
+msgid "that was only looked at, not read in full"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "the IPv4 address is not four decimal numbers"
@@ -12857,11 +12852,6 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "the JMAP {key} isn't on the server the session is served from"
-msgstr ""
-
-#. what a command says
-#: crates/engine/src/import_tree.rs
-msgid "that was only looked at, not read in full"
 msgstr ""
 
 #. what a command says
@@ -13020,7 +13010,7 @@ msgid "the contact has no mark to be made with"
 msgstr ""
 
 #. what a command says
-#: crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs
+#: crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/remote_contacts.rs
 msgid "the contact is gone"
 msgstr ""
 
@@ -13175,6 +13165,11 @@ msgid "the message is too large for the server"
 msgstr ""
 
 #. what a command says
+#: crates/engine/src/cmd/compose.rs
+msgid "the messages to forward are larger than {mb} MB together"
+msgstr ""
+
+#. what a command says
 #: crates/engine/src/cmd/notes.rs
 msgid "the note is gone"
 msgstr ""
@@ -13187,11 +13182,6 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/answer.rs
 msgid "the page is out of date. Reload it and try again."
-msgstr ""
-
-#. what a command says
-#: crates/engine/src/cmd/compose.rs
-msgid "the messages to forward are larger than {mb} MB together"
 msgstr ""
 
 #. what a command says
@@ -13504,6 +13494,11 @@ msgstr ""
 msgid "the server takes fewer objects in a call"
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/cmd/compose.rs
+msgid "the server wouldn't send “{subject}” whole, so it can't be forwarded as an attachment"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "the server wouldn't take it"
@@ -13572,11 +13567,6 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "the session address isn't https"
-msgstr ""
-
-#. what a command says
-#: crates/engine/src/cmd/compose.rs
-msgid "the server wouldn't send “{subject}” whole, so it can't be forwarded as an attachment"
 msgstr ""
 
 #. what a command says
@@ -13700,7 +13690,7 @@ msgid "this Send/Receive was for another account, not for {account}"
 msgstr ""
 
 #. what a command says
-#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/graph_mail.rs
+#: crates/engine/src/cmd/account.rs crates/engine/src/cmd/graph_mail.rs crates/engine/src/cmd/jmap_mail.rs
 msgid "this Send/Receive was for another account, not for {name}"
 msgstr ""
 
@@ -13806,16 +13796,6 @@ msgid_plural "times"
 msgstr[0] ""
 msgstr[1] ""
 
-#. what a command says
-#: crates/engine/src/cmd/tasks.rs
-msgid "too many deletions are waiting to be sent to Microsoft To Do; wait for them to go first"
-msgstr ""
-
-#. what a command says
-#: crates/engine/src/cmd/junk.rs
-msgid "type an address, such as someone@example.org, or a domain, such as @example.org"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "timed out"
@@ -13829,6 +13809,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "too many changes at once"
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/tasks.rs
+msgid "too many deletions are waiting to be sent to Microsoft To Do; wait for them to go first"
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/junk.rs
+msgid "type an address, such as someone@example.org, or a domain, such as @example.org"
 msgstr ""
 
 #. interface
@@ -14311,6 +14301,11 @@ msgstr ""
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 msgid "{name} isn't connected to a mail server"
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/jmap_mail.rs
+msgid "{name} isn't kept in step over JMAP"
 msgstr ""
 
 #. what a command says

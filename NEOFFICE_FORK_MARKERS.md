@@ -383,8 +383,8 @@ the marker check does not know as one that takes comments:
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`
   under them, the workspace's egui 0.37) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); nothing
   else (upstream's `mailcraft-jmap` has upstream's lines; upstream's lock has the `ctutils` past RUSTSEC-2026-0385 now).
-- `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po` and
-  `crates/i18n/po/it.po`: written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
+- `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po`,
+  `crates/i18n/po/it.po` and `crates/i18n/po/nl.po` (upstream's Dutch, 0.8.1 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's
   catalogues below) and by the files named in the references of
   shared texts. At the next upstream merge: take upstream's, then run `cargo xtask i18n` again.
