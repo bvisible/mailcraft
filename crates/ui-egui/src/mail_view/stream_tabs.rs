@@ -20,6 +20,8 @@ use crate::theme::{Tokens, paint_clipped, regular, semibold};
 
 /// The bar under the header: archive what is ticked, or everything in the tab.
 pub(super) const BAR_H: f32 = 34.0;
+/// The row of tabs where the header has no room for them.
+const ROW_H: f32 = 34.0;
 /// A tab's name: a size down from All and Unread so that three of them and their counts fit a narrow list.
 const TAB_TEXT: f32 = 12.5;
 /// The count in a tab.
@@ -66,6 +68,7 @@ pub(super) fn shown(ui: &Ui) -> bool {
     ui.data(|d| d.get_temp::<bool>(EguiId::unique("stream_boxes"))).unwrap_or(false)
 }
 
+#[derive(Clone)]
 struct Tab {
     stream: Option<Stream>,
     name: String,
@@ -81,9 +84,19 @@ impl Tab {
     }
 }
 
-/// The tabs, from `left` to `right` in the header `r`. A filter that has no tab of its own (All, Unread, Flagged…) shows as a last
-/// one while it is in use, as it does where there are no streams.
-pub(super) fn header_tabs(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, counts: &StreamCounts, left: f32, right: f32) {
+/// Whether the tabs are drawn in a row of their own under the header (the list is too narrow for them beside the arrangement):
+/// said by [`header_tabs`], read by the list.
+pub(super) fn row_wanted(ui: &Ui) -> bool {
+    ui.data(|d| d.get_temp::<bool>(EguiId::unique("stream_tabs_row"))).unwrap_or(false)
+}
+
+fn say_row(ui: &Ui, wanted: bool) {
+    ui.data_mut(|d| d.insert_temp(EguiId::unique("stream_tabs_row"), wanted));
+}
+
+/// The three tabs, with the filter in use that has no tab of its own (All, Unread, Flagged…) as a last one while it is in use, as
+/// it shows where there are no streams.
+fn tabs_of(app: &MailApp, ui: &Ui, t: &Tokens, counts: &StreamCounts) -> Vec<Tab> {
     let filter = app.session.view.filter;
     let measure = |text: &str, font: egui::FontId| ui.ctx().fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, t.text).size().x);
     let mut tabs: Vec<Tab> = Stream::ALL
@@ -101,15 +114,22 @@ pub(super) fn header_tabs(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, c
         let name = tl!(filter.label()).to_string();
         tabs.push(Tab { stream: None, name_w: measure(&name, semibold(TAB_TEXT)), name, unread: 0, pill_w: 0.0, on: true });
     }
-    let total = |tabs: &[Tab]| tabs.iter().map(Tab::width).sum::<f32>() + GAP * tabs.len().saturating_sub(1) as f32;
-    // In a list too narrow for them all, the tab in use gives its count first (the rows under it say as much), then the others
-    // are cut short, then left out, then it is cut too.
-    if total(&tabs) > right - left {
+    tabs
+}
+
+fn total(tabs: &[Tab]) -> f32 {
+    tabs.iter().map(Tab::width).sum::<f32>() + GAP * tabs.len().saturating_sub(1) as f32
+}
+
+/// Fit `tabs` to `room`: the tab in use gives its count first (the rows under it say as much), then the others are cut short, then
+/// left out, then it is cut too. What is still over, which the tab in use gives.
+fn fit(tabs: &mut Vec<Tab>, room: f32) -> f32 {
+    if total(tabs) > room {
         for tab in tabs.iter_mut().filter(|tab| tab.on) {
             tab.pill_w = 0.0;
         }
     }
-    let mut over = total(&tabs) - (right - left);
+    let mut over = total(tabs) - room;
     for tab in tabs.iter_mut().rev().filter(|tab| !tab.on) {
         let cut = over.clamp(0.0, (tab.name_w - NAME_MIN).max(0.0));
         tab.name_w -= cut;
@@ -119,6 +139,42 @@ pub(super) fn header_tabs(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, c
         let Some(i) = tabs.iter().rposition(|tab| !tab.on) else { break };
         over -= tabs.remove(i).width() + GAP;
     }
+    over
+}
+
+/// The tabs in the header `r`, from `left` to `right`, where all three fit beside the arrangement (the one in use without its
+/// count if need be); where they do not, nothing is drawn and the list is told to draw them in a row of their own ([`tabs_row`]).
+pub(super) fn header_tabs(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, counts: &StreamCounts, left: f32, right: f32) {
+    let mut tabs = tabs_of(app, ui, t, counts);
+    let mut bare = tabs.clone();
+    for tab in bare.iter_mut().filter(|tab| tab.on) {
+        tab.pill_w = 0.0;
+    }
+    let fits = total(&bare) <= right - left;
+    say_row(ui, !fits);
+    if !fits {
+        return;
+    }
+    let over = fit(&mut tabs, right - left);
+    paint(app, ui, t, r, &tabs, over, left);
+}
+
+/// The tabs in a row of their own under the header, as wide as the list: where it is too narrow for them to fit whole, each is cut
+/// short (its count stays), so that all three can always be reached.
+pub(super) fn tabs_row(app: &mut MailApp, ui: &mut Ui, counts: &StreamCounts) {
+    let t = Tokens::get(ui.ctx());
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+    let mut tabs = tabs_of(app, ui, &t, counts);
+    let (left, right) = (row.min.x + 14.0, row.max.x - 14.0);
+    let over = fit(&mut tabs, right - left);
+    // The painting is laid out for the header (the baseline 31 under the top, the line at the bottom): this row is its lower part.
+    let r = Rect::from_min_max(pos2(row.min.x, row.max.y - 48.0), row.max);
+    ui.painter().line_segment([pos2(row.min.x, row.max.y - 0.5), pos2(row.max.x, row.max.y - 0.5)], Stroke::new(1.0, t.border));
+    paint(app, ui, &t, r, &tabs, over, left);
+}
+
+/// Draw the tabs laid out by [`fit`], from `left`, in the header-shaped rectangle `r`.
+fn paint(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, tabs: &[Tab], over: f32, left: f32) {
     let mut x = left;
     for (n, tab) in tabs.iter().enumerate() {
         let name_w = if tab.on { tab.name_w - over.max(0.0) } else { tab.name_w };
@@ -157,6 +213,16 @@ pub(super) fn header_tabs(app: &mut MailApp, ui: &mut Ui, t: &Tokens, r: Rect, c
         }
         x = rect.max.x + GAP;
     }
+}
+
+/// The three tabs as entries of the arrangement's menu, so that they can be reached however narrow the list.
+pub(super) fn menu(ui: &mut Ui, app: &mut MailApp) {
+    let filter = app.session.view.filter;
+    for stream in Stream::ALL {
+        let f = filter_of(stream);
+        crate::widgets::mi_check(ui, app, f.label(), f == filter, "view.filter", json!({"value": f}));
+    }
+    ui.separator();
 }
 
 /// Whether the bar is there: in Notifications and Newsletters whenever they list something (so that the list does not move as rows

@@ -336,6 +336,10 @@ fn list_header(app: &mut MailApp, ui: &mut Ui, streams: Option<&mailcraft_model:
         crate::widgets::mi_check(ui, app, "Show as Conversations", conv, "view.conversations", json!({}));
         // The filters that have no tab of their own.
         ui.separator();
+        // //// Neoffice — where the inbox has its tabs by kind of sender, they are in this menu too (stream_tabs.rs).
+        if streams.is_some() {
+            stream_tabs::menu(ui, app);
+        }
         for f in Filter::ALL {
             crate::widgets::mi_check(ui, app, f.label(), f == filter, "view.filter", json!({"value": f}));
         }
@@ -577,6 +581,12 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     let streams = stream_tabs::counts(app);
     stream_tabs::say_shown(ui, streams.is_some());
     list_header(app, ui, streams.as_ref());
+    // //// Neoffice — and where the header has no room for the tabs, they have a row of their own.
+    if let Some(counts) = &streams
+        && stream_tabs::row_wanted(ui)
+    {
+        stream_tabs::tabs_row(app, ui, counts);
+    }
     let rows = app.session.rows();
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
     // //// Neoffice — the bar that archives what is ticked, or everything in the tab.

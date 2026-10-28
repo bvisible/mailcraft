@@ -163,3 +163,19 @@ fn the_tabs_go_with_the_inbox() {
     assert_eq!(w.state().session.view.filter, Filter::All);
     assert!(has(&w, "listTab", 0) && !has(&w, "streamTab", 0));
 }
+
+#[test]
+fn in_a_narrow_window_the_tabs_have_a_row_under_the_header_and_all_three_can_be_clicked() {
+    let mut w = testing::window("view.mail");
+    streamed(&mut w, 3, 2);
+    w.set_size(egui::vec2(640.0, 700.0));
+    w.run_steps(6);
+    let sort = w.state().hit.rect("listSort", 0).unwrap();
+    let tabs: Vec<egui::Rect> = (0..3).map(|n| w.state().hit.rect("streamTab", n).unwrap_or_else(|| panic!("no tab {n}"))).collect();
+    assert!(tabs.iter().all(|t| t.min.y > sort.max.y), "below the header's arrangement: {tabs:?} / {sort:?}");
+    assert!(tabs[0].max.x <= tabs[1].min.x && tabs[1].max.x <= tabs[2].min.x, "side by side, in order: {tabs:?}");
+    click(&mut w, "streamTab", 2);
+    assert_eq!(w.state().session.view.filter, Filter::Newsletters);
+    click(&mut w, "streamTab", 1);
+    assert_eq!(w.state().session.view.filter, Filter::Notifications);
+}
