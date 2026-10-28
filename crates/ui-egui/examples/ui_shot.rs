@@ -7,6 +7,7 @@
 //!
 //! The script is JSON lines: control-channel requests (`{"method": …, "params": …}`, see
 //! `docs/control-protocol.md`), `{"shot": "/abs/out.png"}` to save the window as PNG,
+//! `{"open": "/abs/file.ics"}` (or a `mailto:` link) as a later start would hand it over (#505),
 //! `{"steps": n}` to run extra frames (a request with `"agent": {"allow": [...]}` comes as the MCP
 //! bridge's would: what needs the owner puts its question over the window), or `{"wait": ms}` to keep running frames for a while. The
 //! window is 1440×900 pt at 2× (override with `{"width": w, "height": h}` and `{"scale": s}` on
@@ -36,6 +37,8 @@
 //! turn that off for the computer from the start, and `{"host": {"updates": "didntStart 0.4.2"}}`
 //! has the running version be one newly installed that didn't start twice running, with 0.4.2
 //! kept to go back to.
+//! `{"host": {"tasksWork": true}}` has every Microsoft account's To Do work, so that the window
+//! asks whether the tasks that exist only here are to be sent to it (#248).
 //! And a Graph job (`{"host": {"graph": …}}`): `"consent"` (Microsoft wants the owner's
 //! permission first), `"refused"` (it refused the sign-in) or `"sendConsent"` (a shared
 //! mailbox's mail waits for permission to send from shared mailboxes, #70), `"opened"` (the
@@ -52,6 +55,13 @@
 //! that has been at it for a minute, at that stage, done of total; it never ends), `"sweeping"`,
 //! or `""` (nothing being written).
 //!
+//! `{"opening": {"read": bytes, "total": bytes, "after"?: ms, "trouble"?: "unreadable"|"stopped"|"damaged"|"repaired", "repaired"?: n, "theme"?: "light"|"dark"}}`
+//! on any line has the window still opening its mailbox (#519): reading that far, until `after`
+//! ms have gone by (never, without it), or waiting on the page that says what was wrong. While it
+//! opens, the control channel answers everything but `app.status` with "still opening", so the
+//! theme is given here. The opening screen shows after 0.3 s: `{"wait": 400}` before a shot.
+//!
+//! A folder of mailboxes being looked at (#420, `ui.dialog` `importTree`) never finishes; `{"host": {"treeProgress": [folders, files, messages]}}` sets the counts it shows, and `{"host": {"treeDir": "/path"}}` has it look into that folder at once.
 //! And Send/Receive, for Send/Receive Progress (`{"host": {"sync": [[piece, …], …]}}`): one list
 //! of pieces for each run of an account from that line on, in turn, each piece a `sync.apply`
 //! result (`docs/control-protocol.md`) with its account filled in, and `"newMessages": n` to have
@@ -125,6 +135,10 @@ struct Host {
     approvals: Vec<Sender<AdminConsentAnswer>>,
     /// How far the background saver has got (see the header).
     saving: Option<SaveProgress>,
+    /// The folder imports begun (#420): their progress, never finished; `treeProgress` moves it.
+    tree_jobs: Vec<(Arc<mailcraft_engine::import_tree::Progress>, Sender<Result<mailcraft_engine::import_tree::Parsed, String>>)>,
+    /// A folder the import looks into at once instead of waiting (`treeDir`).
+    tree_dir: String,
     /// Copies of the mailbox being "written": never finished (see the header).
     copies: Vec<Sender<Result<(), String>>>,
     /// The pieces of the Send/Receive runs to come, one list for each, and whether the script
@@ -301,6 +315,17 @@ impl Host {
         if let Some(found) = said.get("serverSearch") {
             self.server_search = Some(found.clone());
         }
+        if let Some(dir) = said.get("treeDir").and_then(|v| v.as_str()) {
+            self.tree_dir = dir.to_string();
+        }
+        if let Some(n) = said.get("treeProgress").and_then(|v| v.as_array()) {
+            let n: Vec<usize> = n.iter().map(|v| v.as_u64().unwrap_or(0) as usize).collect();
+            if let (Some(job), [folders, files, messages]) = (self.tree_jobs.last().map(|(p, _)| p), n.as_slice()) {
+                job.folders.store(*folders, std::sync::atomic::Ordering::Relaxed);
+                job.files.store(*files, std::sync::atomic::Ordering::Relaxed);
+                job.messages.store(*messages, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
         if let Some(how) = said.get("saving").and_then(|v| v.as_str()) {
             let mut words = how.split_whitespace();
             let stage = match words.next() {
@@ -356,6 +381,7 @@ fn stand_in(host: &Arc<Mutex<Host>>) -> Services {
     let (signing, approving, updating, graphing, copying) = (host.clone(), host.clone(), host.clone(), host.clone(), host.clone());
     let syncing = host.clone();
     let searching = host.clone();
+    let tree = host.clone();
     Services {
         microsoft_client_id: "11111111-2222-3333-4444-555555555555".into(),
         lookup_mx: Some(Box::new(|_| answered(Ok(vec!["example-org.mail.protection.outlook.com".to_string()])))),
@@ -495,6 +521,19 @@ fn stand_in(host: &Arc<Mutex<Host>>) -> Services {
             })
         })),
         secrets: Some(Box::new(StandInSecrets(host.clone()))),
+        // A folder import that is looked at for ever: `{"host": {"treeProgress": [folders, files, messages]}}` moves its counts.
+        import_tree: Some(Box::new(move |job| {
+            let dir = tree.lock().map(|host| host.tree_dir.clone()).unwrap_or_default();
+            if !dir.is_empty() {
+                // Answered at once from a folder on this computer (`treeDir`).
+                return answered(mailcraft_engine::import_tree::load_path(&dir, None, job.count_only, &job.progress).map_err(|e| e.to_string()));
+            }
+            let (tx, rx) = channel();
+            if let Ok(mut host) = tree.lock() {
+                host.tree_jobs.push((job.progress, tx));
+            }
+            rx
+        })),
         write_copy: Some(Box::new(move |_, _| {
             let (tx, rx) = channel();
             if let Ok(mut host) = copying.lock() {
@@ -572,6 +611,11 @@ fn main() {
     services.alert = Some(Box::new(StandInAlerts(host.clone())));
     // Remove MailCraft's data (#177): offered, and removes nothing here.
     services.data_wipe = Some(Box::new(StandInWipe));
+    // Open MailCraft's data folder (#460): offered, and opens nothing here.
+    services.data_folder = Some(mailcraft_ui_egui::data_removal::DataFolder {
+        path: std::path::PathBuf::from("/home/you/.config/mailcraft"),
+        open: Box::new(|_| Ok(())),
+    });
     // The organisation has turned updating by itself off for the computer.
     services.updates_turned_off_by_organisation = lines.iter().any(|l| l.pointer("/host/updates").and_then(|v| v.as_str()) == Some("organisation"));
     // A newly installed version that didn't start twice running, with the one before it kept.
@@ -582,10 +626,49 @@ fn main() {
     }
     let mut app = MailApp::new(session, services).with_control(rx);
     app.autosave = false;
+    // Every frame may be a shot: a password shown with its eye is drawn as dots (#438).
+    app.headless_shots = true;
     // (With a host that answers, nothing is to happen by itself: what a shot shows, its script asked for.)
     app.auto_sync = !stood_in;
     if let Some(overlay) = lines.iter().find_map(|l| l.get("overlayScrollBars").and_then(|v| v.as_bool())) {
         app.overlay_scroll_bars = overlay;
+    }
+    // A window still opening its mailbox (#519), until `after` ms have gone by (never, without it).
+    let mut _arriving = None;
+    if let Some(said) = lines.iter().find_map(|l| l.get("opening").cloned()) {
+        let (tx, arrive) = channel();
+        let progress = Arc::new(mailcraft_engine::io::OpenProgress::default());
+        let n = |k: &str| said.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+        progress.set_total(n("total"));
+        progress.add_read(n("read"));
+        use mailcraft_ui_egui::opening::{Arrival, Opening, Trouble};
+        let trouble = match said.get("trouble").and_then(|v| v.as_str()) {
+            Some("unreadable") => {
+                Some(Trouble::Unreadable("/home/you/.config/mailcraft/mailbox.mailcraft: this mailbox file is damaged (its header)".into()))
+            }
+            Some("stopped") => Some(Trouble::Stopped),
+            Some("damaged") => Some(Trouble::Damaged),
+            Some("repaired") => Some(Trouble::Repaired(n("repaired").max(1) as usize)),
+            _ => None,
+        };
+        let arrival = |trouble| Arrival { trouble, ..Arrival::opened(mailcraft_model::Mailbox::with_local_account("", ""), None) };
+        if trouble.is_some() {
+            let _ = tx.send(arrival(trouble));
+        } else if let Some(after) = said.get("after").and_then(|v| v.as_u64()) {
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(after));
+                let _ = tx.send(arrival(None));
+            });
+        } else {
+            _arriving = Some(tx);
+        }
+        let theme = match said.get("theme").and_then(|v| v.as_str()) {
+            Some("dark") => mailcraft_ui_egui::theme::Appearance::Dark,
+            _ => mailcraft_ui_egui::theme::Appearance::Light,
+        };
+        let prefs = mailcraft_ui_egui::UiState { theme, ..Default::default() };
+        let built = app;
+        app = MailApp::opening(Opening::new(arrive, progress, Box::new(move |_| built)), Some(prefs), None);
     }
     let w = lines.iter().find_map(|l| l.get("width").and_then(|v| v.as_f64())).unwrap_or(1440.0) as f32;
     let h = lines.iter().find_map(|l| l.get("height").and_then(|v| v.as_f64())).unwrap_or(900.0) as f32;
@@ -620,6 +703,10 @@ fn main() {
                 // In front or not, for desktop alerts about new mail.
                 harness.input_mut().focused = !host.unfocused;
             }
+            // Every Microsoft account's To Do works (the question about the local tasks follows).
+            if said.get("tasksWork").is_some() {
+                harness.state_mut().stand_in_tasks_work();
+            }
             // A search on the server is asked with a token of this session (invented).
             if said.get("serverSearch").is_some() {
                 let app = harness.state_mut();
@@ -644,6 +731,11 @@ fn main() {
                 let count = |k: usize| u32::try_from(n(k)).unwrap_or(u32::MAX);
                 harness.state_mut().session.sync_progress.set_full(n(0), count(1), count(2));
             }
+            step_n(&mut harness, 2);
+        }
+        // What the system hands the program (a later start, the command line): `{"open": "…"}`.
+        if let Some(what) = l.get("open").and_then(|v| v.as_str()) {
+            harness.state_mut().open_from_system(what);
             step_n(&mut harness, 2);
         }
         if let Some(p) = l.get("shot").and_then(|v| v.as_str()) {

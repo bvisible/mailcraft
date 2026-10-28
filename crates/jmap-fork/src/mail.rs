@@ -172,7 +172,8 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
 /// What [`sync_mail`] would have said of the same trouble: the sign-in refused, the server busy, or a line.
 pub fn failed_run(request: &JmapMailRequest, error: &Error) -> JmapMailResult {
     let secrets = secrets_of(&request.email, &request.session, &Secrets::default(), "");
-    let mut result = JmapMailResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    let mut result =
+        JmapMailResult { account: request.account, email: request.email.clone(), session: request.session.clone(), ..Default::default() };
     match error {
         Error::Auth(_) => result.auth_refused = true,
         Error::Busy { retry_after, .. } => {
@@ -352,7 +353,7 @@ impl<'a, H: Http> Run<'a, H> {
 
     /// A piece of the result, for this run's account.
     fn piece(&self, piece: JmapMailResult) -> JmapMailResult {
-        JmapMailResult { account: self.request.account, email: self.request.email.clone(), ..piece }
+        JmapMailResult { account: self.request.account, email: self.request.email.clone(), session: self.request.session.clone(), ..piece }
     }
 
     /// What `error` says, fit for a line: no credential and no address in it.

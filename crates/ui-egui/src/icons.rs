@@ -512,6 +512,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             tail.draw(&pen, c);
             pen.head(16.5, 8.5, 0.0, 4.0, c);
         }
+        // Forward, higher, and the message it carries whole: an envelope in the modifier's corner.
+        "forwardAsAttachment" => {
+            let tail = pen.path().m(&pen, 16.5, 5.5).l(&pen, 10.0, 5.5).c(&pen, (6.5, 5.5), (3.5, 8.0), 3.5, 12.5);
+            tail.draw(&pen, c);
+            pen.head(16.5, 5.5, 0.0, 4.0, c);
+            pen.envelope(11.5, 12.0, 18.0, 17.0, c);
+        }
         "delete" | "deleted" | "discard" | "remove" => {
             pen.lid(false, c);
             pen.rounded(&[(5.0, 5.5), (5.0, 16.5), (15.0, 16.5), (15.0, 5.5)], false, 1.0, c);
@@ -657,6 +664,12 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
                 pen.rounded(&[(6.0, 16.5), (6.0, 11.5), (14.0, 11.5), (14.0, 16.5)], false, 1.0, c);
             }
         }
+        // A sender warning: a triangle with an exclamation mark in it.
+        "warning" => {
+            pen.rounded(&[(10.0, 2.5), (18.0, 16.5), (2.0, 16.5)], true, 1.0, red);
+            pen.line_c(&[(10.0, 7.0), (10.0, 11.0)], red);
+            pen.fcircle(10.0, 13.75, 1.0, red);
+        }
         "highImportance" | "importanceHigh" => {
             pen.frect_r(9.0, 2.5, 11.0, 12.5, 1.0, red);
             pen.fcircle(10.0, 15.75, 1.25, red);
@@ -728,6 +741,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
         "meeting" | "fromMessage" => {
             pen.person(7.5, 7.5, 2.75, 17.5, 5.0, 180.0, 360.0, c);
             pen.person(13.5, 5.5, 2.25, 14.5, 4.0, 250.0, 360.0, c);
+        }
+        // Two people side by side, and the modifier's lines that bring them together into one
+        // (Merge Duplicates, #506).
+        "mergeContacts" => {
+            pen.person(5.5, 5.5, 2.25, 13.5, 3.5, 180.0, 360.0, c);
+            pen.person(14.5, 5.5, 2.25, 13.5, 3.5, 180.0, 360.0, c);
+            pen.line_c(&[(5.5, 14.5), (10.0, 18.0), (14.5, 14.5)], a);
         }
         "newMeeting" => {
             pen.person(7.0, 8.0, 2.75, 17.5, 4.0, 180.0, 360.0, c);
@@ -972,6 +992,36 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.circle(10.0, 10.0, 7.5, c);
             pen.line(&[(10.0, 5.5), (10.0, 10.0), (13.0, 12.0)]);
         }
+        // Insert › Date & Time: a calendar page with a small clock over its corner.
+        "dateTime" => {
+            pen.calendar(true, c);
+            pen.circle(14.5, 14.5, 3.75, a);
+            pen.line_c(&[(14.5, 12.5), (14.5, 14.5), (16.0, 15.5)], a);
+        }
+        // Insert › Pictures: a frame with a sun and two hills.
+        "picture" => {
+            pen.rect(3.0, 4.0, 17.0, 16.0, c);
+            pen.circle(7.5, 8.5, 1.5, a);
+            pen.line(&[(3.5, 15.0), (8.0, 11.0), (11.0, 14.0), (13.0, 12.0), (16.5, 15.0)]);
+        }
+        // A control still to be built: an hourglass.
+        "pending" => {
+            pen.line(&[(5.0, 3.0), (15.0, 3.0)]);
+            pen.line(&[(5.0, 17.0), (15.0, 17.0)]);
+            pen.rounded(&[(6.0, 3.0), (6.0, 5.5), (10.0, 10.0), (6.0, 14.5), (6.0, 17.0)], false, 1.0, c);
+            pen.rounded(&[(14.0, 3.0), (14.0, 5.5), (10.0, 10.0), (14.0, 14.5), (14.0, 17.0)], false, 1.0, c);
+            pen.line_c(&[(8.0, 15.5), (12.0, 15.5)], a);
+        }
+        // Review › Word Count: lines of text and a tally of four strokes and one across them.
+        "wordCount" => {
+            pen.line(&[(2.5, 4.5), (17.5, 4.5)]);
+            pen.line(&[(2.5, 8.5), (12.5, 8.5)]);
+            pen.line(&[(2.5, 12.5), (8.5, 12.5)]);
+            for x in [11.0, 13.0, 15.0, 17.0] {
+                pen.line_c(&[(x, 11.5), (x, 17.5)], a);
+            }
+            pen.line_c(&[(10.0, 16.5), (18.0, 12.5)], a);
+        }
         // A meeting held online: a camera, its lens to the right.
         "onlineMeeting" | "joinMeeting" => {
             pen.rect(2.5, 5.5, 12.5, 14.5, c);
@@ -1129,6 +1179,16 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.fcircle(12.5, 8.0, 1.0, c);
             pen.arc(10.0, 10.5, 3.5, 30.0, 150.0, a);
         }
+        // A password's eye (#438): open, a click shows the password; struck through, it hides
+        // it again.
+        "showPassword" | "hidePassword" => {
+            let lids = pen.path().m(&pen, 2.5, 10.0).c(&pen, (5.5, 4.5), (14.5, 4.5), 17.5, 10.0).c(&pen, (14.5, 15.5), (5.5, 15.5), 2.5, 10.0);
+            lids.draw_closed(&pen, c);
+            pen.circle(10.0, 10.0, 2.5, c);
+            if name == "hidePassword" {
+                pen.line(&[(3.5, 16.5), (16.5, 3.5)]);
+            }
+        }
         // Anything else: a lettered tile, so a missing drawing is visible rather than empty.
         _ => {
             pen.rect(3.5, 3.5, 16.5, 16.5, c);
@@ -1153,6 +1213,7 @@ pub const NAMES: &[&str] = &[
     "reply",
     "replyAll",
     "forward",
+    "forwardAsAttachment",
     "delete",
     "deleted",
     "discard",
@@ -1201,6 +1262,7 @@ pub const NAMES: &[&str] = &[
     "starOn",
     "save",
     "saveDraft",
+    "warning",
     "highImportance",
     "importanceHigh",
     "lowImportance",
@@ -1226,6 +1288,7 @@ pub const NAMES: &[&str] = &[
     "newContact",
     "meeting",
     "newMeeting",
+    "mergeContacts",
     "fromMessage",
     "meetingRequest",
     "meetingCancelled",
@@ -1291,6 +1354,10 @@ pub const NAMES: &[&str] = &[
     "location",
     "clock",
     "time",
+    "dateTime",
+    "wordCount",
+    "pending",
+    "picture",
     "onlineMeeting",
     "joinMeeting",
     "proposeTime",
@@ -1329,4 +1396,6 @@ pub const NAMES: &[&str] = &[
     "formatPlain",
     "increaseIndent",
     "decreaseIndent",
+    "showPassword",
+    "hidePassword",
 ];

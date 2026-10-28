@@ -190,7 +190,7 @@ pub async fn fetch_messages<H: Http>(client: &Client<H>, request: &JmapFetchRequ
 
 /// [`fetch_messages`] with a cap for a message and for a batch of its own (a test's).
 async fn fetch_batch<H: Http>(client: &Client<H>, request: &JmapFetchRequest, cancel: &AtomicBool, max: usize, budget: usize) -> GraphFetchResult {
-    let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), session: request.session.clone(), ..Default::default() };
     // What the lines of the batch hide, as a run's do: what the client hides, and the account's address, its id
     // and the session's address, which a server may name although they are no part of the sign-in.
     let secrets = secrets_of(&request.email, &request.session, &client.secrets, client.account_id());
@@ -281,7 +281,7 @@ fn stops(e: &Error) -> bool {
 /// The answer of a batch that could not begin: signing in to the server (`Client::connect`) failed with
 /// `error`. What [`fetch_messages`] would have said of the same trouble: nothing fetched, and why.
 pub fn failed_fetch(request: &JmapFetchRequest, error: &Error) -> GraphFetchResult {
-    let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() };
+    let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), session: request.session.clone(), ..Default::default() };
     stop(&mut out, error, &secrets_of(&request.email, &request.session, &Secrets::default(), ""));
     out
 }

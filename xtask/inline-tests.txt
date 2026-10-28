@@ -2,20 +2,15 @@
 # Only ever shrinks: move a file's tests to `<name>_tests.rs` and take its line off.
 apps/mailcraft-cli/src/main.rs
 apps/mailcraft/src/alerts.rs
-apps/mailcraft/src/browser.rs
 apps/mailcraft/src/clipboard.rs
 apps/mailcraft/src/control_server.rs
 apps/mailcraft/src/desktop_theme.rs
 apps/mailcraft/src/diagnostics.rs
 apps/mailcraft/src/graphics.rs
-apps/mailcraft/src/install.rs
 apps/mailcraft/src/logging.rs
-apps/mailcraft/src/main.rs
 apps/mailcraft/src/opened_files.rs
 apps/mailcraft/src/picture_cache.rs
 apps/mailcraft/src/secrets.rs
-apps/mailcraft/src/self_update.rs
-apps/mailcraft/src/single_instance.rs
 apps/mailcraft/src/updater.rs
 crates/charset/src/lib.rs
 crates/control-key/src/lib.rs
@@ -47,7 +42,6 @@ crates/ical/src/rrule.rs
 crates/ical/src/values.rs
 crates/ical/src/write.rs
 crates/ical/src/zones.rs
-crates/mcp/src/backend.rs
 crates/mcp/src/files.rs
 crates/mime/src/address.rs
 crates/mime/src/charset.rs
@@ -142,7 +136,6 @@ xtask/src/assets.rs
 xtask/src/i18n.rs
 xtask/src/icon.rs
 xtask/src/ico.rs
-xtask/src/layers.rs
 xtask/src/release_key.rs
 xtask/src/spdx.rs
 xtask/src/stats.rs

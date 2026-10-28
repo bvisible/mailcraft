@@ -89,6 +89,8 @@ fn autolink(text: &str) -> Vec<Span> {
         match hit {
             Hit::None => i += 1,
             Hit::Skip(end) => i = end.max(i + 1),
+            // Only what the safety check accepts is a link, so it is never offered to be opened and then refused.
+            Hit::Link { end, ref url, .. } if !crate::is_safe_url(url) => i = end.max(i + 1),
             Hit::Link { start, end, url } => {
                 if let Some(before) = text.get(plain..start).filter(|s| !s.is_empty()) {
                     spans.push(Span::plain(before));
@@ -206,7 +208,7 @@ fn email_at(text: &str, at: usize, floor: usize) -> Hit {
 /// with `> `, a rule is a row of dashes, a picture is its `[alt text]`. A link reads
 /// `text <url>` when the text doesn't already say where it goes. No-break spaces become spaces.
 pub fn to_text(html: &str) -> String {
-    blocks_to_text(&crate::parse(html))
+    blocks_to_text(&crate::blocks::parse_text(html))
 }
 
 /// Display blocks as plain text, the way [`to_text`] writes them. Every block is a paragraph of

@@ -1,12 +1,17 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! The browser shell: web `Services` (file picker, downloads, storage), drag-and-drop and the
-//! eframe web runner.
+//! The browser shell: web `Services` (file picker, downloads, storage, JMAP), drag-and-drop and
+//! the eframe web runner.
+
+// //// Neoffice — (no `Rc` here: it held upstream's page hook, left out below)
 
 use mailcraft_engine::Session;
 use mailcraft_model::Mailbox;
+use mailcraft_ui_egui::opening::{Arrival, Trouble};
 use mailcraft_ui_egui::{Inbox, MailApp, Services, UiState};
 use wasm_bindgen::JsCast as _;
+
+use crate::page;
 
 const MAILBOX_EXTS: &[&str] = &["mailcraft", "json"];
 const IMPORT_EXTS: &[&str] = &["eml", "mbox", "mbx", "ics", "ical", "vcf", "vcard"];
@@ -31,6 +36,8 @@ pub fn start() {
             log::error!("missing <canvas id=\"{CANVAS_ID}\">");
             return;
         };
+        // //// Neoffice — (upstream's page hook for JMAP accounts, `jmap.rs`, is left out: a hosting page's mailboxes are read
+        // //// Neoffice — by host.rs and run by jmap_services.rs)
         let mut options = eframe::WebOptions::default();
         // //// Neoffice — and a browser whose WebGPU gives no adapter in time starts on WebGL2 at once, rather than waiting
         // //// Neoffice — for an answer that may never come (gpu_probe.rs).
@@ -48,18 +55,46 @@ pub fn start() {
                         log::info!("mailcraft-web: wgpu backend {:?}", rs.adapter.get_info().backend);
                     }
                     let inbox: Inbox = Inbox::default();
-                    // //// Neoffice — the mailboxes a hosting page hands over open by themselves (hosted_app), in place of the mailbox kept in this browser.
+                    // //// Neoffice — the mailboxes a hosting page hands over open by themselves (hosted_app), in place of the
+                    // //// Neoffice — mailbox kept in this browser and of the opening screen that reads it.
                     let hosted = crate::host::accounts();
-                    let mut app = if hosted.is_empty() {
-                        MailApp::new(Session::new(first_mailbox()), services(inbox.clone(), cc.egui_ctx.clone()))
-                    } else {
+                    let app = if !hosted.is_empty() {
                         // //// Neoffice — and the page asks before it is left while a note's change waits (hosted/leave.rs).
                         crate::hosted::leave::install();
-                        hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone())
+                        let mut app = hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone());
+                        if let Some(ui) = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
+                            app.apply_prefs(ui);
+                        }
+                        // //// Neoffice — (its mailboxes were added by hosted_app, not by upstream's page hook)
+                        app
+                    } else {
+                        let prefs = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok());
+                        // The window is there at once, and the mailbox is read from the browser's
+                        // storage after its first frame (#519): the same opening screen as on the
+                        // desktop, which says "Opening…" alone, for the storage says nothing of how far
+                        // it has got.
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let (ctx, wake, first_prefs, build_inbox) = (cc.egui_ctx.clone(), cc.egui_ctx.clone(), prefs.clone(), inbox.clone());
+                        // //// Neoffice — a JMAP account is read by this fork's runner (jmap_services.rs, in `services`), not by
+                        // //// Neoffice — upstream's page hook (`jmap.rs`, which this fork leaves out).
+                        let build: mailcraft_ui_egui::opening::Build = Box::new(move |arrival| {
+                            let mut app = MailApp::new(Session::new(arrival.mailbox), services(build_inbox, ctx.clone()));
+                            if let Some(ui) = prefs {
+                                app.apply_prefs(ui);
+                            }
+                            // //// Neoffice — (no page hook's accounts added here: see above)
+                            app
+                        });
+                        wasm_bindgen_futures::spawn_local(async move {
+                            after_a_frame().await;
+                            // //// Neoffice — (no page hook naming accounts: see above)
+                            let _ = tx.send(first_mailbox(false));
+                            wake.request_repaint();
+                        });
+                        let opening = mailcraft_ui_egui::opening::Opening::new(rx, Default::default(), build);
+                        let locale = web_sys::window().and_then(|w| w.navigator().language());
+                        MailApp::opening(opening, first_prefs, locale)
                     };
-                    if let Some(ui) = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
-                        app.apply_prefs(ui);
-                    }
                     let saved_ui = serde_json::to_string(&app.prefs()).unwrap_or_default();
                     Ok(Box::new(WebShell { app, inbox, saved_ui, checked: 0.0 }))
                 }),
@@ -93,23 +128,36 @@ fn sample() -> Mailbox {
 }
 
 /// The mailbox to start with: what the URL asks for, else the one kept in this browser, else the
-/// sample (an empty mail program in a browser tab has nothing to show).
-fn first_mailbox() -> Mailbox {
+/// sample (an empty mail program in a browser tab has nothing to show), or an empty one when the
+/// page names accounts of its own (`named`), which are added to it. One kept here that can't be
+/// read says why before the window carries on with the sample or an empty one, as it always did.
+fn first_mailbox(named: bool) -> Arrival {
     let q = query();
-    if q.contains("empty") {
-        return Mailbox::with_local_account("", "");
+    if page::has_flag(&q, "empty") {
+        return Arrival::opened(Mailbox::with_local_account("", ""), None);
     }
-    if q.contains("sample") {
-        return sample();
+    if page::has_flag(&q, "sample") {
+        return Arrival::opened(sample(), None);
     }
+    let fresh = || if named { Mailbox::with_local_account("", "") } else { sample() };
     match stored(MAILBOX_KEY).map(|text| mailcraft_engine::io::read_mailbox(text.as_bytes())) {
-        Some(Ok(mailbox)) => mailbox,
+        Some(Ok(mailbox)) => Arrival::opened(mailbox, None),
         Some(Err(e)) => {
             log::error!("the stored mailbox couldn't be read: {e}");
-            sample()
+            Arrival { trouble: Some(Trouble::Unreadable(e.to_string())), ..Arrival::opened(fresh(), None) }
         }
-        None => sample(),
+        None => Arrival::opened(fresh(), None),
     }
+}
+
+/// Resolved once the browser has had a moment to show the page (a frame, as a rule).
+async fn after_a_frame() {
+    let tick = js_sys::Promise::new(&mut |resolve, _| {
+        if let Some(window) = web_sys::window() {
+            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, 30);
+        }
+    });
+    let _ = wasm_bindgen_futures::JsFuture::from(tick).await;
 }
 
 /// Wraps the app to read dropped files asynchronously (browsers can't read them synchronously),
@@ -151,6 +199,7 @@ impl eframe::App for WebShell {
         if self.app.services.host_menu.is_some() || self.app.services.modules.is_some() {
             crate::host_menu::frame(&mut self.app, ctx);
         }
+        open_links(ctx);
         // Interface settings: stored when they change, checked every couple of seconds.
         let now = mailcraft_ui_egui::now_ms();
         if now - self.checked > 2000.0 {
@@ -172,6 +221,33 @@ impl eframe::App for WebShell {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.app.ui(ui);
+        open_links(ui.ctx());
+    }
+}
+
+/// Open the links the window followed in this frame, in place of eframe, which would open them
+/// with a handle on this page left in the new one (`window.opener`): in a new tab with
+/// `noopener,noreferrer`, and only `http`, `https`, `mailto` and `tel` (`page::web_link`).
+fn open_links(ctx: &egui::Context) {
+    let links = ctx.output_mut(|o| {
+        let mut links = Vec::new();
+        o.commands.retain(|c| match c {
+            egui::OutputCommand::OpenUrl(open) => {
+                links.push((open.url.clone(), open.new_tab));
+                false
+            }
+            _ => true,
+        });
+        links
+    });
+    let Some(window) = web_sys::window() else { return };
+    for (url, new_tab) in links {
+        let Some(url) = page::web_link(&url) else { continue };
+        let _ = if new_tab {
+            window.open_with_url_and_target_and_features(&url, "_blank", "noopener,noreferrer")
+        } else {
+            window.open_with_url_and_target(&url, "_self")
+        };
     }
 }
 
@@ -337,6 +413,10 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
 
 /// Keep the mailbox in the browser's storage. A full store is the usual failure: say so plainly.
 fn persist(bytes: &[u8]) -> Result<(), String> {
+    // A look around (`?sample`, `?empty`) never overwrites the mailbox kept in this browser.
+    if page::is_ephemeral(&query()) {
+        return Ok(());
+    }
     let text = std::str::from_utf8(bytes).map_err(|e| e.to_string())?;
     let store = storage().ok_or("this browser has no storage for the page (private window?)")?;
     store

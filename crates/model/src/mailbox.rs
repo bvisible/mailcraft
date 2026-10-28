@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::sync::RemoteFlags;
-use crate::{Action, Calendar, Contact, Event, Id, JmapServer, KeepOffline, Message, ModelError, Rgb, Rule, Signature, Task, clean_name};
+use crate::{Action, Answers, Calendar, Contact, Event, Id, JmapServer, KeepOffline, Message, ModelError, Rgb, Rule, Signature, Task, clean_name};
 
 /// Deepest a folder tree may nest (a hostile file could otherwise chain folders without end).
 const MAX_DEPTH: usize = 32;
@@ -101,6 +101,13 @@ pub struct Folder {
     /// How far down the folder was last read ([`crate::sync::FolderState::uid_from`]).
     #[serde(skip_serializing_if = "is_zero")]
     pub uid_from: u32,
+    /// An IMAP folder's first download has ended with all of it here, or it was empty when first
+    /// read (#504): what arrives in it from then on is new mail, which the Safe and Blocked
+    /// Senders lists sort. `false` again when the server numbers it anew. A file from before
+    /// this was kept has none: [`Folder::read_whole`] takes a folder read up to some UID as
+    /// read whole.
+    #[serde(skip_serializing_if = "Option::is_none", deserialize_with = "crate::sync::lenient")]
+    pub whole: Option<bool>,
     /// For a folder of a [`AccountKind::Microsoft`] account that the server has: what the
     /// server calls it and what it last said of it ([`ServerFolder`]). `None` for a folder that
     /// only exists here (one made here that the server is yet to hear of, or a folder of any
@@ -160,6 +167,14 @@ pub struct FolderCounts {
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+impl Folder {
+    /// Whether the folder has been read whole once ([`Folder::whole`]); for a folder of a file
+    /// from before that was kept, whether it was read up to some UID.
+    pub fn read_whole(&self) -> bool {
+        self.whole.unwrap_or(self.uid_seen > 0)
+    }
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -741,7 +756,40 @@ pub enum Pending {
         uid: u32,
         #[serde(default, rename = "messageId", skip_serializing_if = "String::is_empty")]
         message_id: String,
+        /// What the message said of itself when it was deleted. A Message-ID is chosen by the
+        /// sender, so a numbered-anew mailbox only gives its UID to a copy that is also the same
+        /// mail by this. Absent in a mailbox file of 0.8.0 and before: such a change is not
+        /// carried over a renumbering.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seen: Option<MailIdentity>,
     },
+}
+
+/// What a message says of itself apart from its Message-ID: when it was sent, by whom, about
+/// what and to whom. Two arrivals with one Message-ID are one mail only if these agree too.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MailIdentity {
+    pub date: i64,
+    pub from: String,
+    pub subject: String,
+    pub people: Vec<String>,
+}
+
+impl MailIdentity {
+    pub fn of(m: &Message) -> MailIdentity {
+        MailIdentity {
+            date: m.date,
+            from: m.from.email.to_ascii_lowercase(),
+            subject: m.subject.split_whitespace().collect::<Vec<_>>().join(" "),
+            people: m.to.iter().chain(&m.cc).map(|a| a.email.to_ascii_lowercase()).take(200).collect(),
+        }
+    }
+
+    /// Whether `m` is the mail this was taken from (a mail with no date is never known again).
+    pub fn fits(&self, m: &Message) -> bool {
+        self.date != 0 && *self == MailIdentity::of(m)
+    }
 }
 
 impl Pending {
@@ -823,6 +871,15 @@ pub struct Mailbox {
     #[serde(deserialize_with = "crate::load_limit::capped_vec")]
     pub categories: Vec<Category>,
     pub rules: Vec<Rule>,
+    /// The mailbox-wide Safe Senders and Blocked Senders of #504, before they were kept per
+    /// account (#516). Only read from an old file: [`Mailbox::repair`] moves them to every
+    /// account's own lists and empties this, so the next save drops it.
+    #[serde(skip_serializing_if = "crate::JunkLists::is_empty")]
+    pub junk: crate::JunkLists,
+    /// Junk E-mail Options' Safe Senders and Blocked Senders of each account (#516), by the id
+    /// of the account (a shared mailbox has its owner's, [`Mailbox::junk_owner`]).
+    #[serde(skip_serializing_if = "BTreeMap::is_empty", deserialize_with = "crate::load_limit::capped_map")]
+    pub junk_accounts: BTreeMap<Id, crate::JunkLists>,
     pub signatures: Vec<Signature>,
     /// Moves and deletions the mail server is yet to be told, oldest first.
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
@@ -831,6 +888,22 @@ pub struct Mailbox {
     /// to be told, oldest first ([`crate::remote::EventChange`]).
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
     pub event_changes: Vec<crate::remote::EventChange>,
+    /// To-dos deleted here that a Microsoft account's server (To Do) is yet to be told about,
+    /// oldest first ([`crate::TaskGone`]).
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub task_gone: Vec<crate::TaskGone>,
+    /// The lists of a Microsoft account's To Do that are shared with other people (#461): what an
+    /// agent changes in them, they see.
+    #[serde(
+        skip_serializing_if = "BTreeMap::is_empty",
+        serialize_with = "crate::task::write_shared_lists",
+        deserialize_with = "crate::task::read_shared_lists"
+    )]
+    pub shared_task_lists: crate::SharedTaskLists,
+    /// What the owner said about the to-dos that exist only here (#248): until a yes, none goes
+    /// to a server.
+    #[serde(skip_serializing_if = "crate::LocalTasks::is_unasked")]
+    pub local_tasks: crate::LocalTasks,
     /// Changes to events that a server said it took and that no download has shown yet
     /// ([`crate::remote::EventCheck`]).
     #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
@@ -890,9 +963,14 @@ impl Default for Mailbox {
             tasks: BTreeMap::new(),
             categories: default_categories(),
             rules: Vec::new(),
+            junk: crate::JunkLists::default(),
+            junk_accounts: BTreeMap::new(),
             signatures: Vec::new(),
             pending: Vec::new(),
             event_changes: Vec::new(),
+            task_gone: Vec::new(),
+            shared_task_lists: BTreeMap::new(),
+            local_tasks: crate::LocalTasks::Unasked,
             event_checks: Vec::new(),
             // //// Neoffice — see `contact_changes`.
             contact_changes: Vec::new(),
@@ -1048,6 +1126,20 @@ impl Mailbox {
         self.pending.retain(|p| !going.contains(&p.account()));
         self.event_changes.retain(|change| !going.contains(&change.account));
         self.event_checks.retain(|check| !going.contains(&check.account));
+        self.task_gone.retain(|gone| !going.contains(&gone.account));
+        self.shared_task_lists.retain(|account, _| !going.contains(account));
+        self.junk_accounts.retain(|account, _| !going.contains(account));
+        // Its to-dos stay, as to-dos of this computer only.
+        for task in self.tasks.values_mut().filter(|t| going.contains(&t.origin.account)) {
+            let task = Arc::make_mut(task);
+            task.origin = crate::Origin::default();
+            task.list.clear();
+            task.synced = None;
+            task.local_only = false;
+        }
+        if matches!(self.local_tasks, crate::LocalTasks::SendTo(a) if going.contains(&a)) {
+            self.local_tasks = crate::LocalTasks::Unasked;
+        }
         self.queued.retain(|queued| !going.contains(&queued.account()));
         self.favorites_from_server.retain(|list| !going.contains(&list.account));
         // //// Neoffice — and the notes of their servers, with what waited for those (`note.rs`).
@@ -1540,13 +1632,22 @@ impl Mailbox {
     }
 
     /// Message `id` has been sent: the original it answers or forwards ([`Message::answers`]) is
-    /// marked replied or forwarded now, and `id` no longer waits to do so (#154). Nothing for a
-    /// message that answers nothing, or whose original is gone. Whether anything changed.
+    /// marked replied or forwarded now, and so is each other one a forward of several forwards
+    /// (#360); `id` no longer waits to do so (#154). Nothing for a message that answers nothing,
+    /// or for an original that is gone. Whether anything changed.
     pub fn mark_answered(&mut self, id: Id) -> bool {
         let Some(answers) = self.message(id).and_then(|m| m.answers.clone()) else { return false };
         if let Ok(m) = self.message_mut(id) {
             m.answers = None;
         }
+        for original in std::iter::once(&answers).chain(&answers.also) {
+            self.mark_original(id, original);
+        }
+        true
+    }
+
+    /// The original `answers` names marked replied or forwarded, for message `id` that went.
+    fn mark_original(&mut self, id: Id, answers: &Answers) {
         let marked = |m: &Message| if answers.forward { m.forwarded } else { m.answered };
         let same = |m: &Message| answers.message_id.is_empty() || m.message_id == answers.message_id;
         if answers.message != id
@@ -1559,7 +1660,6 @@ impl Mailbox {
                 orig.answered = true;
             }
         }
-        true
     }
 
     pub fn messages_in(&self, folder: Id) -> impl Iterator<Item = &Arc<Message>> {
@@ -2011,22 +2111,22 @@ impl Mailbox {
         if self.stays_on_server(id) {
             return Err(invalid(NOT_MOVING_YET));
         }
-        let (was_in, account, uid, message_id) = {
+        let (was_in, account, uid, message_id, seen) = {
             let m = self.message(id).ok_or(not_found("message", id))?;
-            (m.folder, m.account, m.uid, m.message_id.clone())
+            (m.folder, m.account, m.uid, m.message_id.clone(), (!m.message_id.is_empty()).then(|| MailIdentity::of(m)))
         };
         self.queue_graph_delete(id);
         match self.waiting_move(id).and_then(|at| self.pending.get_mut(at)) {
             Some(op) => {
                 if let Pending::Move { account, from, uid, .. } = &mut *op {
-                    let delete = Pending::Delete { account: *account, from: std::mem::take(from), uid: *uid, message_id };
+                    let delete = Pending::Delete { account: *account, from: std::mem::take(from), uid: *uid, message_id, seen };
                     *op = delete;
                 }
             }
             None => {
                 let from = self.folder(was_in).filter(|f| f.account == account && !f.remote.is_empty()).map(|f| f.remote.clone());
                 if let (Some(from), true) = (from, uid != 0) {
-                    self.pending.push(Pending::Delete { account, from, uid, message_id });
+                    self.pending.push(Pending::Delete { account, from, uid, message_id, seen });
                 }
             }
         }
@@ -2078,6 +2178,68 @@ impl Mailbox {
             .collect();
         v.sort_by_key(|x| (x.date, x.id));
         v.into_iter().map(|x| x.id).collect()
+    }
+
+    /// Sort a message that has just arrived by the Safe and Blocked Senders lists (#504): from a
+    /// blocked sender into the Inbox, it moves to the account's Junk E-mail; from a safe sender
+    /// into Junk E-mail, to the Inbox. The move is noted for the server as the owner's own is.
+    /// Whether it moved. Never in a shared mailbox, and the callers sort only new mail of a folder
+    /// read whole once ([`Folder::read_whole`], Graph's `caught_up`), never a first download:
+    /// mail that was here before (or before a list changed) stays where it is.
+    pub fn sort_junk(&mut self, id: Id) -> bool {
+        let Some(m) = self.message(id) else { return false };
+        let Some(lists) = self.junk_lists(m.account) else { return false };
+        let Some(kind) = self.folder(m.folder).map(|f| f.kind) else { return false };
+        let to = match (kind, lists.verdict(&m.from.email)) {
+            (FolderKind::Inbox, Some(crate::JunkList::Blocked)) => FolderKind::Junk,
+            (FolderKind::Junk, Some(crate::JunkList::Safe)) => FolderKind::Inbox,
+            _ => return false,
+        };
+        // The lists are the owner's: a shared mailbox's mail is other people's too, and stays
+        // where its server put it.
+        if m.draft || self.account(m.account).is_none_or(|a| a.is_shared()) {
+            return false;
+        }
+        let Some(folder) = self.folder_of_kind(m.account, to) else { return false };
+        self.move_message(id, folder).is_ok() && self.message(id).is_some_and(|m| m.folder == folder)
+    }
+
+    /// The account whose lists govern `account`'s mail: itself, or for a shared mailbox the
+    /// account it was opened through.
+    pub fn junk_owner(&self, account: Id) -> Id {
+        self.account(account).and_then(|a| a.shared_of).unwrap_or(account)
+    }
+
+    /// The Safe Senders and Blocked Senders of `account` (#516); `None` when it has none.
+    pub fn junk_lists(&self, account: Id) -> Option<&crate::JunkLists> {
+        self.junk_accounts.get(&self.junk_owner(account)).filter(|l| !l.is_empty())
+    }
+
+    /// The same, to change; empty ones are made. Call it only for an account that exists.
+    pub fn junk_lists_mut(&mut self, account: Id) -> &mut crate::JunkLists {
+        let owner = self.junk_owner(account);
+        self.junk_accounts.entry(owner).or_default()
+    }
+
+    /// Move the mailbox-wide lists of a file from before #516 to every account's own lists
+    /// (each account of the mailbox gets a copy, unless it has lists already, which are kept).
+    /// A mailbox with no account yet keeps them until it has one. Whether anything moved.
+    fn migrate_junk_lists(&mut self) -> bool {
+        if self.junk.is_empty() {
+            return false;
+        }
+        let owners: Vec<Id> = self.accounts.iter().filter(|a| a.shared_of.is_none()).map(|a| a.id).collect();
+        if owners.is_empty() {
+            return false;
+        }
+        let old = std::mem::take(&mut self.junk);
+        for id in owners {
+            let lists = self.junk_accounts.entry(id).or_default();
+            if lists.is_empty() {
+                *lists = old.clone();
+            }
+        }
+        true
     }
 
     /// Run the enabled rules on a message (new mail). Returns the names of the rules that ran.
@@ -2197,11 +2359,26 @@ impl Mailbox {
         self.tasks.get(&id).map(Arc::as_ref)
     }
 
+    /// Whether the to-do is in a server's list that is shared with other people.
+    pub fn in_shared_task_list(&self, task: &Task) -> bool {
+        task.origin.is_remote() && self.shared_task_lists.get(&task.origin.account).is_some_and(|lists| lists.contains(task.list.as_str()))
+    }
+
     pub fn task_mut(&mut self, id: Id) -> Result<&mut Task, ModelError> {
         self.tasks.get_mut(&id).map(Arc::make_mut).ok_or(not_found("task", id))
     }
 
+    /// Delete a to-do. One that an account's server keeps is noted, so that the server is told.
     pub fn remove_task(&mut self, id: Id) -> Result<(), ModelError> {
+        let task = self.tasks.remove(&id).ok_or(not_found("task", id))?;
+        if task.origin.is_remote() && !task.origin.id.is_empty() && self.task_gone.len() < crate::task::MAX_TASK_GONE {
+            self.task_gone.push(crate::TaskGone { account: task.origin.account, id: task.origin.id.clone(), list: task.list.clone() });
+        }
+        Ok(())
+    }
+
+    /// Remove a to-do without telling any server: it is gone from there already.
+    pub fn remove_task_quietly(&mut self, id: Id) -> Result<(), ModelError> {
         self.tasks.remove(&id).map(|_| ()).ok_or(not_found("task", id))
     }
 
@@ -2298,6 +2475,21 @@ impl Mailbox {
         if self.rules.len() > MAX_RULES {
             self.rules.truncate(MAX_RULES);
             fixed.push(format!("rules cut to {MAX_RULES}"));
+        }
+        if self.migrate_junk_lists() {
+            fixed.push("Safe and Blocked Senders moved to each account".to_string());
+        }
+        let mut tidied = self.junk.repair();
+        let known: HashSet<Id> = self.accounts.iter().filter(|a| a.shared_of.is_none()).map(|a| a.id).collect();
+        let before = self.junk_accounts.len();
+        self.junk_accounts.retain(|account, _| known.contains(account));
+        tidied |= self.junk_accounts.len() != before;
+        for lists in self.junk_accounts.values_mut() {
+            tidied |= lists.repair();
+        }
+        self.junk_accounts.retain(|_, lists| !lists.is_empty());
+        if tidied {
+            fixed.push("Safe and Blocked Senders tidied".to_string());
         }
         // Ids stay within what JSON numbers hold exactly; anything above gets a new id, so the
         // counter can't run into the end of u64.
@@ -2552,7 +2744,7 @@ impl Mailbox {
             let waiting = uid == 0
                 && match &op {
                     Pending::Move { message, .. } => self.messages.get(message).is_some_and(|m| !m.message_id.is_empty()),
-                    Pending::Delete { message_id, .. } => !message_id.is_empty(),
+                    Pending::Delete { message_id, seen, .. } => !message_id.is_empty() && seen.is_some(),
                 };
             let Some(source) = source.filter(|source| (uid != 0 || waiting) && !on_server.contains(&(*source, uid))) else { continue };
             if let Pending::Move { message, synced, to, .. } = &mut op {

@@ -1,6 +1,7 @@
 # MailCraft architecture
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-23 · **Change:** minor (`jmap-fork`, L3, beside upstream's `jmap`: this fork's JMAP client, which reads a JMAP account's mailboxes and newest messages for the engine, tells its server of the changes made here, sends what waits in an account's Outbox and keeps its calendars, contacts and notes; `jmap`, L3: JMAP requests and answers without I/O, M6; quitting on macOS is MailCraft's own code, no craft-libs dependency; #253: the macOS menu bar, a table of command ids in `ui-egui` made native with `muda` in the desktop app; `i18n`, L0: interface text, `.po` catalogues and plural rules in a crate of their own, i18n-1; an account of a kind this program doesn't know, one a newer MailCraft added, is kept as its file has it and written back so, `AccountKind::Unknown`; fuzz targets for every reader, run in CI; `charset`, L0: one decoder of character sets for mail and vCard files, #180; R6: the mailbox file is a log of records, format 3, `store_index.rs`; a damaged later save stops the reading there, a damaged item of the first save costs only itself, and `file.open` says so; files kept aside are never removed and keep their content from the sweep; no citations of private decision records; R3.7: the switch from IMAP to Graph, no switch for testing; quitting on macOS through `-[NSApplication terminate:]`, MailCraft's own code in the desktop app; cargo-deny, pinned actions, zizmor, Scorecard, the threat model; R3.1: a Microsoft account kept in step through Graph behind a switch for testing, server ids, `graph::pace`; the Secret Service on Linux and FreeBSD behind `Services::secrets`; `StoreTrouble`; Exchange Web Services removed: the Favorites of Outlook are read through Microsoft Graph alone, and there is no choice of a way) · **Target:** Microsoft Outlook (Microsoft 365) <!-- //// Neoffice — the status line of the page names `jmap-fork`, a crate this fork adds. -->
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-27 · **Change:** minor · **Target:** Microsoft Outlook (Microsoft 365)
+<!-- //// Neoffice — this fork's `jmap-fork` (L3) beside upstream's `jmap`: its JMAP client, which also tells a server of the changes made here, sends what waits in an account's Outbox and keeps its calendars, contacts and notes; the apps take it under the name `mailcraft-jmap`. -->
 
 How MailCraft is built today. Rules for working in the code are in [`AGENTS.md`](../AGENTS.md). The
 shape — layers, "everything is a command", the swappable egui front end, the control channel, MCP,
@@ -8,9 +9,10 @@ shape — layers, "everything is a command", the swappable egui front end, the c
 
 ## Layers
 
-16 crates, 3 apps and `xtask` <!-- //// Neoffice — this fork adds `jmap-fork` to upstream's 15 crates. --> (`cargo xtask stats` prints lines and tests per crate). Layering is
-enforced by `cargo xtask layers`: a crate may only depend on crates in lower layers (one exception
-inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, winit or rfd.
+18 crates, 3 apps and `xtask` <!-- //// Neoffice — this fork adds `jmap-fork` to upstream's 17 crates. --> (`cargo xtask stats` prints lines and tests per crate). Layering is
+enforced by `cargo xtask layers`: a crate may only depend on crates in lower layers (two exceptions:
+inside L3, `net` drives `proto`; inside L0, `link` uses `names`), and nothing below L6 depends on
+egui, eframe, winit or rfd.
 `dispatch2`, which the desktop app uses to quit the macOS way, is for the apps alone.
 
 | Layer | Crate | Job |
@@ -18,6 +20,8 @@ inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, 
 | L0 | `time` | Dates and times without a clock dependency: proleptic Gregorian maths, weekdays, ISO weeks, RFC 5322 and ISO 8601 text, list and group labels; time zones (`Zone`: the IANA database with its history, built in; Windows' names for zones; offsets; the system's zone), the only place the zone library is used; `now()` and the system's zone are the only calls that ask the system (or the browser) |
 | L0 | `control-key` | Per-window control-port key files shared by the app and the MCP bridge |
 | L0 | `charset` | Bytes to text in any character set of the WHATWG Encoding Standard (`encoding_rs`), one decoder for `mime` and `vcard`, which may not use each other |
+| L0 | `link` | Links: a strict reader of `http` and `https` addresses (RFC 3986) that writes the host a browser would reach (lower-case ASCII, international labels as Punycode per RFC 3492, numbers as dotted decimal, IPv6 in brackets) and the address as it is shown and launched; percent-encoding. Its one dependency is `names`, for the list of format characters, which it refuses in a host but for the joiners IDNA2008 allows (#454); replaces the `url` crate (#350) |
+| L0 | `names` | Names (people, folders, categories, calendars, accounts, signatures, rules): one list of Unicode's format characters (general category Cf, Unicode 17.0) and the zero-width joiner and non-joiner among them, and the two steps a name takes, coming in (`incoming`: one line, without control characters, format characters and Unicode's other default-ignorable code points (the Hangul fillers and the like, which show nothing), but with a joiner inside a word and one variation selector after a character that shows; trimmed, at most a given length, nothing when nothing is left) and being shown (`shown`: the same, cut with an ellipsis). No dependencies (#454) |
 | L0 | `i18n` | Interface text in other languages: the languages (`Lang`), a reader of gettext `.po` catalogues (hostile input: sizes capped, never a panic) with plural rules, the catalogues compiled in from `crates/i18n/po/`, named `{placeholders}` (`fmt`), and the pseudo language that shows text not yet marked for translation. `cargo xtask i18n` writes `po/messages.pot` from every `tl!`/`tln!` and the engine's labels |
 | L1 | `model` | The mailbox: accounts, folders, messages, contacts, calendars, events with recurrence, tasks, categories, rules, signatures; edit primitives (`move_message`, `delete_folder`…), conversations, the search query language, `repair()` for whatever a file held, and the sync data types |
 | L1 | `html` | Hostile HTML mail → display blocks (`parse`), plain text (`to_text`) and the line a message list shows (`preview`, `text_preview`); plain text → blocks and HTML; entities; the safe-URL rule |
@@ -25,7 +29,7 @@ inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, 
 | L2 | `ical` | iCalendar reader and writer: events, to-dos, recurrence rules, alarms, attendees |
 | L2 | `vcard` | vCard 2.1/3.0/4.0 reader, 3.0 writer |
 | L3 | `proto` | IMAP4rev1 and SMTP clients over any `Read + Write` stream (no sockets, so they test against scripted transcripts and build for wasm) |
-| L3 | `jmap` | JMAP (RFC 8620 and 8621) over any HTTP client, with no sockets and no browser API: signing in and the session, batched method calls, and `sync_mail`, which reads an account's mailboxes and the newest messages of each as pieces for the engine; an in-process server for the tests (the `stand-in` feature) <!-- //// Neoffice — added row (no upstream equivalent) --> |
+| L3 | `jmap-fork` | This fork's JMAP client (RFC 8620, 8621, JMAP for Calendars, Contacts and notes) over any HTTP client, with no sockets and no browser API: signing in and the session, batched method calls, `sync_mail`, which reads an account's mailboxes and newest messages, sends what waits in its Outbox, files its drafts and tells the server of the changes made here, and its calendars, contacts and notes; an in-process server for the tests (the `stand-in` feature). The apps take it under the name `mailcraft-jmap` <!-- //// Neoffice — added row (no upstream equivalent) --> |
 | L3 | `net` | TCP + TLS (rustls), sending through SMTP, two-way IMAP synchronisation, OAuth sign-in, MX lookup, Microsoft Graph (`graph`); empty on wasm |
 | L3 | `jmap` | JMAP (RFC 8620, 8621) without sockets or browser APIs: builds each HTTP request and judges the answer, the program does the exchange (`HttpExchange`); an in-process server for tests (`stand-in` feature). Nothing calls it yet (M6) |
 | L4 | `engine` | `Session` (mailbox, selection, view, the message being written, undo), the **command registry** (`cmd/*.rs`), the message list (`list.rs`), the Outlook feature catalog (`catalog.rs`), the sample mailbox, file dispatch (`io.rs`) |
@@ -243,6 +247,41 @@ inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, 
   account signs in that way (`Account::oauth`); the host with sockets does it and hands tokens in.
 - **Plain-text composing.** Rich text needs an editor component the project does not have yet.
 
+## Start-up
+
+The window comes up at once, at its remembered size and in its theme, and the mailbox is read on
+a thread of its own (`apps/mailcraft/src/launch.rs`, #519); the window waits in
+`crates/ui-egui/src/opening.rs`. If reading takes longer than 0.3 s it shows the opening screen:
+the bytes read of the file's (`mailcraft_engine::io::OpenProgress`, counted by
+`store::open_with`), then "Getting ready…". Until the mailbox is there the window can be moved,
+resized and closed and nothing else: every command, and every control request but `app.status`,
+is refused with "the mailbox is still opening"; files and links handed over (a second start,
+Finder) wait and open after; nothing reaches a server and nothing is written, so closing it then
+leaves the mailbox and the settings as they were. A panic on the reading thread is a mailbox that
+couldn't be read. A file that can't be read, was damaged or was repaired is said on the same
+screen with Continue, after which the window is made as it always was (an empty mailbox kept
+nowhere, the damaged-mailbox notice). File › Open later reads the other file in the background
+(`Services::read_ahead`, `store::open_ahead`) while the open mailbox stays in use, with its
+progress and Cancel in the status bar; `file.open` then takes what was read. The browser build
+uses the same screen, reading its storage after the first frame. Every open logs one line: the
+time, the bytes and the counts of messages, folders and accounts.
+
+The desktop window opens its mailbox with `store::open_for_window`, which leaves out what it
+doesn't need before the first frame (#519): the SHA-256 of the whole file, which tells this
+program's bytes from another writer's, is worked out on a thread of its own from the bytes read,
+and every save waits for it first (it is only of bytes the reading itself took: a file cut short
+has none, as before); only the newest 200 messages of the Inbox (the view the window opens on)
+have their bodies read at once; and the content files left on disk are looked for afterwards.
+Once the window shows, a thread the host starts looks for those files and reads the bodies the
+memory budget holds that were left for later (`store::content_later`): the bodies found missing,
+or whose file is there but damaged, are marked in their messages as an opening that looks at once
+marks them (`Session::mark_unavailable`) and the "missing or damaged" count is said in the status
+bar; then the window takes the bodies read in a few batches a frame (`Session::take_bodies`),
+so that previews and everything else that reads bodies in memory end as after an opening that read
+them at once. What comes for a mailbox another has taken the place of is dropped. The word index starts after the first
+five frames. `store::open` and `file.open` open as before. `store_bench_tests.rs` times an open of
+a made-up mailbox of 64,000 messages (ignored by `cargo test`).
+
 ## Testing and gates
 
 - Unit tests in every crate; property tests feeding arbitrary bytes to the readers (`mime`,
@@ -267,6 +306,7 @@ inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, 
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-11 | major | First architecture doc |
+| 2026-10-26 | minor | #519: start-up: the window first, the mailbox read on a thread of its own behind the opening screen; File › Open reads in the background |
 | 2026-10-23 | minor | `jmap`, L3: JMAP requests and answers without I/O (M6); 15 crates |
 | 2026-10-15 | minor | Supply-chain gates: cargo-deny in `cargo xtask ci` and CI, pinned actions, zizmor, Scorecard; link to the threat model |
 | 2026-10-12 | patch | `html` also makes the line a message list shows (`preview`, `text_preview`) |
@@ -293,3 +333,9 @@ inside L3: `net` drives `proto`), and nothing below L6 depends on egui, eframe, 
 | 2026-10-20 | minor | `i18n` (L0): interface text, a `.po` reader with plural rules and the languages moved out of `ui-egui`, which keeps `tl!` and gains `tln!`, i18n-1 |
 | 2026-10-21 | minor | #253: the macOS menu bar: a table of command ids in `crates/ui-egui/src/menubar.rs`, made native with `muda` in `apps/mailcraft/src/menubar.rs` |
 | 2026-10-22 | minor | `jmap-fork` (L3): this fork's JMAP client leaves `crates/jmap` to upstream's own (#278) and is used by the apps under its name until its mail sending, calendars, contacts and notes sit on upstream's <!-- //// Neoffice — added row (no upstream equivalent) --> |
+| 2026-10-25 | minor | #350: `link` (L0): MailCraft's own reader of web addresses and Punycode replaces the `url` and `webbrowser` crates; pages are opened by `rundll32`, `open` or the desktops' openers as programs, never through a shell |
+| 2026-10-27 | minor | #454: `names` (L0): one list of Unicode's format characters, and the two steps a name takes, coming in and being shown, which also remove the other characters that show nothing; the count of crates is 17 |
+| 2026-10-27 | minor | #454 part 2: `link` and `html` use `names`' list of format characters instead of copies of their own; `link` depends on `names`, the second exception to the layers |
+| 2026-10-27 | minor | #519 slice 2: opening for the window: the whole-file sum in the background, bodies of the opening rows only, content files looked for afterwards, the word index after the first frames |
+| 2026-10-27 | patch | #519 slice 2 review: bodies found missing are marked, the bodies the budget holds come in the background, a cut-short file has no sum |
+| 2026-10-27 | patch | #519 slice 2 review: a body whose file is damaged, read in the background, is marked and counted |

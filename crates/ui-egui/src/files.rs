@@ -22,6 +22,8 @@ use crate::MailApp;
 pub enum FileDialogRequest {
     /// Pick a file to open; `purpose` says what for (`mailbox`, `import`, `attach`).
     Open { purpose: String },
+    /// Pick a folder (to import the mbox files under it).
+    Folder,
     /// Pick a path to save to, given a suggested file name.
     Save { name: String },
 }
@@ -32,6 +34,8 @@ pub(crate) enum AfterPick {
     Open(String),
     /// Run this command with the picked path as `path`.
     Export { command: String, params: Value },
+    /// Show what is in the picked folder, ready to import ([`crate::import_tree`]).
+    Tree,
 }
 
 pub struct PendingDialog {
@@ -47,7 +51,12 @@ fn export_name(app: &MailApp, id: &str, params: &Value) -> Option<String> {
     Some(match id {
         "file.saveAs" => format!("mailbox.{}", mailcraft_engine::io::MAILBOX_EXT),
         "file.save" if s.path.is_none() && app.services.persist.is_none() => format!("mailbox.{}", mailcraft_engine::io::MAILBOX_EXT),
-        "file.exportMessage" => clean(&s.focused_message().map(|m| m.subject.clone()).unwrap_or_default(), "eml"),
+        // The message named (a Save As that waited for its download names it), else the selected,
+        // by the name the command gives it.
+        "file.exportMessage" => {
+            let message = params.get("id").and_then(Value::as_u64).and_then(|id| s.mailbox.message(id)).or_else(|| s.focused_message());
+            message.map_or_else(|| clean("message", "eml"), mailcraft_engine::cmd::file::eml_name)
+        }
         "file.exportFolder" => clean(&s.mailbox.folder(s.view.folder).map(|f| f.name.clone()).unwrap_or_default(), "mbox"),
         "file.exportCalendar" => clean(
             &params.get("id").and_then(Value::as_u64).and_then(|id| s.mailbox.event(id)).map_or("calendar".to_string(), |e| e.title.clone()),
@@ -70,12 +79,18 @@ fn export_name(app: &MailApp, id: &str, params: &Value) -> Option<String> {
 /// what it produces (browser). `None` for every other command.
 pub(crate) fn intercept(app: &mut MailApp, id: &str, params: &Value) -> Option<Result<Value, String>> {
     // Open, Import and Attach without a file: pick one.
+    if id == "file.importFolderTree" && params.get("path").is_none() && params.get("entries").is_none() && params.get("staged").is_none() {
+        // A host that can't ask for a folder lets the command say what it needs.
+        app.services.file_dialog.as_ref()?;
+        return Some(ask(app, FileDialogRequest::Folder, AfterPick::Tree));
+    }
     if params.get("path").is_none() && params.get("data").is_none() {
         let purpose = match id {
             "file.open" => Some("mailbox"),
             "file.import" => Some("import"),
             "compose.attach" if app.session.compose.is_some() => Some("attach"),
             "signature.picture.add" if app.session.signature_edit.is_some() => Some("picture"),
+            "insert.picture" if app.session.compose.is_some() && app.session.signature_edit.is_none() => Some("bodyPicture"),
             _ => None,
         };
         if let Some(purpose) = purpose {
@@ -144,6 +159,7 @@ pub(crate) fn poll(app: &mut MailApp) -> Option<Result<Value, String>> {
     let Some(path) = picked else { return Some(Ok(json!({"cancelled": true}))) };
     let r = match d.after {
         AfterPick::Open(purpose) => opened_path(app, &purpose, &path),
+        AfterPick::Tree => app.run("ui.dialog", json!({"name": "importTree", "path": path})),
         AfterPick::Export { command, mut params } => {
             if let Some(o) = params.as_object_mut() {
                 o.insert("path".into(), json!(path));
@@ -184,29 +200,46 @@ fn opened_path(app: &mut MailApp, purpose: &str, path: &str) -> Result<Value, St
     let r = match purpose {
         "mailbox" => app.run("file.open", json!({"path": path})),
         "attach" => app.run("compose.attach", json!({"path": path})),
+        "bodyPicture" => app.run("insert.picture", json!({"path": path})),
         "picture" => {
             crate::signatures::add_picture(app, json!({"path": path}));
             return Ok(json!({"picture": path}));
         }
         _ => app.run("file.import", json!({"path": path})),
     };
-    if r.is_ok() {
+    // (A mailbox goes into Recent, and File closes, once it is open: `MailApp::run`.)
+    if r.is_ok() && purpose != "mailbox" {
         app.ui.backstage = false;
-        if purpose == "mailbox" {
-            app.ui.recent.retain(|p| p != path);
-            app.ui.recent.insert(0, path.to_string());
-            app.ui.recent.truncate(10);
-        }
     }
     r
+}
+
+/// The mailbox file at `path` was opened: first in File's Recent, and File closes.
+pub(crate) fn remember_recent(app: &mut MailApp, path: &str) {
+    app.ui.backstage = false;
+    app.ui.recent.retain(|p| p != path);
+    app.ui.recent.insert(0, path.to_string());
+    app.ui.recent.truncate(10);
 }
 
 /// A file dropped on the window, or something the program was started with: a file, a file
 /// named the way desktops name one (`file://`), or a `mailto:` link, which starts a new message.
 pub(crate) fn dropped_path(app: &mut MailApp, path: &str) {
-    if path.trim().get(..7).is_some_and(|scheme| scheme.eq_ignore_ascii_case("mailto:")) {
+    if is_mailto_link(path) {
+        // A link from outside doesn't destroy a message being written: it is saved to Drafts
+        // first, and if it can't be, the link waits for the owner.
+        let saved = app.session.compose.as_ref().is_some_and(|c| c.dirty);
+        if saved && let Err(e) = app.run("compose.saveDraft", json!({})) {
+            app.status(crate::i18n::fmt(
+                tl!("A link asked for a new message, but the one you are writing couldn't be saved first: {why}"),
+                &[("why", &e)],
+            ));
+            return;
+        }
         if let Err(e) = app.run("mail.new", json!({"mailto": path.trim()})) {
             app.status(e);
+        } else if saved {
+            app.status(tl!("The message you were writing was saved to Drafts; a link opened a new one"));
         }
         return;
     }
@@ -215,9 +248,88 @@ pub(crate) fn dropped_path(app: &mut MailApp, path: &str) {
     let _ = opened_path(app, purpose, &path);
 }
 
+/// The most calendar and contact files waiting to be asked about; more are left alone.
+const MOST_WAITING: usize = 32;
+
+/// [`MailApp::open_from_system`].
+pub(crate) fn from_system(app: &mut MailApp, what: &str) {
+    use mailcraft_engine::io::Format;
+    if is_mailto_link(what) {
+        return dropped_path(app, what);
+    }
+    let path = local_path(what);
+    match Format::from_extension(&path) {
+        Some(Format::Eml) => {
+            // Read in a window of its own and filed nowhere (#515): the owner keeps it with Move
+            // to Folder or Save As, and closing the window leaves nothing in the mailbox.
+            app.ui.backstage = false;
+            let opened = crate::opened_message::read(&path).and_then(|o| app.windows.add_file(o.message, o.bytes));
+            if let Err(e) = opened {
+                app.status(e);
+            }
+        }
+        Some(Format::Ics | Format::Vcf) => {
+            let asking = matches!(&app.dialog, Some(crate::dialogs::Dialog::Confirm { command, params, .. })
+                if command == "file.import" && params.get("path").and_then(Value::as_str) == Some(path.as_str()));
+            if !asking && app.opened_waiting.len() < MOST_WAITING && !app.opened_waiting.contains(&path) {
+                app.opened_waiting.push_back(path);
+            }
+            ask_next(app);
+        }
+        _ => dropped_path(app, &path),
+    }
+}
+
+/// Save As in the window of a message file ([`crate::opened_message`]): the file's own bytes,
+/// where the owner says (a download in the browser).
+pub(crate) fn save_opened(app: &mut MailApp, window: u64, m: &mailcraft_model::Message, bytes: &[u8]) {
+    let name = mailcraft_engine::cmd::file::eml_name(m);
+    if let Some(save) = &app.services.download {
+        match save(&name, bytes) {
+            Ok(()) => app.status(crate::i18n::fmt(tl!("Downloaded {name}"), &[("name", &name)])),
+            Err(e) => app.status(e),
+        }
+        return;
+    }
+    let _ = ask(
+        app,
+        FileDialogRequest::Save { name },
+        AfterPick::Export { command: "ui.saveWindowMessage".to_string(), params: json!({"window": window}) },
+    );
+}
+
+/// Whether `text` is a `mailto:` link, by its scheme.
+fn is_mailto_link(text: &str) -> bool {
+    text.trim().get(..7).is_some_and(|scheme| scheme.eq_ignore_ascii_case("mailto:"))
+}
+
+/// The next calendar or contact file the system asked MailCraft to open, asked about once
+/// nothing else is: Import runs `file.import` with it, Cancel leaves it. The question is the
+/// window's, so only the owner answers it (an agent can't name a file to import).
+pub(crate) fn ask_next(app: &mut MailApp) {
+    if app.dialog.is_some() {
+        return;
+    }
+    let Some(path) = app.opened_waiting.pop_front() else { return };
+    app.dialog =
+        Some(crate::dialogs::Dialog::Confirm { command: "file.import".to_string(), params: json!({"path": path}), ask: import_question(&path) });
+}
+
+/// What the owner is asked before a calendar or contact file from outside is imported.
+pub(crate) fn import_question(path: &str) -> crate::dialogs::Question {
+    use mailcraft_engine::io::Format;
+    let name = std::path::Path::new(path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string());
+    let (title, text) = if Format::from_extension(path) == Some(Format::Vcf) {
+        (tl!("Import Contacts"), crate::i18n::fmt(tl!("Import the contacts in {name} into Contacts?"), &[("name", &name)]))
+    } else {
+        (tl!("Import Calendar File"), crate::i18n::fmt(tl!("Import the appointments and tasks in {name} into your calendar?"), &[("name", &name)]))
+    };
+    crate::dialogs::Question::new(title, text, tl!("Import"), Value::Null)
+}
+
 /// The path a `file://` URL names (percent-decoded; `file:///C:/x` is `C:/x`, `file:///home/x`
 /// is `/home/x`); anything else is taken to be a path already.
-fn local_path(text: &str) -> String {
+pub fn local_path(text: &str) -> String {
     let Some(rest) = text.get(..7).filter(|scheme| scheme.eq_ignore_ascii_case("file://")).and_then(|_| text.get(7..)) else {
         return text.to_string();
     };
@@ -260,6 +372,7 @@ pub(crate) fn drain_inbox(app: &mut MailApp) {
         let r = match purpose.as_str() {
             "mailbox" => app.run("file.open", json!({"name": name, "data": data})),
             "attach" => app.run("compose.attach", json!({"name": name, "data": data})),
+            "bodyPicture" => app.run("insert.picture", json!({"file": name, "data": data})),
             _ => app.run("file.import", json!({"name": name, "data": data})),
         };
         if r.is_ok() {
@@ -305,6 +418,12 @@ pub(crate) mod base64_lite {
         Some(out)
     }
 }
+
+#[cfg(test)]
+mod export_name_tests;
+
+#[cfg(test)]
+mod system_tests;
 
 #[cfg(test)]
 mod tests {

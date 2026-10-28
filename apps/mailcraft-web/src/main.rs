@@ -14,7 +14,9 @@
 //! An account kept in step with a JMAP server is read over HTTPS, through the browser's `fetch`
 //! (`jmap_services.rs`).
 //! URL flags: `?webgl` forces WebGL2; `?sample` starts from the sample mailbox; `?empty` from an
-//! empty one. Without a flag the mailbox kept in this browser opens, or the sample the first time.
+//! empty one; neither of those ever writes the mailbox kept in this browser. Without a flag the
+//! mailbox kept in this browser opens, or the first time the sample (an empty mailbox when the page
+//! names JMAP accounts of its own).
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 // //// Neoffice — the mailboxes a hosting page hands over (host.rs), and what its answer to a renewal of their tokens
@@ -32,6 +34,7 @@ mod renewal;
 // credentials it is given (built everywhere, so that its tests run natively).
 mod credentials;
 #[cfg(target_arch = "wasm32")]
+#[path = "browser_fetch.rs"]
 mod fetch;
 // //// Neoffice — the browser-free half of fetch.rs (what a request is built from, how a failure reads, the body's
 // size): compiled for the web build, and natively so that its tests run.
@@ -51,6 +54,12 @@ mod page_signature;
 // //// Neoffice — whether the browser's WebGPU gives an adapter in time, asked before the window starts (web.rs).
 #[cfg(target_arch = "wasm32")]
 mod gpu_probe;
+// //// Neoffice — upstream's JMAP host (`jmap.rs`, `jmap_rules.rs` and its `fetch.rs`) reads mail only; this fork's
+// //// Neoffice — (jmap_services.rs, host.rs, fetch.rs above) also sends, tells the server of changes and keeps
+// //// Neoffice — calendars, contacts and notes, so it is the one built.
+mod page;
+#[cfg(test)]
+mod page_tests;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

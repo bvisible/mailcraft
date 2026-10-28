@@ -9,7 +9,32 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
-- `a32c8b0` (upstream's v0.8.0, 2026-10-24 at night: the engine's commands for a JMAP account, what a run reads and
+- `caad611` (upstream's v0.8.2, 2026-10-28, 90 commits since v0.8.0: M6 4/6 and 5/6, this fork's PRs 4 and 5, the
+  window's JMAP run and the browser build reading JMAP over `fetch` (#415, #439); Safe Senders and Blocked Senders per
+  account (#516, #504); pictures written into a message (#533, #547); an .eml opened to read without filing it (#515);
+  Advanced Search and searching Subfolders (#329, #493); server certificates checked by the operating system's verifier
+  (#501); Tasks kept in step with Microsoft To Do (#248); Forward as Attachment and of several messages (#315, #360);
+  merged duplicate contacts (#506); security batches AU2; Dutch; the opening screen (#519); `link` and `names`, L0),
+  merged into `version-15` on 2026-10-28. Upstream's JMAP code reads mail only: its window run (`jmap_mail.rs` of the
+  window) says "nothing made here goes up yet", its client (`crates/jmap`) sends nothing and keeps no calendar, contact
+  or note, and its browser host (`jmap.rs`, `jmap_rules.rs`, its `fetch.rs`) hands over a typed secret. The fork's
+  (`jmap_job.rs`, `crates/jmap-fork`, `jmap_services.rs`, `host.rs`, its `fetch.rs`) also sends, tells the server of the
+  changes made here, files drafts and keeps calendars, contacts and notes, and serves the hosting page's mailboxes and
+  tokens; reading and writing are one run there. So the fork's run stays the one built and upstream's are left out:
+  `crates/ui-egui/src/jmap_mail.rs` and its tests, `apps/mailcraft-web/src/jmap.rs`, `jmap_rules.rs` and its tests,
+  upstream's `apps/mailcraft-web/src/fetch.rs` (the fork's transport is `browser_fetch.rs`, declared as `fetch` in `main.rs`), the desktop's `jmap_mail_flow.rs` and
+  the command line's `tests/jmap_loopback.rs` (tests of upstream's client and window run); `MailRun::Jmap` is not a
+  variant here (the fork's run is `jmap_rx`, called off and let go when another mailbox opens, as upstream's is), and the
+  `Services` fields `jmap`, `jmap_fetch` and `jmap_host_credentials` are the fork's. What is the same work is upstream's:
+  the dispatch of a fetch by account kind (`graph_fetch.rs`: `Way`, `hand_over`, `take_in`, with the fork's JMAP request
+  and intake plugged in, marked), the check of whose answer a JMAP result is, its server included (`receiving` in
+  `cmd/jmap_mail.rs`, used by the fork's intake of a run and of messages fetched whole, `cmd/jmap_fetch.rs`; the fork's
+  client now names the server of its answers, `session`, so the check holds), the name a JMAP secret is kept under (`MailApp::secret_key`: the
+  session address and whether it is a bearer token; the fork's test says so), and the refusal reading moved into
+  `say_refused` (the fork's run_words reading in it, marked). The convergence of the run itself comes when upstream's
+  JMAP writes (PR 6 on). `xtask/src/layers_tests.rs` (upstream moved the tests out) carries the fork's two layer tests,
+  marked. Nora's pane stays on craft-libs `1ff4e9a`.
+- Before it: `a32c8b0` (upstream's v0.8.0, 2026-10-24 at night: the engine's commands for a JMAP account, what a run reads and
   what it brings taken in (M6 3/6, #389, from this fork's PR 3); a JMAP server's folders kept as they are until changes
   go up (#411); tests in files of their own and `cargo xtask test-files` (#394); People and Tasks arranged by categories
   (#327); sender images in the message list (#363); Folder Properties (#314); a shared mailbox's calendars, read,
@@ -352,7 +377,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.8.0, the workspace's version, with its dependencies on
+- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.8.2, the workspace's version, with its dependencies on
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`

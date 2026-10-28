@@ -337,6 +337,11 @@ pub struct GraphFetchRequest {
 pub struct GraphFetchResult {
     pub account: Id,
     pub email: String,
+    /// For a JMAP account, the address of the server's session resource the messages were fetched
+    /// from (their request's): they are taken in only while the account still names that server.
+    /// Empty for a Microsoft account's. It may carry the account's address, so it is never logged.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub session: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub fetched: Vec<GraphFetched>,
     /// Server ids the server answered "not found" for (deleted or moved meanwhile; the next run
@@ -439,6 +444,10 @@ pub struct FolderDelta {
     pub flags: Vec<RemoteFlags>,
     /// UIDs the mailbox has that the server no longer does.
     pub removed: Vec<u32>,
+    /// This piece ends the folder's reading and everything that was wanted of it came (#504):
+    /// the folder has been read whole once ([`crate::Folder::read_whole`]).
+    #[serde(skip_serializing_if = "is_false")]
+    pub complete: bool,
 }
 
 /// A folder of mail the server has, as its list names it ([`SyncResult::listed`]).
@@ -631,6 +640,7 @@ impl SyncResult {
                     folder.new.extend(delta.new);
                     folder.flags.extend(delta.flags);
                     folder.removed.extend(delta.removed);
+                    folder.complete |= delta.complete;
                 }
                 None => self.folders.push(delta),
             }

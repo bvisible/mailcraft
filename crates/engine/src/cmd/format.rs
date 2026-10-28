@@ -79,7 +79,7 @@ pub fn specs() -> Vec<CommandSpec> {
             .when(needs_doc),
         CommandSpec::new("edit.paste", "Paste", "Message › Clipboard", paste)
             .pure()
-            .params(r#"{"html"?: string, "text"?: string} — over the selection; HTML is reduced to bold, italic, underline, a size, links and lists (to plain text in a plain-text message)"#)
+            .params(r#"{"html"?: string, "text"?: string} — over the selection; HTML is reduced to bold, italic, underline, a size, links and lists (to plain text in a plain-text message); HTML that comes to no text gives way to `text`, and nothing to paste changes nothing"#)
             .when(needs_doc),
         CommandSpec::new("compose.formatHtml", "HTML", "Format Text › Format", format_html).pure().when(needs_compose),
         CommandSpec::new("compose.formatPlain", "Plain Text", "Format Text › Format", format_plain).pure().when(needs_compose),
@@ -87,7 +87,7 @@ pub fn specs() -> Vec<CommandSpec> {
 }
 
 /// Enabled while a message is being written or a signature is open.
-fn needs_doc(s: &Session) -> Option<&'static str> {
+pub(super) fn needs_doc(s: &Session) -> Option<&'static str> {
     if s.doc().is_none() { Some("no message is being written") } else { None }
 }
 
@@ -113,7 +113,7 @@ fn model(e: ModelError) -> CmdError {
 }
 
 /// A position from the params.
-fn position(v: &Value, key: &str) -> Result<Option<usize>, CmdError> {
+pub(super) fn position(v: &Value, key: &str) -> Result<Option<usize>, CmdError> {
     match v.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(_) => p::u64(v, key).and_then(|n| usize::try_from(n).ok()).map(Some).ok_or_else(|| bad(format!("`{key}` is a position (a number)"))),
@@ -133,7 +133,7 @@ fn select_range(body: &mut RichBody, v: &Value) -> Result<(), CmdError> {
 }
 
 /// Run an edit of the text; the message (or signature) is changed when its text is.
-fn edit<T>(s: &mut Session, v: &Value, f: impl FnOnce(&mut RichBody) -> Result<T, ModelError>) -> Result<T, CmdError> {
+pub(super) fn edit<T>(s: &mut Session, v: &Value, f: impl FnOnce(&mut RichBody) -> Result<T, ModelError>) -> Result<T, CmdError> {
     let d = doc_mut(s)?;
     select_range(d.body, v)?;
     let before = d.body.text().clone();
@@ -145,7 +145,7 @@ fn edit<T>(s: &mut Session, v: &Value, f: impl FnOnce(&mut RichBody) -> Result<T
 }
 
 /// What the answer of an edit says: the selection now.
-fn state(s: &Session) -> Value {
+pub(super) fn state(s: &Session) -> Value {
     match s.doc() {
         Some((body, _)) => {
             let sel = body.selection();
@@ -329,15 +329,32 @@ pub(crate) const MAX_PASTE: usize = 4 << 20;
 
 fn paste(s: &mut Session, v: &Value) -> CmdResult {
     let plain = s.doc().is_some_and(|(_, plain)| plain);
-    let fragment = match (p::str(v, "html"), p::str(v, "text")) {
-        (Some(html), _) if html.len() <= MAX_PASTE => {
+    let (html, text) = (p::str(v, "html"), p::str(v, "text"));
+    if html.is_none() && text.is_none() {
+        return Err(bad("`html` or `text` (string) is required"));
+    }
+    let too_much = || fail("that is too much to paste into one message");
+    // The HTML when there is some, reduced to the set; when it comes to nothing at all (a picture
+    // alone, which a text can't hold), the text beside it, weighed only then; and nothing at all
+    // changes nothing, the selection included. Lines left blank on purpose are something. (What
+    // is looked at is what would be pasted, once cleaned of what a text never keeps.)
+    let from_html = match html {
+        Some(html) if html.len() > MAX_PASTE => return Err(too_much()),
+        Some(html) => {
             let rich = mailcraft_mime::rich::from_html(html);
-            if plain { RichText::from_plain(&rich.text()) } else { rich }
+            Some(if plain { RichText::from_plain(&rich.text()) } else { rich }).filter(|rich| !rich.is_empty())
         }
-        (None, Some(text)) if text.len() <= MAX_PASTE => RichText::from_plain(text),
-        (None, None) => return Err(bad("`html` or `text` (string) is required")),
-        _ => return Err(fail("that is too much to paste into one message")),
+        None => None,
     };
+    let fragment = match (from_html, text) {
+        (Some(rich), _) => rich,
+        (None, Some(text)) if text.len() > MAX_PASTE => return Err(too_much()),
+        (None, Some(text)) => RichText::from_plain(text),
+        (None, None) => return Ok(state(s)),
+    };
+    if fragment.is_empty() {
+        return Ok(state(s));
+    }
     edit(s, &json!({}), |b| b.paste(&fragment))?;
     let mut out = state(s);
     // A signature's pictures come from files only (nothing is fetched); say so when the paste

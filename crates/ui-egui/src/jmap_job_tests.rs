@@ -30,7 +30,8 @@ const ME: &str = "ada@example.org";
 /// The session address carries the account's own, as a server's may.
 const SESSION: &str = "https://mail.example.org/jmap/session?account=ada@example.org";
 /// The name the password is kept under: the address and the JMAP server it goes to (`MailApp::secret_key`).
-const PASSWORD_KEY: &str = "password:ada@example.org|jmap=https://mail.example.org/jmap/session?account=ada@example.org";
+// (Upstream's name for it since 0.8.1: the session address as the account has it, and whether it is a bearer token.)
+const PASSWORD_KEY: &str = "password:ada@example.org|jmap=https://mail.example.org/jmap/session?account=ada@example.org|bearer=false";
 
 /// One run the host was asked for, and the way to answer it.
 struct Run {
@@ -429,9 +430,9 @@ fn a_password_is_kept_for_the_jmap_server_it_goes_to() {
     assert_eq!(MailApp::secret_key("password", &account), PASSWORD_KEY);
     let mut elsewhere = account.clone();
     elsewhere.jmap = Some(mailcraft_model::JmapServer { session: "https://jmap.attacker.example/session".into(), bearer: false });
-    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=https://jmap.attacker.example/session");
+    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=https://jmap.attacker.example/session|bearer=false");
     elsewhere.jmap = None;
-    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=none");
+    assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=none|bearer=false");
 
     let (mut app, _, _) = window(false, false);
     let store = Store::default();

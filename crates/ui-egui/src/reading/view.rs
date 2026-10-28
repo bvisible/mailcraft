@@ -114,11 +114,13 @@ impl Doc {
     }
 }
 
-/// Whether one of the pictures is an attachment of the message.
+/// Whether one of the pictures is written into the message or attached to it.
 fn shows_a_picture(blocks: &[Block], message: &Message) -> bool {
-    mailcraft_html::images(blocks)
-        .iter()
-        .any(|b| matches!(&b.kind, BlockKind::Image { src, .. } if super::images::attachment(message, src).is_some()))
+    mailcraft_html::images(blocks).iter().any(|b| match &b.kind {
+        BlockKind::Image { data: Some(_), .. } => true,
+        BlockKind::Image { src, .. } => super::images::attachment(message, src).is_some(),
+        _ => false,
+    })
 }
 
 /// A very long paragraph of the message as several blocks, so that it is laid out a part per
@@ -287,6 +289,9 @@ pub fn show(app: &mut MailApp, ui: &mut Ui, message: &Arc<Message>, place: Place
     // In steps of a few points, so that dragging the pane's edge does not lay a long message out
     // again for every pixel.
     let width = ((ui.available_width().min(super::MAX_TEXT_WIDTH) / WIDTH_STEP).floor() * WIDTH_STEP).max(1.0);
+    // Links whose text names one place and which go to another wear a mark (#508); not in a
+    // quote or a preview, which are the owner's own.
+    let flagged = if matches!(place, Place::Pane | Place::Window(_)) { super::warnings::mismatched(app, message) } else { Vec::new() };
     let store = Store::of(&ctx);
     let mut store = store.lock().unwrap_or_else(|e| e.into_inner());
     #[cfg(test)]
@@ -347,7 +352,7 @@ pub fn show(app: &mut MailApp, ui: &mut Ui, message: &Arc<Message>, place: Place
     let mut state = app.text_selection.state(place);
     // A copy that waited for the layout to be whole is due now.
     let due = state.as_deref_mut().and_then(|state| state.bind(&entry.doc, entry.laid.done));
-    let (origin, asked) = paint(ui, &entry.laid, &t, access, state);
+    let (origin, asked) = paint(ui, &entry.laid, &t, access, state, &flagged);
     #[cfg(test)]
     {
         entry.origin = origin;
@@ -407,7 +412,16 @@ struct Hover {
 /// Paint what is in view of a layout with what is selected in it, and follow the pointer: over
 /// its links, and through its text when it selects (`state` is the selection of the place the
 /// layout is shown in). Where its top left is, and what its menu was asked to do.
-pub fn paint(ui: &mut Ui, laid: &Laid, t: &Tokens, access: Access, mut state: Option<&mut select::PlaceState>) -> (egui::Pos2, Option<Action>) {
+/// `flagged` are the addresses of the links that go somewhere other than their text says: each
+/// wears a frame, and its tip says so.
+pub fn paint(
+    ui: &mut Ui,
+    laid: &Laid,
+    t: &Tokens,
+    access: Access,
+    mut state: Option<&mut select::PlaceState>,
+    flagged: &[String],
+) -> (egui::Pos2, Option<Action>) {
     let (area, _) = ui.allocate_exact_size(vec2(laid.size.x.max(1.0), laid.size.y.max(1.0)), Sense::hover());
     let origin = area.min.to_vec2();
     let clip = ui.clip_rect();
@@ -452,11 +466,25 @@ pub fn paint(ui: &mut Ui, laid: &Laid, t: &Tokens, access: Access, mut state: Op
                 if let (Some(marks), Some(part)) = (&marks, part(text.chars as usize)) {
                     marks.text(&mut galley, part);
                 }
+                if !flagged.is_empty() {
+                    for (range, url) in &text.links {
+                        if super::warnings::is_mismatched(url, flagged) {
+                            for r in char_rects(&galley, range) {
+                                painter.rect_stroke(
+                                    r.translate(at.to_vec2()).expand(1.5),
+                                    2.0,
+                                    Stroke::new(1.0, t.orange),
+                                    egui::StrokeKind::Outside,
+                                );
+                            }
+                        }
+                    }
+                }
                 painter.galley(at, galley, t.text);
             }
             ItemKind::Picture(picture) => {
                 let store = pictures.get_or_insert_with(|| Pictures::of(&ctx));
-                let state = store.lock().unwrap_or_else(|e| e.into_inner()).texture(&ctx, &picture.data);
+                let state = store.lock().unwrap_or_else(|e| e.into_inner()).texture(&ctx, &picture.data, rect.size());
                 match state {
                     Picture::Ready(texture) => {
                         painter.image(texture.id(), rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
@@ -527,6 +555,9 @@ pub fn paint(ui: &mut Ui, laid: &Laid, t: &Tokens, access: Access, mut state: Op
             // A link is shown with where it really leads: the host it goes to, then the start of
             // its address, not a tracking address of a thousand characters over the message.
             if let Some(url) = &link {
+                if super::warnings::is_mismatched(url, flagged) {
+                    ui.label(egui::RichText::new(tl!("This link goes somewhere other than its text says.")).color(t.orange).strong());
+                }
                 ui.label(link_tip(url));
             }
         });
@@ -562,13 +593,9 @@ fn clipped(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
 /// address as it is. Each line at most [`TIP_ADDRESS`] characters.
 pub(super) fn link_tip(href: &str) -> String {
     let as_is = || clipped(href, TIP_ADDRESS).into_owned();
-    let Ok(url) = url::Url::parse(href.trim()) else { return as_is() };
-    if !matches!(url.scheme(), "http" | "https") {
-        return as_is();
-    }
-    let Some(host) = url.host_str().filter(|h| !h.is_empty()) else { return as_is() };
-    let goes = crate::i18n::fmt(tl!("Goes to {host}"), &[("host", clipped(host, TIP_ADDRESS).as_ref())]);
-    format!("{goes}\n{}", clipped(url.as_str(), TIP_ADDRESS))
+    let Some(link) = mailcraft_link::WebLink::parse(href.trim()) else { return as_is() };
+    let goes = crate::i18n::fmt(tl!("Goes to {host}"), &[("host", clipped(link.host(), TIP_ADDRESS).as_ref())]);
+    format!("{goes}\n{}", clipped(link.as_str(), TIP_ADDRESS))
 }
 
 /// What is said of a picture that is not shown, and where it would come from.
@@ -590,7 +617,7 @@ fn placeholder_note(placeholder: &PlaceholderItem, access: Access, came: Option<
 
 /// The character of a laid-out text under a point (from the text's origin), when there is one:
 /// not the nearest one, as for a cursor, but the one the point is on.
-pub(super) fn char_at(galley: &egui::Galley, point: egui::Vec2) -> Option<usize> {
+pub(crate) fn char_at(galley: &egui::Galley, point: egui::Vec2) -> Option<usize> {
     let mut index = 0usize;
     for row in &galley.rows {
         let rect = row.rect();
@@ -601,6 +628,30 @@ pub(super) fn char_at(galley: &egui::Galley, point: egui::Vec2) -> Option<usize>
         index += row.row.glyphs.len() + usize::from(row.ends_with_newline);
     }
     None
+}
+
+/// Where the characters `range` of a galley are, a rectangle for each row they are on (from the
+/// galley's origin).
+fn char_rects(galley: &egui::Galley, range: &std::ops::Range<usize>) -> Vec<Rect> {
+    let mut out = Vec::new();
+    let mut index = 0usize;
+    for row in &galley.rows {
+        let glyphs = &row.row.glyphs;
+        let rect = row.rect();
+        let mut span: Option<Rect> = None;
+        for (i, g) in glyphs.iter().enumerate() {
+            if range.contains(&(index + i)) {
+                let r = Rect::from_min_max(pos2(rect.min.x + g.pos.x, rect.min.y), pos2(rect.min.x + g.pos.x + g.advance_width, rect.max.y));
+                span = Some(span.map_or(r, |s| s.union(r)));
+            }
+        }
+        out.extend(span);
+        index += glyphs.len() + usize::from(row.ends_with_newline);
+        if index >= range.end || out.len() >= 64 {
+            break;
+        }
+    }
+    out
 }
 
 /// The link of a laid-out text that a point (from the text's origin) is on.

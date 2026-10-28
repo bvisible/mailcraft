@@ -23,13 +23,14 @@ mod help;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
 
-use egui::{Align, Align2, Key, Layout, Margin, Rect, Response, RichText, Role, Sense, Stroke, StrokeKind, TextEdit, Ui, WidgetInfo, pos2, vec2};
+use egui::{Align, Align2, Layout, Margin, Rect, Response, RichText, Role, Sense, Stroke, StrokeKind, TextEdit, Ui, WidgetInfo, pos2, vec2};
 use mailcraft_model::{Account, AccountKind, Directory, Id, KeepOffline, OAuth, OAuthProvider, Security, Server, provider};
 use serde_json::{Map, Value, json};
 
 use crate::approval::SignInEnd;
 use crate::forms::kit::{Pass, body, changes, error, field_id, object, shown};
 use crate::i18n::fmt;
+use crate::secret_field::{self, Watch};
 use crate::theme::{Tokens, medium, paint_clipped, regular, semibold};
 use crate::{MailApp, icons};
 
@@ -421,6 +422,9 @@ pub struct AccountSetup {
     /// The window's context, once a frame has run: what the password field left in its memory
     /// is cleared through it.
     ctx: Option<egui::Context>,
+    /// The owner clicked the password's eye: it is shown until the next click, the next page, or
+    /// the dialog's end (#438).
+    reveal: bool,
 }
 
 impl Drop for AccountSetup {
@@ -448,15 +452,6 @@ fn left_waiting() -> egui::Id {
 /// Drop what the password field keeps between frames: its undo history holds what was typed.
 fn forget_field(ctx: &egui::Context) {
     ctx.data_mut(|d| d.remove::<egui::text_edit::TextEditState>(password_id()));
-}
-
-/// Whether the window's own close button was clicked in this pass. The dialog goes right after,
-/// and nothing else tells a form so; the button is the one thing to click in the window above
-/// the form.
-fn closed_by_window(ui: &Ui) -> bool {
-    let ctx = ui.ctx();
-    let Some(clicked) = ctx.interaction_snapshot(|s| s.clicked) else { return false };
-    ctx.read_response(clicked).is_some_and(|r| r.layer_id == ui.layer_id() && r.rect.bottom() <= ui.max_rect().top())
 }
 
 impl AccountSetup {
@@ -500,6 +495,7 @@ impl AccountSetup {
             graph: false,
             newer: false,
             ctx: None,
+            reveal: false,
         }
     }
 
@@ -678,25 +674,30 @@ impl AccountSetup {
         m
     }
 
-    /// What keeps the servers from being used, in English; nothing when they can be. A new
+    /// What keeps the servers from being used, in the interface language; nothing when they can be. A new
     /// account needs its incoming server (`connected`); an existing one may have none.
-    fn settings_problem(&self, connected: bool) -> Option<&'static str> {
+    fn settings_problem(&self, connected: bool) -> Option<String> {
         let (incoming, outgoing) = (&self.incoming, &self.outgoing);
         if incoming.host.trim().is_empty() {
             if connected {
-                return Some("Type the name of the incoming mail server");
+                return Some(tl!("Type the name of the incoming mail server").to_string());
             }
         } else if !incoming.host_ok() {
-            return Some("The incoming mail server isn't a host name (letters, digits, dots and dashes)");
+            return Some(tl!("The incoming mail server isn't a host name (letters, digits, dots and dashes)").to_string());
         }
         if !outgoing.host.trim().is_empty() && !outgoing.host_ok() {
-            return Some("The outgoing mail server isn't a host name (letters, digits, dots and dashes)");
+            return Some(tl!("The outgoing mail server isn't a host name (letters, digits, dots and dashes)").to_string());
         }
         if incoming.port().is_none() || outgoing.port().is_none() {
-            return Some("A port is a number from 1 to 65535");
+            return Some(tl!("A port is a number from 1 to 65535").to_string());
+        }
+        if !incoming.host.trim().is_empty() && mailcraft_model::pop::looks_like_pop(&incoming.host, incoming.port().unwrap_or(0)) {
+            return Some(
+                tl!("MailCraft doesn't support POP yet. Use your provider's IMAP server instead (usually imap.<your domain>, port 993).").to_string(),
+            );
         }
         if self.edit.is_some() && self.oauth.is_some() && !(is_identifier(self.client_id.trim(), 200) && is_identifier(self.tenant.trim(), 64)) {
-            return Some("An application ID and a tenant are letters, digits, dots and dashes");
+            return Some(tl!("An application ID and a tenant are letters, digits, dots and dashes").to_string());
         }
         None
     }
@@ -705,6 +706,8 @@ impl AccountSetup {
 
     fn go(&mut self, page: Page) {
         self.page = page;
+        // A password shown on one page is dots on the next.
+        self.reveal = false;
         self.error.clear();
         self.app_passwords = false;
         self.focus = true;
@@ -933,7 +936,7 @@ impl AccountSetup {
     /// nothing can.
     fn try_password(&mut self, app: &mut MailApp) {
         let Some(account) = self.account() else {
-            self.error = tl!(self.settings_problem(true).unwrap_or("Check the account's settings")).to_string();
+            self.error = self.settings_problem(true).unwrap_or_else(|| tl!("Check the account's settings").to_string());
             self.settings_open = true;
             return;
         };
@@ -1053,7 +1056,7 @@ impl AccountSetup {
     /// Save on Account Settings: run `account.edit` with what changed. `true` when it is done.
     fn save(&mut self, app: &mut MailApp) -> bool {
         if let Some(problem) = self.settings_problem(false) {
-            self.error = tl!(problem).to_string();
+            self.error = problem;
             return false;
         }
         let Some(id) = self.edit.as_ref().map(|e| e.id) else { return true };
@@ -1154,6 +1157,8 @@ impl AccountSetup {
         match answer {
             Ok(()) => self.add_with_password(app),
             Err(e) => {
+                // The dialog says it once; the log keeps it for a problem report.
+                log::warn!("add account: the servers couldn't be checked: {e}");
                 let google = self.incoming.server().is_some_and(|s| is_google(&s.host));
                 self.refuse(e);
                 if google && self.error.starts_with("sign-in failed") {
@@ -1180,13 +1185,14 @@ impl AccountSetup {
     /// Blank the password, in the form and in what its field kept between frames.
     fn forget_password(&mut self) {
         self.password.wipe();
+        self.reveal = false;
         if let Some(ctx) = &self.ctx {
             forget_field(ctx);
         }
     }
 
     /// The dialog is closing: stop what is under way and keep nothing that was typed in confidence.
-    fn give_up(&mut self, app: &mut MailApp) {
+    pub(crate) fn give_up(&mut self, app: &mut MailApp) {
         (self.lookup, self.check) = (None, None);
         self.stop_sign_in(app);
         // An administrator's approval that Microsoft's page is open for is given up with it.
@@ -1214,8 +1220,9 @@ impl AccountSetup {
             self.ctx = Some(ui.ctx().clone());
             self.sweep(app);
         }
-        // Escape and the window's own close button close the dialog after this pass.
-        if ui.input(|i| i.key_pressed(Key::Escape)) || closed_by_window(ui) {
+        // Escape (when it is the dialog's, #406) closes the dialog after this pass. (The window's
+        // own close button is the dialog's to see: `Form::closed`.)
+        if crate::keys::escape(ui.ctx(), ui.layer_id()) {
             self.give_up(app);
             return true;
         }
@@ -1268,7 +1275,7 @@ impl AccountSetup {
         let ready = !self.email.trim().is_empty();
         let mut go = false;
         strip(ui, self.page, |ui| go = button(ui, tl!("Connect"), true, ready).clicked());
-        (ready && (go || entered(ui, pass))).then_some(Action::Go)
+        (ready && (go || pass.submit)).then_some(Action::Go)
     }
 
     fn choose_page(&mut self, ui: &mut Ui, pass: &Pass) -> Option<Action> {
@@ -1334,7 +1341,7 @@ impl AccountSetup {
             go = button(ui, tl!("Continue"), true, ready).clicked();
             back = button(ui, tl!("Back"), false, true).clicked();
         });
-        if back { Some(Action::Back) } else { (ready && (go || entered(ui, pass))).then_some(Action::Go) }
+        if back { Some(Action::Back) } else { (ready && (go || pass.submit)).then_some(Action::Go) }
     }
 
     fn password_page(&mut self, app: &MailApp, ui: &mut Ui, pass: &mut Pass) -> Option<Action> {
@@ -1356,7 +1363,7 @@ impl AccountSetup {
                 note(ui, tl!(&self.note), t.text);
             }
             if asks {
-                self.password_field(ui, pass, "");
+                self.password_field(ui, pass, app.secret_watch(), "");
                 note(ui, kept_where(app), t.text_dim);
             } else {
                 note(ui, tl!("This build can't connect to mail servers. The account can still be added."), t.text_dim);
@@ -1379,7 +1386,7 @@ impl AccountSetup {
             go = button(ui, tl!("Connect"), true, ready).clicked();
             back = button(ui, tl!("Back"), false, true).clicked();
         });
-        if back { Some(Action::Back) } else { (ready && (go || entered(ui, pass))).then_some(Action::Go) }
+        if back { Some(Action::Back) } else { (ready && (go || pass.submit)).then_some(Action::Go) }
     }
 
     /// The owner signed in as somebody other than the address typed (#103): who, and the two
@@ -1408,7 +1415,7 @@ impl AccountSetup {
             again = button(ui, tl!("Sign in again"), true, true).clicked();
             take = button(ui, &use_label, false, usable).clicked();
         });
-        if take { Some(Action::UseSignedIn) } else { (again || entered(ui, pass)).then_some(Action::Go) }
+        if take { Some(Action::UseSignedIn) } else { (again || pass.submit).then_some(Action::Go) }
     }
 
     fn done_page(&mut self, ui: &mut Ui, pass: &Pass) -> Option<Action> {
@@ -1444,7 +1451,7 @@ impl AccountSetup {
                 another = ui.link(tl!("Add another account")).clicked();
             });
         });
-        if another { Some(Action::Another) } else { (done || entered(ui, pass)).then_some(Action::Go) }
+        if another { Some(Action::Another) } else { (done || pass.submit).then_some(Action::Go) }
     }
 
     fn settings_page(&mut self, app: &MailApp, ui: &mut Ui, pass: &mut Pass) -> Option<Action> {
@@ -1473,7 +1480,7 @@ impl AccountSetup {
             }
             field(ui, pass, "name", tl!("Your name"), &mut self.name, tl!("As the people you write to see it"), LINE);
             if asks {
-                self.password_field(ui, pass, tl!("Leave empty to keep the one in use"));
+                self.password_field(ui, pass, app.secret_watch(), tl!("Leave empty to keep the one in use"));
             }
             // (An account still on IMAP that signs in with Microsoft keeps them: it uses them.)
             if jmap.is_some() {
@@ -1506,7 +1513,7 @@ impl AccountSetup {
             save = button(ui, tl!("Save"), true, true).clicked();
             cancel = button(ui, tl!("Cancel"), false, true).clicked();
         });
-        if cancel { Some(Action::Back) } else { (save || entered(ui, pass)).then_some(Action::Go) }
+        if cancel { Some(Action::Back) } else { (save || pass.submit).then_some(Action::Go) }
     }
 
     /// The settings of an account a newer MailCraft added: what it is, and nothing to change (its
@@ -1530,20 +1537,16 @@ impl AccountSetup {
         });
         let mut close = false;
         strip(ui, self.page, |ui| close = button(ui, tl!("Close"), true, true).clicked());
-        (close || entered(ui, pass)).then_some(Action::Back)
+        (close || pass.submit).then_some(Action::Back)
     }
 
-    /// The password, masked. It is never shown, copied or spoken.
-    fn password_field(&mut self, ui: &mut Ui, pass: &mut Pass, hint: &str) {
+    /// The password, masked. It is shown only while the owner has clicked its eye, and is never
+    /// copied or spoken (`secret_field`).
+    fn password_field(&mut self, ui: &mut Ui, pass: &mut Pass, watch: Watch, hint: &str) {
         caption(ui, tl!("Password"), &pass.t);
-        let edit = TextEdit::singleline(&mut self.password.0)
-            .id(password_id())
-            .password(true)
-            .desired_width(f32::INFINITY)
-            .margin(FIELD_MARGIN)
-            .char_limit(SECRET)
-            .hint_text(hint.to_owned());
-        let resp = ui.add(edit);
+        let resp = secret_field::field(ui, &mut self.password.0, &mut self.reveal, watch, FIELD_MARGIN, |edit| {
+            edit.id(password_id()).char_limit(SECRET).hint_text(hint.to_owned())
+        });
         pass.field(&resp);
     }
 
@@ -1553,12 +1556,6 @@ impl AccountSetup {
         server_row(ui, pass, tl!("Incoming mail (IMAP)"), "incoming", &mut self.incoming, "imap.example.org", (993, 143));
         server_row(ui, pass, tl!("Outgoing mail (SMTP)"), "outgoing", &mut self.outgoing, "smtp.example.org", (465, 587));
     }
-}
-
-/// Whether Enter asked for the page's main button. A key that is held down repeats, and a repeat
-/// doesn't count: it mustn't carry the owner from page to page.
-fn entered(ui: &Ui, pass: &Pass) -> bool {
-    pass.submit && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Enter, pressed: true, repeat: false, .. })))
 }
 
 /// Where a password that works is kept, for the line under its field.
@@ -1631,7 +1628,7 @@ fn field(ui: &mut Ui, pass: &mut Pass, key: &'static str, label: &str, value: &m
         .margin(FIELD_MARGIN)
         .char_limit(limit)
         .hint_text(hint.to_owned());
-    let resp = ui.add(edit);
+    let resp = crate::text_menu::field(ui.add(edit));
     pass.field(&resp);
     resp
 }
@@ -1654,16 +1651,18 @@ fn server_row(ui: &mut Ui, pass: &mut Pass, label: &str, key: &'static str, serv
             .margin(FIELD_MARGIN)
             .char_limit(HOST)
             .hint_text(host_hint.to_owned());
-        let resp = ui.add(host).on_hover_text(tl!("The server's name"));
+        let resp = crate::text_menu::field(ui.add(host)).on_hover_text(tl!("The server's name"));
         pass.field(&resp);
         let usual = if server.security == Security::Tls { ports.0 } else { ports.1 };
+        // (What is pasted into it is its digits, or nothing: `text_menu::digits_only`.)
+        crate::text_menu::digits_only(ui.ctx(), field_id(("account", key, "port")));
         let port = TextEdit::singleline(&mut server.port)
             .id(field_id(("account", key, "port")))
             .desired_width(64.0)
             .margin(FIELD_MARGIN)
             .char_limit(5)
             .hint_text(usual.to_string());
-        let resp = ui.add(port).on_hover_text(tl!("The port; leave it empty for the usual one"));
+        let resp = crate::text_menu::field(ui.add(port)).on_hover_text(tl!("The port; leave it empty for the usual one"));
         pass.field(&resp);
         // A port is a number of at most five digits.
         if server.port.chars().any(|c| !c.is_ascii_digit()) || server.port.chars().count() > 5 {
@@ -1793,6 +1792,9 @@ fn tile(ui: &mut Ui, kind: Kind, width: f32, t: &Tokens) -> Response {
 }
 
 #[cfg(test)]
+mod pop_tests;
+
+#[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex, mpsc};
@@ -1807,9 +1809,12 @@ mod tests {
     use crate::dialogs::Dialog;
     use crate::forms::Form;
     use crate::{Services, SignInRequest};
+    use egui::Key;
 
     /// What the wizard says about a sign-in on Microsoft's page, and the approval help (M4.4).
     mod help;
+    /// The password's eye (#438).
+    mod reveal;
 
     /// Wednesday 2026-10-14 16:00 UTC.
     const NOW: i64 = 1_791_993_600;
@@ -2496,6 +2501,7 @@ mod tests {
     /// (b) A provider that takes a password: the servers are tried before the account is added.
     #[test]
     fn a_password_account_is_tried_before_it_is_added() {
+        let logged = crate::graph_switch::tests::logged();
         let mut a = app(false);
         lookups(&mut a, Some(Ok(vec!["aspmx.l.google.com"])));
         let tried = checks(&mut a, Some(Err("imap.gmail.com refused the sign-in")));
@@ -2515,6 +2521,12 @@ mod tests {
         // Refused: back on the page with the reason and the servers in view, and no account.
         assert_eq!(page(&h), Some(Page::Password));
         assert!(says(&h, "refused the sign-in") && wizard(&h).is_some_and(|w| w.settings_open) && addresses(&h) == [""]);
+        // The log keeps why, for a problem report, and never the password.
+        {
+            let log = logged.lock().unwrap().join("\n");
+            assert!(log.contains("add account: the servers couldn't be checked: imap.gmail.com refused the sign-in"), "{log}");
+            assert!(!log.contains(TYPED), "the password reached the log");
+        }
         {
             let tried = tried.lock().unwrap();
             let (account, secret) = &tried[0];

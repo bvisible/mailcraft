@@ -124,6 +124,8 @@ pub fn text_hash(text: &str) -> u64 {
 
 /// The header `mailcraft-net` gives a message too large to download, with its size on the server.
 pub const NOT_DOWNLOADED: &str = "X-MailCraft-Not-Downloaded";
+/// How the note `mailcraft-net` keeps in place of such a message's text begins.
+pub const NOT_DOWNLOADED_NOTE: &str = "This message is too large to download:";
 
 /// A byte count for people.
 pub fn size_label(bytes: u64) -> String {
@@ -199,6 +201,11 @@ pub struct Message {
     pub forwarded: bool,
     pub draft: bool,
     pub pinned: bool,
+    /// The kinds of sender warning ([`crate::sender_warnings::Warning::kind`]) the owner dismissed
+    /// the banner for (#508). The banner is hidden while every kind it would show is among these;
+    /// a kind that appears later brings it back.
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub warnings_dismissed: Vec<String>,
     /// Headers MailCraft doesn't model, kept so a saved message round-trips.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub headers: Vec<(String, String)>,
@@ -281,6 +288,11 @@ pub struct Answers {
     /// It is a forward (the original is marked forwarded); otherwise a reply (marked replied).
     #[serde(skip_serializing_if = "is_false")]
     pub forward: bool,
+    /// A forward of several messages, each attached whole (#360): the others it forwards, each
+    /// marked as its own entry says (their own `also` is not looked at). Empty for every other
+    /// reply or forward; a build from before reads the first original alone.
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub also: Vec<Answers>,
 }
 
 fn is_false(b: &bool) -> bool {

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent)
+// //// Neoffice — added file (no upstream equivalent): the fork's transport, in place of upstream's `fetch.rs` (left out, v0.8.1
+// //// Neoffice — on); it serves the fork's JMAP client (crates/jmap-fork, which also sends, tells the server of changes and
+// //// Neoffice — keeps calendars, contacts and notes), not upstream's. Declared as `fetch` (main.rs).
 //! A transport for the browser build, over the WHATWG Fetch Standard: `window.fetch`, `Request`, `Headers`,
 //! `AbortController` and the response's `ReadableStream`.
 //!

@@ -132,10 +132,8 @@ fn queue(s: &Session, account: Id, most: usize) -> Vec<String> {
 /// undo step.
 pub fn apply_jmap_fetch(s: &mut Session, result: GraphFetchResult) -> CmdResult {
     let account = result.account;
-    let a = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
-    if a.kind != AccountKind::Jmap {
-        return Err(fail(format!("{} isn't kept in step with a JMAP server", a.name)));
-    }
+    // Whose answer it is, as for a run: a JMAP account's, and from the server it names now (upstream's check).
+    super::jmap_mail::receiving(&s.mailbox, account, &result.email, &result.session)?;
     let gone: Vec<String> = result.missing.iter().filter(|id| plausible_id(id)).take(MAX_PASSED_OVER).cloned().collect();
     let mut said = apply_graph_fetch(s, result)?;
     // (Only an answer that was taken in: one for another account's address was refused above.)

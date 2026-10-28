@@ -212,6 +212,26 @@ fn then(said: String, more: &str) -> String {
     if said.is_empty() || said.ends_with('.') { format!("{said} {more}").trim().to_string() } else { format!("{said}. {more}") }
 }
 
+/// The account a result is for, when it may take it in: a JMAP account, the one the run was for,
+/// and at the server the run read when the result says which (`session`). (An answer for another
+/// account, the mailbox having been replaced while the run was under way, would tie this one's
+/// folders to a stranger's server; so would an answer from the server an account named before its
+/// session address was changed.)
+// //// Neoffice — `pub(crate)`: the fork's intake of messages fetched whole (`jmap_fetch.rs`) checks them the same way.
+pub(crate) fn receiving(mb: &Mailbox, account: Id, email: &str, session: &str) -> Result<String, CmdError> {
+    let a = mb.account(account).ok_or_else(|| failed!("no account with id {id}", id = account))?;
+    if a.kind != AccountKind::Jmap {
+        return Err(failed!("{name} isn't kept in step over JMAP", name = a.name));
+    }
+    if !email.is_empty() && !a.email.trim().eq_ignore_ascii_case(email.trim()) {
+        return Err(failed!("this Send/Receive was for another account, not for {name}", name = a.name));
+    }
+    if !session.is_empty() && a.jmap.as_ref().map(|server| server.session.trim()) != Some(session.trim()) {
+        return Err(failed!("this Send/Receive was for the server {name} named before", name = a.name));
+    }
+    Ok(a.name.clone())
+}
+
 /// A line a server sent, as it is shown: one line, no control characters, not too long.
 fn said(line: &str) -> String {
     line.chars().map(|c| if c.is_control() { ' ' } else { c }).take(300).collect::<String>().trim().to_string()
@@ -221,15 +241,8 @@ fn said(line: &str) -> String {
 /// step: the server is the source of truth, but for what was changed here and hasn't reached it.
 pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     let account = result.account;
-    let a = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
-    if a.kind != AccountKind::Jmap {
-        return Err(fail(format!("{} isn't kept in step with a JMAP server", a.name)));
-    }
-    // An answer for another account (the mailbox was replaced while the run was under way) would
-    // tie this one's folders to a stranger's server.
-    if !result.email.is_empty() && !a.email.trim().eq_ignore_ascii_case(result.email.trim()) {
-        return Err(fail(format!("this Send/Receive was for another account, not for {}", a.name)));
-    }
+    // //// Neoffice — whose answer it is, as upstream checks it (its server too, `session`); the rest is the fork's run.
+    receiving(&s.mailbox, account, &result.email, &result.session)?;
     if s.file_is_current() {
         s.note_saved();
     }
@@ -401,14 +414,8 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
 /// hand them in again once it is.
 pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> Result<Vec<MessagePage>, CmdError> {
     let account = result.account;
-    let a = s.mailbox.account(account).ok_or_else(|| fail(format!("no account with id {account}")))?;
-    if a.kind != AccountKind::Jmap {
-        return Err(fail(format!("{} isn't kept in step with a JMAP server", a.name)));
-    }
-    // (As for a run: an answer for another account would put a stranger's mail in this one.)
-    if !result.email.is_empty() && !a.email.trim().eq_ignore_ascii_case(result.email.trim()) {
-        return Err(fail(format!("this Send/Receive was for another account, not for {}", a.name)));
-    }
+    // //// Neoffice — (as for a run: upstream's check of whose answer it is)
+    receiving(&s.mailbox, account, &result.email, &result.session)?;
     let mut taken = Taken::default();
     if let Some(listing) = &result.listing {
         take_listing(&mut s.mailbox, account, listing, &mut taken);

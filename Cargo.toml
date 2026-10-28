@@ -4,7 +4,7 @@ members = ["crates/*", "apps/*", "xtask"]
 default-members = ["crates/*", "apps/mailcraft", "apps/mailcraft-cli", "xtask"]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.2"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
@@ -14,6 +14,8 @@ repository = "https://github.com/UCS-Care-Group/mailcraft"
 # internal
 mailcraft-time = { path = "crates/time" }
 mailcraft-charset = { path = "crates/charset" }
+mailcraft-link = { path = "crates/link" }
+mailcraft-names = { path = "crates/names" }
 mailcraft-i18n = { path = "crates/i18n" }
 mailcraft-model = { path = "crates/model" }
 mailcraft-html = { path = "crates/html" }
@@ -49,11 +51,21 @@ encoding_rs = "0.8"
 # our own.
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tz-system", "tzdb-bundle-always"] }
 
+# Unicode's word boundaries (UAX #29), for Review › Word Count (`mailcraft-engine`). MIT OR
+# Apache-2.0, Rust throughout, builds for the browser; already in the tree (egui runs on it).
+unicode-segmentation = "1.13"
+
 # network (desktop and CLI only; the browser can't open sockets)
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
-webpki-roots = "1"
+# Server certificates are checked by the operating system's own verifier (#501): Windows and macOS
+# trust what the system trusts (and may fetch a missing intermediate themselves); Linux and
+# FreeBSD read the system's certificate store. No default features: rustls with `ring`, as above.
+rustls-platform-verifier = { version = "0.7.1", default-features = false }
 # SHA-256 and random bytes for the OAuth sign-in (already in the tree: rustls runs on it).
 ring = "0.17"
+# The flag that opens a file without waiting (`O_NONBLOCK`), so that a pipe put where a file was
+# named can't hold the window (#505). Constants only (already in the tree).
+libc = "0.2"
 # gzip and deflate, for a picture a web server sends packed (already in the tree: the PNG decoder
 # runs on it); the backend written in Rust.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
@@ -75,12 +87,11 @@ egui = "0.37"
 egui_extras = { version = "0.37", default-features = false }
 eframe = { version = "0.37", default-features = false }
 egui_kittest = "0.37"
+# The font reader egui uses, at egui's version: a system font is opened with it before egui is
+# given it, so that egui never meets one it cannot open (#217). Already in the tree through epaint.
+skrifa = "0.44"
 rfd = "0.17"
 arboard = { version = "3.7", default-features = false }
-# Reading a link's address the way a browser does (WHATWG URL), for the host it really goes to,
-# an international name in its ASCII (`xn--`) form: the tip over a link. MIT OR Apache-2.0, Rust
-# throughout, builds for the browser; already in the tree (the desktop's `webbrowser` uses it).
-url = "2.5"
 
 # //// Neoffice — Nora's pane (crates/ui-egui/src/nora/assist.rs): her client core and its egui panel, from Neoffice's
 # //// Neoffice — craft-libs fork at a revision that knows the mail program (`AppKind::Mail`), the cards and the links of a
@@ -115,6 +126,8 @@ codegen-units = 16
 debug = 0
 
 [patch.crates-io]
-# winit 0.30.13 with an activation token that names the latest click, which KWin needs before it
-# brings the browser forward (#144). Dropped when winit itself does it.
-winit = { git = "https://github.com/UCS-Care-Group/winit", rev = "bb472d90071a8b48288aeaa70ad81b767808ae9a" }
+# winit 0.30.13 with two patches, each dropped when winit itself has it: an activation token that
+# names the latest click, which KWin needs before it brings the browser forward (#144); and
+# Wayland file drops plus the clipboard on winit's one data device (rust-windowing/winit#4729),
+# so that files dropped on a window are attached (#523).
+winit = { git = "https://github.com/UCS-Care-Group/winit", rev = "951b6c131897a80d27a925af7c5da22ea522eb0d" }

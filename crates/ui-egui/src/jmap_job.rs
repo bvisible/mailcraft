@@ -49,11 +49,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
 
-use mailcraft_engine::CmdResult;
-use mailcraft_engine::cmd::graph_mail::apply_graph_fetch;
-use mailcraft_engine::cmd::jmap_fetch::apply_jmap_fetch;
 use mailcraft_engine::cmd::jmap_mail::{apply_jmap_mail, jmap_mail_request};
-use mailcraft_model::sync::{GraphFetchResult, JmapFetchRequest, JmapMailRequest, JmapMailResult};
+use mailcraft_model::sync::{JmapFetchRequest, JmapMailRequest, JmapMailResult};
 use mailcraft_model::{AccountKind, FolderKind, Id};
 use serde_json::{Value, json};
 
@@ -128,13 +125,6 @@ impl MailApp {
     /// Whether `account` is kept in step with a JMAP server.
     pub(crate) fn is_jmap(&self, account: Id) -> bool {
         self.session.mailbox.account(account).is_some_and(|a| a.kind == AccountKind::Jmap)
-    }
-
-    /// Take in what a fetch of messages brought: a JMAP account's through its own intake
-    /// ([`apply_jmap_fetch`]: it also passes over what the server no longer has), any other account's as a
-    /// Microsoft account's is ([`apply_graph_fetch`]).
-    pub(crate) fn apply_fetched(&mut self, result: GraphFetchResult) -> CmdResult {
-        if self.is_jmap(result.account) { apply_jmap_fetch(&mut self.session, result) } else { apply_graph_fetch(&mut self.session, result) }
     }
 
     /// What a fetch of messages of the JMAP account `account` is opened with, when it can be opened now:

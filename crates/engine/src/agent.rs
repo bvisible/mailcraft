@@ -19,23 +19,29 @@
 // //// Neoffice — what waits to be told to a server's address book (`overstep`).
 use mailcraft_model::book::ContactChangeKind;
 use mailcraft_model::{FolderKind, Id, Mailbox};
-use serde_json::Value;
+use serde_json::{Value, json};
 
+use crate::cmd::compose::{LEAVING, draft_gone};
 use crate::{Session, p};
 
-/// What needs the owner, by kind. `--allow <class>` names them.
+/// What needs the owner, by kind. `--allow <class>` names them, but for [`Class::Leave`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Class {
     /// Writes to anybody (sends mail, answers or forwards meetings, puts mail in the Outbox) or
     /// reaches out to the web for a message (its pictures, a meeting's link).
     Send,
-    /// Deletes for good (or discards what the owner was writing).
+    /// Deletes for good (or throws away what an agent wrote in a message and didn't save; what
+    /// the owner wrote is [`Access::Asked`] about, #494).
     Delete,
+    /// Closes the message the owner is writing, or puts another in its place, when the owner has
+    /// changes in it that aren't saved; they go to Drafts first (#494). Asked every time: no
+    /// `--allow` names it, as the owner leaves their message themselves when they mean to.
+    Leave,
     /// Accounts, sign-ins, the application id, what is remembered of them.
     Accounts,
     /// Opens, replaces or saves the mailbox file.
     Mailbox,
-    /// Options, signatures, rules, picture download settings.
+    /// Options, signatures, rules, the Safe and Blocked Senders lists, picture download settings.
     Settings,
     /// Raw pointer and keyboard input into the window (anything, including Send). Never asked
     /// about: only `--allow input` lets it through.
@@ -43,12 +49,14 @@ pub enum Class {
 }
 
 impl Class {
+    /// The classes `--allow` names: every one but [`Class::Leave`].
     pub const ALL: [Class; 6] = [Class::Send, Class::Delete, Class::Accounts, Class::Mailbox, Class::Settings, Class::Input];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Class::Send => "send",
             Class::Delete => "delete",
+            Class::Leave => "leave",
             Class::Accounts => "accounts",
             Class::Mailbox => "mailbox",
             Class::Settings => "settings",
@@ -65,6 +73,7 @@ impl Class {
         match self {
             Class::Send => "it writes to other people or reaches out to the web",
             Class::Delete => "it deletes for good",
+            Class::Leave => "it takes the window off the message the owner is writing",
             Class::Accounts => "it changes an account or a sign-in",
             Class::Mailbox => "it opens, replaces or saves the mailbox file",
             Class::Settings => "it changes options, signatures or rules",
@@ -80,6 +89,10 @@ pub enum Access {
     Safe,
     /// Only with the owner's yes (bridged: a question in the window; headless: `--allow`).
     Owner(Class),
+    /// Only with the owner's yes in the window, every time, whatever `--allow` says (#494): what
+    /// the owner is writing or changing and hasn't saved. Headless never: only the window's owner
+    /// writes or changes anything.
+    Asked(Class),
     /// Not for agents at all (the host's own protocol, file pickers, the clipboard).
     Never,
 }
@@ -89,7 +102,7 @@ impl Access {
     pub fn label(self) -> &'static str {
         match self {
             Access::Safe => "safe",
-            Access::Owner(_) => "owner",
+            Access::Owner(_) | Access::Asked(_) => "owner",
             Access::Never => "never",
         }
     }
@@ -100,6 +113,7 @@ const SAFE: &[&str] = &[
     "search.openServerResult",
     // File: content goes in and out as `data`; a path is refused separately.
     "file.import",
+    "file.importFolderTree",
     "file.exportMessage",
     "file.exportFolder",
     "file.exportCalendar",
@@ -112,6 +126,10 @@ const SAFE: &[&str] = &[
     "mail.selectAll",
     "mail.next",
     "mail.previous",
+    "mail.first",
+    "mail.last",
+    "mail.pageDown",
+    "mail.pageUp",
     "mail.get",
     "mail.list",
     "mail.delete",
@@ -138,10 +156,12 @@ const SAFE: &[&str] = &[
     "mail.reply",
     "mail.replyAll",
     "mail.forward",
+    "mail.forwardAsAttachment",
     "mail.editDraft",
     // Writing (sending is not).
     "compose.set",
     "compose.attach",
+    "insert.picture",
     "compose.removeAttachment",
     "compose.signature",
     "compose.checkNames",
@@ -172,6 +192,8 @@ const SAFE: &[&str] = &[
     "edit.copy",
     "edit.cut",
     "edit.paste",
+    "insert.dateTime",
+    "review.wordCount",
     // Folders.
     "folder.select",
     "folder.list",
@@ -195,6 +217,7 @@ const SAFE: &[&str] = &[
     "view.filter",
     "view.search",
     "view.clearSearch",
+    "view.searchSuggestions",
     "view.previewLines",
     "view.groups",
     "view.oneLine",
@@ -261,6 +284,7 @@ const SAFE: &[&str] = &[
     "people.categorize",
     "people.email",
     "people.fromMessage",
+    "people.findDuplicates",
     "tasks.new",
     "tasks.edit",
     "tasks.complete",
@@ -289,9 +313,12 @@ const SAFE: &[&str] = &[
     "ui.language",
     "ui.interfaceSize",
     "ui.focusSearch",
+    "ui.advancedSearch",
     "ui.sync",
     "ui.cancelSignIn",
     "ui.cancelSync",
+    // Stops reading a mailbox in the background; the one open stays (#519).
+    "ui.cancelOpen",
     "ui.skipSync",
     "ui.favorites",
     "ui.copyAdminConsentLink",
@@ -303,7 +330,6 @@ const SAFE: &[&str] = &[
     "ui.openWindow",
     "ui.eventWindow",
     "ui.clearPictureCache",
-    "ui.copySelection",
     "ui.selectAllInMessage",
     // (Refused by the window itself unless the owner has the daily check on.)
     "ui.checkForUpdates",
@@ -316,6 +342,8 @@ const SEND: &[&str] = &[
     "mail.sendAgain",
     "calendar.propose",
     "calendar.forward",
+    // The owner's yes to sending the tasks that exist only here to a Microsoft account's To Do.
+    "tasks.sendLocal",
     "ui.downloadPictures",
     "ui.retryPictures",
     "ui.joinMeeting",
@@ -329,9 +357,11 @@ const DELETE: &[&str] = &[
     "folder.empty",
     "calendar.removeCalendar",
     // Local contacts, tasks, events and categories have no Deleted Items to come back from, and
-    // undo is short-lived (a pushing sync clears it).
+    // undo is short-lived (what a server has been told of events and tasks clears it).
     "calendar.delete",
     "people.delete",
+    // A merge removes the contacts merged into the kept one.
+    "people.merge",
     "tasks.delete",
     "category.remove",
     "compose.discard",
@@ -360,6 +390,7 @@ const ACCOUNTS: &[&str] = &[
     "ui.connectFavorites",
     "ui.allowSharedSend",
     "ui.allowSharedCalendars",
+    "ui.allowTasks",
     "ui.checkCalendar",
     "ui.adminConsent",
     "ui.signInAgain",
@@ -374,6 +405,9 @@ const ACCOUNTS: &[&str] = &[
 const MAILBOX: &[&str] = &["file.new", "file.open", "file.save", "file.saveAs"];
 
 const SETTINGS: &[&str] = &[
+    // Hides the sender-warning banner of a message (#508): an agent must not be able to quiet
+    // the owner's phishing warning.
+    "mail.dismissWarnings",
     "file.options",
     "calendar.deleteAnsweredRequests",
     "rules.add",
@@ -382,6 +416,13 @@ const SETTINGS: &[&str] = &[
     "rules.list",
     "rules.run",
     "rules.fromMessage",
+    // Junk E-mail Options (#504): what the lists send to Junk E-mail or let through.
+    "junk.blockSender",
+    "junk.neverBlockSender",
+    "junk.neverBlockDomain",
+    "junk.add",
+    "junk.remove",
+    "junk.list",
     "signature.set",
     "signature.remove",
     "signature.rename",
@@ -391,6 +432,7 @@ const SETTINGS: &[&str] = &[
     "signature.picture.remove",
     "signature.layout",
     "signature.details",
+    "signature.html",
     "signature.open",
     "signature.save",
     "signature.close",
@@ -401,6 +443,7 @@ const SETTINGS: &[&str] = &[
     "ui.updateCheck",
     "ui.updateInstall",
     "ui.dismissUpdateNotice",
+    "ui.dismissSettingsNotice",
 ];
 
 const NEVER: &[&str] = &[
@@ -447,6 +490,9 @@ const NEVER: &[&str] = &[
     "sync.applyBooks",
     "sync.contactChanges",
     "sync.applyContactChanges",
+    "sync.taskChanges",
+    "sync.applyTaskChanges",
+    "sync.applyTasks",
     "sync.applyCalendars",
     "sync.applyCategories",
     "sync.applyFavorites",
@@ -456,8 +502,12 @@ const NEVER: &[&str] = &[
     "ui.open",
     "ui.import",
     "ui.attach",
+    // A message file the owner opened, kept or written out: the owner's own doing (#515).
+    "ui.moveWindowMessage",
+    "ui.saveWindowMessage",
     // Anything an agent chooses onto the owner's clipboard.
     "ui.copyLinkAddress",
+    "ui.copySelection",
     // A file from a message opened with another program: only ever the owner's own doing.
     "mail.openAttachment",
     // Installing a new version, or going back to the one before: only the owner's click.
@@ -465,6 +515,9 @@ const NEVER: &[&str] = &[
     "ui.goBackVersion",
     // Everything MailCraft keeps on this computer, gone (#177): only the owner's own click.
     "ui.removeAllData",
+    // Another program (the file manager) started on the owner's screen, as for an attachment
+    // (#460): only ever the owner's own click.
+    "ui.openDataFolder",
     // The redacted log tail, and the clipboard overwritten with it.
     "ui.copyDiagnostics",
 ];
@@ -512,7 +565,9 @@ pub enum FileUse {
 pub const FILE_PARAMS: &[(&str, &str, FileUse)] = &[
     ("file.open", "path", FileUse::Reads { name_key: "name" }),
     ("file.import", "path", FileUse::Reads { name_key: "name" }),
+    ("file.importFolderTree", "path", FileUse::Reads { name_key: "name" }),
     ("compose.attach", "path", FileUse::Reads { name_key: "name" }),
+    ("insert.picture", "path", FileUse::Reads { name_key: "file" }),
     ("signature.picture.add", "path", FileUse::Reads { name_key: "file" }),
     ("file.save", "path", FileUse::Refused),
     ("file.saveAs", "path", FileUse::Refused),
@@ -545,9 +600,38 @@ pub fn no_paths(id: &str, key: &str) -> String {
 pub fn classify(s: &Session, id: &str, params: &Value) -> Access {
     let Some(base) = access(id) else { return Access::Never };
     let sends = p::bool(params, "send") == Some(true);
+    // An appointment's window with changes the owner hasn't saved closes with the appointment
+    // (`unsaved`, from `agent_gate`): taking that away is asked about every time (#494).
+    if matches!(id, "calendar.delete" | "calendar.removeCalendar" | "edit.undo" | "edit.redo") && unsaved(params) {
+        return Access::Asked(match id {
+            "edit.undo" | "edit.redo" => s.undo_reverts(id == "edit.redo").unwrap_or(Class::Delete),
+            _ if sends => Class::Send,
+            _ => Class::Delete,
+        });
+    }
     // A cancellation sent to the people invited is the stronger question.
     if id == "calendar.delete" && sends {
         return Access::Owner(Class::Send);
+    }
+    // The people a To Do list is shared with see what is done to its to-dos (#461); deleting
+    // one asks this too, the stronger question.
+    if shared_task(s, id, params).is_some() || shared_category(s, id, params) {
+        return Access::Owner(Class::Send);
+    }
+    // What the owner is writing or changing is theirs to let go of, whatever `--allow` says
+    // (#494): Discard throws the message away with its draft; a window closed with changes in its
+    // appointment that aren't saved (`unsaved`, from `agent_gate`) loses them; another mailbox in
+    // view closes the message without saving it, and the windows of its appointments.
+    let writing = owner_writing(s);
+    // A draft opened in a window opens where messages are written, as `mail.editDraft`.
+    if let Some(draft) = draft_in_window(s, id, params) {
+        return classify(s, "mail.editDraft", &json!({"id": draft}));
+    }
+    match id {
+        "compose.discard" if writing => return Access::Asked(Class::Delete),
+        "ui.closeWindow" if unsaved(params) => return Access::Asked(Class::Delete),
+        "file.new" | "file.open" if writing || unsaved(params) => return Access::Asked(Class::Mailbox),
+        _ => {}
     }
     if base != Access::Safe {
         return base;
@@ -559,6 +643,9 @@ pub fn classify(s: &Session, id: &str, params: &Value) -> Access {
     match id {
         // Undoing can put back the accounts, rules or signatures of before.
         "edit.undo" | "edit.redo" => s.undo_reverts(id == "edit.redo").map_or(Access::Safe, Access::Owner),
+        // Saving or sending the appointment in a window runs later, as the owner, and the
+        // account's server writes to the people invited: that is a send.
+        "ui.eventWindow" if matches!(p::str(params, "do"), Some("send" | "save" | "saveAndClose")) => Access::Owner(Class::Send),
         _ if id.starts_with("calendar.") && sends => Access::Owner(Class::Send),
         "mail.move" | "mail.copy" | "file.import" => {
             let folder = p::id(params, "folder").or(if id == "file.import" { Some(s.view.folder) } else { None });
@@ -574,8 +661,96 @@ pub fn classify(s: &Session, id: &str, params: &Value) -> Access {
         "people.new" | "people.fromMessage" | "people.edit" if crate::cmd::remote_contacts::writes_to_a_book(s, id, params) => {
             Access::Owner(Class::Send)
         }
+        // A command that closes the message being written, or puts another in its place, saves
+        // what isn't saved of it first (#442). Letting that go instead (`discard`) is throwing it
+        // away. When the owner wrote in it, the window asks them every time either way, saved or
+        // not, until it is closed (#494); an agent's own message, headless too, is the agent's to
+        // leave.
+        _ if LEAVING.contains(&id) && s.compose.as_ref().is_some_and(|c| c.dirty || c.owner_changed || draft_gone(s, c)) => {
+            let lost = s.compose.as_ref().is_some_and(|c| unsaved_message(s, c)) && p::bool(params, "discard") == Some(true);
+            match (writing, lost) {
+                (true, true) => Access::Asked(Class::Delete),
+                (true, false) => Access::Asked(Class::Leave),
+                (false, true) => Access::Owner(Class::Delete),
+                (false, false) => Access::Safe,
+            }
+        }
+        // An appointment, a contact or a task with changes that aren't saved, in the dialog that
+        // this closes or opens another in place of: the changes are lost. The window says which
+        // (`unsaved`, from `agent_gate`, never from the agent).
+        "ui.closeDialog" | "ui.dialog" if params.get("unsaved").is_some_and(|v| !v.is_null()) => Access::Asked(Class::Delete),
         _ => Access::Safe,
     }
+}
+
+/// Whether what is written in the message isn't all in Drafts: changed since it was saved, or
+/// its draft is gone (#494).
+fn unsaved_message(s: &Session, c: &crate::Compose) -> bool {
+    c.dirty || draft_gone(s, c)
+}
+
+/// Whether the owner wrote in the message being written (#494): it is theirs until it is closed.
+fn owner_writing(s: &Session) -> bool {
+    s.compose.as_ref().is_some_and(|c| c.owner_changed)
+}
+
+/// The draft that `ui.openWindow` would open, which it opens as `mail.editDraft` does.
+fn draft_in_window(s: &Session, id: &str, params: &Value) -> Option<Id> {
+    if id != "ui.openWindow" {
+        return None;
+    }
+    p::id(params, "message").filter(|m| s.mailbox.message(*m).is_some_and(|m| m.draft))
+}
+
+/// Whether the window says the command would lose changes the owner hasn't saved in a form
+/// (`unsaved`, from `agent_gate`, never from the agent).
+fn unsaved(params: &Value) -> bool {
+    params.get("unsaved").is_some_and(|v| !v.is_null())
+}
+
+/// The to-do that `id` would change, when it is in a list shared with other people. The to-do is
+/// found as the command finds it (`id`, else the selected one); one that isn't there is left to
+/// the command, which changes nothing and says so.
+fn shared_task<'a>(s: &'a Session, id: &str, params: &Value) -> Option<&'a mailcraft_model::Task> {
+    if !matches!(id, "tasks.edit" | "tasks.complete" | "tasks.categorize" | "tasks.delete") {
+        return None;
+    }
+    p::id(params, "id").or(s.sel.task).and_then(|t| s.mailbox.task(t)).filter(|t| s.mailbox.in_shared_task_list(t))
+}
+
+/// Whether `id` renames or deletes a category that a to-do in a shared list has: the to-do is
+/// changed with it, and the people the list is shared with see that.
+fn shared_category(s: &Session, id: &str, params: &Value) -> bool {
+    let key = match id {
+        "category.rename" => "from",
+        "category.remove" => "name",
+        _ => return false,
+    };
+    let Some(name) = p::str(params, key).map(str::trim) else { return false };
+    s.mailbox.tasks.values().any(|t| t.categories.iter().any(|c| c.eq_ignore_ascii_case(name)) && s.mailbox.in_shared_task_list(t))
+}
+
+/// Whether going from `before` to `after` changes what a list shared with other people has, as
+/// the next Send/Receive of to-dos would tell its server: a to-do in one changed, brought back or
+/// added, or one deleted from one.
+pub(crate) fn changes_shared_tasks(before: &Mailbox, after: &Mailbox) -> bool {
+    if after.shared_task_lists.is_empty() && before.shared_task_lists.is_empty() {
+        return false;
+    }
+    // Only what goes to the server counts (a to-do's message, say, doesn't); one moved out of a
+    // shared list counts too.
+    let changed = after.tasks.iter().any(|(k, t)| match before.tasks.get(k) {
+        None => after.in_shared_task_list(t),
+        Some(b) => (after.in_shared_task_list(t) || before.in_shared_task_list(b)) && !std::sync::Arc::ptr_eq(b, t) && !b.same_on_server(t),
+    });
+    if changed || after.task_gone == before.task_gone {
+        return changed;
+    }
+    let told: std::collections::HashSet<(Id, &str)> = before.task_gone.iter().map(|g| (g.account, g.id.as_str())).collect();
+    after
+        .task_gone
+        .iter()
+        .any(|g| !told.contains(&(g.account, g.id.as_str())) && before.shared_task_lists.get(&g.account).is_some_and(|l| l.contains(g.list.as_str())))
 }
 
 fn is_outbox(mb: &Mailbox, folder: Id) -> bool {
@@ -602,17 +777,37 @@ pub enum Verdict {
 
 /// The gate: `allow` is what the owner allowed in advance.
 pub fn check(s: &Session, id: &str, params: &Value, allow: &[Class]) -> Verdict {
+    verdict(s, id, params, allow, None)
+}
+
+/// The gate again once the owner has said yes to `yes` in the window: it runs when that is still
+/// all it asks for (what it would do may have changed while the question was up).
+pub fn answered(s: &Session, id: &str, params: &Value, allow: &[Class], yes: Class) -> Verdict {
+    verdict(s, id, params, allow, Some(yes))
+}
+
+fn verdict(s: &Session, id: &str, params: &Value, allow: &[Class], yes: Option<Class>) -> Verdict {
     if access(id).is_none() {
         return Verdict::Refuse(format!("`{id}` isn't available to agents"));
     }
     if let Some(key) = file_named(id, params) {
         return Verdict::Refuse(no_paths(id, key));
     }
+    // The owner is asked about the list the command would change, or about nothing (#504).
+    if matches!(id, "junk.add" | "junk.remove") && p::str(params, "list").and_then(mailcraft_model::JunkList::parse).is_none() {
+        return Verdict::Refuse(format!("`{id}` needs `list`: \"safe\" or \"blocked\""));
+    }
+    if matches!(id, "junk.add" | "junk.remove" | "junk.list")
+        && let Err(e) = crate::cmd::junk::list_account(s, params)
+    {
+        return Verdict::Refuse(format!("`{id}`: {e}"));
+    }
     match classify(s, id, params) {
         Access::Safe => Verdict::Run,
         Access::Never => Verdict::Refuse(format!("`{id}` isn't available to agents")),
-        Access::Owner(c) if allow.contains(&c) => Verdict::Run,
-        Access::Owner(c) => {
+        Access::Owner(c) if allow.contains(&c) || yes == Some(c) => Verdict::Run,
+        Access::Asked(c) if yes == Some(c) => Verdict::Run,
+        Access::Owner(c) | Access::Asked(c) => {
             let what = describe(s, id, params);
             if what.chars().count() > MAX_QUESTION {
                 return Verdict::Refuse(format!(
@@ -628,8 +823,15 @@ pub fn check(s: &Session, id: &str, params: &Value, allow: &[Class]) -> Verdict 
 /// a call whose description is longer is refused rather than clipped).
 pub const MAX_QUESTION: usize = 900;
 
-/// The refusal when nobody can be asked (headless).
-pub fn needs_owner(id: &str, class: Class, what: &str) -> String {
+/// The refusal when nobody can be asked (headless); `asked`: the owner is asked every time
+/// ([`Access::Asked`]), and no `--allow` covers it.
+pub fn needs_owner(id: &str, class: Class, asked: bool, what: &str) -> String {
+    if asked || !Class::ALL.contains(&class) {
+        return format!(
+            "`{id}` needs the owner ({}): it would {what}. The owner is asked about this in the window every time; no `--allow` lets an agent do it",
+            class.what()
+        );
+    }
     format!(
         "`{id}` needs the owner ({}): it would {what}. Only the owner can let an agent do this, by starting the server with `mailcraft-cli mcp --allow {}`",
         class.what(),
@@ -707,6 +909,33 @@ fn invitees(s: &Session, params: &Value) -> Vec<String> {
 /// What a call would do, in a sentence that follows "An agent wants to …" (for the owner's
 /// question; never trusted for anything else).
 pub fn describe(s: &Session, id: &str, params: &Value) -> String {
+    if let Some(draft) = draft_in_window(s, id, params) {
+        return leaving_text(s, "mail.editDraft", &json!({"id": draft}));
+    }
+    // What the window would lose (`unsaved`) is said in words, never shown as params.
+    let form = matches!(id, "ui.closeDialog" | "ui.dialog" | "ui.closeWindow");
+    let mut bare = params.clone();
+    if !form && let Some(fields) = bare.as_object_mut() {
+        fields.remove("unsaved");
+    }
+    let mut what = what_it_does(s, id, &bare);
+    // Another mailbox in view closes the message the owner is writing, unsaved (#494).
+    if matches!(id, "file.new" | "file.open") && owner_writing(s) {
+        let unsaved = s.compose.as_ref().is_some_and(|c| unsaved_message(s, c));
+        let how = if unsaved { " without being saved" } else { "" };
+        what.push_str(&format!("; the message {} that the owner is writing is closed{how}", writing(s)));
+    }
+    // And the windows of appointments with changes that aren't saved, as does taking the
+    // appointments away.
+    if !form && unsaved(params) {
+        let (item, many) = unsaved_item(params);
+        let (are, them) = if many { ("are", "them") } else { ("is", "it") };
+        what.push_str(&format!("; {item} {are} closed without saving the changes made in {them}"));
+    }
+    what
+}
+
+fn what_it_does(s: &Session, id: &str, params: &Value) -> String {
     let label = s.registry.get(id).map(|c| c.label).unwrap_or(id);
     let st = |k: &str| p::str(params, k).unwrap_or("");
     // //// Neoffice — the notes' commands say which note, and that it is on the server (`cmd/notes/agent.rs`).
@@ -757,6 +986,15 @@ pub fn describe(s: &Session, id: &str, params: &Value) -> String {
             };
             format!("{label}: {}, and write to {to}", event_title(s, id, params))
         }
+        "ui.eventWindow" => {
+            let who = addresses(params.get("attendees"));
+            let to = if who.is_empty() {
+                "nobody (no one is invited)".to_string()
+            } else {
+                format!("{} ({})", plural(who.len(), "{n} person", "{n} people"), some(&who, 8))
+            };
+            format!("{} the appointment or meeting in its window, which can make the account's server write to {to}", clip(st("do"), 20))
+        }
         "calendar.delete" => format!("delete {} from the calendar", event_title(s, id, params)),
         "people.delete" => {
             let c = p::id(params, "id").or(s.sel.contact).and_then(|c| s.mailbox.contact(c));
@@ -765,19 +1003,65 @@ pub fn describe(s: &Session, id: &str, params: &Value) -> String {
                 c.map(|c| quoted(&c.name())).unwrap_or_else(|| "(none selected)".to_string())
             )
         }
+        "people.merge" => {
+            let name = |c: Option<u64>| c.and_then(|c| s.mailbox.contact(c)).map(|c| quoted(&c.name())).unwrap_or_else(|| "(none)".to_string());
+            let others: Vec<String> =
+                params.get("others").and_then(Value::as_array).into_iter().flatten().take(100).map(|o| name(o.as_u64())).collect();
+            format!(
+                "merge {} into the contact {} and delete them for good; contacts don't go to Deleted Items",
+                if others.is_empty() {
+                    "(no contacts)".to_string()
+                } else {
+                    format!("{} ({})", plural(others.len(), "{n} contact", "{n} contacts"), some(&others, 8))
+                },
+                name(p::id(params, "keep"))
+            )
+        }
         "tasks.delete" => {
             let t = p::id(params, "id").or(s.sel.task).and_then(|t| s.mailbox.task(t));
-            format!("delete the task {} for good", t.map(|t| quoted(&t.title)).unwrap_or_else(|| "(none selected)".to_string()))
+            let shared = if shared_task(s, id, params).is_some() { SHARED_TASK } else { "" };
+            format!("delete the task {} for good{shared}", t.map(|t| quoted(&t.title)).unwrap_or_else(|| "(none selected)".to_string()))
         }
-        "category.remove" => format!("delete the category {}, taking it off everything that has it", quoted(st("name"))),
+        "tasks.edit" | "tasks.complete" | "tasks.categorize" if shared_task(s, id, params).is_some() => {
+            let t = shared_task(s, id, params).map(|t| quoted(&t.title)).unwrap_or_default();
+            format!("{} on the task {t}{SHARED_TASK}", run_text(label, id, params))
+        }
+        "category.remove" => {
+            let shared = if shared_category(s, id, params) { SHARED_CATEGORY } else { "" };
+            format!("delete the category {}, taking it off everything that has it{shared}", quoted(st("name")))
+        }
+        "category.rename" if shared_category(s, id, params) => {
+            format!("rename the category {} to {}{SHARED_CATEGORY}", quoted(st("from")), quoted(st("to")))
+        }
+        _ if LEAVING.contains(&id) => leaving_text(s, id, params),
+        "ui.closeDialog" | "ui.dialog" => form_text(id, params),
+        "ui.closeWindow" if params.get("unsaved").is_some_and(|v| !v.is_null()) => form_text(id, params),
+        "compose.discard" if owner_writing(s) => {
+            format!("throw away the message {} that the owner is writing, and its draft in Drafts, if it has one", writing(s))
+        }
         "edit.undo" | "edit.redo" => {
             let redo = id == "edit.redo";
             let label = if redo { s.redo_label() } else { s.undo_label() };
+            let verb = if redo { "redo" } else { "undo" };
+            let drafts = s.undo_drafts(redo);
+            if let Some(first) = drafts.first().and_then(|d| s.mailbox.message(*d)) {
+                let which = match drafts.len() {
+                    1 if !first.subject.trim().is_empty() => format!("the draft {}", quoted(&first.subject)),
+                    1 => "a draft".to_string(),
+                    n => format!("{n} drafts"),
+                };
+                return format!(
+                    "{verb} {}, which also takes away {which} in Drafts or puts back an earlier version, and anything written in it since may be lost",
+                    quoted(label.unwrap_or("the last change"))
+                );
+            }
             let what = match s.undo_reverts(redo) {
                 Some(Class::Accounts) => "the accounts",
-                _ => "the rules or signatures",
+                Some(Class::Send) => "a change to a meeting or to a task in a shared list, which other people see",
+                Some(Class::Delete) => "contacts, events, tasks, calendars or categories that were deleted",
+                _ => "the rules, signatures or Safe and Blocked Senders",
             };
-            format!("{} {}, which also puts {what} back as they were", if redo { "redo" } else { "undo" }, quoted(label.unwrap_or("the last change")))
+            format!("{verb} {}, which also puts {what} back as they were", quoted(label.unwrap_or("the last change")))
         }
         "rules.add" => rule_text(s, params),
         "rules.fromMessage" => {
@@ -792,6 +1076,45 @@ pub fn describe(s: &Session, id: &str, params: &Value) -> String {
             match r {
                 Some(r) => format!("{verb} the rule {}: {}", quoted(&r.name), rule_words(s, r)),
                 None => format!("{verb} a rule that isn't there"),
+            }
+        }
+        "junk.blockSender" | "junk.neverBlockSender" | "junk.neverBlockDomain" => {
+            let ids = p::ids(params).unwrap_or_else(|| s.sel.messages.clone());
+            let domain = id == "junk.neverBlockDomain";
+            let mut who: Vec<String> = Vec::new();
+            for m in ids.iter().filter_map(|m| s.mailbox.message(*m)) {
+                let address = m.from.email.trim();
+                let entry = if domain { address.rsplit_once('@').map(|(_, d)| format!("@{d}")) } else { Some(address.to_string()) };
+                if let Some(e) = entry.as_deref().and_then(mailcraft_model::junk_entry)
+                    && !who.contains(&e)
+                {
+                    who.push(e);
+                }
+            }
+            let who = if who.is_empty() { "nobody (the message has no sender's address)".to_string() } else { some(&who, 12) };
+            if id == "junk.blockSender" {
+                format!("add {who} to the Blocked Senders, whose new mail goes to Junk E-mail, and move {} there", messages_text(s, &ids))
+            } else {
+                format!("add {who} to the Safe Senders, whose new mail is never treated as junk")
+            }
+        }
+        "junk.add" | "junk.remove" => {
+            // The list as the command reads it; [`check`] refuses a call that names neither.
+            let list = match p::str(params, "list").and_then(mailcraft_model::JunkList::parse) {
+                Some(mailcraft_model::JunkList::Blocked) => "Blocked Senders",
+                Some(mailcraft_model::JunkList::Safe) => "Safe Senders",
+                None => return format!("run \u{201c}{label}\u{201d} ({id}) on a list that is neither Safe Senders nor Blocked Senders"),
+            };
+            let entry = mailcraft_model::junk_entry(st("entry")).unwrap_or_else(|| clip(st("entry"), 80));
+            let of = crate::cmd::junk::list_account(s, params)
+                .ok()
+                .and_then(|a| s.mailbox.account(a))
+                .map(|a| format!(" of the account {}", quoted(&clip(if a.email.is_empty() { &a.name } else { &a.email }, 80))))
+                .unwrap_or_default();
+            if id == "junk.add" {
+                format!("add {} to the {list}{of}", quoted(&entry))
+            } else {
+                format!("remove {} from the {list}{of}", quoted(&entry))
             }
         }
         "account.add" => {
@@ -874,17 +1197,92 @@ pub fn describe(s: &Session, id: &str, params: &Value) -> String {
                 && s.mailbox.accounts.iter().all(|x| x.id == account.id || x.shared_of == Some(account.id));
             if only { format!("remove the account {a} (the only account: leaves an empty mailbox)") } else { format!("remove the account {a}") }
         }
-        _ => {
-            let mut shown = params.to_string();
-            if shown == "{}" || shown == "null" {
-                shown.clear();
-            }
-            // In full: `check` refuses what is too long to show, rather than a cut hiding the end.
-            let shown = if shown.is_empty() { String::new() } else { format!(" {}", plain(&shown)) };
-            format!("run \u{201c}{label}\u{201d} ({id}){shown}")
-        }
+        _ => run_text(label, id, params),
     }
 }
+
+/// What a command that closes the message being written, or puts another in its place, does,
+/// and what becomes of that message (#494).
+fn leaving_text(s: &Session, id: &str, params: &Value) -> String {
+    let message = |m: Option<Id>| m.and_then(|m| s.mailbox.message(m)).map(|m| quoted(&m.subject)).unwrap_or_else(|| "(none selected)".to_string());
+    let one = || message(p::id(params, "id").or(s.sel.focus()));
+    let several = || messages_text(s, &p::ids(params).unwrap_or_else(|| s.sel.messages.clone()));
+    let instead = match id {
+        "mail.new" => "start a new message".to_string(),
+        "mail.reply" => format!("reply to {}", one()),
+        "mail.replyAll" => format!("reply to all on {}", one()),
+        "mail.forward" => format!("forward {}", several()),
+        "mail.forwardAsAttachment" => format!("forward {} as attachments", several()),
+        "mail.editDraft" => format!("open the draft {}", one()),
+        "people.email" => {
+            let c = p::id(params, "id").or(s.sel.contact).and_then(|c| s.mailbox.contact(c));
+            format!("start a new message to the contact {}", c.map(|c| quoted(&c.name())).unwrap_or_else(|| "(none selected)".to_string()))
+        }
+        _ => String::new(),
+    };
+    let writing = writing(s);
+    // Saved as it is, it stays in Drafts as it was saved, `discard` or not.
+    let saved = s.compose.as_ref().is_some_and(|c| !unsaved_message(s, c));
+    let then = if saved { "it stays in Drafts as it was last saved" } else { "what isn't saved of it goes to Drafts first" };
+    match (instead.is_empty(), p::bool(params, "discard") == Some(true) && !saved) {
+        (true, true) => format!("close the message {writing} without saving what the owner wrote in it"),
+        (true, false) => format!("close the message {writing} that the owner is writing; {then}"),
+        (false, true) => format!("{instead} in place of the message {writing}, without saving what the owner wrote in it"),
+        (false, false) => format!("{instead} in place of the message {writing} that the owner is writing; {then}"),
+    }
+}
+
+/// The message being written, as a question names it: its subject.
+fn writing(s: &Session) -> String {
+    s.compose.as_ref().map(|c| quoted(&c.subject)).unwrap_or_else(|| "being written".to_string())
+}
+
+/// A dialog with changes that aren't saved, which the command closes or opens another in place
+/// of (#494), as the window named it (`unsaved`).
+fn form_text(id: &str, params: &Value) -> String {
+    let (item, many) = unsaved_item(params);
+    match id {
+        "ui.dialog" => {
+            format!("open the dialog {} in place of {item}, without saving the changes made in it", quoted(p::str(params, "name").unwrap_or("")))
+        }
+        _ => format!("close {item} without saving the changes made in {}", if many { "them" } else { "it" }),
+    }
+}
+
+/// The item with changes that aren't saved, as the window named it (`unsaved`), and whether
+/// more windows than its own are named.
+fn unsaved_item(params: &Value) -> (String, bool) {
+    let field = |k: &str| params.get("unsaved").and_then(|u| u.get(k)).and_then(Value::as_str).unwrap_or("");
+    let kind = match field("form") {
+        kind @ ("appointment" | "meeting" | "contact" | "task") => kind,
+        _ => "item",
+    };
+    let title = clip(field("title"), 80);
+    let mut item = if title.is_empty() { format!("the {kind}") } else { format!("the {kind} \u{201c}{title}\u{201d}") };
+    // Windows: how many more it closes with changes that aren't saved.
+    let more = params.get("unsaved").and_then(|u| u.get("more")).and_then(Value::as_u64).unwrap_or(0);
+    if more > 0 {
+        item.push_str(&format!(" and {}", plural(usize::try_from(more).unwrap_or(usize::MAX), "{n} more window", "{n} more windows")));
+    }
+    (item, more > 0)
+}
+
+/// A command and its params, as they came.
+fn run_text(label: &str, id: &str, params: &Value) -> String {
+    let mut shown = params.to_string();
+    if shown == "{}" || shown == "null" {
+        shown.clear();
+    }
+    // In full: `check` refuses what is too long to show, rather than a cut hiding the end.
+    let shown = if shown.is_empty() { String::new() } else { format!(" {}", plain(&shown)) };
+    format!("run \u{201c}{label}\u{201d} ({id}){shown}")
+}
+
+/// Said of a category that to-dos in a list shared with other people have.
+const SHARED_CATEGORY: &str = ", which to-dos in a To Do list shared with other people have: they see the change";
+
+/// Said of a to-do in a list shared with other people.
+const SHARED_TASK: &str = ", which is in a To Do list shared with other people: they see the change";
 
 /// A rule as it would be made, in words, naming the folders by their paths.
 fn rule_words(s: &Session, r: &mailcraft_model::Rule) -> String {
@@ -936,6 +1334,19 @@ pub(crate) fn overstep(before: &Mailbox, after: &Mailbox, allow: &[Class]) -> Op
         let gone = before.messages.iter().any(|(id, m)| !m.draft && !after.messages.contains_key(id));
         if gone {
             return Some(Class::Delete);
+        }
+    }
+    if !allow.contains(&Class::Send) {
+        // A change that makes the server write to people, which the mailbox didn't have.
+        let new = after.event_changes.iter().filter(|c| c.send).any(|c| {
+            !before.event_changes.iter().any(|b| b.send && b.account == c.account && b.kind == c.kind && b.event == c.event && b.token == c.token)
+        });
+        if new {
+            return Some(Class::Send);
+        }
+        // A to-do in a list shared with other people, changed by whatever path.
+        if changes_shared_tasks(before, after) {
+            return Some(Class::Send);
         }
     }
     // //// Neoffice — and a change to a server's address book noted for its server: a contact made or changed there is written for everyone who reads it, one deleted there deleted for them (D8).

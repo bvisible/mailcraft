@@ -292,7 +292,9 @@ where
     match signed_in(&http, &request.session, &request.email, auth, false, host, &job.cancel, &sleep).await {
         SignedIn::In(client, ..) => fetch_messages(&client, request, &job.cancel).await,
         // Stopped: nothing fetched, and nothing to hold against the server.
-        SignedIn::Stopped => GraphFetchResult { account: request.account, email: request.email.clone(), ..Default::default() },
+        SignedIn::Stopped => {
+            GraphFetchResult { account: request.account, email: request.email.clone(), session: request.session.clone(), ..Default::default() }
+        }
         SignedIn::Out(e) => failed_fetch(request, &e),
     }
 }
@@ -492,7 +494,7 @@ fn no_credential() -> Error {
 
 /// The last piece of a run that was stopped before it read anything.
 fn stopped(request: &JmapMailRequest) -> JmapMailResult {
-    JmapMailResult { account: request.account, email: request.email.clone(), stopped: true, ..Default::default() }
+    JmapMailResult { account: request.account, email: request.email.clone(), session: request.session.clone(), stopped: true, ..Default::default() }
 }
 
 /// The answer to a calendar job that was stopped before it read anything.

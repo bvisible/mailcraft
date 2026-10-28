@@ -1537,7 +1537,10 @@ fn forwarding_exporting_and_sending_carry_what_is_on_disk() {
     );
     // (An original in HTML is carried below the owner's text; one in plain text is in it.)
     let quoted = c.quote.as_ref().map_or_else(|| c.body.plain(), |q| q.text.clone());
-    assert!(c.attachments.iter().all(Attachment::is_loaded) && quoted.contains(was.body.text.trim()), "{quoted}");
+    // (An original in HTML is quoted as its HTML reads, line breaks aside, never as its text part.)
+    let said = was.body.html.as_deref().map_or_else(|| was.body.text.clone(), mailcraft_html::to_text);
+    let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(c.attachments.iter().all(Attachment::is_loaded) && squash(&quoted).contains(&squash(said.trim())), "{quoted}");
     s.run("compose.discard", &json!({})).unwrap_or_default();
 
     // Exported as .eml: the files are in it.
@@ -2013,3 +2016,6 @@ fn a_json_file_of_empty_messages_is_refused_while_it_is_read() {
     fs::write(t.file(), "{\"messages\":{\"1\":{},\"2\":{}}}").unwrap();
     assert!(with_budget(64 << 20, || open(&t.file())).is_ok());
 }
+
+#[path = "store_launch_tests.rs"]
+mod launch;

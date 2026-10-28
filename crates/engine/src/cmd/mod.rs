@@ -4,6 +4,8 @@
 
 pub mod account;
 #[cfg(test)]
+mod agent_leaves_compose_tests;
+#[cfg(test)]
 mod answered_tests;
 pub mod calendar;
 pub mod calendar_extra;
@@ -11,6 +13,8 @@ pub mod calendar_opened;
 pub mod calendar_settings;
 pub mod category;
 pub mod compose;
+#[cfg(test)]
+mod compose_trust_tests;
 pub mod edit;
 #[cfg(test)]
 mod favorites_tests;
@@ -22,6 +26,12 @@ pub mod format;
 #[cfg(test)]
 mod format_tests;
 #[cfg(test)]
+mod forward_attachment_headers_tests;
+#[cfg(test)]
+mod forward_attachment_tests;
+#[cfg(test)]
+mod forward_several_tests;
+#[cfg(test)]
 mod full_count_tests;
 pub mod graph_down;
 pub mod graph_drafts;
@@ -32,6 +42,8 @@ pub mod graph_switch;
 pub mod graph_up;
 // //// Neoffice — upstream's `jmap_down` and `jmap_mail` (M6 3/6) are the fork's own files, declared below with the rest of the fork's JMAP run.
 #[cfg(test)]
+mod hidden_selection_tests;
+#[cfg(test)]
 mod jmap_sending_tests;
 // //// Neoffice — an account kept in step with a JMAP server (its request, what comes down, what goes up, and its messages fetched whole).
 pub mod jmap_down;
@@ -40,8 +52,15 @@ pub mod jmap_mail;
 pub mod jmap_send;
 // //// Neoffice — what goes up to a JMAP server (the changes made here).
 pub mod jmap_up;
+pub mod junk;
+#[cfg(test)]
+mod junk_tests;
 // //// Neoffice — what a session that keeps nothing of its own between visits refuses (tasks, importing, a contact's marks).
 pub mod kept_here;
+#[cfg(test)]
+mod keyboard_selection_tests;
+#[cfg(test)]
+mod leave_compose_tests;
 pub mod mail;
 #[cfg(test)]
 mod newer_account_tests;
@@ -50,23 +69,39 @@ pub mod notes;
 pub mod offline;
 #[cfg(test)]
 mod offline_tests;
+#[cfg(test)]
+mod opened_file_tests;
 pub mod people;
+pub mod people_merge;
+pub mod picture;
+#[cfg(test)]
+mod picture_tests;
 #[cfg(test)]
 mod quote_tests;
 pub mod remote;
 // //// Neoffice — the address books of a server (JMAP for Contacts) and what the owner may do with their contacts.
 pub mod remote_contacts;
 pub mod rules;
+#[cfg(test)]
+mod search_scope_tests;
 pub mod search_server;
+#[cfg(test)]
+mod search_suggest_tests;
 pub mod shared;
 pub mod signature;
 #[cfg(test)]
 mod signature_tests;
 pub mod sync_progress;
 pub mod tasks;
+pub mod tasks_remote;
+#[cfg(test)]
+mod tasks_remote_tests;
 pub mod view;
 #[cfg(test)]
 mod wipe_tests;
+pub mod writing_tools;
+#[cfg(test)]
+mod writing_tools_tests;
 #[cfg(test)]
 mod zone_tests;
 pub mod zones;
@@ -85,6 +120,8 @@ pub fn registry() -> Registry {
     v.extend(mail::specs());
     v.extend(compose::specs());
     v.extend(format::specs());
+    v.extend(picture::specs());
+    v.extend(writing_tools::specs());
     v.extend(folder::specs());
     v.extend(view::specs());
     v.extend(calendar::specs());
@@ -93,10 +130,12 @@ pub fn registry() -> Registry {
     v.extend(calendar_settings::specs());
     v.extend(zones::specs());
     v.extend(people::specs());
+    v.extend(people_merge::specs());
     v.extend(tasks::specs());
     // //// Neoffice — see `notes`.
     v.extend(notes::specs());
     v.extend(rules::specs());
+    v.extend(junk::specs());
     v.extend(category::specs());
     v.extend(account::specs());
     v.extend(offline::specs());
@@ -111,6 +150,7 @@ pub fn registry() -> Registry {
     v.extend(remote::specs());
     // //// Neoffice — see `remote_contacts`.
     v.extend(remote_contacts::specs());
+    v.extend(tasks_remote::specs());
     v.extend(sync_progress::specs());
     v.extend(search_server::specs());
     Registry::new(v)
@@ -154,7 +194,18 @@ pub(crate) fn needs_compose(s: &Session) -> Option<&'static str> {
 
 /// The messages a command acts on: `ids` / `id` when given, else the selection.
 pub(crate) fn targets(s: &Session, v: &Value) -> Result<Vec<Id>, CmdError> {
-    let ids = match p::ids(v) {
+    named_or_selected(s, p::ids(v))
+}
+
+/// As [`targets`], but `ids` / `id` read strictly ([`p::ids_strict`]): for a command whose mistake
+/// reaches other people, which never takes the selection for what a caller named wrongly.
+pub(crate) fn targets_strict(s: &Session, v: &Value) -> Result<Vec<Id>, CmdError> {
+    named_or_selected(s, p::ids_strict(v)?)
+}
+
+/// The messages `named`, else the selected ones; each must be here.
+fn named_or_selected(s: &Session, named: Option<Vec<Id>>) -> Result<Vec<Id>, CmdError> {
+    let ids = match named {
         Some(ids) => ids,
         None => s.sel.messages.clone(),
     };
@@ -191,6 +242,7 @@ pub(crate) fn select_after_removal(s: &mut Session, before: &[Row], removed: &[I
     let rows = crate::list::rows(s);
     if let Some(row) = first.and_then(|i| rows.get(i).or_else(|| rows.last())) {
         s.sel.messages = vec![row.id];
+        s.keep_selected(&rows);
     }
 }
 
@@ -277,12 +329,12 @@ pub(crate) fn source(v: &Value) -> Result<(String, Vec<u8>), CmdError> {
     let path = p::req_str(v, "path")?;
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let meta = std::fs::metadata(path).map_err(|e| fail(format!("{path}: {e}")))?;
-        if meta.len() > crate::io::MAX_FILE {
-            return Err(failed!("{path} is larger than {mb} MB", path, mb = crate::io::MAX_FILE >> 20));
+        // Opened once, checked through that handle, read from it (`io::read_regular_file`).
+        match crate::io::read_regular_file(std::path::Path::new(path)) {
+            Ok(bytes) => Ok((name, bytes)),
+            Err(crate::io::ReadError::TooLarge) => Err(failed!("{path} is larger than {mb} MB", path, mb = crate::io::MAX_FILE >> 20)),
+            Err(e) => Err(fail(format!("{path}: {e}"))),
         }
-        let bytes = std::fs::read(path).map_err(|e| fail(format!("{path}: {e}")))?;
-        Ok((name, bytes))
     }
     #[cfg(target_arch = "wasm32")]
     {

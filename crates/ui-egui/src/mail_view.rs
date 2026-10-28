@@ -93,7 +93,6 @@ fn drag_ghost(ui: &Ui) {
     let Some(drag) = egui::DragAndDrop::payload::<MessageDrag>(ui.ctx()) else { return };
     let Some(pos) = ui.ctx().pointer_interact_pos() else { return };
     let t = Tokens::get(ui.ctx());
-    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     let text = tln!(drag.0.len(), "{n} message", "{n} messages");
     egui::Area::new(egui::Id::unique("message_drag_ghost")).order(egui::Order::Tooltip).fixed_pos(pos + vec2(14.0, 16.0)).interactable(false).show(
         ui.ctx(),
@@ -519,11 +518,21 @@ fn search_bar(app: &mut MailApp, ui: &mut Ui, found: usize) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let scope = if app.session.view.scope == mailcraft_engine::Scope::Everywhere {
-        tl!("All Mailboxes").to_string()
-    } else {
+    let mb = &app.session.mailbox;
+    let folder = mb.folder(app.session.view.folder);
+    let scope = match app.session.view.scope {
+        mailcraft_engine::Scope::Everywhere => tl!("All Mailboxes").to_string(),
+        // The account in view, by the name the folder pane gives it (#493).
+        mailcraft_engine::Scope::Mailbox => folder
+            .and_then(|f| mb.account(f.account))
+            .map(|a| if a.name.trim().is_empty() { a.email.trim().to_string() } else { a.name.trim().to_string() })
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| tl!("Current Mailbox").to_string()),
+        mailcraft_engine::Scope::Subfolders => {
+            folder.map(|f| crate::i18n::fmt(tl!("{folder} and its subfolders"), &[("folder", &crate::nav::folder_label(mb, f))])).unwrap_or_default()
+        }
         // (A shared mailbox's folder with the mailbox it is in, #70.)
-        app.session.mailbox.folder(app.session.view.folder).map(|f| crate::nav::folder_label(&app.session.mailbox, f)).unwrap_or_default()
+        mailcraft_engine::Scope::Folder => folder.map(|f| crate::nav::folder_label(mb, f)).unwrap_or_default(),
     };
     let said = match found {
         0 => crate::i18n::fmt(tl!("No results in {scope}"), &[("scope", &scope)]),
@@ -560,9 +569,8 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
     // A search covers what is here: of a message not fetched yet, its headers and preview (R3.2).
     if !app.session.view.search.trim().is_empty() {
-        let folder = app.session.view.folder;
-        let everywhere = app.session.view.scope == mailcraft_engine::Scope::Everywhere;
-        let partly = app.session.mailbox.messages.values().filter(|m| m.unfetched && (everywhere || m.folder == folder)).count();
+        let in_view = mailcraft_engine::list::in_view(&app.session);
+        let partly = app.session.mailbox.messages.values().filter(|m| m.unfetched && in_view(m)).count();
         if partly > 0 {
             let said = crate::i18n::fmt(
                 tl!("{count} messages weren't searched in full: only their beginning is here until they download."),
@@ -643,6 +651,8 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     let reveal = std::mem::take(&mut app.reveal_selection);
     let focus = app.session.sel.focus().map(|id| (id, app.session.sel.focus_copy()));
     let outer = ui.available_rect_before_wrap();
+    // Page Up and Page Down move by the rows that fit (#426).
+    app.list_page_rows = ((outer.height() / row_h).floor() as usize).max(1);
     let lane = scroll_lane(outer);
     let scrolls = total > outer.height();
     // (A bar that floats over the rows has no lane to paint and no arrows.)
@@ -671,6 +681,16 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
         // Rows end where the scroll bar's lane starts, whether the list scrolls or not (at the
         // list's right edge where the bar floats over them).
         let width = (area.width() - lane_w).max(0.0);
+        // After a move from the keyboard, the row with the focus comes into view, however far it
+        // is (End, Page Down), with its group's heading when it starts one.
+        if reveal
+            && let Some(i) = rows.iter().position(|r| Some((r.id, r.copy)) == focus)
+            && let (Some(top), Some(row)) = (tops.get(i).copied(), rows.get(i))
+        {
+            let above = if row.group.is_some() { GROUP_H } else { 0.0 };
+            let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h));
+            ui.scroll_to_rect(rect, None);
+        }
         // Only the rows in view are laid out.
         let first = tops.partition_point(|top| top + row_h < viewport.min.y).saturating_sub(1);
         for (i, row) in rows.iter().enumerate().skip(first) {
@@ -703,9 +723,6 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
                 );
             }
             let rect = Rect::from_min_size(pos2(origin.x, origin.y + top), vec2(width, row_h));
-            if reveal && Some((row.id, row.copy)) == focus {
-                ui.scroll_to_rect(rect, None);
-            }
             message_row(app, ui, row, rect);
         }
         if below > 0.0 {
@@ -753,10 +770,11 @@ fn size_label(s: &mailcraft_engine::Session, m: &Message) -> Option<String> {
     Some(mailcraft_model::size_label_in(crate::i18n::current(), bytes.max(1024)))
 }
 
-/// Whether a row names the folder its message is in, under the time: in a search of every
-/// mailbox, as Outlook's rows do (#195); in one folder the owner knows which it is.
+/// Whether a row names the folder its message is in, under the time: in a search of more than
+/// one folder (its subfolders, its mailbox or every mailbox), as Outlook's rows do (#195, #493);
+/// in one folder the owner knows which it is.
 fn shows_folder(s: &mailcraft_engine::Session) -> bool {
-    s.view.scope == mailcraft_engine::Scope::Everywhere && !mailcraft_model::search::Query::parse(&s.view.search).is_empty()
+    s.view.scope != mailcraft_engine::Scope::Folder && !mailcraft_model::search::Query::parse(&s.view.search).is_empty()
 }
 
 /// The previews of the rows the list drew last, so that drawing them again reads no message a
@@ -986,10 +1004,19 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
         one_date_w = p.text(pos2(time_end, line1), Align2::RIGHT_CENTER, &date, date_font.clone(), date_color).width();
         x = time_end - one_date_w - 10.0;
     }
+    // The server says its sender's checks failed, or its name hides another address (#508): the
+    // first of the marks, where it is seen.
+    let warned = crate::reading::warning_mark(app, &m);
+    if warned {
+        app.hit.add("messageWarning", row.id, Rect::from_center_size(pos2(x - 6.0, line1), vec2(12.0, 12.0)));
+    }
     let mut marker = |icon: &str, color: Color32| {
         icons::paint(p, Rect::from_center_size(pos2(x - 6.0, line1), vec2(12.0, 12.0)), icon, color, t.accent);
         x -= 15.0;
     };
+    if warned {
+        marker("warning", t.icon);
+    }
     // A meeting that came by mail wears its mark; its calendar part is not one of its files.
     let (meeting, files) = crate::reading::list_marks(&m);
     if let Some(meeting) = meeting {
@@ -1138,7 +1165,6 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         let _ = app.execute("mail.select", json!({"id": id, "copy": copy}));
     }
     let (read, flagged, pinned) = (m.read, m.flag == FlagStatus::Flagged, m.pinned);
-    let in_junk = app.session.mailbox.folder(m.folder).is_some_and(|f| f.kind == FolderKind::Junk);
     resp.context_menu(|ui| {
         ui.set_min_width(200.0);
         use crate::widgets::mi;
@@ -1152,6 +1178,7 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         mi(ui, app, "Reply", "mail.reply", json!({}));
         mi(ui, app, "Reply All", "mail.replyAll", json!({}));
         mi(ui, app, "Forward", "mail.forward", json!({}));
+        mi(ui, app, "Forward as Attachment", "mail.forwardAsAttachment", json!({}));
         // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs).
         if app.services.share.is_some() {
             mi(ui, app, "Share in Synk", crate::host_share::COMMAND, json!({}));
@@ -1184,11 +1211,7 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
             });
         });
         mi(ui, app, "Archive", "mail.archive", json!({}));
-        if in_junk {
-            mi(ui, app, "Not Junk", "mail.notJunk", json!({}));
-        } else {
-            mi(ui, app, "Junk", "mail.junk", json!({}));
-        }
+        ui.menu_button(tl!("Junk"), |ui| crate::ribbon::junk_menu(ui, app));
         mi(ui, app, "Delete", "mail.delete", json!({}));
         ui.separator();
         mi(ui, app, "Add to Tasks", "tasks.fromMessage", json!({}));
@@ -1200,7 +1223,13 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
 }
 
 #[cfg(test)]
+mod focus_stays_tests;
+#[cfg(test)]
+mod forward_attachment_tests;
+#[cfg(test)]
 mod from_sender_menu_tests;
+#[cfg(test)]
+mod hidden_selection_tests;
 #[cfg(test)]
 mod overlay_scroll_tests;
 

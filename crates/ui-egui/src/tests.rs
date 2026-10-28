@@ -73,7 +73,11 @@ fn writing_brings_up_the_message_tab_and_errors_reach_the_status_bar() {
     a.run("compose.set", json!({"to": "not an address"})).unwrap();
     let e = a.run("compose.send", json!({})).unwrap_err();
     assert_eq!(a.status_msg.as_ref().map(|(m, _)| m.as_str()), Some(e.as_str()));
-    a.run("compose.close", json!({})).unwrap();
+    // Changed, it asks first (#442); let go of, it closes.
+    assert_eq!(a.run("compose.close", json!({})).unwrap()["pending"], "discardDraft");
+    a.dialog = None;
+    crate::dialogs::leave_message(&mut a, "discard", "compose.close", json!({}));
+    assert!(a.session.compose.is_none());
     assert_eq!(a.ui.tab, "Home");
     assert!(a.run("ui.tab", json!({"tab": "Message"})).is_err());
     assert!(a.run("ui.tab", json!({"tab": "View"})).is_ok());
@@ -1463,18 +1467,15 @@ fn deleting_a_contact_is_asked_about_first() {
 /// arrows mark another, and typing carries on after it.
 #[test]
 fn recipients_are_suggested_as_they_are_typed() {
-    use crate::compose::{completed, typing};
+    use crate::compose::completed;
     use mailcraft_engine::cmd::compose::{Suggestion, suggest};
 
-    // The pieces.
-    assert_eq!(typing("Maya <maya@lumen.example>; pri"), ("Maya <maya@lumen.example>;", "pri"));
-    assert_eq!(typing("pri"), ("", "pri"));
-    assert_eq!(typing("a@b.example,"), ("a@b.example,", ""));
+    // The pieces: what takes the place of the name being typed.
     let who = |name: &str, email: &str| Suggestion { name: name.into(), email: email.into(), contact: true };
-    assert_eq!(completed("pri", &who("Priya Nair", "priya@lumen.example")), "Priya Nair <priya@lumen.example>; ");
-    assert_eq!(completed("a@b.example; x", &who("", "x@y.example")), "a@b.example; x@y.example; ");
-    assert_eq!(completed("x", &who("Nair, Priya", "priya@lumen.example")), "\"Nair, Priya\" <priya@lumen.example>; ");
-    assert_eq!(completed("x", &who("Evil\" <evil@x.example>\r\n", "priya@lumen.example")), "Evil evil@x.example <priya@lumen.example>; ");
+    assert_eq!(completed(true, &who("Priya Nair", "priya@lumen.example")), "Priya Nair <priya@lumen.example>; ");
+    assert_eq!(completed(false, &who("", "x@y.example")), " x@y.example; ");
+    assert_eq!(completed(true, &who("Nair, Priya", "priya@lumen.example")), "\"Nair, Priya\" <priya@lumen.example>; ");
+    assert_eq!(completed(true, &who("Evil\" <evil@x.example>\r\n", "priya@lumen.example")), "Evil evil@x.example <priya@lumen.example>; ");
 
     // The engine's answer: contacts by any word of the name or the address, then people mail was
     // exchanged with, never the owner, never twice.
@@ -2300,4 +2301,40 @@ fn signature_picture_over_the_total_is_refused_on_the_page() {
     }
     assert!(refused);
     assert!(total(&a) <= MAX_PICTURES_BYTES);
+}
+
+/// File › Signatures › Rename: Enter keeps the new name, and a click elsewhere lets go of the
+/// field without renaming.
+#[test]
+fn renaming_a_signature_keeps_the_name_and_lets_go_of_the_keyboard() {
+    use egui_kittest::kittest::Queryable as _;
+    let key = |h: &mut egui_kittest::Harness<'static, MailApp>, key: egui::Key| {
+        for pressed in [true, false] {
+            h.event(egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE });
+        }
+        h.run_steps(3);
+    };
+    let mut harness = window(signature_app());
+    harness.state_mut().execute("ui.dismissReminder", json!({"all": true})).unwrap();
+    harness.state_mut().execute("ui.backstage", json!({"value": true, "page": "signatures"})).unwrap();
+    harness.run_steps(3);
+    harness.get_by_label("Rename").click();
+    harness.run_steps(3);
+    key(&mut harness, egui::Key::End);
+    harness.event(egui::Event::Text(" at work".into()));
+    harness.run_steps(3);
+    key(&mut harness, egui::Key::Enter);
+    let m = &harness.state().session.mailbox;
+    assert!(m.signature("Mine at work").is_some() && m.signature("Mine").is_none(), "Enter didn't rename it");
+    assert!(harness.ctx.memory(|m| m.focused()).is_none(), "the field kept the keyboard");
+
+    // Rename again, then click away: the name stays, and the field is gone.
+    harness.get_by_label("Rename").click();
+    harness.run_steps(3);
+    harness.event(egui::Event::Text("x".into()));
+    harness.run_steps(3);
+    harness.get_by_label("New").click();
+    harness.run_steps(3);
+    assert!(harness.state().session.mailbox.signature("Mine at work").is_some());
+    assert!(harness.ctx.memory(|m| m.focused()).is_none(), "the field kept the keyboard after a click away");
 }

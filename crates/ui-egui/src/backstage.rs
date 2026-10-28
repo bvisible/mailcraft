@@ -243,6 +243,31 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             });
             ui.add_space(4.0);
         }
+        // Where keeping the tasks in step with Microsoft To Do stands, with a way to ask again (#248).
+        if let Some((line, again)) = app.tasks_line(a.id) {
+            ui.horizontal(|ui| {
+                ui.add_space(36.0);
+                ui.label(egui::RichText::new(line).font(regular(11.5)).color(t.text_dim));
+                let tip = tl!(
+                    "Ask for permission to read and change your To Do lists and tasks: Microsoft's page opens in your browser. Without it, tasks stay on this computer."
+                );
+                if again && ui.link(tl!("Ask again")).on_hover_text(tip).clicked() {
+                    app.ask_tasks_again(a.id);
+                }
+            });
+            if let Some((line, _)) = app.local_tasks_line().filter(|_| app.tasks_working_first() == Some(a.id)) {
+                ui.horizontal(|ui| {
+                    ui.add_space(36.0);
+                    ui.label(egui::RichText::new(line).font(regular(11.5)).color(t.text_dim));
+                    let tip = tl!("Choose whether these tasks are sent to a Microsoft account's To Do. Nothing is sent unless you say so.");
+                    if ui.link(tl!("Send to To Do…")).on_hover_text(tip).clicked() {
+                        app.ui.backstage = false;
+                        app.offer_local_tasks();
+                    }
+                });
+            }
+            ui.add_space(4.0);
+        }
         // Which messages are kept whole on this computer (R3.2); a shared mailbox keeps as much
         // as its owner's account (#70).
         if a.kind == AccountKind::Microsoft && !a.is_shared() {
@@ -369,6 +394,10 @@ fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     } else if tile(ui, "import", tl!("Import"), tl!("Messages (.eml, .mbox), calendars (.ics) and contacts (.vcf)"), t) {
         let _ = app.run("ui.import", json!({}));
     }
+    if tile(ui, "import", tl!("Import a Folder of Mailboxes"), tl!("Every mbox file under a folder, keeping its subfolders, into one new folder"), t)
+    {
+        let _ = app.run("file.importFolderTree", json!({}));
+    }
     if tile(ui, "open", tl!("Open Mailbox File"), tl!("Replace what is open with a .mailcraft file"), t) {
         let _ = app.run("ui.open", json!({}));
     }
@@ -410,8 +439,8 @@ fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         section(ui, tl!("Recent"), t);
         for path in app.ui.recent.clone() {
             if ui.link(path.as_str()).clicked() {
+                // (File closes once it is open.)
                 let _ = app.run("file.open", json!({"path": path}));
-                app.ui.backstage = false;
             }
         }
     }
@@ -538,7 +567,7 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         let mut id = app.ui.microsoft_client_id.clone();
         let hint = if built_in { tl!("The one this build came with") } else { tl!("Needed for Outlook.com and Microsoft 365 accounts") };
         let edit = egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0);
-        if ui.add(edit).changed() {
+        if crate::text_menu::field(ui.add(edit)).changed() {
             let _ = app.execute("ui.microsoftClientId", json!({"value": id.trim()}));
         }
     });
@@ -634,7 +663,7 @@ fn time_zones(app: &mut MailApp, ui: &mut Ui, prefs: &mailcraft_engine::Prefs) {
     let label = |ui: &mut Ui, text: &str| {
         let mut text = text.to_string();
         let field = egui::TextEdit::singleline(&mut text).hint_text(tl!("Label")).desired_width(80.0).char_limit(24);
-        ui.add(field).changed().then_some(text)
+        crate::text_menu::field(ui.add(field)).changed().then_some(text)
     };
     let follows = Zone::named(&prefs.time_zone).is_none();
     row(ui, tl!("Time zone"), |ui| {

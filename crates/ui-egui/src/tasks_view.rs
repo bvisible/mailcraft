@@ -244,12 +244,11 @@ fn keyboard(app: &mut MailApp, ui: &Ui, layout: &Layout<Heading>) {
         return;
     }
     let none = egui::Modifiers::NONE;
-    let (down, up, space, enter) = ui.input_mut(|i| {
+    let (down, up, space) = ui.input_mut(|i| {
         (
             i.count_and_consume_key(none, egui::Key::ArrowDown),
             i.count_and_consume_key(none, egui::Key::ArrowUp),
             i.consume_key(none, egui::Key::Space),
-            i.consume_key(none, egui::Key::Enter),
         )
     });
     let step = down.min(1000) as i64 - up.min(1000) as i64;
@@ -267,7 +266,9 @@ fn keyboard(app: &mut MailApp, ui: &Ui, layout: &Layout<Heading>) {
     if space && app.session.sel.task.is_some() {
         let _ = app.run("tasks.complete", json!({}));
     }
-    if enter && app.session.sel.task.is_some() {
+    // Only a new press that is the main window's: not the repeats of an Enter that closed a dialog
+    // (#406).
+    if app.session.sel.task.is_some() && crate::keys::take_enter_alone(ui.ctx(), ui.layer_id()) {
         let _ = app.run("tasks.edit", json!({}));
     }
 }
@@ -395,9 +396,10 @@ fn quick_add(app: &mut MailApp, ui: &mut Ui) {
         .min_size(vec2(0.0, edit_rect.height()))
         .align(egui::Align2::LEFT_CENTER);
     // In a child of its own, so the field doesn't move what is laid out after this row.
-    let resp = ui.new_child(egui::UiBuilder::new().max_rect(edit_rect)).add(edit);
+    let resp = crate::text_menu::field(ui.new_child(egui::UiBuilder::new().max_rect(edit_rect)).add(edit));
     // Enter and Escape both take the keyboard away from the field: Enter adds, Escape gives up.
-    let (enter, escape) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+    // (Each is the window's whose they are, #406.)
+    let (enter, escape) = (crate::keys::enter(ui.ctx(), ui.layer_id()), crate::keys::escape(ui.ctx(), ui.layer_id()));
     if resp.lost_focus() && enter {
         let title = text.trim().to_string();
         if title.is_empty() {
@@ -657,9 +659,10 @@ fn details(app: &mut MailApp, ui: &mut Ui, task: &Task) {
                 ui.add(egui::Label::new(RichText::new(subject).font(regular(12.5)).color(t.text)).truncate());
                 ui.add(egui::Label::new(RichText::new(from).font(regular(11.5)).color(t.text_dim)).truncate());
                 ui.add_space(4.0);
-                if widgets::icon_text_button(ui, "mail", tl!("Open the message"), true).clicked() {
-                    let _ = app.run("mail.select", json!({"id": m.id}));
-                    let _ = app.run("view.mail", json!({}));
+                let open = widgets::icon_text_button(ui, "mail", tl!("Open the message"), true);
+                app.hit.add("openTaskMessage", m.id, open.rect);
+                if open.clicked() {
+                    app.open_in_mail(m.id);
                 }
             }
         });

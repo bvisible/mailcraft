@@ -3,7 +3,7 @@
 //! The message list: which messages show for the folder, filter and search in view, in what
 //! order, under which group headings.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use mailcraft_model::search::Query;
 use mailcraft_model::{FlagStatus, FolderKind, Id, Importance, Message};
@@ -105,19 +105,36 @@ pub fn rows(s: &Session) -> Vec<Row> {
     rows_with(s, &HashMap::new(), &HashMap::new())
 }
 
-/// Which messages the list looks at: those of the folder in view, or, for a search of every
-/// mailbox, every message but those in Deleted Items, Junk E-mail and their subfolders.
-pub(crate) fn in_view(s: &Session) -> impl Fn(&Message) -> bool + '_ {
+/// Which messages the list looks at: those of the folder in view; for a search of its
+/// subfolders, those of the folder and every folder under it; for a search of the mailbox in
+/// view, those of every folder of its account; for a search of every mailbox, every message. A
+/// search of the mailbox or of every mailbox leaves out Deleted Items, Junk E-mail and their
+/// subfolders (#493).
+pub fn in_view(s: &Session) -> impl Fn(&Message) -> bool + '_ {
     let mb = &s.mailbox;
-    let everywhere = !Query::parse(&s.view.search).is_empty() && s.view.scope == Scope::Everywhere;
-    // Deleted and junk mail stays out of a search of everything.
-    let hidden: std::collections::HashSet<Id> = if everywhere {
-        mb.folders.iter().filter(|f| matches!(f.kind, FolderKind::Deleted | FolderKind::Junk)).flat_map(|f| mb.subtree(f.id)).collect()
-    } else {
-        Default::default()
-    };
     let folder = s.view.folder;
-    move |m: &Message| if everywhere { !hidden.contains(&m.folder) } else { m.folder == folder }
+    let scope = if Query::parse(&s.view.search).is_empty() { Scope::Folder } else { s.view.scope };
+    // Deleted and junk mail stays out of a search of a whole mailbox (`account`) or of all.
+    let hidden = |account: Option<Id>| -> HashSet<Id> {
+        mb.folders
+            .iter()
+            .filter(|f| account.is_none_or(|a| f.account == a) && matches!(f.kind, FolderKind::Deleted | FolderKind::Junk))
+            .flat_map(|f| mb.subtree(f.id))
+            .collect()
+    };
+    // The folders looked in, or (for every mailbox) the folders left out.
+    let (everywhere, folders): (bool, HashSet<Id>) = match scope {
+        Scope::Folder => (false, HashSet::from([folder])),
+        Scope::Subfolders => (false, mb.subtree(folder).into_iter().collect()),
+        Scope::Mailbox => {
+            let account = mb.folder(folder).map(|f| f.account);
+            let hidden = hidden(account);
+            let of_account = mb.folders.iter().filter(|f| account == Some(f.account) && !hidden.contains(&f.id));
+            (false, of_account.map(|f| f.id).collect())
+        }
+        Scope::Everywhere => (true, hidden(None)),
+    };
+    move |m: &Message| folders.contains(&m.folder) != everywhere
 }
 
 /// [`rows`], for a search answered in part already: `decided` says whether each message the word
@@ -125,28 +142,65 @@ pub(crate) fn in_view(s: &Session) -> impl Fn(&Message) -> bool + '_ {
 /// was brought in and let go of again while the search ran did (`Session::load_bodies_for_search`),
 /// which a body named only can no longer say.
 pub fn rows_with(s: &Session, decided: &HashMap<Id, bool>, searched: &HashMap<Id, bool>) -> Vec<Row> {
-    let mb = &s.mailbox;
-    let query = Query::parse(&s.view.search);
+    listing(s, decided, searched).0
+}
+
+/// The addresses of the owner's accounts, for To Me.
+fn me(s: &Session) -> Vec<&str> {
+    s.mailbox.accounts.iter().map(|a| a.email.as_str()).filter(|e| !e.is_empty()).collect()
+}
+
+/// Whether `m` matches the filter in view (All, Unread, Flagged…); `me` as from [`me`].
+fn filtered(s: &Session, m: &Message, me: &[&str]) -> bool {
+    match s.view.filter {
+        Filter::All => true,
+        Filter::Unread => !m.read,
+        Filter::Flagged => m.flag == FlagStatus::Flagged,
+        Filter::Attachments => m.has_attachments(),
+        Filter::ToMe => m.to.iter().any(|a| me.iter().any(|e| a.email.eq_ignore_ascii_case(e))),
+    }
+}
+
+/// Of `ids`, those the list in view lists now, without building it (#428): in the folder in view,
+/// and matching the filter or kept. For a list with no search: what a search finds, only the
+/// list can say.
+pub(crate) fn lists(s: &Session, ids: &[Id]) -> std::collections::HashSet<Id> {
     let in_view = in_view(s);
-    let me: Vec<&str> = mb.accounts.iter().map(|a| a.email.as_str()).filter(|e| !e.is_empty()).collect();
+    let me = me(s);
+    let kept = s.kept();
+    let shows = |m: &Message| in_view(m) && (filtered(s, m, &me) || kept.as_ref().is_some_and(|kept| kept.contains(&m.id)));
+    ids.iter().copied().filter(|id| s.mailbox.message(*id).is_some_and(shows)).collect()
+}
+
+/// [`rows_with`], and the messages the rows list only because they are selected (#428): they were
+/// in this list when they were selected and no longer match the filter or the search.
+pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashMap<Id, bool>) -> (Vec<Row>, Vec<Id>) {
+    let mb = &s.mailbox;
+    let query = s.search_query();
+    let in_view = in_view(s);
+    let me = me(s);
+    let kept = s.kept();
+    let mut kept_only = Vec::new();
     let mut shown: Vec<&Message> = mb
         .messages
         .values()
         .map(|m| m.as_ref())
         .filter(|m| in_view(m))
-        .filter(|m| match s.view.filter {
-            Filter::All => true,
-            Filter::Unread => !m.read,
-            Filter::Flagged => m.flag == FlagStatus::Flagged,
-            Filter::Attachments => m.has_attachments(),
-            Filter::ToMe => m.to.iter().any(|a| me.iter().any(|e| a.email.eq_ignore_ascii_case(e))),
-        })
         .filter(|m| {
-            query.is_empty()
-                || match decided.get(&m.id).or_else(|| searched.get(&m.id).filter(|_| m.body_is_kept())) {
-                    Some(hit) => *hit,
-                    None => query.matches(m, s.offset_at(m.date)),
-                }
+            let hit = filtered(s, m, &me)
+                && (query.is_empty()
+                    || match decided.get(&m.id).or_else(|| searched.get(&m.id).filter(|_| m.body_is_kept())) {
+                        Some(hit) => *hit,
+                        None => query.matches_in(m, |at| s.offset_at(at)),
+                    });
+            // A selected message stays while it is selected, though it was read or its flag was
+            // cleared; `in_view` above still applies, so one deleted, or moved out of the folder in
+            // view, is gone.
+            if !hit && kept.as_ref().is_some_and(|kept| kept.contains(&m.id)) {
+                kept_only.push(m.id);
+                return true;
+            }
+            hit
         })
         .collect();
 
@@ -172,7 +226,7 @@ pub fn rows_with(s: &Session, decided: &HashMap<Id, bool>, searched: &HashMap<Id
     });
 
     if s.view.sort == SortBy::Categories {
-        return by_category(s, &shown, desc);
+        return (by_category(s, &shown, desc), kept_only);
     }
 
     let mut out: Vec<Row> = Vec::new();
@@ -213,7 +267,7 @@ pub fn rows_with(s: &Session, decided: &HashMap<Id, bool>, searched: &HashMap<Id
             last = label;
         }
     }
-    out
+    (out, kept_only)
 }
 
 /// The list arranged by categories, as Outlook arranges it: a message is listed under each of its

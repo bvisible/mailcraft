@@ -6,17 +6,21 @@ use mailcraft_model::{FlagStatus, FolderKind, Id, Rgb};
 use serde_json::{Value, json};
 
 use super::{bad, deliver, done, fail, message_json, message_summary, needs_message, needs_movable, select_after_removal, targets};
-use crate::list::{listed, position, position_of};
+use crate::list::{Row, listed, position, position_of};
 use crate::{CmdResult, CommandSpec, Session, p};
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         CommandSpec::new("mail.select", "Select Message", "Mail", select)
             .pure()
-            .params(r#"{"id": number} | {"ids": [number]}, "extend"?: bool (add to the selection), "range"?: bool (select up to it), "copy"?: number (which of its rows, arranged by categories)"#),
+            .params(r#"{"id": number} | {"ids": [number]}, "extend"?: bool (add to the selection), "range"?: bool (select up to it), "copy"?: number (which of its rows, arranged by categories), "elsewhere"?: bool (opened from outside the list, as from a task: shown in its folder, in the All tab, with no search)"#),
         CommandSpec::new("mail.selectAll", "Select All", "Folder › Actions", select_all).pure().key("Mod+A"),
-        CommandSpec::new("mail.next", "Next Message", "Mail", next).pure().key("ArrowDown"),
-        CommandSpec::new("mail.previous", "Previous Message", "Mail", previous).pure().key("ArrowUp"),
+        CommandSpec::new("mail.next", "Next Message", "Mail", next).pure().key("ArrowDown / Shift+ArrowDown").params(EXTEND),
+        CommandSpec::new("mail.previous", "Previous Message", "Mail", previous).pure().key("ArrowUp / Shift+ArrowUp").params(EXTEND),
+        CommandSpec::new("mail.first", "First Message", "Mail", first).pure().key("Home / Shift+Home").params(EXTEND),
+        CommandSpec::new("mail.last", "Last Message", "Mail", last).pure().key("End / Shift+End").params(EXTEND),
+        CommandSpec::new("mail.pageDown", "Page Down", "Mail", page_down).pure().key("PageDown / Shift+PageDown").params(PAGE),
+        CommandSpec::new("mail.pageUp", "Page Up", "Mail", page_up).pure().key("PageUp / Shift+PageUp").params(PAGE),
         CommandSpec::new("mail.get", "Get Message", "Mail", get).pure().params(r#"{"id"?: number} (default: the selected message)"#),
         CommandSpec::new("mail.list", "List Messages", "Mail", list).pure().params(r#"{"limit"?: number} — the message list in view"#),
         CommandSpec::new("mail.delete", "Delete", "Home › Delete", delete).key("Delete / Mod+D").params(IDS).selection(needs_movable),
@@ -52,7 +56,10 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("mail.pin", "Pin", "Home › Tags", pin)
             .params(r#"{"value"?: bool (default: toggle), "ids"?: [number]}"#)
             .selection(needs_message),
-        CommandSpec::new("mail.junk", "Block Sender", "Home › Delete", junk).params(IDS).selection(needs_movable),
+        CommandSpec::new("mail.dismissWarnings", "Dismiss Warnings", "Reading Pane", dismiss_warnings)
+            .params(r#"{"ids"?: [number], "value"?: bool (default true; false shows the banner again)} — hides the sender-warning banner of a message (#508), until a new kind of warning appears. Never for an agent"#)
+            .selection(needs_message),
+        CommandSpec::new("mail.junk", "Move to Junk", "Home › Delete", junk).params(IDS).selection(needs_movable),
         CommandSpec::new("mail.notJunk", "Not Junk", "Home › Delete", not_junk).key("Mod+Alt+J").params(IDS).selection(needs_movable),
         CommandSpec::new("mail.findRelated", "Find Related Messages", "Home › Find", find_related).pure().selection(needs_message),
         CommandSpec::new("mail.findFromSender", "Messages from Sender", "Home › Find", find_from_sender)
@@ -76,6 +83,13 @@ pub fn specs() -> Vec<CommandSpec> {
 }
 
 const IDS: &str = r#"{"ids"?: [number]} (default: the selected messages)"#;
+const EXTEND: &str = r#"{"extend"?: bool} — with `extend` (Shift), the selection runs from its anchor to the message moved to, as Shift-click does"#;
+const PAGE: &str = r#"{"rows"?: number (the rows a page of the list holds; default 10, 1 to 10000), "extend"?: bool} — with `extend` (Shift), the selection runs from its anchor to the message moved to"#;
+
+/// The rows a page is when the caller doesn't say (the window says how many fit).
+const PAGE_ROWS: u64 = 10;
+/// The most a page may be, whatever a caller says.
+const MAX_PAGE_ROWS: u64 = 10_000;
 
 fn select(s: &mut Session, v: &Value) -> CmdResult {
     let ids = p::ids(v).ok_or_else(|| bad("`id` or `ids` is required"))?;
@@ -83,25 +97,24 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         return Err(failed!("no message with id {id}", id = missing));
     }
     let Some(last) = ids.last().copied() else {
-        s.sel.messages.clear();
+        s.sel.clear_messages();
         return done();
     };
     // Which of the message's rows was clicked, for one listed under several categories.
     let copy = p::u64(v, "copy").and_then(|c| u16::try_from(c).ok()).unwrap_or(0);
+    // A Ctrl+click or a Shift+click adds to what the list shows selected, never to a message it
+    // doesn't show (#485).
+    if p::bool(v, "range") == Some(true) || p::bool(v, "extend") == Some(true) {
+        let before = s.sel.messages.clone();
+        let shown = s.in_list(&before);
+        s.sel.messages.retain(|id| shown.contains(id));
+    }
     if p::bool(v, "range") == Some(true) {
         // From the anchor (the first selected message) to this one, in list order.
         let rows = s.rows();
-        let anchor = s.sel.messages.first().copied().unwrap_or(last);
-        if let (Some(a), Some(b)) = (position_of(&rows, anchor, s.sel.anchor_copy(anchor)), position_of(&rows, last, copy)) {
-            let (lo, hi) = (a.min(b), a.max(b));
-            let mut seen = std::collections::HashSet::new();
-            let mut picked: Vec<Id> =
-                rows.iter().skip(lo).take(hi - lo + 1).map(|r| r.id).filter(|id| *id != anchor && *id != last && seen.insert(*id)).collect();
-            picked.insert(0, anchor);
-            if last != anchor {
-                picked.push(last);
-            }
-            s.sel.messages = picked;
+        let (anchor, anchor_copy) = range_anchor(s).unwrap_or((last, 0));
+        if let (Some(a), Some(b)) = (position_of(&rows, anchor, anchor_copy), position_of(&rows, last, copy)) {
+            s.sel.messages = span(&rows, anchor, a, last, b);
         }
     } else if p::bool(v, "extend") == Some(true) {
         for id in ids {
@@ -128,6 +141,18 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
     {
         s.view.folder = m.folder;
     }
+    // Opened from a task, a contact or an alert (`elsewhere`): in its folder, in the All tab and
+    // with no search, always (#485).
+    if let Some(folder) = s.focused_message().map(|m| m.folder)
+        && p::bool(v, "elsewhere") == Some(true)
+    {
+        s.view.folder = folder;
+        s.show_whole_folder();
+    }
+    // What is selected is in the list (#485), and stays in it while it is selected (#428): opened
+    // from outside it (a conversation in the reading pane, an agent), in its folder, in the All
+    // tab and with no search, when the list doesn't show it there.
+    s.show_selected();
     mark_opened(s);
     Ok(json!({"selected": s.sel.messages}))
 }
@@ -153,34 +178,104 @@ fn select_all(s: &mut Session, _: &Value) -> CmdResult {
     // The message in the reading pane stays the focus.
     ids.extend(focus.filter(|f| position(&rows, *f).is_some()));
     s.sel.messages = ids;
+    s.keep_selected(&rows);
     Ok(json!({"selected": s.sel.messages.len()}))
 }
 
-fn step(s: &mut Session, by: i64) -> CmdResult {
-    let rows = s.rows();
-    if rows.is_empty() {
-        return done();
+/// Where a range runs from: the anchor's row while its message is still selected, else the first
+/// selected message.
+fn range_anchor(s: &Session) -> Option<(Id, u16)> {
+    s.sel.anchor_row.filter(|(id, _)| s.sel.messages.contains(id)).or_else(|| s.sel.messages.first().map(|id| (*id, s.sel.anchor_copy(*id))))
+}
+
+/// The messages of rows `a` (the anchor's) to `b` (the focus's), in list order, each once (a
+/// message listed under several categories has several rows, #327): the anchor first and the
+/// focus last, so that the reading pane shows the focus.
+fn span(rows: &[Row], anchor: Id, a: usize, focus: Id, b: usize) -> Vec<Id> {
+    let (lo, hi) = (a.min(b), a.max(b));
+    let mut seen = std::collections::HashSet::new();
+    let mut picked: Vec<Id> =
+        rows.iter().skip(lo).take((hi - lo).saturating_add(1)).map(|r| r.id).filter(|id| *id != anchor && *id != focus && seen.insert(*id)).collect();
+    if focus != anchor {
+        picked.insert(0, anchor);
     }
-    let at = s.sel.focus().and_then(|id| position_of(&rows, id, s.sel.focus_copy()));
-    let i = match at {
-        Some(i) => (i as i64).saturating_add(by).clamp(0, rows.len() as i64 - 1) as usize,
-        None if by >= 0 => 0,
-        None => rows.len() - 1,
-    };
-    if let Some(row) = rows.get(i) {
-        s.sel.messages = vec![row.id];
-        s.sel.focus_row = Some((row.id, row.copy));
+    picked.push(focus);
+    picked
+}
+
+/// Moves the focus to row `i` of the list. With `extend` (Shift), the selection runs from the
+/// anchor, which stays where it is (so going back makes the range smaller), to it; otherwise it
+/// is that one message, which the next range runs from.
+fn land(s: &mut Session, rows: &[Row], i: usize, extend: bool) -> CmdResult {
+    let Some(row) = rows.get(i) else { return done() };
+    let anchor = if extend { range_anchor(s) } else { None };
+    match anchor.and_then(|(id, copy)| Some((id, copy, position_of(rows, id, copy)?))) {
+        Some((id, copy, at)) => {
+            s.sel.messages = span(rows, id, at, row.id, i);
+            s.sel.anchor_row = Some((id, copy));
+        }
+        None => {
+            s.sel.messages = vec![row.id];
+            s.sel.anchor_row = Some((row.id, row.copy));
+        }
     }
+    s.sel.focus_row = Some((row.id, row.copy));
+    s.keep_selected(rows);
     mark_opened(s);
     Ok(json!({"selected": s.sel.messages}))
 }
 
-fn next(s: &mut Session, _: &Value) -> CmdResult {
-    step(s, 1)
+fn extend(v: &Value) -> bool {
+    p::bool(v, "extend") == Some(true)
 }
 
-fn previous(s: &mut Session, _: &Value) -> CmdResult {
-    step(s, -1)
+/// Moves the focus `by` rows, clamped to the list; from no focus, down starts at the first row
+/// and up at the last.
+fn step(s: &mut Session, by: i64, v: &Value) -> CmdResult {
+    let rows = s.rows();
+    let Some(end) = rows.len().checked_sub(1) else { return done() };
+    let at = s.sel.focus().and_then(|id| position_of(&rows, id, s.sel.focus_copy()));
+    let i = match at {
+        Some(i) => {
+            let to = i64::try_from(i).unwrap_or(i64::MAX).saturating_add(by).max(0);
+            usize::try_from(to).unwrap_or(end).min(end)
+        }
+        None if by >= 0 => 0,
+        None => end,
+    };
+    land(s, &rows, i, extend(v))
+}
+
+fn next(s: &mut Session, v: &Value) -> CmdResult {
+    step(s, 1, v)
+}
+
+fn previous(s: &mut Session, v: &Value) -> CmdResult {
+    step(s, -1, v)
+}
+
+fn first(s: &mut Session, v: &Value) -> CmdResult {
+    let rows = s.rows();
+    land(s, &rows, 0, extend(v))
+}
+
+fn last(s: &mut Session, v: &Value) -> CmdResult {
+    let rows = s.rows();
+    let Some(end) = rows.len().checked_sub(1) else { return done() };
+    land(s, &rows, end, extend(v))
+}
+
+/// A page: the rows the caller says fit, clamped to 1 to 10,000.
+fn page(v: &Value) -> i64 {
+    i64::try_from(p::u64(v, "rows").unwrap_or(PAGE_ROWS).clamp(1, MAX_PAGE_ROWS)).unwrap_or(1)
+}
+
+fn page_down(s: &mut Session, v: &Value) -> CmdResult {
+    step(s, page(v), v)
+}
+
+fn page_up(s: &mut Session, v: &Value) -> CmdResult {
+    step(s, -page(v), v)
 }
 
 fn get(s: &mut Session, v: &Value) -> CmdResult {
@@ -191,8 +286,15 @@ fn get(s: &mut Session, v: &Value) -> CmdResult {
     // Its text, from where the mailbox keeps it when it isn't in memory (a text that can't be
     // read says so in its place).
     let _ = s.load_where(id, |_| false);
-    let m = s.mailbox.message(id).ok_or_else(|| failed!("no message with id {id}", id))?;
-    Ok(message_json(s, m))
+    let m = s.mailbox.messages.get(&id).cloned().ok_or_else(|| failed!("no message with id {id}", id))?;
+    // What may not be what it seems about it (sender warnings): worked out by MailCraft from the
+    // account's server's verdict, the sender and the links, never from what the message asks.
+    let warnings = s.sender_warnings(&m, true);
+    let mut v = message_json(s, &m);
+    if let Some(o) = v.as_object_mut() {
+        o.insert("warnings".into(), Value::Array(warnings.iter().map(mailcraft_model::sender_warnings::Warning::json).collect()));
+    }
+    Ok(v)
 }
 
 fn list(s: &mut Session, v: &Value) -> CmdResult {
@@ -407,6 +509,23 @@ fn pin(s: &mut Session, v: &Value) -> CmdResult {
     let all_pinned = ids.iter().filter_map(|id| s.mailbox.message(*id)).all(|m| m.pinned);
     let on = p::bool(v, "value").unwrap_or(!all_pinned);
     each(s, v, |m| m.pinned = on)
+}
+
+/// Hides (or shows again) the banner of sender warnings of each message (#508), remembering the
+/// kinds it held; a kind that comes later shows it again.
+fn dismiss_warnings(s: &mut Session, v: &Value) -> CmdResult {
+    let ids = targets(s, v)?;
+    let on = p::bool(v, "value").unwrap_or(true);
+    let mut changed = 0;
+    for id in ids.iter().take(1_000) {
+        let Some(old) = s.mailbox.message(*id).cloned() else { continue };
+        let kinds = if on { mailcraft_model::sender_warnings::kinds(&s.sender_warnings(&old, true)) } else { Vec::new() };
+        if old.warnings_dismissed != kinds {
+            s.mailbox.message_mut(*id)?.warnings_dismissed = kinds;
+            changed += 1;
+        }
+    }
+    Ok(json!({"changed": changed}))
 }
 
 fn find_related(s: &mut Session, _: &Value) -> CmdResult {
