@@ -44,6 +44,9 @@ mod fetch_rules;
 // that it is tested natively.
 mod hosted;
 mod jmap_services;
+// //// Neoffice — what a hosting page's window keeps on its server between two visits: its rules, its categories and
+// each mailbox's Safe and Blocked Senders (maintenance#1956; built everywhere, so that it is tested natively).
+mod kept;
 // //// Neoffice — how the browser build reaches Nora, the assistant of the Neoffice server, and where her calls may go
 // (both built everywhere, so that their rules are tested natively).
 mod nora;

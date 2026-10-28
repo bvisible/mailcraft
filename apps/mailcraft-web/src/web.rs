@@ -192,7 +192,10 @@ impl eframe::App for WebShell {
         crate::hosted::leave::set(self.app.notes_unsent());
         // //// Neoffice — a hosting page's window tells the page that frames it whether closing it now would lose work (host_dirty.rs).
         if !self.app.session.keeps_local {
-            crate::host_dirty::tell(self.app.unsent_work());
+            // //// Neoffice — and what it keeps on its server between two visits is put, and written when it changes; a change
+            // //// Neoffice — that waits to be written is work that leaving would lose (kept.rs).
+            crate::kept::frame(&mut self.app);
+            crate::host_dirty::tell(self.app.unsent_work() || crate::kept::pending());
         }
         // //// Neoffice — a page that draws the navigation in its own menu is told where the window is, and its menu's commands are run (host_menu.rs).
         // //// Neoffice — and for modules the page draws itself (host_modules.rs of the window), whose messages it hears.
@@ -366,6 +369,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     // //// Neoffice — File › Signatures links to where the page's site writes these mailboxes' signatures (hosted_signatures.rs of the window).
     services.signatures_home = crate::host::signatures();
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
+    // //// Neoffice — the rules, categories and lists these mailboxes' server keeps are read now, and put when they come (kept.rs).
+    crate::kept::start(accounts, credentials.clone(), ctx.clone());
     let gate = crate::jmap_services::Gate::default();
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs); each mailbox by the name of the server's account for it, which is not its address once that changed.
     if let Some(nora) = &mut services.nora {
