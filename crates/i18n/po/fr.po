@@ -691,7 +691,7 @@ msgid "Accounts"
 msgstr "Comptes"
 
 #. ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/stream.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Actions"
 msgstr "Actions"
@@ -1302,7 +1302,7 @@ msgid "April"
 msgstr "avril"
 
 #. command label, interface, name, ribbon
-#: crates/engine/src/cmd/mail.rs crates/model/src/mailbox.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/mail.rs crates/model/src/mailbox.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/stream_tabs.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Archive"
 msgstr "Archiver"
@@ -1311,6 +1311,16 @@ msgstr "Archiver"
 #: crates/engine/src/cmd/notes.rs
 msgid "Archive Note"
 msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Archive all ({count})"
+msgstr "Tout archiver ({count})"
+
+#. interface
+#: crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Archive {count} messages?"
+msgstr "Archiver {count} messages ?"
 
 #. interface
 #: crates/ui-egui/src/notes_view.rs
@@ -1798,7 +1808,7 @@ msgid "Calibri"
 msgstr "Calibri"
 
 #. interface
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/mail_view/stream_tabs.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "Cancel"
 msgstr "Annuler"
@@ -2209,6 +2219,11 @@ msgstr "Effacer la recherche"
 #, fuzzy
 msgid "Clear search (Esc)"
 msgstr "Effacer la recherche (Échap)"
+
+#. interface
+#: crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Clear selection"
+msgstr "Tout désélectionner"
 
 #. ribbon location
 #: crates/engine/src/cmd/format.rs
@@ -3822,7 +3837,7 @@ msgid "Fold the calendars of this group away"
 msgstr "Replier les calendriers de ce groupe"
 
 #. interface, name, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/stream.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
 #, fuzzy
 msgid "Folder"
 msgstr "Dossier"
@@ -5538,6 +5553,11 @@ msgstr ""
 msgid "Mailbox"
 msgstr "Boîte aux lettres"
 
+#. interface, name
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Main"
+msgstr "Principal"
+
 #. interface
 #: crates/ui-egui/src/signatures.rs
 #, fuzzy
@@ -6340,6 +6360,11 @@ msgstr "Nouvelle règle"
 msgid "Newest on top"
 msgstr "Plus récents en haut"
 
+#. interface, name
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Newsletters"
+msgstr "Newsletters"
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -7017,6 +7042,11 @@ msgstr "Rien à faire ici."
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
 msgstr ""
+
+#. interface, name
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Notifications"
+msgstr "Notifications"
 
 #. date and time
 #: crates/i18n/src/date.rs
@@ -9075,6 +9105,11 @@ msgid "Select a note first"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/stream_tabs.rs
+msgid "Select all"
+msgstr "Tout sélectionner"
+
+#. interface
 #: crates/ui-egui/src/reading.rs
 #, fuzzy
 msgid "Select an item to read"
@@ -9402,6 +9437,11 @@ msgstr "sept."
 #, fuzzy
 msgid "September"
 msgstr "septembre"
+
+#. command label
+#: crates/engine/src/cmd/stream.rs
+msgid "Set Streams"
+msgstr "Définir les flux"
 
 #. name
 #: crates/ui-egui/src/forms.rs
@@ -16870,7 +16910,7 @@ msgid "{n} s"
 msgstr "{n} s"
 
 #. interface
-#: crates/ui-egui/src/chrome.rs
+#: crates/ui-egui/src/chrome.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 #, fuzzy
 msgid "{n} selected"
 msgid_plural "{n} selected"

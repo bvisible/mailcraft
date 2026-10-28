@@ -186,6 +186,10 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         s.view.folder = id;
         s.view.module = Module::Mail;
         s.sel.messages.clear();
+        // //// Neoffice — a tab by kind of sender is the inbox's: another folder shows all of its messages.
+        if s.view.filter.by_stream() {
+            s.view.filter = crate::Filter::All;
+        }
     }
     // A search belongs to the folder it was typed in.
     s.view.search.clear();

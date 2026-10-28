@@ -197,6 +197,10 @@ pub struct Message {
     pub importance: Importance,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<String>,
+    // //// Neoffice — which kind of sender wrote it (stream.rs): said by whoever hosts the window, never written to a server nor kept
+    // //// Neoffice — in the mailbox file; `None` is the main tab's. Upstream has no such field; nothing in upstream reads it.
+    #[serde(skip)]
+    pub stream: Option<crate::stream::Stream>,
     pub answered: bool,
     pub forwarded: bool,
     pub draft: bool,
@@ -426,6 +430,11 @@ impl Message {
 
     pub fn has_category(&self, name: &str) -> bool {
         self.categories.iter().any(|c| c.eq_ignore_ascii_case(name))
+    }
+
+    // //// Neoffice — the stream a message is listed in: what was said of it, else a person's (the main tab, never hidden).
+    pub fn stream_or_person(&self) -> crate::stream::Stream {
+        self.stream.unwrap_or(crate::stream::Stream::Person)
     }
 }
 

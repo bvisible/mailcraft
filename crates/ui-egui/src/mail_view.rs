@@ -17,6 +17,8 @@ use crate::theme::{Tokens, paint_clipped, regular, semibold};
 use crate::{MailApp, icons};
 
 mod server_rows;
+// //// Neoffice — the inbox's tabs by kind of sender, the boxes to tick messages and the bar to archive them.
+mod stream_tabs;
 
 /// What a drag out of the message list carries: the messages to file in the folder they are
 /// let go over (`nav::folder_row` takes them).
@@ -288,7 +290,7 @@ fn direction_label(sort: SortBy, descending: bool) -> &'static str {
 /// The header above the list: All and Unread as tabs on the left (the filter in use in the
 /// accent colour, with a line under it), and on the right how the list is arranged, with the
 /// arrow that turns it over. The folder's name is in the window's title and in the folder pane.
-fn list_header(app: &mut MailApp, ui: &mut Ui) {
+fn list_header(app: &mut MailApp, ui: &mut Ui, streams: Option<&mailcraft_model::StreamCounts>) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEADER_H), Sense::hover());
     let rows_end = r.max.x - lane_width(app);
@@ -338,6 +340,12 @@ fn list_header(app: &mut MailApp, ui: &mut Ui) {
         }
     });
 
+    // //// Neoffice — an inbox whose messages a server said the kind of sender of has its tabs by kind (Main, Notifications,
+    // Newsletters) in place of All and Unread, which stay in the arrangement's menu.
+    if let Some(counts) = streams {
+        stream_tabs::header_tabs(app, ui, &t, r, counts, r.min.x + TEXT_LEFT - 1.0, sr.min.x - 8.0);
+        return;
+    }
     // The tabs. A filter that has none (Flagged, Has Attachments, To Me) shows as a third one
     // while it is in use.
     let width = |f: Filter| ui.ctx().fonts_mut(|fonts| fonts.layout_no_wrap(tl!(f.label()).to_string(), regular(SENDER_TEXT), t.text).size().x);
@@ -564,9 +572,16 @@ fn search_bar(app: &mut MailApp, ui: &mut Ui, found: usize) {
 fn list(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-    list_header(app, ui);
+    // //// Neoffice — the inbox's tabs by kind of sender: counted once for the header and the rows.
+    let streams = stream_tabs::counts(app);
+    stream_tabs::say_shown(ui, streams.is_some());
+    list_header(app, ui, streams.as_ref());
     let rows = app.session.rows();
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
+    // //// Neoffice — the bar that archives what is ticked, or everything in the tab.
+    if streams.is_some() && stream_tabs::bar_shown(app, &rows) {
+        stream_tabs::bar(app, ui, &rows);
+    }
     // A search covers what is here: of a message not fetched yet, its headers and preview (R3.2).
     if !app.session.view.search.trim().is_empty() {
         let in_view = mailcraft_engine::list::in_view(&app.session);
@@ -890,6 +905,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
     let one = app.session.prefs.one_line;
     let line1 = if one { rect.center().y } else { rect.min.y + SENDER_Y };
     let line2 = if one { rect.center().y } else { rect.min.y + SUBJECT_Y };
+    // //// Neoffice — in the inbox's tabs by kind of sender a box ticks the row (what a Ctrl+click does), on top of the row.
+    let tick = stream_tabs::shown(ui).then(|| stream_tabs::row_box(ui, key, rect, line1));
     // Quick actions on the row under the pointer, at the right of the sender's line: flag (where
     // a flagged message wears its flag) and delete. Like the read switch they sit on top of the
     // row and leave the selection alone.
@@ -944,6 +961,10 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
     if selected && focus {
         // The message the keys act on has a line of dots round it.
         dotted_frame(p, body, t.text_dim);
+    }
+    // //// Neoffice — the box that ticks the row.
+    if let Some((tick_resp, at)) = &tick {
+        stream_tabs::paint_box(app, ui, &t, row.id, tick_resp, *at, selected);
     }
     let rule = if t.dark { t.border_strong } else { t.border };
     p.line_segment([pos2(body.min.x, rect.max.y - 0.5), pos2(rect.max.x, rect.max.y - 0.5)], Stroke::new(1.0, rule));
@@ -1142,6 +1163,12 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect) {
             let _ = app.run("mail.toggleFlag", json!({"ids": [row.id]}));
         }
     }
+    // //// Neoffice — a click on the box ticks or unticks the message and leaves the others as they are.
+    if let Some((tick_resp, _)) = &tick
+        && tick_resp.clicked()
+    {
+        let _ = app.run("mail.select", json!({"id": row.id, "copy": row.copy, "extend": true}));
+    }
     if read_resp.clicked() {
         // A conversation is read once all of it is; its newest message makes it unread again.
         let (command, ids) = if unread { ("mail.markRead", row.members.clone()) } else { ("mail.markUnread", vec![row.id]) };
@@ -1232,6 +1259,9 @@ mod from_sender_menu_tests;
 mod hidden_selection_tests;
 #[cfg(test)]
 mod overlay_scroll_tests;
+// //// Neoffice — tests of the inbox's tabs by kind of sender.
+#[cfg(test)]
+mod stream_tabs_tests;
 
 #[cfg(test)]
 mod tests {

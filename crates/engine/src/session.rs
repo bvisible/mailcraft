@@ -162,6 +162,11 @@ pub enum Filter {
     Flagged,
     Attachments,
     ToMe,
+    // //// Neoffice — the inbox's tabs by kind of sender (mailcraft_model::stream). They are not in `Filter::ALL`, the filters of
+    // the menus: the list's header shows them where the inbox has streams.
+    Main,
+    Notifications,
+    Newsletters,
 }
 
 impl Filter {
@@ -174,7 +179,16 @@ impl Filter {
             Filter::Flagged => "Flagged",
             Filter::Attachments => "Has Attachments",
             Filter::ToMe => "To Me",
+            // //// Neoffice — the tabs by kind of sender.
+            Filter::Main => "Main",
+            Filter::Notifications => "Notifications",
+            Filter::Newsletters => "Newsletters",
         }
+    }
+
+    // //// Neoffice — whether this is one of the inbox's tabs by kind of sender, which only an inbox with streams has.
+    pub const fn by_stream(self) -> bool {
+        matches!(self, Filter::Main | Filter::Notifications | Filter::Newsletters)
     }
 }
 

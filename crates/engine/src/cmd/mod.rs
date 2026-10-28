@@ -12,6 +12,7 @@ pub mod calendar_extra;
 pub mod calendar_opened;
 pub mod calendar_settings;
 pub mod category;
+// //// Neoffice — the kind of sender of messages, for the inbox's tabs.
 pub mod compose;
 #[cfg(test)]
 mod compose_trust_tests;
@@ -40,6 +41,7 @@ pub mod graph_place;
 pub mod graph_send;
 pub mod graph_switch;
 pub mod graph_up;
+pub mod stream;
 // //// Neoffice — upstream's `jmap_down` and `jmap_mail` (M6 3/6) are the fork's own files, declared below with the rest of the fork's JMAP run.
 #[cfg(test)]
 mod hidden_selection_tests;
@@ -55,6 +57,9 @@ pub mod jmap_up;
 pub mod junk;
 #[cfg(test)]
 mod junk_tests;
+// //// Neoffice — tests of the inbox's tabs by kind of sender.
+#[cfg(test)]
+mod stream_tests;
 // //// Neoffice — what a session that keeps nothing of its own between visits refuses (tasks, importing, a contact's marks).
 pub mod kept_here;
 #[cfg(test)]
@@ -137,6 +142,8 @@ pub fn registry() -> Registry {
     v.extend(rules::specs());
     v.extend(junk::specs());
     v.extend(category::specs());
+    // //// Neoffice — see `stream`.
+    v.extend(stream::specs());
     v.extend(account::specs());
     v.extend(offline::specs());
     v.extend(signature::specs());

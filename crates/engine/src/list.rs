@@ -158,6 +158,10 @@ fn filtered(s: &Session, m: &Message, me: &[&str]) -> bool {
         Filter::Flagged => m.flag == FlagStatus::Flagged,
         Filter::Attachments => m.has_attachments(),
         Filter::ToMe => m.to.iter().any(|a| me.iter().any(|e| a.email.eq_ignore_ascii_case(e))),
+        // //// Neoffice — the tabs by kind of sender: a message nobody said anything of is in the main one.
+        Filter::Main => m.stream_or_person() == mailcraft_model::Stream::Person,
+        Filter::Notifications => m.stream == Some(mailcraft_model::Stream::Notification),
+        Filter::Newsletters => m.stream == Some(mailcraft_model::Stream::Newsletter),
     }
 }
 

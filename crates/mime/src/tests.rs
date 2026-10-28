@@ -538,6 +538,8 @@ fn message() -> impl Strategy<Value = Message> {
             held: String::new(),
             answers: None,
             kept: None,
+            // //// Neoffice — the kind of sender a server said is never in the message's file.
+            stream: None,
         },
     )
 }

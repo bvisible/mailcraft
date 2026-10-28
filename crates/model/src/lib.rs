@@ -32,7 +32,9 @@ pub mod rich;
 mod rule;
 pub mod search;
 pub mod sender_warnings;
+// //// Neoffice — the kind of sender of a message, for the tabs of an inbox (stream.rs).
 pub mod signature;
+pub mod stream;
 pub mod sync;
 mod task;
 pub mod update;
@@ -71,6 +73,8 @@ pub use remote::Origin;
 pub use rich::{RichBody, RichText};
 pub use rule::{Action, Condition, Rule};
 pub use signature::Signature;
+// //// Neoffice — see `stream`.
+pub use stream::{Stream, StreamCounts};
 pub use task::{LocalTasks, MAX_TASK_GONE, SharedTaskList, SharedTaskLists, Task, TaskFields, TaskGone, TaskPatch};
 
 /// An item's identity inside one mailbox. 0 means "not assigned yet".
@@ -162,6 +166,9 @@ mod search_suggest_tests;
 mod search_tests;
 #[cfg(test)]
 mod sender_warnings_tests;
+// //// Neoffice — tests of stream.rs.
+#[cfg(test)]
+mod stream_tests;
 
 #[cfg(test)]
 mod tests {
