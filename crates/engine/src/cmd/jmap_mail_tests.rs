@@ -284,6 +284,15 @@ fn an_answer_for_another_account_or_nonsense_is_refused_or_passed_over() {
     assert!(apply_jmap_mail(&mut s, wrong).is_err());
 }
 
+// //// Neoffice — upstream's helpers of the test below: the server's mailboxes (the fork's `server`), and a piece of a run.
+fn mailboxes() -> Vec<GraphFolder> {
+    server()
+}
+
+fn piece(account: Id) -> JmapMailResult {
+    JmapMailResult { account, email: ME.into(), partial: true, ..Default::default() }
+}
+
 #[test]
 fn an_answer_from_the_server_the_account_named_before_is_refused() {
     let (mut s, account) = session();

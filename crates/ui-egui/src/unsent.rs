@@ -155,7 +155,7 @@ mod tests {
             assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a note's change");
             // A delete for good the server is yet to be told of.
             let mut app = window(keeps_local);
-            let delete = mailcraft_model::Pending::Delete { account: 1, from: "INBOX".into(), uid: 7, message_id: String::new() };
+            let delete = mailcraft_model::Pending::Delete { account: 1, from: "INBOX".into(), uid: 7, message_id: String::new(), seen: None };
             app.session.mailbox.pending.push(delete);
             assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a delete for good");
         }
