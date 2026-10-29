@@ -203,8 +203,13 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             ui.new_child(egui::UiBuilder::new().max_rect(br)).add_sized(br.size(), button)
         };
         let settings_at = if removable { 168.0 } else { 86.0 };
+        // //// Neoffice — a mailbox a hosting page handed over is set up on its site: its Settings opens its page there, the window's own would be lost with the tab (hosted_accounts.rs).
+        let site_page = crate::hosted_accounts::settings_page(app, a);
         // (An account kept in step through Graph has no servers to change, #312.)
-        let settings_tip = if a.kind == AccountKind::Microsoft {
+        let settings_tip = if site_page.is_some() {
+            // //// Neoffice — see above.
+            tl!("Change this mailbox's servers, password and name on the site")
+        } else if a.kind == AccountKind::Microsoft {
             tl!("Change this account's name, sign-in and mail to keep offline")
         } else {
             tl!("Change this account's name, servers and sign-in")
@@ -212,7 +217,13 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         // (A shared mailbox has no settings of its own: its owner's sign-in reads it, #70.)
         if !a.email.is_empty() && !a.is_shared() && on_card(ui, settings_at, egui::Button::new(tl!("Settings"))).on_hover_text(settings_tip).clicked()
         {
-            let _ = app.run("ui.dialog", json!({"name": "account", "id": a.id}));
+            // //// Neoffice — see above.
+            match &site_page {
+                Some(page) => crate::hosted_accounts::open(ui, page),
+                None => {
+                    let _ = app.run("ui.dialog", json!({"name": "account", "id": a.id}));
+                }
+            }
         }
         if a.is_shared() {
             if on_card(ui, 86.0, egui::Button::new(tl!("Remove")))
@@ -295,7 +306,10 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             ui.add_space(4.0);
         }
     }
-    if tile(
+    // //// Neoffice — a hosting page's mailboxes are added and changed on its site, which File › Info links to in place of Add Account (hosted_accounts.rs).
+    if crate::hosted_accounts::note(app, ui, t) {
+        // (Its site adds them: an account added here would be lost with the tab.)
+    } else if tile(
         ui,
         "account",
         tl!("Add Account"),

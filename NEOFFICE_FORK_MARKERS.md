@@ -370,6 +370,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Help tab's in `ribbon.rs`, `describe`). The commands `ui.copyDiagnostics` and `ui.reportProblem` stay, as upstream
   has them; Search Commands lists neither, and no shortcut runs them. A window without a hosting page, the desktop's
   among them, keeps all four.
+- File › Info in a tab whose mailboxes a hosting page handed over (`Session::keeps_local` false): a mailbox's Settings
+  opens the page of its site where it is set up (its servers, its password, its name on mail) in a new tab, in place of
+  the window's own account settings, which the tab loses when it closes; and in place of Add Account, whose account
+  would be lost too, a line says the mailboxes come from the site, with a link to where it lists them. The page says
+  both (`settings` on a mailbox, `accounts_home`); for a mailbox on Neoffice's JMAP facade that a page hands over
+  without them (Neodesk's window, which rebuilds the handover field by field), the form of its Webmail Account on the
+  same site and their list stand in. None for a mailbox shared with the person: its owner sets it up
+  (`crates/ui-egui/src/hosted_accounts.rs` and its tests, `Services::account_settings` and `Services::accounts_home`
+  in `lib.rs`, the Settings button's and Add Account's hunks in `backstage.rs`). The browser's part:
+  `apps/mailcraft-web/src/host.rs` (`settings`, `accounts_home`, the contract in its comment), `hosted.rs`
+  (`settings_page`, `accounts_home`, and their tests) and `web.rs`. A window without a hosting page keeps its own.
 - This file.
 
 ## What cannot carry a comment

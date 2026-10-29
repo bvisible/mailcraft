@@ -370,6 +370,9 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     let mut services = services(inbox, ctx.clone());
     // //// Neoffice — File › Signatures links to where the page's site writes these mailboxes' signatures (hosted_signatures.rs of the window).
     services.signatures_home = crate::host::signatures();
+    // //// Neoffice — File › Info's Settings of a mailbox opens where the page's site sets it up, and the page says where they are all listed (hosted_accounts.rs of the window).
+    services.account_settings = accounts.iter().filter_map(|a| Some((a.email.to_lowercase(), crate::hosted::settings_page(a)?))).collect();
+    services.accounts_home = crate::hosted::accounts_home(crate::host::accounts_home(), accounts);
     let credentials = std::rc::Rc::new(crate::host::HostCredentials::new(accounts));
     // //// Neoffice — the rules, categories and lists these mailboxes' server keeps are read now, and put when they come (kept.rs).
     crate::kept::start(accounts, credentials.clone(), ctx.clone());

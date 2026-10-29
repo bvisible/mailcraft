@@ -26,9 +26,13 @@
 //!     placed_html: "…" }                 // with `pictures`: `html` without any of them, nor a link they leave
 //!                                        // holding nothing; read in place of `html` when MailCraft takes some of
 //!                                        // them (`html` stays for the builds that place one picture)
+//!   settings: "https://…",       // optional: where the site sets it up (its servers, its password): File › Info's
+//!                                // Settings opens it; else, on Neoffice's facade, its Webmail Account (hosted.rs)
 //! }], language: "fr",           // the person's language: MailCraft draws in it for « System default »
 //!   product: "NeoMail",          // the name the person reads, shown wherever MailCraft names itself
 //!   signatures: "https://…",     // where the site writes these mailboxes' signatures: File › Signatures links there
+//!   accounts_home: "https://…",  // optional: where the site lists these mailboxes, to add or change one: File › Info
+//!                                // links there (else, on Neoffice's facade, its Webmail Accounts: hosted.rs)
 //!   chrome: "menu",              // optional: the page draws MailCraft's navigation in its own menu (below)
 //!   share: true,                 // optional: the page takes a message to share in its team chat (below)
 //!   attachments: ["drive", "scan", "edit"],  // optional: what the page does with an attachment (below)
@@ -357,6 +361,8 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
             signature,
             // A mailbox shared with the person, as the page says (Nora asks before she writes in it).
             shared: get(&item, "shared").and_then(|v| v.as_bool()) == Some(true),
+            // Where the page's site sets it up (File › Info's Settings, hosted.rs `settings_page`).
+            settings: text(&item, "settings"),
         };
         if complete(&account) && !out.iter().any(|a| a.email.eq_ignore_ascii_case(&account.email)) {
             out.push(account);
@@ -455,6 +461,12 @@ pub fn modules() -> Vec<serde_json::Value> {
 /// there (hosted.rs says which addresses are taken).
 pub fn signatures() -> Option<String> {
     Some(text(&handed()?, "signatures")).filter(|address| crate::hosted::signatures_home_allowed(address))
+}
+
+/// Where the page's site lists the mailboxes it hands over, if it says (`accounts_home`): File › Info links there
+/// (hosted.rs `accounts_home` says which addresses are taken, and what stands in for one the page doesn't give).
+pub fn accounts_home() -> Option<String> {
+    Some(text(&handed()?, "accounts_home")).filter(|address| !address.is_empty())
 }
 
 /// What each mailbox signs in with: its address (lower case) → (secret, Bearer rather than Basic).

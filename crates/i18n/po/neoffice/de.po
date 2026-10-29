@@ -3495,3 +3495,12 @@ msgid "{n} excerpt of your replies, kept as an example"
 msgid_plural "{n} excerpts of your replies, kept as examples"
 msgstr[0] "{n} Auszug aus Ihren Antworten, als Beispiel behalten"
 msgstr[1] "{n} Auszüge aus Ihren Antworten, als Beispiele behalten"
+
+msgid "Change this mailbox's servers, password and name on the site"
+msgstr "Server, Passwort und Name dieses Postfachs auf der Website ändern"
+
+msgid "These mailboxes come from the site that opened them: add one, or change its servers and password, there."
+msgstr "Diese Postfächer stammen von der Website, die sie geöffnet hat: Dort können Sie eines hinzufügen oder dessen Server und Passwort ändern."
+
+msgid "Manage mailboxes on the site"
+msgstr "Postfächer auf der Website verwalten"

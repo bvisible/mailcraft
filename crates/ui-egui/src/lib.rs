@@ -164,6 +164,8 @@ mod shared_calendars_tests;
 mod shared_mailboxes;
 // //// Neoffice — File › Signatures in a tab of a hosting page: its site's signatures, and where they are written.
 mod hosted_signatures;
+// //// Neoffice — File › Info in a tab of a hosting page: its mailboxes are set up on its site, and their Settings open it.
+mod hosted_accounts;
 mod signatures;
 mod sync_panel;
 pub mod task_sync;
@@ -285,6 +287,15 @@ pub struct Services {
     /// handed over are written (they come from there, and its tab keeps nothing between visits).
     /// Absent everywhere else.
     pub signatures_home: Option<String>,
+    // //// Neoffice — where a hosting page's site sets up each mailbox it handed over, and where it lists them: File › Info opens them (hosted_accounts.rs).
+    /// Web, in a hosting page: each mailbox it handed over (its address, lower case) → the page on its site where it
+    /// is set up (its servers, its password, its name on mail); File › Info's Settings of the mailbox opens it in place
+    /// of the window's own account settings, which the tab loses. Empty everywhere else.
+    pub account_settings: std::collections::HashMap<String, String>,
+    // //// Neoffice — see `account_settings`.
+    /// Web, in a hosting page: where its site lists those mailboxes, to add one or change one; File › Info links
+    /// there in place of Add Account. Absent everywhere else.
+    pub accounts_home: Option<String>,
     // //// Neoffice — a hosting page that draws the navigation in its own menu (Neoffice's desk): no module bar, no folder pane in Mail (host_menu.rs).
     /// Web, in a hosting page that draws MailCraft's navigation in its own menu: the mailboxes it handed over, in its
     /// order. The window then draws no module bar and, in Mail, no folder pane (the list starts at its left edge),

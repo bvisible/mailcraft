@@ -39,6 +39,9 @@ pub struct HostAccount {
     /// Whether the page says it is shared with the person rather than theirs (`shared: true`): Nora writes into a
     /// message of it only after the person's click on a card of her pane that names it (nora.rs).
     pub shared: bool,
+    /// Where the page's site sets this mailbox up, as the page says (`settings`): File › Info's Settings opens it
+    /// ([`settings_page`]).
+    pub settings: String,
 }
 
 impl std::fmt::Debug for HostAccount {
@@ -87,6 +90,54 @@ pub fn signatures_home_allowed(address: &str) -> bool {
         && address.len() <= MAX_SIGNATURES_HOME
         && !address.chars().any(|c| c.is_whitespace() || c.is_control())
         && session_allowed(address)
+}
+
+/// The path of a session on Neoffice's JMAP facade, before its query (frappe_webmail's `host_mailboxes`).
+const FACADE: &str = "/api/method/frappe_webmail.mailcraft_jmap.session";
+/// Where a Neoffice site lists its Webmail Accounts, each one's form under it.
+const WEBMAIL_ACCOUNTS: &str = "/app/webmail-account";
+
+/// Where the page's site sets a mailbox up (its servers, its password, its name on mail): File › Info's Settings of the
+/// mailbox opens it, in place of the window's own account settings, which a hosting page's tab loses when it closes.
+/// The address the page hands over with it (`settings`), taken as File › Signatures takes the page's; else, for a
+/// mailbox on Neoffice's JMAP facade (a page that hands over its session but not this, as Neodesk's), the form of its
+/// Webmail Account on the same site. None for a mailbox shared with the person: its owner sets it up.
+pub fn settings_page(account: &HostAccount) -> Option<String> {
+    if account.shared {
+        return None;
+    }
+    let handed = account.settings.trim();
+    if signatures_home_allowed(handed) {
+        return Some(handed.to_string());
+    }
+    let (site, name) = facade(&account.session)?;
+    Some(format!("{site}{WEBMAIL_ACCOUNTS}/{name}")).filter(|page| signatures_home_allowed(page))
+}
+
+/// Where the page's site lists the mailboxes it hands over, to add one or change one: File › Info links there. The
+/// address the page gives (`accounts_home`), else the Webmail Accounts of the site of the first mailbox on Neoffice's
+/// facade.
+pub fn accounts_home(handed: Option<String>, accounts: &[HostAccount]) -> Option<String> {
+    if let Some(page) = handed.filter(|page| signatures_home_allowed(page.trim())) {
+        return Some(page.trim().to_string());
+    }
+    accounts
+        .iter()
+        .find_map(|a| facade(&a.session))
+        .map(|(site, _)| format!("{site}{WEBMAIL_ACCOUNTS}"))
+        .filter(|page| signatures_home_allowed(page))
+}
+
+/// (its site, the name of its Webmail Account as the address writes it) of a session on Neoffice's JMAP facade:
+/// `https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=jane%40example.org`. None for any
+/// other address, a site with a path, and a name with anything but unreserved characters and escapes.
+fn facade(session: &str) -> Option<(&str, &str)> {
+    let (site, rest) = session.trim().split_once(FACADE)?;
+    let query = rest.strip_prefix('?')?;
+    let name = query.split('&').find_map(|pair| pair.strip_prefix("account="))?;
+    let host = &site[site.find("://")? + 3..];
+    let plain = |b: u8| b.is_ascii_alphanumeric() || b"%-._~".contains(&b);
+    (!host.is_empty() && !host.contains('/') && !name.is_empty() && name.bytes().all(plain)).then_some((site, name))
 }
 
 #[cfg(test)]
@@ -152,5 +203,45 @@ mod tests {
         ] {
             assert!(!signatures_home_allowed(bad), "{bad:?}");
         }
+    }
+
+    const FACADE_SESSION: &str = "https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=jane%40example.org";
+    const JANE_S_FORM: &str = "https://erp.example.org/app/webmail-account/jane%40example.org";
+
+    fn mailbox(session: &str, settings: &str, shared: bool) -> HostAccount {
+        HostAccount { email: "jane@example.org".into(), session: session.into(), settings: settings.into(), shared, ..HostAccount::default() }
+    }
+
+    #[test]
+    fn a_mailbox_is_set_up_where_the_page_says_else_in_its_webmail_account_on_neoffice_s_facade() {
+        let given = "https://erp.example.org/app/webmail-account/other";
+        assert_eq!(settings_page(&mailbox(FACADE_SESSION, given, false)).as_deref(), Some(given));
+        // A page that hands over the session alone (Neodesk's): the form of its Webmail Account on the same site.
+        assert_eq!(settings_page(&mailbox(FACADE_SESSION, "", false)).as_deref(), Some(JANE_S_FORM));
+        // An address the page may not name is not taken; the session's site is.
+        assert_eq!(settings_page(&mailbox(FACADE_SESSION, "javascript:alert(1)", false)).as_deref(), Some(JANE_S_FORM));
+        // A mailbox shared with the person: its owner sets it up.
+        assert_eq!(settings_page(&mailbox(FACADE_SESSION, given, true)), None);
+        // Another JMAP server, or an address of the facade that names no plain account on a plain site: nothing.
+        for session in [
+            "https://mail.example.org/jmap/session",
+            "https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session",
+            "https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=",
+            "https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=a/../../b",
+            "https://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=a\"b",
+            "https://erp.example.org/sub/api/method/frappe_webmail.mailcraft_jmap.session?account=jane",
+            "http://erp.example.org/api/method/frappe_webmail.mailcraft_jmap.session?account=jane",
+        ] {
+            assert_eq!(settings_page(&mailbox(session, "", false)), None, "{session}");
+        }
+    }
+
+    #[test]
+    fn the_mailboxes_are_listed_where_the_page_says_else_in_the_webmail_accounts_of_their_site() {
+        let given = "https://erp.example.org/app/webmail-account";
+        assert_eq!(accounts_home(Some(given.into()), &[]).as_deref(), Some(given));
+        let boxes = [mailbox("https://mail.example.org/jmap/session", "", false), mailbox(FACADE_SESSION, "", true)];
+        assert_eq!(accounts_home(None, &boxes).as_deref(), Some(given));
+        assert_eq!(accounts_home(Some("ftp://erp.example.org/".into()), &boxes[..1]), None);
     }
 }

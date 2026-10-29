@@ -3513,3 +3513,12 @@ msgid "{n} excerpt of your replies, kept as an example"
 msgid_plural "{n} excerpts of your replies, kept as examples"
 msgstr[0] "{n} fragmento de sus respuestas, guardado como ejemplo"
 msgstr[1] "{n} fragmentos de sus respuestas, guardados como ejemplos"
+
+msgid "Change this mailbox's servers, password and name on the site"
+msgstr "Cambiar los servidores, la contraseña y el nombre de este buzón en el sitio"
+
+msgid "These mailboxes come from the site that opened them: add one, or change its servers and password, there."
+msgstr "Estos buzones proceden del sitio que los abrió: allí puede añadir uno o cambiar los servidores y la contraseña de un buzón."
+
+msgid "Manage mailboxes on the site"
+msgstr "Gestionar los buzones en el sitio"
