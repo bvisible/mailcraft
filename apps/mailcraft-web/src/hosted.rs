@@ -121,11 +121,7 @@ pub fn accounts_home(handed: Option<String>, accounts: &[HostAccount]) -> Option
     if let Some(page) = handed.filter(|page| signatures_home_allowed(page.trim())) {
         return Some(page.trim().to_string());
     }
-    accounts
-        .iter()
-        .find_map(|a| facade(&a.session))
-        .map(|(site, _)| format!("{site}{WEBMAIL_ACCOUNTS}"))
-        .filter(|page| signatures_home_allowed(page))
+    accounts.iter().find_map(|a| facade(&a.session)).map(|(site, _)| format!("{site}{WEBMAIL_ACCOUNTS}")).filter(|page| signatures_home_allowed(page))
 }
 
 /// (its site, the name of its Webmail Account as the address writes it) of a session on Neoffice's JMAP facade:
