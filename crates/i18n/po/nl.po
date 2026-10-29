@@ -1965,6 +1965,11 @@ msgid "Change this account's name, sign-in and mail to keep offline"
 msgstr "De naam, de aanmelding en de offline te bewaren e-mail van dit account wijzigen"
 
 #. interface
+#: crates/ui-egui/src/backstage.rs
+msgid "Change this mailbox's servers, password and name on the site"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/notes_view.rs
 msgid "Changed {when}"
 msgstr ""
@@ -5702,6 +5707,11 @@ msgstr "Regels beheren…"
 #, fuzzy
 msgid "Manage Task"
 msgstr "Taak beheren"
+
+#. interface
+#: crates/ui-egui/src/hosted_accounts.rs
+msgid "Manage mailboxes on the site"
+msgstr ""
 
 #. date and time
 #: crates/i18n/src/date.rs
@@ -11847,6 +11857,11 @@ msgstr ""
 #, fuzzy
 msgid "These could not be removed. Remove them yourself:"
 msgstr "Deze konden niet worden verwijderd. Verwijder ze zelf:"
+
+#. interface
+#: crates/ui-egui/src/hosted_accounts.rs
+msgid "These mailboxes come from the site that opened them: add one, or change its servers and password, there."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/hosted_signatures.rs

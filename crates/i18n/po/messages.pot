@@ -1703,6 +1703,11 @@ msgid "Change this account's name, sign-in and mail to keep offline"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/backstage.rs
+msgid "Change this mailbox's servers, password and name on the site"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/notes_view.rs
 msgid "Changed {when}"
 msgstr ""
@@ -4913,6 +4918,11 @@ msgstr ""
 #. ribbon, ribbon location
 #: crates/engine/src/cmd/tasks.rs crates/ui-egui/src/ribbon.rs
 msgid "Manage Task"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/hosted_accounts.rs
+msgid "Manage mailboxes on the site"
 msgstr ""
 
 #. date and time
@@ -10244,6 +10254,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/data_removal.rs
 msgid "These could not be removed. Remove them yourself:"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/hosted_accounts.rs
+msgid "These mailboxes come from the site that opened them: add one, or change its servers and password, there."
 msgstr ""
 
 #. interface
