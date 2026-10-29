@@ -194,6 +194,8 @@ pub(crate) struct Nora {
     pub(crate) said: Option<Said>,
     /// Her pane: the conversation with her beside the window ([`super::assist`]).
     pub(crate) assist: super::assist::Assist,
+    /// Her ready replies under the message being read, and « My style » ([`super::ready`]).
+    pub(crate) ready: super::ready::ReadyState,
 }
 
 impl Nora {
@@ -292,7 +294,7 @@ fn text_of(app: &MailApp, m: &Message) -> String {
 }
 
 /// Whether a reply (or a reply to everyone) to `message` is being written.
-fn replying_to(app: &MailApp, message: Id) -> bool {
+pub(crate) fn replying_to(app: &MailApp, message: Id) -> bool {
     app.session.compose.as_ref().is_some_and(|c| matches!(c.mode, ComposeMode::Reply | ComposeMode::ReplyAll) && c.source == Some(message))
 }
 
@@ -354,6 +356,7 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
         "ui.noraImprove" => rewrite(app, Rewrite::Improve),
         "ui.noraTranslateDraft" => chosen_language(p).and_then(|l| rewrite(app, Rewrite::Translate(l))),
         "ui.noraLearnStyle" => learn_style(app),
+        "ui.noraStyle" => super::ready::open_style(app),
         "ui.noraAssistant" => super::assist::toggle(app, p),
         _ => return None,
     })
@@ -378,6 +381,8 @@ pub(crate) fn enabled(app: &MailApp, id: &str) -> bool {
             writing.is_some() && app.session.signature_edit.is_none() && !nora.asking(Kind::Rewrite) && !nora.asking(Kind::Reply)
         }
         "ui.noraLearnStyle" => writing.is_some_and(|c| page_mailbox(app, c.account).is_some()) && !nora.asking(Kind::Style),
+        // Where the ready replies go out (the page `/neomail`): what Nora keeps of the person's writing.
+        "ui.noraStyle" => app.services.nora.as_ref().is_some_and(|h| h.chat),
         "ui.noraAssistant" => super::assist::available(app),
         _ => false,
     }
@@ -662,7 +667,7 @@ fn write(app: &mut MailApp, chars: usize, text: &str) -> Result<(), String> {
 /// Nora's draft at the top of the reply it was asked for, while that reply is being written: above
 /// the signature and the original, and above anything the person has typed meanwhile, a blank line
 /// between.
-fn put_draft(app: &mut MailApp, message: Id, text: &str) {
+pub(crate) fn put_draft(app: &mut MailApp, message: Id, text: &str) {
     if !replying_to(app, message) {
         return say(app, About::Writing, tl!("The reply was closed before Nora's draft came back.").to_string(), false);
     }

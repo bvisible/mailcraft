@@ -4,7 +4,8 @@
 
 //! Nora's band, under the subject of the message being written: her sphere and her name, then what
 //! she does on the person's own text (Correct, Improve, Translate) and, when the message goes from a
-//! mailbox the hosting page handed over, My style. Each pill runs its window command (`ui.nora*`),
+//! mailbox the hosting page handed over, My style (what Nora keeps of the person's writing, where her ready replies go
+//! out: `ready.rs`; else the learning of the style). Each pill runs its window command (`ui.nora*`),
 //! as a script would. While she works, the pill that asked shows a spinner, the ones that can't run
 //! now are greyed and say why when pointed at, and the band says what she is doing; what came of it
 //! stays in the band for a while, as the status bar says it too.
@@ -71,9 +72,14 @@ pub(crate) fn band(app: &mut MailApp, ui: &mut Ui, indent: f32) {
                 });
             }
             if style {
-                let mine = Pill { label: tl!("My style"), mark: Mark::Pen, menu: false, kind: "noraStyle", command: "ui.noraLearnStyle" };
-                if mine.show(app, ui, &t, app.nora.asking(Kind::Style), doing, tl!("Learn my writing style from my sent emails")) {
-                    let _ = app.run("ui.noraLearnStyle", json!({}));
+                // What Nora keeps of the person's writing (ready.rs), where the ready replies go out; else, as before, the learning
+                // of the style from the sent mail.
+                let shown = app.enabled("ui.noraStyle");
+                let command = if shown { "ui.noraStyle" } else { "ui.noraLearnStyle" };
+                let tip = if shown { tl!("What Nora keeps of your writing") } else { tl!("Learn my writing style from my sent emails") };
+                let mine = Pill { label: tl!("My style"), mark: Mark::Pen, menu: false, kind: "noraStyle", command };
+                if mine.show(app, ui, &t, app.nora.asking(Kind::Style), doing, tip) {
+                    let _ = app.run(command, json!({}));
                 }
             }
             // What she is doing, or what came of it.

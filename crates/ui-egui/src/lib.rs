@@ -984,6 +984,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         r#"{} — has Nora learn, on the server and in the background (about a minute), the writing style of the mailbox the message being written goes from, from its sent mail; only for a mailbox the hosting page handed over. Answers {"asked": number}"#,
     ),
     (
+        "ui.noraStyle",
+        "My Style",
+        "Message › Nora",
+        r#"{} — opens « My style »: what Nora keeps of the owner's way of writing (plain sentences, and the excerpts of their sent mail she writes after), with ready replies on or off, Learn Again and Forget. Only where the hosting page reaches her ready replies. Answers {"open": true}"#,
+    ),
+    (
         "ui.noraAssistant",
         "Ask Nora",
         "Home › Respond",
@@ -2072,6 +2078,12 @@ impl MailApp {
         }
         if let Some(r) = self.ui_command(id, &params) {
             return r;
+        }
+        // //// Neoffice — a message never goes out with a field of Nora's still empty in it (« ⟦Date⟧ », nora/ready.rs), whoever asks.
+        if id == "compose.send"
+            && let Some(left) = nora::ready::unfilled_in_compose(self)
+        {
+            return Err(left);
         }
         let composing = self.session.compose.is_some();
         // An account that goes takes what was remembered for it along.
@@ -4463,6 +4475,8 @@ impl MailApp {
         dialogs::show(self, &ctx);
         // //// Neoffice — the question closing asks about words typed into a note that can't be saved yet, while it is up (notes_view.rs).
         notes_view::close_question(self, &ctx);
+        // //// Neoffice — « My style », what Nora keeps of the owner's writing, while it is open (nora/ready.rs).
+        nora::ready::style_panel(self, &ctx);
         reminders::show(self, &ctx);
         // What was chosen in a text's menu, once everything that has one is drawn.
         text_menu::carry_out(self, &ctx);

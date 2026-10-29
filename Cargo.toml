@@ -95,10 +95,11 @@ arboard = { version = "3.7", default-features = false }
 
 # //// Neoffice — Nora's pane (crates/ui-egui/src/nora/assist.rs): her client core and its egui panel, from Neoffice's
 # //// Neoffice — craft-libs fork at a revision that knows the mail program (`AppKind::Mail`), the cards and the links of a
-# //// Neoffice — conversation, Nora's Markdown and the appointment cards, as the editors take them, and whose panel builds on
+# //// Neoffice — conversation, Nora's Markdown and the appointment cards, as the editors take them, the proposals of her ready
+# //// Neoffice — replies and their card (crates/ui-egui/src/nora/ready.rs), and whose panel builds on
 # //// Neoffice — egui 0.36 (the editors) or 0.37 (here); both depend on egui alone, serde and serde_json.
-craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "1ff4e9a9dce2e8a657f60d4d3fd42d1377356836" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "1ff4e9a9dce2e8a657f60d4d3fd42d1377356836" }
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "24f7bb0294c37a019af15a704a539ee77955617d" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "24f7bb0294c37a019af15a704a539ee77955617d" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

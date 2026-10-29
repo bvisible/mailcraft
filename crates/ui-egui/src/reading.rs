@@ -176,6 +176,8 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
     invitation::bar(app, ui, m, place);
     // //// Neoffice — Nora's strip: she is translating the message, or her translation is shown, with the way back to the original (nora/pane.rs).
     crate::nora::pane::strip(app, ui, m, place);
+    // //// Neoffice — Nora's ready replies to the message: short replies and a draft in the person's style, with fields to fill (nora/ready.rs).
+    crate::nora::ready::card(app, ui, m, place);
     // A calendar that was shared with the owner, and the way to open it (#70).
     sharing::bar(app, ui, m);
     // Only its headers and a preview are here yet (R3.2): say so, and why.

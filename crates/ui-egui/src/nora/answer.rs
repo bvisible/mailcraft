@@ -34,6 +34,8 @@ pub(crate) enum Task {
     Translate,
     Rewrite,
     Style,
+    /// Ready replies, or « My style » ([`super::ready`]).
+    Ready,
 }
 
 impl Task {
@@ -44,6 +46,7 @@ impl Task {
             Task::Translate => tl!("Nora couldn't translate the message: {reason}"),
             Task::Rewrite => tl!("Nora couldn't rewrite the text: {reason}"),
             Task::Style => tl!("Nora couldn't learn your style: {reason}"),
+            Task::Ready => tl!("Nora couldn't prepare replies: {reason}"),
         };
         fmt(template, &[("reason", reason)])
     }
@@ -140,6 +143,14 @@ pub(crate) fn style_started(answer: &NoraAnswer) -> Result<bool, String> {
         Some(true) => Ok(flag(&body, "already_running").unwrap_or(false)),
         _ => Err(task.failed(&reason(&body, answer.status))),
     }
+}
+
+/// The `message` object of a good answer of the ready replies or of « My style » (`ready_replies`, `my_style`), read
+/// further by `craft-nora` (`proposal::parse_ready`); or what to tell the person.
+pub(crate) fn ready(answer: &NoraAnswer) -> Result<Value, String> {
+    let task = Task::Ready;
+    let body = parse(answer, task)?;
+    body.get("message").filter(|m| m.is_object()).cloned().ok_or_else(|| task.failed(&reason(&body, answer.status)))
 }
 
 /// Why a call was refused, from its whole answer (`body` is its JSON, or nothing): a sign-in that ended,

@@ -19,8 +19,8 @@
 //! secret travels in the address.
 //!
 //! Only the six methods the window calls go out ([`METHODS`]), and the seven of Nora's conversation that
-//! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), these only where they
-//! can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), each with a plain JSON
+//! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), and the two of her ready replies
+//! ([`READY_METHODS`]), these only where they can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), each with a plain JSON
 //! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
 //! [`MAX_ANSWER`] bytes, its text as UTF-8 with what isn't replaced; a call is given up after
 //! [`GIVE_UP_MS`]. A call that got no answer comes back with status 0 and why, which the window says.
@@ -29,7 +29,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use mailcraft_ui_egui::NoraCall;
-use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox};
+use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox, READY_METHODS};
 
 use crate::hosted::HostAccount;
 
@@ -99,10 +99,11 @@ pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
     PageMailbox { address: handed.email.clone(), name: name.unwrap_or_else(|| handed.email.trim().to_string()), shared: handed.shared }
 }
 
-/// The body a call goes with, when it may go out at all: one of the six methods or of the seven of her
-/// conversation (her pane's, [`CHAT_METHODS`]), a plain object of arguments without a `cmd` key, within 8 MB.
+/// The body a call goes with, when it may go out at all: one of the six methods, of the seven of her
+/// conversation (her pane's, [`CHAT_METHODS`]) or of the two of her ready replies ([`READY_METHODS`]), a plain object of
+/// arguments without a `cmd` key, within 8 MB.
 pub fn allowed(call: &NoraCall) -> Result<String, String> {
-    if !METHODS.contains(&call.method) && !CHAT_METHODS.contains(&call.method) {
+    if !METHODS.contains(&call.method) && !CHAT_METHODS.contains(&call.method) && !READY_METHODS.contains(&call.method) {
         return Err("that is not one of Nora's methods".into());
     }
     let Some(args) = call.args.as_object() else { return Err("the arguments are not a plain object".into()) };
@@ -198,6 +199,8 @@ mod browser {
             Err(why) => Err(why),
             // Her conversation's calls only where they may go now (a host that came since must say it takes them).
             Ok(_) if super::CHAT_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's conversation".to_string()),
+            // //// Neoffice — her ready replies go out where her conversation does (the page's own `fetch`).
+            Ok(_) if super::READY_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's ready replies".to_string()),
             Ok(body) => match host_call() {
                 Some((owner, function)) => call_host(&owner, &function, call.method, &body).await,
                 None => fetch(origin, call.method, body).await,
@@ -457,8 +460,14 @@ mod tests {
             assert_eq!(allowed(&call(method, json!({"thread_id": "t1"}))), Ok(r#"{"thread_id":"t1"}"#.to_string()));
             assert!(allowed(&call(method, json!({"thread_id": "t1", "cmd": "frappe.client.delete"}))).is_err(), "{method}");
         }
+        // Her ready replies: the two methods, and no other of the server's mail module.
+        for method in READY_METHODS {
+            assert_eq!(allowed(&call(method, json!({"action": "get"}))), Ok(r#"{"action":"get"}"#.to_string()));
+            assert!(allowed(&call(method, json!({"cmd": "frappe.client.delete"}))).is_err(), "{method}");
+        }
         for (method, args) in [
             ("nora.api.nora_webmail.get_style_profile", json!({})),
+            ("nora.api.mail_ready.refresh_if_sent_more", json!({})),
             ("nora.api.chat.clear_thread", json!({})),
             ("nora.api.chat.stop", json!({})),
             ("frappe.client.get_list", json!({"doctype": "Webmail Account"})),

@@ -3411,3 +3411,105 @@ msgstr "{read} de {total} MB"
 
 msgid "{said}; {left}{more}"
 msgstr "{said}; {left}{more}"
+
+# Nora's ready replies under a message being read, and « My style » (crates/ui-egui/src/nora/ready.rs). Translations by Haiku.
+msgid "Nora's ready replies aren't offered here."
+msgstr "Aquí no se ofrecen las respuestas listas de Nora."
+
+msgid "The reply opens once the message is here: read it, then send it."
+msgstr "La respuesta se abre cuando llega el mensaje: léalo y luego envíe la respuesta."
+
+msgid "A field of Nora's is still empty: \"{label}\". Fill it in or delete it before sending."
+msgstr "Un campo de Nora sigue vacío: \"{label}\". Complételo o elimínelo antes de enviar."
+
+msgid "Ready replies"
+msgstr "Respuestas listas"
+
+msgid "NORA'S DRAFT"
+msgstr "BORRADOR DE NORA"
+
+msgid "to"
+msgstr "a"
+
+msgid "Your signature and the quoted message are added when it is sent."
+msgstr "Su firma y el mensaje citado se añaden al enviar."
+
+msgid "Something else"
+msgstr "Otra cosa"
+
+msgid "Enter: keep · Tab: next field · Escape: close"
+msgstr "Intro: mantener · Tab: siguiente campo · Esc: cerrar"
+
+msgid "In your style · My style"
+msgstr "En su estilo · Mi estilo"
+
+msgid "Nora is learning your style from your sent emails."
+msgstr "Nora está aprendiendo su estilo a partir de sus correos enviados."
+
+msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
+msgstr "Nora puede proponer respuestas en su propio estilo. Para ello lee el mensaje que abre y aprende de los correos que usted envió. Todo se queda en su servidor de Neoffice, solo para usted; nada se envía sin su clic."
+
+msgid "Turn on"
+msgstr "Activar"
+
+msgid "You can change this in My style."
+msgstr "Puede cambiarlo en Mi estilo."
+
+msgid "Nora is preparing a reply in your style…"
+msgstr "Nora prepara una respuesta en su estilo…"
+
+msgid "Nora hasn't learnt your style yet: she learns it from the emails you sent."
+msgstr "Nora aún no ha aprendido su estilo: lo aprende de los correos que usted envió."
+
+msgid "Nora learns your style from a mailbox of yours: you have none here."
+msgstr "Nora aprende su estilo de una bandeja de correo suya: aquí usted no tiene ninguna."
+
+msgid "WHAT NORA KEEPS"
+msgstr "LO QUE GUARDA NORA"
+
+msgid "Show"
+msgstr "Mostrar"
+
+msgid "Propose ready replies"
+msgstr "Proponer respuestas listas"
+
+msgid "With each person, Nora writes \"tu\" or \"vous\" as your last email to them did."
+msgstr "Con cada persona, Nora escribe «tú» o «usted» como en su último correo a esa persona."
+
+msgid "Learn again now"
+msgstr "Volver a aprender ahora"
+
+msgid "Forget my style"
+msgstr "Olvidar mi estilo"
+
+msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor Nora's memory see it."
+msgstr "Guardado en su servidor de Neoffice, solo para usted: ni sus compañeros ni la memoria de Nora lo ven."
+
+msgid "What Nora keeps of your writing"
+msgstr "Lo que guarda Nora de su forma de escribir"
+
+msgid "Nora couldn't prepare replies: {reason}"
+msgstr "Nora no pudo preparar respuestas: {reason}"
+
+msgid "My Style"
+msgstr "Mi estilo"
+
+msgid "{n} field to fill in"
+msgid_plural "{n} fields to fill in"
+msgstr[0] "{n} campo por completar"
+msgstr[1] "{n} campos por completar"
+
+msgid "Sending in {n} second…"
+msgid_plural "Sending in {n} seconds…"
+msgstr[0] "Envío en {n} segundo…"
+msgstr[1] "Envío en {n} segundos…"
+
+msgid "Learnt on {date} from {n} sent email."
+msgid_plural "Learnt on {date} from {n} sent emails."
+msgstr[0] "Aprendido el {date} a partir de {n} correo enviado."
+msgstr[1] "Aprendido el {date} a partir de {n} correos enviados."
+
+msgid "{n} excerpt of your replies, kept as an example"
+msgid_plural "{n} excerpts of your replies, kept as examples"
+msgstr[0] "{n} fragmento de sus respuestas, guardado como ejemplo"
+msgstr[1] "{n} fragmentos de sus respuestas, guardados como ejemplos"

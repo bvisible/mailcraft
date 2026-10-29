@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent): Nora, the assistant of the Neoffice server, in MailCraft.
 
-//! Nora, the assistant of the Neoffice server, in MailCraft. Reply with Nora (or Reply All) opens the
-//! reply and has her write its draft; Translate shows the message being read in French, German or
+//! Nora, the assistant of the Neoffice server, in MailCraft. Under a message being read, her ready replies: short
+//! replies and a draft in the person's style, with fields to fill where she could not know ([`ready`]). Reply with Nora
+//! (or Reply All) opens the reply and has her write its draft; Translate shows the message being read in French, German or
 //! English, with the way back to the original; and the band under the subject of a message being
 //! written has her correct, improve or translate the person's own text, and learn the writing style
 //! of the mailbox it goes from (My style).
@@ -38,6 +39,7 @@ pub(crate) mod look;
 mod observe;
 mod own_text;
 pub(crate) mod pane;
+pub(crate) mod ready;
 pub(crate) mod ribbon;
 #[cfg(test)]
 mod testing;
@@ -68,6 +70,14 @@ pub const PROOFREAD: &str = "nora.api.nora_webmail.proofread";
 pub const IMPROVE: &str = "nora.api.nora_webmail.improve";
 /// The server method that learns a mailbox's writing style from its sent mail, in the background.
 pub const SCAN_STYLE: &str = "nora.api.nora_webmail.scan_style";
+/// The server method that prepares the ready replies to a message it reads itself by its id: up to two short replies
+/// and a draft in the person's style, with fields where Nora could not know ([`ready`]).
+pub const READY_REPLIES: &str = "nora.api.mail_ready.ready_replies";
+/// The server method of « My style »: what Nora keeps of the person's writing, and ready replies on or off ([`ready`]).
+pub const MY_STYLE: &str = "nora.api.mail_ready.my_style";
+/// The methods of the ready replies ([`ready`]): they go out where her conversation's do ([`Host::chat`]), the page
+/// `/neomail`; Neodesk's shell lets neither through yet.
+pub const READY_METHODS: [&str; 2] = [READY_REPLIES, MY_STYLE];
 /// Every method the window calls: Neodesk's shell lets these six through and no other, so a new one
 /// waits for a release of Neodesk.
 pub const METHODS: [&str; 6] = [QUICK_REPLY, GENERATE_EMAIL, TRANSLATE, PROOFREAD, IMPROVE, SCAN_STYLE];
@@ -167,6 +177,7 @@ impl MailApp {
     pub(crate) fn poll_nora(&mut self) {
         flow::poll(self);
         assist::poll(self);
+        ready::poll(self);
     }
 }
 

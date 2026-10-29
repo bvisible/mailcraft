@@ -3418,3 +3418,105 @@ msgstr "{read} sur {total} Mo"
 
 msgid "{said}; {left}{more}"
 msgstr "{said} ; {left}{more}"
+
+# Nora's ready replies under a message being read, and « My style » (crates/ui-egui/src/nora/ready.rs). Translations by Haiku.
+msgid "Nora's ready replies aren't offered here."
+msgstr "Les réponses prêtes de Nora ne sont pas proposées ici."
+
+msgid "The reply opens once the message is here: read it, then send it."
+msgstr "La réponse s’ouvre dès que le message est là : lisez-le, puis envoyez-la."
+
+msgid "A field of Nora's is still empty: \"{label}\". Fill it in or delete it before sending."
+msgstr "Un champ de Nora est encore vide : « {label} ». Complétez-le ou supprimez-le avant d’envoyer."
+
+msgid "Ready replies"
+msgstr "Réponses prêtes"
+
+msgid "NORA'S DRAFT"
+msgstr "BROUILLON DE NORA"
+
+msgid "to"
+msgstr "à"
+
+msgid "Your signature and the quoted message are added when it is sent."
+msgstr "Votre signature et le message cité sont ajoutés à l’envoi."
+
+msgid "Something else"
+msgstr "Autre chose"
+
+msgid "Enter: keep · Tab: next field · Escape: close"
+msgstr "Entrée : garder · Tab : champ suivant · Échap : fermer"
+
+msgid "In your style · My style"
+msgstr "Dans votre style · Mon style"
+
+msgid "Nora is learning your style from your sent emails."
+msgstr "Nora apprend votre style à partir de vos e-mails envoyés."
+
+msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
+msgstr "Nora peut proposer des réponses dans votre propre style. Pour cela, elle lit le message que vous ouvrez et apprend de vos e-mails envoyés. Tout reste sur votre serveur Neoffice, pour vous seul ; rien n’est envoyé sans votre clic."
+
+msgid "Turn on"
+msgstr "Activer"
+
+msgid "You can change this in My style."
+msgstr "Vous pouvez le modifier dans Mon style."
+
+msgid "Nora is preparing a reply in your style…"
+msgstr "Nora prépare une réponse dans votre style…"
+
+msgid "Nora hasn't learnt your style yet: she learns it from the emails you sent."
+msgstr "Nora n’a pas encore appris votre style : elle l’apprend à partir de vos e-mails envoyés."
+
+msgid "Nora learns your style from a mailbox of yours: you have none here."
+msgstr "Nora apprend votre style à partir d’une boîte de messagerie à vous : vous n’en avez pas ici."
+
+msgid "WHAT NORA KEEPS"
+msgstr "CE QUE NORA GARDE"
+
+msgid "Show"
+msgstr "Afficher"
+
+msgid "Propose ready replies"
+msgstr "Proposer des réponses prêtes"
+
+msgid "With each person, Nora writes \"tu\" or \"vous\" as your last email to them did."
+msgstr "Avec chaque personne, Nora écrit « tu » ou « vous », comme dans votre dernier e-mail à cette personne."
+
+msgid "Learn again now"
+msgstr "Réapprendre maintenant"
+
+msgid "Forget my style"
+msgstr "Oublier mon style"
+
+msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor Nora's memory see it."
+msgstr "Conservé sur votre serveur Neoffice, pour vous seul : ni vos collègues ni la mémoire de Nora ne le voient."
+
+msgid "What Nora keeps of your writing"
+msgstr "Ce que Nora garde de votre écriture"
+
+msgid "Nora couldn't prepare replies: {reason}"
+msgstr "Nora n’a pas pu préparer de réponses : {reason}"
+
+msgid "My Style"
+msgstr "Mon style"
+
+msgid "{n} field to fill in"
+msgid_plural "{n} fields to fill in"
+msgstr[0] "{n} champ à compléter"
+msgstr[1] "{n} champs à compléter"
+
+msgid "Sending in {n} second…"
+msgid_plural "Sending in {n} seconds…"
+msgstr[0] "Envoi dans {n} seconde…"
+msgstr[1] "Envoi dans {n} secondes…"
+
+msgid "Learnt on {date} from {n} sent email."
+msgid_plural "Learnt on {date} from {n} sent emails."
+msgstr[0] "Appris le {date} à partir de {n} e-mail envoyé."
+msgstr[1] "Appris le {date} à partir de {n} e-mails envoyés."
+
+msgid "{n} excerpt of your replies, kept as an example"
+msgid_plural "{n} excerpts of your replies, kept as examples"
+msgstr[0] "{n} extrait de vos réponses, gardé comme exemple"
+msgstr[1] "{n} extraits de vos réponses, gardés comme exemples"

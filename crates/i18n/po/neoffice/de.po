@@ -3393,3 +3393,105 @@ msgstr "{read} von {total} MB"
 
 msgid "{said}; {left}{more}"
 msgstr "{said}; {left}{more}"
+
+# Nora's ready replies under a message being read, and « My style » (crates/ui-egui/src/nora/ready.rs). Translations by Haiku.
+msgid "Nora's ready replies aren't offered here."
+msgstr "Die vorbereiteten Antworten von Nora werden hier nicht angeboten."
+
+msgid "The reply opens once the message is here: read it, then send it."
+msgstr "Die Antwort öffnet sich, sobald die Nachricht da ist: Lesen Sie die Nachricht, dann senden Sie die Antwort."
+
+msgid "A field of Nora's is still empty: \"{label}\". Fill it in or delete it before sending."
+msgstr "Ein Feld von Nora ist noch leer: \"{label}\". Füllen Sie es aus oder löschen Sie es vor dem Senden."
+
+msgid "Ready replies"
+msgstr "Vorbereitete Antworten"
+
+msgid "NORA'S DRAFT"
+msgstr "ENTWURF VON NORA"
+
+msgid "to"
+msgstr "an"
+
+msgid "Your signature and the quoted message are added when it is sent."
+msgstr "Ihre Signatur und die zitierte Nachricht werden beim Senden hinzugefügt."
+
+msgid "Something else"
+msgstr "Etwas anderes"
+
+msgid "Enter: keep · Tab: next field · Escape: close"
+msgstr "Eingabe: behalten · Tab: nächstes Feld · Esc: schließen"
+
+msgid "In your style · My style"
+msgstr "In Ihrem Stil · Mein Stil"
+
+msgid "Nora is learning your style from your sent emails."
+msgstr "Nora lernt Ihren Stil aus Ihren gesendeten E-Mails."
+
+msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
+msgstr "Nora kann Antworten in Ihrem eigenen Stil vorschlagen. Dazu liest sie die Nachricht, die Sie öffnen, und lernt aus Ihren gesendeten E-Mails. Alles bleibt auf Ihrem Neoffice-Server, nur für Sie; nichts wird ohne Ihren Klick gesendet."
+
+msgid "Turn on"
+msgstr "Aktivieren"
+
+msgid "You can change this in My style."
+msgstr "Sie können dies unter Mein Stil ändern."
+
+msgid "Nora is preparing a reply in your style…"
+msgstr "Nora bereitet eine Antwort in Ihrem Stil vor…"
+
+msgid "Nora hasn't learnt your style yet: she learns it from the emails you sent."
+msgstr "Nora hat Ihren Stil noch nicht gelernt: Sie lernt ihn aus Ihren gesendeten E-Mails."
+
+msgid "Nora learns your style from a mailbox of yours: you have none here."
+msgstr "Nora lernt Ihren Stil aus einem Postfach von Ihnen: Hier haben Sie keines."
+
+msgid "WHAT NORA KEEPS"
+msgstr "WAS NORA BEHÄLT"
+
+msgid "Show"
+msgstr "Anzeigen"
+
+msgid "Propose ready replies"
+msgstr "Vorbereitete Antworten vorschlagen"
+
+msgid "With each person, Nora writes \"tu\" or \"vous\" as your last email to them did."
+msgstr "Bei jeder Person schreibt Nora „du“ oder „Sie“, wie in Ihrer letzten E-Mail an sie."
+
+msgid "Learn again now"
+msgstr "Jetzt neu lernen"
+
+msgid "Forget my style"
+msgstr "Mein Stil vergessen"
+
+msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor Nora's memory see it."
+msgstr "Auf Ihrem Neoffice-Server gespeichert, nur für Sie: weder Ihre Kollegen noch Noras Gedächtnis sehen es."
+
+msgid "What Nora keeps of your writing"
+msgstr "Was Nora von Ihrem Schreibstil behält"
+
+msgid "Nora couldn't prepare replies: {reason}"
+msgstr "Nora konnte keine Antworten vorbereiten: {reason}"
+
+msgid "My Style"
+msgstr "Mein Stil"
+
+msgid "{n} field to fill in"
+msgid_plural "{n} fields to fill in"
+msgstr[0] "{n} Feld auszufüllen"
+msgstr[1] "{n} Felder auszufüllen"
+
+msgid "Sending in {n} second…"
+msgid_plural "Sending in {n} seconds…"
+msgstr[0] "Senden in {n} Sekunde…"
+msgstr[1] "Senden in {n} Sekunden…"
+
+msgid "Learnt on {date} from {n} sent email."
+msgid_plural "Learnt on {date} from {n} sent emails."
+msgstr[0] "Gelernt am {date} aus {n} gesendeter E-Mail."
+msgstr[1] "Gelernt am {date} aus {n} gesendeten E-Mails."
+
+msgid "{n} excerpt of your replies, kept as an example"
+msgid_plural "{n} excerpts of your replies, kept as examples"
+msgstr[0] "{n} Auszug aus Ihren Antworten, als Beispiel behalten"
+msgstr[1] "{n} Auszüge aus Ihren Antworten, als Beispiele behalten"

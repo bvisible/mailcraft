@@ -3409,3 +3409,105 @@ msgstr "{read} di {total} MB"
 
 msgid "{said}; {left}{more}"
 msgstr "{said}; {left}{more}"
+
+# Nora's ready replies under a message being read, and « My style » (crates/ui-egui/src/nora/ready.rs). Translations by Haiku.
+msgid "Nora's ready replies aren't offered here."
+msgstr "Le risposte pronte di Nora non sono proposte qui."
+
+msgid "The reply opens once the message is here: read it, then send it."
+msgstr "La risposta si apre quando il messaggio è qui: lo legga, poi invii la risposta."
+
+msgid "A field of Nora's is still empty: \"{label}\". Fill it in or delete it before sending."
+msgstr "Un campo di Nora è ancora vuoto: \"{label}\". Lo compili o lo elimini prima di inviare."
+
+msgid "Ready replies"
+msgstr "Risposte pronte"
+
+msgid "NORA'S DRAFT"
+msgstr "BOZZA DI NORA"
+
+msgid "to"
+msgstr "a"
+
+msgid "Your signature and the quoted message are added when it is sent."
+msgstr "La Sua firma e il messaggio citato vengono aggiunti al momento dell’invio."
+
+msgid "Something else"
+msgstr "Altro"
+
+msgid "Enter: keep · Tab: next field · Escape: close"
+msgstr "Invio: mantieni · Tab: campo successivo · Esc: chiudi"
+
+msgid "In your style · My style"
+msgstr "Nel Suo stile · Il mio stile"
+
+msgid "Nora is learning your style from your sent emails."
+msgstr "Nora sta imparando il Suo stile dalle e-mail che Lei ha inviato."
+
+msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
+msgstr "Nora può proporre risposte nel Suo stile. Per farlo legge il messaggio che Lei apre e impara dalle e-mail che Lei ha inviato. Tutto resta sul Suo server Neoffice, solo per Lei; nulla viene inviato senza il Suo clic."
+
+msgid "Turn on"
+msgstr "Attivare"
+
+msgid "You can change this in My style."
+msgstr "Può modificarlo da Il mio stile."
+
+msgid "Nora is preparing a reply in your style…"
+msgstr "Nora prepara una risposta nel Suo stile…"
+
+msgid "Nora hasn't learnt your style yet: she learns it from the emails you sent."
+msgstr "Nora non ha ancora imparato il Suo stile: lo impara dalle e-mail che Lei ha inviato."
+
+msgid "Nora learns your style from a mailbox of yours: you have none here."
+msgstr "Nora impara il Suo stile da una Sua casella di posta: qui Lei non ne ha."
+
+msgid "WHAT NORA KEEPS"
+msgstr "COSA CONSERVA NORA"
+
+msgid "Show"
+msgstr "Mostrare"
+
+msgid "Propose ready replies"
+msgstr "Proporre risposte pronte"
+
+msgid "With each person, Nora writes \"tu\" or \"vous\" as your last email to them did."
+msgstr "Con ciascuna persona, Nora scrive «tu» o «Lei» come nella Sua ultima e-mail a quella persona."
+
+msgid "Learn again now"
+msgstr "Riapprendere ora"
+
+msgid "Forget my style"
+msgstr "Dimenticare il mio stile"
+
+msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor Nora's memory see it."
+msgstr "Conservato sul Suo server Neoffice, solo per Lei: né i Suoi colleghi né la memoria di Nora lo vedono."
+
+msgid "What Nora keeps of your writing"
+msgstr "Cosa conserva Nora del Suo modo di scrivere"
+
+msgid "Nora couldn't prepare replies: {reason}"
+msgstr "Nora non è riuscita a preparare risposte: {reason}"
+
+msgid "My Style"
+msgstr "Il mio stile"
+
+msgid "{n} field to fill in"
+msgid_plural "{n} fields to fill in"
+msgstr[0] "{n} campo da compilare"
+msgstr[1] "{n} campi da compilare"
+
+msgid "Sending in {n} second…"
+msgid_plural "Sending in {n} seconds…"
+msgstr[0] "Invio tra {n} secondo…"
+msgstr[1] "Invio tra {n} secondi…"
+
+msgid "Learnt on {date} from {n} sent email."
+msgid_plural "Learnt on {date} from {n} sent emails."
+msgstr[0] "Appreso il {date} da {n} e-mail inviata."
+msgstr[1] "Appreso il {date} da {n} e-mail inviate."
+
+msgid "{n} excerpt of your replies, kept as an example"
+msgid_plural "{n} excerpts of your replies, kept as examples"
+msgstr[0] "{n} estratto delle Sue risposte, conservato come esempio"
+msgstr[1] "{n} estratti delle Sue risposte, conservati come esempi"
