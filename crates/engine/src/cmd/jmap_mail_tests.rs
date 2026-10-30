@@ -153,7 +153,7 @@ fn a_new_message_shows_the_marks_the_server_gave_it() {
     let mut answered = mail("E1", "<1@x>", "One", 100);
     (answered.server.read, answered.server.answered, answered.server.forwarded, answered.server.flag) = (true, true, true, FlagStatus::Flagged);
     let mut plain = mail("E2", "<2@x>", "Two", 200);
-    plain.draft = true;
+    plain.draft = Some(true);
     take(&mut s, account, None, vec![window("Min", vec![answered, plain], true)], true);
     let inbox = in_folder(&s, account, "Min");
     let marks: Vec<(&str, bool, bool, bool, FlagStatus, bool)> =

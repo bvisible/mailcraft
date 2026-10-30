@@ -159,12 +159,14 @@ fn what_is_not_the_right_type_is_refused() {
         (json!({"email": ME, "kind": "microsoft", "jmap": {"session": SESSION}}), "only for an account whose `kind` is"),
         (json!({"email": ME, "kind": "local", "jmap": 5}), "only for an account whose `kind` is"),
         (json!({"email": ME, "kind": 5, "jmap": {"session": SESSION}}), "only for an account whose `kind` is"),
-        (json!({"email": ME, "kind": "exchange"}), "`kind` is imap, local, microsoft or jmap"),
     ] {
         let said = refusal(add(&mut s, params.clone()));
         assert!(said.contains(why), "{params}: {said}");
         assert_eq!(s.mailbox, before, "{params}: a refusal changes nothing");
     }
+    // //// Neoffice — `exchange` is a kind since upstream's #252: with its switch off an account of it is refused for that, not as an unknown kind.
+    assert!(add(&mut s, json!({"email": ME, "kind": "exchange"})).is_err());
+    assert_eq!(s.mailbox, before, "an Exchange server account with its switch off changes nothing");
     // Said to be nothing for the other kinds, it is nothing; and no incoming server said to be none.
     let id = add(&mut s, json!({"email": ME, "jmap": null})).unwrap();
     assert_eq!((s.mailbox.account(id).map(|a| a.kind), server(&s, id)), (Some(AccountKind::Local), None));

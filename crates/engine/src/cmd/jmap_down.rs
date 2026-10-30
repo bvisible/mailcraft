@@ -43,10 +43,11 @@
 //!   not brought down either.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
-use mailcraft_model::sync::{GraphMessage, MessagePage, ServerMessage};
+use mailcraft_model::sync::{FolderListing, GraphMessage, MessagePage, ServerMessage};
 use mailcraft_model::time::Timestamp;
-use mailcraft_model::{Address, FlagStatus, Id, Mailbox, Queued};
+use mailcraft_model::{Address, FlagStatus, FolderKind, Id, Mailbox, Message, Queued};
 
 use super::graph_down::{self, Down, ServerIndex};
 
@@ -298,6 +299,135 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
         ..last
     });
     *m != before
+}
+
+// //// Neoffice — what upstream's Exchange intake (`ews_down.rs`) takes from upstream's `jmap_down`, whose file this fork
+// //// Neoffice — replaces with its own: the limits a server's words are held to, the one-line text, the people of a header, the
+// //// Neoffice — lines of trouble, and the folders that stay when a complete listing leaves them out. Taken whole from upstream's
+// //// Neoffice — v0.8.2+ `jmap_down.rs`; the fork's JMAP run does not use them (its own limits are in `jmap_mail.rs`).
+/// Lines of trouble kept of one piece, and the longest, in characters.
+const MAX_LINES: usize = 32;
+const MAX_LINE: usize = 400;
+/// Longest subject and `Message-ID` kept, in characters.
+pub(crate) const MAX_TEXT: usize = 998;
+/// Longest preview kept, in characters.
+pub(crate) const MAX_PREVIEW: usize = 256;
+/// Longest name and address kept, in characters, and most addresses of a `To` or a `Cc`.
+const MAX_NAME: usize = 256;
+const MAX_ADDRESS: usize = 320;
+const MAX_PEOPLE: usize = 500;
+/// Longest a busy server is waited for, in seconds: a day.
+pub(crate) const MAX_BUSY: u32 = 86_400;
+/// Most messages of a batch fetched whole, the largest taken (Download messages in full goes up to
+/// 50 MB), and the most a batch brings in all, the one message past it taken still.
+pub(crate) const MAX_FETCHED: usize = 100;
+pub(crate) const MAX_MESSAGE: usize = 50 << 20;
+pub(crate) const MAX_BATCH: usize = 64 << 20;
+
+/// `text` on one line: words parted by one space (a control character parts them too), `most`
+/// characters at the most.
+pub(crate) fn line(text: &str, most: usize) -> String {
+    let mut out = String::new();
+    let mut length = 0usize;
+    for word in text.split(|c: char| c.is_whitespace() || c.is_control()).filter(|word| !word.is_empty()) {
+        if length > 0 {
+            out.push(' ');
+            length = length.saturating_add(1);
+        }
+        out.push_str(word);
+        length = length.saturating_add(word.chars().count());
+        if length >= most {
+            break;
+        }
+    }
+    out.chars().take(most).collect::<String>().trim_end().to_string()
+}
+
+/// An address as a server said it, on one line, or none: one whose address part holds what parts
+/// addresses in a list or encloses one (`,` `;` `<` `>` `"`) would be two people, or another one,
+/// once it is written into a reply.
+pub(crate) fn person(a: &Address) -> Option<Address> {
+    let (name, email) = (line(&a.name, MAX_NAME), line(&a.email, MAX_ADDRESS));
+    if email.contains([',', ';', '<', '>', '"']) {
+        return None;
+    }
+    (!name.is_empty() || !email.is_empty()).then_some(Address { name, email })
+}
+
+pub(crate) fn people(list: &[Address]) -> Vec<Address> {
+    list.iter().take(MAX_PEOPLE).filter_map(person).collect()
+}
+
+/// The lines of trouble a piece tells of, held to their number and length.
+pub(crate) fn lines(said: &[String]) -> Vec<String> {
+    said.iter().take(MAX_LINES).map(|said| line(said, MAX_LINE)).filter(|said| !said.is_empty()).collect()
+}
+
+/// A draft that is here whole: it may have been changed here, and nothing goes up yet, so what the
+/// server does with its copy doesn't take it away.
+fn draft_here(m: &Message) -> bool {
+    m.draft && !m.unfetched
+}
+
+/// Most folders followed upwards from one that stays, to the ones above it that stay with it.
+const MAX_DEPTH: usize = 64;
+
+/// Before a complete listing is taken in ([`super::graph_mail::take_listing`], which removes a
+/// folder whose mailbox it doesn't have, with the mail in it): such a folder stays when it is one
+/// of the account's standard folders, or holds mail that only this computer has (moved or
+/// imported here, or a draft that is here whole: nothing goes up yet), and so do the folders above
+/// it whose mailboxes are gone too. It stays as a folder of this computer alone, without what the
+/// server had in that mailbox; and what of such a mailbox lies anywhere else here (moved there
+/// here), or is a draft here whole, is this computer's own from now on. How many messages went.
+pub(crate) fn keep_what_is_only_here(mb: &mut Mailbox, account: Id, listing: &FolderListing) -> usize {
+    if !listing.complete {
+        return 0;
+    }
+    let listed: HashSet<&str> = listing.folders.iter().map(|f| f.id.as_str()).collect();
+    let only_here: HashSet<Id> =
+        mb.messages.values().filter(|m| m.account == account && (m.server.is_none() || draft_here(m))).map(|m| m.folder).collect();
+    // The folders whose mailbox is gone, by the id the server gave the mailbox; and which of them stay.
+    let mut dropped: HashMap<String, Id> = HashMap::new();
+    let mut kept: HashSet<Id> = HashSet::new();
+    for f in mb.folders.iter().filter(|f| f.account == account) {
+        let Some(server) = f.server.as_ref().filter(|server| !listed.contains(server.id.as_str())) else { continue };
+        dropped.insert(server.id.clone(), f.id);
+        if f.kind != FolderKind::Custom || only_here.contains(&f.id) {
+            kept.insert(f.id);
+        }
+    }
+    if dropped.is_empty() {
+        return 0;
+    }
+    let gone_too: HashSet<Id> = dropped.values().copied().collect();
+    for folder in kept.clone() {
+        let mut at = mb.folder(folder).and_then(|f| f.parent);
+        for _ in 0..MAX_DEPTH {
+            let Some(parent) = at.filter(|parent| gone_too.contains(parent)) else { break };
+            kept.insert(parent);
+            at = mb.folder(parent).and_then(|f| f.parent);
+        }
+    }
+    let before = mb.messages.len();
+    // In a folder that stays: what lay in its mailbox goes with it, but a draft here whole.
+    mb.messages.retain(|_, m| {
+        let lay_there = m.server.as_ref().is_some_and(|server| dropped.get(&server.folder) == Some(&m.folder));
+        !(kept.contains(&m.folder) && m.account == account && lay_there && !draft_here(m))
+    });
+    let gone = before.saturating_sub(mb.messages.len());
+    // What else of those mailboxes is here, and not in a folder that goes (whose mail goes with it),
+    // is this computer's now.
+    let doomed: HashSet<Id> = gone_too.difference(&kept).copied().collect();
+    for m in mb.messages.values_mut() {
+        let of_one = m.account == account && m.server.as_ref().is_some_and(|server| dropped.contains_key(&server.folder));
+        if of_one && !doomed.contains(&m.folder) {
+            Arc::make_mut(m).server = None;
+        }
+    }
+    for f in mb.folders.iter_mut().filter(|f| kept.contains(&f.id)) {
+        f.server = None;
+    }
+    gone
 }
 
 #[cfg(test)]

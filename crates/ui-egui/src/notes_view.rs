@@ -750,6 +750,7 @@ pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::di
         more: Vec::new(),
         note: None,
         cancel: None,
+        tick: None,
     })
 }
 

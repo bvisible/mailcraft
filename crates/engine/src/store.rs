@@ -73,15 +73,15 @@ use std::time::{Duration, Instant, SystemTime};
 use mailcraft_model::{Contact, ContentRef, Event, Id, KeptBody, Mailbox, Message, Task};
 use serde::{Deserialize, Serialize};
 
-use crate::io::{BackgroundSave, ContentSource, MAX_FILE, OpenProgress, SaveProgress, SaveReport, SaveStage};
+use crate::io::{BackgroundSave, ContentSource, MAX_FILE, MAX_MAILBOX_JSON, OpenProgress, SaveProgress, SaveReport, SaveStage};
 
 #[path = "store_index.rs"]
 mod index;
 
 use index::{Coll, Fp, Key, Tail};
 
-/// Largest mailbox file read in this form (16 GB; the JSON forms stop at [`MAX_FILE`]).
-pub const MAX_INDEX: u64 = 16 << 30;
+/// Largest mailbox file read in this form (16 GB; the JSON forms stop at [`MAX_MAILBOX_JSON`]).
+pub const MAX_INDEX: u64 = if cfg!(test) { 64 << 20 } else { 16 << 30 };
 
 /// Items of a mailbox file parsed at a time when it is opened.
 const OPEN_SLICE: usize = 16_384;
@@ -277,16 +277,18 @@ struct Part {
 struct Parts {
     text: Option<Part>,
     html: Option<Part>,
+    /// The words the sender hid ([`Message::hidden_text`]), when over [`INLINE_MAX`] (#599).
+    hidden: Option<Part>,
     attachments: Vec<Option<Part>>,
 }
 
 impl Parts {
     fn is_empty(&self) -> bool {
-        self.text.is_none() && self.html.is_none() && self.attachments.iter().all(Option::is_none)
+        self.text.is_none() && self.html.is_none() && self.hidden.is_none() && self.attachments.iter().all(Option::is_none)
     }
 
     fn all(&self) -> impl Iterator<Item = &Part> {
-        self.text.iter().chain(&self.html).chain(self.attachments.iter().flatten())
+        self.text.iter().chain(&self.html).chain(&self.hidden).chain(self.attachments.iter().flatten())
     }
 
     /// As the mailbox file has it under `blobs`: `{"text":[hash,length],"attachments":[…,null]}`.
@@ -298,6 +300,9 @@ impl Parts {
         }
         if self.html.is_some() {
             fields.push(format!("\"html\":{}", one(&self.html)));
+        }
+        if self.hidden.is_some() {
+            fields.push(format!("\"hidden\":{}", one(&self.hidden)));
         }
         if !self.attachments.is_empty() {
             fields.push(format!("\"attachments\":[{}]", self.attachments.iter().map(one).collect::<Vec<_>>().join(",")));
@@ -314,6 +319,9 @@ impl Parts {
         }
         if let (Some(r), Some(html)) = (held(&self.html), &m.body.html) {
             out.push((r, html.as_bytes()));
+        }
+        if let Some(r) = held(&self.hidden).filter(|_| !m.hidden_text.is_empty()) {
+            out.push((r, m.hidden_text.as_bytes()));
         }
         for (p, a) in self.attachments.iter().zip(&m.attachments) {
             if let Some(r) = held(p) {
@@ -338,6 +346,7 @@ struct Head {
 struct WireParts {
     text: Option<(String, u64)>,
     html: Option<(String, u64)>,
+    hidden: Option<(String, u64)>,
     #[serde(deserialize_with = "capped")]
     attachments: Vec<Option<(String, u64)>>,
 }
@@ -372,13 +381,13 @@ fn parse_ref(wire: &(String, u64)) -> Option<Ref> {
 impl WireParts {
     /// Every name given, parsed or not.
     fn hashes(&self) -> impl Iterator<Item = Digest> + '_ {
-        self.text.iter().chain(&self.html).chain(self.attachments.iter().flatten()).filter_map(parse_ref).map(|r| r.hash)
+        self.text.iter().chain(&self.html).chain(&self.hidden).chain(self.attachments.iter().flatten()).filter_map(parse_ref).map(|r| r.hash)
     }
 
     /// The parts as named, all taken to be in memory (what couldn't be read is marked after).
     fn parts(&self) -> Parts {
         let one = |p: &Option<(String, u64)>| p.as_ref().and_then(parse_ref).map(|r| Part { r, held: true });
-        Parts { text: one(&self.text), html: one(&self.html), attachments: self.attachments.iter().map(one).collect() }
+        Parts { text: one(&self.text), html: one(&self.html), hidden: one(&self.hidden), attachments: self.attachments.iter().map(one).collect() }
     }
 }
 
@@ -811,7 +820,7 @@ impl Pins {
         let mut out = HashSet::new();
         for m in self.held.iter().filter_map(Weak::upgrade).filter(|m| which(m)) {
             if let Some(k) = m.kept.as_deref() {
-                out.extend(k.text.iter().chain(&k.html).map(|r| Digest(r.sha256)));
+                out.extend(k.text.iter().chain(&k.html).chain(&k.hidden).map(|r| Digest(r.sha256)));
             }
             out.extend(m.attachments.iter().filter_map(|a| a.kept).map(|r| Digest(r.sha256)));
         }
@@ -1343,6 +1352,17 @@ fn report(show: &std::path::Display<'_>, dir: &Path, filled: &Filled) {
     }
 }
 
+/// Whether the file starts like a JSON object (after a byte order mark and white space): what a
+/// mailbox of the forms before the log of records is.
+fn starts_like_json(file: &Path) -> Result<bool, String> {
+    let mut f = crate::io::regular_file(file).map_err(|e| e.to_string())?;
+    let mut head = [0u8; 64];
+    let got = index::fill(&mut f, &mut head).map_err(|e| e.to_string())?;
+    let head = head.get(..got).unwrap_or(&[]);
+    let head = head.strip_prefix(&[0xEF, 0xBB, 0xBF][..]).unwrap_or(head);
+    Ok(head.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'{'))
+}
+
 /// Whether the file at `path` begins as a mailbox file in this form does. A file that begins as
 /// one of a form a newer MailCraft writes is an error that says so.
 fn is_index(file: &Path) -> Result<bool, String> {
@@ -1539,15 +1559,38 @@ fn open_locked(st: &mut State, path: &Path, progress: &OpenProgress, launch: Lau
         }
         return Ok((opened, true));
     }
-    if len > MAX_FILE {
-        return Err(format!("{show} is larger than {} MB", MAX_FILE >> 20));
+    // Only a file that starts like JSON is a mailbox of the forms before this one: anything else
+    // (zeros left by a write the system cut short, another program's file) is not "too large".
+    if !starts_like_json(&file).map_err(|e| format!("{show}: {e}"))? {
+        return Err(format!("{show} isn't a MailCraft mailbox (it doesn't start like one; it may be damaged, and it is left as it is)"));
     }
-    // (Read as `io::read_regular_file` does, its bytes counted.)
+    if len > MAX_MAILBOX_JSON {
+        return Err(format!("{show} is larger than {} MB", MAX_MAILBOX_JSON >> 20));
+    }
+    // Parsing allocates every string again: about twice the file is in memory at the peak, so a
+    // file that is too large a share of the machine's memory is refused here, not by an abort.
+    let available = available_memory();
+    if json_needs_too_much_memory(len, available) {
+        return Err(if available.is_some() {
+            format!("{show} is too large for this computer's memory ({} MB)", len >> 20)
+        } else {
+            format!(
+                "{show} is {} MB, more than MailCraft opens as one file on a computer whose free memory it can't measure ({} MB)",
+                len >> 20,
+                UNMEASURED_JSON_MAX >> 20
+            )
+        });
+    }
+    // (Read as `io::read_regular_file` does, its bytes counted; the room asked for first, so that
+    // a machine without it says so instead of stopping.)
     let f = crate::io::regular_file(&file).map_err(|e| format!("{show}: {e}"))?;
-    let mut bytes = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
-    Counted { inner: f.take(MAX_FILE.saturating_add(1)), progress }.read_to_end(&mut bytes).map_err(|e| format!("{show}: {e}"))?;
-    if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_FILE) {
-        return Err(format!("{show} is larger than {} MB", MAX_FILE >> 20));
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(usize::try_from(len).map_err(|_| format!("{show} is too large for this computer's memory"))?)
+        .map_err(|_| format!("{show} is too large for this computer's memory ({} MB)", len >> 20))?;
+    Counted { inner: f.take(MAX_MAILBOX_JSON.saturating_add(1)), progress }.read_to_end(&mut bytes).map_err(|e| format!("{show}: {e}"))?;
+    if u64::try_from(bytes.len()).map_or(true, |n| n > MAX_MAILBOX_JSON) {
+        return Err(format!("{show} is larger than {} MB", MAX_MAILBOX_JSON >> 20));
     }
     let mut mailbox: Mailbox =
         mailcraft_model::from_json(&bytes, max_json_items()).map_err(|e| format!("{show}: this isn't a MailCraft mailbox ({e})"))?;
@@ -1771,6 +1814,7 @@ pub(crate) fn forget_how_far_fetched(mailbox: &mut Mailbox) {
         if let Some(server) = &mut folder.server {
             server.delta.clear();
             server.caught_up = false;
+            server.round_ended = false;
         }
     }
 }
@@ -1816,6 +1860,47 @@ pub fn body_budget() -> u64 {
         }
     }
     physical_memory().map_or(FALLBACK_BUDGET, |m| m / 16).min(MAX_CONTENT)
+}
+
+/// Whether reading and parsing a JSON file of `len` bytes would want more than `available` bytes
+/// of memory (three times the file: the bytes, and the strings made of them). Where the memory
+/// can't be read (everywhere but Linux) a fixed cap stands in, [`UNMEASURED_JSON_MAX`].
+fn json_needs_too_much_memory(len: u64, available: Option<u64>) -> bool {
+    match available {
+        Some(a) => len.saturating_mul(3) > a,
+        None => len > UNMEASURED_JSON_MAX,
+    }
+}
+
+/// Largest one-file (JSON) mailbox opened where the memory in use can't be measured: 1 GiB (twice
+/// the old limit; about 3 GB of memory at the peak). 8 MB under test.
+const UNMEASURED_JSON_MAX: u64 = if cfg!(test) { 8 << 20 } else { 1 << 30 };
+
+/// Memory not in use, where it can be read (Linux: `MemAvailable`); `None` elsewhere.
+fn available_memory() -> Option<u64> {
+    #[cfg(test)]
+    {
+        match TEST_AVAILABLE.get() {
+            0 => {}
+            u64::MAX => return None,
+            set => return Some(set),
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let text = fs::read_to_string("/proc/meminfo").ok()?;
+        let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+        kb.checked_mul(1024)
+    }
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 0: the machine's; `u64::MAX`: unknown; else the bytes available.
+    pub(crate) static TEST_AVAILABLE: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// Items a mailbox is always read with from JSON, whatever the budget (250 MB at a kilobyte each).
@@ -1898,11 +1983,13 @@ pub fn read_bodies(path: &Path, bodies: &[crate::session::BodyLater]) -> (Vec<cr
             None
         }
     };
-    let read: Vec<_> = fan_out(bodies.len(), |i| bodies.get(i).map(|b| (b.id, read(b.text), read(b.html))))
+    // (What the sender hid that can't be read is no hidden text, and not a failure to tell of.)
+    let hidden_of = |b: &crate::session::BodyLater| read(b.hidden).and_then(|(r, bytes)| bytes.map(|bytes| (r, bytes)));
+    let read: Vec<_> = fan_out(bodies.len(), |i| bodies.get(i).map(|b| (b.id, read(b.text), read(b.html), hidden_of(b))))
         .into_iter()
         .flatten()
         .flatten()
-        .map(|(id, text, html)| crate::session::BodyRead { id, text: ok(text), html: ok(html) })
+        .map(|(id, text, html, hidden)| crate::session::BodyRead { id, text: ok(text), html: ok(html), hidden })
         .collect();
     (read, failed)
 }
@@ -1996,12 +2083,15 @@ fn fill(st: &mut State, dir: &Path, mailbox: &mut Mailbox, head: Head, mut parts
             let now = rows.as_ref().is_none_or(|rows| rows.contains(&id));
             let text = want(&wire.text, true, now, &mut st.live);
             let html = want(&wire.html, true, now, &mut st.live);
+            // (A name for more than a hidden text can be is not read: the cap holds in a hostile file.)
+            let hidden_wire = wire.hidden.clone().filter(|(_, len)| *len <= mailcraft_model::MAX_HIDDEN_TEXT as u64);
+            let hidden = want(&hidden_wire, true, now, &mut st.live);
             let attachments: Vec<Option<Want>> = wire.attachments.iter().map(|a| want(a, false, true, &mut st.live)).collect();
-            plan.push((id, text, html, attachments));
+            plan.push((id, text, html, hidden, attachments));
         }
         for (id, wire) in &head.blobs {
             if !mailbox.messages.contains_key(id) {
-                for part in wire.text.iter().chain(&wire.html).chain(wire.attachments.iter().flatten()) {
+                for part in wire.text.iter().chain(&wire.html).chain(&wire.hidden).chain(wire.attachments.iter().flatten()) {
                     want(&Some(part.clone()), false, true, &mut st.live);
                 }
             }
@@ -2020,16 +2110,18 @@ fn fill(st: &mut State, dir: &Path, mailbox: &mut Mailbox, head: Head, mut parts
         let pick = |w: &Option<Want>| w.as_ref().filter(|w| w.later).and_then(Want::kept);
         let later = plan
             .iter()
-            .filter_map(|(id, text, html, _)| {
-                let (text, html) = (pick(text), pick(html));
-                (text.is_some() || html.is_some()).then_some(crate::session::BodyLater { id: *id, text, html })
+            .filter_map(|(id, text, html, hidden, _)| {
+                let (text, html, hidden) = (pick(text), pick(html), pick(hidden));
+                (text.is_some() || html.is_some() || hidden.is_some()).then_some(crate::session::BodyLater { id: *id, text, html, hidden })
             })
             .collect();
         st.later = Some(later);
     }
     let mut on_disk: Vec<(Ref, u32)> = Vec::new();
     let mut seen: HashMap<Ref, usize> = HashMap::new();
-    for (_, text, html, attachments) in &plan {
+    // (What the sender hid is not looked for: if it is gone there is no hidden text, which is not
+    // a loss the owner is told of.)
+    for (_, text, html, _, attachments) in &plan {
         for want in text.iter().chain(html).chain(attachments.iter().flatten()) {
             if let (Some(r), None) = (want.r, want.slot) {
                 let at = *seen.entry(r).or_insert_with(|| {
@@ -2078,7 +2170,7 @@ fn fill(st: &mut State, dir: &Path, mailbox: &mut Mailbox, head: Head, mut parts
         let bytes = Arc::try_unwrap(bytes).unwrap_or_else(|used_elsewhere| used_elsewhere.to_vec());
         Some(String::from_utf8(bytes).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned()))
     };
-    for (id, text, html, attachments) in plan {
+    for (id, text, html, hidden, attachments) in plan {
         let Some(m) = mailbox.messages.get_mut(&id).map(Arc::make_mut) else { continue };
         let mut held = parts.as_deref_mut().and_then(|p| p.remove(&id));
         let mut kept = KeptBody::default();
@@ -2118,6 +2210,24 @@ fn fill(st: &mut State, dir: &Path, mailbox: &mut Mailbox, head: Head, mut parts
             }
             if let Some(p) = held.as_mut().and_then(|p| p.html.as_mut()) {
                 p.held = m.body.html.is_some();
+            }
+        }
+        if let Some(want) = &hidden {
+            m.hidden_text = String::new();
+            // (Not counted, whether it was read, is on disk or is gone.)
+            match stand(want, &mut Filled::default()) {
+                Some(true) => {
+                    if let Some(text) = want.slot.and_then(&mut take) {
+                        m.hidden_text = text;
+                    }
+                }
+                Some(false) => kept.hidden = want.kept(),
+                // Missing or damaged: no hidden text. It never makes the message unavailable
+                // (an older build's sweep takes the file, which it knows nothing of).
+                None => {}
+            }
+            if let Some(p) = held.as_mut().and_then(|p| p.hidden.as_mut()) {
+                p.held = !m.hidden_text.is_empty();
             }
         }
         // (A missing HTML is noted on the text, which is otherwise there to read.)
@@ -2253,6 +2363,12 @@ pub fn load_all(path: &Path, mailbox: &mut Mailbox) -> Result<usize, String> {
                 m.body.html = Some(text_of_bytes(&take(&r)?));
                 n += 1;
             }
+            if let Some(r) = kept.hidden.filter(|_| m.hidden_text.is_empty())
+                && let Ok(bytes) = take(&r)
+            {
+                m.hidden_text = text_of_bytes(&bytes);
+                n += 1;
+            }
         }
         for a in &mut m.attachments {
             if let Some(r) = a.kept.filter(|_| a.data.is_empty()) {
@@ -2301,6 +2417,15 @@ pub fn evictable(path: &Path, id: Id, m: &Message) -> Option<Message> {
     {
         lean.body.html = None;
         kept.html = Some(p.r.to_model());
+        any = true;
+    }
+    if let Some(p) = parts.hidden
+        && !m.hidden_text.is_empty()
+        && m.hidden_text.len() as u64 == p.r.len
+        && Ref::of(m.hidden_text.as_bytes()) == p.r
+    {
+        lean.hidden_text = String::new();
+        kept.hidden = Some(p.r.to_model());
         any = true;
     }
     for (a, p) in lean.attachments.iter_mut().zip(&parts.attachments) {
@@ -2392,6 +2517,14 @@ fn save_locked(mut st: MutexGuard<'_, State>, shared: &Shared, path: &Path, mail
 /// written whole and atomically. Returns the bytes written.
 pub fn save_single(path: &Path, mailbox: &Mailbox) -> Result<u64, String> {
     let bytes = crate::io::write_mailbox(mailbox)?;
+    // Never write a file a later open would refuse.
+    if bytes.len() as u64 > MAX_MAILBOX_JSON {
+        return Err(format!(
+            "the mailbox is {} MB, more than one file holds ({} MB); nothing was written. A mailbox this large is kept by saving it where it is kept (content in a folder beside the mailbox file), not as one file",
+            bytes.len() >> 20,
+            MAX_MAILBOX_JSON >> 20
+        ));
+    }
     let shared = shared(path);
     let mut st = lock(&shared.state);
     write_atomic(&resolve(path), &bytes).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -2430,6 +2563,12 @@ fn prepare(id: Id, m: &Arc<Message>, hashes: &mut HashMap<usize, (Weak<Vec<u8>>,
             None => kept.filter(|_| same_text).and_then(|k| k.html.as_ref()).map(on_disk),
             Some(html) => outside(html.as_bytes()),
         },
+        // What the sender hid goes with the HTML it was read from.
+        hidden: if m.hidden_text.is_empty() {
+            kept.filter(|_| same_text).and_then(|k| k.hidden.as_ref()).map(on_disk)
+        } else {
+            outside(m.hidden_text.as_bytes())
+        },
         attachments: Vec::new(),
     };
     for a in m.attachments.iter().take(MAX_PARTS) {
@@ -2457,6 +2596,9 @@ fn prepare(id: Id, m: &Arc<Message>, hashes: &mut HashMap<usize, (Weak<Vec<u8>>,
     }
     if parts.html.is_some() {
         lean.body.html = None;
+    }
+    if parts.hidden.is_some() {
+        lean.hidden_text = String::new();
     }
     let nothing: Arc<Vec<u8>> = Arc::default();
     for (a, part) in lean.attachments.iter_mut().zip(&parts.attachments) {
@@ -2874,6 +3016,11 @@ fn keep_aside(path: &Path, what: &str) -> std::io::Result<PathBuf> {
     Err(std::io::Error::other("too many files kept aside already"))
 }
 
+/// Why a save wasn't written: the file would be one a later open refuses.
+fn too_big_to_open(len: u64) -> String {
+    format!("the mailbox file would be {} MB, more than MailCraft opens ({} GB); nothing was written", len >> 20, MAX_INDEX >> 30)
+}
+
 fn write_index(st: &mut State, path: &Path, mailbox: &Mailbox, progress: &Progress) -> Result<Saved, String> {
     let saved = write_index_once(st, path, mailbox, progress);
     // What was worked out of attachments no longer in memory is no use to anybody.
@@ -2938,9 +3085,10 @@ fn write_index_once(st: &mut State, path: &Path, mailbox: &Mailbox, progress: &P
         saved.unchanged = saved.blobs == 0;
         return Ok(saved);
     }
-    // When what was appended outgrows what the file says, it is written whole instead.
+    // When what was appended outgrows what the file says, or would pass what is opened, it is
+    // written whole instead (which refuses only when the mailbox itself is too big to open).
     d.len = d.len.saturating_add(group.len() as u64);
-    if d.outgrown() {
+    if d.outgrown() || d.len > MAX_INDEX {
         return compact(st, path, mailbox, None, progress).map(|whole| Saved {
             blobs: saved.blobs + whole.blobs,
             blob_bytes: saved.blob_bytes + whole.blob_bytes,
@@ -3049,6 +3197,10 @@ fn compact(st: &mut State, path: &Path, mailbox: &Mailbox, keep: Option<Keep>, p
     compact_items(&mailbox.tasks, Coll::Task, &mut out, &mut d.tasks, &mut d.live, &mut records)?;
     let commit = index::commit(&mut out, records).map_err(io_error)?;
     d.len = index::HEADER_LEN.saturating_add(d.live).saturating_add(commit);
+    // Never write a file a later open would refuse (the temporary file goes, the old one stays).
+    if d.len > MAX_INDEX {
+        return Err(too_big_to_open(d.len));
+    }
     // The content first: the file isn't the mailbox until it is renamed over.
     let mut saved = Saved::default();
     write_content(path, &wanted, &mut saved, progress)?;
@@ -3136,7 +3288,11 @@ fn named_by(path: &Path) -> Result<Option<HashSet<Digest>>, String> {
         }
         return Ok(Some(named));
     }
-    if len > MAX_FILE {
+    // (Only the form with a content folder names any; its head says which form this is.)
+    if crate::store_before::format_on_disk(path) != Some(SPLIT_VERSION) {
+        return Ok(None);
+    }
+    if len > MAX_MAILBOX_JSON {
         return Err("too large".into());
     }
     let head: Head = serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
@@ -3610,3 +3766,7 @@ mod open_tests;
 #[cfg(test)]
 #[path = "store_bench_tests.rs"]
 mod bench_tests;
+
+#[cfg(test)]
+#[path = "store_large_tests.rs"]
+mod large_tests;

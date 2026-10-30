@@ -51,6 +51,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("jmap", Class::Layer(3)),
     // //// Neoffice — the fork's JMAP client (crates/jmap-fork), at the same place, for the same reasons.
     ("jmap-fork", Class::Layer(3)),
+    // Exchange Web Services over any HTTP, the same: no sockets, no browser APIs, and builds for the browser.
+    ("ews", Class::Layer(3)),
     ("net", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("mcp", Class::Layer(5)),

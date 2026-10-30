@@ -119,7 +119,7 @@ fn sent_window(subject: &str) -> JmapMailResult {
 }
 
 fn sent_as(message: Id, outcome: SendOutcome) -> JmapMailResult {
-    JmapMailResult { sent: vec![SendDone { message, outcome, draft: None }], ..piece(true) }
+    JmapMailResult { sent: vec![SendDone { message, outcome, draft: None, draft_left: String::new() }], ..piece(true) }
 }
 
 // ---------------------------------------------------------------------------------------------------------

@@ -626,7 +626,7 @@ impl<'a, H: Http> Outgoing<'a, H> {
 
     /// Send the message `send`: see the module documentation for the steps and what may be retried.
     pub(crate) async fn send(&mut self, send: &JmapSend) -> Went<SendDone> {
-        let done = |outcome: SendOutcome| SendDone { message: send.message, outcome, draft: None };
+        let done = |outcome: SendOutcome| SendDone { message: send.message, outcome, draft: None, draft_left: String::new() };
         let held = |why: String| Went::of(done(SendOutcome::Held { lost: false, why }));
         let message: &Message = &send.mime;
         // What needs no server.

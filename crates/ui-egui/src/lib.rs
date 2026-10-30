@@ -52,6 +52,8 @@ mod advanced_search;
 pub mod agent_gate;
 #[cfg(test)]
 mod agent_leaves_tests;
+#[cfg(test)]
+mod agent_names_tests;
 pub mod alerts;
 pub mod approval;
 mod attachment_open;
@@ -65,6 +67,8 @@ mod clicks;
 #[cfg(test)]
 mod clicks_tests;
 pub mod compose;
+#[cfg(test)]
+mod confirm_ids_tests;
 pub mod control;
 pub mod credits;
 pub mod data_removal;
@@ -73,9 +77,15 @@ pub mod dates;
 #[cfg(test)]
 mod dialog_scrim_tests;
 pub mod dialogs;
+#[cfg(test)]
+mod draft_continue_tests;
 mod drag_pointer;
 #[cfg(test)]
 mod drag_pointer_tests;
+#[cfg(test)]
+mod ews_info_tests;
+pub mod ews_mail;
+pub mod ews_setup;
 pub mod favorites_sync;
 #[cfg(test)]
 mod field_drag_tests;
@@ -145,10 +155,16 @@ mod report_problem;
 pub mod ribbon;
 pub mod scheduling;
 mod search_pills;
+#[cfg(test)]
+mod search_pills_tests;
 mod search_suggest;
 mod secret_field;
 #[cfg(test)]
 mod secret_field_tests;
+mod secret_read;
+#[cfg(test)]
+#[path = "secret_read_tests.rs"]
+mod secret_read_tests;
 #[cfg(test)]
 #[path = "secrets_bound_tests.rs"]
 mod secrets_bound_tests;
@@ -324,6 +340,23 @@ pub struct Services {
     pub graph_tasks: Option<Box<dyn Fn(task_sync::TasksJob) -> Receiver<task_sync::TasksResult>>>,
     // //// Neoffice — (upstream's `jmap`, `jmap_fetch` and `jmap_host_credentials` are the ones above: this fork's JMAP run,
     // //// Neoffice — jmap_job.rs, which also sends and tells the server of changes, in place of upstream's reading run)
+    /// Desktop: read an Exchange server account (#252, E6) as the job says, on a background thread:
+    /// sign in to the account's server with the job's password (Basic over TLS, the certificate
+    /// trusted as the request says), read what the request asks for (`mailcraft_ews::sync_mail`) and
+    /// hand the run back through the channel in pieces (`EwsMailResult::partial` on all but the
+    /// last), waking the UI for each. Absent where no host does (the browser): an Exchange server
+    /// account then has no Send/Receive ([`ews_mail`]).
+    pub ews: Option<Box<dyn Fn(ews_mail::EwsJob) -> Receiver<mailcraft_model::sync::EwsMailResult>>>,
+    /// The same host: fetch messages of an Exchange server account whole
+    /// (`mailcraft_ews::fetch_messages`), as `graph_fetch` does for a Microsoft account.
+    pub ews_fetch: Option<Box<dyn Fn(ews_mail::EwsFetchJob) -> Receiver<mailcraft_model::sync::GraphFetchResult>>>,
+    /// Desktop: set an Exchange server account up on a background thread (#252, E7), once the owner
+    /// has pressed Connect and not before: find the server unless its address is given, ask the
+    /// owner (through the job's answers) before the sign-in goes to a host outside the domain, and
+    /// test the account with one request for the Inbox ([`ews_setup`]). Absent where no host does
+    /// (the browser): Add Account then says it can't connect.
+    pub ews_setup: Option<Box<dyn Fn(ews_setup::EwsSetupJob) -> Receiver<ews_setup::EwsSetupEvent>>>,
+    // //// Neoffice — (no `jmap_host_credentials` here, a closure in upstream: the fork's is the `bool` above, set by the host that signed the owner in)
     /// Desktop: ask the DNS for a domain's mail exchangers on a background thread (best first),
     /// so account setup can tell whose servers an address at a company's own domain uses. Only
     /// the domain is given, never the mailbox name.
@@ -336,7 +369,7 @@ pub struct Services {
     /// keychain, the Secret Service on Linux and FreeBSD), where a password or a refresh token is
     /// remembered between runs when the owner wants that. Never the mailbox file, the settings or
     /// a log.
-    pub secrets: Option<Box<dyn SecretStore>>,
+    pub secrets: Option<std::sync::Arc<dyn SecretStore>>,
     /// The application (client) id this build presents to Microsoft when neither the account nor
     /// the settings name one; empty when the build has none.
     pub microsoft_client_id: String,
@@ -468,17 +501,21 @@ pub struct Services {
 
 // //// Neoffice — which accounts this build can run a Send/Receive for: a JMAP account needs the host's JMAP runner, not its mail connections.
 impl Services {
-    /// Whether this build can run a Send/Receive for some kind of account: the host has mail
-    /// connections ([`Services::sync`]) or a JMAP runner ([`Services::jmap`]).
+    /// Whether this build reaches mail servers at all: with mail connections, over JMAP, or through Exchange Web Services.
     pub fn can_sync(&self) -> bool {
-        self.sync.is_some() || self.jmap.is_some()
+        self.sync.is_some() || self.jmap.is_some() || self.ews.is_some()
     }
 
     /// Whether this build can run a Send/Receive for an account of `kind`: a JMAP account needs
     /// the host's JMAP runner, every other kind its mail connections.
     // //// Neoffice — (see above)
     pub(crate) fn can_run(&self, kind: mailcraft_model::AccountKind) -> bool {
-        if kind == mailcraft_model::AccountKind::Jmap { self.jmap.is_some() } else { self.sync.is_some() }
+        match kind {
+            mailcraft_model::AccountKind::Jmap => self.jmap.is_some(),
+            // //// Neoffice — an Exchange server account has its own runner too (#252).
+            mailcraft_model::AccountKind::Exchange => self.ews.is_some(),
+            _ => self.sync.is_some(),
+        }
     }
 }
 
@@ -526,13 +563,14 @@ pub type Inbox = std::sync::Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 
 /// The operating system's credential store ([`Services::secrets`]). Keys are `password:<address>`
 /// and `refresh:<address>`.
-pub trait SecretStore {
+pub trait SecretStore: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
     fn set(&self, key: &str, secret: &str) -> Result<(), String>;
     fn delete(&self, key: &str);
     /// Why the store itself couldn't be used the last time something was asked of it (none is
     /// running, or it is locked), as opposed to there being nothing kept under a key. Taking it
-    /// clears it.
+    /// clears it. (`get` may wait for the owner to unlock the store: the window never calls it
+    /// itself, only a background thread does, [`secret_read`].)
     fn take_trouble(&self) -> Option<StoreTrouble> {
         None
     }
@@ -808,6 +846,9 @@ pub struct UiState {
     pub ribbon_mode: ribbon::Mode,
     /// Interface theme: light, dark, or follow the OS appearance.
     pub theme: theme::Appearance,
+    /// A message's body on a light page in the light theme's colours, as its sender made it, also
+    /// when the window is dark: the reading pane and a message's own window, not its header.
+    pub light_messages: bool,
     /// Interface size in percent: scales the whole interface on top of the system's display scale.
     pub interface_size: theme::InterfaceSize,
     /// Desktop: the main window's size and position, restored at the next launch.
@@ -898,6 +939,7 @@ impl Default for UiState {
             ribbon_collapsed: false,
             ribbon_mode: ribbon::Mode::default(),
             theme: theme::Appearance::default(),
+            light_messages: false,
             interface_size: theme::InterfaceSize::default(),
             window: None,
             language: i18n::AUTO.into(),
@@ -954,6 +996,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
     ),
     ("ui.closeDialog", "Close Dialog", "Window", "{}"),
     ("ui.theme", "Interface Theme", "File › Options", r#"{"value": "light"|"dark"|"system"}"#),
+    (
+        "ui.lightMessages",
+        "Messages on a Light Background",
+        "File › Options",
+        r#"{"value"?: bool (default: toggle)} — a message's body on a light page as its sender made it, also in the dark theme"#,
+    ),
     ("ui.language", "Interface Language", "File › Options", r#"{"language": "auto"|"en"|"fr"|"pseudo"}"#),
     ("ui.interfaceSize", "Interface Size", "File › Options", r#"{"value": 80-200}"#),
     // //// Neoffice — Nora, the assistant of the Neoffice server, when the hosting page reaches her (nora.rs): the owner's clicks only.
@@ -1407,14 +1455,36 @@ pub struct MailApp {
     pub(crate) input_trail: std::collections::VecDeque<String>,
     /// The message list should scroll to the selected row (after a keyboard move).
     pub(crate) reveal_selection: bool,
+    /// The rows the message list was last drawn from, the selection then (its messages, and those
+    /// picked as their conversation) and what the rows drew selected: worked out again only when
+    /// one of them changes, not at every frame (#503).
+    pub(crate) drawn: Option<(std::sync::Arc<Vec<mailcraft_engine::list::Row>>, Vec<Id>, Vec<Id>, std::sync::Arc<mailcraft_engine::Drawn>)>,
     /// The rows of the message list that fit in it as last drawn: what Page Up and Page Down move
     /// by (#426).
     pub(crate) list_page_rows: usize,
     /// Passwords typed this session, per account. Never saved.
     passwords: std::collections::HashMap<Id, String>,
+    /// The folders of an Exchange server account the last run could not read (named as the owner
+    /// knows them; no id), for File › Info. Not saved.
+    pub(crate) ews_unreadable: std::collections::HashMap<Id, Vec<String>>,
+    /// How the last run of each Exchange server account signed in (`basic` or `ntlm`), for File ›
+    /// Info. Not saved.
+    pub(crate) ews_signed_in: std::collections::HashMap<Id, String>,
+    /// The fingerprint of the certificate an Exchange server account's server showed that needs
+    /// the owner's say (its last run stopped at it), for File › Info. Not saved.
+    pub(crate) ews_certificate: std::collections::HashMap<Id, String>,
     /// [`mailcraft_engine::Session::openings`] when the secrets in memory were last checked
     /// against the mailbox they belong to.
     secrets_opening: u64,
+    /// What the credential store gave back for each key this session, read in the background
+    /// ([`secret_read`]); only what was found. The window asks this, never the store.
+    secret_cache: std::collections::HashMap<String, String>,
+    /// The background read of the store under way, with the opening it was started for.
+    secret_read: Option<(u64, std::sync::mpsc::Receiver<secret_read::SecretRead>)>,
+    /// The opening, and whether remembering was on, when the store was last read by itself.
+    secrets_asked: Option<(u64, bool)>,
+    /// Send/Receive the owner asked for, held until the store has answered.
+    sync_after_secrets: Vec<Value>,
     /// The open mailbox came from a file whose servers nobody has confirmed: nothing of it
     /// reaches a server ([`unconfirmed`]).
     pub(crate) unconfirmed: bool,
@@ -1585,8 +1655,9 @@ pub struct MailApp {
     /// The window is drawn for headless screenshots (`examples/ui_shot`): a password shown with
     /// its eye is drawn as dots all the same, as while `ui.screenshot` waits for a frame (#438).
     pub headless_shots: bool,
-    /// This frame's input came from the control channel (`synthetic`): a password's eye doesn't
-    /// answer it (#438).
+    /// This frame's input came from the control channel (`synthetic`), or a request from it is
+    /// being handled: a password's eye doesn't answer it (#438), and what it selects in a message
+    /// isn't put in the primary selection (`reading::select::settle`, `compose::editor`).
     driven: bool,
     /// When the last round that started by itself began (milliseconds; 0 before the first).
     last_auto_sync: f64,
@@ -1700,6 +1771,13 @@ pub struct MailApp {
 pub(crate) enum MailRun {
     Imap(Receiver<SyncResult>),
     // //// Neoffice — (no `Jmap` here: a JMAP account's run is the fork's, beside this one, `jmap_rx` and jmap_job.rs)
+    /// An Exchange server account's run ([`ews_mail`]).
+    Ews {
+        account: Id,
+        /// `opening`: the mailbox opening it was started under ([`Session::openings`]).
+        opening: u64,
+        pieces: Receiver<mailcraft_model::sync::EwsMailResult>,
+    },
 }
 
 impl MailApp {
@@ -1728,9 +1806,17 @@ impl MailApp {
             signature_note: None,
             input_trail: std::collections::VecDeque::new(),
             reveal_selection: false,
+            drawn: None,
             list_page_rows: 10,
             passwords: Default::default(),
+            ews_unreadable: Default::default(),
+            ews_signed_in: Default::default(),
+            ews_certificate: Default::default(),
             secrets_opening: 0,
+            secret_cache: Default::default(),
+            secret_read: None,
+            secrets_asked: None,
+            sync_after_secrets: Vec::new(),
             unconfirmed: false,
             settings_unread: None,
             held: Default::default(),
@@ -1992,6 +2078,9 @@ impl MailApp {
             && let Some(ask) = reading::invitation_question(self, id, &params).unwrap_or_else(|| dialogs::confirmation(self, id, &params))
         {
             let params = if params.is_object() { params } else { json!({}) };
+            // What the question named is what goes ahead, though the selection changes while it
+            // is open (#620).
+            let params = dialogs::pin_targets(self, id, params);
             self.dialog = Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask });
             return Ok(json!({"pending": "confirm"}));
         }
@@ -2035,7 +2124,8 @@ impl MailApp {
                 }
             }
         }
-        if keys::MOVES_IN_LIST.contains(&id) {
+        // And closing a conversation, which may select its row (#503).
+        if keys::MOVES_IN_LIST.contains(&id) || id == "mail.collapseConversation" {
             self.reveal_selection = true;
         }
         // What was done to the text being written leaves the keyboard in it.
@@ -2164,6 +2254,9 @@ impl MailApp {
             self.passwords.remove(&account);
             self.tokens.remove(&account);
             self.jmap_refused.remove(&account);
+            self.ews_unreadable.remove(&account);
+            self.ews_signed_in.remove(&account);
+            self.ews_certificate.remove(&account);
             self.forget_account_secrets(&gone);
         }
         // Servers changed: what was kept for the old ones is not given to the new, and the owner
@@ -2177,6 +2270,8 @@ impl MailApp {
             self.tokens.remove(&before.id);
             self.graph_tokens.remove(&before.id);
             self.jmap_refused.remove(&before.id);
+            self.ews_signed_in.remove(&before.id);
+            self.ews_certificate.remove(&before.id);
         }
         // Likewise when Undo or Redo changed them: what was typed for the ones it had goes to none
         // of the others.
@@ -2246,6 +2341,10 @@ impl MailApp {
                     self.ui.backstage_page = page.to_string();
                 }
                 Ok(json!({"value": self.ui.backstage, "page": self.ui.backstage_page}))
+            }
+            "ui.lightMessages" => {
+                self.ui.light_messages = b("value").unwrap_or(!self.ui.light_messages);
+                Ok(json!({"value": self.ui.light_messages}))
             }
             "ui.collapseRibbon" => {
                 self.ui.ribbon_collapsed = b("value").unwrap_or(!self.ui.ribbon_collapsed);
@@ -2547,6 +2646,12 @@ impl MailApp {
             // and a bearer token is no password.)
             let (session, bearer) = a.jmap.as_ref().map_or(("none", false), |j| (j.session.trim(), j.bearer));
             format!("{kind}:{address}|jmap={session}|bearer={bearer}")
+        } else if a.kind == mailcraft_model::AccountKind::Exchange {
+            // (Its whole EWS address: another one, on the same server or not, is another server;
+            // and the user name it signs in with: a password is for one name.)
+            let url = a.ews.as_ref().map_or("none", |e| e.url.trim());
+            let user = a.ews.as_ref().map_or_else(String::new, |e| e.username.trim().to_ascii_lowercase());
+            format!("{kind}:{address}|ews={url}|user={user}")
         } else {
             format!("{kind}:{address}|imap={}|smtp={}", server(&a.incoming), server(&a.outgoing))
         }
@@ -2569,8 +2674,9 @@ impl MailApp {
         if !self.ui.remember_sign_in {
             return None;
         }
-        let key = Self::secret_key(kind, self.account_at(address)?);
-        self.services.secrets.as_ref()?.get(&key).filter(|secret| !secret.is_empty())
+        // (What the background read brought, never the store itself: it may be locked, and then
+        // asking blocks until the owner answers.)
+        self.secret_cache.get(&Self::secret_key(kind, self.account_at(address)?)).cloned()
     }
 
     /// Have the operating system remember a secret for `address`, when the owner wants that.
@@ -2582,7 +2688,10 @@ impl MailApp {
         let key = Self::secret_key(kind, account);
         let Some(store) = &self.services.secrets else { return };
         match store.set(&key, secret) {
-            Ok(()) => self.index_secret_key(key),
+            Ok(()) => {
+                self.secret_cache.insert(key.clone(), secret.to_string());
+                self.index_secret_key(key);
+            }
             Err(e) => log::warn!("couldn't keep the sign-in for next time: {e}"),
         }
     }
@@ -2617,6 +2726,7 @@ impl MailApp {
             }
         }
         self.ui.remembered_keys = left.clone();
+        self.secret_cache.clear();
         left
     }
 
@@ -2651,41 +2761,14 @@ impl MailApp {
                 }
             }
         }
+        for key in &gone {
+            self.secret_cache.remove(key);
+        }
         // (Taken here, the owner hears of it as `check_secret_store` would have said it.)
         match store.take_trouble() {
             Some(trouble) => self.note_secret_trouble(trouble),
             None => self.ui.remembered_keys.retain(|key| !gone.contains(key)),
         }
-    }
-
-    /// Secrets kept before they were bound to servers move, once, to the name made from the
-    /// servers of the account in this mailbox, and the old name goes. Only for a mailbox the
-    /// owner has not been asked to confirm; the owner's setting says when it has been done.
-    pub(crate) fn migrate_secrets(&mut self) {
-        if self.ui.sign_ins_bound {
-            return;
-        }
-        let mut moved = Vec::new();
-        if let Some(store) = &self.services.secrets {
-            for a in &self.session.mailbox.accounts {
-                for kind in ["password", "refresh"] {
-                    let old = Self::legacy_secret_key(kind, &a.email);
-                    if let Some(secret) = store.get(&old).filter(|s| !s.is_empty()) {
-                        let new = Self::secret_key(kind, a);
-                        if let Err(e) = store.set(&new, &secret) {
-                            log::warn!("couldn't move a remembered sign-in: {e}");
-                            continue;
-                        }
-                        store.delete(&old);
-                        moved.push(new);
-                    }
-                }
-            }
-        }
-        for key in moved {
-            self.index_secret_key(key);
-        }
-        self.ui.sign_ins_bound = true;
     }
 
     /// The sign-in settings as the host should use them: an account that names no application id
@@ -2835,6 +2918,11 @@ impl MailApp {
             return Err(cant_connect());
         }
         let quiet = p.get("quiet").and_then(Value::as_bool).unwrap_or(false);
+        // Send/Receive the owner asked for is the time to ask the store again (it may have been
+        // locked, or refused): the run goes on when it has answered ([`secret_read`]).
+        if !quiet && self.hold_for_secrets(p) {
+            return Ok(json!({"pending": "secrets"}));
+        }
         // Never two jobs for one account at once: the calendar's job (a short one, but the
         // wide stretch every quarter of an hour is not) finishes first.
         let target = p.get("account").and_then(Value::as_u64).or_else(|| self.server_accounts().first().copied());
@@ -2871,6 +2959,14 @@ impl MailApp {
                 self.sync_queue.pop_front().map(|(first, _)| first).ok_or_else(none)?
             }
         };
+        // An Exchange server account is kept in step through Exchange Web Services (#252), where the
+        // switch is on and the host runs it.
+        if self.session.mailbox.account(account).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Exchange) {
+            if !self.session.ews {
+                return Err(mailcraft_engine::cmd::ews_mail::SWITCHED_OFF.to_string());
+            }
+            return self.start_ews_mail(account, quiet, p);
+        }
         // //// Neoffice — an account kept in step with a JMAP server has a run of its own (jmap_job.rs). A password the dialog hands over is kept for the session, as an IMAP account's is, unless the host holds the credential.
         if self.session.mailbox.account(account).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Jmap) {
             if !self.services.jmap_host_credentials
@@ -3044,12 +3140,14 @@ impl MailApp {
         mb.accounts.iter().all(|a| a.email.trim().is_empty()) && mb.messages.is_empty()
     }
 
-    fn server_accounts(&self) -> Vec<Id> {
+    pub(crate) fn server_accounts(&self) -> Vec<Id> {
         // A JMAP account where the host runs JMAP (without, every run of it would end in a
         // refusal); the others where it opens mail connections, or, when it reaches no server
         // at all, to be told so.
         let runs = |a: &&mailcraft_model::Account| match a.kind {
             mailcraft_model::AccountKind::Jmap => self.services.jmap.is_some(),
+            // (Where the switch is on and the host runs it, #252.)
+            mailcraft_model::AccountKind::Exchange => self.session.ews && self.services.ews.is_some(),
             kind => kind.has_server() && (self.services.sync.is_some() || self.services.jmap.is_none()),
         };
         self.session.mailbox.accounts.iter().filter(runs).map(|a| a.id).collect()
@@ -3057,7 +3155,7 @@ impl MailApp {
 
     /// How much of `account` waits to go to its server: mail in the Outbox, and changes made here
     /// that the server hasn't been told.
-    fn waiting_to_go(&self, account: Id) -> usize {
+    pub(crate) fn waiting_to_go(&self, account: Id) -> usize {
         let mb = &self.session.mailbox;
         // (A held message waits for the owner, not for a run; and so does mail in a shared
         // mailbox's Outbox that may not be sent from it yet, #70.)
@@ -3083,16 +3181,31 @@ impl MailApp {
         let opening = self.session.openings();
         if opening != self.secrets_opening {
             self.secrets_opening = opening;
+            // A question about the mailbox that was open goes with it: it names messages and
+            // accounts by ids, which the other mailbox may have too (#503).
+            if matches!(self.dialog, Some(dialogs::Dialog::Confirm { .. })) {
+                self.dialog = None;
+            }
+            // An agent's too.
+            agent_gate::forget(self);
             self.passwords.clear();
+            self.secret_cache.clear();
+            self.secret_read = None;
+            self.secrets_asked = None;
+            self.sync_after_secrets.clear();
             self.tokens.clear();
             self.graph_tokens.clear();
             self.jmap_refused.clear();
+            self.ews_unreadable.clear();
+            self.ews_signed_in.clear();
+            self.ews_certificate.clear();
             // Work started for the old mailbox stays with it: a JMAP run and the messages being
             // fetched whole are called off (what they still bring is thrown away, `jmap_mail`,
             // `graph_fetch`), a sign-in on its way is called off, and a switch to Graph (its copy,
             // its backup) is forgotten.
-            // //// Neoffice — the fork's JMAP run (jmap_job.rs) is called off and let go: nothing it still brings is taken in.
-            if self.jmap_rx.take().is_some() {
+            // //// Neoffice — the fork's JMAP run (jmap_job.rs) is called off and let go: nothing it still brings is taken in. An
+            // //// Neoffice — Exchange server account's run is upstream's (`MailRun::Ews`).
+            if self.jmap_rx.take().is_some() || matches!(self.sync_rx, Some(MailRun::Ews { .. })) {
                 self.services.sync_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
                 self.jmap_problems.clear();
                 self.session.sync_status.clear();
@@ -3124,6 +3237,11 @@ impl MailApp {
             let credential =
                 self.services.jmap_host_credentials || self.passwords.contains_key(&account) || (!bearer && self.jmap_remembered(account).is_some());
             return self.services.jmap.is_some() && !self.jmap_refused.contains(&account) && credential;
+        }
+        // (An Exchange server account's password is in memory only, for now; and one its server turned
+        // down waits for the owner.)
+        if a.kind == mailcraft_model::AccountKind::Exchange {
+            return !self.jmap_refused.contains(&account) && self.ews_secret(account).is_some();
         }
         if a.oauth.is_some() {
             let kept = self.tokens.get(&account).is_some_and(|t| t.fresh(mailcraft_time::now()) || !t.refresh.is_empty());
@@ -3756,6 +3874,9 @@ impl MailApp {
         // A few pieces a frame: each one redraws the lists, and the window should stay quick.
         for _ in 0..4 {
             // //// Neoffice — (a JMAP account's run has pieces of its own, polled apart: jmap_job.rs)
+            if matches!(self.sync_rx, Some(MailRun::Ews { .. })) {
+                return self.poll_ews();
+            }
             let Some(MailRun::Imap(rx)) = &self.sync_rx else { return };
             let piece = match rx.try_recv() {
                 Ok(piece) => piece,
@@ -3805,7 +3926,9 @@ impl MailApp {
                 // next try renews it (the refresh token stays for that).
                 self.passwords.remove(&account);
                 if let (Some(store), Some(a)) = (&self.services.secrets, self.account_at(&address)) {
-                    store.delete(&Self::secret_key("password", a));
+                    let key = Self::secret_key("password", a);
+                    store.delete(&key);
+                    self.secret_cache.remove(&key);
                 }
                 if let Some(tokens) = self.tokens.get_mut(&account) {
                     tokens.access.clear();
@@ -3975,9 +4098,7 @@ impl MailApp {
         self.sweep_admin_consent();
         self.drop_secrets_if_replaced();
         // The mailbox the window started with: secrets kept the old way are filed under its servers.
-        if self.session.openings() == 0 && !self.unconfirmed {
-            self.migrate_secrets();
-        }
+        self.secrets_tick();
         self.poll_graph();
         // //// Neoffice — the pieces of a JMAP run, a few a frame.
         self.poll_jmap();
@@ -4699,6 +4820,22 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
     let n = |k: &str| v.get(k).and_then(Value::as_u64);
     match id {
         "compose.send" if v.get("queued").and_then(Value::as_bool) == Some(true) => Some(tl!("In the Outbox: it is on its way").to_string()),
+        // Mail put into a Microsoft account from elsewhere: Microsoft's server makes it without
+        // most of the original's headers, which is said rather than hidden (#451).
+        "mail.move" => n("intoMicrosoft").filter(|c| *c > 0).map(|c| {
+            tln!(
+                c,
+                "{n} message moved into the account: Send/Receive puts it on Microsoft's server, without most of its headers (such as Received)",
+                "{n} messages moved into the account: Send/Receive puts them on Microsoft's server, without most of their headers (such as Received)"
+            )
+        }),
+        "mail.copy" => n("intoMicrosoft").filter(|c| *c > 0).map(|c| {
+            tln!(
+                c,
+                "{n} message copied into the account: Send/Receive puts it on Microsoft's server, without most of its headers (such as Received)",
+                "{n} messages copied into the account: Send/Receive puts them on Microsoft's server, without most of their headers (such as Received)"
+            )
+        }),
         // A mailbox whose content folder lost something still opens; say how much is missing. A
         // mailbox file damaged part of the way opens as far as it can be read: that is said first.
         "file.open" => {
@@ -4761,10 +4898,19 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
                 }
             }
             let what = parts.join(", ");
-            // Mail meant for a Microsoft account went to a local folder (R3 spec S30).
-            if v.get("local").and_then(Value::as_bool) == Some(true) {
+            // Mail meant for a Microsoft account went to a local folder (R3 spec S30); moved into
+            // the account from there, it is put on the server (#451). Drafts stay in their own
+            // mailbox, this computer's.
+            let local = v.get("local").and_then(Value::as_bool) == Some(true);
+            if local && v.get("drafts").and_then(Value::as_bool) == Some(true) {
                 return Some(i18n::fmt(
-                    tl!("Imported {what} into a local folder: Microsoft doesn't let a mail program put received mail into your mailbox"),
+                    tl!("Imported {what} into Drafts on this computer: a draft stays on this computer until it is sent"),
+                    &[("what", &what)],
+                ));
+            }
+            if local {
+                return Some(i18n::fmt(
+                    tl!("Imported {what} into a local folder: move it into the account to put it on Microsoft's server"),
                     &[("what", &what)],
                 ));
             }

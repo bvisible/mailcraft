@@ -368,7 +368,7 @@ fn a_run_that_starts_by_itself_goes_ahead_when_the_host_holds_the_credential() {
 fn without_the_host_holding_the_credential_a_password_is_asked_for_once_and_nothing_starts_by_itself_without_one() {
     let (mut app, id, asked) = window(false, false);
     let store = Store::default();
-    app.services.secrets = Some(Box::new(store.clone()));
+    app.services.secrets = Some(Arc::new(store.clone()));
     app.auto_sync = true;
     app.session.prefs.sync_minutes = 5;
     // Nothing is known: a round that starts by itself leaves the account out and asks nobody.
@@ -413,7 +413,7 @@ fn without_the_host_holding_the_credential_a_password_is_asked_for_once_and_noth
 
     // The next start: the system has it, and nobody is asked.
     let (mut next, id, asked) = window(false, false);
-    next.services.secrets = Some(Box::new(store.clone()));
+    next.services.secrets = Some(Arc::new(store.clone()));
     assert!(next.can_sync_quietly(id));
     next.execute("ui.sync", json!({"account": id})).unwrap();
     assert!(next.dialog.is_none());
@@ -437,8 +437,8 @@ fn a_password_is_kept_for_the_jmap_server_it_goes_to() {
     let (mut app, _, _) = window(false, false);
     let store = Store::default();
     store.0.lock().unwrap().insert("password:ada@example.org".into(), "pw-before".into());
-    app.services.secrets = Some(Box::new(store.clone()));
-    app.migrate_secrets();
+    app.services.secrets = Some(Arc::new(store.clone()));
+    crate::secret_read_tests::settle(&mut app);
     assert_eq!((store.kept("password:ada@example.org"), store.kept(PASSWORD_KEY).as_deref()), (None, Some("pw-before")));
     assert_eq!(app.remembered("password", ME).as_deref(), Some("pw-before"));
 }
@@ -448,7 +448,7 @@ fn a_bearer_token_is_in_memory_only() {
     let (mut app, id, asked) = window(false, true);
     let store = Store::default();
     store.0.lock().unwrap().insert(PASSWORD_KEY.into(), "old password".into());
-    app.services.secrets = Some(Box::new(store.clone()));
+    app.services.secrets = Some(Arc::new(store.clone()));
     // What the system has is a password, not this account's token: it is not used for it.
     assert!(!app.can_sync_quietly(id));
     assert_eq!(app.execute("ui.sync", json!({"account": id})).unwrap(), json!({"pending": "password"}));
@@ -541,7 +541,7 @@ fn a_server_that_turns_the_secret_down_ends_the_run_with_a_plain_line_and_no_run
 fn a_password_the_server_refuses_is_forgotten_so_that_the_next_try_asks_again() {
     let (mut app, id, asked) = window(false, false);
     let store = Store::default();
-    app.services.secrets = Some(Box::new(store.clone()));
+    app.services.secrets = Some(Arc::new(store.clone()));
     app.execute("ui.sync", json!({"account": id, "password": "pw-one"})).unwrap();
     answer(&asked, 0, the_end());
     app.poll_jmap();

@@ -7,8 +7,8 @@ use mailcraft_model::rich::RichText;
 use mailcraft_model::signature::Picture;
 use mailcraft_model::sync::{DraftKind, DraftOf, DraftState, ServerDraft};
 use mailcraft_model::{
-    AccountKind, Address, Answers, Attachment, Body, FlagStatus, FolderKind, Id, Importance, Message, NOT_DOWNLOADED, NOT_DOWNLOADED_NOTE,
-    NOT_SENDING_YET, RichBody, Signature, format_list,
+    AccountKind, Address, Answers, Attachment, Body, FlagStatus, FolderKind, Id, Importance, Message, NOT_DOWNLOADED, NOT_DOWNLOADED_NOTE, RichBody,
+    Signature, format_list,
 };
 use serde_json::{Value, json};
 
@@ -1035,7 +1035,8 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     let c = s.compose.clone().ok_or_else(|| fail("no message is being written"))?;
     // A draft of a Microsoft account goes as the draft its server has (R3.4.2): the same
     // Message-ID, marker and server id, brought up to date and sent there.
-    let saved = c.draft.and_then(|d| s.mailbox.message(d).cloned()).filter(|d| d.server_draft.is_some() && s.mailbox.is_graph(d.account));
+    let saved =
+        c.draft.and_then(|d| s.mailbox.message(d).cloned()).filter(|d| d.server_draft.is_some() && s.mailbox.keeps_drafts_on_server(d.account));
     let mut m = build_as(s, &c, true, saved.as_ref().map(|d| d.message_id.as_str()).filter(|id| !id.is_empty()))?;
     if let Some(d) = saved.as_ref().filter(|d| d.account == m.account) {
         (m.server, m.server_draft) = (d.server.clone(), d.server_draft.clone());
@@ -1056,12 +1057,13 @@ fn send(s: &mut Session, _: &Value) -> CmdResult {
     // An account kept in step with a server that doesn't send its mail yet (JMAP) has nowhere
     // for the message: not its Outbox, where it would wait for ever, nor Sent Items, as if it had
     // gone. It stays as it is being written.
-    // //// Neoffice — (a JMAP account's mail is sent where the host runs its Send/Receive: `Session::sends_mail_of`)
+    // //// Neoffice — (a JMAP account's mail is sent where the host runs its Send/Receive, and an Exchange server account's with its switch on:
+    // //// Neoffice — `Session::sends_mail_of`, which says what upstream's `can_queue_mail` says and the JMAP run besides)
     let sends = s.sends_mail_of(&account);
     if account.kind.has_server() && !sends {
         return Err(failed!(
             "{not_sending_yet}: send this message from another account, or save it as a draft",
-            not_sending_yet = mailcraft_i18n::Arg::words(NOT_SENDING_YET)
+            not_sending_yet = mailcraft_i18n::Arg::words(super::ews_mail::not_sending_text(s, account.kind))
         ));
     }
     // An account that sends its mail queues the message for the next Send/Receive; a local one
@@ -1139,7 +1141,7 @@ fn save_draft(s: &mut Session, _: &Value) -> CmdResult {
         (m.read, m.flag, m.flag_due, m.categories, m.pinned) = (old.read, old.flag, old.flag_due, old.categories.clone(), old.pinned);
     }
     // //// Neoffice — a Microsoft account's draft is marked for its server as an answer to a message the server has, a JMAP account's draft only waits to be filed in the server's Drafts (the whole message goes: there is no "reply" to make there).
-    let graph = s.mailbox.account(m.account).is_some_and(|a| a.kind == AccountKind::Microsoft);
+    let graph = s.mailbox.keeps_drafts_on_server(m.account);
     let jmap = s.mailbox.account(m.account).is_some_and(|a| a.kind == AccountKind::Jmap);
     if jmap {
         let mut sd = m.server_draft.take().unwrap_or_default();

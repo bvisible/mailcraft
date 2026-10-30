@@ -174,7 +174,7 @@ fn what_waits_in_the_outbox_goes_before_a_window_is_read_so_that_sent_shows_the_
         assert!(delivered.iter().all(|d| !String::from_utf8_lossy(&d.raw).to_ascii_lowercase().contains("bcc")), "{kind}");
         let sent = window(&pieces, &ids.sent);
         assert_eq!(sent.messages.iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["two", "one"], "{kind}: the newest first");
-        assert!(sent.messages.iter().all(|m| m.server.read && !m.draft), "{kind}");
+        assert!(sent.messages.iter().all(|m| m.server.read && m.draft != Some(true)), "{kind}");
         assert!(sent.afresh, "{kind}: the window holds the whole of Sent");
         let end = last(&pieces);
         assert!(end.whole && end.errors.is_empty() && !end.partial, "{kind}: {end:?}");
@@ -217,7 +217,7 @@ fn drafts_are_filed_after_the_messages_and_the_window_of_drafts_has_the_new_copy
         let page = window(&pieces, &ids.drafts);
         assert_eq!(
             page.messages.iter().map(|m| (m.server.id.as_str(), m.draft, m.subject.as_str())).collect::<Vec<_>>(),
-            [(done.id.as_str(), true, "draft")],
+            [(done.id.as_str(), Some(true), "draft")],
             "{kind}"
         );
         let filed = server.with(|d| d.email(&done.id).map(|e| String::from_utf8_lossy(&e.raw).to_string())).unwrap();

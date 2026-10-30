@@ -321,10 +321,6 @@ pub(crate) fn reason<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
 
 /// A command's refusal, in the interface's language.
 pub(crate) fn refusal<'a>(text: &'a str, mb: &Mailbox) -> Cow<'a, str> {
-    // (The engine's refusal of received mail for a Microsoft account is an interface string of its own.)
-    if text == mailcraft_model::STAYS_LOCAL {
-        return Cow::Borrowed(tl!(mailcraft_model::STAYS_LOCAL));
-    }
     line(text, mb)
 }
 

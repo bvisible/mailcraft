@@ -9,6 +9,28 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `4bef0a9` (upstream `main` on 2026-10-30 in the evening, 106 commits after v0.8.2: Exchange server accounts over Exchange Web
+  Services, behind `MAILCRAFT_EWS=1` (#252, E1 to E8: `crates/ews`, Autodiscover, NTLM, the desktop's runner, set-up and
+  File › Info pages, tried against Grommunio); a message's style sheet styles it, newsletters follow the pane's width, table
+  cells sit where the message puts them, designed mail keeps its buttons side by side (#596 to #599, #639, #640); a conversation
+  opens in the message list (#503); a message moved or copied into another account goes onto that account's server (#451,
+  #561, #610); an Undo takes back only what its step changed (#605); an IMAP account's Outbox sends only what was queued with
+  Send (#607); a locked credential store no longer freezes the window, the remembered sign-ins being read on a thread (#613,
+  `secret_read.rs`); agents name the messages they act on (#620); Save As, Insert Link, IMAP mail with unreadable characters,
+  the reading pane's header and the search box's caret (#649, #636, #650, #630, #652)), merged into `version-15` on 2026-10-30.
+  The fork's JMAP run stays the one built, as at `caad611`, and the places where the two meet are marked: upstream's Exchange
+  intake takes its limits and helpers by name from `cmd/jmap_down.rs`, so the fork's own `jmap_down.rs` carries them in a marked
+  block at its end; `Session::sends_mail_of` says what upstream's `can_queue_mail` says (an Exchange server account sends with its
+  switch on) and the JMAP run besides; `cmd/account.rs` takes upstream's match on the kind with the fork's JMAP arm
+  (`account/jmap.rs`) and lists a JMAP account's server whole; the window has no `MailRun::Jmap` (the fork's run is `jmap_rx`) and
+  `Services::can_run` knows the Exchange runner; the moves, copies and deletions of `Mailbox` keep the fork's refusal for a JMAP
+  account in front of upstream's new places (`placed_into`, `sends_from`) and its delete asks `own` as upstream's does; Undo
+  keeps the server's mail of a JMAP account in step as well as an Exchange server account's; the dialog that deletes for good
+  says nothing of an Exchange server account's server, as upstream has it. `GraphMessage::draft` is an `Option` upstream
+  (#611): the fork's JMAP client says `Some(marks.draft)`, a JMAP server always telling. `STAYS_LOCAL` is gone with the
+  refusal it worded (a move into a Microsoft account is made now), and so is its line in `i18n/run_words.rs`. The catalogues
+  were merged entry by entry (`cargo xtask i18n` then rewrote them). `ui-egui/src/jmap_mail_tests.rs` stays out, with the rest of
+  upstream's reading run.
 - `caad611` (upstream's v0.8.2, 2026-10-28, 90 commits since v0.8.0: M6 4/6 and 5/6, this fork's PRs 4 and 5, the
   window's JMAP run and the browser build reading JMAP over `fetch` (#415, #439); Safe Senders and Blocked Senders per
   account (#516, #504); pictures written into a message (#533, #547); an .eml opened to read without filing it (#515);

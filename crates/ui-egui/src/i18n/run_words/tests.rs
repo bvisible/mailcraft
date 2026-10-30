@@ -969,8 +969,6 @@ fn a_refused_move_or_copy_says_why_in_french_in_the_status_and_the_box() {
         assert_eq!(app.status_msg.as_ref().map(|(said, _)| said.as_str()), Some(french), "{command}: the status");
         assert_eq!(app.refused.take().as_deref(), Some(french), "{command}: the box");
     }
-    // The engine's refusal of received mail for a Microsoft account reads as it did.
-    assert_eq!(super::refusal(mailcraft_model::STAYS_LOCAL, &app.session.mailbox), t_in(french(), mailcraft_model::STAYS_LOCAL));
     super::super::set_current(Lang::English);
 }
 

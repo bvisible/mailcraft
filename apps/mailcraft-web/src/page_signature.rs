@@ -99,8 +99,9 @@ pub fn picture(data: &str, name: &str, alt: &str, width: Option<f64>) -> Option<
     })
 }
 
-/// Where a page says a picture leads, if MailCraft writes a link there: an `http`, `https`, `mailto` or `tel` address
-/// (`compose.link` takes no other, and the sent message's HTML writes no other); none else.
+/// Where a page says a picture leads, if MailCraft writes a link there: any address `compose.link` takes (upstream's #636:
+/// any well-formed scheme but `javascript`, `vbscript`, `data`, `file` and `cid`, a web address with a host), and the sent
+/// message's HTML writes the same; none else.
 pub fn link(given: &str) -> Option<String> {
     safe_link(given.trim())
 }
@@ -427,7 +428,7 @@ mod tests {
 
     #[test]
     fn a_banner_without_a_link_or_with_one_mailcraft_does_not_write_goes_out_as_a_picture() {
-        for href in ["", "javascript:alert(1)", "data:text/html,x", "https://", "ftp://example.org/fair"] {
+        for href in ["", "javascript:alert(1)", "data:text/html,x", "https://", "vbscript:x", "file:///etc/passwd"] {
             assert_eq!(link(href), None, "{href}");
             let (mut session, id) = hosted();
             // Even handed past `link`, the engine takes no such link.

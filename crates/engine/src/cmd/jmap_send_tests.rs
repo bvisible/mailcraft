@@ -57,7 +57,7 @@ fn answer(s: &mut Session, account: Id, sent: Vec<SendDone>, drafts: Vec<JmapDra
 }
 
 fn outcome(message: Id, outcome: SendOutcome) -> SendDone {
-    SendDone { message, outcome, draft: None }
+    SendDone { message, outcome, draft: None, draft_left: String::new() }
 }
 
 fn held(lost: bool, why: &str) -> SendOutcome {

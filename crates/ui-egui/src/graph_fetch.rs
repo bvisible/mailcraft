@@ -22,11 +22,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 
 // //// Neoffice — a JMAP account's fetch is the fork's engine's (`cmd::jmap_fetch`), not upstream's `jmap_mail`.
-use mailcraft_engine::cmd::{compose, graph_mail, jmap_fetch};
+use mailcraft_engine::cmd::{compose, ews_mail, graph_mail, jmap_fetch};
 use mailcraft_model::sync::{GraphFetchRequest, GraphFetchResult};
 use mailcraft_model::{AccountKind, Id};
 use serde_json::{Value, json};
 
+use crate::ews_mail::EwsFetchJob;
 // //// Neoffice — the job a JMAP account's host is handed.
 use crate::jmap_job::JmapFetchJob;
 use crate::{MailApp, now_ms};
@@ -182,6 +183,7 @@ enum Way {
     Graph(String),
     // //// Neoffice — the fork's JMAP job carries no secret when the host holds the credential (`None`).
     Jmap(Option<String>),
+    Ews(String),
 }
 
 fn way(app: &MailApp, account: Id) -> Option<Way> {
@@ -190,6 +192,9 @@ fn way(app: &MailApp, account: Id) -> Option<Way> {
         // (Not with a credential its server turned down: the next Send/Receive the owner asks for first.)
         // //// Neoffice — the fork's secret of a fetch (jmap_job.rs), which also leaves out a credential its server turned down.
         AccountKind::Jmap if app.services.jmap_fetch.is_some() => app.jmap_fetch_secret(account).map(Way::Jmap),
+        AccountKind::Exchange if app.services.ews_fetch.is_some() && app.session.ews && !app.jmap_refused.contains(&account) => {
+            app.ews_secret(account).map(Way::Ews)
+        }
         _ => None,
     }
 }
@@ -199,6 +204,7 @@ fn fetched(app: &MailApp, kind: AccountKind) -> bool {
     match kind {
         AccountKind::Microsoft => app.services.graph_fetch.is_some(),
         AccountKind::Jmap => app.services.jmap_fetch.is_some(),
+        AccountKind::Exchange => app.services.ews_fetch.is_some() && app.session.ews,
         _ => false,
     }
 }
@@ -206,9 +212,12 @@ fn fetched(app: &MailApp, kind: AccountKind) -> bool {
 /// Take in messages fetched whole, as their account's kind is taken in (a JMAP account's are held
 /// to sizes first).
 fn take_in(app: &mut MailApp, result: GraphFetchResult) -> Result<Value, mailcraft_engine::CmdError> {
-    if app.session.mailbox.account(result.account).is_some_and(|a| a.kind == AccountKind::Jmap) {
+    let kind = app.session.mailbox.account(result.account).map(|a| a.kind);
+    if kind == Some(AccountKind::Jmap) {
         // //// Neoffice — the fork's intake of a JMAP fetch.
         jmap_fetch::apply_jmap_fetch(&mut app.session, result)
+    } else if kind == Some(AccountKind::Exchange) {
+        ews_mail::apply_ews_fetch(&mut app.session, result)
     } else {
         graph_mail::apply_graph_fetch(&mut app.session, result)
     }
@@ -373,6 +382,11 @@ impl MailApp {
                 // //// Neoffice — the fork's request of a JMAP fetch.
                 let request = asked(messages, |m| jmap_fetch::jmap_fetch_request(&self.session, account, m, most).ok(), |r| &mut r.ids)?;
                 Some(fetch(JmapFetchJob { request, secret, cancel }))
+            }
+            Way::Ews(secret) => {
+                let fetch = self.services.ews_fetch.as_ref()?;
+                let request = asked(messages, |m| ews_mail::ews_fetch_request(&self.session, account, m, most).ok(), |r| &mut r.ids)?;
+                Some(fetch(EwsFetchJob { request, secret, cancel }))
             }
         }
     }

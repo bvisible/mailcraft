@@ -72,7 +72,12 @@ fn result() -> JmapMailResult {
                 outcome: JmapOutcome::Refused { why: format!("{ME} may not delete it") },
             },
         ],
-        sent: vec![SendDone { message: 7, outcome: SendOutcome::Held { lost: false, why: format!("{ME} was refused") }, draft: None }],
+        sent: vec![SendDone {
+            message: 7,
+            outcome: SendOutcome::Held { lost: false, why: format!("{ME} was refused") },
+            draft: None,
+            draft_left: String::new(),
+        }],
         // //// Neoffice — what became of a draft filed, and a copy nobody wants.
         drafts: vec![JmapDraftDone { message: 8, saves: 2, id: "E10".into(), folder: "M3".into(), refused: Some(format!("{ME} may not file it")) }],
         unwanted: vec!["E11".into()],
@@ -222,7 +227,7 @@ fn the_pieces_of_a_run_come_together() {
             changes: vec![JmapChangeDone { change: JmapChange::Destroy { id: "E9".into() }, outcome: JmapOutcome::Gone }],
             errors: vec!["One".into()],
             // //// Neoffice — what became of a message sent, of a draft filed, and a copy nobody wants, kept in order.
-            sent: vec![SendDone { message: 7, outcome: SendOutcome::Sent, draft: None }],
+            sent: vec![SendDone { message: 7, outcome: SendOutcome::Sent, draft: None, draft_left: String::new() }],
             progress: Some(GraphProgress { folder: "M1".into(), read: 0, total: 2, number: 1, folders: 2 }),
             ..Default::default()
         },

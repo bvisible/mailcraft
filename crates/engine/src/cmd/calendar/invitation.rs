@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use mailcraft_ical::WriteOptions;
-use mailcraft_model::{Address, Attachment, Attendee, Body, Event, FolderKind, Id, Message, NOT_SENDING_YET, Occurrence, Origin, Response, ShowAs};
+use mailcraft_model::{Address, Attachment, Attendee, Body, Event, FolderKind, Id, Message, Occurrence, Origin, Response, ShowAs};
 use mailcraft_time::{Date, DateTime, Timestamp};
 use serde_json::{Value, json};
 
@@ -876,7 +876,7 @@ fn reply_message(
         if owner.kind.has_server() {
             return Err(failed!(
                 "{not_sending_yet}: answer the invitation without sending an answer.",
-                not_sending_yet = mailcraft_i18n::Arg::words(NOT_SENDING_YET)
+                not_sending_yet = mailcraft_i18n::Arg::words(super::super::ews_mail::not_sending_text(s, owner.kind))
             ));
         }
         return Err(fail("This account has no mail server to send the answer through."));
@@ -975,11 +975,11 @@ pub(super) fn forward_message(s: &Session, event: &Event, to: &[Address], note: 
     let sends = |account: &&mailcraft_model::Account| s.sends_mail_of(account) && s.mailbox.folder_of_kind(account.id, FolderKind::Outbox).is_some();
     let owner = s.mailbox.default_account().filter(sends).or_else(|| s.mailbox.accounts.iter().find(sends));
     let owner = owner.cloned().ok_or_else(|| {
-        // (One with a server that doesn't send yet: a JMAP account.)
-        if s.mailbox.accounts.iter().any(|a| a.kind.has_server()) {
+        // (One with a server that doesn't send yet: a JMAP account, or an Exchange server one.)
+        if let Some(a) = s.mailbox.accounts.iter().find(|a| a.kind.has_server()) {
             failed!(
                 "{not_sending_yet}, and no other account here has a mail server to send this through.",
-                not_sending_yet = mailcraft_i18n::Arg::words(NOT_SENDING_YET)
+                not_sending_yet = mailcraft_i18n::Arg::words(super::super::ews_mail::not_sending_text(s, a.kind))
             )
         } else {
             fail("No account here has a mail server to send this through.")
@@ -1294,6 +1294,48 @@ mod tests {
         let forward = json!({"id": event, "to": "dana@example.org", "send": true});
         assert_eq!(run(&mut s, "calendar.forward", forward)["onServer"], false);
         assert_eq!(outbox(&s, account).len(), 2);
+    }
+
+    /// An Exchange server account sends nothing while its switch is off (#252): an invitation to it isn't answered by mail, a meeting isn't forwarded through its
+    /// Outbox, and nothing is put there to wait for ever. Answered without mail, it goes on a
+    /// calendar here.
+    #[test]
+    fn an_exchange_account_answers_and_forwards_no_meeting_by_mail() {
+        // With the switch on the account sends (#252 E5): only the switch off is a refusal.
+        {
+            let switch = false;
+            let mut s = Session::at(crate::sample::mailbox(now(), 0), now(), 0);
+            s.ews = switch;
+            let server = mailcraft_model::EwsServer { url: "https://exchange.example.org/EWS/Exchange.asmx".into(), ..Default::default() };
+            let exchange = mailcraft_model::Account {
+                name: "Ada".into(),
+                email: "ada@example.org".into(),
+                kind: mailcraft_model::AccountKind::Exchange,
+                ews: Some(server),
+                ..Default::default()
+            };
+            let account = s.mailbox.add_account(exchange);
+            let reason = crate::cmd::ews_mail::SWITCHED_OFF;
+            let request = mail(&mut s, account, "REQUEST", "uid-ews", "");
+            let said = run(&mut s, "calendar.invitation", json!({"message": request}));
+            assert_eq!((said["answerable"].as_bool(), said["canSend"].as_bool()), (Some(true), Some(false)), "switch {switch}");
+            let events = s.mailbox.events.len();
+            let why = refused(&mut s, "calendar.respond", json!({"message": request, "response": "accept", "send": true}));
+            assert_eq!(why, format!("{reason}: answer the invitation without sending an answer."), "switch {switch}");
+            assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events, 0));
+            let answered = run(&mut s, "calendar.respond", json!({"message": request, "response": "accept"}));
+            let event = answered["event"].as_u64().unwrap();
+            assert_eq!((s.mailbox.events.len(), outbox(&s, account).len()), (events + 1, 0));
+            // Forwarded: refused while it is the only account with a server (also when it is the
+            // default account), then sent from the account that sends its mail.
+            let forward = json!({"id": event, "to": "dana@example.org", "send": true});
+            let why = refused(&mut s, "calendar.forward", forward.clone());
+            assert_eq!(why, format!("{reason}, and no other account here has a mail server to send this through."), "switch {switch}");
+            let imap =
+                run(&mut s, "account.add", json!({"email": "ada@imap.example", "incoming": {"host": "imap.example.org"}}))["id"].as_u64().unwrap();
+            assert_eq!(run(&mut s, "calendar.forward", forward)["onServer"], false);
+            assert_eq!((outbox(&s, account).len(), outbox(&s, imap).len()), (0, 1), "switch {switch}");
+        }
     }
 
     #[test]
