@@ -3519,3 +3519,47 @@ msgstr "Estos buzones proceden del sitio que los abrió: allí puede añadir uno
 
 msgid "Manage mailboxes on the site"
 msgstr "Gestionar los buzones en el sitio"
+
+# Nora's recipes: the list in her pane and the requests a click asks her (about the whole mailbox, not the open message).
+msgid "Daily routine"
+msgstr "Rutina diaria"
+
+msgid "Morning summary"
+msgstr "Resumen de la mañana"
+
+msgid "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
+msgstr "Dame mi resumen de la mañana: los correos que llegaron desde anoche, primero los que todavía no he leído, agrupados según lo que requiere mi atención (personas y clientes primero, el resto después), una línea por cada uno. Se trata de todo mi buzón, no del mensaje abierto: busca en mis buzones con tus herramientas de correo. Sé breve y no inventes nada."
+
+msgid "End-of-day summary"
+msgstr "Resumen de fin de jornada"
+
+msgid "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
+msgstr "Dame mi resumen de fin de jornada: los correos que recibí hoy y no he respondido, lo que envié hoy y las respuestas que todavía espero. Se trata de todo mi buzón, no del mensaje abierto: busca en la bandeja de entrada y en Enviados con tus herramientas de correo. Sé breve, una línea por cada uno, sin inventar nada."
+
+msgid "Follow-ups"
+msgstr "Seguimientos"
+
+msgid "Needs my reply"
+msgstr "Espera mi respuesta"
+
+msgid "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
+msgstr "Enumera los correos de los últimos 14 días que necesitan mi respuesta: escritos por una persona (no un boletín ni una notificación automática) y todavía sin contestar. Se trata de todo mi buzón, no del mensaje abierto: busca en la bandeja de entrada con tus herramientas de correo (un mensaje marcado como respondido es uno que ya contesté), lee los que no tengas claros e indica cada uno en una línea: quién, sobre qué y desde cuándo. No inventes nada."
+
+msgid "Still without an answer"
+msgstr "Sin respuesta todavía"
+
+msgid "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
+msgstr "Enumera los correos que envié en los últimos 14 días y que nadie ha contestado todavía, del más antiguo al más reciente: a quién escribí, sobre qué y cuántos días lleva esperando. Se trata de todo mi buzón, no del mensaje abierto: usa la herramienta para correos enviados sin respuesta. Una línea por cada uno. Si no hay ninguno, dilo."
+
+msgid "My commitments"
+msgstr "Mis compromisos"
+
+msgid "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
+msgstr "Enumera los compromisos que adquirí en los correos que envié en los últimos 7 días: qué prometí, a quién y para cuándo, si el mensaje lo indica. Se trata de todo mi buzón, no del mensaje abierto: busca en Enviados con tus herramientas de correo y lee los mensajes. Una línea por cada uno, nunca una cita larga. Si no hay ninguno, dilo."
+
+msgid "Recipes"
+msgstr "Recetas"
+
+msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
+msgstr "Nora lee su correo con sus propios permisos. No se envía, mueve ni elimina nada."
+

@@ -2857,6 +2857,11 @@ msgstr "Knippen"
 msgid "DOMAIN\\user or you@example.org; empty for your address"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Daily routine"
+msgstr ""
+
 #. name
 #: crates/ui-egui/src/theme.rs
 #, fuzzy
@@ -3671,6 +3676,11 @@ msgid "End"
 msgstr "Einde"
 
 #. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "End-of-day summary"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "Ends"
@@ -4175,6 +4185,11 @@ msgstr "Opvolgen."
 msgid "Follow up. Due {date}"
 msgstr "Opvolgen. Vervalt op {date}"
 
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Follow-ups"
+msgstr ""
+
 #. command label, interface, ribbon
 #: crates/engine/src/cmd/format.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs
 #, fuzzy
@@ -4437,6 +4452,16 @@ msgstr "De pagina van GitHub is open: voeg daar het diagnosebestand toe en dien 
 #, fuzzy
 msgid "GitHub's page is open: check it, then submit. MailCraft sent nothing."
 msgstr "De pagina van GitHub is open: controleer die en dien hem daarna in. MailCraft heeft niets verzonden."
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
+msgstr ""
 
 #. name
 #: crates/ui-egui/src/account_setup.rs
@@ -5596,6 +5621,21 @@ msgid "List Tasks"
 msgstr "Taken opsommen"
 
 #. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/dialogs.rs
 #, fuzzy
 msgid "Local mailbox"
@@ -6398,6 +6438,11 @@ msgid "More results on the server can't be asked for now"
 msgstr "Meer resultaten op de server kunnen nu niet worden opgevraagd"
 
 #. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Morning summary"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/warnings.rs
 #, fuzzy
 msgid "Most of the sender's name is characters that aren't shown, and the message came from {real}."
@@ -6527,6 +6572,11 @@ msgid "My Tasks"
 msgstr "Mijn taken"
 
 #. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "My commitments"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup/help.rs
 #, fuzzy
 msgid "My organisation has to approve MailCraft first: what to do"
@@ -6595,6 +6645,11 @@ msgstr "Nodig voor accounts van Outlook.com en Microsoft 365"
 #, fuzzy
 msgid "Needs Check for new versions."
 msgstr "Controleren op nieuwe versies is nodig."
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Needs my reply"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
@@ -7302,6 +7357,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Nora learns your style from a mailbox of yours: you have none here."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
 msgstr ""
 
 #. interface
@@ -8709,6 +8769,11 @@ msgstr "Recent"
 #, fuzzy
 msgid "Recent mail"
 msgstr "Recente e-mail"
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Recipes"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -10834,6 +10899,11 @@ msgstr "Statusbalk · Bestand"
 #, fuzzy
 msgid "Still indexing: some older mail is searched more slowly"
 msgstr "Nog bezig met indexeren: een deel van de oudere e-mail wordt trager doorzocht"
+
+#. interface
+#: crates/ui-egui/src/nora/recipes.rs
+msgid "Still without an answer"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/sync_panel.rs

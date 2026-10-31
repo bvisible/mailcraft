@@ -3517,3 +3517,47 @@ msgstr "Queste caselle provengono dal sito che le ha aperte: è lì che può agg
 
 msgid "Manage mailboxes on the site"
 msgstr "Gestire le caselle sul sito"
+
+# Nora's recipes: the list in her pane and the requests a click asks her (about the whole mailbox, not the open message).
+msgid "Daily routine"
+msgstr "Routine quotidiana"
+
+msgid "Morning summary"
+msgstr "Riepilogo del mattino"
+
+msgid "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
+msgstr "Dammi il mio riepilogo del mattino: la posta arrivata da ieri sera, prima quella ancora non letta, raggruppata in base a ciò che richiede la mia attenzione (prima persone e clienti, poi il resto), una riga per messaggio. Riguarda tutta la mia casella, non il messaggio aperto: cerca nelle mie caselle con i tuoi strumenti di posta. Sii breve e non inventare nulla."
+
+msgid "End-of-day summary"
+msgstr "Riepilogo di fine giornata"
+
+msgid "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
+msgstr "Dammi il mio riepilogo di fine giornata: la posta ricevuta oggi e a cui non ho risposto, ciò che ho inviato oggi e le risposte che sto ancora aspettando. Riguarda tutta la mia casella, non il messaggio aperto: cerca nella posta in arrivo e nella cartella Inviati con i tuoi strumenti di posta. Sii breve, una riga per voce, senza inventare nulla."
+
+msgid "Follow-ups"
+msgstr "Solleciti"
+
+msgid "Needs my reply"
+msgstr "In attesa della mia risposta"
+
+msgid "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
+msgstr "Elencami la posta degli ultimi 14 giorni che richiede una mia risposta: scritta da una persona (non da una newsletter o da una notifica automatica) e non ancora evasa. Riguarda tutta la mia casella, non il messaggio aperto: cerca nella posta in arrivo con i tuoi strumenti di posta (un messaggio contrassegnato come risposto è uno a cui ho già risposto), leggi quelli su cui hai dubbi e indica ciascuno in una riga: chi, di cosa, da quando. Non inventare nulla."
+
+msgid "Still without an answer"
+msgstr "Ancora senza risposta"
+
+msgid "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
+msgstr "Elencami la posta che ho inviato negli ultimi 14 giorni e a cui nessuno ha ancora risposto, dalla più vecchia: a chi ho scritto, di cosa e da quanti giorni è in attesa. Riguarda tutta la mia casella, non il messaggio aperto: usa lo strumento per la posta inviata senza risposta. Una riga per ciascuna. Se non ce n'è nessuna, dillo."
+
+msgid "My commitments"
+msgstr "I miei impegni"
+
+msgid "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
+msgstr "Elencami gli impegni che ho preso nella posta inviata negli ultimi 7 giorni: cosa ho promesso, a chi e per quando, se il messaggio lo indica. Riguarda tutta la mia casella, non il messaggio aperto: cerca nella cartella Inviati con i tuoi strumenti di posta e leggi i messaggi. Una riga per impegno, mai una citazione lunga. Se non ce n'è nessuno, dillo."
+
+msgid "Recipes"
+msgstr "Ricette"
+
+msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
+msgstr "Nora legge la sua posta con i suoi stessi diritti. Non viene inviato, spostato né eliminato nulla."
+

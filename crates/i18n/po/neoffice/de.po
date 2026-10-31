@@ -3501,3 +3501,47 @@ msgstr "Diese Postfächer stammen von der Website, die sie geöffnet hat: Dort k
 
 msgid "Manage mailboxes on the site"
 msgstr "Postfächer auf der Website verwalten"
+
+# Nora's recipes: the list in her pane and the requests a click asks her (about the whole mailbox, not the open message).
+msgid "Daily routine"
+msgstr "Tagesroutine"
+
+msgid "Morning summary"
+msgstr "Morgenzusammenfassung"
+
+msgid "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
+msgstr "Gib mir meine Morgenzusammenfassung: die Mails, die seit gestern Abend eingegangen sind, zuerst die noch ungelesenen, gruppiert nach dem, was meine Aufmerksamkeit braucht (zuerst Personen und Kunden, dann der Rest), je eine Zeile pro Mail. Es geht um mein ganzes Postfach, nicht um die geöffnete Nachricht: durchsuche meine Postfächer mit den Mail-Werkzeugen. Halte es kurz und erfinde nichts."
+
+msgid "End-of-day summary"
+msgstr "Zusammenfassung am Tagesende"
+
+msgid "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
+msgstr "Gib mir meine Zusammenfassung am Tagesende: die Mails, die ich heute erhalten und noch nicht beantwortet habe, was ich heute gesendet habe und worauf ich noch eine Antwort warte. Es geht um mein ganzes Postfach, nicht um die geöffnete Nachricht: durchsuche Posteingang und Gesendet mit den Mail-Werkzeugen. Kurz, je eine Zeile, ohne etwas zu erfinden."
+
+msgid "Follow-ups"
+msgstr "Nachfassen"
+
+msgid "Needs my reply"
+msgstr "Wartet auf meine Antwort"
+
+msgid "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
+msgstr "Gib mir die Liste der Mails der letzten 14 Tage, die meine Antwort brauchen: von einer Person geschrieben (nicht von einem Newsletter oder einer automatischen Benachrichtigung) und noch nicht beantwortet. Es geht um mein ganzes Postfach, nicht um die geöffnete Nachricht: durchsuche den Posteingang mit den Mail-Werkzeugen (eine als beantwortet markierte Nachricht ist eine, auf die ich bereits geantwortet habe), lies die, bei denen du unsicher bist, und gib jede in einer Zeile an: wer, worum es geht, seit wann. Erfinde nichts."
+
+msgid "Still without an answer"
+msgstr "Noch ohne Antwort"
+
+msgid "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
+msgstr "Gib mir die Liste der Mails, die ich in den letzten 14 Tagen gesendet habe und die noch niemand beantwortet hat, die ältesten zuerst: an wen ich geschrieben habe, worum es ging und wie viele Tage sie warten. Es geht um mein ganzes Postfach, nicht um die geöffnete Nachricht: verwende das Werkzeug für gesendete Mails ohne Antwort. Eine Zeile pro Mail. Wenn keine vorhanden ist, sag es."
+
+msgid "My commitments"
+msgstr "Meine Zusagen"
+
+msgid "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
+msgstr "Gib mir die Liste der Zusagen, die ich in den Mails der letzten 7 Tage gemacht habe: was ich versprochen habe, wem und bis wann, falls die Mail es nennt. Es geht um mein ganzes Postfach, nicht um die geöffnete Nachricht: durchsuche den Ordner Gesendet mit den Mail-Werkzeugen und lies die Mails. Eine Zeile pro Zusage, nie ein langes Zitat. Wenn keine vorhanden ist, sag es."
+
+msgid "Recipes"
+msgstr "Rezepte"
+
+msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
+msgstr "Nora liest Ihre Mails mit Ihren eigenen Rechten. Es wird nichts gesendet, verschoben oder gelöscht."
+

@@ -40,6 +40,7 @@ mod observe;
 mod own_text;
 pub(crate) mod pane;
 pub(crate) mod ready;
+mod recipes;
 pub(crate) mod ribbon;
 #[cfg(test)]
 mod testing;
