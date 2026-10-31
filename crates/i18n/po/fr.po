@@ -4353,12 +4353,12 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/recipes.rs
-msgid "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with no argument (my latest 20 inbox messages): keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_search once, with folder=sent: keep what I sent today. Step 3: call nora_mail_unanswered once, with no argument: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each, and do not search again. Invent nothing."
+msgid "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_news once, with no argument: keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_sent once, with no argument: keep what I sent today. Step 3: call nora_mail_unanswered once, with no argument: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each, and do not search again. Invent nothing."
 msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/recipes.rs
-msgid "Give me my morning summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with no argument: it lists my latest 20 inbox messages, each with its date, seen (I read it) and answered; the answer says what day it is. Step 2: keep the ones that arrived since yesterday evening, the unread first. If there is none, say that no mail has come in since yesterday evening, and stop: do not search again. Step 3: group them by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Invent nothing."
+msgid "Give me my morning summary, about my whole mailbox and not the message that is open. Call nora_mail_news once, with no argument: it lists what came in since yesterday evening, the unread first, and says so itself when nothing did: then say that no mail has come in since yesterday evening, and stop. Otherwise group it by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Invent nothing."
 msgstr ""
 
 #. name
@@ -5481,7 +5481,7 @@ msgstr "Lister les tâches"
 
 #. interface
 #: crates/ui-egui/src/nora/recipes.rs
-msgid "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with folder=sent: my latest sent messages; keep those of the last 7 days. Step 2: read at most five of them with nora_mail_read. Step 3: one line per commitment: what I promised, to whom, and by when if the message says so; never a long quote. If there is none, say so."
+msgid "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_sent once, with no argument: my sent messages of the last 7 days, each with the start of my own words. Step 2: one line per commitment: what I promised, to whom, and by when if the text says so; never a long quote. If there is none, say so."
 msgstr ""
 
 #. interface

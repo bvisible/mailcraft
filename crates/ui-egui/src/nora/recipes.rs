@@ -5,11 +5,12 @@
 //! Recipes: ready-made requests to Nora about the person's whole mailbox, listed in her pane while the conversation is
 //! empty (a morning summary, what needs a reply, what nobody answered). A click asks her, as if the person had typed it.
 //!
-//! A recipe is a request and nothing more: the words Nora is asked, as a few steps that name her mail tools (`nora_mail_search`,
-//! `nora_mail_unanswered`, `nora_mail_read`) and say that it is the mailbox and not the message that is open. The model she
-//! runs on leaves out the arguments it is told to give (tried on 31.10: five identical calls, then nothing), so the steps
-//! ask for the call that needs none, whose defaults are the right ones (the latest 20 messages of the inbox, the last 14
-//! days of sent mail), and for an argument only where there is no other way (`folder=sent`). She answers through the
+//! A recipe is a request and nothing more: the words Nora is asked, as a few steps that name her mail tools (`nora_mail_news`,
+//! `nora_mail_sent`, `nora_mail_unanswered`, `nora_mail_search`) and say that it is the mailbox and not the message that is
+//! open. The model she runs on leaves out the arguments it is told to give (tried on 31.10: five identical calls, then
+//! nothing), so the steps ask for the call that needs none, whose defaults are the right ones: what came in since yesterday
+//! evening, what was sent in the last 7 days, the sent mail nobody answered in the last 14, and for the rest the latest
+//! 20 messages of the inbox. Each of the first three says by itself when there is nothing. She answers through the
 //! conversation like any other question, as data a stranger wrote and never as instructions; nothing is sent, deleted or
 //! moved by one.
 
@@ -46,13 +47,13 @@ pub(crate) fn groups() -> Vec<Group> {
                 recipe(
                     tl!("Morning summary"),
                     tl!(
-                        "Give me my morning summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with no argument: it lists my latest 20 inbox messages, each with its date, seen (I read it) and answered; the answer says what day it is. Step 2: keep the ones that arrived since yesterday evening, the unread first. If there is none, say that no mail has come in since yesterday evening, and stop: do not search again. Step 3: group them by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Invent nothing."
+                        "Give me my morning summary, about my whole mailbox and not the message that is open. Call nora_mail_news once, with no argument: it lists what came in since yesterday evening, the unread first, and says so itself when nothing did: then say that no mail has come in since yesterday evening, and stop. Otherwise group it by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Invent nothing."
                     ),
                 ),
                 recipe(
                     tl!("End-of-day summary"),
                     tl!(
-                        "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with no argument (my latest 20 inbox messages): keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_search once, with folder=sent: keep what I sent today. Step 3: call nora_mail_unanswered once, with no argument: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each, and do not search again. Invent nothing."
+                        "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_news once, with no argument: keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_sent once, with no argument: keep what I sent today. Step 3: call nora_mail_unanswered once, with no argument: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each, and do not search again. Invent nothing."
                     ),
                 ),
             ],
@@ -75,7 +76,7 @@ pub(crate) fn groups() -> Vec<Group> {
                 recipe(
                     tl!("My commitments"),
                     tl!(
-                        "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with folder=sent: my latest sent messages; keep those of the last 7 days. Step 2: read at most five of them with nora_mail_read. Step 3: one line per commitment: what I promised, to whom, and by when if the message says so; never a long quote. If there is none, say so."
+                        "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_sent once, with no argument: my sent messages of the last 7 days, each with the start of my own words. Step 2: one line per commitment: what I promised, to whom, and by when if the text says so; never a long quote. If there is none, say so."
                     ),
                 ),
             ],
