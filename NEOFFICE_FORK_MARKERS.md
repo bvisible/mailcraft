@@ -9,6 +9,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `0009470` (upstream's tag v0.9.0, 2026-10-30: three commits after `4bef0a9`, a one-file mailbox of any size read as a
+  stream (#649, #664), a picture another thread keeps still found on Windows (#665), and the release notes and version
+  (#669)), merged into `version-15` on 2026-10-31 without a conflict. What came before it:
 - `4bef0a9` (upstream `main` on 2026-10-30 in the evening, 106 commits after v0.8.2: Exchange server accounts over Exchange Web
   Services, behind `MAILCRAFT_EWS=1` (#252, E1 to E8: `crates/ews`, Autodiscover, NTLM, the desktop's runner, set-up and
   File › Info pages, tried against Grommunio); a message's style sheet styles it, newsletters follow the pane's width, table
