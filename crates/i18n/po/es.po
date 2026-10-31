@@ -302,11 +302,6 @@ msgstr "@{login}, probando desde {since}"
 msgid "@{login}: {prs} merged PRs, {commits} commits, +{added} / −{deleted} lines (Δ {delta}), +{binAdded} / −{binDeleted} binary assets, {first} – {last}"
 msgstr "@{login}: {prs} PR integradas, {commits} commits, +{added} / −{deleted} líneas (Δ {delta}), +{binAdded} / −{binDeleted} recursos binarios, {first} – {last}"
 
-#. interface, what a command says
-#: crates/engine/src/cmd/folder.rs crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"
-msgstr ""
-
 #. interface
 #: crates/ui-egui/src/calendar_sync.rs
 #, fuzzy

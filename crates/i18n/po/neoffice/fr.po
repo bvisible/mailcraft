@@ -110,9 +110,6 @@ msgstr "Une modification de contact n’a pas encore pu être envoyée et sera r
 msgid "A contact change that was waiting to be sent no longer matched the contacts. It was not sent."
 msgstr "Une modification de contact en attente d’envoi ne correspondait plus aux contacts. Elle n’a pas été envoyée."
 
-msgid "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"
-msgstr "Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur"
-
 msgid "a JMAP address is too long"
 msgstr "une adresse JMAP est trop longue"
 

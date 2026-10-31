@@ -986,10 +986,6 @@ fn what_undo_and_the_engine_refuse_reads_in_french() {
             "Ada's JMAP server can't be reached: is a plain http:// address to a server that isn't on this computer: use https://",
             "Le serveur JMAP du compte Ada est injoignable : est en http:// en clair pour un serveur qui n’est pas sur cet ordinateur : utilisez https://",
         ),
-        (
-            "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there",
-            "Les dossiers d’un compte JMAP sont ceux de son serveur : cette version ne peut pas les créer, les renommer, les déplacer ni les supprimer sur le serveur",
-        ),
     ];
     for (english, french) in cases {
         assert_eq!(fr(english).as_deref(), Some(french), "{english:?}");

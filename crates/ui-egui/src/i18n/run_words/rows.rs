@@ -25,7 +25,6 @@ const ENGINE: &str = "crates/engine/src/cmd/jmap_mail.rs";
 const SENDING: &str = "crates/engine/src/cmd/jmap_send.rs";
 const CHANGES: &str = "crates/engine/src/cmd/jmap_up.rs";
 const FETCH: &str = "crates/engine/src/cmd/jmap_fetch.rs";
-const FOLDER: &str = "crates/engine/src/cmd/folder.rs";
 const GRAPH_MAIL: &str = "crates/engine/src/cmd/graph_mail.rs";
 const UNDO: &str = "crates/engine/src/undo.rs";
 const MAILBOX: &str = "crates/model/src/mailbox.rs";
@@ -253,7 +252,6 @@ pub(super) static ROWS: &[Row] = &[
         run_word!("Mail can't be copied to or from a JMAP account: its server keeps a message in one mailbox. Move it, or save it as a file"),
         &[],
     ),
-    row(FOLDER, Line, run_word!("A JMAP account's folders are its server's: this version can't make, rename, move or delete them there"), &[]),
     // A new contact, a change or a deletion the server has no room for (`remote_contacts::written`): it waits, and the
     // owner is told once.
     row(CONTACTS, Line, run_word!("The server's mailbox is full: {name} waits here and goes as soon as there is room."), &[]),
