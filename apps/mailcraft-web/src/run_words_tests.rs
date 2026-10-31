@@ -858,7 +858,8 @@ fn refused_changes() -> Vec<Scenario> {
 }
 
 /// The engine's refusals: a piece of a run for another account, the address of a JMAP server wrong in each way the
-/// model checks, a move or a copy between a JMAP account and another place, a JMAP account's folder renamed.
+/// model checks, a move or a copy between a JMAP account and another place. (A JMAP account's folders are made, renamed,
+/// moved and deleted as any: their changes go up, and nothing refuses them.)
 fn refusals_of_the_engine() -> Vec<Scenario> {
     let mut out = Vec::new();
     let refused = |rig: &Rig, name: &'static str, said: std::result::Result<Value, mailcraft_engine::CmdError>| {
@@ -891,7 +892,7 @@ fn refusals_of_the_engine() -> Vec<Scenario> {
         let said = jmap_mail_request(&rig.s, account, true, &[], false).map(|_| Value::Null);
         out.push(refused(&rig, "a JMAP server's address", said));
     }
-    // Between a JMAP account and a folder on this computer, and a copy; a JMAP folder renamed.
+    // Between a JMAP account and a folder on this computer, and a copy.
     let mut rig = Rig::listed();
     // (An account kept on this computer.)
     let mine = rig.s.mailbox.add_account(mailcraft_model::Account { name: "Mine".into(), email: "mine@example.org".into(), ..Default::default() });
@@ -902,8 +903,6 @@ fn refusals_of_the_engine() -> Vec<Scenario> {
     out.push(refused(&rig, "a move to this computer", said));
     let said = rig.s.run("mail.copy", &json!({"folder": trash, "ids": ids}));
     out.push(refused(&rig, "a copy", said));
-    let said = rig.s.run("folder.rename", &json!({"id": trash, "name": "Bin"}));
-    out.push(refused(&rig, "a folder renamed", said));
     out
 }
 
