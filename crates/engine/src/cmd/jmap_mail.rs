@@ -21,6 +21,11 @@
 //! account's standard folders are tied to the server's by role, the others are made here, and a
 //! complete listing removes what the server no longer has.
 //!
+//! **Folders up.** The folders made, renamed, moved and deleted here go up as a Microsoft account's do
+//! ([`super::graph_mail`]'s `folder_changes`, with `Mailbox/set`), first in a run, and a run that sends some lists the
+//! mailboxes. A server that names a mailbox by where it lies gives a folder another id when it is renamed or moved: the
+//! folder takes it, and the messages in it wait to be found again there, as moved messages do.
+//!
 //! **Changes up.** What the owner changed here since the server last said (read marks, flags, a move to
 //! another folder, a delete, Deleted Items emptied) goes up first in a run, as the difference between each
 //! message and the server's last word on it ([`super::jmap_up`]); the host says what became of each change,
@@ -37,15 +42,15 @@
 use std::collections::HashMap;
 
 use mailcraft_model::sync::{
-    GraphMessage, JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, MessagePage,
-    SendOutcome, SyncPhase,
+    ChangeOutcome, FolderChange, FolderChangeDone, GraphMessage, JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope,
+    MAX_FOLDER_CHANGES, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, MessagePage, SendOutcome, SyncPhase,
 };
 use mailcraft_model::time::Timestamp;
 use mailcraft_model::{AccountKind, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
 
 use super::graph_down::{self, Down};
-use super::graph_mail::{Taken, take_listing};
+use super::graph_mail::{Taken, change_done, folder_changes, take_listing};
 use super::jmap_down::{self, plausible_id};
 use super::jmap_send;
 use super::jmap_up::{self, Refusals};
@@ -98,7 +103,9 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         n => n.min(MAX_JMAP_WINDOW),
     };
     let tied = s.mailbox.folders.iter().any(|f| f.account == account && f.server.is_some());
-    // What was changed here and the server hasn't heard of.
+    // The folders made, renamed, moved and deleted here (parents first), and the changes of messages, that the server
+    // hasn't heard of.
+    let folders = folder_changes(&s.mailbox, account, MAX_FOLDER_CHANGES).0;
     let changes = jmap_up::message_changes(s, account, MAX_MESSAGE_CHANGES).0;
     // What waits to go: the Outbox, and the drafts saved here.
     let (sends, drafts) = (jmap_send::sends(s, account), jmap_send::drafts(s, account));
@@ -135,9 +142,11 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         session: server.session.clone(),
         bearer: server.bearer,
         window,
-        list_folders: full || !tied,
+        // (After folder changes, the server's word on them: a renamed folder may have another id.)
+        list_folders: full || !tied || !folders.is_empty(),
         scope,
         known: known(&s.mailbox, account, window),
+        folders,
         changes,
         sends,
         drafts,
@@ -178,7 +187,10 @@ fn known(mb: &Mailbox, account: Id, window: u32) -> Vec<JmapKnown> {
 /// messages deleted for good, and the drafts saved here that it hasn't got in their latest form. (The Outbox is
 /// counted by the window, as for any account that sends.)
 pub fn unpushed(s: &Session, account: Id) -> usize {
-    jmap_up::message_changes(s, account, 0).1.saturating_add(jmap_send::pending_drafts(&s.mailbox, account))
+    folder_changes(&s.mailbox, account, 0)
+        .1
+        .saturating_add(jmap_up::message_changes(s, account, 0).1)
+        .saturating_add(jmap_send::pending_drafts(&s.mailbox, account))
 }
 
 fn request(s: &mut Session, v: &Value) -> CmdResult {
@@ -205,6 +217,40 @@ fn apply(s: &mut Session, v: &Value) -> CmdResult {
 /// the window shows only its newest). Nothing can be sent for them.
 fn unplaced(mb: &Mailbox, account: Id) -> usize {
     mb.messages.values().filter(|m| m.account == account && m.server.as_ref().is_some_and(|server| server.id.is_empty() && !server.gone)).count()
+}
+
+/// A folder renamed or moved on a server that names a mailbox by where it lies (the webmail's facade over IMAP does):
+/// the outcome names the folder's new id. The folder takes it, and the messages in it, whose ids name the place too, wait
+/// to be found again there by its next window ([`super::jmap_down`]), as moved messages do: nothing is sent for them until
+/// then. (The folders inside it have new ids as well, which the listing brings: they are made again here, and their mail
+/// comes down again.) Whether the folder took a new id.
+fn retie(mb: &mut Mailbox, account: Id, done: &FolderChangeDone) -> bool {
+    let (FolderChange::Rename { folder, id, .. } | FolderChange::Move { folder, id, .. }, ChangeOutcome::Done { folder: there }) =
+        (&done.change, &done.outcome)
+    else {
+        return false;
+    };
+    if there.id == *id || !plausible_id(&there.id) || mb.folder_by_server(account, &there.id).is_some() {
+        return false;
+    }
+    let Some(server) = mb.folder_mut(*folder).ok().filter(|f| f.account == account).and_then(|f| f.server.as_mut()).filter(|server| server.id == *id)
+    else {
+        return false;
+    };
+    server.id.clone_from(&there.id);
+    let inside: Vec<Id> = mb
+        .messages
+        .values()
+        .filter(|m| m.account == account && m.folder == *folder && m.server.as_ref().is_some_and(|server| server.folder == *id))
+        .map(|m| m.id)
+        .collect();
+    for message in inside {
+        if let Some(server) = mb.message_mut(message).ok().and_then(|m| m.server.as_mut()) {
+            server.folder.clone_from(&there.id);
+            server.id.clear();
+        }
+    }
+    true
 }
 
 /// `said` and a sentence more, each ending in a full stop.
@@ -250,6 +296,22 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     let mut errors: Vec<String> = result.errors.iter().take(MAX_ERRORS).map(|e| said(e)).filter(|e| !e.is_empty()).collect();
     if result.auth_refused && !result.partial {
         errors.push("The server refused the sign-in".to_string());
+    }
+    // What became of the folder changes (RFC 8621 §2.5), as a Microsoft account takes them in: first, as they were made
+    // first. What the server refused is said at the end of the run.
+    let mut retied = false;
+    for done in result.folders.iter().take(MAX_FOLDER_CHANGES) {
+        retied |= retie(&mut s.mailbox, account, done);
+        if let Some(line) = change_done(&mut s.mailbox, account, &done.change, &done.outcome, &mut taken).map(|line| said(&line)) {
+            errors.push(line.clone());
+            s.graph_said.push(line);
+        }
+    }
+    // The messages of a folder that took a new id are looked for afresh; and an undo would bring back here alone a folder
+    // and messages under the ids the server no longer has.
+    if retied {
+        s.graph_index = Default::default();
+        s.forget_history();
     }
     // What became of the changes made here (RFC 8621 §4.6): first, so that what the windows say is merged with the
     // server's last word as it is now. A refusal is said once per kind of change and reason, and the status says it

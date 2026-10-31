@@ -2377,7 +2377,7 @@ dependencies = [
 
 [[package]]
 name = "mailcraft-jmap-fork"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "base64",
  "log",

@@ -183,7 +183,8 @@ fn a_folder_the_server_does_not_have_is_no_place_to_move_to_and_a_message_with_n
     s.mailbox.folders.push(Folder { id: local, account, name: "Made here".into(), kind: FolderKind::Custom, ..Default::default() });
     s.run("mail.move", &json!({"ids": [m], "folder": local})).unwrap();
     assert_eq!(changes(&s, account), []);
-    assert_eq!(unpushed(&s, account), 0);
+    // (What waits to go up is the folder itself, which the next run makes on the server.)
+    assert_eq!(unpushed(&s, account), 1);
     // A message whose id is gone, or marked gone, is not touched either.
     let (mut s, account, m, _) = setup();
     let archive = folder_of(&s, account, "Mar");
@@ -671,42 +672,99 @@ fn mail_does_not_move_between_a_jmap_account_and_another_account_and_is_never_co
 }
 
 #[test]
-fn a_jmap_accounts_folders_are_its_servers_and_deleted_items_is_emptied_with_its_folders_left() {
+fn a_jmap_accounts_folders_are_made_renamed_moved_and_deleted_here_and_go_up_with_the_next_run() {
+    use mailcraft_model::Queued;
+    use mailcraft_model::sync::{ChangeOutcome, FolderChange, FolderChangeDone, GraphFolder};
     let (mut s, account, m, _) = setup();
     let inbox = folder_of(&s, account, "Min");
     let deleted = folder_of(&s, account, "Mtr");
     let projects = s.mailbox.add_folder(account, None, "Projects").unwrap();
     s.mailbox.folder_mut(projects).unwrap().server = Some(ServerFolder { id: "Mpr".into(), name: "Projects".into(), ..Default::default() });
-    let before = s.mailbox.folders.clone();
-    for (command, params) in [
-        ("folder.new", json!({"name": "Made here", "parent": inbox})),
-        ("folder.new", json!({"name": "Made here", "parent": null, "account": account})),
-        ("folder.rename", json!({"name": "Renamed", "id": projects})),
-        ("folder.move", json!({"parent": inbox, "id": projects})),
-        ("folder.delete", json!({"id": projects})),
-    ] {
-        let refused = s.run(command, &params).unwrap_err();
-        assert_eq!(refused.to_string(), JMAP_FOLDERS_REASON, "{command}");
-    }
-    assert_eq!(s.mailbox.folders, before, "nothing changed");
-    // Another account's folders are made as they were.
-    let (mut other, ..) = setup();
-    let local = other.mailbox.accounts.iter().find(|a| a.kind == AccountKind::Local).unwrap().id;
-    assert!(other.run("folder.new", &json!({"name": "Made here", "parent": null, "account": local})).is_ok());
-    // Deleted Items emptied: its messages are destroyed, and the folder in it stays (the server would give it back).
+    let in_projects = add(&mut s, projects, "E9", "Nine");
+    let made = s.run("folder.new", &json!({"name": "Made here", "parent": inbox})).unwrap()["id"].as_u64().unwrap();
+    let under = s.run("folder.new", &json!({"name": "Under it", "parent": made})).unwrap()["id"].as_u64().unwrap();
+    s.run("folder.rename", &json!({"name": "Plans", "id": projects})).unwrap();
+    s.run("folder.move", &json!({"parent": inbox, "id": projects})).unwrap();
+    // A folder deleted is moved into Deleted Items; one deleted there is deleted for good, and queued for the server.
+    let old = s.mailbox.add_folder(account, Some(deleted), "Old").unwrap();
+    s.mailbox.folder_mut(old).unwrap().server =
+        Some(ServerFolder { id: "Mol".into(), name: "Old".into(), parent: "Mtr".into(), ..Default::default() });
+    s.run("folder.delete", &json!({"id": old})).unwrap();
+    assert_eq!(s.mailbox.queued, [Queued::DeleteFolder { account, id: "Mol".into() }]);
+    // The next run sends them, parents first, before the changes of messages, and lists the mailboxes after them.
+    let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
+    assert_eq!(
+        request.folders,
+        [
+            FolderChange::Rename { folder: projects, id: "Mpr".into(), name: "Plans".into() },
+            FolderChange::Move { folder: projects, id: "Mpr".into(), parent: "Min".into() },
+            FolderChange::Create { folder: made, name: "Made here".into(), parent: "Min".into(), parent_folder: None },
+            FolderChange::Create { folder: under, name: "Under it".into(), parent: String::new(), parent_folder: Some(made) },
+            FolderChange::Delete { id: "Mol".into() },
+        ]
+    );
+    assert!(request.list_folders);
+    assert_eq!(unpushed(&s, account), 5);
+    // The server made them. It names a mailbox by where it lies (the webmail's facade does): the folder renamed and moved
+    // has another id, and so have the messages in it, which wait to be found again there.
+    let folder = |id: &str, parent: &str, name: &str| GraphFolder { id: id.into(), parent: parent.into(), name: name.into(), ..Default::default() };
+    let outcomes = vec![
+        FolderChangeDone { change: request.folders[0].clone(), outcome: ChangeOutcome::Done { folder: folder("MinPlans", "", "Plans") } },
+        FolderChangeDone { change: request.folders[1].clone(), outcome: ChangeOutcome::Done { folder: folder("MinPlans", "Min", "") } },
+        FolderChangeDone { change: request.folders[2].clone(), outcome: ChangeOutcome::Done { folder: folder("MinMade", "Min", "Made here") } },
+        FolderChangeDone {
+            change: request.folders[3].clone(),
+            outcome: ChangeOutcome::Done { folder: folder("MinMadeUnder", "MinMade", "Under it") },
+        },
+        FolderChangeDone { change: request.folders[4].clone(), outcome: ChangeOutcome::Done { folder: GraphFolder::default() } },
+    ];
+    let taken = apply_jmap_mail(&mut s, JmapMailResult { folders: outcomes, partial: true, ..result(account, Vec::new()) }).unwrap();
+    assert_eq!(taken["pushed"], 5, "{taken}");
+    let server_of = |s: &Session, id: Id| s.mailbox.folder(id).and_then(|f| f.server.clone()).map(|server| (server.id, server.name, server.parent));
+    assert_eq!(server_of(&s, projects), Some(("MinPlans".into(), "Plans".into(), "Min".into())));
+    assert_eq!(server_of(&s, made), Some(("MinMade".into(), "Made here".into(), "Min".into())));
+    assert_eq!(server_of(&s, under), Some(("MinMadeUnder".into(), "Under it".into(), "MinMade".into())));
+    let server = s.mailbox.message(in_projects).and_then(|m| m.server.clone()).unwrap();
+    assert_eq!((server.id.as_str(), server.folder.as_str()), ("", "MinPlans"));
+    assert!(s.mailbox.queued.is_empty());
+    // Nothing waits any more, and nothing is moved for the messages of the folder that took another id.
+    let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
+    assert!(request.folders.is_empty() && request.changes.is_empty(), "{:?} {:?}", request.folders, request.changes);
+    // The messages of a folder that took another id are read in a light run, to be found again.
+    assert!(matches!(&request.scope, JmapScope::Light { also } if also.contains(&"MinPlans".to_string())), "{:?}", request.scope);
+    let _ = m;
+}
+
+#[test]
+fn a_folder_change_the_server_refuses_is_put_back_and_said() {
+    use mailcraft_model::sync::{ChangeOutcome, FolderChangeDone};
+    let (mut s, account, _, _) = setup();
+    let projects = s.mailbox.add_folder(account, None, "Projects").unwrap();
+    s.mailbox.folder_mut(projects).unwrap().server = Some(ServerFolder { id: "Mpr".into(), name: "Projects".into(), ..Default::default() });
+    s.run("folder.rename", &json!({"name": "Plans", "id": projects})).unwrap();
+    let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
+    let refused = vec![FolderChangeDone { change: request.folders[0].clone(), outcome: ChangeOutcome::Refused { why: "forbidden".into() } }];
+    let taken = apply_jmap_mail(&mut s, JmapMailResult { folders: refused, ..result(account, Vec::new()) }).unwrap();
+    assert_eq!(s.mailbox.folder(projects).map(|f| f.name.as_str()), Some("Projects"));
+    assert!(taken["errors"].to_string().contains("Couldn't rename the folder"), "{taken}");
+    assert!(jmap_mail_request(&s, account, false, &[], false).unwrap().folders.is_empty());
+}
+
+#[test]
+fn deleted_items_is_emptied_with_the_folders_in_it_and_the_server_is_told() {
+    let (mut s, account, _, _) = setup();
+    let deleted = folder_of(&s, account, "Mtr");
     let nested = s.mailbox.add_folder(account, Some(deleted), "Old").unwrap();
     s.mailbox.folder_mut(nested).unwrap().server =
         Some(ServerFolder { id: "Mol".into(), name: "Old".into(), parent: "Mtr".into(), ..Default::default() });
     let in_nested = add(&mut s, nested, "E5", "Five");
     let in_deleted = add(&mut s, deleted, "E6", "Six");
     s.run("folder.empty", &json!({"id": deleted})).unwrap();
-    assert!(s.mailbox.message(in_deleted).is_none() && s.mailbox.folder(nested).is_some());
-    assert!(s.mailbox.message(in_nested).is_some(), "what is in a folder of Deleted Items is that folder's");
+    assert!(s.mailbox.message(in_deleted).is_none() && s.mailbox.folder(nested).is_none() && s.mailbox.message(in_nested).is_none());
     assert_eq!(changes(&s, account), [JmapChange::Destroy { id: "E6".into() }]);
-    let _ = m;
+    let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
+    assert_eq!(request.folders, [mailcraft_model::sync::FolderChange::Delete { id: "Mol".into() }]);
 }
-
-const JMAP_FOLDERS_REASON: &str = super::super::folder::JMAP_FOLDERS;
 
 #[test]
 fn a_move_that_has_not_reached_the_server_is_not_undone_by_a_window_that_lists_the_message_where_it_was() {

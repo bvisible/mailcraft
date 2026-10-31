@@ -6,6 +6,8 @@
 
 use super::*;
 use crate::sync::{GraphFolder, GraphMessage, SendOutcome, ServerMessage};
+// //// Neoffice — (a JMAP account's folder changes)
+use crate::sync::ChangeOutcome;
 use crate::{Address, FolderKind, Message};
 
 const ME: &str = "ada@example.org";
@@ -37,6 +39,8 @@ fn request() -> JmapMailRequest {
             JmapChange::Move { message: 5, id: "E3".into(), from: "M1".into(), to: "M2".into() },
             JmapChange::Destroy { id: "E9".into() },
         ],
+        // //// Neoffice — a folder made, as this fork sends a JMAP account's folder changes.
+        folders: vec![FolderChange::Create { folder: 6, name: format!("For {ME}"), parent: "M1".into(), parent_folder: None }],
         // //// Neoffice — a message to send and a draft to file, as this fork sends them (`JmapSend`, `JmapDraftUp`).
         sends: vec![JmapSend { message: 7, draft_copy: format!("E-draft-{ME}"), mime: Box::new(to_bob.clone()) }],
         drafts: vec![JmapDraftUp { message: 8, saves: 2, replaces: "E9".into(), mime: Box::new(to_bob) }],
@@ -72,6 +76,13 @@ fn result() -> JmapMailResult {
                 outcome: JmapOutcome::Refused { why: format!("{ME} may not delete it") },
             },
         ],
+        // //// Neoffice — what became of a folder made.
+        folders: vec![FolderChangeDone {
+            change: FolderChange::Create { folder: 6, name: format!("For {ME}"), parent: "M1".into(), parent_folder: None },
+            outcome: ChangeOutcome::Done {
+                folder: GraphFolder { id: "M6".into(), parent: "M1".into(), name: format!("For {ME}"), ..Default::default() },
+            },
+        }],
         sent: vec![SendDone {
             message: 7,
             outcome: SendOutcome::Held { lost: false, why: format!("{ME} was refused") },
@@ -105,6 +116,7 @@ fn a_request_and_a_result_read_and_write_as_json() {
         r#""known":[{"mailbox":"M1","ids":["#,
         r#""sends":[{"message":7,"draftCopy":"#,
         r#""drafts":[{"message":8,"saves":2,"replaces":"E9","mime":"#,
+        r#""folders":[{"create":{"folder":6,"name":"#,
         r#""bearer":true"#,
     ] {
         assert!(json.contains(part), "{part} in {json}");
@@ -279,13 +291,13 @@ fn debug_output_has_counts_only() {
     // //// Neoffice — (with the drafts filed, and the copies nobody wants)
     assert_eq!(
         format!("{request:?}"),
-        // //// Neoffice — (with the emails read by their ids alone)
-        "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, sends: 1, drafts: 1, background: true, emails: 1 }"
+        // //// Neoffice — (with the emails read by their ids alone, and the folder changes)
+        "JmapMailRequest { account: 3, bearer: true, window: 300, list_folders: true, scope: \"light+2\", mailboxes: 2, known: 3, changes: 3, folders: 1, sends: 1, drafts: 1, background: true, emails: 1 }"
     );
     // //// Neoffice — (likewise)
     assert_eq!(
         format!("{result:?}"),
-        "JmapMailResult { account: 3, changes: 4, sent: 1, drafts: 1, unwanted: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
+        "JmapMailResult { account: 3, changes: 4, folders: 1, sent: 1, drafts: 1, unwanted: 1, listed: Some(1), pages: 1, messages: 1, errors: 1, busy_for: Some(30), partial: true, whole: true, stopped: true, progress: true, auth_refused: true }"
     );
 }
 

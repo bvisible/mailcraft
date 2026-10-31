@@ -56,7 +56,7 @@ const SET_BYTES: usize = WINDOW_BYTES;
 /// Longest type of a SetError that is kept.
 const MAX_TYPE: usize = 40;
 /// Method errors that say the account's mail cannot be changed, so that every change of the call is refused.
-const NO_CHANGES: [&str; 4] = ["accountReadOnly", "forbidden", "accountNotSupportedByMethod", "unknownMethod"];
+pub(super) const NO_CHANGES: [&str; 4] = ["accountReadOnly", "forbidden", "accountNotSupportedByMethod", "unknownMethod"];
 
 /// An update of one message, as the changes of a request make it: its marks, or its move.
 struct Update {
@@ -98,7 +98,7 @@ enum Item {
 }
 
 /// What the server made of an object.
-enum Verdict {
+pub(super) enum Verdict {
     /// It no longer has the message.
     Gone,
     /// It could not just now: the change waits.
@@ -108,12 +108,12 @@ enum Verdict {
 }
 
 /// A SetError's `type`, as a token: letters and digits only, no longer than [`MAX_TYPE`].
-fn token(kind: &str) -> String {
+pub(super) fn token(kind: &str) -> String {
     let kept: String = kind.chars().filter(char::is_ascii_alphanumeric).take(MAX_TYPE).collect();
     if kept.is_empty() { "unknown".into() } else { kept }
 }
 
-fn verdict(error: &Value) -> Verdict {
+pub(super) fn verdict(error: &Value) -> Verdict {
     let kind = token(error.get("type").and_then(Value::as_str).unwrap_or_default());
     match kind.as_str() {
         "notFound" => Verdict::Gone,
@@ -246,7 +246,8 @@ impl<H: Http> Run<'_, H> {
             .collect();
         let waiting = settled.iter().filter(|outcome| outcome.is_none()).count();
         if result.is_ok() && waiting > 0 {
-            out.up.0 = waiting;
+            // (Beside the folder changes that wait, `folder_changes.rs`.)
+            out.up.0 = out.up.0.saturating_add(waiting);
             out.up.1.get_or_insert_with(|| "the server did not take them".to_string());
         }
         log::debug!("jmap changes: {} of {} answered", answered.len(), changes.len());

@@ -1669,7 +1669,8 @@ impl Mailbox {
                     self.folders.iter().filter(|f| gone.contains(&f.id) && !f.remote.is_empty()).map(|f| f.remote.clone()).collect();
                 // The server deletes what it has of them: each folder it has whose parent it
                 // doesn't have among them (deleting that takes what is under it along).
-                if self.names_may_hold_slashes(f.account) {
+                // //// Neoffice — and a JMAP account's, whose folders this fork's engine changes on its server (`renaming_stays_on_server`).
+                if self.names_may_hold_slashes(f.account) || self.is_jmap(f.account) {
                     let on_server = |p: Id| gone.contains(&p) && self.folder(p).is_some_and(|parent| parent.server.is_some());
                     let deletes: Vec<Queued> = self
                         .folders
@@ -1872,19 +1873,19 @@ impl Mailbox {
     /// server has it until changes go up ([`FOLDERS_STAY_YET`]). A folder made here keeps its name
     /// to itself, whatever is in it.
     pub fn renaming_stays_on_server(&self, id: Id) -> bool {
-        self.folder(id).is_some_and(|f| f.server.is_some() && self.account(f.account).is_some_and(|a| a.kind == AccountKind::Jmap))
+        // //// Neoffice — none does in this fork: its engine sends a JMAP account's folder changes up to the server as a
+        // //// Neoffice — Microsoft account's (`cmd/jmap_mail.rs`, with `crates/jmap-fork`'s `Mailbox/set`), as it does the
+        // //// Neoffice — moves of its messages (`stays_on_server`). Back to upstream's line with the convergence.
+        let _ = id;
+        false
     }
 
     /// Whether the folder `id`, with the folders in it, holds what a JMAP account's server has: a
     /// mailbox of its, or mail it has. Such a folder isn't deleted here yet.
     pub fn folder_stays_on_server(&self, id: Id) -> bool {
-        let Some(f) = self.folder(id) else { return false };
-        if !self.account(f.account).is_some_and(|a| a.kind == AccountKind::Jmap) {
-            return false;
-        }
-        let tree: HashSet<Id> = self.subtree(id).into_iter().collect();
-        self.folders.iter().any(|g| tree.contains(&g.id) && g.server.is_some())
-            || self.messages.values().any(|m| tree.contains(&m.folder) && m.server.is_some())
+        // //// Neoffice — see `renaming_stays_on_server`.
+        let _ = id;
+        false
     }
 
     /// Whether emptying the folder `id` would take what a JMAP account's server has: mail in it, or,

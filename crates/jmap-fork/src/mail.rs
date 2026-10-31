@@ -9,7 +9,8 @@
 //!
 //! **What is asked of the server**, in order, each in one request:
 //!
-//! 0. When the request holds changes of messages, `Email/set` for them, before anything is read, so that what
+//! 0. When the request holds folder changes, `Mailbox/set` for them ([`folder_changes`]), then, when it holds changes
+//!    of messages, `Email/set` for them, before anything is read, so that what
 //!    is read is the server after them ([`up`]). The answer to each change is a piece of its own.
 //! 1. `Mailbox/get`, always: the mailboxes (their roles say which is the Inbox, which a run that reads
 //!    only the Inbox and the mailboxes on screen needs as much as one that reads them all). It is the
@@ -79,6 +80,7 @@
 //! sizes; an answer is held to the size its request can need; an entry that cannot be read is passed over;
 //! nothing is indexed, unwrapped or recursed into.
 
+mod folder_changes;
 mod folders;
 mod message;
 mod outgoing;
@@ -219,6 +221,8 @@ struct Outcome {
     /// leaves it out): a window of the mailbox such a move left would not list the message. (A mailbox that the listing
     /// of the run does not have was moved to by none.)
     unsure_to: Vec<String>,
+    /// The mailboxes a folder change gave another id ([`folder_changes`]): a run that reads only some reads them too.
+    refolded: Vec<String>,
     /// Mailboxes that were left for the next run: three failed in a row, or there were too many.
     gave_up: bool,
     left_out: usize,
@@ -399,7 +403,8 @@ impl<'a, H: Http> Run<'a, H> {
             }
             return self.by_id(places.as_ref(), out, emit).await;
         }
-        // What was changed here goes up first: what is read then is the server after it.
+        // What was changed here goes up first, the folders before the messages: what is read then is the server after it.
+        self.make_folder_changes(out, emit).await?;
         self.make_changes(out, emit).await?;
         let places = self.list(out).await?;
         // A move into a mailbox that the server does not have can not have been made.
@@ -545,6 +550,7 @@ impl<'a, H: Http> Run<'a, H> {
             JmapScope::All => Vec::new(),
         };
         let light = matches!(self.request.scope, JmapScope::Light { .. });
+        let refolded = out.refolded.clone();
         let mut order: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
         let mut take = |id: &str| {
@@ -558,6 +564,8 @@ impl<'a, H: Http> Run<'a, H> {
                 if light {
                     // (One the server does not list is one the engine has stale.)
                     also.iter().filter(|id| listing.folders.iter().any(|f| f.id == **id)).for_each(|id| take(id));
+                    // And the folders a change gave another id: the messages in them are found again under theirs.
+                    refolded.iter().filter(|id| listing.folders.iter().any(|f| f.id == **id)).for_each(|id| take(id));
                 } else {
                     for kind in SPECIAL {
                         listing.folders.iter().filter(|f| f.kind == kind).for_each(|f| take(&f.id));

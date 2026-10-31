@@ -42,6 +42,8 @@ use serde::{Deserialize, Serialize};
 // //// Neoffice — a message to send goes whole as a `JmapSend` (with the copy of its draft the server has), not as
 // Graph's `SendUp`: sending from a JMAP account works here (`mailcraft-jmap`'s `send`).
 use super::{FolderListing, GraphProgress, MessagePage, SendDone, is_false};
+// //// Neoffice — the folder changes of a JMAP account go up as a Microsoft account's do (`JmapMailRequest::folders`).
+use super::{FolderChange, FolderChangeDone};
 use crate::{Id, Message};
 
 /// Most messages of one mailbox that a run reads (the newest ones): what [`JmapMailRequest::window`]
@@ -87,6 +89,13 @@ pub struct JmapMailRequest {
     /// The changes of messages made here, after which the mailboxes are read.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<JmapChange>,
+    // //// Neoffice — upstream makes, renames, moves and deletes no folder of a JMAP account yet (M6); this fork's engine
+    // //// Neoffice — works these out as for a Microsoft account (`graph_mail::folder_changes`) and the host makes them
+    // //// Neoffice — with `Mailbox/set` (`mailcraft-jmap`'s `mail/folder_changes.rs`).
+    /// The folder changes made here ([`FolderChange`], parents before what lies in them), made with `Mailbox/set`
+    /// (RFC 8621 §2.5) before the changes of messages.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<FolderChange>,
     /// What waits in the Outbox, sent after the changes (RFC 8621 §7). Each message goes whole.
     // //// Neoffice — as a `JmapSend` (see the `use` above), and the drafts filed with the run.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -322,6 +331,11 @@ pub struct JmapMailResult {
     /// What became of the changes of messages sent.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<JmapChangeDone>,
+    // //// Neoffice — see `JmapMailRequest::folders`.
+    /// What became of the folder changes sent. A folder a server names by where it lies has a new id once it is renamed
+    /// or moved: its outcome names it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<FolderChangeDone>,
     /// What became of the messages sent.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sent: Vec<SendDone>,
@@ -383,6 +397,8 @@ impl JmapMailResult {
             self.session = piece.session;
         }
         self.changes.extend(piece.changes);
+        // //// Neoffice — (the folder changes, likewise)
+        self.folders.extend(piece.folders);
         self.sent.extend(piece.sent);
         // //// Neoffice — (the drafts and the copies nobody wants, likewise)
         self.drafts.extend(piece.drafts);
@@ -415,6 +431,8 @@ impl std::fmt::Debug for JmapMailRequest {
             .field("mailboxes", &self.known.len())
             .field("known", &known)
             .field("changes", &self.changes.len())
+            // //// Neoffice — (the folder changes)
+            .field("folders", &self.folders.len())
             .field("sends", &self.sends.len())
             // //// Neoffice — (the drafts filed with the run)
             .field("drafts", &self.drafts.len())
@@ -469,6 +487,8 @@ impl std::fmt::Debug for JmapMailResult {
         f.debug_struct("JmapMailResult")
             .field("account", &self.account)
             .field("changes", &self.changes.len())
+            // //// Neoffice — (the folder changes)
+            .field("folders", &self.folders.len())
             .field("sent", &self.sent.len())
             // //// Neoffice — (the drafts and the copies nobody wants)
             .field("drafts", &self.drafts.len())

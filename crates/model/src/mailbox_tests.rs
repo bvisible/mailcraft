@@ -1003,10 +1003,13 @@ fn only_a_jmap_or_microsoft_account_has_server_ids() {
     assert_eq!([Local, Imap, Microsoft, Jmap, Unknown].map(AccountKind::sends_mail), [false, true, true, false, false]);
 }
 
-/// A JMAP account's server's mailboxes keep their names and places until changes go up: a rename
-/// or a move made here would stay here alone. A folder made here is renamed and moved as any.
+// //// Neoffice — this fork's engine sends a JMAP account's folder changes up (`Mailbox::renaming_stays_on_server`): its
+// //// Neoffice — server's folders are renamed, moved and deleted as a Microsoft account's, where upstream keeps them.
+/// A JMAP account's server's mailboxes are renamed, moved and deleted here, and the changes go up with the next run:
+/// a folder deleted for good is queued for the server to delete.
 #[test]
-fn a_jmap_servers_folder_is_neither_renamed_nor_moved_until_changes_go_up() {
+// //// Neoffice — (upstream's test of the same folder, which it keeps where it is)
+fn a_jmap_servers_folder_is_renamed_moved_and_deleted_and_the_changes_go_up() {
     let mut mb = Mailbox::with_local_account("Ada Lovelace", "ada@example.org");
     assert!(!mb.has_jmap_account());
     let account = mb.add_account(Account { email: "ada@example.org".into(), kind: AccountKind::Jmap, ..Default::default() });
@@ -1014,18 +1017,19 @@ fn a_jmap_servers_folder_is_neither_renamed_nor_moved_until_changes_go_up() {
     let theirs = mb.add_folder(account, None, "Projects").unwrap();
     mb.folder_mut(theirs).unwrap().server = Some(ServerFolder { id: "M5".into(), name: "Projects".into(), ..Default::default() });
     let ours = mb.add_folder(account, None, "Ours").unwrap();
-    let before = mb.clone();
-    assert!(mb.renaming_stays_on_server(theirs) && mb.folder_stays_on_server(theirs));
-    assert_eq!(mb.rename_folder(theirs, "Plans").unwrap_err().to_string(), FOLDERS_STAY_YET);
-    assert_eq!(mb.move_folder(theirs, Some(ours)).unwrap_err().to_string(), FOLDERS_STAY_YET);
-    assert_eq!(mb, before);
-    // Ours is renamed, goes inside theirs and back out (the server's folder isn't changed by it).
-    assert!(!mb.renaming_stays_on_server(ours) && !mb.folder_stays_on_server(ours));
-    mb.rename_folder(ours, "Mine").unwrap();
-    mb.move_folder(ours, Some(theirs)).unwrap();
-    mb.move_folder(ours, None).unwrap();
-    assert_eq!(mb.folder(ours).map(|f| (f.name.as_str(), f.parent)), Some(("Mine", None)));
-    assert_eq!(mb.folder(theirs), before.folder(theirs));
+    // //// Neoffice — renamed and moved here, where upstream refuses (`FOLDERS_STAY_YET`).
+    assert!(!mb.renaming_stays_on_server(theirs) && !mb.folder_stays_on_server(theirs));
+    mb.rename_folder(theirs, "Plans").unwrap();
+    mb.move_folder(theirs, Some(ours)).unwrap();
+    assert_eq!(mb.folder(theirs).map(|f| (f.name.as_str(), f.parent)), Some(("Plans", Some(ours))));
+    // What the server last said stays, for the run to tell the difference.
+    assert_eq!(mb.folder(theirs).and_then(|f| f.server.as_ref()).map(|s| s.name.as_str()), Some("Projects"));
+    // Deleted with the folder it lies in: into Deleted Items first, then for good, and the server is told to delete it.
+    assert!(!mb.delete_folder(ours).unwrap());
+    assert!(mb.queued.is_empty());
+    assert!(mb.delete_folder(ours).unwrap());
+    assert!(mb.folder(theirs).is_none());
+    assert_eq!(mb.queued, [crate::Queued::DeleteFolder { account, id: "M5".into() }]);
 }
 
 #[test]

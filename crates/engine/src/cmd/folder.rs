@@ -118,16 +118,6 @@ const FOLDER: &str = r#"{"id"?: number} (default: the folder in view)"#;
 pub const FROM_OUTLOOK: &str =
     "This account's Favorites come from Outlook and are changed there (File › Options can show the ones kept in MailCraft instead)";
 
-// //// Neoffice — why a JMAP account's folders aren't made, renamed, moved or deleted here.
-/// Why `folder.new`, `folder.rename`, `folder.move` and `folder.delete` refuse for a JMAP account: its folders are its
-/// server's, and this version can't change them there (a change made here would come undone with the next listing).
-pub const JMAP_FOLDERS: &str = "A JMAP account's folders are its server's: this version can't make, rename, move or delete them there";
-
-// //// Neoffice — the refusal above.
-fn not_a_jmap_account(s: &Session, account: Id) -> Result<(), CmdError> {
-    if s.mailbox.is_jmap(account) { Err(fail(JMAP_FOLDERS)) } else { Ok(()) }
-}
-
 fn can_empty(s: &Session) -> Option<&'static str> {
     if s.mailbox.count(s.view.folder) == 0 {
         return Some("the folder is already empty");
@@ -257,24 +247,18 @@ fn new(s: &mut Session, v: &Value) -> CmdResult {
             .or_else(|| s.mailbox.default_account().map(|a| a.id))
             .ok_or_else(|| fail("add an account first"))?,
     };
-    // //// Neoffice — see `JMAP_FOLDERS`.
-    not_a_jmap_account(s, account)?;
     let id = s.mailbox.add_folder(account, parent, name)?;
     Ok(json!({"id": id, "path": s.mailbox.folder_path(id)}))
 }
 
 fn rename(s: &mut Session, v: &Value) -> CmdResult {
     let id = target(s, v)?;
-    // //// Neoffice — see `JMAP_FOLDERS`.
-    not_a_jmap_account(s, s.mailbox.folder(id).map_or(0, |f| f.account))?;
     s.mailbox.rename_folder(id, p::req_str(v, "name")?)?;
     Ok(json!({"id": id, "path": s.mailbox.folder_path(id)}))
 }
 
 fn move_folder(s: &mut Session, v: &Value) -> CmdResult {
     let id = target(s, v)?;
-    // //// Neoffice — see `JMAP_FOLDERS`.
-    not_a_jmap_account(s, s.mailbox.folder(id).map_or(0, |f| f.account))?;
     let parent = match v.get("parent") {
         Some(Value::Null) => None,
         Some(_) => Some(p::req_id(v, "parent")?),
@@ -288,8 +272,6 @@ fn delete(s: &mut Session, v: &Value) -> CmdResult {
     let id = target(s, v)?;
     let parent = s.mailbox.folder(id).and_then(|f| f.parent);
     let account = s.mailbox.folder(id).map(|f| f.account);
-    // //// Neoffice — see `JMAP_FOLDERS`.
-    not_a_jmap_account(s, account.unwrap_or(0))?;
     let permanently = s.mailbox.delete_folder(id)?;
     // The view goes to where the folder was.
     if s.view.folder == id || s.mailbox.folder(s.view.folder).is_none() {
@@ -327,9 +309,7 @@ fn empty(s: &mut Session, v: &Value) -> CmdResult {
         }
     }
     // Folders deleted into Deleted Items go with it.
-    // //// Neoffice — but not a JMAP account's: they are its server's, which would give them back with the next listing.
-    let jmap = s.mailbox.folder(id).is_some_and(|f| s.mailbox.is_jmap(f.account));
-    if kind == Some(FolderKind::Deleted) && !jmap {
+    if kind == Some(FolderKind::Deleted) {
         let children: Vec<Id> = s.mailbox.folders.iter().filter(|f| f.parent == Some(id)).map(|f| f.id).collect();
         for c in children {
             s.mailbox.delete_folder(c)?;
