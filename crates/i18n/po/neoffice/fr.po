@@ -3534,14 +3534,8 @@ msgstr "Routine quotidienne"
 msgid "Morning summary"
 msgstr "Résumé du matin"
 
-msgid "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
-msgstr "Donne-moi mon résumé du matin : le courrier reçu depuis hier soir, d'abord ce qui est encore non lu, regroupé selon ce qui demande mon attention (personnes et clients d'abord, le reste ensuite), une ligne par message. Il s'agit de toute ma boîte, pas du message ouvert : cherche dans mes boîtes avec les outils de courrier. Reste bref et n'invente rien."
-
 msgid "End-of-day summary"
 msgstr "Résumé de fin de journée"
-
-msgid "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
-msgstr "Donne-moi mon résumé de fin de journée : le courrier reçu aujourd'hui et resté sans réponse, ce que j'ai envoyé aujourd'hui, et les réponses que j'attends encore. Il s'agit de toute ma boîte, pas du message ouvert : cherche dans la boîte de réception et le dossier Envoyés avec les outils de courrier. Reste bref : une ligne par point, sans rien inventer."
 
 msgid "Follow-ups"
 msgstr "Relances"
@@ -3549,24 +3543,30 @@ msgstr "Relances"
 msgid "Needs my reply"
 msgstr "Nécessite ma réponse"
 
-msgid "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
-msgstr "Donne-moi la liste du courrier des 14 derniers jours qui attend ma réponse : écrit par une personne (pas une newsletter ni une notification automatique) et sans réponse de ma part. Il s'agit de toute ma boîte, pas du message ouvert : cherche dans la boîte de réception avec les outils de courrier (un message marqué comme répondu est un message auquel j'ai déjà répondu), lis ceux dont tu n'es pas sûr, et donne chacun en une ligne : qui, à propos de quoi, depuis quand. N'invente rien."
-
 msgid "Still without an answer"
 msgstr "Toujours sans réponse"
 
-msgid "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
-msgstr "Donne-moi la liste du courrier que j'ai envoyé ces 14 derniers jours et auquel personne n'a encore répondu, le plus ancien en premier : à qui j'ai écrit, à propos de quoi, et depuis combien de jours il attend. Il s'agit de toute ma boîte, pas du message ouvert : utilise l'outil prévu pour le courrier envoyé sans réponse. Une ligne chacun. S'il n'y en a aucun, dis-le."
-
 msgid "My commitments"
 msgstr "Mes engagements"
-
-msgid "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
-msgstr "Donne-moi la liste des engagements que j'ai pris dans le courrier envoyé ces 7 derniers jours : ce que j'ai promis, à qui, et pour quand si le message le dit. Il s'agit de toute ma boîte, pas du message ouvert : cherche dans le dossier Envoyés avec les outils de courrier et lis les messages. Une ligne chacun, jamais une longue citation. S'il n'y en a aucun, dis-le."
 
 msgid "Recipes"
 msgstr "Recettes"
 
 msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
 msgstr "Nora lit votre courrier avec vos propres droits. Rien n'est envoyé, déplacé ni supprimé."
+
+msgid "Give me my morning summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=2, unread=true and limit=20 (my inbox). Step 2: if it finds nothing, say that no unread mail has come in since yesterday, and stop. Step 3: otherwise group what it found by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Read at most three messages, only if you must. Invent nothing."
+msgstr "Donne-moi mon résumé du matin, sur l'ensemble de mon courrier et non sur le message ouvert. Étape 1 : appelle nora_mail_search une seule fois, avec days=2, unread=true et limit=20 (ma boîte de réception). Étape 2 : si rien n'est trouvé, dis qu'aucun courrier non lu n'est arrivé depuis hier, et arrête-toi là. Étape 3 : sinon, regroupe ce qui a été trouvé selon ce qui demande mon attention (d'abord les personnes et les clients, puis les newsletters et les notifications), une ligne chacun : qui, à propos de quoi. Ne lis au plus que trois messages, seulement si c'est nécessaire. N'invente rien."
+
+msgid "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=1 and limit=20 (my inbox): keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_search once, with folder=sent, days=1 and limit=20: what I sent today. Step 3: call nora_mail_unanswered once, with days=7: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each. Invent nothing."
+msgstr "Donne-moi mon résumé de fin de journée, sur l'ensemble de mon courrier et non sur le message ouvert. Étape 1 : appelle nora_mail_search une seule fois, avec days=1 et limit=20 (ma boîte de réception) : garde ce qui est arrivé aujourd'hui et auquel je n'ai pas répondu (answered is false). Étape 2 : appelle nora_mail_search une seule fois, avec folder=sent, days=1 et limit=20 : ce que j'ai envoyé aujourd'hui. Étape 3 : appelle nora_mail_unanswered une seule fois, avec days=7 : ce pour quoi j'attends encore une réponse. Étape 4 : réponds en trois courtes listes (à traiter, envoyé aujourd'hui, en attente), une ligne chacune. N'invente rien."
+
+msgid "List the mail from the last 14 days that needs my reply, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=14 and limit=20 (my inbox). Step 2: keep what a person wrote (not a newsletter or an automatic notification) and that I have not answered (answered is false); read the ones you are unsure about. Step 3: give each in one line: who, about what, since when. If there is none, say so. Invent nothing."
+msgstr "Liste le courrier des 14 derniers jours qui demande une réponse de ma part, sur l'ensemble de mon courrier et non sur le message ouvert. Étape 1 : appelle nora_mail_search une seule fois, avec days=14 et limit=20 (ma boîte de réception). Étape 2 : garde ce qu'une personne a écrit (pas une newsletter ni une notification automatique) et auquel je n'ai pas répondu (answered is false) ; lis ceux dont tu n'es pas sûr. Étape 3 : donne chacun en une ligne : qui, à propos de quoi, depuis quand. S'il n'y en a aucun, dis-le. N'invente rien."
+
+msgid "List the mail I sent in the last 14 days that nobody has answered yet, about my whole mailbox and not the message that is open. Call nora_mail_unanswered once, with days=14 and limit=20. Give each in one line, the oldest first: who I wrote to, about what, and how many days it has been waiting. If there is none, say how many sent messages it looked at (sent_looked_at) and that none is waiting."
+msgstr "Liste le courrier que j'ai envoyé pendant les 14 derniers jours et auquel personne n'a encore répondu, sur l'ensemble de mon courrier et non sur le message ouvert. Appelle nora_mail_unanswered une seule fois, avec days=14 et limit=20. Donne chacun en une ligne, le plus ancien en premier : à qui j'ai écrit, à propos de quoi, et depuis combien de jours il attend. S'il n'y en a aucun, dis combien de messages envoyés il a examinés (sent_looked_at) et qu'aucun n'attend de réponse."
+
+msgid "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with folder=sent, days=7 and limit=10. Step 2: read at most five of those messages with nora_mail_read. Step 3: one line per commitment: what I promised, to whom, and by when if the message says so; never a long quote. If there is none, say so."
+msgstr "Liste les engagements que j'ai pris dans le courrier envoyé pendant les 7 derniers jours, sur l'ensemble de mon courrier et non sur le message ouvert. Étape 1 : appelle nora_mail_search une seule fois, avec folder=sent, days=7 et limit=10. Étape 2 : lis au plus cinq de ces messages avec nora_mail_read. Étape 3 : une ligne par engagement : ce que j'ai promis, à qui, et pour quand si le message le dit ; jamais de longue citation. S'il n'y en a aucun, dis-le."
 

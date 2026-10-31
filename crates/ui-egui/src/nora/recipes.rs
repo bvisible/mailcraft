@@ -5,10 +5,12 @@
 //! Recipes: ready-made requests to Nora about the person's whole mailbox, listed in her pane while the conversation is
 //! empty (a morning summary, what needs a reply, what nobody answered). A click asks her, as if the person had typed it.
 //!
-//! A recipe is a request and nothing more: the words Nora is asked, which name what she is to look at (the inbox, the
-//! Sent folder, the last days) and that it is the mailbox and not the message that is open. She answers with her mail
-//! tools (`nora_mail_search`, `nora_mail_unanswered`, `nora_mail_read`) through the conversation like any other question,
-//! as data a stranger wrote and never as instructions; nothing is sent, deleted or moved by one.
+//! A recipe is a request and nothing more: the words Nora is asked, as a few steps that name her mail tools and their
+//! arguments (`nora_mail_search` with `days`, `unread`, `folder`; `nora_mail_unanswered`; `nora_mail_read`) and that it is
+//! the mailbox and not the message that is open. Left to choose its searches, the model she runs on asks the same question
+//! over and over (tried on 31.10); told which call to make with which arguments, it answers. She answers through the
+//! conversation like any other question, as data a stranger wrote and never as instructions; nothing is sent, deleted or
+//! moved by one.
 
 use egui::{Align2, CursorIcon, Role, Sense, Stroke, Ui, WidgetInfo, vec2};
 
@@ -43,13 +45,13 @@ pub(crate) fn groups() -> Vec<Group> {
                 recipe(
                     tl!("Morning summary"),
                     tl!(
-                        "Give me my morning summary: the mail that arrived since yesterday evening, with what is still unread first, grouped by what needs my attention (people and customers first, then the rest), one line each. This is about my whole mailbox, not the message that is open: search my mailboxes with your mail tools. Keep it short and invent nothing."
+                        "Give me my morning summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=2, unread=true and limit=20 (my inbox). Step 2: if it finds nothing, say that no unread mail has come in since yesterday, and stop. Step 3: otherwise group what it found by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Read at most three messages, only if you must. Invent nothing."
                     ),
                 ),
                 recipe(
                     tl!("End-of-day summary"),
                     tl!(
-                        "Give me my end-of-day summary: the mail I received today and have not answered, what I sent today, and what I am still waiting for an answer to. This is about my whole mailbox, not the message that is open: search my inbox and my Sent folder with your mail tools. Keep it short, one line each, and invent nothing."
+                        "Give me my end-of-day summary, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=1 and limit=20 (my inbox): keep what arrived today and that I have not answered (answered is false). Step 2: call nora_mail_search once, with folder=sent, days=1 and limit=20: what I sent today. Step 3: call nora_mail_unanswered once, with days=7: what I am still waiting for an answer to. Step 4: answer in three short lists (to answer, sent today, still waiting), one line each. Invent nothing."
                     ),
                 ),
             ],
@@ -60,19 +62,19 @@ pub(crate) fn groups() -> Vec<Group> {
                 recipe(
                     tl!("Needs my reply"),
                     tl!(
-                        "List the mail from the last 14 days that needs my reply: written by a person (not a newsletter or an automatic notification) and not answered yet. This is about my whole mailbox, not the message that is open: search my inbox with your mail tools (a message that is marked answered is one I already replied to), read the ones you are unsure about, and give each in one line: who, about what, since when. Invent nothing."
+                        "List the mail from the last 14 days that needs my reply, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with days=14 and limit=20 (my inbox). Step 2: keep what a person wrote (not a newsletter or an automatic notification) and that I have not answered (answered is false); read the ones you are unsure about. Step 3: give each in one line: who, about what, since when. If there is none, say so. Invent nothing."
                     ),
                 ),
                 recipe(
                     tl!("Still without an answer"),
                     tl!(
-                        "List the mail I sent in the last 14 days that nobody has answered yet, the oldest first: who I wrote to, about what, and how many days it has been waiting. This is about my whole mailbox, not the message that is open: use your tool for sent mail without an answer. One line each. If there is none, say so."
+                        "List the mail I sent in the last 14 days that nobody has answered yet, about my whole mailbox and not the message that is open. Call nora_mail_unanswered once, with days=14 and limit=20. Give each in one line, the oldest first: who I wrote to, about what, and how many days it has been waiting. If there is none, say how many sent messages it looked at (sent_looked_at) and that none is waiting."
                     ),
                 ),
                 recipe(
                     tl!("My commitments"),
                     tl!(
-                        "List the commitments I made in the mail I sent in the last 7 days: what I promised, to whom, and by when if the message says so. This is about my whole mailbox, not the message that is open: search my Sent folder with your mail tools and read the messages. One line each, never a long quote. If there is none, say so."
+                        "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_search once, with folder=sent, days=7 and limit=10. Step 2: read at most five of those messages with nora_mail_read. Step 3: one line per commitment: what I promised, to whom, and by when if the message says so; never a long quote. If there is none, say so."
                     ),
                 ),
             ],
