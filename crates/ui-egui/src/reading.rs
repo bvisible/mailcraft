@@ -432,6 +432,8 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
                     }
                     // //// Neoffice — Nora's button beside the actions, when a host reaches her: reply with her, or have her translate the message (nora/pane.rs).
                     crate::nora::pane::button(app, ui, m);
+                    // //// Neoffice — and the one that opens what was said with the sender, whether or not there is a strip to open it by (exchanges.rs).
+                    crate::exchanges::button(app, ui, m);
                 }
                 // //// Neoffice — see `under` above.
                 under = ui.available_width() < SUBJECT_BESIDE_MIN;

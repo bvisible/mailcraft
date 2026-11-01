@@ -3746,9 +3746,14 @@ msgstr ""
 msgid "Exchange server · no usable server address"
 msgstr ""
 
-#. command label, interface
-#: crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/lib.rs
+#. command label, interface, ribbon
+#: crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/ribbon.rs
 msgid "Exchanges"
+msgstr ""
+
+#. interface, ribbon
+#: crates/ui-egui/src/exchanges.rs crates/ui-egui/src/ribbon.rs
+msgid "Exchanges with the sender"
 msgstr ""
 
 #. command label

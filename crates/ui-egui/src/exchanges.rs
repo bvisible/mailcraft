@@ -372,6 +372,15 @@ pub(crate) fn mark(t: &Tokens) -> (egui::Color32, egui::Color32) {
     if t.dark { (egui::Color32::from_rgb(0xF5, 0x5D, 0x1A), ink) } else { (egui::Color32::from_rgb(0xFF, 0xEA, 0xE2), ink) }
 }
 
+/// The button beside the message's actions that opens the pane (or shuts it): there whether or not the strip under the sender is.
+pub(crate) fn button(app: &mut MailApp, ui: &mut Ui, m: &Message) {
+    let resp = crate::widgets::icon_button(ui, "conversations", tl!("Exchanges with the sender"), 17.0, true);
+    app.hit.add("exchangesButton", m.id, resp.rect);
+    if resp.clicked() {
+        let _ = app.run("ui.exchanges", json!({}));
+    }
+}
+
 /// The strip between a message's header and its body: who the sender is in Neoffice, how many exchanges the window has with them,
 /// and the way to open the pane.
 pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Place) {

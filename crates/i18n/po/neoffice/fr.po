@@ -3680,3 +3680,6 @@ msgid "{n} invoice this year"
 msgid_plural "{n} invoices this year"
 msgstr[0] "{n} facture cette année"
 msgstr[1] "{n} factures cette année"
+
+msgid "Exchanges with the sender"
+msgstr "Échanges avec l'expéditeur"
