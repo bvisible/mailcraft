@@ -197,6 +197,8 @@ impl eframe::App for WebShell {
             crate::kept::frame(&mut self.app);
             // //// Neoffice — and the kind of sender of the Inbox's messages, for the tabs, is asked of the server and put (streams.rs).
             crate::streams::frame(&mut self.app);
+            // //// Neoffice — and what the Échanges pane asks of the server is asked, and what came is put (exchanges.rs).
+            crate::exchanges::frame(&mut self.app);
             crate::host_dirty::tell(self.app.unsent_work() || crate::kept::pending());
         }
         // //// Neoffice — a page that draws the navigation in its own menu is told where the window is, and its menu's commands are run (host_menu.rs).
@@ -378,6 +380,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     crate::kept::start(accounts, credentials.clone(), ctx.clone());
     // //// Neoffice — the kind of sender of these mailboxes' Inbox messages is asked of their server for the window's tabs (streams.rs).
     crate::streams::start(accounts, credentials.clone(), ctx.clone());
+    // //// Neoffice — the Échanges pane asks the server of these mailboxes who their senders are and what was said with them (exchanges.rs).
+    crate::exchanges::start(accounts, credentials.clone(), ctx.clone());
     let gate = crate::jmap_services::Gate::default();
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs); each mailbox by the name of the server's account for it, which is not its address once that changed.
     if let Some(nora) = &mut services.nora {

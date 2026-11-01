@@ -442,7 +442,10 @@ fn open(app: &mut MailApp, account: &str, email: &str, id: &Value) -> Result<Ope
     if let Some(menu) = app.services.host_menu.as_mut()
         && let Some(on_its_way) = menu.opening.iter_mut().find(|o| o.account == account && o.email == email)
     {
-        on_its_way.ids.push(id.clone());
+        // //// Neoffice — no page waits for an answer to what the Échanges pane opens (`open_server_message`): no id to answer.
+        if !id.is_null() {
+            on_its_way.ids.push(id.clone());
+        }
         return Ok(Opened::Joined);
     }
     if app.services.host_menu.as_ref().is_some_and(|menu| menu.opening.len() >= MAX_OPENING) {
@@ -485,6 +488,34 @@ pub fn answer(app: &mut MailApp, text: &str) -> Option<Value> {
         Incoming::Command { id, command } => (id, run(app, &command)),
     };
     Some(done(id, result))
+}
+
+// //// Neoffice — the Échanges pane opens a message of someone's that this window has not got, as one the page names, with no page waiting for the answer.
+/// Open the message `server` (its id on the server) of the mailbox `mailbox` (its address, handed over by the page): shown at once
+/// when this window has it, else read from its server by its id and shown when it comes. Why not, in the interface's language.
+pub(crate) fn open_server_message(app: &mut MailApp, mailbox: &str, server: &str) -> Result<(), String> {
+    match open(app, mailbox, server, &Value::Null)? {
+        Opened::Shown | Opened::Joined => Ok(()),
+        Opened::Fetching((account, pieces, cancel)) => {
+            let until = crate::now_ms() + OPEN_WAIT_MS;
+            let opening = Opening {
+                ids: Vec::new(),
+                account,
+                email: server.to_string(),
+                pieces,
+                cancel,
+                until,
+                errors: Vec::new(),
+                refused: false,
+                over: false,
+                held: Vec::new(),
+            };
+            if let Some(menu) = app.services.host_menu.as_mut() {
+                menu.opening.push(opening);
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Whether messages the page opened are on their way from their server: the host looks again ([`poll`]) a moment

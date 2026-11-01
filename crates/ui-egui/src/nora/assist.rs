@@ -214,6 +214,8 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     };
     if open && !app.nora.assist.open {
         app.nora.assist.panel.focus_input();
+        // The Échanges pane stands where hers does: the two never stand together.
+        app.exchanges.open = false;
     }
     if !open {
         close(app);

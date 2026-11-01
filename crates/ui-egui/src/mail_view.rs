@@ -172,7 +172,8 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     let beside = match (pane, composing) {
         (Pane::Bottom, _) => Beside::Nothing,
         (_, true) => Beside::Writing,
-        (Pane::Right, false) if crate::nora::assist::shown(app) => Beside::Reading,
+        // //// Neoffice — the Échanges pane stands where Nora's does (exchanges.rs).
+        (Pane::Right, false) if crate::nora::assist::shown(app) || crate::exchanges::shown(app) => Beside::Reading,
         _ => Beside::Nothing,
     };
     let room = message_room(ui.available_width(), shown_folders, app.ui.list_width, beside);

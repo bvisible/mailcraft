@@ -137,6 +137,9 @@ pub mod nav;
 pub mod notes_view;
 // //// Neoffice — Nora, the assistant of the Neoffice server, reached through the hosting page: her answers, her commands, her band and her button.
 pub mod nora;
+// //// Neoffice — the Échanges pane: what was said with the sender of the message being read (exchanges.rs, exchanges_pane.rs).
+pub mod exchanges;
+mod exchanges_pane;
 #[cfg(test)]
 mod on_top_tests;
 mod open_shared;
@@ -1054,6 +1057,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Home › Respond",
         r#"{"open"?: bool (default: the other way round)} — opens or closes Nora's pane at the right of the window, a conversation with her: she reads the message or conversation being read and the message being written, and writes into that message only (at its top, after or over the owner's text, into the reply she opens or a new message); nothing she writes is sent. Only where the hosting page reaches her conversation. Answers {"open": bool}"#,
     ),
+    // //// Neoffice — the Échanges pane: what was said with the sender of the message being read (exchanges.rs).
+    (
+        "ui.exchanges",
+        "Exchanges",
+        "Home › Respond",
+        r#"{"open"?: bool (default: the other way round)} — opens or closes the Échanges pane at the right of the window (it and Nora's pane never stand together): the person whose message is in the reading pane (for a message the owner sent, the one it went to), with what was said with them in three tabs, the exchanges (what the window has in memory, and, where a Neoffice page hosts it, what the server holds beyond it, a page at a time), the files that came with them, and what Neoffice links them to"#
+    ),
     // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs): the owner's click only.
     (
         "ui.shareMessage",
@@ -1603,6 +1613,8 @@ pub struct MailApp {
     jmap_calm: std::collections::HashMap<Id, f64>,
     // //// Neoffice — what the window knows of Nora while it runs: her calls in flight, a translation shown, the last word on what she did (nora.rs).
     pub(crate) nora: nora::Nora,
+    // //// Neoffice — the Échanges pane's state, and what it asks of the host (exchanges.rs).
+    pub exchanges: exchanges::Exchanges,
     control_rx: Option<Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -1869,6 +1881,8 @@ impl MailApp {
             jmap_calm: Default::default(),
             // //// Neoffice — nothing asked of Nora yet.
             nora: Default::default(),
+            // //// Neoffice — the Échanges pane is shut.
+            exchanges: Default::default(),
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),
@@ -2622,6 +2636,8 @@ impl MailApp {
                     .or_else(|| reading::remote::ui_command(self, id, p))
                     // //// Neoffice — Nora's commands (nora/flow.rs).
                     .or_else(|| nora::ui_command(self, id, p))
+                    // //// Neoffice — the Échanges pane (exchanges.rs).
+                    .or_else(|| exchanges::ui_command(self, id, p))
                     .or_else(|| calendar_view::ui_command(self, id, p))
                     .or_else(|| meeting_dialogs::ui_command(self, id, p))
                     .or_else(|| favorites_sync::ui_command(self, id, p))
@@ -4604,6 +4620,8 @@ impl MailApp {
                 ribbon::show(self, ui);
                 // //// Neoffice — Nora's pane at the right of the window, while it is open (nora/assist.rs).
                 nora::assist::side(self, ui);
+                // //// Neoffice — the Échanges pane at the right of the window, while it is open; Nora's and it never stand together (exchanges_pane.rs).
+                exchanges_pane::side(self, ui);
                 egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| match self.session.view.module {
                     mailcraft_engine::Module::Mail => mail_view::show(self, ui),
                     mailcraft_engine::Module::Calendar => calendar_view::show(self, ui),

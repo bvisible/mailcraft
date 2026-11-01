@@ -66,6 +66,9 @@ mod page_tests;
 // //// Neoffice — which kind of sender wrote the Inbox's messages, asked of the Neoffice server for the window's tabs (built
 // everywhere, so that its rules are tested natively).
 mod streams;
+// //// Neoffice — what the Échanges pane asks of the Neoffice server: who the sender is, their messages in every folder, what Neoffice
+// links them to (built everywhere, so that its calls are tested natively).
+mod exchanges;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
