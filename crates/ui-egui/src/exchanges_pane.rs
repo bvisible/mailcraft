@@ -324,27 +324,50 @@ fn neoffice_line(ui: &mut Ui, t: &Tokens, someone: &Someone, acts: &mut Vec<Act>
 fn tabs(ui: &mut Ui, t: &Tokens, view: &View, active: Tab, acts: &mut Vec<Act>) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_H), Sense::hover());
     ui.painter().line_segment([pos2(r.min.x, r.max.y), pos2(r.max.x, r.max.y)], Stroke::new(1.0, t.border));
-    let exchanges = format!("{} {}", tl!("Exchanges"), view.all);
-    let files = format!("{} {}", tl!("Files"), view.file_count);
-    let neoffice = tl!("In Neoffice").to_string();
-    let mut x = r.min.x + 8.0;
-    for (which, label) in [(Tab::Exchanges, exchanges), (Tab::Files, files), (Tab::Neoffice, neoffice)] {
-        if which == Tab::Neoffice && !view.hosted {
-            continue;
+    let which: Vec<Tab> = [Tab::Exchanges, Tab::Files, Tab::Neoffice].into_iter().filter(|tab| *tab != Tab::Neoffice || view.hosted).collect();
+    let labels = |counts: bool| -> Vec<String> {
+        which
+            .iter()
+            .map(|tab| match (tab, counts) {
+                (Tab::Exchanges, true) => format!("{} {}", tl!("Exchanges"), view.all),
+                (Tab::Exchanges, false) => tl!("Exchanges").to_string(),
+                (Tab::Files, true) => format!("{} {}", tl!("Files"), view.file_count),
+                (Tab::Files, false) => tl!("Files").to_string(),
+                (Tab::Neoffice, _) => tl!("In Neoffice").to_string(),
+            })
+            .collect()
+    };
+    let widths = |labels: &[String], size: f32| -> Vec<f32> {
+        labels.iter().zip(&which).map(|(label, tab)| text_width(ui, label, if *tab == active { semibold(size) } else { regular(size) })).collect()
+    };
+    // A narrow pane gives up, one after the other, the size of the letters and the counts before it cuts a label.
+    let room = (r.width() - 16.0).max(0.0);
+    let mut chosen = None;
+    for (size, counts) in [(12.5, true), (11.0, true), (11.0, false)] {
+        let labels = labels(counts);
+        let text = widths(&labels, size);
+        let fits = text.iter().sum::<f32>() + 10.0 * text.len() as f32 <= room;
+        chosen = Some((size, labels, text));
+        if fits {
+            break;
         }
-        let font = if which == active { semibold(12.5) } else { regular(12.5) };
-        let w = text_width(ui, &label, font.clone()) + 20.0;
+    }
+    let Some((size, labels, text)) = chosen else { return };
+    let around = ((room - text.iter().sum::<f32>()) / text.len().max(1) as f32).clamp(4.0, 20.0);
+    let mut x = r.min.x + 8.0;
+    for ((tab, label), w) in which.iter().zip(&labels).zip(text) {
+        let font = if *tab == active { semibold(size) } else { regular(size) };
+        let w = w + around;
         let at = Rect::from_min_size(pos2(x, r.min.y), vec2(w, TAB_H));
-        let resp = ui.interact(at, ui.scope_id().with(("exchanges_tab", which as u8)), Sense::click());
-        let colour = if which == active { t.text } else { t.text_dim };
-        ui.painter().text(at.center(), Align2::CENTER_CENTER, &label, font, colour);
-        if which == active {
-            ui.painter().line_segment([pos2(at.min.x + 6.0, r.max.y - 1.0), pos2(at.max.x - 6.0, r.max.y - 1.0)], Stroke::new(2.0, t.accent));
+        let resp = ui.interact(at, ui.scope_id().with(("exchanges_tab", *tab as u8)), Sense::click());
+        ui.painter().text(at.center(), Align2::CENTER_CENTER, label, font, if *tab == active { t.text } else { t.text_dim });
+        if *tab == active {
+            ui.painter().line_segment([pos2(at.min.x + 4.0, r.max.y - 1.0), pos2(at.max.x - 4.0, r.max.y - 1.0)], Stroke::new(2.0, t.accent));
         }
         if resp.clicked() {
-            acts.push(Act::Tab(which));
+            acts.push(Act::Tab(*tab));
         }
-        x += w + 2.0;
+        x += w;
     }
 }
 
@@ -546,7 +569,7 @@ fn files_tab(ui: &mut Ui, t: &Tokens, view: &View, words: &mut String, acts: &mu
     search_box(ui, t, words);
     egui::ScrollArea::vertical().id_salt("exchanges_files").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        if view.files.is_empty() {
+        if view.files.is_empty() && view.target.is_some() {
             note(ui, t, tl!("No file came with the exchanges the window has."));
         }
         for (name, meta, subject, row) in &view.files {
@@ -567,6 +590,10 @@ fn files_tab(ui: &mut Ui, t: &Tokens, view: &View, words: &mut String, acts: &mu
 }
 
 fn neoffice_tab(ui: &mut Ui, t: &Tokens, view: &View, acts: &mut Vec<Act>) {
+    // No message in view: the header says to select one, and there is nobody to say anything of.
+    if view.target.is_none() {
+        return;
+    }
     let said = |ui: &mut Ui, text: &str| note(ui, t, text);
     match &view.linked {
         Asked::Waiting => said(ui, tl!("Looking in Neoffice…")),
