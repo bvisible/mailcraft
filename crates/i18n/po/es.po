@@ -7179,7 +7179,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/recipes.rs
-msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
+msgid "Nora only reads your mail, with your own rights."
 msgstr ""
 
 #. interface

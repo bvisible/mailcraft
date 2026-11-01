@@ -91,6 +91,19 @@ fn a_click_asks_nora_the_recipe_and_the_list_goes_once_the_conversation_has_begu
 }
 
 #[test]
+fn the_recipes_sit_under_the_headers_buttons_with_the_hint_above_them() {
+    let (mut app, _, _) = page(true);
+    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+    let harness = window(app, (1440.0, 900.0));
+    // The same place as when the conversation has begun: the buttons first, then what the empty conversation shows.
+    let buttons = harness.get_by_label("New conversation").rect();
+    let hint = harness.get_by_label_contains("Ask Nora about the message you are reading").rect();
+    let first = harness.get_by_label("Morning summary").rect();
+    assert!(buttons.bottom() <= hint.top(), "the hint under the buttons: {buttons:?} then {hint:?}");
+    assert!(hint.bottom() <= first.top(), "the recipes under the hint: {hint:?} then {first:?}");
+}
+
+#[test]
 fn the_recipes_are_not_there_without_the_pane() {
     let (app, calls, _) = page(true);
     let harness = window(app, (1440.0, 900.0));

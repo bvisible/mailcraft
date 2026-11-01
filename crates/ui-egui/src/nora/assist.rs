@@ -247,7 +247,6 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut closing = false;
     let mut typing = false;
     let mut answered = None;
-    let mut recipe = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep
@@ -278,12 +277,10 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
         // come from a message rather than from her.
         assist.panel.links_on_cards_only = true;
-        // The recipes, while there is nothing yet to read in the conversation: a click asks what the person would have typed.
-        if assist.session.transcript().is_empty() && !assist.session.is_busy() {
-            recipe = recipes::show(ui, &t);
-        }
-        actions = assist.panel.show(ui, &assist.session);
-        actions.extend(recipe.take().map(PanelAction::Send));
+        // The recipes, while there is nothing yet to read in the conversation: under the panel's header and in place of its
+        // hint (which they carry), a click asks what the person would have typed.
+        let mut empty = |ui: &mut Ui, hint: &str| recipes::show(ui, &t, hint);
+        actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
         typing = ui.ctx().memory(|m| m.has_focus(input));
     });
     if !narrowed {

@@ -105,8 +105,9 @@ arboard = { version = "3.7", default-features = false }
 # //// Neoffice — conversation, Nora's Markdown and the appointment cards, as the editors take them, the proposals of her ready
 # //// Neoffice — replies and their card (crates/ui-egui/src/nora/ready.rs), and whose panel builds on
 # //// Neoffice — egui 0.36 (the editors) or 0.37 (here); both depend on egui alone, serde and serde_json.
-craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "24f7bb0294c37a019af15a704a539ee77955617d" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "24f7bb0294c37a019af15a704a539ee77955617d" }
+# //// Neoffice — The pane's empty conversation is the app's to draw there (`NoraPanel::show_with`: the recipes, recipes.rs).
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "4864e32e56a8f6ce20c0e0e283f6fee0131030a0" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "4864e32e56a8f6ce20c0e0e283f6fee0131030a0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

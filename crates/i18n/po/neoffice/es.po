@@ -3545,8 +3545,8 @@ msgstr "Mis compromisos"
 msgid "Recipes"
 msgstr "Recetas"
 
-msgid "Nora reads your mail with your own rights. Nothing is sent, moved or deleted."
-msgstr "Nora lee su correo con sus propios permisos. No se envía, mueve ni elimina nada."
+msgid "Nora only reads your mail, with your own rights."
+msgstr "Nora solo lee su correo, con sus propios derechos."
 
 msgid "Give me my morning summary, about my whole mailbox and not the message that is open. Call nora_mail_news once, with no argument: it lists what came in since yesterday evening, the unread first, and says so itself when nothing did: then say that no mail has come in since yesterday evening, and stop. Otherwise group it by what needs my attention (people and customers first, then newsletters and notifications), one line each: who, about what. Invent nothing."
 msgstr "Dame mi resumen de la mañana, sobre todo mi correo y no sobre el mensaje abierto. Llama a nora_mail_news una vez, sin ningún argumento: lista lo que llegó desde ayer por la tarde, los no leídos primero, y lo dice él mismo cuando no llegó nada. En ese caso, di que no ha llegado correo desde ayer por la tarde, y para. Si no, agrúpalos según lo que requiere mi atención (primero personas y clientes, después newsletters y notificaciones), una línea cada uno: quién, sobre qué. No inventes nada."
