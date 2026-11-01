@@ -83,3 +83,15 @@ fn the_way_chips_let_in_what_they_say() {
     assert!(Show::In.lets(Way::In) && !Show::In.lets(Way::Out));
     assert!(Show::Out.lets(Way::Out) && !Show::Out.lets(Way::In));
 }
+
+#[test]
+fn an_address_of_the_instance_is_given_to_the_host_as_its_path() {
+    assert_eq!(instance_path("https://x.example/app/history/Customer/C-1").as_deref(), Some("/app/history/Customer/C-1"));
+    assert_eq!(instance_path("http://x.example/app/customer/C-1?tab=a#b").as_deref(), Some("/app/customer/C-1?tab=a#b"));
+    assert_eq!(instance_path("https://x.example"), None);
+    assert_eq!(instance_path("https://x.example/"), None);
+    assert_eq!(instance_path("https://x.example//evil.example/x"), None);
+    assert_eq!(instance_path("javascript:alert(1)"), None);
+    assert_eq!(instance_path("/app/customer/C-1"), None);
+    assert_eq!(instance_path("https://x.example/a\nb"), None);
+}

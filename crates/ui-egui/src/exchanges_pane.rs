@@ -685,9 +685,23 @@ fn carry_out(app: &mut MailApp, ctx: &egui::Context, view: &View, acts: Vec<Act>
                 }
             }
             Act::Retry => app.exchanges.retry(&view.addresses),
-            Act::Url(url) => ctx.open_url(egui::OpenUrl::new_tab(url)),
+            // A page of the person's instance goes through the host that frames the window when it can open one (the page `/neomail`
+            // in a new tab, Neodesk in its own window), as a card of Nora's pane does; any other link in a new tab.
+            Act::Url(url) => match (app.services.nora.as_ref().and_then(|host| host.open.as_ref()), instance_path(&url)) {
+                (Some(open), Some(path)) => open(&path),
+                _ => ctx.open_url(egui::OpenUrl::new_tab(url)),
+            },
         }
     }
+}
+
+/// The path (with its query) of an address of the instance: `https://x.example/app/history/Customer/C-1` is `/app/history/Customer/C-1`.
+/// `None` for anything that is not an `http` or `https` address, and for one with no path.
+fn instance_path(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://"))?;
+    let at = rest.find('/')?;
+    let path = rest.get(at..)?;
+    (path.len() > 1 && !path.starts_with("//") && !path.chars().any(char::is_control)).then(|| path.to_string())
 }
 
 /// An exchange opened: the window's own message at once, else the one the server has, read by its id.
