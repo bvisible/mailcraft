@@ -339,7 +339,7 @@ pub(crate) fn target_of(app: &MailApp, m: &Message) -> Option<Target> {
 /// The window's own exchanges with `addresses`, kept until the mailbox changes.
 pub(crate) fn local_rows(app: &MailApp, ctx: &egui::Context, addresses: &[String]) -> Arc<Vec<Row>> {
     type Cached = ((u64, usize, Vec<String>), Arc<Vec<Row>>);
-    let slot = egui::Id::new("exchanges_local_rows");
+    let slot = egui::Id::unique("exchanges_local_rows");
     let key = (app.session.rev(), app.session.mailbox.messages.len(), addresses.to_vec());
     if let Some((cached, list)) = ctx.data(|d| d.get_temp::<Cached>(slot))
         && cached == key
@@ -424,7 +424,7 @@ pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Place) {
             });
         });
     });
-    let resp = ui.interact(shown.response.rect, ui.id().with("exchanges_strip").with(m.id), Sense::click());
+    let resp = ui.interact(shown.response.rect, ui.scope_id().with("exchanges_strip").with(m.id), Sense::click());
     app.hit.add("exchangesStrip", m.id, shown.response.rect);
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
         let _ = app.run("ui.exchanges", json!({"open": true}));

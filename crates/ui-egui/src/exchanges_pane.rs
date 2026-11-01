@@ -238,7 +238,7 @@ fn header(ui: &mut Ui, t: &Tokens, view: &View, options: (bool, bool), acts: &mu
     paint_clipped(p, pos2(r.min.x + 52.0, r.center().y + 9.0), right - r.min.x - 52.0, &target.address, regular(11.5), t.text_dim);
     // The options (the gear) and the way to close.
     let gear = Rect::from_center_size(pos2(r.max.x - 20.0 - 28.0, r.center().y), vec2(26.0, 26.0));
-    let resp = ui.interact(gear, ui.id().with("exchanges_gear"), Sense::click());
+    let resp = ui.interact(gear, ui.scope_id().with("exchanges_gear"), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(gear, 4.0, t.hover);
     }
@@ -259,7 +259,7 @@ fn header(ui: &mut Ui, t: &Tokens, view: &View, options: (bool, bool), acts: &mu
 }
 
 fn close_button(ui: &Ui, t: &Tokens, rect: Rect) -> bool {
-    let resp = ui.interact(rect, ui.id().with("exchanges_close"), Sense::click()).on_hover_text(tl!("Close"));
+    let resp = ui.interact(rect, ui.scope_id().with("exchanges_close"), Sense::click()).on_hover_text(tl!("Close"));
     if resp.hovered() {
         ui.painter().rect_filled(rect, 4.0, t.hover);
     }
@@ -289,7 +289,7 @@ fn neoffice_line(ui: &mut Ui, t: &Tokens, someone: &Someone, acts: &mut Vec<Act>
     paint_clipped(ui.painter(), pos2(pill.max.x + 8.0, r.center().y), r.max.x - link_w - 12.0 - pill.max.x - 8.0, &line, regular(12.0), t.text);
     if let Some(url) = page {
         let at = Rect::from_min_max(pos2(r.max.x - link_w - 8.0, r.min.y), pos2(r.max.x - 4.0, r.max.y));
-        let resp = ui.interact(at, ui.id().with("exchanges_record"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = ui.interact(at, ui.scope_id().with("exchanges_record"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
         ui.painter().text(pos2(at.max.x - 8.0, at.center().y), Align2::RIGHT_CENTER, tl!("Open the record"), semibold(11.5), t.accent_text);
         if resp.clicked() {
             acts.push(Act::Url(url));
@@ -311,7 +311,7 @@ fn tabs(ui: &mut Ui, t: &Tokens, view: &View, active: Tab, acts: &mut Vec<Act>) 
         let font = if which == active { semibold(12.5) } else { regular(12.5) };
         let w = text_width(ui, &label, font.clone()) + 20.0;
         let at = Rect::from_min_size(pos2(x, r.min.y), vec2(w, TAB_H));
-        let resp = ui.interact(at, ui.id().with(("exchanges_tab", which as u8)), Sense::click());
+        let resp = ui.interact(at, ui.scope_id().with(("exchanges_tab", which as u8)), Sense::click());
         let colour = if which == active { t.text } else { t.text_dim };
         ui.painter().text(at.center(), Align2::CENTER_CENTER, &label, font, colour);
         if which == active {
@@ -343,7 +343,7 @@ fn chips(ui: &mut Ui, t: &Tokens, show: Show, acts: &mut Vec<Act>) {
     for (which, label) in [(Show::All, tl!("All")), (Show::In, tl!("Received")), (Show::Out, tl!("Sent"))] {
         let w = text_width(ui, label, regular(12.0)) + 20.0;
         let at = Rect::from_min_size(pos2(x, r.min.y + 3.0), vec2(w, 22.0));
-        let resp = ui.interact(at, ui.id().with(("exchanges_chip", which as u8)), Sense::click());
+        let resp = ui.interact(at, ui.scope_id().with(("exchanges_chip", which as u8)), Sense::click());
         let on = which == show;
         if on {
             ui.painter().rect_filled(at, 11.0, t.checked);
@@ -486,7 +486,7 @@ fn foot_of(ui: &mut Ui, t: &Tokens, view: &View, acts: &mut Vec<Act>) {
             let bw = text_width(ui, button, semibold(12.0)) + 8.0;
             paint_clipped(ui.painter(), centre, width - bw - 8.0, said, regular(11.5), t.red);
             let at = Rect::from_min_max(pos2(r.max.x - bw - 12.0, r.min.y), pos2(r.max.x - 4.0, r.max.y));
-            let resp = ui.interact(at, ui.id().with("exchanges_retry"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let resp = ui.interact(at, ui.scope_id().with("exchanges_retry"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
             ui.painter().text(at.center(), Align2::CENTER_CENTER, button, semibold(12.0), t.accent_text);
             if resp.clicked() {
                 acts.push(Act::Retry);
@@ -501,7 +501,7 @@ fn foot_of(ui: &mut Ui, t: &Tokens, view: &View, acts: &mut Vec<Act>) {
             } else {
                 tl!("Look further on the server…")
             };
-            let resp = ui.interact(r, ui.id().with("exchanges_more"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+            let resp = ui.interact(r, ui.scope_id().with("exchanges_more"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
             paint_clipped(ui.painter(), centre, width, said, semibold(12.0), t.accent_text);
             if resp.clicked() {
                 acts.push(Act::More);
@@ -631,7 +631,7 @@ fn everything(ui: &mut Ui, t: &Tokens, linked: &Linked, acts: &mut Vec<Act>) {
     let label = tl!("See everything");
     let w = text_width(ui, label, semibold(12.5)) + 28.0;
     let button = Rect::from_min_size(pos2(r.max.x - 12.0 - w, r.center().y - 14.0), vec2(w, 28.0));
-    let resp = ui.interact(button, ui.id().with("exchanges_everything"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = ui.interact(button, ui.scope_id().with("exchanges_everything"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     ui.painter().rect_filled(button, 4.0, if resp.hovered() { t.hover } else { t.input });
     ui.painter().rect_stroke(button, 4.0, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
     ui.painter().text(button.center(), Align2::CENTER_CENTER, label, semibold(12.5), t.text);
