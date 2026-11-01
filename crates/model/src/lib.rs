@@ -16,6 +16,8 @@ mod calendar;
 pub mod confusables;
 mod contact;
 mod ews_server;
+// //// Neoffice — what was said with someone, for NeoMail's Échanges pane (exchanges.rs).
+pub mod exchanges;
 mod jmap_server;
 mod junk;
 mod load_limit;
