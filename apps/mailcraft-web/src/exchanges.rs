@@ -92,19 +92,109 @@ pub fn passes(e: &Error) -> Option<u32> {
     }
 }
 
-/// The mailbox `email`'s server, signed in; `None` when it doesn't offer the history.
-async fn connect<H: Http, C: Credentials>(http: H, credentials: &C, email: &str, session: &str) -> Result<Option<Client<H>>, Error> {
-    let Some(auth) = credentials.auth(email) else { return Err(Error::Auth("no credential".into())) };
-    let client = Client::connect(http, session, &auth).await?;
-    Ok(client.has_capability(HISTORY).then_some(client))
+/// How an ask of the server ended, before it is said in the words of the one who asked.
+#[derive(Debug)]
+pub enum Outcome<T> {
+    /// The server answered.
+    Answered(T),
+    /// The server does not offer the capability, or no longer knows the method (its site is older, or turned it off).
+    Unsupported,
+    /// It could not be asked, even after the one more try: the last trouble, for whoever logs its kind.
+    Failed(Error),
 }
 
-/// One ask of the server: through the client `kept` from an earlier ask, or a new one signed in with the page's credential.
+/// The mailbox `email`'s server, signed in; `None` when it doesn't offer `capability`.
+async fn connect<H: Http, C: Credentials>(
+    http: H,
+    credentials: &C,
+    email: &str,
+    session: &str,
+    capability: &str,
+) -> Result<Option<Client<H>>, Error> {
+    let Some(auth) = credentials.auth(email) else { return Err(Error::Auth("no credential".into())) };
+    let client = Client::connect(http, session, &auth).await?;
+    Ok(client.has_capability(capability).then_some(client))
+}
+
+/// One ask of the server, for any of the window's asks under a capability of the server's own: through the client `kept` from an
+/// earlier ask, or a new one signed in with the page's credential, and `call` is what is asked of that client.
 ///
 /// What is not the person's to see is settled here, in silence, once each: a credential the server refuses (at the session
 /// or at the call) is renewed by the page, and a trouble that passes by itself ([`passes`]: the server that starts again, a
-/// network blink) is tried again after a moment, on a new sign-in. Only the second failure of the same kind reaches the pane
-/// as [`Trouble::Failed`]. The client to keep for the next ask comes back with the answer (none when it is not to be kept).
+/// network blink) is tried again after a moment, on a new sign-in. Only the second failure of the same kind is told, as
+/// [`Outcome::Failed`]. The client to keep for the next ask comes back with the outcome (none when it is not to be kept).
+///
+/// Every ask of the Neoffice server that is made from the page goes through this one function, so that a way of failing is
+/// settled once: the Échanges pane's ask forgot to renew a credential that kept.rs renews, and gave up on the first 502.
+#[allow(clippy::too_many_arguments)]
+pub async fn ask_with<H, C, S, W, T, F, Fut>(
+    http: H,
+    credentials: &C,
+    email: &str,
+    session: &str,
+    capability: &str,
+    kept: Option<Rc<Client<H>>>,
+    call: F,
+    sleep: S,
+) -> (Option<Rc<Client<H>>>, Outcome<T>)
+where
+    H: Http + Clone,
+    C: Credentials,
+    S: Fn(u32) -> W,
+    W: Future<Output = ()>,
+    F: Fn(Rc<Client<H>>) -> Fut,
+    Fut: Future<Output = Result<T, Error>>,
+{
+    let mut client = kept;
+    let (mut renewed, mut again) = (false, false);
+    loop {
+        let current = match client.take() {
+            Some(client) => client,
+            None => match connect(http.clone(), credentials, email, session, capability).await {
+                Ok(Some(client)) => Rc::new(client),
+                Ok(None) => return (None, Outcome::Unsupported),
+                Err(e @ Error::Auth(_)) if !renewed => {
+                    renewed = true;
+                    match credentials.renew(email).await {
+                        Renewal::Given(_) => continue,
+                        Renewal::Later | Renewal::Reload => return (None, Outcome::Failed(e)),
+                    }
+                }
+                Err(e) => match passes(&e).filter(|_| !again) {
+                    Some(wait) => {
+                        again = true;
+                        sleep(wait).await;
+                        continue;
+                    }
+                    None => return (None, Outcome::Failed(e)),
+                },
+            },
+        };
+        match call(current.clone()).await {
+            Ok(answer) => return (Some(current), Outcome::Answered(answer)),
+            Err(Error::Refused { kind, .. }) if kind.contains("unknownMethod") || kind.contains("unknownCapability") => {
+                return (None, Outcome::Unsupported);
+            }
+            Err(e @ Error::Auth(_)) if !renewed => {
+                renewed = true;
+                match credentials.renew(email).await {
+                    Renewal::Given(_) => continue,
+                    Renewal::Later | Renewal::Reload => return (None, Outcome::Failed(e)),
+                }
+            }
+            Err(e) => match passes(&e).filter(|_| !again) {
+                Some(wait) => {
+                    again = true;
+                    sleep(wait).await;
+                    continue;
+                }
+                None => return (Some(current), Outcome::Failed(e)),
+            },
+        }
+    }
+}
+
+/// One ask of the Échanges pane, in the pane's words: see [`ask_with`].
 pub async fn ask<H, C, S, W>(
     http: H,
     credentials: &C,
@@ -120,58 +210,18 @@ where
     S: Fn(u32) -> W,
     W: Future<Output = ()>,
 {
-    let mut client = kept;
-    let (mut renewed, mut again) = (false, false);
-    loop {
-        let current = match client.take() {
-            Some(client) => client,
-            None => match connect(http.clone(), credentials, email, session).await {
-                Ok(Some(client)) => Rc::new(client),
-                Ok(None) => return (None, Err(Trouble::Unsupported)),
-                Err(Error::Auth(_)) if !renewed => {
-                    renewed = true;
-                    match credentials.renew(email).await {
-                        Renewal::Given(_) => continue,
-                        Renewal::Later | Renewal::Reload => return (None, Err(Trouble::Failed)),
-                    }
-                }
-                Err(e) => match passes(&e).filter(|_| !again) {
-                    Some(wait) => {
-                        again = true;
-                        sleep(wait).await;
-                        continue;
-                    }
-                    None => return (None, Err(Trouble::Failed)),
-                },
-            },
-        };
-        let Call { method, arguments } = call_of(current.account_id(), want);
-        let asked = async {
-            let mut answers = current.call(&[CORE, HISTORY], vec![(method, arguments)]).await?;
-            answers.take(0)
-        };
-        match asked.await {
-            Ok(answer) => return (Some(current), Ok(answer)),
-            Err(Error::Refused { kind, .. }) if kind.contains("unknownMethod") || kind.contains("unknownCapability") => {
-                return (None, Err(Trouble::Unsupported));
-            }
-            Err(Error::Auth(_)) if !renewed => {
-                renewed = true;
-                match credentials.renew(email).await {
-                    Renewal::Given(_) => continue,
-                    Renewal::Later | Renewal::Reload => return (None, Err(Trouble::Failed)),
-                }
-            }
-            Err(e) => match passes(&e).filter(|_| !again) {
-                Some(wait) => {
-                    again = true;
-                    sleep(wait).await;
-                    continue;
-                }
-                None => return (Some(current), Err(Trouble::Failed)),
-            },
-        }
-    }
+    let call = move |client: Rc<Client<H>>| async move {
+        let Call { method, arguments } = call_of(client.account_id(), want);
+        let mut answers = client.call(&[CORE, HISTORY], vec![(method, arguments)]).await?;
+        answers.take(0)
+    };
+    let (client, outcome) = ask_with(http, credentials, email, session, HISTORY, kept, call, sleep).await;
+    let told = match outcome {
+        Outcome::Answered(answer) => Ok(answer),
+        Outcome::Unsupported => Err(Trouble::Unsupported),
+        Outcome::Failed(_) => Err(Trouble::Failed),
+    };
+    (client, told)
 }
 
 #[cfg(test)]

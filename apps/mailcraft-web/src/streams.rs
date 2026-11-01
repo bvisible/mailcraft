@@ -17,7 +17,9 @@
 //! stream yet, the newest first, [`MAX_IDS`] at most. A message the server does not know ([`MAX_TRIES`] answers short of an
 //! answer) is a person's by default, as the window shows a message nobody said anything of. A server without the capability is
 //! never asked again, and its Inbox has no tabs. A message whose stream the window lost (the synchronisation put a new copy of
-//! it there) gets what it was told back at once, without a second question.
+//! it there) gets what it was told back at once, without a second question. An ask that meets a trouble that passes by itself
+//! (a server starting again, a network blink) is made once more after a moment, and a sign-in the server refuses is renewed by the
+//! page once, as for the Échanges pane: `exchanges::ask_with` is the one place that settles both.
 //!
 //! **What is not here.** The server's model, its headers rules and its cache are the server's; the tabs, the boxes and the bar are
 //! the window's (`ui-egui`); this file is only what asks and what puts.
@@ -25,10 +27,15 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::Future;
+use std::rc::Rc;
 
 use mailcraft_jmap::{CORE, Client, Error, Http};
 use mailcraft_model::{FolderKind, Id, Mailbox, Stream};
 use serde_json::{Value, json};
+
+use crate::credentials::Credentials;
+use crate::exchanges::{Outcome, ask_with};
 
 /// A mailbox's address as a key (as kept.rs has it).
 fn key(email: &str) -> String {
@@ -184,6 +191,57 @@ pub fn put(session: &mut mailcraft_engine::Session, said: &[(Id, Stream)]) -> us
         .map_or(0, |n| usize::try_from(n).unwrap_or(0))
 }
 
+/// How an ask ended when it did not bring an answer.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// The server has no such method (its site turned the tabs off since the session): never asked again.
+    Unsupported,
+    /// Another time.
+    Trouble(&'static str),
+}
+
+/// What kind of trouble it was, never the server's words (they may name the mailbox).
+pub fn kind(e: &Error) -> &'static str {
+    match e {
+        Error::Io(_) => "network",
+        Error::Tls(_) => "secure connection",
+        Error::Auth(_) => "sign-in",
+        Error::Busy { .. } => "busy",
+        _ => "refused",
+    }
+}
+
+/// One ask of the server about `ids`, through the client `kept` or a new one signed in with the page's credential.
+///
+/// A trouble that passes by itself (the server that starts again, a network blink) is tried again once after a moment, and a
+/// credential the server refuses, at the session as at the call, is renewed by the page once: [`ask_with`] settles both, as it
+/// does for the Échanges pane. The tabs showed nothing for half a minute after a first failure, and the window's sign-in was
+/// never renewed here. The client to keep for the next ask comes back with the answer.
+pub async fn ask_streams<H, C, S, W>(
+    http: H,
+    credentials: &C,
+    email: &str,
+    session: &str,
+    kept: Option<Rc<Client<H>>>,
+    ids: &[String],
+    sleep: S,
+) -> (Option<Rc<Client<H>>>, Result<Answer, Failure>)
+where
+    H: Http + Clone,
+    C: Credentials,
+    S: Fn(u32) -> W,
+    W: Future<Output = ()>,
+{
+    let call = move |client: Rc<Client<H>>| async move { ask(&client, ids).await };
+    let (client, outcome) = ask_with(http, credentials, email, session, STREAM, kept, call, sleep).await;
+    let told = match outcome {
+        Outcome::Answered(answer) => Ok(answer),
+        Outcome::Unsupported => Err(Failure::Unsupported),
+        Outcome::Failed(e) => Err(Failure::Trouble(kind(&e))),
+    };
+    (client, told)
+}
+
 #[cfg(test)]
 #[path = "streams_tests.rs"]
 mod tests;
@@ -199,12 +257,11 @@ mod run {
     use std::rc::Rc;
     use std::time::Duration;
 
-    use mailcraft_jmap::{Client, Error};
+    use mailcraft_jmap::Client;
     use mailcraft_model::Id;
     use mailcraft_ui_egui::MailApp;
 
-    use super::{Answer, Book, STREAM, ask, key, put};
-    use crate::credentials::{Credentials, Renewal};
+    use super::{Answer, Book, Failure, ask_streams, key, put};
     use crate::host::{HostAccount, HostCredentials};
 
     /// How long to wait before looking again: after an answer that holds something to finish, after one that did not, when there
@@ -221,13 +278,6 @@ mod run {
         email: String,
         asked: Vec<(Id, String)>,
         result: Result<Answer, Failure>,
-    }
-
-    enum Failure {
-        /// The server has no such method (its site turned the tabs off since the session): never asked again.
-        Unsupported,
-        /// Another time.
-        Trouble(&'static str),
     }
 
     #[derive(Default)]
@@ -329,7 +379,9 @@ mod run {
             let ctx = s.ctx.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let asked = plan.ask;
-                let (client, result) = go(&credentials, &email, &session, client, &asked).await;
+                let ids: Vec<String> = asked.iter().map(|(_, server)| server.clone()).collect();
+                let (client, result) =
+                    ask_streams(crate::fetch::Fetch, &*credentials, &email, &session, client, &ids, |ms| crate::fetch::sleep(ms as i32)).await;
                 STATE.with(|s| {
                     let mut s = s.borrow_mut();
                     if let Some(client) = client {
@@ -344,62 +396,5 @@ mod run {
             return SOON_MS;
         }
         IDLE_MS
-    }
-
-    /// One ask: through the client kept (signed in again when the server refuses its credential, once), or a new one.
-    async fn go(
-        credentials: &HostCredentials,
-        email: &str,
-        session: &str,
-        kept: Option<Rc<Server>>,
-        asked: &[(Id, String)],
-    ) -> (Option<Rc<Server>>, Result<Answer, Failure>) {
-        let ids: Vec<String> = asked.iter().map(|(_, server)| server.clone()).collect();
-        let mut client = kept;
-        let mut renewed = false;
-        loop {
-            let current = match client.take() {
-                Some(client) => client,
-                None => match connect(credentials, email, session).await {
-                    Ok(Some(client)) => Rc::new(client),
-                    Ok(None) => return (None, Err(Failure::Unsupported)),
-                    Err(e) => return (None, Err(Failure::Trouble(kind(&e)))),
-                },
-            };
-            match ask(&current, &ids).await {
-                Ok(answer) => return (Some(current), Ok(answer)),
-                Err(Error::Refused { kind, .. }) if kind.contains("unknownMethod") || kind.contains("unknownCapability") => {
-                    return (None, Err(Failure::Unsupported));
-                }
-                Err(Error::Auth(_)) if !renewed => {
-                    renewed = true;
-                    match credentials.renew(email).await {
-                        Renewal::Given(_) => continue,
-                        Renewal::Later | Renewal::Reload => return (None, Err(Failure::Trouble("sign-in"))),
-                    }
-                }
-                Err(e) => return (Some(current), Err(Failure::Trouble(kind(&e)))),
-            }
-        }
-    }
-
-    /// The mailbox `email`'s server, signed in; `None` when it doesn't offer the tabs.
-    async fn connect(credentials: &HostCredentials, email: &str, session: &str) -> Result<Option<Server>, Error> {
-        let Some(auth) = credentials.auth(email) else { return Err(Error::Auth("no credential".into())) };
-        match Client::connect(crate::fetch::Fetch, session, &auth).await {
-            Ok(client) => Ok(client.has_capability(STREAM).then_some(client)),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// What kind of trouble it was, never the server's words (they may name the mailbox).
-    fn kind(e: &Error) -> &'static str {
-        match e {
-            Error::Io(_) => "network",
-            Error::Tls(_) => "secure connection",
-            Error::Auth(_) => "sign-in",
-            Error::Busy { .. } => "busy",
-            _ => "refused",
-        }
     }
 }
