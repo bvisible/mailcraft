@@ -214,8 +214,8 @@ mod browser {
 
     /// Whether the calls of Nora's conversation (her pane's, [`super::CHAT_METHODS`]) go out: always as the page's own
     /// `fetch` (`/neomail`, its session, its origin); through a host that makes the calls itself only when it says it
-    /// takes them, with `window.mailcraftNoraChat === true` beside its `mailcraftNoraCall` (Neodesk's shell lets none of
-    /// them through yet).
+    /// takes them, with `window.mailcraftNoraChat === true` beside its `mailcraftNoraCall` (Neodesk's shell does since
+    /// 1.3.0, once the instance says it has Nora).
     pub fn chat() -> bool {
         match host_call() {
             None => true,

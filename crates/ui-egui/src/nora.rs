@@ -16,7 +16,7 @@
 //!
 //! Nora lives on the server. The window reaches her only through a host that says it can
 //! ([`crate::Services::nora`]): the browser build when a Neoffice page hosts it. A call names one of
-//! six methods of the server ([`METHODS`], the six Neodesk's shell lets through) with its arguments,
+//! six methods of the server ([`METHODS`], the band's) with its arguments,
 //! and the host hands the answer back through a channel, a frame or more later. Nothing here opens a
 //! connection.
 //!
@@ -76,17 +76,19 @@ pub const SCAN_STYLE: &str = "nora.api.nora_webmail.scan_style";
 pub const READY_REPLIES: &str = "nora.api.mail_ready.ready_replies";
 /// The server method of « My style »: what Nora keeps of the person's writing, and ready replies on or off ([`ready`]).
 pub const MY_STYLE: &str = "nora.api.mail_ready.my_style";
-/// The methods of the ready replies ([`ready`]): they go out where her conversation's do ([`Host::chat`]), the page
-/// `/neomail`; Neodesk's shell lets neither through yet.
+/// The methods of the ready replies ([`ready`]): they go out where her conversation's do ([`Host::chat`]): the page
+/// `/neomail` and Neodesk's NeoMail window (its shell lets them through since 1.3.3).
 pub const READY_METHODS: [&str; 2] = [READY_REPLIES, MY_STYLE];
-/// Every method the window calls: Neodesk's shell lets these six through and no other, so a new one
-/// waits for a release of Neodesk.
+/// The six methods of the band. Neodesk's shell lets through the methods of its own list (`NORA_METHODS` and
+/// `NORA_CHAT_METHODS`, `desktop/src/editors/mail.js`) and no other, so a new method of Nora waits for a release of
+/// Neodesk.
 pub const METHODS: [&str; 6] = [QUICK_REPLY, GENERATE_EMAIL, TRANSLATE, PROOFREAD, IMPROVE, SCAN_STYLE];
 /// The methods of Nora's conversation, which her pane calls ([`assist`]): craft-nora's protocol, the one the
 /// editors' panes speak (its paths, without `/api/method/`), with the person's answer to a card of the conversation
 /// that waits for them (an appointment to put in their calendar, a mailbox to write a draft from, a letter template),
-/// through the two doors that answer only the person's own cards. Neodesk's shell lets none of them through yet, so a
-/// host that makes the calls itself says whether it takes them ([`Host::chat`]).
+/// through the two doors that answer only the person's own cards. Neodesk's shell lets them through since 1.3.0
+/// (`NORA_CHAT_METHODS`, the cards' answers checked), and says so with `window.mailcraftNoraChat`: a host that makes the
+/// calls itself says whether it takes them ([`Host::chat`]).
 pub const CHAT_METHODS: [&str; 7] = [
     "nora.api.chat.start_or_resume_thread",
     "nora.api.chat.post_message",
@@ -149,8 +151,8 @@ pub struct Host {
     /// id on the server, and only their style can be learnt there.
     pub mailboxes: Vec<PageMailbox>,
     /// Whether the host takes the calls of Nora's conversation ([`CHAT_METHODS`]) too, and so her pane
-    /// ([`assist`]) can be opened: the page `/neomail` does (its own session, its own origin); Neodesk's
-    /// shell doesn't yet.
+    /// ([`assist`]) can be opened: the page `/neomail` does (its own session, its own origin), and so does Neodesk's
+    /// NeoMail window (`window.mailcraftNoraChat`, since Neodesk 1.3.0).
     pub chat: bool,
     /// How the host opens a page of the person's instance (a path: `/app/…`, `/drive/f/…`) that a card or a link of
     /// her pane leads to, on the person's click: the page `/neomail` in a new tab (`window.mailcraftNoraOpen`).

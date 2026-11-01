@@ -181,8 +181,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `crates/ui-egui/src/lib.rs` (the module, the host's field of `Services`, the commands, the window's state, the poll
   once a frame), `reading.rs`, `compose.rs`, `ribbon.rs`, `icons.rs`, `crates/engine/src/agent.rs`,
   `apps/mailcraft-web/src/main.rs` and `web.rs`; her French lines are in `crates/i18n/po/neoffice/fr.po`. The rules:
-  only the six methods Neodesk's shell lets through are called; a message of a mailbox the page handed over goes by
-  its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; a mailbox of
+  only the methods Neodesk's shell lets through (its `NORA_METHODS` and `NORA_CHAT_METHODS`, `desktop/src/editors/mail.js`)
+  are called; a message of a mailbox the page handed over goes by its id on the server, never its text, the sample mailbox's by its text, any other mailbox not at all; a mailbox of
   the page is named by the name of the server's account for it (the page's `account`, else the `account` of its
   session's address, else its address), which is not its address once that changed; the origin of
   her calls never comes from the address, but for a loopback page naming a loopback origin (the workshop's stand-in
@@ -196,8 +196,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   of a conversation, Nora's Markdown and the appointment cards; the workspace's `Cargo.toml`, `crates/ui-egui/Cargo.toml`
   and `deny.toml`, which lets that fork's git source in). Its calls are the seven of Nora's conversation
   (`nora::CHAT_METHODS`: craft-nora's five, and the two doors that answer the person's own cards), only where the host
-  takes them (`Host::chat`: the page's own `fetch`, or a host that sets `window.mailcraftNoraChat`; Neodesk's shell
-  doesn't yet); a card's Open and a link of a reply open a page of the instance through the page
+  takes them (`Host::chat`: the page's own `fetch`, or a host that sets `window.mailcraftNoraChat`, as Neodesk's NeoMail
+  window does since 1.3.0); a card's Open and a link of a reply open a page of the instance through the page
   (`window.mailcraftNoraOpen`, `Host::open`). A write into a message of a mailbox the page says is shared with the
   person (`shared`, `PageMailbox::shared`) waits for their click on a card of the pane that names it. What she reads is the window's own: the
   message being read and its conversation, the message being written, its selection (data, read by the server's guard

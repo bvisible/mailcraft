@@ -18,8 +18,9 @@
 //! « My style » shows what Nora keeps of the person's writing (in plain sentences, with the excerpts of their sent mail
 //! it uses as examples), and turns ready replies on or off, learns the style again, or forgets it (`my_style`).
 //!
-//! Both methods go out where Nora's conversation does ([`super::Host::chat`]): from the page `/neomail`; Neodesk's shell
-//! lets neither through yet. What is drawn is `craft-nora-ui`'s card of a proposal, in Nora's colours.
+//! Both methods go out where Nora's conversation does ([`super::Host::chat`]): from the page `/neomail` and from
+//! Neodesk's NeoMail window (its shell lets them through since 1.3.3). What is drawn is `craft-nora-ui`'s card of a
+//! proposal, in Nora's colours.
 
 use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, TryRecvError};
