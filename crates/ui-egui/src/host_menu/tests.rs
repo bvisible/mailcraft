@@ -900,3 +900,25 @@ fn a_message_asked_for_twice_while_it_is_on_its_way_is_fetched_once_and_both_are
     hand.send(0, last_piece());
     assert_eq!(poll(&mut app), vec![opened(), json!({"type": DONE, "id": "second", "ok": true})]);
 }
+
+// //// Neoffice — the Échanges pane opens a message the window hasn't got by its id on the server (`open_server_message`), with nobody to answer.
+#[test]
+fn a_message_the_exchanges_pane_opens_is_fetched_once_shown_and_answers_nobody() {
+    let (mut app, ada, _, _) = page();
+    let hand = Hand::serve(&mut app);
+    open_server_message(&mut app, ADA, "A9").unwrap();
+    // A second click on the same one while it is on its way joins the first: one run.
+    open_server_message(&mut app, ADA, "A9").unwrap();
+    assert_eq!(hand.jobs.borrow().len(), 1, "one run");
+    assert_eq!(hand.request(0).emails, ["A9"]);
+    hand.send(0, piece_of(vec![MessagePage { folder: "Map".into(), messages: vec![mail("A9", "Map", false)], ..Default::default() }]));
+    hand.send(0, last_piece());
+    assert!(poll(&mut app).is_empty(), "no page waits for an answer");
+    let a9 = super::here(&app, ada, "A9").expect("the message came in");
+    assert_eq!(app.session.sel.focus(), Some(a9), "and is the one in view");
+    // A message the window has is shown at once, with no run.
+    open_server_message(&mut app, ADA, "A9").unwrap();
+    assert_eq!(hand.jobs.borrow().len(), 1, "no second run");
+    // A mailbox the page didn't hand over is refused, in words.
+    assert!(open_server_message(&mut app, "nobody@example.org", "A9").is_err());
+}
