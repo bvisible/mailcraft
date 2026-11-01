@@ -158,6 +158,25 @@ fn initials(name: &str, address: &str) -> String {
     }
 }
 
+/// `text` in at most `rows` lines of `width`, wrapped at the words, with its left edge at `at.x` and the block centred on `at.y`.
+fn paint_wrapped(painter: &egui::Painter, at: egui::Pos2, width: f32, text: &str, font: FontId, colour: Color32, rows: usize) {
+    if width <= 4.0 || text.is_empty() {
+        return;
+    }
+    let mut job =
+        egui::text::LayoutJob::single_section(text.to_string(), egui::text::TextFormat { font_id: font, color: colour, ..Default::default() });
+    job.wrap = egui::text::TextWrapping { max_width: width, max_rows: rows, break_anywhere: false, overflow_character: Some('…') };
+    let galley = painter.layout_job(job);
+    let top = at.y - galley.size().y / 2.0;
+    painter.galley(pos2(at.x, top), galley, colour);
+}
+
+/// A few words said in the middle of a tab, wrapped: what there is nothing of, or why.
+fn note(ui: &mut Ui, t: &Tokens, text: &str) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
+    paint_wrapped(ui.painter(), pos2(r.min.x + 12.0, r.center().y), r.width() - 24.0, text, regular(12.0), t.text_dim, 3);
+}
+
 fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
     ui.ctx().fonts_mut(|f| f.layout_no_wrap(text.to_string(), font, Color32::WHITE).size().x)
 }
@@ -172,6 +191,10 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         app.exchanges.width = crate::exchanges::WIDTH;
     }
     let view = prepare(app, ui.ctx());
+    // What the pane asked of the host is asked at the next frame, which an idle window would not have.
+    if app.exchanges.has_wants() {
+        ui.ctx().request_repaint();
+    }
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep (`mail_view::message_room`).
     let widest = (ui.available_width() - crate::mail_view::LIST_MIN - crate::mail_view::READING_MIN).max(240.0);
     let narrowed = app.exchanges.width > widest + 0.5;
@@ -214,13 +237,14 @@ fn header(ui: &mut Ui, t: &Tokens, view: &View, options: (bool, bool), acts: &mu
     p.line_segment([pos2(r.min.x, r.max.y), pos2(r.max.x, r.max.y)], Stroke::new(1.0, t.border));
     // The person.
     let Some(target) = &view.target else {
-        paint_clipped(
+        paint_wrapped(
             p,
             pos2(r.min.x + 12.0, r.center().y),
             r.width() - 56.0,
             tl!("Select a message to see what was said with its sender."),
             regular(12.5),
             t.text_dim,
+            3,
         );
         let close = Rect::from_center_size(pos2(r.max.x - 20.0, r.center().y), vec2(26.0, 26.0));
         if close_button(ui, t, close) {
@@ -379,8 +403,7 @@ fn exchanges_tab(ui: &mut Ui, t: &Tokens, view: &View, words: &mut String, show:
             } else {
                 tl!("No exchange matches.")
             };
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
-            paint_clipped(ui.painter(), pos2(r.min.x + 12.0, r.center().y), r.width() - 24.0, said, regular(12.0), t.text_dim);
+            note(ui, t, said);
         }
         let mut band = "";
         for line in &view.lines {
@@ -469,7 +492,15 @@ fn foot_of(ui: &mut Ui, t: &Tokens, view: &View, acts: &mut Vec<Act>) {
     ui.painter().line_segment([pos2(r.min.x, r.min.y), pos2(r.max.x, r.min.y)], Stroke::new(1.0, t.border));
     let centre = pos2(r.min.x + 12.0, r.center().y);
     if !view.hosted {
-        paint_clipped(ui.painter(), centre, r.width() - 24.0, tl!("This window has no way to ask the server for more."), regular(11.5), t.text_dim);
+        paint_wrapped(
+            ui.painter(),
+            pos2(r.min.x + 12.0, r.center().y),
+            r.width() - 24.0,
+            tl!("This window has no way to ask the server for more."),
+            regular(11.5),
+            t.text_dim,
+            2,
+        );
         return;
     }
     let width = r.width() - 24.0;
@@ -516,15 +547,7 @@ fn files_tab(ui: &mut Ui, t: &Tokens, view: &View, words: &mut String, acts: &mu
     egui::ScrollArea::vertical().id_salt("exchanges_files").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         if view.files.is_empty() {
-            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
-            paint_clipped(
-                ui.painter(),
-                pos2(r.min.x + 12.0, r.center().y),
-                r.width() - 24.0,
-                tl!("No file came with the exchanges the window has."),
-                regular(12.0),
-                t.text_dim,
-            );
+            note(ui, t, tl!("No file came with the exchanges the window has."));
         }
         for (name, meta, subject, row) in &view.files {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
@@ -544,10 +567,7 @@ fn files_tab(ui: &mut Ui, t: &Tokens, view: &View, words: &mut String, acts: &mu
 }
 
 fn neoffice_tab(ui: &mut Ui, t: &Tokens, view: &View, acts: &mut Vec<Act>) {
-    let said = |ui: &mut Ui, text: &str| {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
-        paint_clipped(ui.painter(), pos2(r.min.x + 12.0, r.center().y), r.width() - 24.0, text, regular(12.0), t.text_dim);
-    };
+    let said = |ui: &mut Ui, text: &str| note(ui, t, text);
     match &view.linked {
         Asked::Waiting => said(ui, tl!("Looking in Neoffice…")),
         Asked::Failed(_) => said(ui, tl!("Neoffice did not answer.")),

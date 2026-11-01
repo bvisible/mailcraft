@@ -156,6 +156,11 @@ impl Exchanges {
         self.hosted
     }
 
+    /// Whether something is still to be asked of the server.
+    pub fn has_wants(&self) -> bool {
+        !self.wants.is_empty()
+    }
+
     /// What is still to be asked of the server: the host asks it, and puts each answer back.
     pub fn take_wants(&mut self) -> Vec<Want> {
         std::mem::take(&mut self.wants)
@@ -375,6 +380,9 @@ pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Place) {
     }
     let Some(target) = target_of(app, m) else { return };
     let (addresses, someone) = who(app, &target);
+    if app.exchanges.has_wants() {
+        ui.ctx().request_repaint();
+    }
     let rows = local_rows(app, ui.ctx(), &addresses);
     let others: Vec<&Row> = rows.iter().filter(|r| r.message != Some(m.id)).collect();
     let party = someone.as_ref().and_then(|s| s.party.clone());
