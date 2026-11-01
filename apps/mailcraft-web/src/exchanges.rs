@@ -17,8 +17,14 @@
 // Outside the browser only the tests use it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
-use mailcraft_ui_egui::exchanges::Want;
+use std::future::Future;
+use std::rc::Rc;
+
+use mailcraft_jmap::{CORE, Client, Error, Http};
+use mailcraft_ui_egui::exchanges::{Trouble, Want};
 use serde_json::{Value, json};
+
+use crate::credentials::{Credentials, Renewal};
 
 /// The capability: a data type of the Neoffice server (frappe_webmail's `neomail_history`), named by it.
 pub const HISTORY: &str = "https://neoffice.me/jmap/neomail-history";
@@ -27,6 +33,11 @@ pub const MESSAGES: &str = "NeomailHistory/get";
 pub const LINKED: &str = "NeomailLinked/get";
 /// How many messages one page holds.
 pub const PAGE_ROWS: u32 = 20;
+/// How long an ask waits before its one more try, when the server did not say, in milliseconds.
+pub const AGAIN_MS: u32 = 1_500;
+/// The longest an ask waits in silence for a server that asked it to (`Retry-After`), in milliseconds: a server that wants more
+/// than this is told to the pane, which offers to try again.
+pub const MOST_WAIT_MS: u32 = 5_000;
 
 /// What a [`Want`] is, as a method of the server and its arguments.
 #[derive(Clone, Debug, PartialEq)]
@@ -63,6 +74,106 @@ pub fn mailbox_of(want: &Want) -> &str {
     }
 }
 
+/// How long to wait before the one more try that follows `e`, when `e` is a trouble that passes by itself: a server that is
+/// starting again (a gateway's 502 or 504, any 5xx), a network that blinked, a server that is busy (waiting what it asked
+/// for, up to [`MOST_WAIT_MS`]), a method that failed on the server's side for the moment. `None` for what trying again will not change
+/// (a refusal of the sign-in, a request the server does not take, an answer that cannot be read).
+pub fn passes(e: &Error) -> Option<u32> {
+    match e {
+        Error::Io(_) => Some(AGAIN_MS),
+        Error::Busy { retry_after, .. } => {
+            let wait = retry_after.map_or(AGAIN_MS, |seconds| seconds.saturating_mul(1_000));
+            (wait <= MOST_WAIT_MS).then_some(wait)
+        }
+        // (The client says a gateway's 502 and 504 as a refusal of the request: `jmap_fork::check`.)
+        Error::Bad(said) if said.starts_with("HTTP 5") => Some(AGAIN_MS),
+        Error::Refused { kind, .. } if kind.contains("serverFail") || kind.contains("serverUnavailable") => Some(AGAIN_MS),
+        _ => None,
+    }
+}
+
+/// The mailbox `email`'s server, signed in; `None` when it doesn't offer the history.
+async fn connect<H: Http, C: Credentials>(http: H, credentials: &C, email: &str, session: &str) -> Result<Option<Client<H>>, Error> {
+    let Some(auth) = credentials.auth(email) else { return Err(Error::Auth("no credential".into())) };
+    let client = Client::connect(http, session, &auth).await?;
+    Ok(client.has_capability(HISTORY).then_some(client))
+}
+
+/// One ask of the server: through the client `kept` from an earlier ask, or a new one signed in with the page's credential.
+///
+/// What is not the person's to see is settled here, in silence, once each: a credential the server refuses (at the session
+/// or at the call) is renewed by the page, and a trouble that passes by itself ([`passes`]: the server that starts again, a
+/// network blink) is tried again after a moment, on a new sign-in. Only the second failure of the same kind reaches the pane
+/// as [`Trouble::Failed`]. The client to keep for the next ask comes back with the answer (none when it is not to be kept).
+pub async fn ask<H, C, S, W>(
+    http: H,
+    credentials: &C,
+    email: &str,
+    session: &str,
+    kept: Option<Rc<Client<H>>>,
+    want: &Want,
+    sleep: S,
+) -> (Option<Rc<Client<H>>>, Result<Value, Trouble>)
+where
+    H: Http + Clone,
+    C: Credentials,
+    S: Fn(u32) -> W,
+    W: Future<Output = ()>,
+{
+    let mut client = kept;
+    let (mut renewed, mut again) = (false, false);
+    loop {
+        let current = match client.take() {
+            Some(client) => client,
+            None => match connect(http.clone(), credentials, email, session).await {
+                Ok(Some(client)) => Rc::new(client),
+                Ok(None) => return (None, Err(Trouble::Unsupported)),
+                Err(Error::Auth(_)) if !renewed => {
+                    renewed = true;
+                    match credentials.renew(email).await {
+                        Renewal::Given(_) => continue,
+                        Renewal::Later | Renewal::Reload => return (None, Err(Trouble::Failed)),
+                    }
+                }
+                Err(e) => match passes(&e).filter(|_| !again) {
+                    Some(wait) => {
+                        again = true;
+                        sleep(wait).await;
+                        continue;
+                    }
+                    None => return (None, Err(Trouble::Failed)),
+                },
+            },
+        };
+        let Call { method, arguments } = call_of(current.account_id(), want);
+        let asked = async {
+            let mut answers = current.call(&[CORE, HISTORY], vec![(method, arguments)]).await?;
+            answers.take(0)
+        };
+        match asked.await {
+            Ok(answer) => return (Some(current), Ok(answer)),
+            Err(Error::Refused { kind, .. }) if kind.contains("unknownMethod") || kind.contains("unknownCapability") => {
+                return (None, Err(Trouble::Unsupported));
+            }
+            Err(Error::Auth(_)) if !renewed => {
+                renewed = true;
+                match credentials.renew(email).await {
+                    Renewal::Given(_) => continue,
+                    Renewal::Later | Renewal::Reload => return (None, Err(Trouble::Failed)),
+                }
+            }
+            Err(e) => match passes(&e).filter(|_| !again) {
+                Some(wait) => {
+                    again = true;
+                    sleep(wait).await;
+                    continue;
+                }
+                None => return (Some(current), Err(Trouble::Failed)),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 #[path = "exchanges_tests.rs"]
 mod tests;
@@ -77,14 +188,13 @@ mod run {
     use std::collections::{BTreeMap, VecDeque};
     use std::rc::Rc;
 
-    use mailcraft_jmap::{CORE, Client, Error};
+    use mailcraft_jmap::Client;
     use mailcraft_model::exchanges as data;
     use mailcraft_ui_egui::MailApp;
     use mailcraft_ui_egui::exchanges::{Trouble, Want};
     use serde_json::Value;
 
-    use super::{Call, HISTORY, call_of, mailbox_of};
-    use crate::credentials::{Credentials, Renewal};
+    use super::mailbox_of;
     use crate::host::{HostAccount, HostCredentials};
 
     /// At most this many asks on their way at once (the page's other jobs share the server's two requests).
@@ -188,7 +298,8 @@ mod run {
         let kept = s.clients.get(&email).cloned();
         let ctx = s.ctx.clone();
         wasm_bindgen_futures::spawn_local(async move {
-            let (client, result) = go(&credentials, &email, &session, kept, &want).await;
+            let (client, result) =
+                super::ask(crate::fetch::Fetch, &*credentials, &email, &session, kept, &want, |ms| crate::fetch::sleep(ms as i32)).await;
             STATE.with(|s| {
                 let mut s = s.borrow_mut();
                 match client {
@@ -205,53 +316,5 @@ mod run {
                 ctx.request_repaint();
             }
         });
-    }
-
-    /// One ask: through the client kept (signed in again when the server refuses its credential, once), or a new one.
-    async fn go(
-        credentials: &HostCredentials,
-        email: &str,
-        session: &str,
-        kept: Option<Rc<Server>>,
-        want: &Want,
-    ) -> (Option<Rc<Server>>, Result<Value, Trouble>) {
-        let mut client = kept;
-        let mut renewed = false;
-        loop {
-            let current = match client.take() {
-                Some(client) => client,
-                None => match connect(credentials, email, session).await {
-                    Ok(Some(client)) => Rc::new(client),
-                    Ok(None) => return (None, Err(Trouble::Unsupported)),
-                    Err(_) => return (None, Err(Trouble::Failed)),
-                },
-            };
-            let Call { method, arguments } = call_of(current.account_id(), want);
-            let asked = async {
-                let mut answers = current.call(&[CORE, HISTORY], vec![(method, arguments)]).await?;
-                answers.take(0)
-            };
-            match asked.await {
-                Ok(answer) => return (Some(current), Ok(answer)),
-                Err(Error::Refused { kind, .. }) if kind.contains("unknownMethod") || kind.contains("unknownCapability") => {
-                    return (None, Err(Trouble::Unsupported));
-                }
-                Err(Error::Auth(_)) if !renewed => {
-                    renewed = true;
-                    match credentials.renew(email).await {
-                        Renewal::Given(_) => continue,
-                        Renewal::Later | Renewal::Reload => return (None, Err(Trouble::Failed)),
-                    }
-                }
-                Err(_) => return (Some(current), Err(Trouble::Failed)),
-            }
-        }
-    }
-
-    /// The mailbox `email`'s server, signed in; `None` when it doesn't offer the history.
-    async fn connect(credentials: &HostCredentials, email: &str, session: &str) -> Result<Option<Server>, Error> {
-        let Some(auth) = credentials.auth(email) else { return Err(Error::Auth("no credential".into())) };
-        let client = Client::connect(crate::fetch::Fetch, session, &auth).await?;
-        Ok(client.has_capability(HISTORY).then_some(client))
     }
 }
