@@ -130,7 +130,7 @@ msgid "(no recipients)"
 msgstr "(nessun destinatario)"
 
 #. interface, what a command says
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "(no subject)"
 msgstr "(nessun oggetto)"
@@ -906,7 +906,7 @@ msgid "After you accept, tentatively accept or decline a meeting request in the 
 msgstr "Dopo aver accettato, accettato con riserva o rifiutato una convocazione di riunione nella posta, o aver tolto dal calendario una riunione annullata, il messaggio viene spostato in Posta eliminata. Se l'opzione è disattivata, resta dov'è e indica la risposta data."
 
 #. interface, name
-#: crates/engine/src/session.rs crates/model/src/offline.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/backstage.rs crates/ui-egui/src/keep_offline.rs
+#: crates/engine/src/session.rs crates/model/src/offline.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/backstage.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/keep_offline.rs
 #, fuzzy
 msgid "All"
 msgstr "Tutti"
@@ -1018,6 +1018,11 @@ msgstr "Già nei contatti"
 #, fuzzy
 msgid "Also Hotmail, Live and MSN"
 msgstr "Anche Hotmail, Live e MSN"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Also what only copied them"
+msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
@@ -2277,7 +2282,7 @@ msgid "Clipboard"
 msgstr "Appunti"
 
 #. interface, ribbon
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Close"
 msgstr "Chiudi"
@@ -3743,6 +3748,11 @@ msgstr ""
 msgid "Exchange server · no usable server address"
 msgstr ""
 
+#. command label, interface
+#: crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/lib.rs
+msgid "Exchanges"
+msgstr ""
+
 #. command label
 #: crates/engine/src/cmd/mail.rs
 #, fuzzy
@@ -3873,6 +3883,11 @@ msgstr "File"
 #, fuzzy
 msgid "File dialogs aren't available here"
 msgstr "Le finestre di selezione file non sono disponibili qui"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Files"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/attachment_open.rs
@@ -4784,6 +4799,11 @@ msgid "Improve with Nora"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "In Neoffice"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/signatures.rs
 #, fuzzy
 msgid "In a plain-text message"
@@ -5370,6 +5390,11 @@ msgstr "Sovrapponi questo calendario agli altri"
 msgid "Layout"
 msgstr "Layout"
 
+#. interface
+#: crates/ui-egui/src/exchanges.rs crates/ui-egui/src/exchanges_pane.rs
+msgid "Lead"
+msgstr ""
+
 #. command label
 #: crates/ui-egui/src/lib.rs
 msgid "Learn My Writing Style"
@@ -5524,6 +5549,16 @@ msgid "Look for This Meeting on the Calendar"
 msgstr "Cerca questa riunione nel calendario"
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Look further on the server…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Look further on the server… (some folders were not looked through)"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/warnings.rs
 msgid "Lookalike address."
 msgstr ""
@@ -5542,6 +5577,21 @@ msgstr "Ricerca di questa riunione nel calendario…"
 #. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
 msgid "Looking for your Exchange server…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Looking further on the server…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Looking in Neoffice…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Looking on the server…"
 msgstr ""
 
 #. interface
@@ -6490,6 +6540,11 @@ msgstr ""
 msgid "NeoMail takes one of Nora's commands at a time: draft.reply, draft.new or draft.write, each in a call of its own."
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Neoffice did not answer."
+msgstr ""
+
 #. command label, interface
 #: crates/engine/src/cmd/junk.rs crates/ui-egui/src/ribbon.rs
 msgid "Never Block Sender"
@@ -6856,6 +6911,11 @@ msgid "No credential store answered (on Linux, GNOME Keyring or KWallet provides
 msgstr "Nessun archivio credenziali ha risposto (su Linux, ne fornisce uno GNOME Keyring o KWallet)"
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "No customer, supplier or lead of Neoffice has this address."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "No downloaded pictures are kept on this computer."
@@ -6876,6 +6936,16 @@ msgstr "Nessuna data di fine"
 #. interface
 #: crates/ui-egui/src/forms/junk.rs
 msgid "No entries yet"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "No exchange matches."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "No file came with the exchanges the window has."
 msgstr ""
 
 #. interface
@@ -7393,6 +7463,11 @@ msgid "Nothing is added to your mail until it has all been read."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Nothing is linked to this person yet."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "Nothing matches the search."
@@ -7411,6 +7486,11 @@ msgid "Nothing more was found on the server"
 msgstr "Non è stato trovato altro sul server"
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Nothing older on the server."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Nothing to do here."
@@ -7419,6 +7499,11 @@ msgstr "Niente da fare qui."
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nothing was done in your message: Nora could not act in it in time. Ask again if you still need it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Nothing was said with this person yet."
 msgstr ""
 
 #. interface
@@ -7839,6 +7924,11 @@ msgstr "Apri il messaggio"
 #, fuzzy
 msgid "Open the page again"
 msgstr "Apri di nuovo la pagina"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Open the record"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/sharing.rs
@@ -8439,6 +8529,11 @@ msgid "Quit MailCraft"
 msgstr "Esci da MailCraft"
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Quotes, orders, invoices, tickets, tasks, files."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "Range"
@@ -8508,6 +8603,11 @@ msgstr ""
 #, fuzzy
 msgid "Real name"
 msgstr "Nome reale"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Received"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/chrome.rs
@@ -9413,6 +9513,11 @@ msgid "Search in"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Search in these exchanges"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/chrome.rs
 #, fuzzy
 msgid "Search mail"
@@ -9452,6 +9557,11 @@ msgstr "Ricerca sul server…"
 #, fuzzy
 msgid "Second time zone"
 msgstr "Secondo fuso orario"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "See everything"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/scheduling.rs
@@ -9523,6 +9633,11 @@ msgstr "Selezionare prima una riunione"
 #, fuzzy
 msgid "Select a message first"
 msgstr "Selezionare prima un messaggio"
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "Select a message to see what was said with its sender."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/notes_view.rs
@@ -9839,7 +9954,7 @@ msgid "Sending…"
 msgstr "Invio…"
 
 #. interface
-#: crates/ui-egui/src/lib.rs
+#: crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "Sent"
 msgstr "Inviato"
@@ -10166,6 +10281,11 @@ msgstr "Mostra nel calendario il giorno di questa riunione."
 #, fuzzy
 msgid "Show the folder pane"
 msgstr "Mostra il riquadro delle cartelle"
+
+#. interface
+#: crates/ui-egui/src/exchanges.rs
+msgid "Show the history"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view.rs
@@ -11745,6 +11865,11 @@ msgid "The server couldn't be reached. What waits to go will go with the next Se
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "The server did not answer."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
 msgid "The server didn't accept the user name and password. Check them, or type your user name in Server settings (DOMAIN\\user or you@example.org)."
 msgstr ""
@@ -12148,6 +12273,11 @@ msgid "The user name is too long or has a character in it that a name can't have
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "The whole company (every address of its domain)"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "The window changed since Nora asked: nothing was written. Ask her again."
 msgstr ""
@@ -12276,6 +12406,11 @@ msgstr "Vengono rimossi anche dal server di posta."
 #. interface
 #: crates/ui-egui/src/merge_contacts.rs
 msgid "They share {what}."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "This Neoffice cannot say what is linked to this person."
 msgstr ""
 
 #. name, ribbon
@@ -12987,6 +13122,11 @@ msgstr ""
 msgid "This window can't ask the server for the message."
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "This window has no way to ask the server for more."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/remote.rs
 #, fuzzy
@@ -13284,7 +13424,7 @@ msgid "Try Signing In Again"
 msgstr "Riprova ad accedere"
 
 #. interface
-#: crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/reading/remote.rs
+#: crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "Try again"
 msgstr "Riprova"
@@ -17497,6 +17637,34 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. interface
+#: crates/ui-egui/src/exchanges.rs
+msgid "{n} exchange"
+msgid_plural "{n} exchanges"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "{n} exchange in memory, since {since}."
+msgid_plural "{n} exchanges in memory, since {since}."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/exchanges_pane.rs
+msgid "{n} exchange, back to {since}."
+msgid_plural "{n} exchanges, back to {since}."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/exchanges.rs
+msgid "{n} exchange, the latest {when}"
+msgid_plural "{n} exchanges, the latest {when}"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "{n} field to fill in"
 msgid_plural "{n} fields to fill in"
@@ -17538,6 +17706,13 @@ msgid "{n} hour"
 msgid_plural "{n} hours"
 msgstr[0] "{n} ora"
 msgstr[1] "{n} ore"
+
+#. interface
+#: crates/ui-egui/src/exchanges.rs
+msgid "{n} invoice this year"
+msgid_plural "{n} invoices this year"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/chrome.rs

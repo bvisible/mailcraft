@@ -1062,7 +1062,7 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "ui.exchanges",
         "Exchanges",
         "Home › Respond",
-        r#"{"open"?: bool (default: the other way round)} — opens or closes the Échanges pane at the right of the window (it and Nora's pane never stand together): the person whose message is in the reading pane (for a message the owner sent, the one it went to), with what was said with them in three tabs, the exchanges (what the window has in memory, and, where a Neoffice page hosts it, what the server holds beyond it, a page at a time), the files that came with them, and what Neoffice links them to"#
+        r#"{"open"?: bool (default: the other way round)} — opens or closes the Échanges pane at the right of the window (it and Nora's pane never stand together): the person whose message is in the reading pane (for a message the owner sent, the one it went to), with what was said with them in three tabs, the exchanges (what the window has in memory, and, where a Neoffice page hosts it, what the server holds beyond it, a page at a time), the files that came with them, and what Neoffice links them to"#,
     ),
     // //// Neoffice — Share in Synk, where the hosting page takes a message to share in its team chat (host_share.rs): the owner's click only.
     (

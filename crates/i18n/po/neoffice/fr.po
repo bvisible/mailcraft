@@ -3570,3 +3570,113 @@ msgstr "Liste le courrier que j'ai envoyé dans les 14 derniers jours et auquel 
 msgid "List the commitments I made in the mail I sent in the last 7 days, about my whole mailbox and not the message that is open. Step 1: call nora_mail_sent once, with no argument: my sent messages of the last 7 days, each with the start of my own words. Step 2: one line per commitment: what I promised, to whom, and by when if the text says so; never a long quote. If there is none, say so."
 msgstr "Liste les engagements que j'ai pris dans le courrier envoyé ces 7 derniers jours, portant sur tout mon courrier et non sur le message ouvert. Étape 1 : appelle nora_mail_sent une fois, sans aucun argument : mes messages envoyés des 7 derniers jours, chacun avec le début de mes propres mots. Étape 2 : une ligne par engagement : ce que j'ai promis, à qui, et pour quand si le texte le dit ; jamais de longue citation. S'il n'y en a aucun, dis-le."
 
+# The Échanges pane (exchanges.rs, exchanges_pane.rs). Translations by Haiku.
+
+msgid "Also what only copied them"
+msgstr "Aussi ceux qui ne les ont eus qu'en copie"
+
+msgid "Exchanges"
+msgstr "Échanges"
+
+msgid "Files"
+msgstr "Fichiers"
+
+msgid "In Neoffice"
+msgstr "Dans Neoffice"
+
+msgid "Lead"
+msgstr "Prospect"
+
+msgid "Look further on the server…"
+msgstr "Chercher plus loin sur le serveur…"
+
+msgid "Look further on the server… (some folders were not looked through)"
+msgstr "Chercher plus loin sur le serveur… (certains dossiers n'ont pas été parcourus)"
+
+msgid "Looking further on the server…"
+msgstr "Recherche plus loin sur le serveur…"
+
+msgid "Looking in Neoffice…"
+msgstr "Recherche dans Neoffice…"
+
+msgid "Looking on the server…"
+msgstr "Recherche sur le serveur…"
+
+msgid "Neoffice did not answer."
+msgstr "Neoffice n'a pas répondu."
+
+msgid "No customer, supplier or lead of Neoffice has this address."
+msgstr "Aucun client, fournisseur ni prospect de Neoffice n'a cette adresse."
+
+msgid "No exchange matches."
+msgstr "Aucun échange ne correspond."
+
+msgid "No file came with the exchanges the window has."
+msgstr "Aucun fichier n'accompagne les échanges affichés dans cette fenêtre."
+
+msgid "Nothing is linked to this person yet."
+msgstr "Rien n'est encore lié à cette personne."
+
+msgid "Nothing older on the server."
+msgstr "Rien de plus ancien sur le serveur."
+
+msgid "Nothing was said with this person yet."
+msgstr "Aucun échange avec cette personne pour l'instant."
+
+msgid "Open the record"
+msgstr "Ouvrir la fiche"
+
+msgid "Quotes, orders, invoices, tickets, tasks, files."
+msgstr "Devis, commandes, factures, tickets, tâches, fichiers."
+
+msgid "Received"
+msgstr "Reçus"
+
+msgid "Search in these exchanges"
+msgstr "Rechercher dans ces échanges"
+
+msgid "See everything"
+msgstr "Tout voir"
+
+msgid "Select a message to see what was said with its sender."
+msgstr "Sélectionnez un message pour voir ce qui a été échangé avec son expéditeur."
+
+msgid "Show the history"
+msgstr "Afficher l'historique"
+
+msgid "The server did not answer."
+msgstr "Le serveur n'a pas répondu."
+
+msgid "The whole company (every address of its domain)"
+msgstr "Toute l'entreprise (toutes les adresses de son domaine)"
+
+msgid "This Neoffice cannot say what is linked to this person."
+msgstr "Ce Neoffice ne peut pas dire ce qui est lié à cette personne."
+
+msgid "This window has no way to ask the server for more."
+msgstr "Cette fenêtre ne peut pas demander davantage au serveur."
+
+msgid "{n} exchange"
+msgid_plural "{n} exchanges"
+msgstr[0] "{n} échange"
+msgstr[1] "{n} échanges"
+
+msgid "{n} exchange in memory, since {since}."
+msgid_plural "{n} exchanges in memory, since {since}."
+msgstr[0] "{n} échange en mémoire, depuis {since}."
+msgstr[1] "{n} échanges en mémoire, depuis {since}."
+
+msgid "{n} exchange, back to {since}."
+msgid_plural "{n} exchanges, back to {since}."
+msgstr[0] "{n} échange, remontant jusqu'au {since}."
+msgstr[1] "{n} échanges, remontant jusqu'au {since}."
+
+msgid "{n} exchange, the latest {when}"
+msgid_plural "{n} exchanges, the latest {when}"
+msgstr[0] "{n} échange, le plus récent {when}"
+msgstr[1] "{n} échanges, le plus récent {when}"
+
+msgid "{n} invoice this year"
+msgid_plural "{n} invoices this year"
+msgstr[0] "{n} facture cette année"
+msgstr[1] "{n} factures cette année"
