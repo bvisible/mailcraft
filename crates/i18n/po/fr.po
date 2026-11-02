@@ -98,7 +98,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "'{subject}' was deleted for good: that can't be undone here."
+msgid "'{subject}' was permanently deleted: that can't be undone here."
 msgstr ""
 
 #. interface
@@ -15852,21 +15852,6 @@ msgid "day"
 msgstr "jour"
 
 #. interface
-#: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "delete '{subject}' for good"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "delete a message for good"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "delete {n} messages for good"
-msgstr ""
-
-#. interface
 #: crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "everybody at @{domain}"
@@ -16602,6 +16587,21 @@ msgstr "owner"
 #, fuzzy
 msgid "past"
 msgstr "past"
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "permanently delete '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "permanently delete a message"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "permanently delete {n} messages"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/picture.rs crates/engine/src/cmd/signature.rs
@@ -19045,7 +19045,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
-msgid "{n} messages were deleted for good: that can't be undone here."
+msgid "{n} messages were permanently deleted: that can't be undone here."
 msgstr ""
 
 #. date and time, interface

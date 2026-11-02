@@ -184,6 +184,8 @@ fn favourite_categorize_and_import_are_greyed_with_the_reason_where_nothing_is_k
 
 #[test]
 fn a_simple_event_in_a_tab_asks_before_it_is_deleted() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, _) = window(true);
     let budget = event(&app, "Budget review");
     let (title, text, action) = asked(&mut app, "calendar.delete", json!({"id": budget})).expect("a question");
@@ -319,6 +321,8 @@ fn a_kept_contact_asks_before_it_is_deleted_for_the_whole_team() {
 
 #[test]
 fn the_categorize_menu_names_the_starting_categories_in_the_interfaces_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, _) = window(false);
     crate::i18n::set_current(crate::i18n::Lang::French);
     let bob = app.session.mailbox.contacts.values().find(|c| c.first == "Bob").map(|c| c.id).unwrap();

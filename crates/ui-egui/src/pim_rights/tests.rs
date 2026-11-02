@@ -164,6 +164,8 @@ fn the_engines_reasons_and_the_tables_are_the_same_strings() {
 
 #[test]
 fn deleting_a_contact_of_a_servers_book_is_asked_about_first_naming_it_and_where_it_goes() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut s, account) = session();
     // Cy, in Grace's book (she may only read it).
     let cy = RemoteContact {
@@ -215,6 +217,8 @@ fn deleting_a_contact_of_a_servers_book_is_asked_about_first_naming_it_and_where
 
 #[test]
 fn the_contact_form_names_the_categories_in_the_interfaces_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (s, _) = session();
     let bob = contact(&s, "Bob");
     let mut app = MailApp::new(s, Services::default());

@@ -544,7 +544,7 @@ fn a_refused_delete_for_good_puts_the_message_back_with_all_that_was_kept() {
         apply_jmap_mail(s, result(account, vec![done(JmapChange::Destroy { id: "E1".into() }, outcome)])).unwrap()
     };
     let answer = delete(&mut s, refused("forbidden"));
-    assert_eq!(answer["errors"], json!(["Couldn't delete 'Invoice 42' for good: the server doesn't allow it."]));
+    assert_eq!(answer["errors"], json!(["Couldn't permanently delete 'Invoice 42': the server doesn't allow it."]));
     // Back as the server has it (unread, in the Inbox), with its text, and nothing to send.
     let back = s.mailbox.messages.values().find(|m| m.subject == "Invoice 42").unwrap();
     assert_eq!((back.folder, back.read, back.body.text.as_str()), (inbox, false, "Please pay by Friday."));
@@ -574,7 +574,7 @@ fn a_refused_delete_for_good_puts_the_message_back_with_all_that_was_kept() {
         }
     }
     let answer = apply_jmap_mail(&mut s, result(account, vec![done(JmapChange::Destroy { id: "E1".into() }, refused("forbidden"))])).unwrap();
-    assert_eq!(answer["errors"], json!(["Couldn't delete a message for good: the server doesn't allow it."]));
+    assert_eq!(answer["errors"], json!(["Couldn't permanently delete a message: the server doesn't allow it."]));
     assert!(s.mailbox.messages.values().all(|m| m.subject != "Invoice 42") && s.mailbox.queued.is_empty());
 }
 
@@ -596,7 +596,7 @@ fn deletes_for_good_are_taken_in_together_each_comes_off_the_queue_and_only_a_re
     let dones = (10..300).map(|n| done(JmapChange::Destroy { id: format!("D{n}") }, outcome(n))).collect();
     let answer = apply_jmap_mail(&mut s, result(account, dones)).unwrap();
     // 97 refused (n = 11, 14, … 299), and said once.
-    assert_eq!(answer["errors"], json!(["Couldn't delete 97 messages for good: the server doesn't allow it."]));
+    assert_eq!(answer["errors"], json!(["Couldn't permanently delete 97 messages: the server doesn't allow it."]));
     // What was not answered still waits, oldest first.
     let waiting: Vec<&str> = s.mailbox.queued.iter().map(|q| if let Queued::DeleteMessage { id, .. } = q { id.as_str() } else { "" }).collect();
     assert_eq!(waiting, (0..10).map(|n| format!("D{n}")).collect::<Vec<_>>());
@@ -622,7 +622,7 @@ fn an_answer_for_a_message_that_is_not_there_or_is_not_the_one_changes_nothing()
         done(JmapChange::Destroy { id: "E".repeat(10_000) }, refused(&"y".repeat(10_000))),
     ];
     let answer = apply_jmap_mail(&mut s, result(account, junk)).unwrap();
-    assert_eq!(answer["errors"], json!(["Couldn't delete a message for good: the server says it can't make that change."]));
+    assert_eq!(answer["errors"], json!(["Couldn't permanently delete a message: the server says it can't make that change."]));
     assert_eq!(answer["pushed"], 0);
     assert_eq!(s.mailbox, before);
     // An answer for another account's address is refused, whatever it holds.
@@ -1194,7 +1194,7 @@ fn a_refused_delete_of_a_message_that_was_named_late_puts_it_back_where_it_is() 
     assert_eq!(changes(&s, account), std::slice::from_ref(&destroy));
     // The server will not: the message is back, in the Archive, as the server has it, and the delete is said.
     let answer = apply_jmap_mail(&mut s, result(account, vec![done(destroy, refused("forbidden"))])).unwrap();
-    assert_eq!(answer["errors"], json!(["Couldn't delete 'Invoice 42' for good: the server doesn't allow it."]));
+    assert_eq!(answer["errors"], json!(["Couldn't permanently delete 'Invoice 42': the server doesn't allow it."]));
     let back = s.mailbox.messages.values().find(|m| m.subject == "Invoice 42").unwrap();
     assert_eq!((back.folder, back.server.as_ref().map(|server| (server.id.as_str(), server.folder.as_str()))), (archive, Some(("E1-new", "Mar"))));
     assert!(s.mailbox.queued.is_empty() && changes(&s, account).is_empty());

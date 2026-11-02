@@ -28,7 +28,7 @@ msgstr "„{subject}“ wurde möglicherweise gesendet, obwohl es inzwischen aus
 msgid "'{subject}' may have been sent: {doubt}. It is held in the Outbox."
 msgstr "„{subject}“ wurde möglicherweise gesendet: {doubt}. Es wird im Postausgang zurückgehalten."
 
-msgid "'{subject}' was deleted for good: that can't be undone here."
+msgid "'{subject}' was permanently deleted: that can't be undone here."
 msgstr "„{subject}“ wurde endgültig gelöscht: Das lässt sich hier nicht rückgängig machen."
 
 msgid "'{subject}' was sent, although it was taken out of the Outbox meanwhile. Look in Sent."
@@ -319,10 +319,10 @@ msgstr "Dunkelrot"
 msgid "days"
 msgstr "Tage"
 
-msgid "delete '{subject}' for good"
+msgid "permanently delete '{subject}'"
 msgstr "„{subject}“ endgültig löschen"
 
-msgid "delete a message for good"
+msgid "permanently delete a message"
 msgstr "eine Nachricht endgültig löschen"
 
 msgid "Delete it"
@@ -337,7 +337,7 @@ msgstr "Diesen Termin löschen?"
 msgid "Delete This Occurrence?"
 msgstr "Diese Wiederholung löschen?"
 
-msgid "delete {n} messages for good"
+msgid "permanently delete {n} messages"
 msgstr "{n} Nachrichten endgültig löschen"
 
 msgid "Deleting {name} could not be sent: the server keeps failing with it ({why}). It comes back with the next read if the server still has it."
@@ -1735,7 +1735,7 @@ msgstr "{n} Termine vom Server konnten nicht gelesen werden und wurden ausgelass
 msgid "{n} mailboxes were not read: a run reads {max} at most."
 msgstr "{n} Ordner wurden nicht gelesen: Ein Senden/Empfangen liest höchstens {max}."
 
-msgid "{n} messages were deleted for good: that can't be undone here."
+msgid "{n} messages were permanently deleted: that can't be undone here."
 msgstr "{n} Nachrichten wurden endgültig gelöscht: Das kann hier nicht rückgängig gemacht werden."
 
 msgid "{n} moved messages can't be found on the server yet, so changes to them wait."

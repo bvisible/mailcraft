@@ -1003,10 +1003,10 @@ fn deleting_a_jmap_message_for_good_says_it_goes_from_the_server_too_where_the_w
     let asked = |app: &MailApp| crate::dialogs::confirmation(app, "mail.deletePermanently", &json!({"id": message})).map(|ask| ask.text);
     assert_eq!(
         asked(&app).as_deref(),
-        Some("This message will be deleted for good. It is removed from the mail server too, and that can't be undone.")
+        Some("This message will be permanently deleted. It is removed from the mail server too, and that can't be undone.")
     );
     app.services.jmap = None;
-    assert_eq!(asked(&app).as_deref(), Some("This message will be deleted for good."));
+    assert_eq!(asked(&app).as_deref(), Some("This message will be permanently deleted."));
 }
 
 /// What the engine says of a JMAP account's mail follows the window's runners from the start, before any frame or command.

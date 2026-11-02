@@ -555,10 +555,10 @@ const NOT_READ: &[(&str, &str)] = &[
     ("the draft a message was written as", "as above"),
     ("the earlier copy of a draft", "as above"),
     (
-        "The folder '{}' was deleted for good: that can't be undone here.",
+        "The folder '{}' was permanently deleted: that can't be undone here.",
         "a folder deleted for good is a Microsoft account's: a JMAP account's folders are its server's",
     ),
-    ("{} folders were deleted for good: that can't be undone here.", "as above"),
+    ("{} folders were permanently deleted: that can't be undone here.", "as above"),
     (
         "'{}' was moved out of its account and the server's copy removed: that can't be undone here.",
         "a move out of an account is a Microsoft account's: one out of a JMAP account is refused",
@@ -921,11 +921,11 @@ fn a_refused_change_reads_in_french_with_its_words_agreed() {
             "Impossible de déplacer « Invoice 42 » vers le dossier Boîte de réception : selon le serveur, ce compte n’est pas autorisé à le modifier.",
         ),
         (
-            "Couldn't delete 2 messages for good: the server doesn't allow it.",
+            "Couldn't permanently delete 2 messages: the server doesn't allow it.",
             "Impossible de supprimer définitivement 2 messages : le serveur ne l’autorise pas.",
         ),
         (
-            "Couldn't delete a message for good: the server says it can't make that change.",
+            "Couldn't permanently delete a message: the server says it can't make that change.",
             "Impossible de supprimer définitivement un message : selon le serveur, il ne peut pas faire cette modification.",
         ),
         // A subject that holds the words that follow it is split where the rest reads.
@@ -994,7 +994,7 @@ fn what_undo_and_the_engine_refuse_reads_in_french() {
     let fr = |text: &str| super::explain_status(french(), text, &mb).map(|r| r.text);
     let cases = [
         (
-            "'Plans' was deleted for good: that can't be undone here.",
+            "'Plans' was permanently deleted: that can't be undone here.",
             "« Plans » a été supprimé définitivement : cette action ne peut pas être annulée ici.",
         ),
         ("Sending 2 messages can't be undone.", "L’envoi de 2 messages ne peut pas être annulé."),

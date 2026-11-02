@@ -146,6 +146,10 @@ struct Flight {
     /// What its answer was to go into was closed, if only for a frame: a reply or a message opened
     /// again by hand is not hers.
     gone: bool,
+    // //// Neoffice — the message being written that the call was made for. Since #286 several are open at once, so a reply to
+    // the same message that comes back once hers is closed (one put aside, one opened by hand) is not hers: it is the
+    // message, not the message it answers, that must still be the one in front.
+    compose: Option<u64>,
 }
 
 /// A reply whose message is being downloaded: Nora is asked for its draft when it opens.
@@ -330,7 +334,9 @@ fn send(app: &mut MailApp, method: &'static str, args: Value, what: What) -> Opt
     app.nora.last = app.nora.last.wrapping_add(1);
     let id = app.nora.last;
     let answer = (host.call)(NoraCall { id, method, args });
-    app.nora.flights.push(Flight { id, what, since: now_ms(), answer, gone: false });
+    // //// Neoffice — the message in front now is the one the call is for (see `Flight::compose`).
+    let compose = app.session.compose_id();
+    app.nora.flights.push(Flight { id, what, since: now_ms(), answer, gone: false, compose });
     Some(id)
 }
 
@@ -541,7 +547,9 @@ pub(crate) fn poll(app: &mut MailApp) {
     let mut kept = Vec::with_capacity(flights.len());
     let signature_open = app.session.signature_edit.is_some();
     for mut flight in flights {
-        if !flight.gone && !still_there(app, &flight.what) {
+        // //// Neoffice — and, for a reply or a rewrite, the very message it was asked for (`Flight::compose`).
+        let same_message = !matches!(flight.what, What::Reply { .. } | What::Rewrite { .. }) || flight.compose == app.session.compose_id();
+        if !flight.gone && !(still_there(app, &flight.what) && same_message) {
             flight.gone = true;
         }
         // While a signature is open in File › Signatures, the composer's commands would write in it.

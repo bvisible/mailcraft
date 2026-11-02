@@ -172,11 +172,11 @@ fn the_page_gives_its_module_a_badge_and_may_bring_it_into_view() {
 fn the_look_is_the_palette_in_use_as_css_writes_it() {
     let dark = look(&crate::theme::Tokens::dark());
     assert_eq!(dark["dark"], true);
-    assert_eq!(dark["colors"]["canvas"], "#0f161f");
-    assert_eq!(dark["colors"]["accent"], "#58b8fe");
+    assert_eq!(dark["colors"]["canvas"], "#12161d");
+    assert_eq!(dark["colors"]["accent"], "#5aa2ff");
     let light = look(&crate::theme::Tokens::light());
     assert_eq!(light["dark"], false);
-    assert_eq!(light["colors"]["accent"], "#0f6cbd");
+    assert_eq!(light["colors"]["accent"], "#0f68f0");
     assert_eq!(light["colors"]["surface"], "#ffffff");
     let colors = light["colors"].as_object().unwrap();
     assert_eq!(colors.len(), 22);

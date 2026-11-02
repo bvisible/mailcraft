@@ -32,7 +32,7 @@ msgstr "« {subject} » a peut-être été envoyé, bien qu’il ait été retir
 msgid "'{subject}' may have been sent: {doubt}. It is held in the Outbox."
 msgstr "« {subject} » a peut-être été envoyé : {doubt}. Il est retenu dans la Boîte d’envoi."
 
-msgid "'{subject}' was deleted for good: that can't be undone here."
+msgid "'{subject}' was permanently deleted: that can't be undone here."
 msgstr "« {subject} » a été supprimé définitivement : cette action ne peut pas être annulée ici."
 
 msgid "'{subject}' was sent, although it was taken out of the Outbox meanwhile. Look in Sent."
@@ -332,10 +332,10 @@ msgstr "Rouge foncé"
 msgid "days"
 msgstr "jours"
 
-msgid "delete '{subject}' for good"
+msgid "permanently delete '{subject}'"
 msgstr "supprimer définitivement « {subject} »"
 
-msgid "delete a message for good"
+msgid "permanently delete a message"
 msgstr "supprimer définitivement un message"
 
 msgid "Delete it"
@@ -350,7 +350,7 @@ msgstr "Supprimer cet événement ?"
 msgid "Delete This Occurrence?"
 msgstr "Supprimer cette occurrence ?"
 
-msgid "delete {n} messages for good"
+msgid "permanently delete {n} messages"
 msgstr "supprimer définitivement {n} messages"
 
 msgid "Deleting {name} could not be sent: the server keeps failing with it ({why}). It comes back with the next read if the server still has it."
@@ -1817,7 +1817,7 @@ msgstr "{n} événements du serveur n’ont pas pu être lus et ont été laiss�
 msgid "{n} mailboxes were not read: a run reads {max} at most."
 msgstr "{n} dossiers n’ont pas été lus : un Envoyer/Recevoir en lit au plus {max}."
 
-msgid "{n} messages were deleted for good: that can't be undone here."
+msgid "{n} messages were permanently deleted: that can't be undone here."
 msgstr "{n} messages ont été supprimés définitivement : cette action ne peut pas être annulée ici."
 
 msgid "{n} moved messages can't be found on the server yet, so changes to them wait."

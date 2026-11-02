@@ -79,6 +79,8 @@ fn a_refusal_says_what_the_server_said() {
 /// else, and what the server says otherwise, are said as before.
 #[test]
 fn an_ended_session_and_an_old_page_say_what_to_do() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     use crate::i18n::{Lang, set_current};
     const ENDED: &str = "your Neoffice session has ended. Reload the page and sign in again.";
     const OLD: &str = "the page is out of date. Reload it and try again.";

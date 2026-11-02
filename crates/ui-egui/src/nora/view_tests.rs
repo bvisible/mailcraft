@@ -442,6 +442,8 @@ fn the_ribbon_reaches_her_in_both_layouts() {
 /// the catalog (the labels a table hands on, which the catalog test can't follow, among them).
 #[test]
 fn her_words_follow_the_interface_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, _calls, id) = sample(PLAIN);
     app.execute("ui.language", json!({"language": "fr"})).unwrap();
     let mut harness = window(app, (1440.0, 900.0));

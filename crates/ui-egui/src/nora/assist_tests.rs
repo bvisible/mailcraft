@@ -384,6 +384,8 @@ fn one_write_waits_at_a_time_and_every_way_into_a_shared_mailbox_asks() {
 
 #[test]
 fn a_refusal_is_said_in_the_interfaces_words() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, _calls, _) = page(true);
     // The look-alike language turns every interface text it is given: a refusal that skipped translation stays English.
     crate::i18n::set_current(crate::i18n::Lang::Pseudo);

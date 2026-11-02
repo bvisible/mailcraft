@@ -228,6 +228,8 @@ fn only_here(app: &MailApp, account: Id, kind: FolderKind) -> Id {
 
 #[test]
 fn the_page_is_told_its_mailboxes_folders_and_favourites_and_where_the_window_is() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, ada, team, _) = page();
     let outbox = only_here(&app, ada, FolderKind::Outbox);
     let told = state(&app).unwrap();
@@ -418,6 +420,8 @@ fn refused(app: &mut MailApp, name: &str, params: Value) -> String {
 
 #[test]
 fn each_command_the_page_may_send_runs_its_engine_command() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, ada, team, _) = page();
     for (name, module) in [("view.calendar", Module::Calendar), ("view.people", Module::People), ("view.mail", Module::Mail)] {
         assert_eq!(ask(&mut app, name, json!({})), ok());
@@ -467,6 +471,8 @@ fn each_command_the_page_may_send_runs_its_engine_command() {
 
 #[test]
 fn an_unknown_command_or_one_with_bad_params_is_refused_with_a_reason() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, ada, _, bob) = page();
     let before = (app.session.view.clone(), app.session.compose.is_some());
     let unknown = refused(&mut app, "mail.delete", json!({}));
@@ -678,6 +684,8 @@ fn a_message_the_window_hasnt_got_is_read_from_its_server_by_its_id_and_then_sho
 
 #[test]
 fn a_message_its_server_hasnt_got_is_refused_with_a_reason() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, _, _, _) = page();
     let runner = Runner::serve(&mut app);
     runner.answers(Vec::new(), &[]);

@@ -787,6 +787,8 @@ mod tests {
     // //// Neoffice — added: the engine's words for how far a run has got, in the interface's language.
     #[test]
     fn how_far_a_run_has_got_reads_in_the_interface_s_language() {
+        // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+        let _language = crate::i18n::RestoreLanguage::hold();
         use crate::i18n::{Lang, set_current};
         use mailcraft_model::{FolderKind, Mailbox};
 

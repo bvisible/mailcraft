@@ -223,9 +223,9 @@ pub(super) static ROWS: &[Row] = &[
     row(CHANGES, Doing, run_word!("move '{subject}' to {folder}"), &[]),
     row(CHANGES, Doing, run_word!("move {n} messages"), &[]),
     row(CHANGES, Doing, run_word!("move {n} messages to {folder}"), &[]),
-    row(CHANGES, Doing, run_word!("delete a message for good"), &[]),
-    row(CHANGES, Doing, run_word!("delete '{subject}' for good"), &[]),
-    row(CHANGES, Doing, run_word!("delete {n} messages for good"), &[]),
+    row(CHANGES, Doing, run_word!("permanently delete a message"), &[]),
+    row(CHANGES, Doing, run_word!("permanently delete '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("permanently delete {n} messages"), &[]),
     row(CHANGES, Cause, run_word!("it no longer exists"), &[]),
     row(CHANGES, Cause, run_word!("they no longer exist"), &[]),
     row(CHANGES, Cause, run_word!("this account may not change it"), &[]),
@@ -233,8 +233,8 @@ pub(super) static ROWS: &[Row] = &[
     row(CHANGES, Cause, run_word!("the mailbox is full"), &[]),
     row(CHANGES, Cause, run_word!("it can't make that change"), &[]),
     // What Undo couldn't take back (`undo::Said::lines`), shown in the status bar.
-    row(UNDO, Line, run_word!("'{subject}' was deleted for good: that can't be undone here."), &[]),
-    row(UNDO, Line, run_word!("{n} messages were deleted for good: that can't be undone here."), &[]),
+    row(UNDO, Line, run_word!("'{subject}' was permanently deleted: that can't be undone here."), &[]),
+    row(UNDO, Line, run_word!("{n} messages were permanently deleted: that can't be undone here."), &[]),
     row(UNDO, Line, run_word!("Sending '{subject}' can't be undone."), &[]),
     row(UNDO, Line, run_word!("Sending {n} messages can't be undone."), &[]),
     // A command's refusals for a JMAP account.

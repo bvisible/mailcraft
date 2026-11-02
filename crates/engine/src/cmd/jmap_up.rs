@@ -202,8 +202,9 @@ impl Refusals {
                     Kind::Replied => format!("change the replied or forwarded mark of {what}"),
                     Kind::Several => format!("change {what}"),
                     Kind::Move => format!("move {what}{to}"),
-                    Kind::Delete if subject.is_empty() && !many => "delete a message for good".to_string(),
-                    Kind::Delete => format!("delete {what} for good"),
+                    // //// Neoffice — "permanently", as upstream words a delete for good in `graph_up.rs` since v0.10.0.
+                    Kind::Delete if subject.is_empty() && !many => "permanently delete a message".to_string(),
+                    Kind::Delete => format!("permanently delete {what}"),
                 };
                 match (kind, why) {
                     (Kind::Delete, Why::Denied) => format!("Couldn't {doing}: the server doesn't allow it."),
