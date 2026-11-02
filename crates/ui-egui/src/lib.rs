@@ -156,10 +156,10 @@ mod opened_message;
 mod opened_message_tests;
 pub mod opening;
 pub mod people_view;
-// //// Neoffice — what the owner may do with what a server keeps in its address books, said where it is offered.
 mod pick_item;
 #[cfg(test)]
 mod pick_item_tests;
+// //// Neoffice — what the owner may do with what a server keeps in its address books, said where it is offered.
 pub mod pim_rights;
 pub mod reading;
 mod reminders;
