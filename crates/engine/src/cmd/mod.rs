@@ -6,7 +6,12 @@ pub mod account;
 #[cfg(test)]
 mod agent_leaves_compose_tests;
 #[cfg(test)]
+mod agent_owners_message_tests;
+#[cfg(test)]
 mod answered_tests;
+pub mod auto_replies;
+#[cfg(test)]
+mod auto_replies_tests;
 pub mod calendar;
 pub mod calendar_extra;
 pub mod calendar_opened;
@@ -44,6 +49,7 @@ pub mod graph_place;
 pub mod graph_send;
 pub mod graph_switch;
 pub mod graph_up;
+pub mod help;
 pub mod stream;
 // //// Neoffice — upstream's `jmap_down` and `jmap_mail` (M6 3/6) are the fork's own files, declared below with the rest of the fork's JMAP run.
 #[cfg(test)]
@@ -93,15 +99,20 @@ pub mod picture;
 mod picture_tests;
 #[cfg(test)]
 mod quote_tests;
+#[cfg(test)]
+mod read_receipt_tests;
 pub mod remote;
 // //// Neoffice — the address books of a server (JMAP for Contacts) and what the owner may do with their contacts.
 pub mod remote_contacts;
+#[cfg(test)]
+mod resend_reply_to_tests;
 pub mod rules;
 #[cfg(test)]
 mod search_scope_tests;
 pub mod search_server;
 #[cfg(test)]
 mod search_suggest_tests;
+pub mod send_receive;
 pub mod shared;
 pub mod signature;
 #[cfg(test)]
@@ -133,6 +144,7 @@ use crate::{CmdError, CmdResult, Registry, Session, p};
 pub fn registry() -> Registry {
     let mut v = Vec::new();
     v.extend(file::specs());
+    v.extend(help::specs());
     v.extend(edit::specs());
     v.extend(mail::specs());
     v.extend(compose::specs());
@@ -157,7 +169,9 @@ pub fn registry() -> Registry {
     // //// Neoffice — see `stream`.
     v.extend(stream::specs());
     v.extend(account::specs());
+    v.extend(auto_replies::specs());
     v.extend(offline::specs());
+    v.extend(send_receive::specs());
     v.extend(signature::specs());
     v.extend(graph_mail::specs());
     // //// Neoffice — the commands of an account kept in step with a JMAP server.
@@ -212,9 +226,10 @@ pub(crate) fn needs_compose(s: &Session) -> Option<&'static str> {
     if s.compose.is_none() { Some("no message is being written") } else { None }
 }
 
-/// The messages a command acts on: `ids` / `id` when given, else the selection.
+/// The messages a command acts on: `ids` / `id` when given, else the selection. They are read
+/// strictly ([`p::ids_strict`], #553): named wrongly, they are refused, never taken for the selection.
 pub(crate) fn targets(s: &Session, v: &Value) -> Result<Vec<Id>, CmdError> {
-    named_or_selected(s, p::ids(v))
+    named_or_selected(s, p::ids_strict(v)?)
 }
 
 /// As [`targets`], for Delete and Move: without `ids` / `id`, a message selected by its
@@ -228,12 +243,6 @@ pub(crate) fn targets_whole(s: &mut Session, v: &Value) -> Result<Vec<Id>, CmdEr
     let named = p::ids_strict(v)?;
     let ids = if named.is_some() { named } else { Some(s.acting_on()) };
     named_or_selected(s, ids)
-}
-
-/// As [`targets`], but `ids` / `id` read strictly ([`p::ids_strict`]): for a command whose mistake
-/// reaches other people, which never takes the selection for what a caller named wrongly.
-pub(crate) fn targets_strict(s: &Session, v: &Value) -> Result<Vec<Id>, CmdError> {
-    named_or_selected(s, p::ids_strict(v)?)
 }
 
 /// The messages `named`, else the selected ones; each must be here.

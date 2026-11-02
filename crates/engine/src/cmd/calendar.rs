@@ -16,6 +16,9 @@ mod invitation;
 mod invitation_tests;
 pub(crate) use invitation::{same_organizer, tidy_imported};
 mod meeting;
+pub mod share;
+#[cfg(test)]
+mod share_tests;
 // //// Neoffice — what a calendar whose server keeps only the basics of an event refuses, tested apart.
 #[cfg(test)]
 mod plain_tests;
@@ -26,6 +29,7 @@ pub fn specs() -> Vec<CommandSpec> {
     let mut specs = own_specs();
     specs.extend(invitation::specs());
     specs.extend(meeting::specs());
+    specs.extend(share::specs());
     specs
 }
 
@@ -46,7 +50,7 @@ fn own_specs() -> Vec<CommandSpec> {
             .params(r#"{"id"?: number, "scope"?: "series" | "occurrence", "occurrence"?: "YYYY-MM-DD" (only that day of a series), "send"?: true (required for a meeting the owner organizes on a server: the people invited are sent a cancellation), "comment"?: string (a note for them), "decline"?: true (somebody else's meeting: decline it rather than only delete the owner's copy; the organizer is told when "send" is true)}"#)
             // //// Neoffice — greyed, with the reason, for an event of a calendar the account may only read (`needs_changeable_event`).
             .selection(needs_changeable_event),
-        CommandSpec::new("calendar.select", "Select Event", "Calendar", select).pure().params(r#"{"id": number | null, "day"?: "YYYY-MM-DD"}"#),
+        CommandSpec::new("calendar.select", "Select Event", "Calendar", select).pure().params(r#"{"id": number | null, "day"?: "YYYY-MM-DD"} (null selects nothing; anything else that isn't an id is refused)"#),
         CommandSpec::new("calendar.get", "Get Event", "Calendar", get).pure().params(r#"{"id"?: number}"#),
         CommandSpec::new("calendar.list", "List Events", "Calendar", list)
             .pure()
@@ -92,7 +96,7 @@ fn needs_event(s: &Session) -> Option<&'static str> {
 }
 
 fn target(s: &Session, v: &Value) -> Result<Id, CmdError> {
-    let id = p::id(v, "id").or(s.sel.event).ok_or_else(|| fail("select an appointment first"))?;
+    let id = p::id_strict(v, "id")?.or(s.sel.event).ok_or_else(|| fail("select an appointment first"))?;
     s.mailbox.event(id).map(|e| e.id).ok_or_else(|| failed!("no event with id {id}", id))
 }
 
@@ -679,7 +683,7 @@ pub fn mail_of(s: &Session, id: &str, v: &Value) -> Option<Mail> {
         let calendar = if e.calendar == 0 { current_calendar(s) } else { e.calendar };
         return (served(s, calendar) && !e.attendees.is_empty()).then_some(Mail::Invitation(e.attendees.len()));
     }
-    let before = s.mailbox.event(p::id(v, "id").or(s.sel.event)?)?.clone();
+    let before = s.mailbox.event(p::id_strict(v, "id").ok()?.or(s.sel.event)?)?.clone();
     let one = part(s, &before, v).ok()?;
     if id == "calendar.delete" {
         // (One that isn't on the server yet has invited nobody yet.)
@@ -849,7 +853,9 @@ fn delete(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn select(s: &mut Session, v: &Value) -> CmdResult {
-    match p::id(v, "id") {
+    // `null` selects nothing, as leaving `id` out does; an id named wrongly is refused (#553).
+    let named = if v.get("id").is_some_and(Value::is_null) { None } else { p::id_strict(v, "id")? };
+    match named {
         Some(id) => {
             let e = s.mailbox.event(id).ok_or_else(|| failed!("no event with id {id}", id))?;
             s.sel.event_day = p::date(v, "day")?.or(Some(e.start.date));
@@ -929,7 +935,8 @@ fn list(s: &mut Session, v: &Value) -> CmdResult {
 
 fn respond(s: &mut Session, v: &Value) -> CmdResult {
     // An invitation in the mail is answered through what it says (`calendar.invitation`).
-    if p::id(v, "message").is_some() {
+    // (Named wrongly, it is refused there, never taken for the selected appointment, #553.)
+    if v.get("message").is_some() {
         return invitation::respond(s, v);
     }
     let before = changing(s, v)?;
@@ -1079,7 +1086,7 @@ fn categorize(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 fn from_message(s: &mut Session, v: &Value) -> CmdResult {
-    let mid = p::id(v, "id").or(s.sel.focus()).ok_or_else(|| fail("select a message first"))?;
+    let mid = p::message_strict(v)?.or(s.sel.focus()).ok_or_else(|| fail("select a message first"))?;
     if s.mailbox.message(mid).is_none() {
         return Err(failed!("no message with id {id}", id = mid));
     }

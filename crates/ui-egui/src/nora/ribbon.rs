@@ -69,7 +69,7 @@ pub(crate) fn add(app: &MailApp, tab: &mut Tab) {
             });
         }
         let at = tab.groups.iter().position(|g| g.title == AFTER).map_or(tab.groups.len(), |i| i + 1);
-        tab.groups.insert(at, Group { title: "Nora", items });
+        tab.groups.insert(at, Group { title: "Nora", items, priority: 5 });
         return;
     }
     // Mail's Home tab is the one with a Respond group in the mail module.

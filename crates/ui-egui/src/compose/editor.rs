@@ -27,9 +27,9 @@ use std::sync::{Arc, Mutex};
 use egui::epaint::text::CharIndex;
 use egui::text::{CCursor, LayoutJob, TextFormat};
 use egui::{Align2, Event, FontFamily, Galley, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use mailcraft_model::RichBody;
 use mailcraft_model::rich::{ListKind, OBJECT, Paragraph, Selection, Style, numbers};
 use mailcraft_model::signature::Picture;
-use mailcraft_model::{RichBody, RichText};
 use serde_json::{Value, json};
 
 use crate::MailApp;
@@ -60,22 +60,36 @@ pub enum Which {
 }
 
 impl Which {
-    fn id(self) -> egui::Id {
+    fn id(self, app: &MailApp) -> egui::Id {
         match self {
-            Which::Message => id(),
+            Which::Message => id(app),
             Which::Signature => egui::Id::unique("mailcraft-signature-body"),
         }
     }
 }
 
-/// The body's id: what has the keyboard when it does.
-pub fn id() -> egui::Id {
-    egui::Id::unique("mailcraft-compose-body")
+/// The id of the body of the message being written `compose`: what has the keyboard when it
+/// does. Each message has its own (#286), so that two never share a caret, a layout or the keyboard.
+pub fn id_of(compose: u64) -> egui::Id {
+    egui::Id::unique("mailcraft-compose-body").with(compose)
 }
 
-/// Whether the body (or a signature being edited) has the keyboard.
+/// The body's id of the current message being written.
+pub fn id(app: &MailApp) -> egui::Id {
+    id_of(app.session.compose_id().unwrap_or_default())
+}
+
+/// What marks the id of a body drawn (of any message being written, or of a signature).
+const BODY: &str = "mailcraft-body";
+
+/// Whether `id` is the body of a message being written, or of a signature being edited.
+pub fn is_body(ctx: &egui::Context, id: egui::Id) -> bool {
+    ctx.data(|d| d.get_temp::<bool>(id.with(BODY))).unwrap_or(false)
+}
+
+/// Whether a body (of a message being written, or of a signature being edited) has the keyboard.
 pub fn has_focus(ctx: &egui::Context) -> bool {
-    ctx.memory(|m| m.has_focus(id()) || m.has_focus(Which::Signature.id()))
+    ctx.memory(|m| m.focused()).is_some_and(|id| is_body(ctx, id))
 }
 
 /// The key a command has in the body (shown in tooltips and menus). They are not the registry's
@@ -113,8 +127,11 @@ pub(super) fn text_format(style: &Style, plain: bool, t: &Tokens, has: &dyn Fn(&
         crate::theme::document_font(style.font, style.bold, size, has).unwrap_or_else(|| if style.bold { semibold(size) } else { regular(size) });
     let own = style.color.as_deref().and_then(|c| egui::Color32::from_hex(c).ok()).map(|c| crate::reading::colors::readable(c, t.surface));
     let color = if style.link.is_some() { t.accent_text } else { own.unwrap_or(t.text) };
+    // A highlight is drawn as it is chosen, and the text over it kept readable on it.
+    let background = style.highlight.as_deref().and_then(|c| egui::Color32::from_hex(c).ok());
+    let color = background.map_or(color, |paper| crate::reading::colors::readable(color, paper));
     let underline = if style.underline || style.link.is_some() { Stroke::new(1.0, color) } else { Stroke::NONE };
-    TextFormat { font_id: font, color, italics: style.italic, underline, ..Default::default() }
+    TextFormat { font_id: font, color, italics: style.italic, underline, background: background.unwrap_or_default(), ..Default::default() }
 }
 
 /// What a layout was made for: when any of it changes, every paragraph is laid out again.
@@ -202,14 +219,13 @@ pub(crate) struct Layout {
 impl Layout {
     /// Bring the layout up to `doc`: the paragraphs that changed (and only those) are laid out
     /// again. Whether anything did.
-    fn sync(&mut self, ctx: &egui::Context, doc: &RichText, pictures: &[Picture], key: LayoutKey, t: &Tokens, width: f32) -> bool {
+    fn sync(&mut self, ctx: &egui::Context, paragraphs: &[Paragraph], pictures: &[Picture], key: LayoutKey, t: &Tokens, width: f32) -> bool {
         let atlas = ctx.fonts(|f| f.font_atlas_fill_ratio());
         if self.key != Some(key) || atlas < self.atlas {
             self.paras.clear();
             self.key = Some(key);
         }
         self.atlas = atlas;
-        let paragraphs = doc.paragraphs();
         let numbers = numbers(paragraphs);
         let same = |new: usize, old: usize| matches!((paragraphs.get(new), numbers.get(new), self.paras.get(old)), (Some(p), Some(n), Some(o)) if o.number == *n && o.source == *p);
         let (n_new, n_old) = (paragraphs.len(), self.paras.len());
@@ -470,14 +486,14 @@ fn pictures_key(pictures: &[Picture]) -> u64 {
 }
 
 /// The layout of the body, kept from frame to frame.
-fn store(ctx: &egui::Context, which: Which) -> Arc<Mutex<Layout>> {
-    ctx.data_mut(|d| d.get_temp_mut_or_default::<Arc<Mutex<Layout>>>(which.id().with("layout")).clone())
+fn store(ctx: &egui::Context, id: egui::Id) -> Arc<Mutex<Layout>> {
+    ctx.data_mut(|d| d.get_temp_mut_or_default::<Arc<Mutex<Layout>>>(id.with("layout")).clone())
 }
 
-/// How many paragraphs of the body were laid out since the window opened, for tests.
+/// How many paragraphs of the current message's body were laid out since the window opened, for tests.
 #[cfg(test)]
-pub(crate) fn laid(ctx: &egui::Context) -> usize {
-    store(ctx, Which::Message).lock().map_or(0, |l| l.laid)
+pub(crate) fn laid(ctx: &egui::Context, app: &MailApp) -> usize {
+    store(ctx, id(app)).lock().map_or(0, |l| l.laid)
 }
 
 /// What the body remembers between frames besides its layout.
@@ -534,6 +550,23 @@ fn pictures(app: &MailApp, which: Which) -> Vec<Picture> {
     }
 }
 
+/// The signature's own HTML while the message shows it as it goes out, under the text in place of
+/// its simpler copy ([`crate::compose`] draws it): an unedited HTML signature, unless the owner
+/// chose to edit it as text (`compose.signatureAsText`).
+pub(crate) fn html_signature(app: &MailApp) -> Option<&str> {
+    app.session.compose.as_ref()?.signature_html_shown()
+}
+
+/// The signature's own HTML while it is still unedited: an HTML signature that ends an HTML
+/// message with text before it, shown as it goes out or as its simpler copy.
+pub(crate) fn unedited_html_signature(app: &MailApp) -> Option<&str> {
+    let c = app.session.compose.as_ref()?;
+    let html = c.signature.as_ref()?.html.as_deref()?;
+    let paragraphs = c.body.text().paragraphs();
+    let ends = paragraphs.first().is_some_and(|p| !p.signature) && paragraphs.last().is_some_and(|p| p.signature);
+    (c.format == mailcraft_engine::BodyFormat::Html && ends && c.signature_unedited()).then_some(html)
+}
+
 /// The selection, the caret and whether the text is plain.
 fn now(app: &MailApp, which: Which) -> Option<(Selection, bool)> {
     body(app, which).map(|(b, plain)| (b.selection(), plain))
@@ -550,7 +583,8 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, min_height: f32, take_focus: 
 pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height: f32, take_focus: bool) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
-    let id = which.id();
+    let id = which.id(app);
+    ctx.data_mut(|d| d.insert_temp(id.with(BODY), true));
     let width = ui.available_width().max(40.0);
     let Some((_, plain)) = now(app, which) else { return };
     let editable = which == Which::Signature || app.session.signature_edit.is_none();
@@ -563,11 +597,15 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
         pictures: pictures_key(&shown),
         families: ctx.fonts(|f| f.families().len()),
     };
-    let store = store(&ctx, which);
+    let store = store(&ctx, id);
     let mut layout = store.lock().unwrap_or_else(|e| e.into_inner());
     let resync = |layout: &mut Layout, app: &MailApp| {
         if let Some((b, _)) = body(app, which) {
-            layout.sync(&ctx, b.text(), &shown, key, &t, width);
+            let all = b.text().paragraphs();
+            // An HTML signature drawn as it goes out is not in the text laid out here.
+            let html = which == Which::Message && html_signature(app).is_some();
+            let end = if html { all.iter().position(|p| p.signature).unwrap_or(all.len()) } else { all.len() };
+            layout.sync(&ctx, all.get(..end).unwrap_or(all), &shown, key, &t, width);
         }
     };
     resync(&mut layout, app);
@@ -581,7 +619,7 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
     // Changed since the last frame, by a command from elsewhere (an agent's or a script's
     // `compose.select`, the ribbon's): not selected by the owner here.
     own(app, which, &mut st, None);
-    if editable && (take_focus || (which == Which::Message && std::mem::take(&mut app.body_focus_wanted))) {
+    if editable && (take_focus || (which == Which::Message && app.take_body_focus())) {
         resp.request_focus();
     }
     let mut reveal = false;
@@ -648,6 +686,11 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
             let _ = app.execute(command, params);
             st.column = None;
             own(app, which, &mut st, Some(command));
+        }
+        // Format Painter: the look it copied goes on what the pointer has just selected.
+        if (resp.drag_stopped() || resp.clicked()) && body(app, which).is_some_and(|(b, _)| b.painter().is_some() && !b.selection().is_empty()) {
+            let _ = app.run("edit.formatPainter", json!({"apply": true}));
+            own(app, which, &mut st, Some("edit.formatPainter"));
         }
     }
     // A middle click on X11 and Wayland pastes the primary selection where the pointer is, as
@@ -1068,6 +1111,8 @@ fn key_press(layout: &Layout, st: &mut State, sel: Selection, plain: bool, key: 
         Key::Enter if !m.command && !m.alt => ask("compose.type", json!({"text": "\n"})),
         Key::Backspace if sel.is_empty() && word && head > 0 => ask("compose.delete", json!({"from": layout.word_left(head), "to": head})),
         Key::Backspace => ask("compose.delete", json!({})),
+        // (At the end, nothing: not the paragraph break before a signature that isn't shown.)
+        Key::Delete if sel.is_empty() && head >= len => None,
         Key::Delete if sel.is_empty() && word && head < len => ask("compose.delete", json!({"from": head, "to": layout.word_right(head)})),
         Key::Delete => ask("compose.delete", json!({"forward": true})),
         // In a list, Tab at an item's start (or over a selection) takes it a level deeper and

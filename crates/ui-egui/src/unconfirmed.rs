@@ -43,6 +43,7 @@ pub(crate) struct Held {
     graph_fetch: Option<Box<dyn Fn(crate::graph_fetch::GraphFetchJob) -> Receiver<mailcraft_model::sync::GraphFetchResult>>>,
     graph_search: Option<Box<dyn Fn(crate::server_search::GraphSearchJob) -> Receiver<mailcraft_model::sync::GraphSearchResult>>>,
     graph_tasks: Option<Box<dyn Fn(crate::task_sync::TasksJob) -> Receiver<crate::task_sync::TasksResult>>>,
+    graph_auto_replies: Option<Box<dyn Fn(crate::auto_replies::AutoRepliesJob) -> Receiver<crate::auto_replies::AutoRepliesResult>>>,
     // //// Neoffice — and the jobs of a JMAP account (the fork's): its Send/Receive, a message fetched whole, its calendars, contacts and notes.
     jmap: Option<Box<dyn Fn(crate::jmap_job::JmapJob) -> Receiver<mailcraft_model::sync::JmapMailResult>>>,
     jmap_fetch: Option<Box<dyn Fn(crate::jmap_job::JmapFetchJob) -> Receiver<mailcraft_model::sync::GraphFetchResult>>>,
@@ -148,6 +149,7 @@ impl MailApp {
             graph_fetch: s.graph_fetch.take(),
             graph_search: s.graph_search.take(),
             graph_tasks: s.graph_tasks.take(),
+            graph_auto_replies: s.graph_auto_replies.take(),
             // //// Neoffice — see `Held::jmap`.
             jmap: s.jmap.take(),
             jmap_fetch: s.jmap_fetch.take(),
@@ -166,6 +168,7 @@ impl MailApp {
         s.graph_fetch = held.graph_fetch.or(s.graph_fetch.take());
         s.graph_search = held.graph_search.or(s.graph_search.take());
         s.graph_tasks = held.graph_tasks.or(s.graph_tasks.take());
+        s.graph_auto_replies = held.graph_auto_replies.or(s.graph_auto_replies.take());
         // //// Neoffice — see `Held::jmap`.
         s.jmap = held.jmap.or(s.jmap.take());
         s.jmap_fetch = held.jmap_fetch.or(s.jmap_fetch.take());

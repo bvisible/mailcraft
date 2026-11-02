@@ -45,6 +45,29 @@ fn frames(app: MailApp, size: (f32, f32), frames: usize) -> MailApp {
 }
 
 #[test]
+fn rename_folder_without_a_name_asks_for_the_folder_s_new_name() {
+    use crate::dialogs::{Dialog, FolderMode};
+    let mut a = app();
+    let account = a.session.mailbox.accounts[0].id;
+    let inbox = a.session.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Inbox).unwrap();
+    let reports = a.session.run("folder.new", &json!({"name": "Quarterly reports", "parent": inbox})).unwrap()["id"].as_u64().unwrap();
+    a.session.run("folder.select", &json!({"id": reports})).unwrap();
+    // As the ribbon's Rename Folder and F2 run it: with no name, and with no parameters at all.
+    for params in [json!({}), Value::Null] {
+        a.dialog = None;
+        assert_eq!(a.run("folder.rename", params).unwrap()["pending"], "folder");
+        match a.dialog.as_ref() {
+            Some(Dialog::Folder { mode: FolderMode::Rename { id }, name, .. }) => assert_eq!((*id, name.as_str()), (reports, "Quarterly reports")),
+            _ => panic!("Rename Folder opened something else than the folder's rename"),
+        }
+    }
+    // New Folder still asks for a folder in the one in view.
+    a.dialog = None;
+    assert_eq!(a.run("folder.new", json!({})).unwrap()["pending"], "folder");
+    assert!(matches!(a.dialog, Some(Dialog::Folder { mode: FolderMode::New { parent: Some(p) }, .. }) if p == reports));
+}
+
+#[test]
 fn commands_missing_input_open_their_dialog() {
     let mut a = app();
     assert_eq!(a.run("folder.new", json!({})).unwrap()["pending"], "folder");
@@ -94,11 +117,14 @@ fn window_commands_validate() {
     assert_eq!(a.ui.language, "en");
     assert!(a.execute("ui.language", json!({"language": "xx"})).is_err());
     assert!(a.execute("ui.language", json!({})).is_err());
-    // Dutch has no catalogue: it can't be chosen, and Automatic in the Netherlands is English.
-    assert!(a.execute("ui.language", json!({"language": "nl"})).is_err());
+    // Dutch is a preview. Automatic in the Netherlands follows it. The guard holds the
+    // process-wide language until this ends, and puts the previous one back if an assertion fails.
+    let _language = crate::i18n::RestoreLanguage::hold();
+    assert_eq!(a.execute("ui.language", json!({"language": "nl"})).unwrap()["inForce"], "nl");
     a.services.system_locale = Some("nl-NL".into());
-    assert_eq!(a.execute("ui.language", json!({"language": "auto"})).unwrap()["inForce"], "en");
-    assert_eq!(a.session.interface_language, crate::i18n::Lang::English);
+    assert_eq!(a.execute("ui.language", json!({"language": "auto"})).unwrap()["inForce"], "nl");
+    assert_eq!(a.session.interface_language, crate::i18n::Lang::Dutch);
+    assert_eq!(a.execute("ui.language", json!({"language": "en"})).unwrap()["inForce"], "en");
     assert_eq!(a.execute("ui.interfaceSize", json!({"value": 9000})).unwrap()["value"], 200);
     assert!(a.execute("ui.interfaceSize", json!({"value": "big"})).is_err());
     assert!(a.execute("ui.backstage", json!({"page": "nowhere"})).is_err());
@@ -154,6 +180,33 @@ fn files_arriving_from_the_browser_go_where_they_belong() {
     inbox.lock().unwrap().push(("junk.bin".into(), vec![0, 159, 146, 150]));
     crate::files::drain_inbox(&mut a);
     assert!(a.status_msg.is_some());
+}
+
+#[test]
+fn a_file_dropped_after_the_browsers_picker_was_cancelled_goes_where_its_kind_says() {
+    let mut a = app();
+    let (inbox, picked): (crate::Inbox, crate::Inbox) = Default::default();
+    (a.services.inbox, a.services.picked) = (Some(inbox.clone()), Some(picked.clone()));
+    a.services.open_async = Some(Box::new(|_| {}));
+    a.execute("mail.new", json!({})).unwrap();
+    // Attach opens the picker, and the owner cancels it: nothing is delivered. Then the message
+    // is closed.
+    a.run("compose.attach", json!({})).unwrap();
+    crate::files::drain_inbox(&mut a);
+    a.run("compose.close", json!({"discard": true})).unwrap();
+    // A calendar file dropped next is brought in, not taken for the attachment asked for.
+    let events = a.session.mailbox.events.len();
+    let ics = b"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:drop-1@example.org\r\nDTSTART:20261020T090000Z\r\nDTEND:20261020T100000Z\r\nSUMMARY:Dropped\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
+    inbox.lock().unwrap().push(("dropped.ics".into(), ics.to_vec()));
+    crate::files::drain_inbox(&mut a);
+    assert_eq!(a.session.mailbox.events.len(), events + 1, "{:?}", a.status_msg);
+    // What the picker delivers is for what it was opened for: an attachment, whatever it is.
+    let compose = a.execute("mail.new", json!({})).unwrap()["compose"].as_u64().unwrap();
+    a.run("compose.attach", json!({})).unwrap();
+    picked.lock().unwrap().push(("invite.ics".into(), ics.to_vec()));
+    crate::files::drain_inbox(&mut a);
+    assert_eq!(a.session.composing_by_id(compose).map(|c| c.attachments.len()), Some(1));
+    assert_eq!(a.session.mailbox.events.len(), events + 1);
 }
 
 #[test]
@@ -1397,7 +1450,7 @@ fn what_cant_be_taken_back_is_asked_about_first() {
     assert_eq!(a.run("mail.delete", json!({"ids": [first]})).unwrap()["pending"], "confirm");
     assert!(asked(&a) && a.session.mailbox.message(first).is_some());
     let Some(crate::dialogs::Dialog::Confirm { ask, .. }) = &a.dialog else { panic!("no question") };
-    assert!(ask.text.contains("for good") && !ask.text.contains("server"), "{}", ask.text);
+    assert!(ask.text.contains("permanently") && !ask.text.contains("server"), "{}", ask.text);
     // Cancelled: still there. Confirmed: gone.
     a.dialog = None;
     assert_eq!(a.session.mailbox.messages.len(), total);
@@ -1450,7 +1503,7 @@ fn deleting_a_contact_is_asked_about_first() {
     assert_eq!(a.run("people.delete", json!({"id": id})).unwrap()["pending"], "confirm");
     let Some(crate::dialogs::Dialog::Confirm { ask, command, .. }) = &a.dialog else { panic!("no question") };
     assert_eq!((command.as_str(), ask.title.as_str(), ask.action.as_str()), ("people.delete", "Delete Contact", "Delete"));
-    assert_eq!(ask.text, "\"Ivana Horvat\" will be deleted for good. Contacts don't go to Deleted Items.");
+    assert_eq!(ask.text, "\"Ivana Horvat\" will be permanently deleted. Contacts don't go to Deleted Items.");
     // Cancelled: still there. Confirmed: gone, and Undo brings it back.
     a.dialog = None;
     assert_eq!(a.session.mailbox.contacts.len(), total);
@@ -1470,7 +1523,7 @@ fn deleting_a_contact_is_asked_about_first() {
     let only = a.execute("people.new", json!({"email": "kim@example.org"})).unwrap()["id"].as_u64().unwrap();
     a.run("people.delete", json!({"id": only})).unwrap();
     let Some(crate::dialogs::Dialog::Confirm { ask, .. }) = &a.dialog else { panic!("no question") };
-    assert!(ask.text.starts_with("\"kim@example.org\" will be deleted for good."), "{}", ask.text);
+    assert!(ask.text.starts_with("\"kim@example.org\" will be permanently deleted."), "{}", ask.text);
     let a = frames(a, (1280.0, 800.0), 3);
     assert!(a.session.mailbox.contact(only).is_some());
 }
@@ -2247,7 +2300,7 @@ fn a_jmap_account_is_left_out_of_send_receive_until_one_can_be_run() {
     let kept = mailcraft_model::Message { folder: inbox, subject: "Kept there".into(), ..Default::default() };
     let kept = a.session.mailbox.add_message(kept).unwrap();
     let ask = crate::dialogs::confirmation(&a, "mail.deletePermanently", &json!({"ids": [kept]})).unwrap();
-    assert_eq!(ask.text, "This message will be deleted for good.");
+    assert_eq!(ask.text, "This message will be permanently deleted.");
 }
 
 /// A noisy PNG far over a signature picture's cap.

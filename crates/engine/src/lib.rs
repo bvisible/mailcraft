@@ -28,6 +28,8 @@ pub mod agent;
 pub mod arrivals;
 pub mod catalog;
 pub mod cmd;
+pub mod composing;
+pub mod counts;
 pub mod import_tree;
 pub mod io;
 #[cfg(test)]
@@ -120,11 +122,17 @@ pub struct CommandSpec {
     pub params: &'static str,
     /// Changes the mailbox (so it is undoable and marks the mailbox as edited).
     pub mutates: bool,
+    /// Changes nothing of the mailbox, ever ([`CommandSpec::reads`]): no copy of it is taken
+    /// before the command runs, which over a large mailbox takes longer than the command.
+    pub reads: bool,
     /// `None` = enabled; `Some(reason)` = disabled.
     pub enabled: fn(&Session) -> Option<&'static str>,
     /// `enabled` only asks for a selection: the command still runs for a caller that names what
     /// to act on (`id` / `ids` in its params), whatever is selected.
     pub selection: bool,
+    /// It acts on a message being written (#286): it takes an optional `compose` id naming which
+    /// one ([`Session::run`]), and an agent names it whenever more than one is open.
+    pub writing: bool,
     pub run: fn(&mut Session, &Value) -> CmdResult,
 }
 
@@ -134,7 +142,19 @@ fn always(_: &Session) -> Option<&'static str> {
 
 impl CommandSpec {
     pub const fn new(id: &'static str, label: &'static str, location: &'static str, run: fn(&mut Session, &Value) -> CmdResult) -> Self {
-        CommandSpec { id, label, location, shortcut: "", params: "{}", mutates: true, enabled: always, selection: false, run }
+        CommandSpec {
+            id,
+            label,
+            location,
+            shortcut: "",
+            params: "{}",
+            mutates: true,
+            reads: false,
+            enabled: always,
+            selection: false,
+            writing: false,
+            run,
+        }
     }
     pub const fn key(mut self, s: &'static str) -> Self {
         self.shortcut = s;
@@ -144,9 +164,18 @@ impl CommandSpec {
         self.params = p;
         self
     }
-    /// Doesn't change the mailbox (navigation, view, export, composing).
+    /// Isn't a step of the history (navigation, view, export, composing, mail that came from
+    /// a server): what it changes of the mailbox is noted and saved, but not undone.
     pub const fn pure(mut self) -> Self {
         self.mutates = false;
+        self
+    }
+    /// [`CommandSpec::pure`], and changes nothing of the mailbox at all (the view, the search, the
+    /// folder in view, a listing): the copy of the mailbox every other command is checked against
+    /// is not taken for it. Tests check the claim for every command that makes it.
+    pub const fn reads(mut self) -> Self {
+        self.mutates = false;
+        self.reads = true;
         self
     }
     pub const fn when(mut self, f: fn(&Session) -> Option<&'static str>) -> Self {
@@ -158,6 +187,13 @@ impl CommandSpec {
     pub const fn selection(mut self, f: fn(&Session) -> Option<&'static str>) -> Self {
         self.enabled = f;
         self.selection = true;
+        self
+    }
+    /// Enabled while there is a message being written (`f` says what is missing), and acting on
+    /// one: the one its `compose` id names, else the current one (#286).
+    pub const fn when_writing(mut self, f: fn(&Session) -> Option<&'static str>) -> Self {
+        self.enabled = f;
+        self.writing = true;
         self
     }
 }
@@ -249,19 +285,14 @@ pub mod p {
     pub fn req_id(v: &Value, k: &str) -> Result<Id, CmdError> {
         id(v, k).ok_or_else(|| CmdError::Params(format!("`{k}` (id) is required")))
     }
-    /// `ids` (an array) or `id` (one), when either is given.
-    pub fn ids(v: &Value) -> Option<Vec<Id>> {
-        if let Some(a) = v.get("ids").and_then(Value::as_array) {
-            return Some(a.iter().take(MAX_IDS).filter_map(|x| x.as_u64()).filter(|i| *i != 0).collect());
-        }
-        id(v, "id").map(|i| vec![i])
-    }
     /// `ids` (an array of ids) or `id` (one), read strictly, for a command whose mistake reaches
     /// other people (#360): `None` when neither is given. Anything else under those names (`null`,
     /// which a look-up that found nothing gives (#512), an id as text, zero, a fraction, `ids`
     /// that isn't a list or names no message or has an entry that isn't an id, or more than
-    /// [`MAX_IDS`], both at once) is refused, never taken to mean the selection, as [`ids`] takes it.
+    /// [`MAX_IDS`], both at once) is refused, never taken to mean the selection. Every command that
+    /// takes messages by `id` / `ids` reads them this way (#553).
     pub fn ids_strict(v: &Value) -> Result<Option<Vec<Id>>, CmdError> {
+        object(v)?;
         let null = |k: &str| CmdError::Params(format!("`{k}` is null, which names no message"));
         match (v.get("id"), v.get("ids")) {
             (None, None) => Ok(None),
@@ -278,6 +309,33 @@ pub mod p {
                 list.iter().map(|x| whole(x).filter(|i| *i != 0).ok_or_else(wrong)).collect::<Result<_, _>>().map(Some)
             }
         }
+    }
+    /// The one message a command acts on, named by `id` (or by `ids` naming one), read as
+    /// [`ids_strict`] reads them (#553): `None` when neither is given, which takes the selection.
+    /// Anything else, `ids` naming more than one message too, is refused.
+    pub fn message_strict(v: &Value) -> Result<Option<Id>, CmdError> {
+        match ids_strict(v)?.as_deref() {
+            None => Ok(None),
+            Some([one]) => Ok(Some(*one)),
+            Some(_) => Err(CmdError::Params("this command acts on one message: name it by `id`".into())),
+        }
+    }
+    /// One item named by `k` (an appointment's `id`, a meeting request's `message`), read as
+    /// [`ids_strict`] reads messages (#553): `None` when `k` is left out, which takes the
+    /// selection; anything else under it that isn't a whole number above 0 (`null`, an id as
+    /// text, zero, a fraction) is refused, never taken to mean the selection.
+    pub fn id_strict(v: &Value, k: &str) -> Result<Option<Id>, CmdError> {
+        object(v)?;
+        match v.get(k) {
+            None => Ok(None),
+            Some(Value::Null) => Err(CmdError::Params(format!("`{k}` is null, which names nothing"))),
+            Some(x) => whole(x).filter(|i| *i != 0).map(Some).ok_or_else(|| CmdError::Params(format!("`{k}` is an id: a whole number above 0"))),
+        }
+    }
+    /// Parameters that aren't an object (or none) name nothing, and aren't taken for the
+    /// selection either.
+    fn object(v: &Value) -> Result<(), CmdError> {
+        if v.is_object() || v.is_null() { Ok(()) } else { Err(CmdError::Params("the parameters are an object".into())) }
     }
     /// Refuses any parameter but `known`: a caller that names what the command doesn't take
     /// means something by it that the command would not do.
@@ -332,7 +390,11 @@ mod agent_tests;
 #[cfg(test)]
 mod category_rows_tests;
 #[cfg(test)]
-mod ews_switch_tests;
+mod composing_tests;
+#[cfg(test)]
+mod counts_tests;
+#[cfg(test)]
+mod ews_account_tests;
 #[cfg(test)]
 mod focus_stays_tests;
 #[cfg(test)]
@@ -342,6 +404,12 @@ mod import_tree_progress_tests;
 #[cfg(test)]
 mod import_tree_tests;
 #[cfg(test)]
+mod pop_out_tests;
+#[cfg(test)]
 mod sender_warnings_tests;
+#[cfg(test)]
+mod strict_ids_all_tests;
+#[cfg(test)]
+mod strict_ids_tests;
 #[cfg(test)]
 mod tests;

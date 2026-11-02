@@ -45,7 +45,7 @@ fn body(app: &MailApp) -> String {
 #[test]
 fn insert_and_review_are_tabs_while_writing() {
     let app = writing();
-    assert_eq!(crate::ribbon::tabs(&app)[..4], ["File", "Message", "Insert", "Review"]);
+    assert_eq!(crate::ribbon::tabs(&app)[..5], ["File", "Message", "Insert", "Format Text", "Review"]);
     let mut app = writing();
     app.execute("compose.discard", json!({})).unwrap();
     assert!(!crate::ribbon::tabs(&app).contains(&"Insert"));
@@ -104,7 +104,7 @@ fn ctrl_shift_g_counts_the_words() {
 fn the_rest_of_insert_and_review_is_pending() {
     let mut app = writing();
     for (tab, pending) in
-        [("Insert", ["Item", "Table", "Diagram", "Saved Text"]), ("Review", ["Spelling & Grammar", "Thesaurus", "Translate", "Language"])]
+        [("Insert", ["Table", "Diagram", "Saved Text", "Chart"]), ("Review", ["Spelling & Grammar", "Thesaurus", "Translate", "Language"])]
     {
         app.execute("ui.tab", json!({"tab": tab})).unwrap();
         let described = crate::ribbon::describe(&app);

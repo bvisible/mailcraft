@@ -72,34 +72,53 @@ fn key(p: &Pending) -> String {
     format!("{p:?}")
 }
 
+/// `before`'s message `id`, which `after` no longer has, noted in `t`.
+fn gone(t: &mut Touched, id: Id, b: &Arc<Message>, g: &BTreeSet<Id>) {
+    t.changed_messages.insert(id);
+    if relevant(b, g) {
+        t.messages.insert(id, None);
+    }
+}
+
 /// What going from `before` to `after` changed: of the Microsoft accounts' mail, what it is now;
 /// of every account's, which messages and folders it was, and the waiting changes it added or took away.
 pub(crate) fn touched(before: &Mailbox, after: &Mailbox) -> Touched {
     let mut g = graph_accounts(before);
     g.extend(graph_accounts(after));
     let mut t = Touched::default();
-    for (id, b) in &before.messages {
-        match after.messages.get(id) {
-            Some(a) if Arc::ptr_eq(a, b) || a == b => {}
-            Some(a) => {
-                t.changed_messages.insert(*id);
-                if relevant(b, &g) || relevant(a, &g) {
-                    t.messages.insert(*id, Some(a.clone()));
+    // One walk of both maps, in order of id (a lookup for each of a few hundred thousand
+    // messages took longer than the command it followed).
+    let mut was = before.messages.iter().peekable();
+    let mut is = after.messages.iter().peekable();
+    loop {
+        match (was.peek(), is.peek()) {
+            (None, None) => break,
+            (Some((id, b)), Some((n, a))) if id == n => {
+                if !(Arc::ptr_eq(a, b) || a == b) {
+                    t.changed_messages.insert(**id);
+                    if relevant(b, &g) || relevant(a, &g) {
+                        t.messages.insert(**id, Some((*a).clone()));
+                    }
                 }
+                was.next();
+                is.next();
             }
-            None => {
-                t.changed_messages.insert(*id);
-                if relevant(b, &g) {
-                    t.messages.insert(*id, None);
+            // Gone since: `before` has it and `after` has none of its id.
+            (Some((id, b)), Some((n, _))) if id < n => {
+                gone(&mut t, **id, b, &g);
+                was.next();
+            }
+            (Some((id, b)), None) => {
+                gone(&mut t, **id, b, &g);
+                was.next();
+            }
+            // Come since.
+            (_, Some((id, a))) => {
+                t.changed_messages.insert(**id);
+                if relevant(a, &g) {
+                    t.messages.insert(**id, Some((*a).clone()));
                 }
-            }
-        }
-    }
-    for (id, a) in &after.messages {
-        if !before.messages.contains_key(id) {
-            t.changed_messages.insert(*id);
-            if relevant(a, &g) {
-                t.messages.insert(*id, Some(a.clone()));
+                is.next();
             }
         }
     }
@@ -151,13 +170,13 @@ impl Said {
         let mut lines = Vec::new();
         match self.deleted.as_slice() {
             [] => {}
-            [one] => lines.push(format!("'{}' was deleted for good: that can't be undone here.", shown(one))),
-            many => lines.push(format!("{} messages were deleted for good: that can't be undone here.", many.len())),
+            [one] => lines.push(format!("'{}' was permanently deleted: that can't be undone here.", shown(one))),
+            many => lines.push(format!("{} messages were permanently deleted: that can't be undone here.", many.len())),
         }
         match self.folders.as_slice() {
             [] => {}
-            [one] => lines.push(format!("The folder '{}' was deleted for good: that can't be undone here.", shown(one))),
-            many => lines.push(format!("{} folders were deleted for good: that can't be undone here.", many.len())),
+            [one] => lines.push(format!("The folder '{}' was permanently deleted: that can't be undone here.", shown(one))),
+            many => lines.push(format!("{} folders were permanently deleted: that can't be undone here.", many.len())),
         }
         match self.sent.as_slice() {
             [] => {}
@@ -529,7 +548,7 @@ fn fields(t: &Message, a: &Message, c: &Arc<Message>, now: &Mailbox, g: &BTreeSe
             })*
         };
     }
-    back!(folder, read, flag, flag_due, importance, pinned, answered, forwarded, draft);
+    back!(folder, read, flag, flag_due, importance, pinned, answered, forwarded, draft, held, placed);
     // Categories as a list that others add to too (R3 spec S17): what the change added is taken
     // off and what it took off is put back; one added in Outlook meanwhile stays.
     if t.categories != a.categories {
@@ -541,7 +560,15 @@ fn fields(t: &Message, a: &Message, c: &Arc<Message>, now: &Mailbox, g: &BTreeSe
             }
         }
     }
-    back!(subject, from, reply_to, to, cc, bcc, date, body, attachments, in_reply_to, references);
+    back!(subject, from, reply_to, to, cc, bcc, date, attachments, in_reply_to, references);
+    // The body goes back as one with where it is kept and what the sender hid (#688): a body only
+    // brought in from disk while the change ran differs from the one there before, which named
+    // its text on disk; put back without that name, it would be no text at all.
+    if t.body != a.body || t.kept != a.kept || t.hidden_text != a.hidden_text {
+        m.body = t.body.clone();
+        m.kept = t.kept.clone();
+        m.hidden_text = t.hidden_text.clone();
+    }
     if t.account != c.account {
         m.folder = t.folder;
     }

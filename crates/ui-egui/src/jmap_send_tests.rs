@@ -284,27 +284,28 @@ fn a_draft_being_written_is_saved_by_itself_every_five_minutes_while_it_has_chan
     let drafts = app.session.mailbox.folder_of_kind(id, FolderKind::Drafts).unwrap();
     let kept = |app: &MailApp| app.session.mailbox.messages_in(drafts).count();
     // Nothing changed since the window opened it: nothing to save.
-    app.draft_saved_at = crate::now_ms() - 6.0 * 60_000.0;
+    app.draft_saved_at = Some(app.session.now() - 6 * 60);
     app.draft_autosave_tick(&ctx);
     assert_eq!(kept(&app), 0);
     // Changed, and the five minutes are over.
     app.run("compose.set", json!({"body": "More words"})).unwrap();
     assert!(app.session.compose.as_ref().is_some_and(|c| c.dirty));
-    app.draft_saved_at = crate::now_ms() - 60_000.0;
+    app.draft_saved_at = Some(app.session.now() - 60);
     app.draft_autosave_tick(&ctx);
     assert_eq!(kept(&app), 0, "not yet");
-    app.draft_saved_at = crate::now_ms() - 6.0 * 60_000.0;
+    app.draft_saved_at = Some(app.session.now() - 6 * 60);
     app.draft_autosave_tick(&ctx);
     assert_eq!(kept(&app), 1);
     assert_eq!(app.waiting_to_go(id), 1, "and it goes up with the next run");
-    // An account whose server keeps no drafts of ours is not saved for by itself.
+    // //// Neoffice — since #286 every kind of account is saved for by itself: an IMAP account's draft is kept in Drafts here (and
+    // //// Neoffice — goes up to no server), where this test used to say that an account whose server keeps no drafts of ours wasn't.
     let imap =
         app.execute("account.add", json!({"email": "bob@example.org", "incoming": {"host": "imap.example.org"}})).unwrap()["id"].as_u64().unwrap();
     app.run("compose.discard", json!({})).unwrap();
     app.execute("mail.new", json!({"to": "carol@example.org", "subject": "Elsewhere", "account": imap})).unwrap();
     app.run("compose.set", json!({"body": "Words"})).unwrap();
-    app.draft_saved_at = crate::now_ms() - 6.0 * 60_000.0;
+    app.draft_saved_at = Some(app.session.now() - 6 * 60);
     app.draft_autosave_tick(&ctx);
     let imap_drafts = app.session.mailbox.folder_of_kind(imap, FolderKind::Drafts).unwrap();
-    assert_eq!(app.session.mailbox.messages_in(imap_drafts).count(), 0);
+    assert_eq!(app.session.mailbox.messages_in(imap_drafts).count(), 1);
 }

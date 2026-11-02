@@ -411,6 +411,8 @@ fn a_new_contact_the_server_has_no_room_for_reads_in_french() {
 /// item with no name and the parts of an event included.
 #[test]
 fn the_calendar_and_contact_lines_read_in_french() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let mb = mailbox();
     let fr = |text: &str| super::explain(french(), Family::Line, text, &mb).map(|r| r.text);
     let t = |english: &str| t_in(french(), english).to_string();
@@ -472,6 +474,8 @@ fn the_calendar_and_contact_lines_read_in_french() {
 /// or another language a new one.
 #[test]
 fn the_status_bar_reads_its_message_once_for_each_text_and_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let mb = mailbox();
     crate::i18n::set_current(french());
     let refusal = "Your rights do not let you delete this contact";
@@ -731,6 +735,8 @@ fn problems_of(app: &crate::MailApp, account: mailcraft_model::Id) -> Vec<String
 
 #[test]
 fn the_status_bar_and_the_panel_show_a_failed_run_in_the_interface_s_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     use crate::chrome::{SyncShown, sync_shown};
     let (mut app, account) = window();
     let english: Vec<String> = FAILED.iter().map(|(en, _)| (*en).to_string()).collect();
@@ -775,6 +781,8 @@ fn the_status_bar_and_the_panel_show_a_failed_run_in_the_interface_s_language() 
 
 #[test]
 fn the_panel_draws_the_lines_in_french() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, account) = window();
     let english: Vec<String> = FAILED.iter().map(|(en, _)| (*en).to_string()).collect();
     app.keep_sync_problems(account, &english);
@@ -791,6 +799,8 @@ fn the_panel_draws_the_lines_in_french() {
 
 #[test]
 fn in_english_a_line_is_handed_back_as_it_came() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let mb = mailbox();
     let line = "Couldn't reach the server: network: connection refused";
     assert!(matches!(super::line(line, &mb), std::borrow::Cow::Borrowed(same) if std::ptr::eq(same, line)));
@@ -865,6 +875,8 @@ fn drawn(app: crate::MailApp) -> egui_kittest::Harness<'static, crate::MailApp> 
 
 #[test]
 fn the_banner_of_a_held_message_says_why_in_the_interface_s_language() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, account) = window();
     let outbox = app.session.mailbox.folder_of_kind(account, FolderKind::Outbox).unwrap();
     let held = "It wasn't sent: the server doesn't accept bob@example.org. Change it, or send it again.";
@@ -929,6 +941,8 @@ fn a_refused_change_reads_in_french_with_its_words_agreed() {
 
 #[test]
 fn how_far_a_run_has_got_names_a_standard_folder_as_a_refused_move_does() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let mb = mailbox();
     for lang in [Lang::English, Lang::Pseudo, french()] {
         let named = super::standard_folder_name(&mb, "INBOX", lang);
@@ -941,6 +955,8 @@ fn how_far_a_run_has_got_names_a_standard_folder_as_a_refused_move_does() {
 
 #[test]
 fn a_refused_move_or_copy_says_why_in_french_in_the_status_and_the_box() {
+    // //// Neoffice — upstream's lock on the window's language: this test changes it, so a test beside it waits.
+    let _language = crate::i18n::RestoreLanguage::hold();
     let (mut app, account) = window();
     let inbox = app.session.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap();
     let server = mailcraft_model::sync::ServerMessage { id: "M1".into(), folder: "Mi".into(), ..Default::default() };

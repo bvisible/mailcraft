@@ -257,9 +257,7 @@ pub enum AccountKind {
     /// (Exchange Server, Grommunio, SmarterMail), kept in step over HTTPS alone, never by IMAP or
     /// SMTP (#252). Never a Microsoft 365 mailbox: that is a [`AccountKind::Microsoft`] account.
     /// Its server is [`Account::ews`]; the password is given by whoever holds the connection and
-    /// is never written anywhere. Works only while its switch is on
-    /// ([`AccountKind::needs_switch`]): switched off, an account of this kind in a mailbox opens
-    /// and shows its mail, but is not kept in step.
+    /// is never written anywhere.
     Exchange,
     /// A kind this version doesn't know: an account that a newer MailCraft added, in a file that
     /// one wrote (or one whose kind can't be read at all). Only what says which account it is
@@ -284,13 +282,6 @@ impl AccountKind {
     /// would wait for ever.
     pub fn sends_mail(self) -> bool {
         matches!(self, AccountKind::Imap | AccountKind::Microsoft | AccountKind::Exchange)
-    }
-
-    /// Whether the kind is kept in step only while its feature switch is on (`MAILCRAFT_EWS=1`,
-    /// #252: [`Session::ews`] in the engine). Switched off, an account of the kind opens and
-    /// shows its mail, and nothing is synchronised or sent for it.
-    pub fn needs_switch(self) -> bool {
-        matches!(self, AccountKind::Exchange)
     }
 
     /// Whether the account's folders and messages are known to its server by the ids the server
@@ -1050,6 +1041,10 @@ pub const BETWEEN_MAILBOXES: &str =
 /// Microsoft account's does (#451); an IMAP account's holds it ([`MOVED_INTO_OUTBOX`], #607).
 pub const INTO_OUTBOX: &str = "Mail from another mailbox can't go into an Outbox: the next Send/Receive would send it";
 
+/// Why a copy doesn't go into an Outbox that sends what lies in it, a Microsoft or an Exchange
+/// server account's (#704): only Send sends.
+pub const COPY_INTO_OUTBOX: &str = "A copy can't go into this Outbox: the next Send/Receive would send it";
+
 /// The local folder that mail imported for a Microsoft account goes to (R3 spec S30).
 pub const IMPORTED: &str = "Imported";
 
@@ -1117,6 +1112,22 @@ fn subject_said(m: &Message) -> String {
 /// Why a message can't go elsewhere before it is fetched whole.
 fn not_downloaded_yet(subject: &str) -> String {
     format!("\"{subject}\" isn't downloaded yet: open it, then try again")
+}
+
+/// Whether `x` is of the conversation whose key ([`Message::thread_key`]) is `key`, with a cheap
+/// no first: the topic is what is left of the subject once its prefixes are taken off, so an
+/// ASCII subject that doesn't end in the key (letter case aside; lower case keeps an ASCII text's
+/// length) isn't of it, and the key of one that might be is worked out, which takes a string.
+fn same_thread(x: &Message, key: &str) -> bool {
+    let s = x.subject.trim();
+    if s.is_ascii() && key.is_ascii() {
+        let ends_in_key =
+            s.len().checked_sub(key.len()).and_then(|at| s.as_bytes().get(at..)).is_some_and(|end| end.eq_ignore_ascii_case(key.as_bytes()));
+        if !ends_in_key {
+            return false;
+        }
+    }
+    x.thread_key() == key
 }
 
 impl Mailbox {
@@ -1920,6 +1931,14 @@ impl Mailbox {
         if m.folder == folder {
             return Ok(());
         }
+        // Moved in from another mailbox and not made on this account's server yet, it is mail from
+        // elsewhere still: not into an Outbox that would send it, as straight from there (#704).
+        if m.account == account
+            && self.sends_from(folder)
+            && self.queued.iter().any(|q| matches!(q, Queued::PlaceMessage { message, .. } if *message == id))
+        {
+            return Err(invalid(INTO_OUTBOX));
+        }
         if m.returned > 0 {
             // Moved on by its owner: what its server says of it from here on goes as for any other.
             self.message_mut(id)?.returned = 0;
@@ -1931,11 +1950,8 @@ impl Mailbox {
         }
         let (uid, synced) = self.imap_side(id, folder, account, &remote, fresh)?;
         let m = self.message_mut(id)?;
-        m.folder = folder;
-        m.account = account;
-        // The UID belonged to the old folder.
-        m.uid = uid;
-        m.synced = synced;
+        // (The UID belonged to the old folder.)
+        m.lies_in(folder, account, uid, synced);
         hold_if_put_in_outbox(m, into_outbox);
         Ok(())
     }
@@ -2001,8 +2017,19 @@ impl Mailbox {
         self.is_send_queue(folder) && !self.is_imap_outbox(folder)
     }
 
-    /// Whether `folder` is the Outbox of an IMAP account, which sends all it holds (#607).
-    fn is_imap_outbox(&self, folder: Id) -> bool {
+    /// `id`, come back to the folder it lies in without a move (#451): in an Outbox of any kind it
+    /// is held, whatever it was when it left, for it left unsent and only Send sends; anywhere
+    /// else it is no longer held for having been put in one (#607).
+    pub fn hold_if_in_outbox(&mut self, id: Id) {
+        let in_outbox = self.message(id).is_some_and(|m| self.is_send_queue(m.folder));
+        if let Ok(m) = self.message_mut(id) {
+            hold_if_put_in_outbox(m, in_outbox);
+        }
+    }
+
+    /// Whether `folder` is the Outbox of an IMAP account, which holds what is moved or copied
+    /// there and sends only what was queued with Send (#607).
+    pub fn is_imap_outbox(&self, folder: Id) -> bool {
         self.folder(folder).is_some_and(|f| f.kind == FolderKind::Outbox && self.account(f.account).is_some_and(|a| a.kind == AccountKind::Imap))
     }
 
@@ -2104,8 +2131,9 @@ impl Mailbox {
     }
 
     /// Why `m` can't go to another mailbox (#70, #451), when it can't: what goes there is made of
-    /// the whole message, and a draft stays in its own mailbox. `fetched_first`: one not fetched
-    /// yet will be before its copy goes.
+    /// the whole message, and a draft stays in its own mailbox, as does a message a Microsoft
+    /// account's server wouldn't send; one held only for having been put in an IMAP account's
+    /// Outbox is no draft. `fetched_first`: one not fetched yet will be before its copy goes.
     fn not_whole(m: &Message, doing: &str, fetched_first: bool) -> Option<String> {
         let subject = subject_said(m);
         if m.incomplete || m.not_downloaded > 0 {
@@ -2114,7 +2142,7 @@ impl Mailbox {
             Some(format!("The text of \"{subject}\" couldn't be read on this computer, so it can't be {doing} to another mailbox"))
         } else if m.unfetched && !fetched_first {
             Some(not_downloaded_yet(&subject))
-        } else if m.draft || m.server_draft.is_some() || !m.held.is_empty() {
+        } else if m.draft || m.server_draft.is_some() || (!m.held.is_empty() && m.held != MOVED_INTO_OUTBOX) {
             Some(format!("The draft \"{subject}\" stays in its own mailbox: send it from there"))
         } else {
             None
@@ -2123,12 +2151,12 @@ impl Mailbox {
 
     /// Put `id` on its account's server again, from the whole message here: the server's copy
     /// was deleted while the message was moved back there (#451). Nothing for one that isn't
-    /// whole here, a draft, or one that waits to go there already.
+    /// whole here, a draft, one held in an Outbox, or one that waits to go there already.
     pub fn place_again(&mut self, id: Id) {
         let Some(m) = self.message(id) else { return };
         let account = m.account;
         let waits = self.queued.iter().any(|q| matches!(q, Queued::PlaceMessage { message, .. } if *message == id));
-        if waits || !self.puts_on_server(account) || Mailbox::not_whole(m, "moved", false).is_some() {
+        if waits || !m.held.is_empty() || !self.puts_on_server(account) || Mailbox::not_whole(m, "moved", false).is_some() {
             return;
         }
         let marker = self.place_marker(id, "");
@@ -2192,7 +2220,8 @@ impl Mailbox {
     ///   owner's (a shared mailbox and its owner's, or two of his shared mailboxes, #70): there at
     ///   once, being moved, and waiting to be made on the destination's server
     ///   ([`Queued::PlaceMessage`]); the original is removed from its own server once that copy
-    ///   is there. Refused for a message that isn't whole here, and for a draft.
+    ///   is there. Refused for a message that isn't whole here, a draft, and mail a Microsoft
+    ///   account's server wouldn't send ([`Mailbox::not_whole`]).
     /// - Back into the account it is being moved out of: it is that server message again.
     /// - Between a shared mailbox and a mailbox of another sign-in's: refused, with the reason.
     fn move_between_accounts(&mut self, id: Id, folder: Id, to_account: Id, remote: &str, fresh: bool) -> Result<bool, ModelError> {
@@ -2218,7 +2247,7 @@ impl Mailbox {
             let (uid, synced) = self.imap_side(id, folder, to_account, remote, fresh)?;
             let m = self.message_mut(id)?;
             m.server = None;
-            (m.folder, m.account, m.uid, m.synced) = (folder, to_account, uid, synced);
+            m.lies_in(folder, to_account, uid, synced);
             return Ok(true);
         }
         if self.is_graph(to_account)
@@ -2241,7 +2270,7 @@ impl Mailbox {
             self.imap_side(id, folder, to_account, remote, fresh)?;
             let m = self.message_mut(id)?;
             (m.server, m.moving_out) = (Some(server), None);
-            (m.folder, m.account, m.uid, m.synced) = (folder, to_account, 0, None);
+            m.lies_in(folder, to_account, 0, None);
             // Its run may be removing the server's copy: should that answer be lost, it is kept
             // here rather than forgotten.
             m.returned = crate::RETURNED_LISTINGS;
@@ -2277,7 +2306,7 @@ impl Mailbox {
                 m.moving_out = Some(crate::sync::MovingOut { account: from_account, id: server.id, folder: server.folder, ..Default::default() });
             }
             m.server = None;
-            (m.folder, m.account, m.uid, m.synced) = (folder, to_account, uid, synced);
+            m.lies_in(folder, to_account, uid, synced);
             self.queued.push(Queued::PlaceMessage { account: to_account, message: id, marker, copy: false, from });
             return Ok(true);
         }
@@ -2298,7 +2327,7 @@ impl Mailbox {
             m.moving_out = Some(crate::sync::MovingOut { account: from_account, id: server.id, folder: server.folder, ..Default::default() });
         }
         m.server = None;
-        (m.folder, m.account, m.uid, m.synced) = (folder, to_account, uid, synced);
+        m.lies_in(folder, to_account, uid, synced);
         Ok(true)
     }
 
@@ -2349,6 +2378,11 @@ impl Mailbox {
         if from_account != to_account && self.sends_from(folder) {
             return Err(invalid(INTO_OUTBOX));
         }
+        // A copy in a Microsoft or an Exchange server account's Outbox would be sent by the next
+        // Send/Receive, and made on the server as well (#704): only Send sends.
+        if self.sends_from(folder) && self.keeps_changes_for_server(to_account) {
+            return Err(invalid(COPY_INTO_OUTBOX));
+        }
         if self.placed_into(from_account, to_account) {
             // Made on the destination's server by its own run, from the whole message (#70, #451).
             if let Some(why) = Mailbox::not_whole(m, "copied", false) {
@@ -2358,6 +2392,7 @@ impl Mailbox {
             let mut copy = m.clone();
             (copy.id, copy.folder, copy.account, copy.uid, copy.synced) = (0, folder, to_account, 0, None);
             (copy.server, copy.moving_out, copy.returned) = (None, None, 0);
+            copy.placed.clear();
             hold_if_put_in_outbox(&mut copy, self.is_imap_outbox(folder));
             let new = self.add_message(copy)?;
             let marker = self.place_marker(new, &source);
@@ -2378,8 +2413,10 @@ impl Mailbox {
         copy.synced = None;
         copy.server = None;
         copy.moving_out = None;
-        // (Put back after a refused copy is said of the message, not of a copy of it.)
+        // (Put back after a refused copy is said of the message, not of a copy of it, and so is
+        // the copy on a server it waits for.)
         copy.returned = 0;
+        copy.placed.clear();
         hold_if_put_in_outbox(&mut copy, self.is_imap_outbox(folder));
         let new = self.add_message(copy)?;
         if let Some(server) = server {
@@ -2517,10 +2554,21 @@ impl Mailbox {
     /// The messages of the conversation `id` is part of (same account, same topic), oldest first.
     pub fn conversation(&self, id: Id) -> Vec<Id> {
         let Some(m) = self.message(id) else { return Vec::new() };
-        let key = m.thread_key();
         let skips = self.conversation_skips(m.account, m.folder);
-        let mut v: Vec<&Arc<Message>> =
-            self.messages.values().filter(|x| x.account == m.account && !skips.contains(&x.folder) && x.thread_key() == key).collect();
+        let among = self.messages.values().map(|x| x.as_ref()).filter(|x| x.account == m.account && !skips.contains(&x.folder));
+        self.conversation_among(m, among)
+    }
+
+    /// [`Mailbox::conversation`] of `m`, looked for among `among`: the messages of its account
+    /// but for those of the folders a conversation leaves out ([`Mailbox::conversation_skips`]),
+    /// for a caller that has them listed by folder and needn't walk every message.
+    pub fn conversation_among<'a>(&self, m: &Message, among: impl Iterator<Item = &'a Message>) -> Vec<Id> {
+        let key = m.thread_key();
+        // A message without a subject is a conversation of its own ([`Message::thread_key`]).
+        if key.starts_with('\0') {
+            return vec![m.id];
+        }
+        let mut v: Vec<&Message> = among.filter(|x| same_thread(x, &key)).collect();
         v.sort_by_key(|x| (x.date, x.id));
         v.into_iter().map(|x| x.id).collect()
     }
@@ -3026,7 +3074,7 @@ impl Mailbox {
                         if m.account != account {
                             (m.server, m.moving_out) = (None, None);
                         }
-                        (m.folder, m.account, m.uid, m.synced) = (folder, account, 0, None);
+                        m.lies_in(folder, account, 0, None);
                     }
                 }
                 None => {

@@ -70,6 +70,10 @@ pub struct Item {
     pub preview: String,
     /// Who it is blind-copied to.
     pub bcc: Vec<(String, String)>,
+    /// Where replies go.
+    pub reply_to: Vec<(String, String)>,
+    /// It asks for a read receipt (`IsReadReceiptRequested`).
+    pub read_receipt: bool,
     /// The body, and whether it is HTML.
     pub body: (bool, String),
     /// The flag's status as the server has it: `NotFlagged`, `Flagged` or `Complete`.
@@ -151,6 +155,8 @@ impl State {
             from: ("Zoe Park".into(), "zoe@example.org".into()),
             to: vec![("Ada".into(), "ada@example.org".into())],
             cc: Vec::new(),
+            reply_to: Vec::new(),
+            read_receipt: false,
             received: when.clone(),
             sent: when,
             read,

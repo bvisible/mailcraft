@@ -522,6 +522,8 @@ struct ListCache {
     /// What was kept when it was built.
     stays: Option<Arc<Stays>>,
     rows: Arc<Vec<Row>>,
+    /// How many messages it looked at are not fetched whole ([`Session::unfetched_in_view`]).
+    unfetched: usize,
 }
 
 impl Selection {
@@ -652,6 +654,9 @@ pub struct Compose {
     pub to: String,
     pub cc: String,
     pub bcc: String,
+    /// Direct Replies To: where replies go (the `Reply-To` line), as typed; empty for the sender.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub reply_to: String,
     pub subject: String,
     /// What the owner writes, in rich text, with its selection and its own undo. Stored as plain
     /// text before rich text; that still reads.
@@ -664,6 +669,9 @@ pub struct Compose {
     pub quote: Option<Quote>,
     pub attachments: Vec<Attachment>,
     pub importance: Importance,
+    /// Request a Read Receipt: the message asks for one, to its sender (`compose.readReceipt`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub read_receipt: bool,
     pub in_reply_to: String,
     pub references: Vec<String>,
     /// The signature put in the body (its paragraphs are marked there): which one, how it lays
@@ -685,6 +693,67 @@ pub struct Compose {
     /// is closed. Never read from a file: only [`Session::run`] sets it.
     #[serde(skip)]
     pub owner_changed: bool,
+    /// It is in Drafts only because it was saved in the background (`compose.saveDraft` with
+    /// `background`) and wasn't a draft when it was opened (#286): closing it with `discard`
+    /// (Don't Save) takes that copy out of Drafts again. A draft opened from Drafts never is.
+    #[serde(skip)]
+    pub autosaved: bool,
+    /// Which message being written this is, among those open at once (#286): given when it opens
+    /// ([`Session::open_compose`]), never read from a file.
+    #[serde(skip)]
+    pub id: u64,
+}
+
+/// Who a Save Draft is for ([`Session::saving`]), which says whether the copy it makes is one
+/// Don't Save takes out of Drafts again ([`Compose::autosaved`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Saving {
+    /// Somebody asked for it (Save Draft, Save, closing with changes, quitting): a draft for good.
+    #[default]
+    Asked,
+    /// The five-minute timer ([`Session::save_in_background`]): no step to undo, and a message
+    /// that was no draft before is one Don't Save takes out of Drafts again.
+    Background,
+    /// A message put aside for another, unasked: as for the timer, a message that was no draft
+    /// before is one Don't Save takes out of Drafts again.
+    Unasked,
+}
+
+impl Compose {
+    /// Whether the signature in the message is still the one that went in.
+    pub fn signature_unedited(&self) -> bool {
+        self.signature.as_ref().is_some_and(|inserted| self.body.text().signature().as_ref() == Some(&inserted.text))
+    }
+
+    /// The owner's own HTML of the signature, while that is what goes out: an HTML signature
+    /// that is unedited and not chosen to be edited as text.
+    pub fn signature_html(&self) -> Option<&str> {
+        let inserted = self.signature.as_ref().filter(|i| !i.as_text)?;
+        inserted.html.as_deref().filter(|_| self.signature_unedited())
+    }
+
+    /// The owner's own HTML of the signature while the composer shows it as it goes out, under
+    /// the text and out of the keyboard's reach: an HTML message that ends with it, with text
+    /// before it.
+    pub fn signature_html_shown(&self) -> Option<&str> {
+        let paragraphs = self.body.text().paragraphs();
+        let ends = paragraphs.first().is_some_and(|p| !p.signature) && paragraphs.last().is_some_and(|p| p.signature);
+        self.signature_html().filter(|_| self.format == BodyFormat::Html && ends)
+    }
+
+    /// Take the caret and the selection out of a signature shown as it goes out, to the end of
+    /// the owner's text before it, so that typing never edits what isn't shown (#614).
+    pub fn keep_out_of_signature(&mut self) {
+        if self.signature_html_shown().is_none() {
+            return;
+        }
+        let Some(end) = self.body.text().signature_start().map(|s| s.saturating_sub(1)) else { return };
+        let sel = self.body.selection();
+        if sel.anchor.max(sel.head) > end {
+            // Within the text: `end` is before the signature.
+            let _ = self.body.select(sel.anchor.min(end), sel.head.min(end));
+        }
+    }
 }
 
 fn is_zero_u32(n: &u32) -> bool {
@@ -704,6 +773,10 @@ pub struct InsertedSignature {
     /// The owner's own HTML, for an HTML signature: what goes out while the text is unedited.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub html: Option<String>,
+    /// The owner chose to edit an HTML signature as text: its simpler copy is shown in the
+    /// message and goes out in place of the HTML (`compose.signatureAsText`).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub as_text: bool,
 }
 
 /// A signature open in File › Signatures (R4.5.3): edited as a message's body is, by the
@@ -800,6 +873,20 @@ pub struct Prefs {
     /// computer's own.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub recent_zones: Vec<String>,
+    /// The rows of the message list stand closer together (`view.density`).
+    #[serde(skip_serializing_if = "is_false")]
+    pub tight_spacing: bool,
+    /// How large the text of the message being read is, in percent (`view.zoom`): read through
+    /// [`Prefs::zoom_percent`], which keeps it in range whatever the settings file says.
+    pub zoom: u16,
+    /// The searches run lately, the latest first (`view.recentSearches`): kept in this computer's
+    /// settings and never sent anywhere. Read through [`Prefs::recent_searches`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recent_searches: Vec<String>,
+    /// Work Offline (`sync.offline`): nothing goes to or comes from a server while it is on;
+    /// mail that is sent waits in the Outbox. Off unless the owner turns it on; kept between runs.
+    #[serde(skip_serializing_if = "is_false")]
+    pub offline: bool,
 }
 
 impl Default for Prefs {
@@ -831,11 +918,34 @@ impl Default for Prefs {
             zone_label: String::new(),
             second_zone_label: String::new(),
             recent_zones: Vec::new(),
+            tight_spacing: false,
+            zoom: Prefs::ZOOM_DEFAULT,
+            recent_searches: Vec::new(),
+            offline: false,
         }
     }
 }
 
 impl Prefs {
+    /// The zoom of the message being read, in percent: the least, the most, and as it comes.
+    pub const ZOOM_MIN: u16 = 50;
+    pub const ZOOM_MAX: u16 = 300;
+    pub const ZOOM_DEFAULT: u16 = 100;
+    /// The most searches the list of recent ones keeps, and the most characters of each.
+    pub const RECENT_SEARCHES: usize = 10;
+    pub const RECENT_SEARCH_CHARS: usize = 200;
+
+    /// The zoom of the message being read, in percent, in range (a settings file may say anything).
+    pub fn zoom_percent(&self) -> u16 {
+        self.zoom.clamp(Self::ZOOM_MIN, Self::ZOOM_MAX)
+    }
+
+    /// The searches run lately, the latest first: at most [`Prefs::RECENT_SEARCHES`], none empty,
+    /// each cut to [`Prefs::RECENT_SEARCH_CHARS`] (a settings file may say anything).
+    pub fn recent_searches(&self) -> impl Iterator<Item = &str> {
+        self.recent_searches.iter().map(|q| cut_chars(q, Self::RECENT_SEARCH_CHARS)).filter(|q| !q.trim().is_empty()).take(Self::RECENT_SEARCHES)
+    }
+
     /// The clock and the first day of the week that the owner never chose follow the interface
     /// language (French: 24-hour, Monday); the ones they chose are kept. Settings saved before
     /// this was kept count what differs from the old defaults (12-hour, Sunday) as chosen, so
@@ -852,6 +962,11 @@ impl Prefs {
             self.week_start = Weekday::from_index(i64::from(own.week_start));
         }
     }
+}
+
+/// The first `max` characters of `text`.
+fn cut_chars(text: &str, max: usize) -> &str {
+    text.char_indices().nth(max).and_then(|(at, _)| text.get(..at)).unwrap_or(text)
 }
 
 fn is_false(b: &bool) -> bool {
@@ -902,8 +1017,14 @@ pub struct Session {
     pub mailbox: Mailbox,
     pub view: ViewState,
     pub sel: Selection,
-    /// The message being written, if one is open.
+    /// The current message being written, if one is open: the one a command acts on when it names
+    /// none (#286), shown in the reading pane.
     pub compose: Option<Compose>,
+    /// The other messages being written, open at the same time, the one opened or put aside last
+    /// at the end ([`crate::composing`]).
+    pub composing: Vec<Compose>,
+    /// The last id given to a message being written.
+    pub(crate) compose_seq: u64,
     /// A signature open in File › Signatures. While there is one, the editing commands
     /// work on it instead of the message being written ([`Session::doc`]).
     pub signature_edit: Option<SignatureEdit>,
@@ -961,15 +1082,14 @@ pub struct Session {
     /// set by the window while an agent's command runs: a command that takes one away is undone,
     /// as the owner wasn't asked about it (#494). Never saved.
     pub owner_changing: Vec<Id>,
+    /// Who the Save Draft that is running is for (#286): the five-minute timer, a message put
+    /// aside unasked, or anybody's asking for it. Never a command's parameter.
+    pub(crate) saving: Saving,
     /// A copy of the mailbox the window had the host write off its own thread before switching an
     /// account to Microsoft Graph (the account, where the copy is): `account.graphSwitch` takes it
     /// instead of writing one itself ([`crate::cmd::graph_switch::prepare_backup`]). Set only by
     /// the window once the copy is on disk, never by a command's params. Never saved.
     pub graph_switch_backup: Option<(Id, PathBuf)>,
-    /// Exchange server accounts may be added and kept in step through Exchange Web Services
-    /// (#252): the switch for testing, off until a tester has confirmed it on a server of their
-    /// own. Set by the host (`MAILCRAFT_EWS=1`), never by a command's params. Never saved.
-    pub ews: bool,
     /// A folder tree of mbox files read and parsed by the host off the window's thread, waiting
     /// for `file.importFolderTree` with `staged` to put it in (#420). Never saved.
     pub staged_tree: Option<crate::import_tree::Parsed>,
@@ -996,12 +1116,23 @@ pub struct Session {
     pub jmap_runs: bool,
     // //// Neoffice — how many times an account was moved to another server in this session (`account.edit`, cmd/notes/server.rs): a job of its notes notes it when it starts, and its answer is set aside when it changed since, even when the account is back on the server it asked. Never saved, never undone.
     pub notes_moves: std::collections::HashMap<Id, u32>,
+    /// The automatic replies of each account that signs in with Microsoft, as its server last
+    /// said (`sync.applyAutomaticReplies`). The server's, read again each session: never saved.
+    pub auto_replies: std::collections::HashMap<Id, crate::cmd::auto_replies::Known>,
     pub(crate) history: Vec<Undo>,
     pub(crate) redo: Vec<Undo>,
     /// What the last undo or redo couldn't do there (a delete for good, a message sent).
     undo_said: Vec<String>,
     rev: u64,
     list_cache: Option<ListCache>,
+    /// What each folder holds, as of the revision and message count it was counted at
+    /// ([`Session::folder_counts`]).
+    pub(crate) counts_cache: Option<((u64, usize), Arc<crate::counts::FolderCounts>)>,
+    /// The conversation last asked for ([`Session::conversation`]), as of the revision, message
+    /// count and message it was worked out for.
+    conversation_cache: Option<((u64, usize, Id), Arc<Vec<Id>>)>,
+    /// How many times the list was built ([`Session::list_builds`]).
+    list_builds: u64,
     /// The known correspondents, and the sender warnings worked out against them
     /// ([`Session::sender_warnings`]). Never saved.
     pub(crate) sender_checks: crate::sender_warnings::SenderChecks,
@@ -1102,6 +1233,8 @@ impl Session {
             view: ViewState::default(),
             sel: Selection::default(),
             compose: None,
+            composing: Vec::new(),
+            compose_seq: 0,
             signature_edit: None,
             prefs: Prefs::default(),
             registry: Arc::new(crate::cmd::registry()),
@@ -1123,8 +1256,8 @@ impl Session {
             jmap_read: Default::default(),
             agent: None,
             owner_changing: Vec::new(),
+            saving: Saving::Asked,
             graph_switch_backup: None,
-            ews: false,
             staged_tree: None,
             server_search: Default::default(),
             // //// Neoffice — see the field: kept, unless the host says otherwise.
@@ -1135,11 +1268,15 @@ impl Session {
             jmap_runs: false,
             // //// Neoffice — see the field.
             notes_moves: Default::default(),
+            auto_replies: Default::default(),
             history: Vec::new(),
             redo: Vec::new(),
             undo_said: Vec::new(),
             rev: 0,
             list_cache: None,
+            counts_cache: None,
+            conversation_cache: None,
+            list_builds: 0,
             sender_checks: Default::default(),
             content_source: None,
             loads: 0,
@@ -1181,12 +1318,25 @@ impl Session {
     /// Whether a Send/Receive here sends the mail that waits in `account`'s Outbox: as its kind says
     /// ([`mailcraft_model::AccountKind::sends_mail`]), and a JMAP account's where the host runs its Send/Receive
     /// ([`Session::jmap_runs`]).
-    // //// Neoffice — and an Exchange server account's with its switch on, as upstream's `can_queue_mail` says (#252).
     pub fn sends_mail_of(&self, account: &mailcraft_model::Account) -> bool {
-        crate::cmd::ews_mail::can_queue_mail(self, account.kind) || (account.kind == mailcraft_model::AccountKind::Jmap && self.jmap_runs)
+        account.kind.sends_mail() || (account.kind == mailcraft_model::AccountKind::Jmap && self.jmap_runs)
     }
 
     // ---- time ----
+
+    /// Save the message being written `compose` to Drafts as the five-minute timer does (#286),
+    /// as Save Draft saves it but as no step to undo: one that wasn't a draft before is marked
+    /// ([`Compose::autosaved`]) so that Don't Save takes it out of Drafts again. For the host's
+    /// timer alone, never a command: refused while an agent's command runs.
+    pub fn save_in_background(&mut self, compose: u64) -> Result<Value, CmdError> {
+        if self.agent.is_some() {
+            return Err(CmdError::Failed("a message is saved in the background by the window's own timer alone".into()));
+        }
+        let was = std::mem::replace(&mut self.saving, Saving::Background);
+        let r = self.run("compose.saveDraft", &serde_json::json!({"compose": compose}));
+        self.saving = was;
+        r
+    }
 
     pub fn now(&self) -> Timestamp {
         self.clock.now.unwrap_or_else(mailcraft_time::now)
@@ -1502,14 +1652,145 @@ impl Session {
         // A list searched across midnight may have matched `received:today` on either day: it is
         // built again on the next call (#329).
         let key = if self.today() == day { key(self) } else { String::new() };
-        let (rows, kept) = crate::list::listing(self, &decided, &searched);
+        // (So that the list is built from the folder's own messages: `list::listing`.)
+        let _ = self.folder_counts();
+        let (rows, kept, unfetched) = crate::list::listing(self, &decided, &searched);
+        self.list_builds = self.list_builds.saturating_add(1);
         // What it lists of the selection stays in it too: the rows don't change for that, as each
         // of those matches or is kept already.
         let list = self.list_of();
         Stays::listed(&mut self.sel.stays, &self.sel.messages, &rows, &list);
         let rows = Arc::new(rows);
-        self.list_cache = Some(ListCache { key, kept, stays: self.sel.stays.clone(), rows: rows.clone() });
+        self.list_cache = Some(ListCache { key, kept, stays: self.sel.stays.clone(), rows: rows.clone(), unfetched });
         rows
+    }
+
+    /// How many of the messages the list in view looks at are not fetched whole (a Microsoft
+    /// account's message of which only the headers and a preview are here, R3.2): a search of
+    /// them reads only their beginning, and the window says so. Counted when the list is built
+    /// ([`Session::rows`]), which the window does before asking.
+    pub fn unfetched_in_view(&self) -> usize {
+        self.list_cache.as_ref().map_or(0, |c| c.unfetched)
+    }
+
+    /// The messages of the conversation `id` is part of ([`Mailbox::conversation`]: same
+    /// account, same topic, oldest first), kept while the mailbox doesn't change: the reading
+    /// pane asks at every frame, and the answer is a walk over every message.
+    pub fn conversation(&mut self, id: Id) -> Arc<Vec<Id>> {
+        let key = (self.rev, self.mailbox.messages.len(), id);
+        if let Some((at, thread)) = &self.conversation_cache
+            && *at == key
+        {
+            return thread.clone();
+        }
+        let thread = {
+            let mb = &self.mailbox;
+            match (self.fresh_counts(), mb.message(id)) {
+                // From the account's folders' own lists, not a walk over every account's messages.
+                (Some(counts), Some(m)) => {
+                    let skips = mb.conversation_skips(m.account, m.folder);
+                    let folders = mb.folders.iter().filter(|f| f.account == m.account && !skips.contains(&f.id));
+                    mb.conversation_among(m, folders.flat_map(|f| counts.ids(f.id)).filter_map(|i| mb.message(*i)))
+                }
+                _ => mb.conversation(id),
+            }
+        };
+        let thread = Arc::new(thread);
+        self.conversation_cache = Some((key, thread.clone()));
+        thread
+    }
+
+    /// How many times the message list was built ([`Session::rows`]): for tests and diagnostics.
+    pub fn list_builds(&self) -> u64 {
+        self.list_builds
+    }
+
+    /// After a command changed the mailbox, before the revision moves on: the messages whose read
+    /// state alone changed, when that is all that changed of the mailbox (at most
+    /// `MOST_READ_MARKS` of them), and the list in view is unfiltered, unsearched and built: it
+    /// then stands with its rows' unread counts put right rather than being built again
+    /// ([`Session::keep_through_read_marks`]), as a click that opens an unread message, or a read
+    /// mark coming down from the server, would otherwise cost a frame of the list over a large
+    /// folder. `None` when anything else changed, or nothing did.
+    fn read_marks_only(&mut self, before: &mut Mailbox) -> Option<Vec<Id>> {
+        const MOST_READ_MARKS: usize = 64;
+        if self.view.filter != Filter::All || !mailcraft_model::search::Query::parse(&self.view.search).is_empty() {
+            return None;
+        }
+        if !self.list_cache.as_ref().is_some_and(|c| c.key == self.list_key()) || before.messages.len() != self.mailbox.messages.len() {
+            return None;
+        }
+        let mut changed = Vec::new();
+        for ((was_id, was), (id, now)) in before.messages.iter().zip(&self.mailbox.messages) {
+            if was_id != id {
+                return None;
+            }
+            if Arc::ptr_eq(was, now) {
+                continue;
+            }
+            if changed.len() >= MOST_READ_MARKS || was.read == now.read {
+                return None;
+            }
+            let mut as_was = (**now).clone();
+            as_was.read = was.read;
+            if as_was != **was {
+                return None;
+            }
+            changed.push(*id);
+        }
+        if changed.is_empty() {
+            return None;
+        }
+        // And nothing else of the mailbox changed: but for the messages, the two are the same.
+        let mine = std::mem::take(&mut self.mailbox.messages);
+        let theirs = std::mem::take(&mut before.messages);
+        let rest_same = self.mailbox == *before;
+        self.mailbox.messages = mine;
+        before.messages = theirs;
+        rest_same.then_some(changed)
+    }
+
+    /// The list, the counts and the conversation stand through the read marks of `changed`
+    /// ([`Session::read_marks_only`]), with the rows' and the folders' unread counts put right,
+    /// under the revision after them. Only what was of the mailbox as it was before them
+    /// (`rev_before`, the revision the command ran under) is carried over: counts or a
+    /// conversation left from an earlier revision, which a command that is no step of the
+    /// history changed the mailbox past, stay behind it and are worked out afresh when asked.
+    /// And of the counts, only those that stood before the command ran (`counts_before`): counts
+    /// the command built as it ran, under the same revision but over the mailbox after the marks
+    /// (Undo and Redo show what they select again, which builds the list, and so the counts, for
+    /// a message listed under its open conversation), already have them, and would have them
+    /// twice; they are let go of, to be counted again when asked.
+    fn keep_through_read_marks(&mut self, changed: &[Id], rev_before: u64, counts_before: Option<Arc<crate::counts::FolderCounts>>) {
+        let key = self.list_key();
+        let rev = self.rev;
+        let mb = &self.mailbox;
+        if let Some(cache) = &mut self.list_cache {
+            let rows = Arc::make_mut(&mut cache.rows);
+            for row in rows.iter_mut().filter(|r| r.members.iter().any(|m| changed.contains(m))) {
+                row.unread = row.members.iter().filter(|m| mb.message(**m).is_some_and(|m| !m.read)).count();
+            }
+            cache.key = key;
+        }
+        // (The clone of the `Arc` is let go of before the counts are changed in place, so that
+        // changing them doesn't copy them.)
+        let stood = self.counts_cache.as_ref().is_some_and(|(_, counts)| counts_before.as_ref().is_some_and(|b| Arc::ptr_eq(b, counts)));
+        drop(counts_before);
+        if stood
+            && let Some((at, counts)) = &mut self.counts_cache
+            && at.0 == rev_before
+        {
+            let counts = Arc::make_mut(counts);
+            for m in changed.iter().filter_map(|id| mb.message(*id)) {
+                counts.read_changed(m.folder, m.account, m.read);
+            }
+            *at = (rev, mb.messages.len());
+        }
+        if let Some((at, _)) = &mut self.conversation_cache
+            && at.0 == rev_before
+        {
+            at.0 = rev;
+        }
     }
 
     /// The rows of the message list as it was last built, while they are of the list in view: what
@@ -2073,6 +2354,24 @@ impl Session {
         self.resident_bytes = self.resident_bytes.saturating_sub(freed);
     }
 
+    /// The mailbox was `was` and is now another (an undo or a redo): what is counted as brought
+    /// into a message that holds less of it now (its body named on disk again, #688) is let go
+    /// of by as much, so that the count is never more than what is held.
+    fn recount(&mut self, was: &Mailbox) {
+        let mut freed = 0u64;
+        for (id, bytes) in &mut self.resident {
+            let (Some(then), Some(now)) = (was.messages.get(id), self.mailbox.messages.get(id)) else { continue };
+            if Arc::ptr_eq(then, now) {
+                continue;
+            }
+            let less = in_memory(then).saturating_sub(in_memory(now)).min(*bytes);
+            *bytes = bytes.saturating_sub(less);
+            freed = freed.saturating_add(less);
+        }
+        self.resident.retain(|(_, bytes)| *bytes > 0);
+        self.resident_bytes = self.resident_bytes.saturating_sub(freed);
+    }
+
     /// How many bytes brought into messages this session keeps there now.
     pub fn resident_bytes(&self) -> u64 {
         self.resident_bytes
@@ -2316,10 +2615,11 @@ impl Session {
         if self.sel.task.is_some_and(|t| mb.task(t).is_none()) {
             self.sel.task = None;
         }
-        if let Some(c) = &mut self.compose
-            && mb.account(c.account).is_none()
-        {
-            c.account = mb.default_account().map_or(0, |a| a.id);
+        let fallback = mb.default_account().map_or(0, |a| a.id);
+        for c in self.compose.iter_mut().chain(self.composing.iter_mut()) {
+            if mb.account(c.account).is_none() {
+                c.account = fallback;
+            }
         }
         // And its times are by the clock of the zone the calendar is shown in.
         self.settle_zone();
@@ -2370,11 +2670,13 @@ impl Session {
         self.graph_swept.clear();
         self.graph_listed_short.clear();
         self.jmap_read.clear();
+        self.auto_replies.clear();
         self.openings = self.openings.wrapping_add(1);
         self.history.clear();
         self.redo.clear();
         self.sel = Selection::default();
         self.compose = None;
+        self.composing.clear();
         self.view.folder = 0;
         self.view.search.clear();
         // Another mailbox starts with every conversation closed, though its folder has the same id.
@@ -2388,6 +2690,12 @@ impl Session {
 
     fn snapshot(&self, label: &'static str) -> Undo {
         Undo { label, mailbox: self.mailbox.clone(), touched: Default::default(), sel: self.sel.clone(), folder: self.view.folder, mail: false }
+    }
+
+    /// [`Session::snapshot`] without the mailbox, for a command that doesn't change it
+    /// ([`Session::run`]): never kept as a step of the history.
+    fn snapshot_light(&self, label: &'static str) -> Undo {
+        Undo { label, mailbox: Mailbox::default(), touched: Default::default(), sel: self.sel.clone(), folder: self.view.folder, mail: false }
     }
 
     pub fn can_undo(&self) -> bool {
@@ -2430,6 +2738,7 @@ impl Session {
         // Undone, the step is to be done again from here: what that does is the way back.
         let touched = crate::undo::touched(&now, &back);
         self.mailbox = back;
+        self.recount(&now);
         self.undo_said = said;
         // //// Neoffice — and what of a server's notes it couldn't keep in step (cmd/notes/server.rs).
         self.undo_said.extend(kept);
@@ -2539,6 +2848,11 @@ impl Session {
 
     // ---- commands ----
 
+    /// Whether a command is running: one it runs itself is run inside it.
+    pub(crate) fn in_command(&self) -> bool {
+        self.swaps.is_some()
+    }
+
     /// Whether a command exists and is enabled now.
     pub fn enabled(&self, id: &str) -> bool {
         self.registry.get(id).is_some_and(|s| (s.enabled)(self).is_none())
@@ -2550,30 +2864,67 @@ impl Session {
     /// (`cmd::compose::saves_first`, #442) saves it to Drafts first, as a Save Draft step of its
     /// own; when the command then fails, that Save Draft step stays behind, and the draft with it.
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
+        self.run_on_message(id, params)
+    }
+
+    /// [`Session::run`] on the message being written that is current now.
+    pub(crate) fn run_here(&mut self, id: &str, params: &Value) -> Result<Value, CmdError> {
         let reg = self.registry.clone();
         let Some(spec) = reg.get(id) else { return Err(CmdError::Unknown(id.to_string())) };
+        // Work Offline: nothing that would go to a server is asked for (a host, a script, an agent).
+        if self.prefs.offline && crate::cmd::send_receive::ASKS_A_SERVER.contains(&id) {
+            return Err(CmdError::Disabled(crate::cmd::send_receive::OFFLINE.to_string()));
+        }
         if let Some(reason) = (spec.enabled)(self) {
-            // A command that only lacks a selection still runs on what the caller names.
-            let named = spec.selection && ["id", "ids", "message"].iter().any(|k| params.get(*k).is_some_and(|v| !v.is_null()));
+            // A command that only lacks a selection still runs on what the caller names, and on
+            // what it names wrongly, which the command refuses for what it is (#553).
+            let named = spec.selection && ["id", "ids", "message"].iter().any(|k| params.get(*k).is_some());
             if !named {
                 return Err(CmdError::Disabled(reason.to_string()));
             }
         }
         // A message being written isn't let go of with what isn't saved of it (#442): it goes to
         // Drafts first, in a step of its own, and a save that fails stops here.
-        if crate::cmd::compose::saves_first(self, id, params) {
-            self.run("compose.saveDraft", &Value::Null)?;
+        for unsaved in crate::cmd::compose::saves_first(self, id, params) {
+            // (Nobody chose to keep it: one only the background saves had put in Drafts still is.)
+            let was = std::mem::replace(&mut self.saving, Saving::Unasked);
+            let saved = self.run("compose.saveDraft", &serde_json::json!({"compose": unsaved}));
+            self.saving = was;
+            saved?;
         }
-        // Undo and redo manage the history themselves.
-        let history = spec.mutates && !matches!(id, "edit.undo" | "edit.redo");
+        // Undo and redo manage the history themselves; a save in the background is no step.
+        let background = self.saving == Saving::Background;
+        let history = spec.mutates && !matches!(id, "edit.undo" | "edit.redo") && !background;
         // The computer may have been carried to another zone since the last command: the
         // mailbox is put by that zone's clock first, and that is not this command's to undo.
         self.settle_zone();
-        let before = self.snapshot(spec.label);
+        // A command that changes nothing of the mailbox (`CommandSpec::reads`: the view, a search,
+        // the folder in view) has no copy of it taken: copying the map of a few hundred thousand
+        // messages, comparing it afterwards and letting it go took longer than the command, at
+        // every keystroke of a search. The guard against a panic can't put the mailbox back for
+        // one, and needn't: it changes nothing of it (in tests that claim is checked against a
+        // copy of its own, `claimed`, so that the tests run the path the program runs). An
+        // agent's command is copied whatever it is: what it did is checked against the copy.
+        let light = spec.reads && self.agent.is_none();
+        let before = if light { self.snapshot_light(spec.label) } else { self.snapshot(spec.label) };
+        #[cfg(test)]
+        let claimed = spec.reads.then(|| self.mailbox.clone());
+        // What was counted of the mailbox is counted again after the command, and by a command
+        // that changes the mailbox and then asks of its list ([`Session::folder_counts`]).
+        if spec.mutates {
+            self.counts_cache = None;
+            self.conversation_cache = None;
+        }
         let compose = self.compose.clone();
+        let composing = self.composing.clone();
         let signature_edit = self.signature_edit.clone();
         let view = self.view.clone();
         let list_before = self.list_of();
+        // The counts as they stand before the command: only those are carried through read marks
+        // alone ([`Session::keep_through_read_marks`]). Counts the command builds as it runs
+        // (Undo shows what it selects again, and a conversation open in the list has that built)
+        // are of the mailbox after the marks already.
+        let counts_before = self.counts_cache.as_ref().map(|(_, counts)| counts.clone());
         let run = spec.run;
         // Last-resort guard (never-crash): a panic in a command becomes an error and the state is restored.
         let outer = self.swaps.replace(Swaps::default());
@@ -2582,11 +2933,24 @@ impl Session {
         // is no change to undo, and a command that fails keeps it (and what is counted of it).
         let swaps = std::mem::replace(&mut self.swaps, outer).unwrap_or_default();
         let mut before = before;
-        for swap in &swaps.list {
+        for swap in swaps.list.iter().filter(|_| !light) {
             if before.mailbox.messages.get(&swap.id).is_some_and(|m| Arc::ptr_eq(m, &swap.old)) {
                 before.mailbox.messages.insert(swap.id, swap.new.clone());
             }
         }
+        #[cfg(test)]
+        let claimed = claimed.map(|mut claimed| {
+            for swap in &swaps.list {
+                if claimed.messages.get(&swap.id).is_some_and(|m| Arc::ptr_eq(m, &swap.old)) {
+                    claimed.messages.insert(swap.id, swap.new.clone());
+                }
+            }
+            claimed
+        });
+        // Checked whatever became of the command: a reading command that failed or panicked has
+        // nothing put back on the light path, so it must have changed nothing on the way.
+        #[cfg(test)]
+        assert!(claimed.is_none_or(|claimed| self.mailbox == claimed), "`{id}` says it reads (`CommandSpec::reads`) but changed the mailbox");
         if let Some(outer) = &mut self.swaps {
             for swap in swaps.list {
                 outer.push(swap);
@@ -2606,6 +2970,11 @@ impl Session {
             (Ok(_), Some(_)) if self.owner_changing.iter().any(|e| gone_in(&before.mailbox, &self.mailbox, *e)) => Err(CmdError::Failed(format!(
                 "`{id}` would take away an appointment, a contact or a task the owner is changing in the window and hasn't saved, and the owner wasn't asked about that; nothing was changed. Try again once the owner has saved or closed it"
             ))),
+            // What is written in the message the owner is writing is theirs until it is closed
+            // (#494): an agent doesn't change it, nor empty it and save that over its draft (#577).
+            (Ok(_), Some(_)) if changes_owners_message(compose.as_ref(), self.compose.as_ref()) => Err(CmdError::Failed(format!(
+                "`{id}` would change the message the owner is writing, which is theirs until they close it; nothing was changed. Ask the owner to make the change, or to close the message first"
+            ))),
             (Ok(_), Some(allow)) if let Some(c) = crate::agent::overstep(&before.mailbox, &self.mailbox, allow) => {
                 Err(CmdError::Failed(crate::agent::needs_owner(id, c, false, "do more than an agent is allowed to; nothing was changed")))
             }
@@ -2613,12 +2982,18 @@ impl Session {
         };
         match &result {
             Ok(_) => {
+                // Whatever put the caret there (a format, an account, a signature, an undo, an agent).
+                if let Some(c) = self.compose.as_mut() {
+                    c.keep_out_of_signature();
+                }
                 // A message being written that the owner (or a script of theirs) changed is theirs
                 // until it is closed (#494); an agent's own changes don't make it the agent's.
+                // (One put aside before and current again isn't changed by being so.)
                 if self.agent.is_none()
                     && let Some(c) = self.compose.as_mut()
                     && c.dirty
                     && !c.owner_changed
+                    && !composing.iter().any(|other| other.id == c.id)
                     && !compose.as_ref().is_some_and(|before| as_it_was(before, c))
                 {
                     c.owner_changed = true;
@@ -2640,9 +3015,15 @@ impl Session {
                 if wipes_history(id) {
                     crate::cmd::calendar_settings::forget_gone_hours(self);
                 }
-                if self.mailbox != before.mailbox {
+                if !light && self.mailbox != before.mailbox {
                     self.hold_replaced(&before.mailbox);
+                    // Read marks alone: the list and the counts stand, put right ([`Session::read_marks_only`]).
+                    let read_marks = self.read_marks_only(&mut before.mailbox);
+                    let rev_before = self.rev;
                     self.rev += 1;
+                    if let Some(changed) = &read_marks {
+                        self.keep_through_read_marks(changed, rev_before, counts_before);
+                    }
                     if history && wipes_history(id) {
                         // The mail is gone from this computer (#177): no step brings it back,
                         // and none holds its content on disk.
@@ -2659,21 +3040,27 @@ impl Session {
                             self.history.remove(0);
                         }
                         self.redo.clear();
+                    } else if background {
+                        // Not to undo, but to keep: the file is written.
+                        self.dirty = true;
                     }
                 }
                 self.normalize();
             }
             Err(_) => {
-                if self.mailbox != before.mailbox {
-                    self.rev += 1;
+                if !light {
+                    if self.mailbox != before.mailbox {
+                        self.rev += 1;
+                    }
+                    self.mailbox = before.mailbox;
                 }
-                self.mailbox = before.mailbox;
                 // A list built for what the command kept may lack what was kept before it (#428).
                 if self.sel.stays != before.sel.stays {
                     self.list_cache = None;
                 }
                 self.sel = before.sel;
                 self.compose = compose;
+                self.composing = composing;
                 self.signature_edit = signature_edit;
                 self.view = view;
             }
@@ -2694,6 +3081,21 @@ fn as_it_was(before: &Compose, now: &Compose) -> bool {
     let at = now.body.selection();
     let mut moved = before.clone();
     moved.body.select(at.anchor, at.head).is_ok() && moved == *now
+}
+
+/// Whether `now` is the message the owner was writing in `before` (#494), still open, with what
+/// is written in it changed: its text, its recipients, its attachments, anything but where the
+/// cursor is, whether it is saved and the draft it was saved as (#577). A message put in its
+/// place (which the owner was asked about) is nobody's yet, so it isn't.
+fn changes_owners_message(before: Option<&Compose>, now: Option<&Compose>) -> bool {
+    let (Some(before), Some(now)) = (before, now) else { return false };
+    // Another one current now (the one before was closed, or put aside) isn't that one changed.
+    if before.id != now.id || !before.owner_changed || !now.owner_changed {
+        return false;
+    }
+    let mut saved = before.clone();
+    (saved.dirty, saved.draft, saved.autosaved) = (now.dirty, now.draft, now.autosaved);
+    saved != *now && !as_it_was(&saved, now)
 }
 
 /// Commands that remove what is kept of an account on this computer (#177): they leave nothing

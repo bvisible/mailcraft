@@ -9,6 +9,30 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `6e02c20` (upstream's tag v0.10.0, 2026-11-02, 188 commits after v0.9.0: writing several messages at once, each in a window of
+  its own or in the reading pane (#286: `windows/compose_window`, `Session::all_composing`, `pane_compose`); the new look, four
+  accents and high contrast (#703); Exchange server accounts as a preview, no longer behind `MAILCRAFT_EWS` (#252: `Session::ews`
+  and `ews_mail::can_queue_mail` are gone, `AccountKind::sends_mail` says it); automatic replies of a Microsoft account (#692,
+  `auto_replies`); Work Offline (`send_receive::after`, `MailApp::offline`); View zoom, recent searches, tighter spacing and Change
+  View; Resend, Reply and Delete, Find and Replace, View Source; Dutch; a window that stays quick over a large mailbox (#731:
+  `counts.rs`, `Session::folder_counts`); an agent can't touch a message the owner has typed in (#577) and an id named wrongly
+  is refused instead of becoming the selection (#553: `p::id_strict`, `p::message_strict`); an HTML signature shown as it goes
+  out (#614); the ribbon folds into the room it has (#709, #712, `ribbon/fit.rs`)), merged into `version-15` on 2026-11-02 with
+  conflicts in 24 files besides the catalogues. The places where upstream's change meets the fork's are marked:
+  `Session::sends_mail_of` is `AccountKind::sends_mail` and a JMAP account's where the host runs it (the test of the Exchange
+  switch went with the switch); `Services` takes `graph_auto_replies` and keeps the fork's `jmap`/`jmap_fetch` (`jmap_job.rs`), upstream's
+  (`jmap_mail.rs`) staying out, and `unconfirmed.rs` holds both; `cmd::account::unpushed` counts a Microsoft or Exchange server
+  account's as `graph_mail` does and a JMAP account's as `jmap_mail` (the fork's) does; `nav::tallies` is gone and
+  `nav::shown_count` takes the engine's `FolderCounts`, the one rule the folder pane and a hosting page's menu share (`host_menu::state`
+  reads `Session::fresh_counts` and counts once only when none is fresh); upstream's `action_bar` and `header` in `compose.rs` carry
+  the fork's narrow-bar icons, the state cut to the room left, and Nora's band under the subject; `run` keeps the guard against a
+  message going out with a field of Nora's empty before upstream's `pane_compose`; Nora's keyboard goes back through `want_body_focus`;
+  `ribbon::describe_tab` builds the Notes Home tab and adds Nora's, Share in Synk and the diagnostics groups before `fit::prioritise`;
+  a message row keeps the box that ticks it beside upstream's tighter spacing (`lift`); the `view.*` commands are `.reads()` as
+  upstream has them, `view.tasks` keeping its `.when(kept_here)`; the fork's thread-local language of the tests is gone for upstream's
+  `RestoreLanguage` lock, which the tests that change the language hold (`run_words` tests, `nav_tests`); a JMAP account's draft is
+  saved by the five-minute timer like every kind of account's (the test now says an IMAP account's is kept in Drafts here). The
+  catalogues were merged entry by entry (a script over the three stages, then `cargo xtask i18n`). What came before it:
 - `0009470` (upstream's tag v0.9.0, 2026-10-30: three commits after `4bef0a9`, a one-file mailbox of any size read as a
   stream (#649, #664), a picture another thread keeps still found on Windows (#665), and the release notes and version
   (#669)), merged into `version-15` on 2026-10-31 without a conflict. What came before it:

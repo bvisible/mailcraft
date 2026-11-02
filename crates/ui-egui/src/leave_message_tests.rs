@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Leaving a message being written asks first (#442): Escape, the ✕, New Email, Reply, Reply All,
-//! Forward and Open Draft show the Unsaved Message question that quitting shows, unless the
-//! message is empty; Save Draft, Discard and Cancel each do what they say; and a script is never
-//! asked.
+//! Leaving a message being written asks first (#442): Escape and the ✕ show the Unsaved Message
+//! question that quitting shows, unless the message is empty; Save Draft, Discard and Cancel each
+//! do what they say; and a script is never asked. New Email, Reply, Reply All, Forward and Open
+//! Draft open another message beside it and ask nothing (#286).
 
 use egui::Key;
 use mailcraft_engine::Session;
@@ -60,10 +60,14 @@ fn with_a_draft() -> (MailApp, Id) {
 }
 
 /// What the owner can do that leaves the message being written.
-fn actions(a: &MailApp, draft: Id) -> Vec<(&'static str, Value)> {
+fn actions(_: &MailApp, _: Id) -> Vec<(&'static str, Value)> {
+    vec![("compose.close", json!({}))]
+}
+
+/// What the owner can do that starts another message beside it (#286).
+fn starting(a: &MailApp, draft: Id) -> Vec<(&'static str, Value)> {
     let other = received(a);
     vec![
-        ("compose.close", json!({})),
         ("mail.new", json!({})),
         ("mail.reply", json!({"id": other})),
         ("mail.replyAll", json!({"id": other})),
@@ -90,6 +94,31 @@ fn went_on(a: &MailApp, id: &str, was: &str, draft: Id) {
         "mail.editDraft" => assert_eq!(a.session.compose.as_ref().unwrap().draft, Some(draft), "{id}"),
         _ => assert!(subject(a).is_some_and(|s| s != was), "{id}: {:?}", subject(a)),
     }
+}
+
+#[test]
+fn starting_another_message_asks_nothing_and_saves_this_one_first() {
+    let (mut a, draft) = with_a_draft();
+    for (n, (id, params)) in starting(&a, draft).into_iter().enumerate() {
+        let mine = format!("Mine {n}");
+        written(&mut a, &mine);
+        let r = a.run(id, params).unwrap();
+        assert!(r.get("pending").is_none() && a.dialog.is_none(), "{id}: nothing to ask about");
+        assert!(draft_with(&a, &mine).is_some(), "{id}: saved to Drafts first, unasked");
+        assert!(a.session.composing.iter().any(|c| c.subject == mine && !c.dirty), "{id}: still open beside it");
+        assert_ne!(subject(&a).as_deref(), Some(mine.as_str()), "{id}");
+        // The new one closed, this one is current again.
+        a.execute("compose.close", json!({"discard": true})).unwrap();
+        assert_eq!(subject(&a).as_deref(), Some(mine.as_str()), "{id}");
+    }
+    // Each closed in turn brings back the one before it, until none is left.
+    for _ in 0..20 {
+        if a.session.compose.is_none() {
+            break;
+        }
+        a.execute("compose.close", json!({"discard": true})).unwrap();
+    }
+    assert_eq!(a.session.composing_count(), 0);
 }
 
 #[test]
@@ -183,16 +212,26 @@ fn a_draft_that_cant_be_saved_leaves_the_message_open_and_says_why() {
 }
 
 #[test]
-fn quitting_still_asks_and_each_answer_still_quits() {
-    for (answer, kept) in [("save", true), ("discard", false)] {
+fn quitting_saves_to_drafts_unasked_and_asks_only_when_that_fails() {
+    // Closing the window saves what is being written to Drafts, asking nothing (#286).
+    let mut a = app();
+    written(&mut a, "At quitting");
+    assert!(a.close_requested());
+    assert!(a.dialog.is_none());
+    assert!(draft_with(&a, "At quitting").is_some());
+    // With nowhere to save it, the owner is asked, and each answer still quits.
+    for (answer, kept) in [("save", false), ("discard", false)] {
         let mut a = app();
-        written(&mut a, "At quitting");
-        assert!(!a.close_requested());
-        assert_eq!(asked(&a).map(|(then, _)| then), Some("quit".to_string()));
+        written(&mut a, "Nowhere at quitting");
+        let d = drafts(&a);
+        a.session.mailbox.folders.iter_mut().find(|f| f.id == d).unwrap().kind = FolderKind::Custom;
+        assert!(!a.close_requested(), "{answer}");
+        assert_eq!(asked(&a).map(|(then, _)| then), Some("quit".to_string()), "{answer}");
+        a.session.mailbox.folders.iter_mut().find(|f| f.id == d).unwrap().kind = FolderKind::Drafts;
         a.dialog = None;
         leave_message(&mut a, answer, "quit", json!({}));
         assert!(a.quit_requested && a.session.compose.is_none(), "{answer}");
-        assert_eq!(draft_with(&a, "At quitting").is_some(), kept, "{answer}");
+        assert_eq!(draft_with(&a, "Nowhere at quitting").is_some(), answer == "save" || kept, "{answer}");
     }
 }
 
@@ -250,4 +289,58 @@ fn the_question_opened_by_name_runs_nothing_after_it() {
             _ => assert!(a.session.compose.is_none() && draft_with(&a, "Planted").is_none()),
         }
     }
+}
+
+/// #470: another mailbox in view (File › New, File › Open, a recent or dropped mailbox file)
+/// asks as the other actions do: Cancel stays in the message and the mailbox; Save Draft and
+/// Discard go on to open the other mailbox.
+#[test]
+fn another_mailbox_asks_first() {
+    let file = std::env::temp_dir().join(format!("mc-470-{}.mailcraft", std::process::id()));
+    mailcraft_engine::store::save(&file, &mailcraft_model::Mailbox::with_local_account("", "")).unwrap();
+    let open = json!({"path": file.to_string_lossy()});
+    for (id, params) in [("file.new", json!({})), ("file.open", open)] {
+        for answer in ["cancel", "save", "discard"] {
+            let mut a = app();
+            written(&mut a, "Mine");
+            let before = (a.session.compose.clone(), a.session.mailbox.clone());
+            let r = a.run(id, params.clone()).unwrap();
+            assert_eq!(r["pending"], "discardDraft", "{id}");
+            let (then, waiting) = asked(&a).unwrap();
+            assert_eq!(a.session.compose, before.0, "{id}: nothing happens before the answer");
+            a.dialog = None;
+            leave_message(&mut a, answer, &then, waiting);
+            if answer == "cancel" {
+                assert_eq!(subject(&a).as_deref(), Some("Mine"), "{id}: Cancel stays in the message");
+                assert!(a.session.mailbox == before.1, "{id}: and in the mailbox");
+            } else {
+                assert!(a.session.compose.is_none(), "{id} {answer}");
+                assert!(a.session.mailbox.messages.is_empty(), "{id} {answer}: the other mailbox is in view");
+                assert!(a.dialog.is_none(), "{id} {answer}: asked once");
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&file);
+}
+
+/// File › Open with no file named yet opens the picker without asking: the question comes once
+/// a file is chosen, so a cancelled picker leaves the message alone.
+#[test]
+fn open_asks_once_a_file_is_chosen() {
+    let mut a = app();
+    written(&mut a, "Mine");
+    assert!(!crate::dialogs::leaves_message(&a, "file.open", &json!({})));
+    assert!(crate::dialogs::leaves_message(&a, "file.open", &json!({"path": "/somewhere/Archive.mailcraft"})));
+    assert!(crate::dialogs::leaves_message(&a, "file.open", &json!({"name": "a.mailcraft", "data": ""})));
+    assert!(crate::dialogs::leaves_message(&a, "file.new", &json!({})));
+}
+
+/// A script is never asked: what was written goes to Drafts of the mailbox left (the engine's
+/// `another_mailbox_saves_the_message_being_written_to_drafts_first` follows it into the file).
+#[test]
+fn a_script_opening_another_mailbox_is_not_asked() {
+    let mut a = app();
+    written(&mut a, "Mine");
+    a.execute("file.new", json!({})).unwrap();
+    assert!(a.dialog.is_none() && a.session.compose.is_none());
 }

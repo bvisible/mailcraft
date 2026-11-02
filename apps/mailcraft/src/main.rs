@@ -35,6 +35,8 @@ mod clipboard;
 mod control_challenge_flow;
 mod control_server;
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
+mod desktop_icons;
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
 mod desktop_theme;
 mod diagnostics;
 #[cfg(test)]
@@ -101,7 +103,7 @@ use mailcraft_model::sync::Tokens;
 use mailcraft_ui_egui::{
     AdminConsentAnswer, AdminConsentRequest, CalendarCheckRequest, CalendarCheckResult, CalendarCheckStep, FreeBusyRequest, FreeBusyResult,
     GraphRequest, GraphResult, MailApp, Services, SettingsUnread, SignInRequest, UiState,
-    window_geometry::{WindowGeometry, take_rescue},
+    window_geometry::{self, WindowGeometry, take_rescue},
 };
 
 /// The app, the restored window geometry until the first frame has checked it, the control
@@ -166,11 +168,26 @@ impl eframe::App for App {
             bar.pump(&mut self.0, ctx);
         }
         self.0.logic(ctx);
+        // Another mailbox file opened in the window (or File › New): the lock follows it (#517).
+        if let Some(guard) = &self.4
+            && !self.0.is_opening()
+        {
+            guard.follow(self.0.session.path.as_deref());
+        }
         self.3.show(frame);
         let prev = self.0.ui.window;
         self.0.ui.window = ctx.input(|i| WindowGeometry::track(prev, i.viewport(), i.viewport_rect().size()));
-        if let Some(pos) = ctx.input(|i| take_rescue(&mut self.1, i.viewport())) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+        // A window restored onto a monitor that is gone is moved onto the main one (#719): the
+        // monitors are asked for only until that check is done.
+        if self.1.is_some() {
+            let monitors = connected_monitors(ctx, frame);
+            if let Some(pos) = ctx.input(|i| take_rescue(&mut self.1, i.viewport(), &monitors)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(pos));
+            }
+        }
+        // A window of its own about to open is put on a monitor that is connected (#286).
+        if self.0.wants_monitors() {
+            self.0.set_monitors(monitors_in_pixels(frame));
         }
         // Pages to open, with the browser brought in front (`browser`).
         open_pages(ctx, frame);
@@ -292,19 +309,6 @@ fn opened_files() -> Option<&'static opened_files::Opened> {
 /// Where the log files live: `logs` in the preferences folder (see `logging`).
 fn log_dir() -> Option<PathBuf> {
     Some(prefs_path()?.parent()?.join("logs"))
-}
-
-/// The switch for testing Exchange server accounts (#252): `MAILCRAFT_EWS=1`. Off, `account.add`
-/// with `kind: "exchange"` and every `sync.ews*` command refuse, and an Exchange server account
-/// already in a mailbox opens, shows its mail and isn't kept in step. (Add Account doesn't offer
-/// them either way yet: its page for them comes later, and will be shown only while this is on.)
-fn ews_switch() -> bool {
-    let on = std::env::var("MAILCRAFT_EWS").is_ok_and(|value| value.trim() == "1");
-    static SAID: std::sync::Once = std::sync::Once::new();
-    if on {
-        SAID.call_once(|| log::info!("Exchange server accounts may be added and kept in step (MAILCRAFT_EWS=1, for testing)"));
-    }
-    on
 }
 
 /// Runs without preferences (`MAILCRAFT_NO_PREFS`, agents' test runs) neither read nor write them,
@@ -473,6 +477,39 @@ fn open_in_browser(url: &str) -> bool {
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
 static DESKTOP_THEME: std::sync::OnceLock<desktop_theme::DesktopTheme> = std::sync::OnceLock::new();
 
+/// The monitors connected now, in the points the window's place is in, from the window eframe made
+/// (egui doesn't list them). None while there is no window; where the system lists none, none.
+fn connected_monitors(ctx: &egui::Context, frame: &eframe::Frame) -> Vec<egui::Rect> {
+    let Some(window) = frame.winit_window() else { return Vec::new() };
+    // As egui turns the window's own rect into points (`egui_winit::pixels_per_point`).
+    let pixels_per_point = ctx.zoom_factor() * window.scale_factor() as f32;
+    let listed = window.available_monitors().map(|m| {
+        let (at, size) = (m.position(), m.size());
+        ([at.x, at.y], [size.width, size.height])
+    });
+    window_geometry::monitors_in_points(listed, pixels_per_point)
+}
+
+/// The monitors connected now, in the system's pixels with each one's scale, for the windows of
+/// their own about to open (#286): one space for every monitor, whatever its scale.
+fn monitors_in_pixels(frame: &eframe::Frame) -> Vec<mailcraft_ui_egui::window_places::Monitor> {
+    let Some(window) = frame.winit_window() else { return Vec::new() };
+    window
+        .available_monitors()
+        .take(64)
+        .map(|m| {
+            let (at, size) = (m.position(), m.size());
+            // (In points on macOS, where winit gives each monitor's place by its own scale.)
+            mailcraft_ui_egui::window_places::monitor(
+                [at.x, at.y],
+                [size.width, size.height],
+                m.scale_factor(),
+                mailcraft_ui_egui::window_places::POINTS,
+            )
+        })
+        .collect()
+}
+
 /// The pages waiting for the window's activation token (`browser`), set once before the window opens.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 static BROWSER: std::sync::OnceLock<browser::Browser<winit::event_loop::AsyncRequestSerial>> = std::sync::OnceLock::new();
@@ -635,6 +672,12 @@ fn sign_in_with(request: SignInRequest, open_page: &dyn Fn(&str) -> bool) -> Res
     // ahead: the page comes up for that permission alone, by itself.
     if request.graph && request.tasks {
         let asked = mailcraft_net::oauth::sign_in_for_tasks(&request.oauth, &request.email, &open, &request.cancel);
+        return asked.map_err(|refusal| unopened(favorites_refusal(refusal)));
+    }
+    // A change of the automatic replies found the sign-in doesn't cover changing the mailbox's
+    // settings, and the owner said go ahead: the page comes up for that permission alone.
+    if request.graph && request.replies {
+        let asked = mailcraft_net::oauth::sign_in_for_replies(&request.oauth, &request.email, &open, &request.cancel);
         return asked.map_err(|refusal| unopened(favorites_refusal(refusal)));
     }
     // Calendars are opened by address for the first time (#70): the page comes up for the same
@@ -1309,6 +1352,63 @@ fn tasks_job_with(
     out
 }
 
+/// File › Info › Automatic Replies: a read takes the calendar's tokens, which read the
+/// mailbox's settings (no more token requests than any Graph job makes); a change takes a token
+/// for changing them, which a sign-in doesn't carry until the owner allowed it by itself (then
+/// the answer says he is to be asked, and nothing is sent). The setting is read back after a
+/// change. Nothing of a reply is logged.
+fn auto_replies_job(job: mailcraft_ui_egui::auto_replies::AutoRepliesJob) -> mailcraft_ui_egui::auto_replies::AutoRepliesResult {
+    use mailcraft_net::{NetError, graph, oauth};
+    let mut out = mailcraft_ui_egui::auto_replies::AutoRepliesResult { account: job.account.id, ..Default::default() };
+    let renewed = match &job.change {
+        Some(_) => oauth::refresh_graph_replies(&job.oauth, &job.refresh, tasks_mail(&job.account)).map(|got| (got.tokens, true)),
+        None => oauth::refresh_graph(&job.oauth, &job.refresh).map(|got| (got.tokens, !got.extras_missing)),
+    };
+    let access = match renewed {
+        Ok((tokens, covered)) => {
+            let access = tokens.access.clone();
+            out.tokens = Some(tokens);
+            if !covered {
+                // The sign-in doesn't read the mailbox's settings: the owner is to sign in again.
+                out.consent_needed = true;
+                return out;
+            }
+            access
+        }
+        Err(e) if e.is_consent_needed() && job.change.is_some() => {
+            out.write_consent_needed = true;
+            return out;
+        }
+        Err(e) => {
+            out.consent_needed = e.is_consent_needed();
+            out.sign_in_refused = !out.consent_needed && e.is_refused_sign_in();
+            if !out.consent_needed && !out.sign_in_refused {
+                out.error = format!("Couldn't sign in to Microsoft for the automatic replies: {e}");
+            }
+            return out;
+        }
+    };
+    if let Some(change) = &job.change {
+        match graph::set_automatic_replies(&access, change) {
+            Ok(()) => out.changed = true,
+            // The token covers the permission and Graph still says no: the organisation keeps them.
+            Err(NetError::Forbidden(_)) => out.write_denied = true,
+            Err(e) if e.is_refused_sign_in() => {
+                out.sign_in_refused = true;
+                return out;
+            }
+            Err(e) => out.error = format!("Couldn't change the automatic replies: {e}"),
+        }
+    }
+    match graph::automatic_replies(&access) {
+        Ok(setting) => out.setting = Some(setting),
+        Err(e) if e.is_refused_sign_in() => out.sign_in_refused = true,
+        Err(e) if out.error.is_empty() => out.error = format!("Couldn't read the automatic replies: {e}"),
+        Err(_) => {}
+    }
+    out
+}
+
 /// File › Info › Check Calendar Connection: on the account's real server, and only because the
 /// owner asked for it and said yes to what it does. One appointment is made a year from today
 /// in the main calendar, read back, changed (once as an instant, once said in this computer's
@@ -1448,6 +1548,7 @@ fn services(
     let (ews_ctx, ews_fetch_ctx, ews_setup_ctx) = (ctx.clone(), ctx.clone(), ctx.clone());
     let search_ctx = ctx.clone();
     let tasks_ctx = ctx.clone();
+    let replies_ctx = ctx.clone();
     let ahead_ctx = ctx.clone();
     let update_ctx = ctx.clone();
     let download_ctx = ctx.clone();
@@ -1502,6 +1603,10 @@ fn services(
         // The tasks of a Microsoft account, kept in step with Microsoft To Do (#248).
         graph_tasks: Some(Box::new(move |job: mailcraft_ui_egui::task_sync::TasksJob| {
             background(&tasks_ctx, "microsoft to do", move || tasks_job(job))
+        })),
+        // File › Info › Automatic Replies of a Microsoft account, read and changed on its server.
+        graph_auto_replies: Some(Box::new(move |job: mailcraft_ui_egui::auto_replies::AutoRepliesJob| {
+            background(&replies_ctx, "automatic replies", move || auto_replies_job(job))
         })),
         lookup_mx: Some(Box::new(move |domain| {
             background(&mx_ctx, "mail exchangers", move || mailcraft_net::lookup_mx(&domain).map_err(|e| e.to_string()))
@@ -1784,6 +1889,12 @@ fn main() -> eframe::Result {
             self_update::clear_mac_data(&folders);
         }
     }
+    // The icons of MailCraft in the owner's own data folder, brought up to this version's: an
+    // update replaces the program, not the icons a copy put in place by hand came with (#732).
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))]
+    if build_sha() != "dev" && prefs_enabled() {
+        desktop_icons::refresh();
+    }
     // The settings folder holds the mailbox, the control key and the logs: for the owner alone.
     // One an earlier version left open to others is closed; best effort, never a reason not to
     // start (a folder of somebody else's, named by `--mailbox`, is not touched).
@@ -1793,7 +1904,8 @@ fn main() -> eframe::Result {
         log::debug!("the settings folder was not made private: {e}");
     }
     // One window per mailbox file: started again, MailCraft hands what it was started with to
-    // the window that has the mailbox and exits. The sample keeps no file, so it isn't guarded.
+    // the window that has the mailbox and exits. The sample keeps no file, so nothing is locked at the
+    // start; a mailbox file it opens later is (#517).
     let kept = if sample { None } else { mailbox_path.clone().or_else(|| default_mailbox_path().filter(|_| prefs_enabled())) };
     let guard = match kept {
         Some(path) => match single_instance::start(&path, &files) {
@@ -1805,7 +1917,8 @@ fn main() -> eframe::Result {
                 return Ok(());
             }
         },
-        None => None,
+        // Nothing held yet: a mailbox file opened later in the window is locked all the same.
+        None => Some(single_instance::none()),
     };
     // The log file lives in the settings directory, next to the preferences; opened after the
     // arguments, so `--version` leaves no file behind. Runs without preferences (agents' test
@@ -1849,6 +1962,8 @@ fn main() -> eframe::Result {
     let apple_events = apple_events::AppleEvents::install();
     #[cfg(target_os = "macos")]
     let apple_events = &apple_events;
+    // For the window, to take the lock of another mailbox file before it opens it (#517).
+    let claimer = guard.as_ref().map(single_instance::Guard::claimer);
     run_window(
         options,
         Box::new(move |cc| {
@@ -1873,7 +1988,6 @@ fn main() -> eframe::Result {
                 let (mailbox, path, unavailable, unchecked, damaged) =
                     (arrival.mailbox, arrival.path, arrival.unavailable, arrival.unchecked, arrival.damaged);
                 let mut session = Session::new(mailbox);
-                session.ews = ews_switch();
                 let kept = path.is_some();
                 session.path = path;
                 // Search answers from a word index kept beside the mailbox file, built in the
@@ -1885,6 +1999,8 @@ fn main() -> eframe::Result {
                 services.window_identity =
                     Some(mailcraft_ui_egui::windows::WindowIdentity { icon: app_icon().map(std::sync::Arc::new), app_id: Some(APP_ID.into()) });
                 services.update_start = update_start;
+                services.claim_mailbox =
+                    claimer.map(|c| Box::new(move |path: &std::path::Path| c.claim(path)) as Box<dyn Fn(&std::path::Path) -> bool>);
                 let mut app = MailApp::new(session, services);
                 // Nowhere to keep the mailbox (the sample, a run without preferences): don't try.
                 app.autosave = kept;

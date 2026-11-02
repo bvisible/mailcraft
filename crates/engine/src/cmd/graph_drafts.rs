@@ -80,7 +80,11 @@ pub fn draft_up(m: &Message) -> Option<DraftUp> {
         to: differs(&|was| was.to == now.to).then(|| m.to.clone()),
         cc: differs(&|was| was.cc == now.cc).then(|| m.cc.clone()),
         bcc: differs(&|was| was.bcc == now.bcc).then(|| m.bcc.clone()),
+        // (Nothing to say of where replies go, for a draft the server never had: none is set.)
+        reply_to: differs(&|was| was.reply_to == now.reply_to).then(|| m.reply_to.clone()).filter(|r| synced.is_some() || !r.is_empty()),
         importance: differs(&|was| was.importance == now.importance).then_some(m.importance),
+        // (Nor of a read receipt, for a draft the server never had that asks for none.)
+        read_receipt: differs(&|was| was.read_receipt == now.read_receipt).then_some(m.read_receipt).filter(|on| synced.is_some() || *on),
         attachments,
     })
 }
@@ -98,7 +102,9 @@ pub fn draft_up_whole(m: &Message) -> Option<DraftUp> {
         to: Some(m.to.clone()),
         cc: Some(m.cc.clone()),
         bcc: Some(m.bcc.clone()),
+        reply_to: Some(m.reply_to.clone()),
         importance: Some(m.importance),
+        read_receipt: Some(m.read_receipt),
         attachments: Some(up.attachments.unwrap_or_else(|| AttachmentsUp { here: m.attachments.iter().map(AttachmentUp::of).collect(), synced })),
         ..up
     })
@@ -196,6 +202,12 @@ pub fn draft_done(mb: &mut Mailbox, account: Id, done: &DraftDone, lang: mailcra
         }
         if let Some(bcc) = &change.bcc {
             state.bcc = bcc.clone();
+        }
+        if let Some(reply_to) = &change.reply_to {
+            state.reply_to = reply_to.clone();
+        }
+        if let Some(read_receipt) = change.read_receipt {
+            state.read_receipt = read_receipt;
         }
         if let Some(importance) = change.importance {
             state.importance = importance;

@@ -659,7 +659,8 @@ fn write(app: &mut MailApp, chars: usize, text: &str) -> Result<(), String> {
     // The keyboard goes back to the text only if it was there: an answer that comes while the person
     // types in another field leaves them there.
     if had_keys {
-        app.body_focus_wanted = true;
+        // //// Neoffice — the message being written takes the keyboard back (`want_body_focus`: one per message since #286).
+        app.want_body_focus();
     }
     Ok(())
 }

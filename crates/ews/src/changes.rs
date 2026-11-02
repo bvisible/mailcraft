@@ -152,6 +152,10 @@ pub struct ItemUpdate {
     pub cc: Option<Vec<Address>>,
     /// See `to`.
     pub bcc: Option<Vec<Address>>,
+    /// `message:ReplyTo` (a draft).
+    pub reply_to: Option<Vec<Address>>,
+    /// `message:IsReadReceiptRequested` (a draft).
+    pub read_receipt: Option<bool>,
 }
 
 impl ItemUpdate {
@@ -182,6 +186,7 @@ impl ItemUpdate {
             ("message:ToRecipients", "t:ToRecipients", &self.to),
             ("message:CcRecipients", "t:CcRecipients", &self.cc),
             ("message:BccRecipients", "t:BccRecipients", &self.bcc),
+            ("message:ReplyTo", "t:ReplyTo", &self.reply_to),
         ] {
             if let Some(people) = list {
                 if people.iter().all(|a| a.email.trim().is_empty()) {
@@ -193,6 +198,10 @@ impl ItemUpdate {
         }
         if let Some(importance) = self.importance {
             put(Self::set("item:Importance", "t:Message", Element::new("t:Importance").text(importance_name(importance))));
+        }
+        if let Some(asked) = self.read_receipt {
+            let value = Element::new("t:IsReadReceiptRequested").text(if asked { "true" } else { "false" });
+            put(Self::set("message:IsReadReceiptRequested", "t:Message", value));
         }
         if let Some(read) = self.read {
             put(Self::set("message:IsRead", "t:Message", Element::new("t:IsRead").text(if read { "true" } else { "false" })));

@@ -84,7 +84,7 @@ fn agents_are_asked_before_deleting_contacts_tasks_events_and_categories() {
         assert_eq!(check(&s, id, &params, &[Class::Delete]), Verdict::Run, "{id}");
     }
     let d = describe(&s, "people.delete", &json!({"id": c}));
-    assert!(d.contains("Ada Example") && d.contains("for good"), "{d}");
+    assert!(d.contains("Ada Example") && d.contains("permanently"), "{d}");
     assert!(describe(&s, "tasks.delete", &json!({"id": t})).contains("Pay the invoice"));
     // Telling the people invited too is the stronger question.
     assert!(matches!(check(&s, "calendar.delete", &json!({"id": e, "send": true}), &[Class::Delete]), Verdict::Ask(Class::Send, _)));
@@ -108,6 +108,27 @@ fn a_question_is_shown_in_full_or_refused() {
     s.run("mail.new", &json!({"to": many.join("; "), "subject": "Hi"})).unwrap();
     let d = describe(&s, "compose.send", &json!({}));
     assert!(d.contains("p0@example.org") && d.contains("and 28 more"), "{d}");
+}
+
+#[test]
+fn the_question_about_an_outbox_says_what_that_outbox_does() {
+    let mut s = sample();
+    let m = *s.mailbox.messages.keys().next().unwrap();
+    let sends = folder_of(&s, FolderKind::Outbox);
+    let imap =
+        s.run("account.add", &json!({"email": "ada@mail.example", "incoming": {"host": "imap.mail.example"}})).unwrap()["id"].as_u64().unwrap();
+    let holds = s.mailbox.folder_of_kind(imap, FolderKind::Outbox).unwrap();
+    for (id, verb) in [("mail.move", "move"), ("mail.copy", "copy")] {
+        let d = describe(&s, id, &json!({"ids": [m], "folder": sends}));
+        assert!(d.ends_with("in the Outbox, which sends them"), "{d}");
+        let d = describe(&s, id, &json!({"ids": [m], "folder": holds}));
+        assert!(d.starts_with(verb) && d.ends_with("into the Outbox of ada@mail.example, held there unsent until Send Again"), "{d}");
+    }
+    // Imported mail never lies in an Outbox, of whichever kind.
+    for folder in [sends, holds] {
+        let d = describe(&s, "file.import", &json!({"folder": folder}));
+        assert_eq!(d, "import a file with an Outbox chosen: no mail goes in it, and none is sent");
+    }
 }
 
 #[test]

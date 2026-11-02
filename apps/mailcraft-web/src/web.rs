@@ -259,7 +259,10 @@ fn open_links(ctx: &egui::Context) {
 }
 
 fn services(inbox: Inbox, ctx: egui::Context) -> Services {
-    let open_inbox = inbox.clone();
+    // What the picker delivers comes in apart from what is dropped: it is for what the picker
+    // was opened for, and a dropped file never is.
+    let picked = Inbox::default();
+    let open_inbox = picked.clone();
     // //// Neoffice — an account kept in step with a JMAP server is read through `fetch` (jmap_services.rs), with the credential its owner types; a hosting page's credentials replace these (hosted_app).
     let (jmap_ctx, gate) = (ctx.clone(), crate::jmap_services::Gate::default());
     let no_credentials = std::rc::Rc::new(crate::credentials::NoCredentials);
@@ -293,6 +296,7 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
             });
         })),
         download: Some(Box::new(download)),
+        picked: Some(picked),
         inbox: Some(inbox),
         persist: Some(Box::new(persist)),
         // //// Neoffice — as above.

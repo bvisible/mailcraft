@@ -213,7 +213,7 @@ impl MailApp {
         let Ok(upload) = tasks_remote::task_upload(&self.session.mailbox, account) else { return false };
         let given = fingerprint(&refresh);
         let job = TasksJob { account: owner, oauth: self.effective_oauth(oauth), refresh, upload, cancel: Default::default() };
-        let Some(graph) = &self.services.graph_tasks else { return false };
+        let Some(graph) = self.services.graph_tasks.as_ref().filter(|_| !self.offline()) else { return false };
         self.tasks.rx = Some((account, now, given, graph(job)));
         self.tasks.checked.insert(account, now);
         true
@@ -552,7 +552,7 @@ impl ForAccount for TasksUploaded {
 
 /// A refresh token, told apart from another without being kept: whether the account has signed
 /// in again since a job's was refused.
-fn fingerprint(refresh: &str) -> u64 {
+pub(crate) fn fingerprint(refresh: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     refresh.hash(&mut hasher);

@@ -158,8 +158,17 @@ pub fn state(app: &MailApp) -> Option<Value> {
     let (s, mb) = (&app.session, &app.session.mailbox);
     let handed = handed(menu, mb);
     let of = |account: Id| handed.iter().find(|(_, id)| *id == account).map(|(h, _)| *h);
-    let counts = crate::nav::tallies(mb);
-    let unread = |folder: Id| counts.get(&folder).map_or(0, |(_, unread)| *unread);
+    // //// Neoffice — the counts the window already made of this mailbox (`Session::folder_counts`, once per change), counted
+    // //// Neoffice — here only when none is fresh: never a walk over every message at each state sent to the page.
+    let owned;
+    let counts = match s.fresh_counts() {
+        Some(counts) => counts,
+        None => {
+            owned = mailcraft_engine::counts::FolderCounts::of(mb);
+            &owned
+        }
+    };
+    let unread = |folder: Id| counts.unread(folder);
     // The folder in view, when it is a mailbox's of the page's: none while a search shows what it found.
     let shown = mb.folder(s.view.folder).filter(|f| of(f.account).is_some());
     let searching = !s.view.search.is_empty();
@@ -191,7 +200,7 @@ pub fn state(app: &MailApp) -> Option<Value> {
                         // Every folder the pane lists can be shown.
                         "selectable": true,
                         // What the pane shows beside it, by the pane's own rule.
-                        "count": pane_count(crate::nav::shown_count(&counts, f)),
+                        "count": pane_count(crate::nav::shown_count(counts, f)),
                     })
                 })
                 .collect();

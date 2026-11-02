@@ -232,7 +232,7 @@ fn the_keyboard_and_the_caret_stay_where_the_person_had_them() {
     let at = draft.chars().count() + 5;
     assert_eq!(app.session.compose.as_ref().map(|c| c.body.selection()), Some(mailcraft_model::rich::Selection { anchor: at, head: at }));
     // Nobody's keyboard was in the body (no window here): it isn't taken there.
-    assert!(!app.body_focus_wanted);
+    assert!(app.body_focus_wanted.is_none());
     // Her version over the person's text: a caret in it goes to its end; one past it stays past it.
     let typed_len = "Bonjour Priya,\n\nC'est noté.\n\nMerci !".chars().count();
     app.execute("compose.select", json!({"from": 3})).unwrap();
