@@ -4637,3 +4637,6 @@ msgstr "{name} n'est pas un compte de serveur Exchange"
 
 msgid "{n} messages are being written already, the most there can be at once; send, save or close one first"
 msgstr "{n} messages sont déjà en cours de rédaction, le maximum possible à la fois ; envoyez, enregistrez ou fermez-en un d'abord"
+
+msgid "Pop\nOut"
+msgstr "Ouvrir dans\nune fenêtre"
