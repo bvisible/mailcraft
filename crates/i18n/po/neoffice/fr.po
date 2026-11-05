@@ -3683,3 +3683,957 @@ msgstr[1] "{n} factures cette année"
 
 msgid "Exchanges with the sender"
 msgstr "Échanges avec l'expéditeur"
+
+msgid "A code point written U+2192 or 2192, or a decimal number after #."
+msgstr "Un point de code écrit U+2192 ou 2192, ou un nombre décimal après #."
+
+msgid "A copy can't go into this Outbox: the next Send/Receive would send it"
+msgstr "Une copie ne peut pas aller dans cette Boîte d'envoi : le prochain Envoyer/Recevoir l'enverrait."
+
+msgid "A mail server your organisation runs itself"
+msgstr "Un serveur de courriel géré par votre organisation"
+
+msgid "A secure connection to the server couldn't be set up. Type the server's address in Server settings."
+msgstr "Impossible d'établir une connexion sécurisée avec le serveur. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "A shared mailbox's automatic replies are set by whoever manages it; MailCraft sets only your own account's"
+msgstr "Les réponses automatiques d'une boîte partagée sont définies par la personne qui la gère ; MailCraft ne définit que celles de votre propre compte."
+
+msgid "Accent Colour"
+msgstr "Couleur d'accent"
+
+msgid "Actual Size"
+msgstr "Taille réelle"
+
+msgid "Add as a Microsoft account"
+msgstr "Ajouter comme compte Microsoft"
+
+msgid "Addresses separated by ; (leave empty for replies to come to you)"
+msgstr "Adresses séparées par ; (laisser vide pour recevoir les réponses dans votre boîte)"
+
+msgid "Allow Changing Automatic Replies"
+msgstr "Autoriser la modification des réponses automatiques"
+
+msgid "Allow MailCraft to change your automatic replies on the page that opened in your browser…"
+msgstr "Autoriser MailCraft à modifier vos réponses automatiques sur la page ouverte dans votre navigateur…"
+
+msgid "An appointment marked private shows only that you are busy. Nobody invited to anything is named."
+msgstr "Un rendez-vous marqué privé indique seulement que vous êtes occupé. Les personnes invitées ne sont pas nommées."
+
+msgid "Apply Downloaded Automatic Replies"
+msgstr "Appliquer les réponses automatiques téléchargées"
+
+msgid "Apply Downloaded Exchange Messages"
+msgstr "Appliquer les messages Exchange téléchargés"
+
+msgid "Apply Send/Receive with Exchange Web Services"
+msgstr "Appliquer Envoyer/Recevoir avec Exchange Web Services"
+
+msgid "Appointments not listed:"
+msgstr "Rendez-vous non affichés :"
+
+msgid "Ask for permission to change your automatic replies: Microsoft's page opens in your browser. Reading them doesn't need it."
+msgstr "Demander l'autorisation de modifier vos réponses automatiques : la page de Microsoft s'ouvre dans votre navigateur. La lecture ne la demande pas."
+
+msgid "Ask to be told when the message is read"
+msgstr "Demander un accusé de lecture"
+
+msgid "Attach Item"
+msgstr "Joindre un élément"
+
+msgid "Attach a Contact Card"
+msgstr "Joindre une carte de contact"
+
+msgid "Attach the same as an iCalendar file"
+msgstr "Joindre aussi sous forme de fichier iCalendar"
+
+msgid "Attendance"
+msgstr "Présence"
+
+msgid "Automatic Replies"
+msgstr "Réponses automatiques"
+
+msgid "Automatic Replies - {address}"
+msgstr "Réponses automatiques - {address}"
+
+msgid "Automatic Replies for {address}"
+msgstr "Réponses automatiques pour {address}"
+
+msgid "Automatic replies are being sent for {address}"
+msgstr "Des réponses automatiques sont en cours d'envoi pour {address}"
+
+msgid "Automatic replies are kept on the mail server, and MailCraft can set them only for accounts that sign in with Microsoft so far: IMAP has no standard way to set them (Sieve vacation replies may come later)"
+msgstr "Les réponses automatiques sont conservées sur le serveur de courriel. MailCraft ne peut les définir, pour l'instant, que pour les comptes qui se connectent avec Microsoft : IMAP n'a pas de méthode standard pour les définir (les réponses d'absence Sieve pourront venir plus tard)"
+
+msgid "Automatic replies are off"
+msgstr "Les réponses automatiques sont désactivées"
+
+msgid "Automatic replies are on"
+msgstr "Les réponses automatiques sont activées"
+
+msgid "Automatic replies are set for the time range you chose"
+msgstr "Les réponses automatiques sont définies pour la période choisie"
+
+msgid "Automatic replies: MailCraft needs you to sign in again to read them"
+msgstr "Réponses automatiques : MailCraft a besoin que vous vous reconnectiez pour les lire"
+
+msgid "Automatic replies: Microsoft no longer takes the sign-in"
+msgstr "Réponses automatiques : Microsoft n'accepte plus la connexion"
+
+msgid "Automatic replies: asking for your permission to change them…"
+msgstr "Réponses automatiques : demande d'autorisation pour les modifier…"
+
+msgid "Automatic replies: changing them not allowed ({why})"
+msgstr "Réponses automatiques : modification non autorisée ({why})"
+
+msgid "Automatic replies: changing them waits for your permission"
+msgstr "Réponses automatiques : la modification attend votre autorisation"
+
+msgid "Automatic replies: couldn't be read ({why})"
+msgstr "Réponses automatiques : lecture impossible ({why})"
+
+msgid "Automatic replies: during a time range"
+msgstr "Réponses automatiques : pendant une période"
+
+msgid "Automatic replies: from {start} to {end}"
+msgstr "Réponses automatiques : du {start} au {end}"
+
+msgid "Automatic replies: not read yet"
+msgstr "Réponses automatiques : pas encore lues"
+
+msgid "Automatic replies: off"
+msgstr "Réponses automatiques : désactivées"
+
+msgid "Automatic replies: on, until you turn them off"
+msgstr "Réponses automatiques : activées, jusqu'à ce que vous les désactiviez"
+
+msgid "Automatic replies: reading…"
+msgstr "Réponses automatiques : lecture en cours…"
+
+msgid "Automatic replies: your organisation doesn't let MailCraft change them"
+msgstr "Réponses automatiques : votre organisation ne permet pas à MailCraft de les modifier"
+
+msgid "Automatic setup can't sign in to this server. Type its address in Server settings and MailCraft will sign in with NTLM."
+msgstr "La configuration automatique ne peut pas se connecter à ce serveur. Saisissez son adresse dans les paramètres du serveur et MailCraft se connectera avec NTLM."
+
+msgid "Availability only: when you are free or busy"
+msgstr "Disponibilité seulement : quand vous êtes libre ou occupé"
+
+msgid "Back online"
+msgstr "De nouveau en ligne"
+
+msgid "Basic (user name and password over a secure connection)"
+msgstr "De base (nom d'utilisateur et mot de passe sur une connexion sécurisée)"
+
+msgid "Cancel\nAll"
+msgstr "Annuler\ntout"
+
+msgid "Cancel All"
+msgstr "Tout annuler"
+
+msgid "Categories:"
+msgstr "Catégories :"
+
+msgid "Change\nView"
+msgstr "Changer\nl'affichage"
+
+msgid "Change Automatic Replies"
+msgstr "Modifier les réponses automatiques"
+
+msgid "Change View"
+msgstr "Changer l'affichage"
+
+msgid "Changing your automatic replies needs your permission, once: when you press OK, Microsoft's page opens in your browser to ask you. Reading them doesn't need it."
+msgstr "La modification de vos réponses automatiques demande votre autorisation, une seule fois : quand vous cliquez sur OK, la page de Microsoft s'ouvre dans votre navigateur pour vous la demander. La lecture ne la demande pas."
+
+msgid "Changing your automatic replies wasn't allowed ({why}). Press OK to ask again: Microsoft's page opens in your browser."
+msgstr "La modification de vos réponses automatiques n'a pas été autorisée ({why}). Cliquez sur OK pour demander à nouveau : la page de Microsoft s'ouvre dans votre navigateur."
+
+msgid "Changing your automatic replies…"
+msgstr "Modification de vos réponses automatiques…"
+
+msgid "Character code"
+msgstr "Code du caractère"
+
+msgid "Choose a first and a last day, at most a year apart."
+msgstr "Choisissez un premier et un dernier jour, séparés d'un an au plus."
+
+msgid "Clear Recent Searches"
+msgstr "Effacer les recherches récentes"
+
+msgid "Contact\nCard"
+msgstr "Carte de\ncontact"
+
+msgid "Contact Attendees"
+msgstr "Contacter les participants"
+
+msgid "Contact Card"
+msgstr "Carte de contact"
+
+msgid "Continue editing"
+msgstr "Continuer la rédaction"
+
+msgid "Create Message"
+msgstr "Créer un message"
+
+msgid "DOMAIN\\user or you@example.org; empty for your address"
+msgstr "DOMAINE\\utilisateur ou vous@example.org ; vide pour votre adresse"
+
+msgid "Detail"
+msgstr "Détails"
+
+msgid "Direct Replies To"
+msgstr "Adresse de réponse"
+
+msgid "Don't send"
+msgstr "Ne pas envoyer"
+
+msgid "Don't send automatic replies"
+msgstr "Ne pas envoyer de réponses automatiques"
+
+msgid "Download"
+msgstr "Télécharger"
+
+msgid "Download Exchange Messages in Full"
+msgstr "Télécharger les messages Exchange en entier"
+
+msgid "Due date:"
+msgstr "Échéance :"
+
+msgid "Each sender gets one automatic reply, with the message below:"
+msgstr "Chaque expéditeur reçoit une seule réponse automatique, avec le message ci-dessous :"
+
+msgid "Edit Signature as Text"
+msgstr "Modifier la signature en texte brut"
+
+msgid "Edit signature as text"
+msgstr "Modifier la signature en texte brut"
+
+msgid "Editing"
+msgstr "Modification"
+
+msgid "Email\nCalendar"
+msgstr "Courriel\net agenda"
+
+msgid "Email Calendar"
+msgstr "Agenda par courriel"
+
+msgid "Email the people of this meeting"
+msgstr "Envoyer un courriel aux personnes de ce rendez-vous"
+
+msgid "End time:"
+msgstr "Heure de fin :"
+
+msgid "Everyone outside my organization"
+msgstr "Toute personne hors de mon organisation"
+
+msgid "Exchange server"
+msgstr "Serveur Exchange"
+
+msgid "Exchange server (your organisation's own)"
+msgstr "Serveur Exchange (de votre organisation)"
+
+msgid "Exchange server account"
+msgstr "Compte de serveur Exchange"
+
+msgid "Exchange server {host}"
+msgstr "Serveur Exchange {host}"
+
+msgid "Exchange server · no usable server address"
+msgstr "Serveur Exchange · aucune adresse de serveur utilisable"
+
+msgid "Feedback"
+msgstr "Commentaires"
+
+msgid "Find Next"
+msgstr "Suivant"
+
+msgid "Find what"
+msgstr "Rechercher :"
+
+msgid "For a mail server your organisation runs itself. MailCraft looks for the server from your address, or you can type its address in Server settings. Nothing is sent until you press Connect."
+msgstr "Pour un serveur de courriel géré par votre organisation. MailCraft cherche le serveur à partir de votre adresse, ou vous pouvez saisir son adresse dans les paramètres du serveur. Rien n'est envoyé tant que vous n'avez pas cliqué sur Connecter."
+
+msgid "Forget"
+msgstr "Oublier"
+
+msgid "Forget Trusted Certificate"
+msgstr "Oublier le certificat approuvé"
+
+msgid "Format Painter"
+msgstr "Reproduire la mise en forme"
+
+msgid "Forward\nContact"
+msgstr "Transférer\nle contact"
+
+msgid "Forward Contact"
+msgstr "Transférer le contact"
+
+msgid "Full details: and where, and the notes"
+msgstr "Détails complets : lieu et notes compris"
+
+msgid "Get\nSupport"
+msgstr "Obtenir\nde l'aide"
+
+msgid "Get Support"
+msgstr "Obtenir de l'aide"
+
+msgid "Have replies sent to"
+msgstr "Envoyer les réponses à"
+
+msgid "Have replies sent to other addresses"
+msgstr "Autres adresses de réponse"
+
+msgid "High Contrast"
+msgstr "Contraste élevé"
+
+msgid "High contrast"
+msgstr "Contraste élevé"
+
+msgid "If you don't, nothing is sent to it, and the search goes on elsewhere or ends."
+msgstr "Si vous ne le faites pas, rien ne lui est envoyé, et la recherche se poursuit ailleurs ou s'arrête."
+
+msgid "If you go on, your user name and password are sent to {host}. Go on only if you know it is your organisation's."
+msgstr "Si vous poursuivez, votre nom d'utilisateur et votre mot de passe seront envoyés à {host}. Poursuivez uniquement si vous savez qu'il appartient à votre organisation."
+
+msgid "Importance:"
+msgstr "Importance :"
+
+msgid "In Progress"
+msgstr "En cours"
+
+msgid "Insert Calendar"
+msgstr "Insérer l'agenda"
+
+msgid "Inside My Organization"
+msgstr "Dans mon organisation"
+
+msgid "Issued by"
+msgstr "Délivré par"
+
+msgid "Issued to"
+msgstr "Délivré à"
+
+msgid "Leave it empty to look for the server from your address. It must begin with https://."
+msgstr "Laissez vide pour chercher le serveur à partir de votre adresse. Elle doit commencer par https://."
+
+msgid "Let people know you're away or can't answer for a while: your mailbox replies by itself"
+msgstr "Indiquez aux personnes que vous êtes absent ou que vous ne pouvez pas répondre pendant un certain temps : votre boîte répond d'elle-même"
+
+msgid "Limited details: and the titles"
+msgstr "Détails limités : et les titres"
+
+msgid "Line Spacing"
+msgstr "Interligne"
+
+msgid "Look at the certificate the server shows now. Nothing is signed in while you decide."
+msgstr "Examinez le certificat que le serveur présente maintenant. Aucune connexion n'est ouverte pendant que vous décidez."
+
+msgid "Looking at the server's certificate…"
+msgstr "Examen du certificat du serveur…"
+
+msgid "Looking for your Exchange server…"
+msgstr "Recherche de votre serveur Exchange…"
+
+msgid "MailCraft can't sign in to this server this way yet (it wants Kerberos). Ask your administrator whether it can take a user name and password over an encrypted connection."
+msgstr "MailCraft ne peut pas encore se connecter à ce serveur de cette façon (il exige Kerberos). Demandez à votre administrateur s'il accepte un nom d'utilisateur et un mot de passe sur une connexion chiffrée."
+
+msgid "MailCraft needs you to sign in again to read your automatic replies: Microsoft's page opens in your browser. Mail and your calendar work as they are meanwhile."
+msgstr "MailCraft a besoin que vous vous reconnectiez pour lire vos réponses automatiques : la page de Microsoft s'ouvre dans votre navigateur. Le courriel et votre agenda continuent de fonctionner entre-temps."
+
+msgid "MailCraft needs your permission to change your automatic replies first: File › Info › Ask again."
+msgstr "MailCraft a d'abord besoin de votre autorisation pour modifier vos réponses automatiques : Fichier › Informations › Demander à nouveau."
+
+msgid "Match case"
+msgstr "Respecter la casse"
+
+msgid "Microsoft 365 mail is added as a Microsoft account: you sign in on Microsoft's own page in your browser, and MailCraft never sees your password."
+msgstr "Le courriel Microsoft 365 s'ajoute comme compte Microsoft : vous vous connectez sur la page de Microsoft dans votre navigateur, et MailCraft ne voit jamais votre mot de passe."
+
+msgid "Microsoft no longer takes your sign-in. Sign in again to read and change your automatic replies."
+msgstr "Microsoft n'accepte plus votre connexion. Reconnectez-vous pour lire et modifier vos réponses automatiques."
+
+msgid "More Options"
+msgstr "Autres options"
+
+msgid "No Color"
+msgstr "Aucune couleur"
+
+msgid "No appointment matches."
+msgstr "Aucun rendez-vous ne correspond."
+
+msgid "No recent searches"
+msgstr "Aucune recherche récente"
+
+msgid "No server answered at the usual places for this address. Check the network connection, or type the server's address in Server settings."
+msgstr "Aucun serveur n'a répondu aux adresses habituelles pour cette adresse. Vérifiez la connexion réseau, ou saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "Nobody is invited to this appointment."
+msgstr "Personne n'est invité à ce rendez-vous."
+
+msgid "Not Started"
+msgstr "Non commencée"
+
+msgid "Nothing is scheduled on these days."
+msgstr "Aucun rendez-vous n'est prévu ces jours-là."
+
+msgid "Nothing is sent or received. Click to connect again."
+msgstr "Rien n'est envoyé ni reçu. Cliquez pour vous reconnecter."
+
+msgid "Nothing matches."
+msgstr "Aucun résultat."
+
+msgid "Nothing was sent to Microsoft, and your password isn't kept."
+msgstr "Rien n'a été envoyé à Microsoft, et votre mot de passe n'est pas conservé."
+
+msgid "Only my contacts"
+msgstr "Mes contacts uniquement"
+
+msgid "Only send during this time range:"
+msgstr "N'envoyer que pendant cette période :"
+
+msgid "Only this certificate is trusted, and only for this account. If the server shows another one later, you are asked again."
+msgstr "Seul ce certificat est approuvé, et seulement pour ce compte. Si le serveur en présente un autre plus tard, on vous le demandera à nouveau."
+
+msgid "Open Replies and Forwards in a New Window"
+msgstr "Ouvrir les réponses et transferts dans une nouvelle fenêtre"
+
+msgid "Open a message you sent as a new one"
+msgstr "Ouvrir un message envoyé comme nouveau message"
+
+msgid "Open new messages, replies and forwards in a new window"
+msgstr "Ouvrir les nouveaux messages, réponses et transferts dans une nouvelle fenêtre"
+
+msgid "Otherwise they start in the reading pane, where Pop Out moves them into a window of their own."
+msgstr "Sinon, ils s'ouvrent dans le volet de lecture, où Détacher les place dans une fenêtre distincte."
+
+msgid "Outside My Organization (Off)"
+msgstr "Hors de mon organisation (désactivé)"
+
+msgid "Outside My Organization (On)"
+msgstr "Hors de mon organisation (activé)"
+
+msgid "Paragraph"
+msgstr "Paragraphe"
+
+msgid "Plain\nText"
+msgstr "Texte\nbrut"
+
+msgid "Pop Out"
+msgstr "Détacher"
+
+msgid "Preferences"
+msgstr "Préférences"
+
+msgid "Puts the days you choose of your calendar into the message, where the cursor is."
+msgstr "Insère dans le message, à l'emplacement du curseur, les jours d'agenda que vous choisissez."
+
+msgid "Reading the automatic replies stopped unexpectedly"
+msgstr "La lecture des réponses automatiques s'est arrêtée de façon inattendue"
+
+msgid "Reading your automatic replies from the server…"
+msgstr "Lecture de vos réponses automatiques sur le serveur…"
+
+msgid "Recent\nSearches"
+msgstr "Recherches\nrécentes"
+
+msgid "Recent Searches"
+msgstr "Recherches récentes"
+
+msgid "Replace"
+msgstr "Remplacer"
+
+msgid "Replace All"
+msgstr "Tout remplacer"
+
+msgid "Replace with"
+msgstr "Remplacer par :"
+
+msgid "Reply and Delete"
+msgstr "Répondre et supprimer"
+
+msgid "Reply by Email"
+msgstr "Répondre par courriel"
+
+msgid "Reply to"
+msgstr "Répondre à"
+
+msgid "Reply to people outside my organization"
+msgstr "Répondre aux personnes hors de mon organisation"
+
+msgid "Request a Read Receipt"
+msgstr "Demander un accusé de lecture"
+
+msgid "Resend Message"
+msgstr "Renvoyer le message"
+
+msgid "Response"
+msgstr "Réponse"
+
+msgid "Review certificate…"
+msgstr "Examiner le certificat…"
+
+msgid "Rich Text"
+msgstr "Texte enrichi"
+
+msgid "SHA-256 fingerprint"
+msgstr "Empreinte SHA-256"
+
+msgid "Save All Attachments"
+msgstr "Enregistrer toutes les pièces jointes"
+
+msgid "Save All Attachments…"
+msgstr "Enregistrer toutes les pièces jointes…"
+
+msgid "Say what to open: `message` or `event` by its id, `compose` (a message being written) by its id, or `new` (\"appointment\" or \"meeting\")"
+msgstr "Indiquez quoi ouvrir : `message` ou `event` avec son identifiant, `compose` (un message en cours de rédaction) avec son identifiant, ou `new` (\"rendez-vous\" ou \"réunion\")"
+
+msgid "Search\nCalendar"
+msgstr "Rechercher\nagenda"
+
+msgid "Search Calendar"
+msgstr "Rechercher dans l'agenda"
+
+msgid "Search by subject or sender"
+msgstr "Rechercher par objet ou expéditeur"
+
+msgid "Search contacts"
+msgstr "Rechercher des contacts"
+
+msgid "Send Status\nReport"
+msgstr "Envoyer le\nrapport d'état"
+
+msgid "Send Status Report"
+msgstr "Envoyer un rapport d'état"
+
+msgid "Send automatic replies"
+msgstr "Envoyer des réponses automatiques"
+
+msgid "Send my sign-in"
+msgstr "Envoyer mes informations de connexion"
+
+msgid "Send your sign-in to another server?"
+msgstr "Envoyer vos informations de connexion à un autre serveur ?"
+
+msgid "Send/Receive with Exchange Web Services"
+msgstr "Envoyer/Recevoir avec Exchange Web Services"
+
+msgid "Server Certificate"
+msgstr "Certificat du serveur"
+
+msgid "Server address (Exchange Web Services)"
+msgstr "Adresse du serveur (Exchange Web Services)"
+
+msgid "Server settings"
+msgstr "Paramètres du serveur"
+
+msgid "Server: {address}"
+msgstr "Serveur : {address}"
+
+msgid "Setting up the account stopped unexpectedly"
+msgstr "La configuration du compte s'est arrêtée de façon inattendue"
+
+msgid "Show\nTraining"
+msgstr "Afficher\nla formation"
+
+msgid "Show Training"
+msgstr "Afficher la formation"
+
+msgid "Show signature as it is sent"
+msgstr "Afficher la signature telle qu'elle est envoyée"
+
+msgid "Shown as text: nothing in it runs, opens or is downloaded."
+msgstr "Affiché en texte : rien de ce qu'il contient ne s'exécute, ne s'ouvre ni ne se télécharge."
+
+msgid "Shows the signature as it was designed again, as long as its text is unchanged"
+msgstr "Réaffiche la signature telle qu'elle a été conçue, tant que son texte n'a pas changé"
+
+msgid "Sign In Again"
+msgstr "Se reconnecter"
+
+msgid "Sign In Again for Automatic Replies"
+msgstr "Se reconnecter pour les réponses automatiques"
+
+msgid "Sign in again: Microsoft's page opens in your browser. Mail and your calendar work as they are meanwhile."
+msgstr "Se reconnecter : la page de Microsoft s'ouvre dans votre navigateur. Le courriel et votre agenda continuent de fonctionner entre-temps."
+
+msgid "Sign in with Send/Receive first, then change your automatic replies."
+msgstr "Connectez-vous d'abord avec Envoyer/Recevoir, puis modifiez vos réponses automatiques."
+
+msgid "Signs in to an Exchange server with a user name and password"
+msgstr "Se connecte à un serveur Exchange avec un nom d'utilisateur et un mot de passe"
+
+msgid "Signs in with: {how}"
+msgstr "Se connecte avec : {how}"
+
+msgid "Source of {subject}"
+msgstr "Source de {subject}"
+
+msgid "Start date:"
+msgstr "Date de début :"
+
+msgid "Start time:"
+msgstr "Heure de début :"
+
+msgid "Starts a new message with the days you choose of your calendar in it. You say who it goes to, and nothing is sent until you press Send."
+msgstr "Crée un nouveau message contenant les jours de votre agenda que vous choisissez. Vous indiquez à qui il est destiné, et rien n'est envoyé tant que vous n'avez pas cliqué sur Envoyer."
+
+msgid "Status:"
+msgstr "État :"
+
+msgid "Stop trusting this certificate for this account. If the server shows it again and this computer doesn't trust it, you are asked."
+msgstr "Ne plus faire confiance à ce certificat pour ce compte. Si le serveur le présente à nouveau et que cet ordinateur ne lui fait pas confiance, on vous le demandera."
+
+msgid "Stronger text and edges, in the light or the dark theme."
+msgstr "Texte et contours plus marqués, en thème clair ou sombre."
+
+msgid "Task Status Report:"
+msgstr "Rapport d'état de la tâche :"
+
+msgid "Task:"
+msgstr "Tâche :"
+
+msgid "Text Highlight Color"
+msgstr "Couleur de surlignage du texte"
+
+msgid "The account couldn't be set up. Check the details, or type the server's address in Server settings."
+msgstr "Le compte n'a pas pu être configuré. Vérifiez les informations, ou saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "The certificate of the server of {name} needs your say"
+msgstr "Le certificat du serveur de {name} requiert votre décision"
+
+msgid "The certificate the server at {host} shows is not the one you trusted for this account, and this computer doesn't trust it. Trust it only if your administrator has changed it."
+msgstr "Le certificat présenté par le serveur {host} n'est pas celui auquel vous faites confiance pour ce compte, et cet ordinateur ne lui fait pas confiance. Ne lui faites confiance que si votre administrateur l'a changé."
+
+msgid "The search for your Exchange server asks to start again with an address in another domain, {host}."
+msgstr "La recherche de votre serveur Exchange demande de recommencer avec une adresse d'un autre domaine, {host}."
+
+msgid "The search for your Exchange server was sent on to {host}, which isn't in your address's own domain."
+msgstr "La recherche de votre serveur Exchange a été transmise à {host}, qui ne fait pas partie du domaine de votre adresse."
+
+msgid "The server answered without the address of Exchange Web Services. Ask your administrator for it and type it in Server settings."
+msgstr "Le serveur a répondu sans l'adresse d'Exchange Web Services. Demandez-la à votre administrateur et saisissez-la dans les paramètres du serveur."
+
+msgid "The server answered, but not as an Exchange server does. Check its address in Server settings."
+msgstr "Le serveur a répondu, mais pas comme le ferait un serveur Exchange. Vérifiez son adresse dans les paramètres du serveur."
+
+msgid "The server didn't accept the user name and password. Check them, or type your user name in Server settings (DOMAIN\\user or you@example.org)."
+msgstr "Le serveur n'a pas accepté le nom d'utilisateur et le mot de passe. Vérifiez-les, ou saisissez votre nom d'utilisateur dans les paramètres du serveur (DOMAINE\\utilisateur ou vous@example.org)."
+
+msgid "The server or the organisation wouldn't give its settings. Ask your administrator for the server's address and type it in Server settings."
+msgstr "Le serveur ou l'organisation n'a pas voulu communiquer ses paramètres. Demandez l'adresse du serveur à votre administrateur et saisissez-la dans les paramètres du serveur."
+
+msgid "The server sent the setup somewhere that isn't encrypted, which MailCraft never follows. Type the server's address in Server settings."
+msgstr "Le serveur a renvoyé la configuration vers un emplacement non chiffré, que MailCraft ne suit jamais. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "The server shows a certificate that needs your say."
+msgstr "Le serveur présente un certificat qui requiert votre décision."
+
+msgid "The server turned down the sign-in for {name}: sign in again"
+msgstr "Le serveur a refusé la connexion pour {name} : reconnectez-vous"
+
+msgid "The server's address must begin with https:// and name the server (https://mail.example.org/EWS/Exchange.asmx)"
+msgstr "L'adresse du serveur doit commencer par https:// et désigner le serveur (https://mail.example.org/EWS/Exchange.asmx)"
+
+msgid "The server's address or the user name can't be used. Check them in Server settings."
+msgstr "L'adresse du serveur ou le nom d'utilisateur ne peut pas être utilisé. Vérifiez-les dans les paramètres du serveur."
+
+msgid "The server's answer for automatic setup couldn't be read. Type the server's address in Server settings."
+msgstr "La réponse du serveur pour la configuration automatique n'a pas pu être lue. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "The server's certificate"
+msgstr "Le certificat du serveur"
+
+msgid "The server's certificate has changed"
+msgstr "Le certificat du serveur a changé"
+
+msgid "The server's certificate has expired, so MailCraft won't connect to it. Ask your administrator to renew it."
+msgstr "Le certificat du serveur a expiré : MailCraft ne s'y connectera pas. Demandez à votre administrateur de le renouveler."
+
+msgid "The server's certificate is for another server's name, so MailCraft won't connect to it. Check the address in Server settings."
+msgstr "Le certificat du serveur est établi pour le nom d'un autre serveur : MailCraft ne s'y connectera pas. Vérifiez l'adresse dans les paramètres du serveur."
+
+msgid "The server's certificate isn't valid yet, so MailCraft won't connect to it. Check this computer's date and time, or ask your administrator."
+msgstr "Le certificat du serveur n'est pas encore valide : MailCraft ne s'y connectera pas. Vérifiez la date et l'heure de cet ordinateur, ou demandez à votre administrateur."
+
+msgid "The settings the server gave name {host}, which isn't in your address's own domain, as the mail server."
+msgstr "Les paramètres fournis par le serveur désignent {host} comme serveur de courriel, alors qu'il ne fait pas partie du domaine de votre adresse."
+
+msgid "The setup was sent from one server to another too many times. Type the server's address in Server settings."
+msgstr "La configuration a été transmise d'un serveur à un autre trop de fois. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "The signature is then sent as the simpler text shown here, not as it was designed"
+msgstr "La signature est alors envoyée sous la forme de texte simple présentée ici, et non telle qu'elle a été conçue"
+
+msgid "The source is long: only its first megabyte is shown."
+msgstr "La source est longue : seul son premier mégaoctet est affiché."
+
+msgid "The text wasn't found."
+msgstr "Le texte est introuvable."
+
+msgid "The user name is too long or has a character in it that a name can't have"
+msgstr "Le nom d'utilisateur est trop long ou contient un caractère interdit dans un nom"
+
+msgid "These are the answers this computer has been told of."
+msgstr "Voici les réponses connues de cet ordinateur."
+
+msgid "This build can't connect to mail servers. Use the desktop app to add an Exchange server account."
+msgstr "Cette version ne peut pas se connecter aux serveurs de courriel. Utilisez l'application de bureau pour ajouter un compte de serveur Exchange."
+
+msgid "This build can't reach the server to change automatic replies. Use the desktop app."
+msgstr "Cette version ne peut pas joindre le serveur pour modifier les réponses automatiques. Utilisez l'application de bureau."
+
+msgid "This computer doesn't trust the certificate the server at {host} shows. If this is your organisation's server, you can trust this one certificate for this account."
+msgstr "Cet ordinateur ne fait pas confiance au certificat présenté par le serveur {host}. S'il s'agit du serveur de votre organisation, vous pouvez accorder votre confiance à ce seul certificat pour ce compte."
+
+msgid "This domain's servers have no automatic setup. Type the server's address in Server settings."
+msgstr "Les serveurs de ce domaine n'ont pas de configuration automatique. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "This mailbox is in Microsoft 365"
+msgstr "Cette boîte est dans Microsoft 365"
+
+msgid "This message hasn't been sent."
+msgstr "Ce message n'a pas été envoyé."
+
+msgid "Tighter\nSpacing"
+msgstr "Espacement\nréduit"
+
+msgid "Tighter Spacing"
+msgstr "Espacement réduit"
+
+msgid "Time zone:"
+msgstr "Fuseau horaire :"
+
+msgid "To change the automatic replies of {address}, MailCraft needs your permission to change your mailbox settings. Microsoft's page opens in your browser to ask you, once.\n\nMailCraft changes only the automatic replies with it, never your categories or working hours. Reading your automatic replies doesn't need it."
+msgstr "Pour modifier les réponses automatiques de {address}, MailCraft a besoin de votre autorisation pour changer les paramètres de votre boîte. La page de Microsoft s'ouvre dans votre navigateur pour vous la demander, une seule fois.\n\nMailCraft ne modifie que les réponses automatiques avec elle, jamais vos catégories ni vos heures de travail. La lecture de vos réponses automatiques n'en a pas besoin."
+
+msgid "To use another server or user name, remove the account and add it again."
+msgstr "Pour utiliser un autre serveur ou un autre nom d'utilisateur, supprimez le compte et ajoutez-le à nouveau."
+
+msgid "Tracking"
+msgstr "Suivi"
+
+msgid "Trust this certificate for this account"
+msgstr "Faire confiance à ce certificat pour ce compte"
+
+msgid "Trust this server's certificate?"
+msgstr "Faire confiance au certificat de ce serveur ?"
+
+msgid "Trusted certificate (SHA-256 fingerprint):"
+msgstr "Certificat approuvé (empreinte SHA-256) :"
+
+msgid "User name: {name}"
+msgstr "Nom d'utilisateur : {name}"
+
+msgid "Valid"
+msgstr "Valide"
+
+msgid "View Source"
+msgstr "Afficher la source"
+
+msgid "What's\nNew"
+msgstr "Quoi de\nneuf"
+
+msgid "What's New"
+msgstr "Quoi de neuf"
+
+msgid "Who has answered, and how"
+msgstr "Qui a répondu, et comment"
+
+msgid "Words, from:, to:, category:, on:…"
+msgstr "Mots, de:, à:, catégorie:, le:…"
+
+msgid "Work\nOffline"
+msgstr "Travailler\nhors connexion"
+
+msgid "Work Offline"
+msgstr "Travailler hors connexion"
+
+msgid "Working Offline"
+msgstr "Hors connexion"
+
+msgid "Working offline: mail you send waits in the Outbox"
+msgstr "Hors connexion : les courriels que vous envoyez attendent dans la boîte d'envoi"
+
+msgid "Write to the organizer without answering"
+msgstr "Écrire à l'organisateur sans répondre"
+
+msgid "You didn't agree to send your sign-in to the server the setup led to. Type the server's address in Server settings."
+msgstr "Vous n'avez pas accepté d'envoyer vos informations de connexion au serveur vers lequel la configuration vous a menée. Saisissez l'adresse du serveur dans les paramètres du serveur."
+
+msgid "You organize this meeting."
+msgstr "Vous organisez cette réunion."
+
+msgid "You're working offline. Turn off Work Offline (Send / Receive) to connect."
+msgstr "Vous êtes hors connexion. Désactivez Travailler hors connexion (Envoyer/Recevoir) pour vous connecter."
+
+msgid "Your automatic replies couldn't be read: {error}"
+msgstr "Vos réponses automatiques n'ont pas pu être lues : {error}"
+
+msgid "Your automatic replies weren't changed"
+msgstr "Vos réponses automatiques n'ont pas été modifiées"
+
+msgid "Your automatic replies weren't changed: MailCraft needs your permission first (File › Info › Ask again)."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : MailCraft a d'abord besoin de votre autorisation (Fichier › Infos › Demander à nouveau)."
+
+msgid "Your automatic replies weren't changed: MailCraft wasn't allowed to change them."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : MailCraft n'était pas autorisé à les modifier."
+
+msgid "Your automatic replies weren't changed: Microsoft no longer takes your sign-in."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : Microsoft n'accepte plus votre connexion."
+
+msgid "Your automatic replies weren't changed: sign in again to let MailCraft read them (File › Info)."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : reconnectez-vous pour que MailCraft puisse les lire (Fichier › Infos)."
+
+msgid "Your automatic replies weren't changed: you are working offline."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : vous êtes hors connexion."
+
+msgid "Your automatic replies weren't changed: your organisation doesn't let MailCraft change them."
+msgstr "Vos réponses automatiques n'ont pas été modifiées : votre organisation ne permet pas à MailCraft de les modifier."
+
+msgid "Your automatic replies weren't changed: {error}"
+msgstr "Vos réponses automatiques n'ont pas été modifiées : {error}"
+
+msgid "Your mailbox is sending automatic replies. Click to change them."
+msgstr "Votre boîte envoie des réponses automatiques. Cliquez pour les modifier."
+
+msgid "Your organisation doesn't allow Exchange Web Services for this account. Ask your administrator."
+msgstr "Votre organisation n'autorise pas Exchange Web Services pour ce compte. Demandez à votre administrateur."
+
+msgid "Your organisation doesn't let MailCraft change automatic replies"
+msgstr "Votre organisation ne permet pas à MailCraft de modifier les réponses automatiques"
+
+msgid "Your organisation doesn't let MailCraft change your automatic replies. Ask your administrator."
+msgstr "Votre organisation ne permet pas à MailCraft de modifier vos réponses automatiques. Demandez à votre administrateur."
+
+msgid "Your organisation's administrator has to approve MailCraft changing automatic replies once: File › Info"
+msgstr "L'administrateur de votre organisation doit approuver une fois la modification des réponses automatiques par MailCraft : Fichier › Infos"
+
+msgid "Zoom In"
+msgstr "Zoom avant"
+
+msgid "Zoom Out"
+msgstr "Zoom arrière"
+
+msgid "Zoom the Message"
+msgstr "Zoomer sur le message"
+
+msgid "a message is saved in the background by the window's own timer alone"
+msgstr "un message n'est enregistré en arrière-plan que par la minuterie propre à la fenêtre"
+
+msgid "a reply may be {most} characters long at most"
+msgstr "une réponse ne peut pas dépasser {most} caractères"
+
+msgid "an Exchange server account's server, address and user name can't be changed once its mail is here: remove it and add the other one"
+msgstr "le serveur, l'adresse et le nom d'utilisateur d'un compte de serveur Exchange ne peuvent plus être modifiés une fois que son courriel est arrivé : supprimez-le et ajoutez l'autre"
+
+msgid "an account becomes an Exchange server account, or stops being one, only by being removed and added again"
+msgstr "un compte ne devient un compte de serveur Exchange, ou n'en cesse d'être un, qu'en étant supprimé puis ajouté à nouveau"
+
+msgid "from {from} to {to}"
+msgstr "de {from} à {to}"
+
+msgid "no account is an Exchange server account"
+msgstr "aucun compte n'est un compte de serveur Exchange"
+
+msgid "no account with id {account}"
+msgstr "aucun compte avec l'identifiant {account}"
+
+msgid "no look was copied: press Format Painter on the text to copy it from first"
+msgstr "aucune mise en forme n'a été copiée : cliquez d'abord sur Reproduire la mise en forme sur le texte pour la copier"
+
+msgid "no message being written has the id {id}"
+msgstr "aucun message en cours de rédaction n'a l'identifiant {id}"
+
+msgid "nobody else is invited to this appointment"
+msgstr "personne d'autre n'est invité à ce rendez-vous"
+
+msgid "not known until the first Send/Receive"
+msgstr "inconnu jusqu'au premier Envoyer/Recevoir"
+
+msgid "only a message you sent can be sent again"
+msgstr "seul un message que vous avez envoyé peut être renvoyé"
+
+msgid "only your own calendars can be put in a message"
+msgstr "seuls vos propres agendas peuvent être insérés dans un message"
+
+msgid "overdue"
+msgstr "en retard"
+
+msgid "replies can go to at most {n} addresses"
+msgstr "les réponses peuvent être adressées à {n} adresses au maximum"
+
+msgid "that mailbox is open in another MailCraft window; close it there first"
+msgstr "cette boîte est ouverte dans une autre fenêtre de MailCraft ; fermez-la d'abord là-bas"
+
+msgid "that message is a draft: open it to send it"
+msgstr "ce message est un brouillon : ouvrez-le pour l'envoyer"
+
+msgid "the Inbox of this account hasn't been read yet"
+msgstr "la boîte de réception de ce compte n'a pas encore été lue"
+
+msgid "the attachments are larger than {mb} MB together: save them in a folder"
+msgstr "les pièces jointes dépassent {mb} Mo au total : enregistrez-les dans un dossier"
+
+msgid "the automatic replies haven't been read from the server yet: read them first, so that nothing of them is written over unseen"
+msgstr "les réponses automatiques n'ont pas encore été lues depuis le serveur : lisez-les d'abord, afin que rien ne soit écrit par-dessus sans les avoir vues"
+
+msgid "the end of the time range must be after its start"
+msgstr "la fin de la plage horaire doit être postérieure à son début"
+
+msgid "the message has no HTML signature"
+msgstr "le message n'a pas de signature HTML"
+
+msgid "the message has no attachments to save"
+msgstr "le message n'a aucune pièce jointe à enregistrer"
+
+msgid "the places to replace are not places in the text"
+msgstr "les emplacements à remplacer ne sont pas dans le texte"
+
+msgid "the result would make this account keep more sync state than is taken in"
+msgstr "le résultat ferait conserver à ce compte plus d'état de synchronisation qu'il n'en reçoit"
+
+msgid "the result {why}"
+msgstr "le résultat {why}"
+
+msgid "the signature was edited as text: its copy is what goes out"
+msgstr "la signature a été modifiée en texte : c'est sa copie qui est envoyée"
+
+msgid "this Exchange server account has no server settings"
+msgstr "ce compte de serveur Exchange n'a aucun paramètre de serveur"
+
+msgid "this meeting has no organizer to write to"
+msgstr "cette réunion n'a pas d'organisateur à qui écrire"
+
+msgid "this message isn't downloaded: open it once you're online, then send it again"
+msgstr "ce message n'est pas téléchargé : ouvrez-le une fois connecté, puis renvoyez-le"
+
+msgid "too many files of one name"
+msgstr "trop de fichiers portant le même nom"
+
+msgid "you signed in as somebody else"
+msgstr "vous vous êtes connecté avec un autre compte"
+
+msgid "{folder} couldn't be read from the server"
+msgstr "{folder} n'a pas pu être lu depuis le serveur"
+
+msgid "{line} · MailCraft may change them"
+msgstr "{line} · MailCraft peut les modifier"
+
+msgid "{line} · couldn't be read in the last run: {folders}"
+msgstr "{line} · n'a pas pu être lu lors de la dernière exécution : {folders}"
+
+msgid "{line} · the server's certificate needs your say"
+msgstr "{line} · le certificat du serveur requiert votre décision"
+
+msgid "{name} couldn't be saved: the folder has too many files of that name"
+msgstr "{name} n'a pas pu être enregistré : le dossier contient trop de fichiers portant ce nom"
+
+msgid "{name} has no Exchange server address that can be used"
+msgstr "{name} n'a aucune adresse de serveur Exchange utilisable"
+
+msgid "{name} isn't an Exchange server account"
+msgstr "{name} n'est pas un compte de serveur Exchange"
+
+msgid "{n} messages are being written already, the most there can be at once; send, save or close one first"
+msgstr "{n} messages sont déjà en cours de rédaction, le maximum possible à la fois ; envoyez, enregistrez ou fermez-en un d'abord"
