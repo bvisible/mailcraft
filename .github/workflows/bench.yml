@@ -35,6 +35,10 @@ jobs:
         with:
           toolchain: 1.98.1
       - name: Run the benchmark
+        # //// Neoffice — the benchmark is built with the real cap on a mailbox file, not the 64 MB of a test build
+        # //// (store::MAX_INDEX): its mailbox was refused at its first save, every week since 03.11.2026
+        env:
+          MAILCRAFT_BENCH: '1'
         run: |
           set -o pipefail
           cargo test --locked --release -p mailcraft-engine open_bench -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP/bench.log"

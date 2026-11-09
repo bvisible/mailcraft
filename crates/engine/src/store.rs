@@ -84,7 +84,10 @@ mod stream;
 use index::{Coll, Fp, Key, Tail};
 
 /// Largest mailbox file read in this form (16 GB; the JSON forms stop at [`MAX_MAILBOX_JSON`]).
-pub const MAX_INDEX: u64 = if cfg!(test) { 64 << 20 } else { 16 << 30 };
+// //// Neoffice — the 64 MB of a test build is lifted for the benchmark, built with MAILCRAFT_BENCH=1: the
+// //// benchmark is a test of this crate, and since the test cap its 645 MB mailbox was refused at its first
+// //// save ("more than MailCraft opens (0 GB)"), every weekly Bench red upstream and here (03.11.2026)
+pub const MAX_INDEX: u64 = if cfg!(test) && option_env!("MAILCRAFT_BENCH").is_none() { 64 << 20 } else { 16 << 30 };
 
 /// Items of a mailbox file parsed at a time when it is opened.
 const OPEN_SLICE: usize = 16_384;

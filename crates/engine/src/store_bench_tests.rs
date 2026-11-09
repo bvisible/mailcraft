@@ -6,8 +6,10 @@
 //! let go of. Ignored by `cargo test`; the Bench workflow runs it every week. Run it with
 //!
 //! ```text
-//! cargo test --release -p mailcraft-engine open_bench -- --ignored --nocapture
+//! MAILCRAFT_BENCH=1 cargo test --release -p mailcraft-engine open_bench -- --ignored --nocapture
 //! ```
+// //// Neoffice — MAILCRAFT_BENCH=1 at build time lifts the test build's 64 MB cap on a mailbox file
+// //// (store::MAX_INDEX), which the benchmark's mailbox exceeds
 //!
 //! The mailbox is made once (about 2 GB, under `MAILCRAFT_BENCH_DIR`, else the system's
 //! temporary folder) and kept for the next run. `MAILCRAFT_BENCH_WARN_MS` names a time past which
@@ -104,6 +106,8 @@ fn make(path: &Path) -> Mailbox {
 #[test]
 #[ignore = "a benchmark: makes a mailbox of about 2 GB; see the module's documentation"]
 fn open_bench() {
+    // //// Neoffice — without MAILCRAFT_BENCH=1 at build time the first save is refused by the test cap: say so first
+    assert!(option_env!("MAILCRAFT_BENCH").is_some(), "build the benchmark with MAILCRAFT_BENCH=1: a test build caps a mailbox file at 64 MB");
     let dir = std::env::var_os("MAILCRAFT_BENCH_DIR").map_or_else(|| std::env::temp_dir().join("mailcraft-open-bench"), PathBuf::from);
     let path = dir.join("mailbox.mailcraft");
     let marker = dir.join(SHAPE);
