@@ -4795,6 +4795,15 @@ impl MailApp {
             opening::show(self, ui);
             return;
         }
+        // //// Neoffice — a window with no room is not drawn. The desk hides the page that frames NeoMail with
+        // `display: none`, which gives the build a window of nothing, and the panes drawn in it recorded the widths
+        // they got there (the message list 0, then 240 on the way back instead of the person's 380,
+        // maintenance#1793). Nothing can be seen in it; back on the page, the window is drawn as it was left.
+        let room = ui.max_rect();
+        let drawable = room.width() >= 1.0 && room.height() >= 1.0;
+        if !drawable {
+            return;
+        }
         let t = theme::Tokens::get(&ctx);
         self.hit.clear();
         // What was chosen in a text's menu, for a text of the main window, before anything reads

@@ -1665,6 +1665,22 @@ mod tests {
         assert!(narrow.state().hit.rect("listTab", 1).is_none(), "Unread makes room for it");
     }
 
+    // //// Neoffice — the desk hides the page that frames NeoMail (`display: none`): the window has no room for a while,
+    // then comes back; the list and the folder pane are as wide as they were left (maintenance#1793).
+    #[test]
+    fn a_window_with_no_room_for_a_while_keeps_the_widths_of_the_panes() {
+        let mut harness = window(app(), (1280.0, 800.0));
+        let widths = |h: &Window| (h.state().ui.list_width, h.state().ui.folder_pane_width);
+        let before = widths(&harness);
+        assert!(before.0 > 300.0, "the list is drawn at the person's width first: {before:?}");
+        harness.set_size(vec2(0.0, 0.0));
+        harness.run_steps(6);
+        assert_eq!(widths(&harness), before, "nothing is recorded while the window has no room");
+        harness.set_size(vec2(1280.0, 800.0));
+        harness.run_steps(6);
+        assert_eq!(widths(&harness), before, "back, the panes are as they were left");
+    }
+
     /// The header says how the list is arranged and which way it runs, in words for each.
     #[test]
     fn the_arrangement_has_a_name_and_a_direction() {
