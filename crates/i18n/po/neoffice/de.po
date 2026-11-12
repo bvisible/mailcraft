@@ -1483,6 +1483,9 @@ msgstr "Der Text dieser Notiz wird dort geändert, wo sie geschrieben wurde: Öf
 msgid "This page keeps no categories or favorites: they would be gone at the next visit"
 msgstr "Diese Seite speichert weder Kategorien noch Favoriten: Beides ginge beim nächsten Besuch verloren."
 
+msgid "This page keeps no certificates or keys: they would be gone at the next visit"
+msgstr "Diese Seite speichert weder Zertifikate noch Schlüssel: Beides ginge beim nächsten Besuch verloren."
+
 msgid "This page keeps no contacts of its own, and its server has no address book to put new ones in"
 msgstr "Diese Seite speichert keine eigenen Kontakte, und ihr Server hat kein Adressbuch, in das neue Kontakte eingetragen werden könnten."
 

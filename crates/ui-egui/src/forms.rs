@@ -3015,6 +3015,7 @@ mod event {
                 self.online_dropped |= self.online;
                 self.online = false;
             }
+        }
 
         /// The account whose categories the event takes: its calendar's.
         pub(crate) fn category_account(&self, s: &Session) -> Id {
@@ -3220,7 +3221,9 @@ mod event {
                 // //// Neoffice — greyed, saying why, where its calendar's server keeps no categories (`options_refused`).
                 let refused = self.options_refused;
                 tall_row(ui, tl!("Categories"), |ui| {
-                    let chips = ui.add_enabled_ui(refused.is_none(), |ui| category_chips(ui, s.mailbox.categories_of(self.category_account(s)), &mut self.categories));
+                    let chips = ui.add_enabled_ui(refused.is_none(), |ui| {
+                        category_chips(ui, s.mailbox.categories_of(self.category_account(s)), &mut self.categories)
+                    });
                     if let Some(why) = refused {
                         chips.response.on_disabled_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))]));
                     }
@@ -3943,8 +3946,8 @@ mod contact {
                     });
                 }
                 crate::pim_rights::kept_note(ui, &keeps);
-                  // //// Neoffice — a server's address book keeps no certificates and keys: not offered where the card's book is one (see `keeps`).
-                  if keeps.everything {
+                // //// Neoffice — a server's address book keeps no certificates and keys: not offered where the card's book is one (see `keeps`).
+                if keeps.everything {
                     // The card's certificates and keys (#30 R11), and the Public keys kept for its
                     // addresses, which are shown and not the card's to change.
                     tall_row(ui, tl!("Certificates"), |ui| {
@@ -3968,7 +3971,7 @@ mod contact {
                             .on_hover_text(tl!("An X.509 certificate (.cer, .pem) or an OpenPGP Public key (.asc) of this contact's"))
                             .clicked();
                     });
-                  }
+                }
             });
             error(ui, &self.error);
             let ready = self.ready();

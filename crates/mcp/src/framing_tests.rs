@@ -47,6 +47,8 @@ struct Fixture {
     task: Id,
     note: Id,
     entry: Id,
+    // //// Neoffice — a note of the fork's Notes module (upstream's `note` is a .pst file's sticky note).
+    notes_module: Id,
 }
 
 fn fixture() -> Fixture {
@@ -163,7 +165,8 @@ fn fixture() -> Fixture {
         list: marked("list"),
         ..Default::default()
     });
-    let note = s.mailbox.add_note(mailcraft_engine::model::Note {
+    // //// Neoffice — upstream's sticky notes of a .pst file are `PstNote` here, and its `notes.*` commands `pstNotes.*` (the fork's own `notes.*` are its Notes module).
+    let note = s.mailbox.add_pst_note(mailcraft_engine::model::PstNote {
         text: marked("noteText"),
         categories: vec![marked("noteCategory")],
         ..Default::default()
@@ -176,7 +179,13 @@ fn fixture() -> Fixture {
         categories: vec![marked("journalCategory")],
         ..Default::default()
     });
-    Fixture { session: s, message, invitation, event, joinable, contact, task, note, entry }
+    // //// Neoffice — and a note of the fork's Notes module, whose texts hold the markers too.
+    let notes_module = s.run("notes.new", &json!({"title": marked("noteTitle"), "text": marked("noteText")})).unwrap()["id"].as_u64().unwrap();
+    if let Some(n) = s.mailbox.notes.note_mut(notes_module) {
+        n.category = marked("noteCategoryName");
+        n.owner_name = marked("noteOwner");
+    }
+    Fixture { session: s, message, invitation, event, joinable, contact, task, note, entry, notes_module }
 }
 
 /// Where in an answer a marker stands outside a frame (or a frame holds one inside it).
@@ -223,7 +232,9 @@ fn params(f: &Fixture, id: &str) -> Value {
         "people.search" | "compose.suggest" => json!({"query": "Hostile"}),
         "view.searchSuggestions" => json!({"query": "from:Hostile"}),
         "tasks.get" => json!({"id": t}),
-        "notes.get" => json!({"id": f.note}),
+        "pstNotes.get" => json!({"id": f.note}),
+        // //// Neoffice — the fork's own.
+        "notes.get" => json!({"id": f.notes_module}),
         "journal.get" => json!({"id": f.entry}),
         "tasks.list" => json!({"account": "all", "filter": "all"}),
         "edit.copy" | "edit.cut" => json!({"from": 0, "to": marked("composed").chars().count()}),

@@ -394,7 +394,9 @@ impl Draft {
             self.error = why_not_sendable(field).to_string();
             return;
         }
-        let Some(send) = &app.services.report_send else { return };
+        // //// Neoffice — never from a hosting page's tab (`host_diagnostics::offered`): a report goes straight to MailCraft's makers, and
+        // //// Neoffice — what this window shows of a tab's mailboxes is none of theirs. The browser build has no runner for it either.
+        let Some(send) = app.services.report_send.as_ref().filter(|_| crate::host_diagnostics::offered(app)) else { return };
         self.not_sent = None;
         self.sending = Some(send(report));
     }
@@ -429,7 +431,8 @@ impl Draft {
             return show_sent(ui, reference);
         }
         // Send report, in a build that names the project's relay; Open on GitHub alone otherwise.
-        let can_send = app.services.report_send.is_some();
+        // //// Neoffice — and never where a hosting page hosts the window (`host_diagnostics::offered`).
+        let can_send = app.services.report_send.is_some() && crate::host_diagnostics::offered(app);
         let sending = self.sending.is_some();
         let t = Tokens::get(ui.ctx());
         let dim = |s: &str| egui::RichText::new(s.to_string()).color(t.text_dim).size(11.5);

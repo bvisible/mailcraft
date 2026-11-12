@@ -341,41 +341,6 @@ a made-up mailbox of 64,000 messages (ignored by `cargo test`).
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-11 | major | First architecture doc |
-| 2026-10-26 | minor | #519: start-up: the window first, the mailbox read on a thread of its own behind the opening screen; File › Open reads in the background |
-| 2026-10-23 | minor | `jmap`, L3: JMAP requests and answers without I/O (M6); 15 crates |
-| 2026-10-15 | minor | Supply-chain gates: cargo-deny in `cargo xtask ci` and CI, pinned actions, zizmor, Scorecard; link to the threat model |
-| 2026-10-12 | patch | `html` also makes the line a message list shows (`preview`, `text_preview`) |
-| 2026-10-12 | minor | Calendar changes are checked against what comes down; the strict Graph stand-in |
-| 2026-10-12 | minor | Time zones (M3.5): `time::Zone`, the mailbox's zone stamp and how stored times are read |
-| 2026-10-13 | minor | The Favorites of Outlook (M4.2): `graph::favorites` in `net`, the server's list in the mailbox, `favorites_sync` in the front end |
-| 2026-10-13 | minor | The owner chooses how they are read (M4.3): `ews` in `net` (Exchange Web Services, until 1 April 2027), `Account::favorites_source`, the choice and its job in the front end |
-| 2026-10-15 | minor | Sign-ins remembered on Linux and FreeBSD (R5): the Secret Service behind `Services::secrets`, and `SecretStore::take_trouble` for a store that can't be used |
-| 2026-10-15 | minor | Exchange Web Services removed (R2): Graph is the one way of reading the Favorites; a mailbox that chose the other opens and says so once |
-| 2026-10-16 | minor | Quitting on macOS through `craft-quit` (craft-libs, a git dependency pinned by `rev`), for the apps alone (`cargo xtask layers`); Rust 1.95 |
-| 2026-10-15 | minor | R3.1: `AccountKind::Microsoft` behind the switch for testing; server ids (`ServerFolder`, `ServerMessage`, `Mailbox::queued`); Graph's own sync types; `graph::mail` and `graph::pace` in `net`; `cmd/graph_mail.rs` in the engine |
-| 2026-10-15 | minor | R6 (prerequisite of R6.1): the mailbox file in format 3, a log of records a save appends to (`store_index.rs`), crash-safe, formats 1 and 2 migrated with the old file kept; a damaged later save stops the reading there, a damaged item of the first save costs only itself and the mail is fetched again (`Opened::notice`, `file.open`'s `lostSaves`, `lostRecords`); a file another writer changed kept aside; kept-aside files protected from the sweep |
-| 2026-10-17 | minor | R6.1 review: files kept aside are never removed by MailCraft; a file whose time changed but whose bytes didn't is still this program's (`Stamp::sum`); a damaged commit of the first save loses no item |
-| 2026-10-23 | minor | Quitting on macOS is MailCraft's own code (`quit_macos.rs`); the `craft-quit` git dependency is gone, and `dispatch2` is the app-only crate in `cargo xtask layers` |
-| 2026-10-16 | patch | The Graph-only account described without citing private decision records |
-| 2026-10-16 | minor | R3.7: the switch from IMAP to Graph (`cmd/graph_switch.rs`, `Account::graph_switch`, `Folder::awaiting_listing`); the switch for testing is gone |
-| 2026-10-18 | minor | `charset` (L0): the decoder of character sets moved out of `mime` so that `vcard` reads `CHARSET=` by the same rules, #180 |
-| 2026-10-19 | minor | `jmap` (L3): JMAP without sockets or browser APIs, `sync_mail` for an account's mailboxes and newest messages, and an in-process server for the tests <!-- //// Neoffice — added row (no upstream equivalent) --> |
-| 2026-10-19 | minor | Fuzz targets (`fuzz/`, cargo-fuzz) for every reader, run by `fuzz.yml` |
-| 2026-10-19 | minor | A JMAP account sends its Outbox and keeps its drafts on the server (`crates/jmap/src/send.rs`, `cmd/jmap_send.rs`): a message is uploaded, filed in Sent and submitted, held when refused or when its answer is lost, and never sent twice by a retry <!-- //// Neoffice — added row (no upstream equivalent) --> |
-| 2026-10-19 | minor | The changes made to a JMAP account's messages go up first in a run (`jmap/mail/up.rs`, `cmd/jmap_up.rs`): marks, moves, deletes for good; the in-process server takes `Email/set` <!-- //// Neoffice — added row (no upstream equivalent) --> |
-| 2026-10-20 | minor | An account of a kind this program doesn't know (`AccountKind::Unknown`, one a newer MailCraft added) is kept as its file has it (`Account::as_written`), written back so, and never sent from, received for or changed here |
-| 2026-10-20 | minor | Notes, the mailbox's own and a server's (`model/note.rs`, `cmd/notes.rs` and `notes/`, `jmap/pim/notes.rs`, `ui-egui/src/notes_view.rs`): kept where they are offered, written to the server first and read after, a conflict kept as a note of its own <!-- //// Neoffice — added row (no upstream equivalent) --> |
-| 2026-10-20 | minor | `i18n` (L0): interface text, a `.po` reader with plural rules and the languages moved out of `ui-egui`, which keeps `tl!` and gains `tln!`, i18n-1 |
-| 2026-10-21 | minor | #253: the macOS menu bar: a table of command ids in `crates/ui-egui/src/menubar.rs`, made native with `muda` in `apps/mailcraft/src/menubar.rs` |
-| 2026-10-22 | minor | `jmap-fork` (L3): this fork's JMAP client leaves `crates/jmap` to upstream's own (#278) and is used by the apps under its name until its mail sending, calendars, contacts and notes sit on upstream's <!-- //// Neoffice — added row (no upstream equivalent) --> |
-| 2026-10-25 | minor | #350: `link` (L0): MailCraft's own reader of web addresses and Punycode replaces the `url` and `webbrowser` crates; pages are opened by `rundll32`, `open` or the desktops' openers as programs, never through a shell |
-| 2026-10-27 | minor | #454: `names` (L0): one list of Unicode's format characters, and the two steps a name takes, coming in and being shown, which also remove the other characters that show nothing; the count of crates is 17 |
-| 2026-10-27 | minor | #454 part 2: `link` and `html` use `names`' list of format characters instead of copies of their own; `link` depends on `names`, the second exception to the layers |
-| 2026-10-27 | minor | #519 slice 2: opening for the window: the whole-file sum in the background, bodies of the opening rows only, content files looked for afterwards, the word index after the first frames |
-| 2026-10-27 | patch | #519 slice 2 review: bodies found missing are marked, the bodies the budget holds come in the background, a cut-short file has no sum |
-| 2026-10-27 | patch | #519 slice 2 review: a body whose file is damaged, read in the background, is marked and counted |
-| 2026-10-28 | minor | M6: the browser build runs `jmap` over `fetch`; a JMAP account's Send/Receive in the data flow |
 | 2026-11-09 | minor | #30 part 3: `openpgp`, L2: checking OpenPGP Digital signatures (PGP/MIME, cleartext) and reading attached keys and `Autocrypt:` headers on rPGP, capped and without I/O; an `openpgp` fuzz target; 21 crates |
 | 2026-11-09 | minor | #30: `assuan`, L3: an Assuan client and gpg-agent's operations over any stream, with a bounded canonical S-expression reader and Assuan's socket files; the desktop program finds the agent through `gpgconf`; 21 crates |
 | 2026-11-07 | patch | `i18n` (L0): `Text` holds texts within texts and words said as they are, and `said!` is the crate's own, for `proto` and `net` (L3), whose errors carry one, #872 |
@@ -406,9 +371,14 @@ a made-up mailbox of 64,000 messages (ignored by `cargo test`).
 | 2026-10-25 | minor | #350: `link` (L0): MailCraft's own reader of web addresses and Punycode replaces the `url` and `webbrowser` crates; pages are opened by `rundll32`, `open` or the desktops' openers as programs, never through a shell |
 | 2026-10-23 | minor | `jmap`, L3: JMAP requests and answers without I/O (M6); 15 crates |
 | 2026-10-23 | minor | Quitting on macOS is MailCraft's own code (`quit_macos.rs`); the `craft-quit` git dependency is gone, and `dispatch2` is the app-only crate in `cargo xtask layers` |
+| 2026-10-22 | minor | `jmap-fork` (L3): this fork's JMAP client leaves `crates/jmap` to upstream's own (#278) and is used by the apps under its name until its mail sending, calendars, contacts and notes sit on upstream's <!-- //// Neoffice — added row (no upstream equivalent) --> |
 | 2026-10-21 | minor | #253: the macOS menu bar: a table of command ids in `crates/ui-egui/src/menubar.rs`, made native with `muda` in `apps/mailcraft/src/menubar.rs` |
+| 2026-10-20 | minor | Notes, the mailbox's own and a server's (`model/note.rs`, `cmd/notes.rs` and `notes/`, `jmap/pim/notes.rs`, `ui-egui/src/notes_view.rs`): kept where they are offered, written to the server first and read after, a conflict kept as a note of its own <!-- //// Neoffice — added row (no upstream equivalent) --> |
 | 2026-10-20 | minor | An account of a kind this program doesn't know (`AccountKind::Unknown`, one a newer MailCraft added) is kept as its file has it (`Account::as_written`), written back so, and never sent from, received for or changed here |
 | 2026-10-20 | minor | `i18n` (L0): interface text, a `.po` reader with plural rules and the languages moved out of `ui-egui`, which keeps `tl!` and gains `tln!`, i18n-1 |
+| 2026-10-19 | minor | `jmap` (L3): JMAP without sockets or browser APIs, `sync_mail` for an account's mailboxes and newest messages, and an in-process server for the tests <!-- //// Neoffice — added row (no upstream equivalent) --> |
+| 2026-10-19 | minor | A JMAP account sends its Outbox and keeps its drafts on the server (`crates/jmap/src/send.rs`, `cmd/jmap_send.rs`): a message is uploaded, filed in Sent and submitted, held when refused or when its answer is lost, and never sent twice by a retry <!-- //// Neoffice — added row (no upstream equivalent) --> |
+| 2026-10-19 | minor | The changes made to a JMAP account's messages go up first in a run (`jmap/mail/up.rs`, `cmd/jmap_up.rs`): marks, moves, deletes for good; the in-process server takes `Email/set` <!-- //// Neoffice — added row (no upstream equivalent) --> |
 | 2026-10-19 | minor | Fuzz targets (`fuzz/`, cargo-fuzz) for every reader, run by `fuzz.yml` |
 | 2026-10-18 | minor | `charset` (L0): the decoder of character sets moved out of `mime` so that `vcard` reads `CHARSET=` by the same rules, #180 |
 | 2026-10-17 | minor | R6.1 review: files kept aside are never removed by MailCraft; a file whose time changed but whose bytes didn't is still this program's (`Stamp::sum`); a damaged commit of the first save loses no item |

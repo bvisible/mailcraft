@@ -793,7 +793,7 @@ pub(super) fn attachment_menu(ui: &mut Ui, app: &mut MailApp, id: u64, index: us
     crate::widgets::mi(ui, app, "Save All Attachments…", "mail.saveAllAttachments", json!({"id": id}));
     // //// Neoffice — what the hosting page does with an attachment: its Drive, its scanned documents, an editor (host_attachments.rs).
     let held = app.session.mailbox.message(id).cloned();
-    if let Some(m) = held.as_deref()
+    if let Some(m) = held.as_ref()
         && let Some(a) = m.attachments.get(index)
     {
         crate::host_attachments::menu(ui, app, m, index, a);

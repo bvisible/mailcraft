@@ -434,13 +434,14 @@ fn a_password_is_kept_for_the_jmap_server_it_goes_to() {
     elsewhere.jmap = None;
     assert_eq!(MailApp::secret_key("password", &elsewhere), "password:ada@example.org|jmap=none|bearer=false");
 
-    let (mut app, _, _) = window(false, false);
+    let (mut app, id, _) = window(false, false);
     let store = Store::default();
     store.0.lock().unwrap().insert("password:ada@example.org".into(), "pw-before".into());
     app.services.secrets = Some(Arc::new(store.clone()));
     crate::secret_read_tests::settle(&mut app);
     assert_eq!((store.kept("password:ada@example.org"), store.kept(PASSWORD_KEY).as_deref()), (None, Some("pw-before")));
-    assert_eq!(app.remembered("password", ME).as_deref(), Some("pw-before"));
+    // //// Neoffice — upstream's `remembered` names the account, not its address (AU3-03).
+    assert_eq!(app.remembered("password", id).as_deref(), Some("pw-before"));
 }
 
 #[test]

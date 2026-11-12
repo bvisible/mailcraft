@@ -119,6 +119,10 @@ enum Setup {
     /// The account signs in with Microsoft, and the selected to-do is in its To Do list shared
     /// with other people, with a category.
     Shared,
+    // //// Neoffice — an account whose server keeps notes, with two notes on it, the first selected.
+    Notes,
+    // //// Neoffice — an account kept in step with a JMAP server whose address book the selected contact is in, and that a new contact goes to.
+    Book,
 }
 
 /// One row for every command an agent can be asked about: its params in the sample mailbox and
@@ -246,6 +250,17 @@ const ROWS: &[(&str, &str, Setup)] = &[
     ("tasks.new", r#"{"title": "x", "account": $account}"#, Setup::Shared),
     ("tasks.fromMessage", "{}", Setup::Shared),
     ("category.rename", r#"{"from": "Shared", "to": "y"}"#, Setup::Shared),
+    // //// Neoffice — what is written to a server's notes, and what is deleted of them or opened on the web.
+    ("notes.new", r#"{"title": "x"}"#, Setup::Notes),
+    ("notes.edit", r#"{"title": "y"}"#, Setup::Notes),
+    ("notes.pin", "{}", Setup::Notes),
+    ("notes.archive", "{}", Setup::Notes),
+    ("notes.delete", "{}", Setup::Notes),
+    ("ui.openNote", "{}", Setup::Notes),
+    // //// Neoffice — what is written to a server's address book, which everyone who reads that book sees.
+    ("people.new", r#"{"first": "Bo"}"#, Setup::Book),
+    ("people.edit", r#"{"first": "Zed"}"#, Setup::Book),
+    ("people.fromMessage", "{}", Setup::Book),
 ];
 
 /// Asked about only for a dialog with changes the owner hasn't saved, which a test can't fill in
@@ -325,6 +340,49 @@ fn set_up(a: &mut MailApp, setup: Setup, i: &Ids) {
             t.list = "L1".to_string();
             t.categories = vec!["Shared".to_string()];
         }
+        // //// Neoffice — see `Setup::Notes`.
+        Setup::Notes => {
+            use mailcraft_model::note::{Note, NoteRights, NoteServer};
+            let account = a.session.mailbox.add_account(mailcraft_model::Account { email: "ada@example.net".into(), ..Default::default() });
+            a.session.mailbox.notes.servers.push(NoteServer { account, ..Default::default() });
+            let mut made = Vec::new();
+            for (remote, title) in [("N1", "First"), ("N2", "Second")] {
+                let id = a.session.mailbox.alloc_id();
+                let note = Note {
+                    id,
+                    origin: mailcraft_model::Origin { account, id: remote.into(), ..Default::default() },
+                    title: title.into(),
+                    text: "Words".into(),
+                    rights: NoteRights::default(),
+                    ..Default::default()
+                };
+                a.session.mailbox.notes.items.insert(id, std::sync::Arc::new(note));
+                made.push(id);
+            }
+            a.execute("notes.select", json!({"id": made[0]})).unwrap();
+        }
+        // //// Neoffice — see `Setup::Book`.
+        Setup::Book => {
+            let added = a.execute(
+                "account.add",
+                json!({"email": "ada@example.net", "kind": "jmap", "jmap": {"session": "https://jmap.example.net/session", "bearer": true}}),
+            );
+            let account = added.unwrap()["id"].as_u64().unwrap();
+            let book = a.session.mailbox.alloc_id();
+            let origin = mailcraft_model::Origin { account, id: "AB1".into(), ..Default::default() };
+            a.session.mailbox.address_books.push(mailcraft_model::AddressBook {
+                id: book,
+                name: "Contacts".into(),
+                origin,
+                main: true,
+                may_remove: true,
+                ..Default::default()
+            });
+            let mut contact = a.session.mailbox.contact(i.contact).unwrap().clone();
+            contact.book = book;
+            contact.origin = mailcraft_model::Origin { account, id: "C1".into(), ..Default::default() };
+            *a.session.mailbox.contact_mut(i.contact).unwrap() = contact;
+        }
         Setup::Step(redo) => {
             a.execute("junk.add", json!({"list": "safe", "entry": "z@example.org"})).unwrap();
             if redo {
@@ -345,6 +403,11 @@ fn meanwhile(a: &mut MailApp, i: &Ids) {
     let _ = agent(a, "compose.set", json!({"to": "mallory@example.org", "bcc": "eve@example.org"}));
     let _ = agent(a, "ui.openWindow", json!({"new": "meeting", "title": "Other", "attendees": "mallory@example.org"}));
     let _ = agent(a, "folder.select", json!({"id": i.inbox}));
+    // //// Neoffice — and another note.
+    let other_note = a.session.mailbox.notes.items.keys().copied().find(|id| Some(*id) != a.session.sel.note);
+    if let Some(id) = other_note {
+        let _ = agent(a, "notes.select", json!({"id": id}));
+    }
 }
 
 #[test]

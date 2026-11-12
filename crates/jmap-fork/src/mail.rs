@@ -86,6 +86,9 @@ mod message;
 mod outgoing;
 #[cfg(test)]
 mod tests;
+// //// Neoffice — upstream's #795 test, over this client.
+#[cfg(test)]
+mod threads_tests;
 mod up;
 
 use std::collections::{HashMap, HashSet};
@@ -93,7 +96,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::FolderKind;
 use mailcraft_model::sync::{
-    FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_EMAILS, MAX_JMAP_WINDOW, MessagePage,
+    FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_EMAILS, MAX_JMAP_WINDOW, MAX_THREAD_ASKS,
+    MessagePage, ThreadOf, thread_id,
 };
 use serde_json::{Value, json};
 
@@ -134,7 +138,11 @@ const BY_ID_BYTES: usize = 1 << 20;
 /// What the mailboxes' list asks for, and what an email is read for in the window and for a message list.
 const MAILBOX_PROPERTIES: [&str; 6] = ["id", "name", "parentId", "role", "totalEmails", "unreadEmails"];
 const WINDOW_PROPERTIES: [&str; 3] = ["id", "keywords", "mailboxIds"];
-const EMAIL_PROPERTIES: [&str; 9] = ["id", "blobId", "keywords", "mailboxIds", "size", "receivedAt", "hasAttachment", "preview", "headers"];
+// //// Neoffice — and the thread of each (`threadId`, upstream's #795).
+const EMAIL_PROPERTIES: [&str; 10] =
+    ["id", "blobId", "keywords", "mailboxIds", "size", "receivedAt", "hasAttachment", "preview", "headers", "threadId"];
+// //// Neoffice — most emails one call asks the thread of (#795), and never more than the server's `maxObjectsInGet`.
+const THREADS_AT_ONCE: usize = 100;
 /// The special mailboxes after the Inbox, in the order the folder pane lists them.
 const SPECIAL: [FolderKind; 5] = [FolderKind::Drafts, FolderKind::Sent, FolderKind::Deleted, FolderKind::Archive, FolderKind::Junk];
 
@@ -158,8 +166,20 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
             Stop::Down(error) | Stop::Failed(error) => out.halted = Some(run.said(&error)),
         }
     }
+    // //// Neoffice — then the threads of mail listed before they were asked for (upstream's #795), unless the run was stopped or the
+    // //// Neoffice — server asked to be left alone. Never worth failing the run for.
+    let threads = if request.threads.is_empty() || out.stopped || out.auth_refused || out.busy_for.is_some() {
+        Vec::new()
+    } else {
+        let (threads, busy) = run.threads().await;
+        if let Some((seconds, why)) = busy {
+            (out.busy_for, out.halted) = (Some(seconds), Some(why));
+        }
+        threads
+    };
     log::debug!("jmap mail: the run is over (clean: {}, stopped: {}, busy: {})", out.clean(), out.stopped, out.busy_for.is_some());
     emit(run.piece(JmapMailResult {
+        threads,
         errors: out.lines(),
         busy_for: out.busy_for,
         // (A run for emails by their ids reads no window to its end: nothing it did not see is gone.)
@@ -778,6 +798,74 @@ impl<'a, H: Http> Run<'a, H> {
         let all_named = total.is_some_and(|total| usize::try_from(total).is_ok_and(|total| total == named.len()));
         let complete = accounted && from_the_start && listed.len() <= self.window && all_named;
         Ok(Newest { slots, total: total.map(|total| u32::try_from(total).unwrap_or(u32::MAX)), complete })
+    }
+
+    // //// Neoffice — upstream's #795 (`crates/jmap/src/mail.rs` there), over this client's calls.
+    /// The threads of the emails the request names (`threadId`, RFC 8621 §4.1.1), at most [`MAX_THREAD_ASKS`], [`THREADS_AT_ONCE`] to a
+    /// call: what the server answered for, until it doesn't.
+    async fn threads(&self) -> (Vec<ThreadOf>, Option<(u32, String)>) {
+        let ids: Vec<&str> = self.request.threads.iter().take(MAX_THREAD_ASKS).map(String::as_str).filter(|id| valid_id(id)).collect();
+        let at_once = self.client.max_objects_in_get().clamp(1, THREADS_AT_ONCE);
+        let mut out = Vec::new();
+        let mut busy = None;
+        for some in ids.chunks(at_once) {
+            if self.check().is_err() {
+                break;
+            }
+            let args = json!({"accountId": self.client.account_id(), "ids": some, "properties": ["id", "threadId"]});
+            let asked = match self.client.mail_within(vec![("Email/get", args)], WINDOW_BYTES).await {
+                Ok(answers) => answers,
+                Err(error) => match self.call_stop(error) {
+                    Stop::Busy(seconds, why) => {
+                        busy = Some((seconds, why));
+                        break;
+                    }
+                    // The server answered and refused: asked again in a later run, a few times.
+                    Stop::Failed(_) => {
+                        log::info!("jmap mail: the server refused to say the threads; asked again in a later run, a few times");
+                        out.extend(some.iter().map(|id| ThreadOf::refused(id)));
+                        break;
+                    }
+                    _ => {
+                        log::info!("jmap mail: threads not asked for now; a later run goes on");
+                        break;
+                    }
+                },
+            };
+            let mut answers = asked;
+            let got = match answers.take(0).map_err(Self::method_stop) {
+                Ok(got) => got,
+                Err(Stop::Failed(_)) => {
+                    log::info!("jmap mail: the server refused to say the threads; asked again in a later run, a few times");
+                    out.extend(some.iter().map(|id| ThreadOf::refused(id)));
+                    break;
+                }
+                Err(_) => {
+                    log::info!("jmap mail: threads not asked for now; a later run goes on");
+                    break;
+                }
+            };
+            let asked: HashSet<&str> = some.iter().copied().collect();
+            let before = out.len();
+            let list = got.get("list").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            for email in list.iter().take(some.len()) {
+                let Some(id) = email.get("id").and_then(Value::as_str).filter(|id| asked.contains(id)) else { continue };
+                let thread = thread_id(email.get("threadId").and_then(Value::as_str).unwrap_or_default());
+                out.push(ThreadOf { id: id.to_string(), thread, refused: false });
+            }
+            // Gone from the server: none, and not asked again.
+            let gone = got.get("notFound").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            for id in gone.iter().take(some.len()).filter_map(Value::as_str).filter(|id| asked.contains(id)) {
+                out.push(ThreadOf { id: id.to_string(), ..ThreadOf::default() });
+            }
+            if out.len() == before {
+                break;
+            }
+        }
+        out.sort_by(|a, b| a.id.cmp(&b.id));
+        out.dedup_by(|a, b| a.id == b.id);
+        log::info!("jmap mail: the threads of {} of {} emails asked for", out.len(), self.request.threads.len());
+        (out, busy)
     }
 
     /// `Email/get` of the emails `ids`, for what a message list shows of them.

@@ -40,6 +40,9 @@ pub enum Object {
     Contact,
     /// A task: the one named, or the selected one.
     Task,
+    // //// Neoffice — a note of the fork's Notes module: the one named, or the selected one.
+    /// A note: the one named, or the selected one.
+    Note,
     /// An appointment or a meeting: the one named, or the selected one.
     Event,
     /// A calendar.
@@ -88,7 +91,10 @@ pub fn object(id: &str) -> Option<Object> {
         | "ui.alwaysDownloadPictures" => Messages,
         "folder.empty" | "folder.delete" => FolderContent,
         "rules.run" | "file.import" | "calendar.deleteAnsweredRequests" => Folder,
-        "people.delete" | "people.merge" => Contact,
+        // //// Neoffice — a contact made, changed or taken from a message in a server's address book is the owner's to allow (`remote_contacts::writes_to_a_book`).
+        "people.delete" | "people.merge" | "people.new" | "people.edit" | "people.fromMessage" => Contact,
+        // //// Neoffice — and a note written on a server, deleted, or opened on the web (`cmd/notes/agent.rs`).
+        "notes.new" | "notes.edit" | "notes.pin" | "notes.archive" | "notes.delete" | "ui.openNote" => Note,
         "tasks.delete" | "tasks.edit" | "tasks.complete" | "tasks.categorize" | "tasks.new" | "tasks.fromMessage" => Task,
         // A calendar command that writes to people is asked about whatever it is (`classify`).
         "calendar.forward" | "calendar.propose" | "calendar.delete" | "people.meeting" | "ui.joinMeeting" => Event,

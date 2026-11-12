@@ -3119,6 +3119,7 @@ impl Mailbox {
     pub fn add_pst_note(&mut self, mut n: crate::PstNote) -> Id {
         n.id = self.alloc_id();
         let id = n.id;
+        // //// Neoffice — see `pst_notes`.
         self.pst_notes.insert(id, Arc::new(n));
         id
     }

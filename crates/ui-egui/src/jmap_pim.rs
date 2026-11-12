@@ -190,7 +190,8 @@ impl MailApp {
 
     /// The lines the Send/Receive problems report keeps for `account`. (Public for a host's tests.)
     pub fn sync_problems_of(&self, account: Id) -> Vec<String> {
-        self.sync_problems.iter().filter(|(of, ..)| *of == account).flat_map(|(.., lines)| lines.iter().cloned()).collect()
+        // //// Neoffice — upstream's problems are texts now (#872), said in the interface's language.
+        self.sync_problems.iter().filter(|(of, ..)| *of == account).flat_map(|(.., lines)| lines.iter().map(crate::problem_line)).collect()
     }
 
     /// Look whether a JMAP account's calendar is due, and start a job when one is. Called every frame.

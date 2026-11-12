@@ -480,11 +480,28 @@ fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     } else if tile(ui, "import", tl!("Import"), tl!("Messages (.eml, .mbox), calendars (.ics) and contacts (.vcf)"), t) {
         let _ = app.run("ui.import", json!({}));
     }
-    if tile(ui, "import", tl!("Import a Folder of Mailboxes"), tl!("Every mbox file under a folder, keeping its subfolders, into one new folder"), t)
-    {
+    // //// Neoffice — the same for a folder of mailboxes and a .pst file.
+    if let Some(why) = mailcraft_engine::cmd::kept_here::import_refusal(&app.session) {
+        greyed_tile(ui, &mut app.hit, "import", tl!("Import a Folder of Mailboxes"), tl!(why), t);
+    } else if tile(
+        ui,
+        "import",
+        tl!("Import a Folder of Mailboxes"),
+        tl!("Every mbox file under a folder, keeping its subfolders, into one new folder"),
+        t,
+    ) {
         let _ = app.run("file.importFolderTree", json!({}));
     }
-    if tile(ui, "import", tl!("Import a .pst File"), tl!("The mail, contacts, calendar, tasks and notes of a .pst file, onto this computer"), t) {
+    // //// Neoffice — (see above)
+    if let Some(why) = mailcraft_engine::cmd::kept_here::import_refusal(&app.session) {
+        greyed_tile(ui, &mut app.hit, "import", tl!("Import a .pst File"), tl!(why), t);
+    } else if tile(
+        ui,
+        "import",
+        tl!("Import a .pst File"),
+        tl!("The mail, contacts, calendar, tasks and notes of a .pst file, onto this computer"),
+        t,
+    ) {
         let _ = app.run("file.importPst", json!({}));
     }
     if tile(ui, "open", tl!("Open Mailbox File"), tl!("Replace what is open with a .mailcraft file"), t) {

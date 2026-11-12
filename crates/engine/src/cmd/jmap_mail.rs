@@ -304,7 +304,9 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     let mut retied = false;
     for done in result.folders.iter().take(MAX_FOLDER_CHANGES) {
         retied |= retie(&mut s.mailbox, account, done);
-        if let Some(line) = change_done(&mut s.mailbox, account, &done.change, &done.outcome, &mut taken).map(|line| said(&line)) {
+        if let Some(line) =
+            change_done(&mut s.mailbox, account, &done.change, &done.outcome, s.interface_language, &mut taken).map(|line| said(&line))
+        {
             errors.push(line.clone());
             s.graph_said.push(line);
         }

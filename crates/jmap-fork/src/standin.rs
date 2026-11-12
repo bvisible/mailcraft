@@ -123,9 +123,12 @@ const MAX_PREVIEW: usize = 256;
 const MAX_POINTER: usize = 16;
 
 const MAILBOX_PROPERTIES: &[&str] = &["id", "name", "parentId", "role", "sortOrder", "totalEmails", "unreadEmails"];
-const EMAIL_PROPERTIES: &[&str] = &["id", "blobId", "mailboxIds", "keywords", "size", "receivedAt", "hasAttachment", "preview", "headers"];
+// //// Neoffice — upstream's #795: `threadId` is the email's metadata, which every kind of server gives (RFC 8621 §4.1.1), not a field
+// //// Neoffice — only a server that parses the header for a client has.
+const EMAIL_PROPERTIES: &[&str] =
+    &["id", "blobId", "threadId", "mailboxIds", "keywords", "size", "receivedAt", "hasAttachment", "preview", "headers"];
 /// What a store of the standard kind parses out of the header for a client (RFC 8621 §4.1).
-const EMAIL_PARSED: &[&str] = &["threadId", "subject", "from", "to", "cc", "messageId", "sentAt"];
+const EMAIL_PARSED: &[&str] = &["subject", "from", "to", "cc", "messageId", "sentAt"];
 /// What `Email/get` answers when no properties are named: all but the raw headers.
 const EMAIL_DEFAULT: &[&str] = &["id", "blobId", "mailboxIds", "keywords", "size", "receivedAt", "hasAttachment", "preview"];
 
@@ -1050,13 +1053,24 @@ fn email_json(email: &Email, properties: &[String]) -> Value {
             "hasAttachment" => json!(text.to_ascii_lowercase().contains("content-disposition: attachment")),
             "preview" => json!(body.split_whitespace().collect::<Vec<&str>>().join(" ").chars().take(MAX_PREVIEW).collect::<String>()),
             "headers" => Value::Array(fields.iter().map(|(name, value)| json!({"name": name, "value": value})).collect()),
-            "threadId" => json!(email.id),
+            // //// Neoffice — upstream's #795, see `thread_of`.
+            "threadId" => json!(thread_of(email)),
             parsed_property if EMAIL_PARSED.contains(&parsed_property) => parsed.as_ref().map_or(Value::Null, |m| parsed_field(parsed_property, m)),
             _ => continue,
         };
         out.insert(property.clone(), value);
     }
     Value::Object(out)
+}
+
+// //// Neoffice — upstream's #795 (the stand-in's thread of an email, as upstream's has it).
+/// The thread of an email (RFC 8621 §3), as a server that threads by the header would name it: after
+/// the first message its `References` name, else the one it answers, else itself.
+fn thread_of(email: &Email) -> String {
+    let m = mailcraft_mime::parse(&email.raw);
+    let root = m.references.first().cloned().filter(|r| !r.is_empty()).unwrap_or(m.in_reply_to);
+    let root = if root.is_empty() { m.message_id } else { root };
+    if root.is_empty() { format!("T{}", email.id) } else { format!("T{:016x}", mailcraft_model::text_hash(&root)) }
 }
 
 /// A field of the header as RFC 8621 §4.1.2 shows it: `null` when the message has none.

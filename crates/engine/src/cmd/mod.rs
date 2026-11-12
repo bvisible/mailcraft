@@ -100,8 +100,6 @@ mod moves_between_accounts_tests;
 #[cfg(test)]
 mod newer_account_tests;
 // //// Neoffice — notes, the mailbox's own and a server's.
-// //// Neoffice — what upstream's .pst import keeps as notes and the journal, as commands (`cmd/pst_items.rs`).
-pub mod pst_items;
 pub mod notes;
 pub mod offline;
 #[cfg(test)]
@@ -117,6 +115,8 @@ pub mod picture;
 mod picture_tests;
 #[cfg(test)]
 mod protected_moves_tests;
+// //// Neoffice — what upstream's .pst import keeps as notes and the journal, as commands (`cmd/pst_items.rs`).
+pub mod pst_items;
 #[cfg(test)]
 mod quote_tests;
 #[cfg(test)]

@@ -66,7 +66,8 @@ fn note_head(n: &PstNote) -> Value {
 
 fn list_notes(s: &mut Session, v: &Value) -> CmdResult {
     let q = query(v);
-    let mut all: Vec<&PstNote> = s.mailbox.pst_notes.values().map(|n| n.as_ref()).filter(|n| found(&q, &[&n.text, &n.categories.join(" ")])).collect();
+    let mut all: Vec<&PstNote> =
+        s.mailbox.pst_notes.values().map(|n| n.as_ref()).filter(|n| found(&q, &[&n.text, &n.categories.join(" ")])).collect();
     all.sort_by_key(|n| std::cmp::Reverse(n.modified));
     let total = all.len();
     Ok(json!({"notes": all.into_iter().take(limit(v)).map(note_head).collect::<Vec<_>>(), "total": total}))

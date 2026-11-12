@@ -167,7 +167,8 @@ pub struct Batch {
     /// Calendar items, each with the calendar asked for (0: a new one, [`Batch::calendar_name`]).
     pub events: Vec<CalendarEvent>,
     pub tasks: Vec<Task>,
-    pub notes: Vec<mailcraft_model::Note>,
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+    pub notes: Vec<mailcraft_model::PstNote>,
     pub journal: Vec<mailcraft_model::JournalEntry>,
     /// The name of the calendar made for the file, when one is.
     pub calendar_name: String,
@@ -258,7 +259,8 @@ fn known_plans_and_people(mb: &Mailbox) -> impl Iterator<Item = String> + '_ {
     let contacts = mb.contacts.values().flat_map(|c| c.imported.split_whitespace().map(str::to_string));
     let events = mb.events.values().filter(|e| !e.imported.is_empty()).map(|e| e.imported.clone());
     let tasks = mb.tasks.values().filter(|t| !t.imported.is_empty()).map(|t| t.imported.clone());
-    let notes = mb.notes.values().filter(|n| !n.imported.is_empty()).map(|n| n.imported.clone());
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+    let notes = mb.pst_notes.values().filter(|n| !n.imported.is_empty()).map(|n| n.imported.clone());
     let journal = mb.journal.values().filter(|j| !j.imported.is_empty()).map(|j| j.imported.clone());
     contacts.chain(events).chain(tasks).chain(notes).chain(journal)
 }
@@ -1068,7 +1070,8 @@ pub fn room(s: &Session, place: &Place) -> usize {
 /// rest of the mailbox, so what earlier imports kept counts, as it is written.
 fn kept_room(mb: &Mailbox) -> u64 {
     let written = |j: serde_json::Result<String>| j.map_or(0, |j| j.len() as u64);
-    let notes = mb.notes.values().map(|n| written(serde_json::to_string(n)));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+    let notes = mb.pst_notes.values().map(|n| written(serde_json::to_string(n)));
     let journal = mb.journal.values().map(|e| written(serde_json::to_string(e)));
     let held = notes.chain(journal).fold(0, u64::saturating_add);
     item::KEPT_TOTAL_BUDGET.saturating_sub(held).min(item::KEPT_TEXT_BUDGET)
@@ -1341,7 +1344,8 @@ impl Running {
             s.mailbox.tasks.remove(&id);
         }
         for id in self.plans.notes.drain(plans[2].min(self.plans.notes.len())..) {
-            s.mailbox.notes.remove(&id);
+            // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+            s.mailbox.pst_notes.remove(&id);
         }
         for id in self.plans.journal.drain(plans[3].min(self.plans.journal.len())..) {
             s.mailbox.journal.remove(&id);
@@ -1482,7 +1486,8 @@ fn put(s: &mut Session, run: &mut Running, batch: Batch) -> Result<usize, CmdErr
     }
     for mut note in batch.notes {
         note.id = 0;
-        let id = s.mailbox.add_note(note);
+        // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+        let id = s.mailbox.add_pst_note(note);
         run.plans.notes.push(id);
         n = n.saturating_add(1);
     }

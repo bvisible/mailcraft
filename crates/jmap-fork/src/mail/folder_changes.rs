@@ -154,7 +154,9 @@ impl<H: Http> Run<'_, H> {
                     patch(&mut update, id, "parentId", parent);
                     false
                 }
-                FolderChange::Delete { id } if valid_id(id) => {
+                // //// Neoffice — (`shown` is upstream's guard for a Microsoft server's folder, AU3-H7: a JMAP server refuses to destroy a
+                // mailbox that still has emails, `onDestroyRemoveEmails` being left false, so what it holds beyond what the owner saw is safe)
+                FolderChange::Delete { id, .. } if valid_id(id) => {
                     if !destroy.contains(&id.as_str()) {
                         destroy.push(id.as_str());
                     }
@@ -278,7 +280,7 @@ impl<H: Http> Run<'_, H> {
                 }
                 FolderChange::Rename { id, name, .. } => answer.update(id, |folder| folder.name.clone_from(name)),
                 FolderChange::Move { id, parent, .. } => answer.update(id, |folder| folder.parent.clone_from(parent)),
-                FolderChange::Delete { id } => {
+                FolderChange::Delete { id, .. } => {
                     if let Some(error) = answer.not_destroyed.and_then(|members| members.get(id)) {
                         of_error(error, true)
                     } else if answer.destroyed.contains(id.as_str()) {

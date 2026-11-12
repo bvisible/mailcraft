@@ -14,7 +14,7 @@ use crate::{Address, Id};
 /// A sticky note, as a .pst file keeps it (not the fork's [`crate::Note`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct Note {
+pub struct PstNote {
     pub id: Id,
     pub text: String,
     /// `blue`, `green`, `pink`, `yellow` or `white`.

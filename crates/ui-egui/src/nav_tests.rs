@@ -370,6 +370,7 @@ fn a_standard_folder_and_a_date_are_shown_in_the_interface_s_language() {
     set_current(Lang::English);
     assert_eq!(folder_name(mb.folder(inbox).unwrap()), "Inbox");
     assert_eq!(crate::dates::list_label(at, now, 0, false), "Sat 15:05");
+}
 
 /// Over an account, a dragged account goes in the gap above it in its upper half and below it in
 /// its lower half; above the first (over Favorites) in the first gap, below the last in the last.

@@ -354,8 +354,10 @@ const SAFE: &[&str] = &[
     "tasks.select",
     "tasks.get",
     "tasks.list",
-    "notes.list",
-    "notes.get",
+    // //// Neoffice — upstream's `notes.list` and `notes.get` (what a .pst file's sticky notes are kept as) are `pstNotes.list` and
+    // //// Neoffice — `pstNotes.get` here: the fork's own `notes.*` (the Notes module) are classed by `cmd/notes/agent.rs`.
+    "pstNotes.list",
+    "pstNotes.get",
     "journal.list",
     "journal.get",
     "tasks.arrange",

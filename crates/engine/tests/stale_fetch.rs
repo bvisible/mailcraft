@@ -6,7 +6,8 @@
 //! that it never puts back what the owner took out. Every message here is invented.
 
 use mailcraft_engine::Session;
-use mailcraft_engine::cmd::{ews_mail, graph_mail, graph_send, jmap_mail};
+// //// Neoffice — a JMAP account's fetch is the fork's (`cmd/jmap_fetch.rs`), not upstream's (`jmap_mail.rs`).
+use mailcraft_engine::cmd::{ews_mail, graph_mail, graph_send, jmap_fetch, jmap_mail};
 use mailcraft_model::sync::{
     EwsFolderDeltas, EwsMailResult, EwsMessagePage, FolderListing, GraphFetchResult, GraphFetched, GraphFolder, GraphMailResult, GraphMessage,
     JmapMailResult, MessagePage, ServerMessage,
@@ -105,7 +106,8 @@ fn ask(s: &Session, kind: Kind, account: Id, message: Option<Id>) -> Vec<String>
     match kind {
         Kind::Ews => ews_mail::ews_fetch_request(s, account, message, 10).unwrap().ids,
         Kind::Graph => graph_mail::graph_fetch_request(s, account, message, 10).unwrap().ids,
-        Kind::Jmap => jmap_mail::jmap_fetch_request(s, account, message, 10).unwrap().ids,
+        // //// Neoffice — a JMAP account's fetch is `cmd/jmap_fetch.rs`'s here.
+        Kind::Jmap => jmap_fetch::jmap_fetch_request(s, account, message, 10).unwrap().ids,
     }
 }
 
@@ -116,7 +118,8 @@ fn answer(s: &mut Session, kind: Kind, account: Id, mime: &[u8]) -> u64 {
     let said = match kind {
         Kind::Ews => ews_mail::apply_ews_fetch(s, result),
         Kind::Graph => graph_mail::apply_graph_fetch(s, result),
-        Kind::Jmap => jmap_mail::apply_jmap_fetch(s, result),
+        // //// Neoffice — a JMAP account's fetch is `cmd/jmap_fetch.rs`'s here.
+        Kind::Jmap => jmap_fetch::apply_jmap_fetch(s, result),
     };
     said.unwrap()["fetched"].as_u64().unwrap()
 }

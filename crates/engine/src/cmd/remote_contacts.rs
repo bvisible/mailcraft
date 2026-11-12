@@ -292,6 +292,8 @@ pub fn unkept(book: &AddressBook, before: &Contact, after: &Contact) -> Option<&
         || before.addresses != after.addresses
         || before.websites != after.websites
         || before.birthday != after.birthday
+        // //// Neoffice — the card's certificates and keys (upstream's #30) are not a server card's either.
+        || before.keys != after.keys
         || before.notes != after.notes
         || (book.plain && before.display_name != after.display_name);
     beyond.then_some(NO_KEEPING)

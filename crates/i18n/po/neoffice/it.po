@@ -1499,6 +1499,9 @@ msgstr "Il testo di questa nota si modifica dove è stato scritto: apra la nota 
 msgid "This page keeps no categories or favorites: they would be gone at the next visit"
 msgstr "Questa pagina non conserva categorie né preferiti: andrebbero persi alla prossima visita"
 
+msgid "This page keeps no certificates or keys: they would be gone at the next visit"
+msgstr "Questa pagina non conserva certificati né chiavi: andrebbero persi alla prossima visita"
+
 msgid "This page keeps no contacts of its own, and its server has no address book to put new ones in"
 msgstr "Questa pagina non conserva contatti propri e il suo server non ha una rubrica in cui aggiungerne di nuovi"
 

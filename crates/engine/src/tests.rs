@@ -2328,8 +2328,8 @@ fn parity_has_a_floor_that_only_rises() {
 /// Never-crash: every command, with junk for every parameter it might read, returns `Ok` or `Err`.
 #[test]
 fn hostile_params_never_panic() {
-    // //// Neoffice — an array: the fork's junk for a JMAP account's mail goes on a copy of it below (`junk.to_vec()`).
-    let junk = [
+    // //// Neoffice — the fork's junk for a JMAP account's mail is added to it below (`junk.extend`).
+    let mut junk = vec![
         json!(null),
         json!({}),
         json!([]),
@@ -2430,7 +2430,6 @@ fn hostile_params_never_panic() {
     }});
     // (If this does not take, the junk below meets no mail of the account: the test says so.)
     assert_eq!(s.run("sync.applyJmap", &window).unwrap()["new"], 2);
-    let mut junk = junk.to_vec();
     junk.extend([
         json!({"account": jmap, "message": 18446744073709551615u64, "most": 1e300}),
         json!({"account": jmap, "most": 18446744073709551615u64, "result": {"account": jmap, "email": "reader@example.org", "fetched": [{"id": "E1", "mime": [255, 0, 13, 10]}, {"id": ""}, {"id": "a/b", "mime": "x"}, null], "missing": ["E2", "\u{0}", 5], "failed": ["E3"], "errors": ["\u{0}"], "offline": "yes", "busyFor": -1}}),

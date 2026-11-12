@@ -142,8 +142,7 @@ fn an_appointment_where_the_server_makes_rooms_offers_online_meeting_and_is_save
             ..Default::default()
         }],
     };
-    mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(account, "ada@example.org", vec![mailcraft_model::OnlineProvider::Other]))
-        .unwrap();
+    mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(account, "ada@example.org", vec![mailcraft_model::OnlineProvider::Other])).unwrap();
     let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
     let keys = |f: &EventForm| f.bar_items().into_iter().map(|item| (item.key, item.label)).collect::<Vec<_>>();
     let visit = json!({"start": "2026-10-16T15:00", "end": "2026-10-16T16:00", "title": "Site visit", "calendar": calendar});
@@ -165,8 +164,7 @@ fn an_appointment_where_the_server_makes_rooms_offers_online_meeting_and_is_save
     let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
     let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
     let microsoft = added.unwrap()["id"].as_u64().unwrap();
-    mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(microsoft, "bo@example.org", vec![mailcraft_model::OnlineProvider::Teams]))
-        .unwrap();
+    mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(microsoft, "bo@example.org", vec![mailcraft_model::OnlineProvider::Teams])).unwrap();
     let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
     for calendar in [own, theirs] {
         let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), false);
@@ -242,10 +240,9 @@ fn a_teams_meeting_turned_into_an_appointment_and_back_is_still_held_online() {
 fn a_microsoft_appointment_whose_teams_meeting_waits_shows_it() {
     let (mut s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
     // Made a Teams meeting here, the server not told yet: no id there, and nobody invited.
-    let id =
-        s.run("calendar.new", &json!({"title": "Focus", "start": "2026-10-16T15:00", "calendar": microsoft, "online": true})).unwrap()["id"]
-            .as_u64()
-            .unwrap();
+    let id = s.run("calendar.new", &json!({"title": "Focus", "start": "2026-10-16T15:00", "calendar": microsoft, "online": true})).unwrap()["id"]
+        .as_u64()
+        .unwrap();
     assert!(s.mailbox.event(id).is_some_and(|e| e.online.is_some() && e.origin.id.is_empty() && e.attendees.is_empty()));
     let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
     f.follow_calendar(&s);
@@ -311,11 +308,8 @@ fn a_form_in_the_dialog_follows_its_calendar_too() {
     let mut app = MailApp::new(s, crate::Services::default());
     app.autosave = false;
     app.execute("ui.dialog", json!({"name": "event", "calendar": jmap, "start": "2026-10-16T15:00", "title": "Visit"})).unwrap();
-    let mut h = egui_kittest::Harness::builder()
-        .with_accessibility_check(false)
-        .allow_missing_glyphs()
-        .with_size(egui::vec2(1280.0, 800.0))
-        .build_ui_state(
+    let mut h =
+        egui_kittest::Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(1280.0, 800.0)).build_ui_state(
             |ui, app: &mut MailApp| {
                 let ctx = ui.ctx().clone();
                 app.logic(&ctx);

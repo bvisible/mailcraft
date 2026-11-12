@@ -7,6 +7,8 @@
 //! - **Tasks** are kept on this computer only: such a session doesn't offer them at all (`view.tasks`, the module bar,
 //!   `tasks.new`, Add to Tasks), as the old base hid Notes for the same reason ([`tasks_refusal`]).
 //! - **Importing** a file puts its messages, events, tasks and contacts here, where nothing stays ([`import_refusal`]).
+//! - **Public keys and certificates** (File › Options › Security, `keys.import`, `keys.remove`) are kept in the mailbox, where nothing
+//!   stays between visits, and the keys of a contact's card are a card's, which a server's address book doesn't keep ([`keys_refusal`]).
 //! - **A contact's categories and whether it is a favourite** are this computer's, whichever book the contact is in
 //!   ([`marks_refusal`]).
 //!
@@ -21,6 +23,9 @@ pub const NO_IMPORT_HERE: &str = "This page keeps nothing of its own between vis
 /// Why a contact's categories and whether it is a favourite can't be set: they are kept on this computer only.
 pub const NO_MARKS_HERE: &str = "This page keeps no categories or favorites: they would be gone at the next visit";
 
+/// Why Public keys are not imported or removed: they are kept in the mailbox, which a hosting page's tab doesn't keep.
+pub const NO_KEYS_HERE: &str = "This page keeps no certificates or keys: they would be gone at the next visit";
+
 /// Whether Tasks are offered: where what is made here is kept.
 pub fn tasks_offered(s: &Session) -> bool {
     s.keeps_local
@@ -34,6 +39,11 @@ pub fn tasks_refusal(s: &Session) -> Option<&'static str> {
 /// Why a file is not imported, when it isn't.
 pub fn import_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_IMPORT_HERE)
+}
+
+/// Why Public keys can't be imported or removed, when they can't.
+pub fn keys_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_KEYS_HERE)
 }
 
 /// Why a contact's categories and whether it is a favourite can't be set, when they can't.

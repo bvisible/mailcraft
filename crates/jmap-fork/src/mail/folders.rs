@@ -106,6 +106,8 @@ pub(super) fn listing_with_counts(answer: &Value) -> Option<(FolderListing, Hash
             unread: count(entry, "unreadEmails"),
             // Only Graph's delta passes folders over by their counts (#276).
             counted: false,
+            // //// Neoffice — upstream's #756: only a Microsoft server says a folder is its own.
+            well_known: false,
         });
     }
     // (A list with nothing in it is no listing of the account's mailboxes.)

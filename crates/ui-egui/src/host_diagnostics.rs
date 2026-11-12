@@ -125,4 +125,34 @@ mod tests {
         let copied = hosted.execute(COMMAND, json!({})).unwrap();
         assert!(copied["text"].as_str().unwrap().contains(env!("CARGO_PKG_VERSION")));
     }
+
+    /// A host that would send a report to MailCraft's makers (the desktop's, built with their relay), and how many it was asked for.
+    fn with_relay(app: &mut MailApp) -> std::sync::Arc<std::sync::Mutex<usize>> {
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(0usize));
+        let counted = asked.clone();
+        app.services.report_send = Some(Box::new(move |_| {
+            *counted.lock().unwrap() += 1;
+            let (tx, rx) = std::sync::mpsc::channel();
+            tx.send(Ok(1)).unwrap();
+            rx
+        }));
+        asked
+    }
+
+    // //// Neoffice — upstream's v0.12.0 Report a Problem can send a report straight to its makers (#956): never from a hosting page's tab.
+    #[test]
+    fn a_hosting_pages_tab_has_no_way_to_send_a_report_to_mailcrafts_makers() {
+        // In upstream's window, a host with a relay offers Send report in the draft an agent or the owner opens.
+        let mut open = app(false);
+        let _ = with_relay(&mut open);
+        open.execute(REPORT, json!({"via": "send", "what": "It stopped"})).unwrap();
+        assert!(window(open, "Home").query_by_label("Send report").is_some());
+        // In a hosting page's tab, with the same host, it is not offered, and nothing is asked of the host.
+        let mut hosted = app(true);
+        let asked = with_relay(&mut hosted);
+        hosted.execute(REPORT, json!({"via": "send", "what": "It stopped"})).unwrap();
+        let harness = window(hosted, "Home");
+        assert!(harness.query_by_label("Send report").is_none());
+        assert_eq!(*asked.lock().unwrap(), 0);
+    }
 }

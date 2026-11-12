@@ -11,9 +11,9 @@
 mod address;
 pub mod auth_results;
 pub mod auto_replies;
+pub mod ber;
 // //// Neoffice — the address books of servers (JMAP for Contacts): what a kept contact is in, and what the account may do there.
 pub mod book;
-pub mod ber;
 mod calendar;
 pub mod confusables;
 mod contact;
@@ -28,19 +28,19 @@ mod junk;
 pub mod load_limit;
 mod mailbox;
 mod message;
-// //// Neoffice — notes: the mailbox's own and those of a server that keeps them (a Notes module).
-pub mod note;
 pub mod messages;
 #[cfg(test)]
 mod messages_tests;
-// //// Neoffice — what upstream's .pst import keeps as notes and journal entries (`PstNote`, `JournalEntry`): upstream's `note.rs` has
-// //// Neoffice — the same names as the fork's Notes (`note.rs`), so its note type is `PstNote` here.
-mod pst_note;
+// //// Neoffice — notes: the mailbox's own and those of a server that keeps them (a Notes module).
+pub mod note;
 mod offline;
 pub mod pictures;
 pub mod pop;
 pub mod protected;
 pub mod provider;
+// //// Neoffice — what upstream's .pst import keeps as notes and journal entries (`PstNote`, `JournalEntry`): upstream's `note.rs` has
+// //// Neoffice — the same names as the fork's Notes (`note.rs`), so its note type is `PstNote` here.
+mod pst_note;
 pub mod public_keys;
 pub mod remote;
 pub mod remote_rules;
@@ -92,12 +92,12 @@ pub use message::{
     NOT_DOWNLOADED_NOTE, ORIGINAL_PATIENCE, ORIGINAL_TRIES, Original, PREVIEW_CHARS, RETURNED_LISTINGS, normalize_subject, size_label, size_label_in,
     text_hash,
 };
+pub use messages::Messages;
 // //// Neoffice — see `note`.
 pub use note::Note;
-pub use messages::Messages;
+pub use offline::{KeepOffline, OfflineWindow};
 // //// Neoffice — see `pst_note`.
 pub use pst_note::{JournalEntry, PstNote};
-pub use offline::{KeepOffline, OfflineWindow};
 pub use remote::{AccountChoice, Origin};
 pub use rich::{RichBody, RichText};
 pub use rule::{Action, Condition, Keep, MAX_RULE_GONE, Rule, RuleGone, ServerRule};
@@ -225,11 +225,11 @@ mod search_suggest_tests;
 mod search_tests;
 #[cfg(test)]
 mod sender_warnings_tests;
+#[cfg(test)]
+mod shown_tests;
 // //// Neoffice — tests of stream.rs.
 #[cfg(test)]
 mod stream_tests;
-#[cfg(test)]
-mod shown_tests;
 #[cfg(test)]
 mod well_known_folder_tests;
 

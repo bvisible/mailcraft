@@ -133,9 +133,9 @@ pub mod host_menu;
 // //// Neoffice — modules a hosting page draws itself, beside the window's own (Synk, in Neodesk's NeoMail window).
 pub mod host_modules;
 // //// Neoffice — a hosting page that takes a message to share in its team chat (Synk, in Neoffice's desk).
-pub mod host_share;
 #[cfg(test)]
 mod host_said_tests;
+pub mod host_share;
 pub mod i18n;
 pub mod icons;
 pub mod import_pst;
@@ -4615,7 +4615,12 @@ impl MailApp {
 
     /// The problems kept for `account`, as lines to show.
     pub(crate) fn account_problem_lines(&self, account: Id) -> Vec<String> {
-        self.sync_problems.iter().find(|(a, ..)| *a == account).map(|(.., lines)| lines.iter().map(problem_line).collect()).unwrap_or_default()
+        // //// Neoffice — and the sentences of the fork's runs (the engine's and the JMAP crate's, kept in English) are read in the interface's language (`run_words`).
+        self.sync_problems
+            .iter()
+            .find(|(a, ..)| *a == account)
+            .map(|(.., lines)| lines.iter().map(|said| i18n::run_words::line(&problem_line(said), &self.session.mailbox).into_owned()).collect())
+            .unwrap_or_default()
     }
 
     /// Keep what a Send/Receive said went wrong (the log gets only how many); a run without

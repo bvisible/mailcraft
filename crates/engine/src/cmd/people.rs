@@ -110,6 +110,7 @@ pub(crate) fn forget_here(s: &mut Session) {
     if s.view.people_account == AccountChoice::Here && contact_accounts(&s.mailbox).is_empty() {
         s.view.people_account = AccountChoice::All;
     }
+}
 
 // //// Neoffice — what the address book of the selected contact says against changing or deleting it, and a session that keeps nothing against adding the sender.
 /// [`needs_contact`], and a selected contact whose address book the account may change ([`super::remote_contacts`]).

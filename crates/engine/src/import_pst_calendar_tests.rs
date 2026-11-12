@@ -629,12 +629,15 @@ fn notes_and_journal_entries_are_kept_and_can_be_found() {
         (Some(2), Some(1), Some(0)),
         "{answer}"
     );
-    let found = s.run("notes.list", &json!({"query": "STAMPS"})).unwrap();
+    // //// Neoffice — upstream's `notes.list` is `pstNotes.list` here.
+    let found = s.run("pstNotes.list", &json!({"query": "STAMPS"})).unwrap();
     assert_eq!(found["total"], 1, "{found}");
     assert_eq!((found["notes"][0]["subject"].as_str(), found["notes"][0]["color"].as_str()), (Some("Buy stamps"), Some("blue")));
-    let whole = s.run("notes.get", &json!({"id": found["notes"][0]["id"]})).unwrap();
+    // //// Neoffice — upstream's `notes.get` is `pstNotes.get` here.
+    let whole = s.run("pstNotes.get", &json!({"id": found["notes"][0]["id"]})).unwrap();
     assert_eq!(whole["body"], "Buy stamps\nand envelopes");
-    assert_eq!(s.run("notes.list", &json!({"query": "stamps plumber"})).unwrap()["total"], 0, "every word must be in the one note");
+    // //// Neoffice — upstream's `notes.list` is `pstNotes.list` here.
+    assert_eq!(s.run("pstNotes.list", &json!({"query": "stamps plumber"})).unwrap()["total"], 0, "every word must be in the one note");
     let entries = s.run("journal.list", &json!({"query": "phone"})).unwrap();
     assert_eq!(entries["total"], 1, "{entries}");
     let e = s.run("journal.get", &json!({"id": entries["entries"][0]["id"]})).unwrap();
@@ -644,7 +647,8 @@ fn notes_and_journal_entries_are_kept_and_can_be_found() {
     );
     assert_eq!(e["start"], "2026-03-02T09:00:00Z");
     assert_eq!(e["from"][0], "Ada Fernsby <ada@example.org>");
-    assert!(s.run("notes.get", &json!({"id": 999_999})).is_err());
+    // //// Neoffice — upstream's `notes.get` is `pstNotes.get` here.
+    assert!(s.run("pstNotes.get", &json!({"id": 999_999})).is_err());
 }
 
 #[test]
@@ -654,12 +658,14 @@ fn a_second_import_keeps_notes_once_and_a_dry_run_keeps_none() {
     let bytes = notes_file();
     let pst = dir.pst(&bytes);
     let look = run_staged(&mut s, &pst, None, true, &json!({})).unwrap();
-    assert_eq!((look["stickyNotes"].as_u64(), s.mailbox.notes.len()), (Some(2), 0));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!((look["stickyNotes"].as_u64(), s.mailbox.pst_notes.len()), (Some(2), 0));
     run(&mut s, &dir, &bytes, json!({}));
     let again = run(&mut s, &dir, &bytes, json!({}));
     adds_up(&again);
     assert_eq!((again["added"].as_u64(), again["already"].as_u64()), (Some(0), Some(3)), "{again}");
-    assert_eq!((s.mailbox.notes.len(), s.mailbox.journal.len()), (2, 1));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!((s.mailbox.pst_notes.len(), s.mailbox.journal.len()), (2, 1));
 }
 
 #[test]
@@ -668,7 +674,8 @@ fn undo_takes_the_notes_and_journal_out() {
     let mut s = kept_session(&dir);
     run(&mut s, &dir, &notes_file(), json!({}));
     s.run("edit.undo", &json!({})).unwrap();
-    assert_eq!((s.mailbox.notes.len(), s.mailbox.journal.len()), (0, 0));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!((s.mailbox.pst_notes.len(), s.mailbox.journal.len()), (0, 0));
 }
 
 #[test]
@@ -678,9 +685,12 @@ fn notes_and_journal_outlast_a_save() {
     run(&mut s, &dir, &notes_file(), json!({}));
     crate::store::save(&dir.mailbox(), &s.mailbox).unwrap();
     let mut back = crate::store::open(&dir.mailbox()).unwrap().mailbox;
-    assert_eq!((back.notes.len(), back.journal.len()), (2, 1));
-    assert_eq!(back.notes, s.mailbox.notes);
-    let top = *back.notes.keys().chain(back.journal.keys()).max().unwrap();
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!((back.pst_notes.len(), back.journal.len()), (2, 1));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!(back.pst_notes, s.mailbox.pst_notes);
+    let top = *back.pst_notes.keys().chain(back.journal.keys()).max().unwrap();
     assert!(back.alloc_id() > top, "an id is never used twice");
 }
 
@@ -690,7 +700,8 @@ fn notes_in_deleted_items_are_left_out_named() {
     let mut s = kept_session(&dir);
     let answer = run(&mut s, &dir, &file(vec![folder("Deleted Items", "IPF.Note", vec![sticky("Gone", 3), logged("Gone too")])]), json!({}));
     adds_up(&answer);
-    assert_eq!((s.mailbox.notes.len(), s.mailbox.journal.len()), (0, 0));
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    assert_eq!((s.mailbox.pst_notes.len(), s.mailbox.journal.len()), (0, 0));
 }
 
 #[test]
@@ -701,7 +712,8 @@ fn notes_stay_within_what_one_import_may_keep() {
     let many = (0..6).map(|_| sticky(&big, 3)).collect();
     let answer = run(&mut s, &dir, &file(vec![folder("Notes", "IPF.StickyNote", many)]), json!({}));
     adds_up(&answer);
-    let held: usize = s.mailbox.notes.values().map(|n| n.text.len()).sum();
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    let held: usize = s.mailbox.pst_notes.values().map(|n| n.text.len()).sum();
     assert!(held as u64 <= crate::import_pst::item::KEPT_TEXT_BUDGET, "{held}");
     assert!(answer["leftOut"].as_u64().unwrap() > 0, "{answer}");
     let why = answer["leftOutItems"][0]["why"].as_str().unwrap();
@@ -713,7 +725,8 @@ fn a_mailbox_full_of_notes_takes_no_more_from_any_file() {
     let dir = Temp::new("notes-total");
     let mut s = kept_session(&dir);
     let full = usize::try_from(crate::import_pst::item::KEPT_TOTAL_BUDGET).unwrap().saturating_sub(1000);
-    s.mailbox.add_note(mailcraft_model::Note { text: "n".repeat(full), ..Default::default() });
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` here (the fork's `notes` are its Notes module).
+    s.mailbox.add_pst_note(mailcraft_model::PstNote { text: "n".repeat(full), ..Default::default() });
     let answer = run(&mut s, &dir, &file(vec![folder("Notes", "IPF.StickyNote", vec![sticky(&"m".repeat(4000), 3)])]), json!({}));
     adds_up(&answer);
     assert_eq!((answer["stickyNotes"].as_u64(), answer["leftOut"].as_u64()), (Some(0), Some(1)), "{answer}");

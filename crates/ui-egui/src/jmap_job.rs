@@ -193,13 +193,15 @@ impl MailApp {
         if !quiet {
             self.jmap_pim_asked_for(account);
         }
-        let Some(start) = &self.services.jmap else { return Err(tl!("This build can't connect to JMAP servers").to_string()) };
         self.services.sync_cancel.store(false, Ordering::Relaxed);
         let job = JmapJob { request, secret, cancel: self.services.sync_cancel.clone() };
         self.jmap_problems.clear();
         // A run is a fresh try: what the server said of the secret before is not held against it.
         self.jmap_refused.remove(&account);
-        self.jmap_rx = Some((account, quiet, start(job)));
+        // //// Neoffice — what it sends is marked so, on disk, before it leaves (upstream's AU3-26, `sending.rs`): an answer that never comes
+        // //// Neoffice — back leaves the message held at the next run, never sent a second time.
+        let pieces = self.hand_jmap(account, job)?;
+        self.jmap_rx = Some((account, quiet, pieces));
         self.session.sync_status = if pushing { tl!("Sending your changes…") } else { tl!("Sending and receiving…") }.to_string();
         Ok(json!({"started": true, "account": account, "jmap": true}))
     }
@@ -315,8 +317,13 @@ impl MailApp {
                     }
                 }
             }
-            Err(e) if self.jmap_problems.len() < MOST_PROBLEMS => self.jmap_problems.push(e.to_string()),
-            Err(_) => {}
+            Err(e) => {
+                if self.jmap_problems.len() < MOST_PROBLEMS {
+                    self.jmap_problems.push(e.to_string());
+                }
+                // //// Neoffice — a piece that was refused may have said what became of a send: it stays in doubt (`run_answered`).
+                self.send_doubt = true;
+            }
         }
         if last {
             self.finish_jmap_run(account, stopped);
@@ -328,6 +335,8 @@ impl MailApp {
     /// what still waits to go to the server doesn't start another run every few seconds.
     fn finish_jmap_run(&mut self, account: Id, stopped: bool) {
         self.jmap_rx = None;
+        // //// Neoffice — what it sent is filed, and what it didn't is known not to have gone (upstream's AU3-26, `sending.rs`).
+        self.run_answered(account);
         crate::host_menu::run_over(self, account);
         // Its part of the run is over, however its last piece went in.
         self.session.sync_progress.end(account, stopped);

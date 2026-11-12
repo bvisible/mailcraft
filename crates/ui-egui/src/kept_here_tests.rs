@@ -331,7 +331,7 @@ fn the_categorize_menu_names_the_starting_categories_in_the_interfaces_language(
         .with_accessibility_check(false)
         .allow_missing_glyphs()
         .with_size(egui::vec2(400.0, 400.0))
-        .build_ui_state(|ui, app: &mut MailApp| crate::ribbon::category_menu(ui, app, "people.categorize", |_, _| false, None), app);
+        .build_ui_state(|ui, app: &mut MailApp| crate::ribbon::category_menu(ui, app, &[], &[], "people.categorize", |_, _| false, None), app);
     h.run_steps(2);
     let french = crate::i18n::Lang::French;
     let (red, english) = (h.query_by_label(crate::i18n::t_in(french, "Red category")).is_some(), h.query_by_label("Red category").is_some());

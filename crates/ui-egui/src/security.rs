@@ -339,6 +339,10 @@ pub(crate) fn command(app: &mut MailApp, id: &str, p: &Value) -> Option<Result<V
             Ok(json!({"pending": purpose}))
         }
         "ui.importPublicKey" => {
+            // //// Neoffice — a tab that keeps nothing between visits imports no key (`kept_here`); its picker is never opened.
+            if let Some(why) = mailcraft_engine::cmd::kept_here::keys_refusal(&app.session) {
+                return Some(Err(tl!(why).to_string()));
+            }
             crate::files::open(app, PURPOSE_PUBLIC);
             Ok(json!({"pending": PURPOSE_PUBLIC}))
         }
@@ -692,6 +696,11 @@ fn dim(ui: &mut Ui, text: &str, t: &Tokens) {
 pub(crate) fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     ui.label(RichText::new(tl!("Digital signatures and encryption")).font(semibold(13.5)).color(t.text));
     own_keys(app, ui, t);
+    // //// Neoffice — the Public keys are kept in the mailbox: not offered where it is kept nowhere between visits (`kept_here`).
+    if let Some(why) = mailcraft_engine::cmd::kept_here::keys_refusal(&app.session) {
+        dim(ui, tl!(why), t);
+        return;
+    }
     public_keys(app, ui, t);
 }
 

@@ -690,7 +690,10 @@ fn a_jmap_accounts_folders_are_made_renamed_moved_and_deleted_here_and_go_up_wit
     s.mailbox.folder_mut(old).unwrap().server =
         Some(ServerFolder { id: "Mol".into(), name: "Old".into(), parent: "Mtr".into(), ..Default::default() });
     s.run("folder.delete", &json!({"id": old})).unwrap();
-    assert_eq!(s.mailbox.queued, [Queued::DeleteFolder { account, id: "Mol".into() }]);
+    // //// Neoffice — upstream's folder delete says what the owner had of the folder (`shown`, AU3-H7): its name, the folders under it, its messages.
+    let [Queued::DeleteFolder { account: queued_for, id: queued_id, shown }] = &s.mailbox.queued[..] else { panic!("{:?}", s.mailbox.queued) };
+    assert_eq!((*queued_for, queued_id.as_str(), shown.name.as_str()), (account, "Mol", "Old"));
+    let shown = shown.clone();
     // The next run sends them, parents first, before the changes of messages, and lists the mailboxes after them.
     let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
     assert_eq!(
@@ -700,7 +703,7 @@ fn a_jmap_accounts_folders_are_made_renamed_moved_and_deleted_here_and_go_up_wit
             FolderChange::Move { folder: projects, id: "Mpr".into(), parent: "Min".into() },
             FolderChange::Create { folder: made, name: "Made here".into(), parent: "Min".into(), parent_folder: None },
             FolderChange::Create { folder: under, name: "Under it".into(), parent: String::new(), parent_folder: Some(made) },
-            FolderChange::Delete { id: "Mol".into() },
+            FolderChange::Delete { id: "Mol".into(), shown },
         ]
     );
     assert!(request.list_folders);
@@ -763,7 +766,9 @@ fn deleted_items_is_emptied_with_the_folders_in_it_and_the_server_is_told() {
     assert!(s.mailbox.message(in_deleted).is_none() && s.mailbox.folder(nested).is_none() && s.mailbox.message(in_nested).is_none());
     assert_eq!(changes(&s, account), [JmapChange::Destroy { id: "E6".into() }]);
     let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
-    assert_eq!(request.folders, [mailcraft_model::sync::FolderChange::Delete { id: "Mol".into() }]);
+    // //// Neoffice — (as above: the folder's `shown` goes with its delete)
+    let [mailcraft_model::sync::FolderChange::Delete { id, shown }] = &request.folders[..] else { panic!("{:?}", request.folders) };
+    assert_eq!((id.as_str(), shown.name.as_str(), shown.messages.len()), ("Mol", "Old", 2));
 }
 
 #[test]

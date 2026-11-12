@@ -564,6 +564,19 @@ const NOT_READ: &[(&str, &str)] = &[
         "a move out of an account is a Microsoft account's: one out of a JMAP account is refused",
     ),
     ("{} messages were moved out of their account and the server's copies removed: that can't be undone here.", "as above"),
+    // //// Neoffice — upstream's #30: a Digitally signed or Encrypted message that was moved between accounts keeps the bytes it came as.
+    (
+        "'{subject}' stays where it was moved: it is Digitally signed or Encrypted, and its copy in the mailbox it came from was removed while the copy it was first moved out of keeps the bytes it came as. Move it back to put it there again.",
+        "a move out of an account is a Microsoft account's or an IMAP one's: one out of a JMAP account is refused; the engine says it in the interface's language itself (`Lang::t`)",
+    ),
+    (
+        "{n} message stays where it was moved: it is Digitally signed or Encrypted, and its copy in the mailbox it came from was removed while the copy it was first moved out of keeps the bytes it came as. Move it back to put it there again.",
+        "as above",
+    ),
+    (
+        "{n} messages stay where they were moved: they are Digitally signed or Encrypted, and their copies in the mailbox they came from were removed while the copies they were first moved out of keep the bytes they came as. Move them back to put them there again.",
+        "as above",
+    ),
     ("the server's answer said nothing of it", "a note change's words, which a line about the note shows as they came"),
     ("the version its words were read at isn't known yet", "as above: a change that waits for a read"),
     (
@@ -670,6 +683,7 @@ fn every_row_is_written_by_the_file_it_names() {
 #[test]
 fn every_sentence_of_the_census_has_a_row() {
     let mut not_shown_seen = std::collections::HashSet::new();
+    let mut unread: Vec<String> = Vec::new();
     for path in CENSUS {
         for literal in literals_of(&source(path)) {
             let text = literal.text.as_str();
@@ -685,13 +699,16 @@ fn every_sentence_of_the_census_has_a_row() {
                 continue;
             }
             let pieces = fragments(text);
-            assert!(
-                read_by_rows(&pieces),
-                "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_READ why no row reads it",
-                literal.line
-            );
+            // //// Neoffice — every sentence without a row is told at once, not the first alone.
+            if !read_by_rows(&pieces) {
+                unread.push(format!(
+                    "{path}:{}: {text:?} has no row in run_words (a sentence the crate added or reworded): add one, or say in NOT_READ why no row reads it",
+                    literal.line
+                ));
+            }
         }
     }
+    assert!(unread.is_empty(), "{}", unread.join("\n"));
     for (sentence, _) in NOT_READ {
         assert!(not_shown_seen.contains(*sentence), "{sentence:?} is in NOT_READ and in none of the census's files any more");
     }

@@ -30,7 +30,8 @@ use serde_json::json;
 
 use crate::auto_replies::{AutoRepliesJob, AutoRepliesResult};
 use crate::ews_mail::EwsJob;
-use crate::jmap_mail::JmapJob;
+// //// Neoffice — the fork's JMAP run (jmap_job.rs), not upstream's window run (`jmap_mail.rs`).
+use crate::jmap_job::JmapJob;
 use crate::jobs::JobKind;
 use crate::rule_sync::{RulesJob, RulesResult};
 use crate::task_sync::{TasksJob, TasksResult};
@@ -488,6 +489,8 @@ enum Sends {
     Imap,
     Graph,
     Ews,
+    // //// Neoffice — the fork's JMAP account sends too (upstream's cannot): marked, held when its answer is lost, never sent twice.
+    Jmap,
 }
 
 /// What became of the run whose send was in flight.
@@ -505,6 +508,8 @@ fn sending_account(ids: Accounts, protocol: Sends) -> Id {
         Sends::Imap => ids.imap,
         Sends::Graph => ids.microsoft,
         Sends::Ews => ids.ews,
+        // //// Neoffice — see `Sends::Jmap`.
+        Sends::Jmap => ids.jmap,
     }
 }
 
@@ -539,6 +544,19 @@ fn handed(hosts: &Hosts, protocol: Sends) -> (Vec<Id>, Box<dyn FnOnce(Id)>) {
             let ids = job.request.sends.iter().map(|up| up.message).collect();
             (ids, Box::new(move |m| drop(tx.send(EwsMailResult { account, sent: vec![sent(m)], ..Default::default() }))))
         }
+        // //// Neoffice — see `Sends::Jmap`.
+        Sends::Jmap => {
+            let (job, tx) = take(&hosts.jmap);
+            let account = job.request.account;
+            let ids = job.request.sends.iter().map(|up| up.message).collect();
+            let (email, session) = (job.request.email.clone(), job.request.session.clone());
+            (
+                ids,
+                Box::new(move |m| {
+                    drop(tx.send(JmapMailResult { account, email, session, sent: vec![sent(m)], partial: false, ..Default::default() }))
+                }),
+            )
+        }
     }
 }
 
@@ -546,6 +564,8 @@ fn poll_run(app: &mut MailApp) {
     for _ in 0..4 {
         app.poll_graph();
         app.poll_sync();
+        // //// Neoffice — the fork's JMAP run is polled apart (jmap_job.rs).
+        app.poll_jmap();
     }
 }
 
@@ -613,6 +633,18 @@ fn a_graph_send_whose_answer_was_lost_to_another_mailbox_is_held_not_sent_again(
 #[test]
 fn an_ews_send_whose_answer_was_lost_to_another_mailbox_is_held_not_sent_again() {
     send_row(Sends::Ews, Lost::Replaced);
+}
+
+// //// Neoffice — the same for the fork's JMAP run (`jmap_job.rs`, handed through `sending.rs` as the others are).
+#[test]
+fn a_jmap_send_whose_answer_was_lost_to_another_mailbox_is_held_not_sent_again() {
+    send_row(Sends::Jmap, Lost::Replaced);
+}
+
+// //// Neoffice — (as above)
+#[test]
+fn a_jmap_send_cut_short_by_a_kill_is_held_not_sent_again() {
+    send_row(Sends::Jmap, Lost::Killed);
 }
 
 #[test]
@@ -693,6 +725,11 @@ fn refused_row(protocol: Sends) {
             let (_, tx) = take(&hosts.ews);
             let _ = tx.send(EwsMailResult { account, email: stranger, url: EWS.into(), partial: false, ..Default::default() });
         }
+        // //// Neoffice — see `Sends::Jmap`.
+        Sends::Jmap => {
+            let (_, tx) = take(&hosts.jmap);
+            let _ = tx.send(JmapMailResult { account, email: stranger, session: JMAP.into(), partial: false, ..Default::default() });
+        }
     }
     poll_run(&mut app);
     assert!(app.session.mailbox.message(message).is_some_and(|m| m.sending), "{protocol:?}: the mark is left");
@@ -703,6 +740,12 @@ fn refused_row(protocol: Sends) {
         let (going, _) = handed(&hosts, protocol);
         assert!(!going.contains(&message), "{protocol:?}: not sent again by itself");
     }
+}
+
+// //// Neoffice — see `Sends::Jmap`.
+#[test]
+fn a_jmap_send_whose_answer_was_refused_is_held_not_sent_again() {
+    refused_row(Sends::Jmap);
 }
 
 #[test]

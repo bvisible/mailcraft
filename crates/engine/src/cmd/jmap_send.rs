@@ -163,6 +163,14 @@ pub fn pending_drafts(mb: &Mailbox, account: Id) -> usize {
 /// Take in what became of one message sent. Whether anything changed; a line for the owner when it is held, or
 /// when it went (or may have) although the owner had taken it out of the Outbox meanwhile.
 pub fn send_done(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<String>) -> bool {
+    // //// Neoffice — the answer accounts for it (upstream's AU3-26, as `graph_send::send_done` has it): whatever became of it, it is no
+    // //// Neoffice — longer in doubt, and the mark that `sending.rs` put on it before the run went is taken off.
+    let cleared = mb.message(done.message).is_some_and(|m| m.account == account && m.sending)
+        && mb.message_mut(done.message).map(|m| m.sending = false).is_ok();
+    send_outcome(mb, account, done, said) || cleared
+}
+
+fn send_outcome(mb: &mut Mailbox, account: Id, done: &SendDone, said: &mut Vec<String>) -> bool {
     let outbox = mb.folder_of_kind(account, FolderKind::Outbox);
     let Some(m) = mb.message(done.message).filter(|m| m.account == account) else {
         // Deleted from here while the run was under way: all that is left to say is that it went, if it did.

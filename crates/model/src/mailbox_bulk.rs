@@ -190,6 +190,7 @@ impl Mailbox {
             deletes.push((out.account, out.id.clone()));
         }
         r.unplaced.insert(id);
+        // //// Neoffice — (a delete without an id is a delete too: see `unnamed`)
         if deletes.is_empty() && unnamed.is_none() {
             return;
         }
@@ -224,6 +225,7 @@ impl Mailbox {
         });
         for (account, server_id) in deletes {
             if known.insert((account, server_id.clone())) {
+                // //// Neoffice — (`kept` is made only when a delete is named: see above)
                 self.queued.push(Queued::DeleteMessage { account, id: server_id, kept: kept.clone().map(Box::new) });
             }
         }

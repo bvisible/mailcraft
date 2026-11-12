@@ -50,7 +50,15 @@ fn account(mb: &Mailbox, email: &str) -> Id {
 }
 
 fn rule(name: &str, actions: Vec<Action>) -> Rule {
-    Rule { id: 0, name: name.into(), enabled: true, conditions: vec![Condition::SubjectContains("invoice".into())], actions, stop: false }
+    Rule {
+        id: 0,
+        name: name.into(),
+        enabled: true,
+        conditions: vec![Condition::SubjectContains("invoice".into())],
+        actions,
+        stop: false,
+        ..Default::default()
+    }
 }
 
 fn handed() -> Vec<String> {

@@ -746,7 +746,8 @@ fn links_of(app: &MailApp, m: &Message) -> HashSet<String> {
         if links.len() >= MAX_LINKS {
             break;
         }
-        links.extend(block.spans.into_iter().filter_map(|span| span.link));
+        // //// Neoffice — a span's link is an `Arc<str>` now (upstream's html), a `String` here.
+        links.extend(block.spans.into_iter().filter_map(|span| span.link.map(|link| link.to_string())));
         if let mailcraft_html::BlockKind::Table(table) = block.kind {
             blocks.extend(table.rows.into_iter().flat_map(|row| row.cells).flat_map(|cell| cell.blocks));
         }

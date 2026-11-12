@@ -42,6 +42,9 @@ pub(crate) const CONTENT: &[&str] = &[
     "tasks.list",
     "notes.list",
     "notes.get",
+    // //// Neoffice — what a .pst file's sticky notes are kept as (upstream's `notes.list` and `notes.get`, renamed: `notes.*` are the fork's Notes module's, listed above).
+    "pstNotes.list",
+    "pstNotes.get",
     "journal.list",
     "journal.get",
     "view.reminders",
@@ -113,6 +116,11 @@ const TEXT_KEYS: &[&str] = &[
     "label",
     "value",
     "websites",
+    // //// Neoffice — a note's first words, its category, who owns one shared with the person, and where it is on its server (notes.list, notes.get).
+    "excerpt",
+    "category",
+    "ownerName",
+    "webUrl",
 ];
 
 fn wrap_text(t: &str) -> String {

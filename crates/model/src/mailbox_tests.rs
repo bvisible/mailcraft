@@ -1033,7 +1033,12 @@ fn a_jmap_servers_folder_is_renamed_moved_and_deleted_and_the_changes_go_up() {
     assert!(mb.queued.is_empty());
     assert!(mb.delete_folder(ours).unwrap());
     assert!(mb.folder(theirs).is_none());
-    assert_eq!(mb.queued, [crate::Queued::DeleteFolder { account, id: "M5".into() }]);
+    // //// Neoffice — upstream's folder delete says what the owner had of the folder (`shown`, AU3-H7).
+    assert!(
+        matches!(&mb.queued[..], [crate::Queued::DeleteFolder { account: a, id, shown }] if *a == account && id == "M5" && shown.name == "Ours"),
+        "{:?}",
+        mb.queued
+    );
 }
 
 #[test]

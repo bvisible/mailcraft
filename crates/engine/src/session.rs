@@ -3112,7 +3112,8 @@ impl Session {
             before.mailbox.tasks.remove(id);
         }
         for id in &plans.notes {
-            before.mailbox.notes.remove(id);
+            // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+            before.mailbox.pst_notes.remove(id);
         }
         for id in &plans.journal {
             before.mailbox.journal.remove(id);
@@ -3325,7 +3326,8 @@ impl Session {
         gone.extend(now.contacts.keys().filter(|k| !back.contacts.contains_key(*k)).map(|k| format!("contact {k}")));
         gone.extend(now.events.keys().filter(|k| !back.events.contains_key(*k)).map(|k| format!("event {k}")));
         gone.extend(now.tasks.keys().filter(|k| !back.tasks.contains_key(*k)).map(|k| format!("task {k}")));
-        gone.extend(now.notes.keys().filter(|k| !back.notes.contains_key(*k)).map(|k| format!("note {k}")));
+        // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+        gone.extend(now.pst_notes.keys().filter(|k| !back.pst_notes.contains_key(*k)).map(|k| format!("note {k}")));
         gone.extend(now.journal.keys().filter(|k| !back.journal.contains_key(*k)).map(|k| format!("journal entry {k}")));
         gone.extend(now.calendars.iter().filter(|c| !back.calendars.iter().any(|t| t.id == c.id)).map(|c| format!("calendar {}", c.id)));
         gone.extend(categories_gone(&now.categories, &back.categories).into_iter().map(|n| format!("category {n}")));

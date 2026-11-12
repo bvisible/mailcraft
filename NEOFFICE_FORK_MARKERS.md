@@ -9,6 +9,34 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `92eb10c` (upstream's tag v0.12.0, 2026-11-12, 816 commits after v0.10.0: Digital signatures of S/MIME and OpenPGP mail checked in the
+  reading pane, and File › Options › Security for the certificates and keys (#30: `crates/smime`, `crates/openpgp`, `crates/assuan`,
+  `security.rs`, `own_keys.rs`, `keys.*`); the .pst import with its calendar items, tasks, notes and journal (#815: `crates/pst`,
+  `import_pst.rs`); Gmail's categories as folders or tabs (#911: `gmail.rs`, `gmail_tabs.rs`); conversations by the server's own thread (#795:
+  `ThreadIndex`, `ServerMessage::thread`, `cmd/thread_ids.rs`, `Message::thread_key` and `conversation_among` gone); account colours (#893);
+  attachment previews with a local program, off by default (#1053); Help › Report a Problem sending to the makers (#956); an account's place in
+  the folder pane (#702, `account.move`); what a run sends marked as being sent before it leaves, so that a lost answer holds the message
+  instead of sending it again (AU3-26: `sending.rs`, `jobs.rs`, `Message::sending`); Empty Folder and large selections in one pass (#1037:
+  `mailbox_bulk.rs`); rules kept on a Microsoft account's server (`rules.*`); the DAV model (`crates/dav`)), merged into `version-15` on
+  2026-11-12 with conflicts in 45 files, the catalogues among them. The places where upstream's change meets the fork's are marked:
+  `Mailbox::pst_notes`, `PstNote` (`pst_note.rs`) and the commands `pstNotes.list`, `pstNotes.get` (`cmd/pst_items.rs`) are upstream's sticky
+  notes of a .pst file (`notes`, `Note`, `notes.list`, `notes.get` of upstream), renamed because the fork's Notes module has those names and
+  keeps them (`note.rs`, `cmd/notes.rs`); `queue_graph_delete_in` (`mailbox_bulk.rs`) carries the fork's JMAP deletes (a JMAP account's server
+  destroys the message, one with no id there waits for the window that names it) in upstream's one-pass removal; `jmap-fork` asks `threadId` of
+  each email, fills `ServerMessage::thread` and asks the threads of mail listed before (`JmapMailRequest::threads`, `mail.rs`, `threads_tests.rs`,
+  `cmd/jmap_mail.rs`, `cmd/thread_ids.rs`), the stand-in naming a thread as upstream's does; `sending.rs` hands the fork's JMAP run
+  (`jmap_job.rs`, `jmap_rx`) as it hands the others, and `jmap_send::send_done` clears the mark (`jobs.rs` calls off `jmap_rx` and what the run
+  knew with the other runs); `ui-egui/src/jmap_mail.rs`, `jmap_mail_tests.rs`, `apps/mailcraft/src/jmap_mail_flow.rs` and upstream's `MailRun::Jmap`
+  stay out, as before, and `job_replacement_tests.rs` takes the fork's run; the menus that grey when their command can't run are upstream's
+  (`usable`, `submenu`, `menu_tooltip`), the fork's categorize menus being greyed through them (`menu_refusal`); the Categorize menus and the forms take
+  the list of the item's account (`categories_of`), the contact form's rows following what its address book keeps; the browser's start (`web.rs`)
+  keeps `hosted_app` and takes upstream's steps of an opening (no trusted authorities for mail, `after_opening`, `fresh_prefs`); `sync_problems`
+  holds upstream's `Text`, read through `problem_line` and then `run_words`; the owner's yes to an agent is bound to what the question showed (`agent/bind.rs`), which names what the fork's owner-asked commands act on (`Object::Note` for a note written on a server, deleted or opened on the web, and `people.new`, `people.edit`, `people.fromMessage` for a contact of a server's address book); the MCP frame of untrusted text holds the fork's notes (`mcp/tools.rs`, `notes.list`, `notes.get`) and upstream's sticky notes (`pstNotes.*`). In a tab whose mailboxes a hosting page handed over (nothing kept
+  between visits) the .pst import, Import a Folder of Mailboxes and the Public keys are refused and greyed with the reason (`kept_here.rs`:
+  `import_refusal`, `keys_refusal`), a card's keys are not a server address book's (`remote_contacts::unkept`), Help › Report a Problem
+  can't send to the makers whatever host the window has (`report_problem.rs`; the browser build has no runner for it, and the desktop's has
+  one only when built with the project's relay), and attachment previews and the keys of the system need a host the browser build does not
+  have. The catalogues were taken as upstream's, then `cargo xtask i18n` and the fork's own catalogues followed the reworded texts. What came before it:
 - `6e02c20` (upstream's tag v0.10.0, 2026-11-02, 188 commits after v0.9.0: writing several messages at once, each in a window of
   its own or in the reading pane (#286: `windows/compose_window`, `Session::all_composing`, `pane_compose`); the new look, four
   accents and high contrast (#703); Exchange server accounts as a preview, no longer behind `MAILCRAFT_EWS` (#252: `Session::ews`
@@ -437,7 +465,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 A `Cargo.lock` change or a binary asset that differs from upstream gets a line here, and so does any file of a format
 the marker check does not know as one that takes comments:
 
-- `Cargo.lock`: the `mailcraft-jmap-fork` package (0.8.2, the workspace's version, with its dependencies on
+- `Cargo.lock`: the `mailcraft-jmap-fork` package (the workspace's version, with its dependencies on
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`

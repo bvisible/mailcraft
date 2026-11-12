@@ -8,7 +8,8 @@
 use std::collections::HashMap;
 use std::io::{Read, Seek};
 
-use mailcraft_model::{Address, Attendee, Event, Freq, Importance, JournalEntry, Note, Recurrence, Response, ShowAs, Task};
+// //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+use mailcraft_model::{Address, Attendee, Event, Freq, Importance, JournalEntry, PstNote, Recurrence, Response, ShowAs, Task};
 use mailcraft_pst::{Error as PstError, NamedMap, PropName, PropValue, Pst, Recur, recur};
 use mailcraft_time::{Date, DateTime, Timestamp, Weekday, Zone};
 
@@ -661,11 +662,13 @@ fn files_left_out(m: &mailcraft_pst::Message, kind: &str, notes: &mut Vec<String
 }
 
 /// A sticky note. Its text is its body; the subject Outlook keeps is only its first line.
+// //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
 pub fn build_note<R: Read + Seek>(
     pst: &mut Pst<R>,
     m: &mailcraft_pst::Message,
     named: &Named,
-) -> Result<Result<(Note, Vec<String>), &'static str>, PstError> {
+    // //// Neoffice — (the result's note is a `PstNote`, see above)
+) -> Result<Result<(PstNote, Vec<String>), &'static str>, PstError> {
     let p = &m.properties;
     let text = Text::of(p, named.charset);
     let (mut body, mut notes) = item::plain_body(pst, m, named, MAX_NOTES)?;
@@ -681,7 +684,8 @@ pub fn build_note<R: Read + Seek>(
         Some(4) => "white",
         _ => "yellow",
     };
-    let note = Note {
+    // //// Neoffice — upstream's sticky notes of a .pst file are `Mailbox::pst_notes` and `PstNote` here (the fork's `notes` and `Note` are its Notes module).
+    let note = PstNote {
         text: body,
         color: color.to_string(),
         categories: item::own_categories(p, named, &text),

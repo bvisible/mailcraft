@@ -124,7 +124,7 @@ fn folders_made_renamed_moved_and_deleted_go_in_one_call_and_each_is_answered() 
         create(11, "Q1", "", Some(10)),
         FolderChange::Rename { folder: 12, id: "Mold".into(), name: "New".into() },
         FolderChange::Move { folder: 12, id: "Mold".into(), parent: String::new() },
-        FolderChange::Delete { id: "Mgone".into() },
+        FolderChange::Delete { id: "Mgone".into(), shown: Default::default() },
     ];
     let http = scripted(&stand_in, |_| {
         Some(json!({
@@ -176,8 +176,8 @@ fn what_the_server_refuses_fails_or_says_nothing_of_is_told_apart() {
         // Under a folder this call doesn't make: it waits, and isn't sent.
         create(20, "Later", "", Some(99)),
         FolderChange::Rename { folder: 12, id: "Mold".into(), name: "New".into() },
-        FolderChange::Delete { id: "Mgone".into() },
-        FolderChange::Delete { id: "Mquiet".into() },
+        FolderChange::Delete { id: "Mgone".into(), shown: Default::default() },
+        FolderChange::Delete { id: "Mquiet".into(), shown: Default::default() },
         // Ids that can't be a server's are refused without a word to it.
         FolderChange::Rename { folder: 13, id: "M x".into(), name: "Bad".into() },
     ];
@@ -207,7 +207,7 @@ fn what_the_server_refuses_fails_or_says_nothing_of_is_told_apart() {
 #[test]
 fn a_server_that_has_no_mailbox_set_refuses_every_change() {
     let (stand_in, inbox, _) = server(Profile::standard());
-    let changes = vec![create(10, "Plans", &inbox, None), FolderChange::Delete { id: "Mgone".into() }];
+    let changes = vec![create(10, "Plans", &inbox, None), FolderChange::Delete { id: "Mgone".into(), shown: Default::default() }];
     let pieces = run(stand_in.clone(), &request(changes.clone()));
     assert_eq!(outcomes(&pieces), [(changes[0].clone(), refused("unknownMethod")), (changes[1].clone(), refused("unknownMethod"))]);
     // The run goes on: the Inbox is read.

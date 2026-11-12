@@ -1501,6 +1501,9 @@ msgstr "El texto de esta nota se modifica donde se escribió: ábrala en la web"
 msgid "This page keeps no categories or favorites: they would be gone at the next visit"
 msgstr "Esta página no conserva categorías ni favoritos: se perderían en la próxima visita"
 
+msgid "This page keeps no certificates or keys: they would be gone at the next visit"
+msgstr "Esta página no conserva certificados ni claves: se perderían en la próxima visita"
+
 msgid "This page keeps no contacts of its own, and its server has no address book to put new ones in"
 msgstr "Esta página no conserva contactos propios, y su servidor no tiene libreta de direcciones donde agregar nuevos"
 

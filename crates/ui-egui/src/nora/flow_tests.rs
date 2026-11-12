@@ -420,7 +420,8 @@ fn a_translation_links_only_the_addresses_its_message_had() {
     app.poll_nora();
     let shown = &app.nora.translation.as_ref().unwrap().shown;
     let html = shown.body.html.as_deref().unwrap();
-    let links: Vec<String> = mailcraft_html::parse(html).into_iter().flat_map(|block| block.spans).filter_map(|span| span.link).collect();
+    let links: Vec<String> =
+        mailcraft_html::parse(html).into_iter().flat_map(|block| block.spans).filter_map(|span| span.link).map(|link| link.to_string()).collect();
     assert_eq!(links, ["https://kept.example.org/agenda"], "{html}");
     assert_eq!(shown.body.text, translated, "what she added stays, as words");
 }

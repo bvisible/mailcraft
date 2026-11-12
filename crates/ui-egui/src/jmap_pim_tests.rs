@@ -272,7 +272,8 @@ fn one_job_at_a_time_and_none_beside_a_mail_run_of_the_account_or_a_graph_calend
     app.jmap_rx = None;
     // A Graph calendar job is under way: everything waits.
     let (_graph, graph_rx) = mpsc::channel();
-    app.calendar.rx = Some((99, false, 0.0, graph_rx));
+    // //// Neoffice — upstream's job carries the mailbox opening it was started under now.
+    app.calendar.rx = Some((99, false, 0.0, app.session.openings(), graph_rx));
     assert!(!app.jmap_pim_tick_at(true, 3.0 * MINUTE));
     app.calendar.rx = None;
     assert!(app.jmap_pim_tick_at(true, 3.0 * MINUTE));
@@ -413,7 +414,7 @@ fn the_hosts_lines_go_to_the_problems_report() {
     app.jmap_pim_tick_at(true, 0.0);
     let line = "Couldn't list the calendars on the server: the server refused: serverFail".to_string();
     answer(&mut app, &asked, JmapPimResult { errors: vec![line.clone()], ..answered(id) });
-    assert!(app.sync_problems.iter().any(|(account, _, _, lines)| *account == id && lines.contains(&line)));
+    assert!(app.sync_problems.iter().any(|(account, _, _, lines)| *account == id && lines.iter().any(|l| l.to_string() == line)));
     // And the job came to nothing, as far as waiting goes.
     assert_eq!(app.jmap_pim.failures.get(&id).map(|f| f.0), Some(1));
 }

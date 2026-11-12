@@ -20,7 +20,8 @@ use mailcraft_model::sync::{EwsMailResult, JmapMailResult, SyncRequest, SyncResu
 use serde_json::json;
 
 use crate::ews_mail::EwsJob;
-use crate::jmap_mail::JmapJob;
+// //// Neoffice — the fork's JMAP run (jmap_job.rs), not upstream's window run (`jmap_mail.rs`).
+use crate::jmap_job::JmapJob;
 use crate::{GraphRequest, GraphResult, MailApp, MailRun};
 
 /// Whether the marks are on disk.
@@ -206,7 +207,8 @@ impl MailApp {
                 }
             }
             Waiting::Jmap(job, _) => {
-                if let (Some(run), Some(MailRun::Jmap { account: whose, pieces, .. })) = (&self.services.jmap, &mut self.sync_rx)
+                // //// Neoffice — the fork's JMAP run is `jmap_rx`, beside `sync_rx` (jmap_job.rs).
+                if let (Some(run), Some((whose, _, pieces))) = (&self.services.jmap, &mut self.jmap_rx)
                     && *whose == account
                 {
                     *pieces = run(*job);

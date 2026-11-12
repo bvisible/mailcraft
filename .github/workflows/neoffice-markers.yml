@@ -37,7 +37,7 @@ jobs:
       - name: Fetch the marker checker (pinned)
         run: |
           set -euo pipefail
-          curl -fsSL -o "$RUNNER_TEMP/fork_markers.py" "https://raw.githubusercontent.com/bvisible/neoffice-ci/ee9051f7c264e48bd77ffe39437161e456ed0bc2/scripts/fork_markers.py"
+          curl --proto =https --proto-redir =https -fsSL -o "$RUNNER_TEMP/fork_markers.py" "https://raw.githubusercontent.com/bvisible/neoffice-ci/ee9051f7c264e48bd77ffe39437161e456ed0bc2/scripts/fork_markers.py"
           echo "591007e9d8b6ff3dd3aad3d2549820a5fbfdfc57c37e1d0bf9aab72c406e4b70  $RUNNER_TEMP/fork_markers.py" | sha256sum -c -
       - name: Check that every change is marked
         run: python3 -I "$RUNNER_TEMP/fork_markers.py" check --base "$BASE" --head HEAD --verbose
