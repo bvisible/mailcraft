@@ -1945,7 +1945,6 @@ msgstr "Il pannello di Nora ha bisogno di una pagina ospitante che raggiunga la 
 msgid "A mailbox shared with you"
 msgstr "Una casella condivisa con Lei"
 
-
 msgid "Write from {mailbox}"
 msgstr "Scrivi da {mailbox}"
 
@@ -3677,3 +3676,30 @@ msgstr[1] "{n} fatture quest'anno"
 
 msgid "Exchanges with the sender"
 msgstr "Scambi con il mittente"
+
+msgid "Main"
+msgstr "Principale"
+
+msgid "Notifications"
+msgstr "Notifiche"
+
+msgid "Newsletters"
+msgstr "Newsletter"
+
+msgid "Archive all ({count})"
+msgstr "Archivia tutto ({count})"
+
+msgid "Archive {count} messages?"
+msgstr "Archiviare {count} messaggi?"
+
+msgid "Select all"
+msgstr "Seleziona tutto"
+
+msgid "Clear selection"
+msgstr "Deseleziona tutto"
+
+msgid "Set Streams"
+msgstr "Imposta flussi"
+
+msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr "Questa pagina segnala i problemi a chi la gestisce, non ai creatori di MailCraft"

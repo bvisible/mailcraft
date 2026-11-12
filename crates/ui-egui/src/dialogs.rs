@@ -346,6 +346,8 @@ impl Dialog {
                 _ => Dialog::About(AboutTab::About),
             },
             "contributors" => Dialog::About(AboutTab::Contributors),
+            // //// Neoffice — never in a hosting page's tab (`host_diagnostics::offered`).
+            "reportProblem" if !crate::host_diagnostics::offered(app) => return None,
             // (Never over a report being written or on its way.)
             "reportProblem" if matches!(&app.dialog, Some(Dialog::ReportProblem(d)) if d.busy()) => return None,
             "reportProblem" => Dialog::ReportProblem(Box::new(crate::report_problem::Draft::new(app, params))),
@@ -1427,6 +1429,8 @@ pub(crate) fn all_commands(app: &MailApp) -> Vec<(String, String, String, String
                 && !c.id.ends_with(".list")
                 // Not even greyed while it waits for Google's review (#911).
                 && (c.id != "mail.setGmailCategory" || crate::gmail_move::switched_on(app))
+                // //// Neoffice — nor what leads to MailCraft's makers, in a hosting page's tab (host_diagnostics.rs).
+                && !crate::host_diagnostics::hidden(app, c.id)
         })
         .map(|c| {
             (

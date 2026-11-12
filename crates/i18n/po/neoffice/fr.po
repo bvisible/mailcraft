@@ -1963,7 +1963,6 @@ msgstr "Le panneau de Nora a besoin d’une page hôte qui atteint sa conversati
 msgid "A mailbox shared with you"
 msgstr "Une boîte partagée avec vous"
 
-
 msgid "Write from {mailbox}"
 msgstr "Écrire depuis {mailbox}"
 
@@ -4476,26 +4475,33 @@ msgstr "Vos réponses automatiques n'ont pas pu être lues : {error}"
 msgid "Your automatic replies weren't changed"
 msgstr "Vos réponses automatiques n'ont pas été modifiées"
 
-msgid "Your automatic replies weren't changed: MailCraft needs your permission first (File › Info › Ask again)."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : MailCraft a d'abord besoin de votre autorisation (Fichier › Infos › Demander à nouveau)."
+msgctxt "why automatic replies weren't changed"
+msgid "you are working offline."
+msgstr "vous êtes hors connexion."
 
-msgid "Your automatic replies weren't changed: MailCraft wasn't allowed to change them."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : MailCraft n'était pas autorisé à les modifier."
+msgctxt "why automatic replies weren't changed"
+msgid "MailCraft needs your permission first (File › Info › Ask again)."
+msgstr "MailCraft a d'abord besoin de votre autorisation (Fichier › Infos › Demander à nouveau)."
 
-msgid "Your automatic replies weren't changed: Microsoft no longer takes your sign-in."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : Microsoft n'accepte plus votre connexion."
+msgctxt "why automatic replies weren't changed"
+msgid "your organisation doesn't let MailCraft change them."
+msgstr "votre organisation ne permet pas à MailCraft de les modifier."
 
-msgid "Your automatic replies weren't changed: sign in again to let MailCraft read them (File › Info)."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : reconnectez-vous pour que MailCraft puisse les lire (Fichier › Infos)."
+msgctxt "why automatic replies weren't changed"
+msgid "MailCraft wasn't allowed to change them."
+msgstr "MailCraft n'était pas autorisé à les modifier."
 
-msgid "Your automatic replies weren't changed: you are working offline."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : vous êtes hors connexion."
+msgctxt "why automatic replies weren't changed"
+msgid "sign in again to let MailCraft read them (File › Info)."
+msgstr "reconnectez-vous pour que MailCraft puisse les lire (Fichier › Infos)."
 
-msgid "Your automatic replies weren't changed: your organisation doesn't let MailCraft change them."
-msgstr "Vos réponses automatiques n'ont pas été modifiées : votre organisation ne permet pas à MailCraft de les modifier."
+msgctxt "why automatic replies weren't changed"
+msgid "Microsoft no longer takes your sign-in."
+msgstr "Microsoft n'accepte plus votre connexion."
 
-msgid "Your automatic replies weren't changed: {error}"
-msgstr "Vos réponses automatiques n'ont pas été modifiées : {error}"
+msgctxt "what didn't happen, then why"
+msgid "{heading}: {reason}"
+msgstr "{heading} : {reason}"
 
 msgid "Your mailbox is sending automatic replies. Click to change them."
 msgstr "Votre boîte envoie des réponses automatiques. Cliquez pour les modifier."
@@ -4643,3 +4649,30 @@ msgstr "{n} messages sont déjà en cours de rédaction, le maximum possible à 
 
 msgid "Pop\nOut"
 msgstr "Ouvrir dans\nune fenêtre"
+
+msgid "Main"
+msgstr "Principal"
+
+msgid "Notifications"
+msgstr "Notifications"
+
+msgid "Newsletters"
+msgstr "Newsletters"
+
+msgid "Archive all ({count})"
+msgstr "Tout archiver ({count})"
+
+msgid "Archive {count} messages?"
+msgstr "Archiver {count} messages ?"
+
+msgid "Select all"
+msgstr "Tout sélectionner"
+
+msgid "Clear selection"
+msgstr "Tout désélectionner"
+
+msgid "Set Streams"
+msgstr "Définir les flux"
+
+msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr "Cette page signale les problèmes à ceux qui l’administrent, et non aux créateurs de MailCraft"

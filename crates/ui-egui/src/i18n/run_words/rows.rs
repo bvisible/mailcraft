@@ -452,6 +452,8 @@ pub(super) static ROWS: &[Row] = &[
     row(KEPT_HERE, Line, run_word!("This page keeps no tasks: they would be gone at the next visit"), &[]),
     row(KEPT_HERE, Line, run_word!("This page keeps nothing of its own between visits: what is imported would be gone at the next one"), &[]),
     row(KEPT_HERE, Line, run_word!("This page keeps no categories or favorites: they would be gone at the next visit"), &[]),
+    // //// Neoffice — (what leads to MailCraft's makers: not from a hosting page's tab)
+    row(KEPT_HERE, Line, run_word!("This page reports problems to the people who run it, not to MailCraft's makers"), &[]),
     // //// Neoffice — (Public keys and certificates: kept in the mailbox, which such a page doesn't keep)
     row(KEPT_HERE, Line, run_word!("This page keeps no certificates or keys: they would be gone at the next visit"), &[]),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),

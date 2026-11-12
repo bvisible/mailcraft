@@ -833,7 +833,9 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
             let Some((sel, plain)) = now(app, which) else { break };
             let asked = match event {
                 // (A space may start a list, #973: the engine looks at the paragraph.)
-                Event::Text(text) if text == " " => ask("compose.type", json!({"text": text, "autoList": true})),
+                // //// Neoffice — also a text that ends with one, which a text agent or a virtual keyboard hands over whole (`* `): the browser's
+                // //// Neoffice — keys make `*` and ` ` two events, but not everything that types into a page does.
+                Event::Text(text) if text.ends_with(' ') => ask("compose.type", json!({"text": text, "autoList": true})),
                 Event::Text(text) if !text.is_empty() => ask("compose.type", json!({"text": text})),
                 Event::Ime(egui::ImeEvent::Commit(text)) => {
                     st.preedit.clear();

@@ -14464,6 +14464,11 @@ msgid "This page keeps nothing of its own between visits: what is imported would
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/view.rs
 msgid "This picture couldn't be downloaded: {why}."
 msgstr ""

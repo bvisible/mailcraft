@@ -179,3 +179,22 @@ fn in_a_narrow_window_the_tabs_have_a_row_under_the_header_and_all_three_can_be_
     click(&mut w, "streamTab", 1);
     assert_eq!(w.state().session.view.filter, Filter::Notifications);
 }
+
+/// The tabs' texts are this fork's own, and upstream regenerates its catalogues at each merge: a merge once left them without a
+/// French word because they lived in those generated files, not in the fork's (`po/neoffice/`). Each text `stream_tabs.rs` shows
+/// (and the label of the command that sets the streams) has a French translation, here, in what is compiled in.
+#[test]
+fn every_text_the_tabs_show_has_a_french_translation() {
+    let source = include_str!("stream_tabs.rs");
+    let shown = source.split("#[cfg(test)]").next().unwrap_or(source);
+    let french = mailcraft_i18n::catalogue(mailcraft_i18n::Lang::French).expect("French is compiled in");
+    let mut texts: Vec<&str> = shown.split("tl!(\"").skip(1).filter_map(|rest| rest.split_once('"').map(|(text, _)| text)).collect();
+    // The plural of the count of what is ticked is read the same way, by the form it is asked for.
+    assert!(shown.contains("tln!("), "the count of what is ticked is no longer read by tln!: say where it is now");
+    texts.push("Set Streams");
+    texts.sort_unstable();
+    texts.dedup();
+    assert!(texts.len() >= 7, "the scan finds the tabs' texts: {texts:?}");
+    let missing: Vec<&&str> = texts.iter().filter(|text| french.get(text).is_none()).collect();
+    assert!(missing.is_empty(), "no French for {missing:?}: add them to crates/i18n/po/neoffice/fr.po (the generated files are upstream's)");
+}

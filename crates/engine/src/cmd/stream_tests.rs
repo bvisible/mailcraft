@@ -166,6 +166,25 @@ fn the_tabs_do_not_open_over_a_folder_that_is_not_the_inbox() {
 }
 
 #[test]
+fn the_inbox_comes_back_on_the_main_tab_after_another_folder_not_as_a_fourth_tab_called_all() {
+    let (mut s, _) = said();
+    s.run("view.filter", &json!({"value": "notifications"})).unwrap();
+    let account = s.mailbox.accounts[0].id;
+    let drafts = s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap();
+    let sent = s.mailbox.folder_of_kind(account, FolderKind::Sent).unwrap();
+    for folder in [drafts, sent] {
+        s.run("folder.select", &json!({"id": folder})).unwrap();
+        assert_eq!(s.view.filter, crate::Filter::All, "another folder lists all of its messages");
+    }
+    let inbox = s.mailbox.inbox().unwrap();
+    s.run("folder.select", &json!({"id": inbox})).unwrap();
+    assert_eq!(s.view.filter, crate::Filter::Main);
+    // a folder with no tabs stays on All, and an ordinary filter still goes along
+    s.run("folder.select", &json!({"id": drafts})).unwrap();
+    assert_eq!(s.view.filter, crate::Filter::All);
+}
+
+#[test]
 fn another_folder_shows_all_of_its_messages_not_a_tab_of_the_inbox() {
     let (mut s, ids) = said();
     s.run("view.filter", &json!({"value": "notifications"})).unwrap();

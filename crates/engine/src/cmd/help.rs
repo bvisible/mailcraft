@@ -23,10 +23,12 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("help.training", "Show Training", "Help › Help", training).pure().params(
             r#"{} — answers {"url"}: MailCraft's documentation (the `docs` folder of the project's repository: how it is put together, the parity checklists, driving it from scripts and agents). The window opens it in the system's browser; nothing about the owner is in the address"#,
         ),
-        CommandSpec::new("help.support", "Get Support", "Help › Help", support).pure().params(
+        // //// Neoffice — not in a hosting page's tab: it opens MailCraft's own issue tracker (`kept_here`).
+        CommandSpec::new("help.support", "Get Support", "Help › Help", support).pure().when(super::kept_here::support_refusal).params(
             r#"{} — answers {"url"}: the project's list of issues, where questions are asked and answered in public. The window opens it in the system's browser; nothing about the owner is in the address"#,
         ),
-        CommandSpec::new("help.feedback", "Feedback", "Help › Help", feedback).pure().params(
+        // //// Neoffice — nor is this one: it opens Report a Problem, which goes to MailCraft's makers (`kept_here`).
+        CommandSpec::new("help.feedback", "Feedback", "Help › Help", feedback).pure().when(super::kept_here::support_refusal).params(
             r#"{} — answers {"url", "dialog": "reportProblem"}: the project's page for a new issue. The window opens its Report a Problem window instead, which says what goes with a report before anything is opened or sent"#,
         ),
         CommandSpec::new("help.whatsNew", "What's New", "Help › Help", whats_new).pure().params(

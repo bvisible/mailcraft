@@ -227,6 +227,11 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         if s.view.filter.by_stream() {
             s.view.filter = crate::Filter::All;
         }
+        // //// Neoffice — and the inbox that has tabs opens on the main one, as it does when the tabs first appear: All has no tab of its own, and
+        // that the view went there by leaving a tab (Drafts, Sent) would show it as a fourth, "All", beside the three.
+        if s.view.filter == crate::Filter::All && s.mailbox.has_streams(id) {
+            s.view.filter = crate::Filter::Main;
+        }
     }
     // A search belongs to the folder it was typed in.
     s.view.search.clear();

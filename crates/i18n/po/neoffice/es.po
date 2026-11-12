@@ -1947,7 +1947,6 @@ msgstr "El panel de Nora necesita una página anfitriona que llegue a su convers
 msgid "A mailbox shared with you"
 msgstr "Un buzón compartido con usted"
 
-
 msgid "Write from {mailbox}"
 msgstr "Escribir desde {mailbox}"
 
@@ -3679,3 +3678,30 @@ msgstr[1] "{n} facturas este año"
 
 msgid "Exchanges with the sender"
 msgstr "Intercambios con el remitente"
+
+msgid "Main"
+msgstr "Principal"
+
+msgid "Notifications"
+msgstr "Notificaciones"
+
+msgid "Newsletters"
+msgstr "Boletines"
+
+msgid "Archive all ({count})"
+msgstr "Archivar todo ({count})"
+
+msgid "Archive {count} messages?"
+msgstr "¿Archivar {count} mensajes?"
+
+msgid "Select all"
+msgstr "Seleccionar todo"
+
+msgid "Clear selection"
+msgstr "Anular selección"
+
+msgid "Set Streams"
+msgstr "Definir flujos"
+
+msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr "Esta página notifica los problemas a quienes la administran, no a los creadores de MailCraft"

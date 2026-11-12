@@ -194,6 +194,11 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
 }
 
 fn report(app: &mut MailApp, p: &Value) -> Result<Value, String> {
+    // //// Neoffice — not in a hosting page's tab (`host_diagnostics::offered`): its problems are told to whoever runs the page, and what this
+    // //// Neoffice — starts (a window of diagnostics, the repository's new issue) leads to MailCraft's makers.
+    if !crate::host_diagnostics::offered(app) {
+        return Err(tl!(mailcraft_engine::cmd::kept_here::NO_SUPPORT_HERE).to_string());
+    }
     let typed = Typed::from_params(p);
     if typed.what.is_empty() {
         return Err(tl!("Say what happened (`what`)").to_string());

@@ -186,7 +186,8 @@ fn type_text(s: &mut Session, v: &Value) -> CmdResult {
     let text = p::req_str(v, "text")?.to_string();
     edit(s, &json!({}), |b| b.type_text(&text))?;
     // Lists as you type (#973): only after a space, in HTML, when the owner leaves them on.
-    if text == " " && p::bool(v, "autoList").unwrap_or(false) && s.prefs.auto_lists && matches!(s.doc(), Some((_, false))) {
+    // //// Neoffice — a text that ends with a space starts one too (`* ` typed whole): the paragraph so far is what counts (`Body::auto_list`).
+    if text.ends_with(' ') && p::bool(v, "autoList").unwrap_or(false) && s.prefs.auto_lists && matches!(s.doc(), Some((_, false))) {
         edit(s, &json!({}), |b| b.auto_list())?;
     }
     Ok(state(s))

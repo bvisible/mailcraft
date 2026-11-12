@@ -963,3 +963,28 @@ fn an_html_signature_is_shown_as_it_goes_out_until_edited_as_text() {
     // Edited, it is the copy that goes out: there is no way back to the HTML.
     assert!(h.state().hit.rect("composeSignatureAsHtml", 0).is_none());
 }
+
+// //// Neoffice — Automatic bulleted and numbered lists (#973) through the browser's two ways of typing: a key, which hands the editor the
+// //// Neoffice — marker and the space as two events, and a text agent or a virtual keyboard, which may hand over `* ` whole.
+#[test]
+fn a_marker_and_a_space_start_a_list_typed_as_two_events_or_as_one() {
+    let mut h = writing();
+    type_in(&mut h, "*");
+    type_in(&mut h, " ");
+    assert_eq!(kinds(&h), [ListKind::Bullet], "{:?}", plain(&h));
+    assert_eq!(plain(&h), "");
+    type_in(&mut h, "one");
+    key(&mut h, Key::Enter);
+    key(&mut h, Key::Enter);
+    type_in(&mut h, "1. ");
+    assert_eq!(kinds(&h).last(), Some(&ListKind::Numbered), "{:?}", plain(&h));
+    // A marker in the middle of a line is only text, and Undo puts a marker back as the text it was.
+    let mut h = writing();
+    type_in(&mut h, "a * ");
+    assert_eq!(kinds(&h), [ListKind::None]);
+    let mut h = writing();
+    type_in(&mut h, "- ");
+    assert_eq!(kinds(&h), [ListKind::Bullet]);
+    key_with(&mut h, Modifiers::COMMAND, Key::Z);
+    assert_eq!((kinds(&h), plain(&h)), (vec![ListKind::None], "- ".to_string()));
+}

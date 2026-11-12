@@ -1929,7 +1929,6 @@ msgstr "Noras Panel braucht eine Hostseite, die ihre Unterhaltung erreicht (NeoM
 msgid "A mailbox shared with you"
 msgstr "Ein Postfach, das mit Ihnen geteilt wird"
 
-
 msgid "Write from {mailbox}"
 msgstr "Aus {mailbox} schreiben"
 
@@ -3661,3 +3660,30 @@ msgstr[1] "{n} Rechnungen in diesem Jahr"
 
 msgid "Exchanges with the sender"
 msgstr "Austausch mit dem Absender"
+
+msgid "Main"
+msgstr "Primär"
+
+msgid "Notifications"
+msgstr "Benachrichtigungen"
+
+msgid "Newsletters"
+msgstr "Newsletter"
+
+msgid "Archive all ({count})"
+msgstr "Alle archivieren ({count})"
+
+msgid "Archive {count} messages?"
+msgstr "{count} Nachrichten archivieren?"
+
+msgid "Select all"
+msgstr "Alle auswählen"
+
+msgid "Clear selection"
+msgstr "Auswahl aufheben"
+
+msgid "Set Streams"
+msgstr "Streams festlegen"
+
+msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr "Diese Seite meldet Probleme an die Betreiber, nicht an die Macher von MailCraft"

@@ -7,7 +7,12 @@
 //! In a tab whose mailboxes a hosting page handed over (Neoffice's desk at `/app/neomail`, Neodesk's NeoMail window),
 //! the people reading their mail have no use for either (their problems go to whoever runs the page), and the browser
 //! keeps no log to copy: neither the title bar's two pills (chrome.rs) nor the buttons of the Help tab ([`ribbon`]) are
-//! drawn there ([`offered`]). The commands themselves stay, as upstream has them, and Search Commands lists neither.
+//! drawn there ([`offered`]). Nor are Feedback, which opens Report a Problem, and Get Support, which opens the repository's list of
+//! issues: what sends diagnostics or opens the tracker of MailCraft's makers is off in such a tab, in the Help tab, in Search Commands
+//! and in the commands themselves (`help.feedback`, `help.support` and `ui.reportProblem` refuse, [`crate::report_problem`] and
+//! `mailcraft_engine::cmd::kept_here::support_refusal`, and no window of Report a Problem opens). Help, Show Training and What's New
+//! open pages of the repository to read and send nothing: they stay. Copy Diagnostics only copies text for the person to paste: its
+//! command stays, as upstream has it.
 
 use crate::MailApp;
 use crate::ribbon::Tab;
@@ -17,6 +22,14 @@ pub const COMMAND: &str = "ui.copyDiagnostics";
 
 /// The window's command Report a Problem's pill and button run.
 pub const REPORT: &str = "ui.reportProblem";
+
+/// The Help tab's two buttons that open MailCraft's issue tracker, with Report a Problem: Feedback and Get Support.
+const TRACKER: [&str; 3] = ["help.feedback", "help.support", REPORT];
+
+/// Whether Search Commands and the Help tab leave `id` out: Copy Diagnostics and what leads to MailCraft's makers, in a tab that doesn't offer them.
+pub(crate) fn hidden(app: &MailApp, id: &str) -> bool {
+    !offered(app) && (id == COMMAND || TRACKER.contains(&id))
+}
 
 /// Whether the window offers Copy Diagnostics and Report a Problem: everywhere but a tab whose mailboxes a hosting page handed over (the page
 /// holds their credentials, [`crate::Services::jmap_host_credentials`]).
@@ -30,7 +43,7 @@ pub(crate) fn ribbon(app: &MailApp, tab: &mut Tab) {
         return;
     }
     for group in &mut tab.groups {
-        group.items.retain(|item| item.command.as_ref().is_none_or(|(id, _)| *id != COMMAND && *id != REPORT));
+        group.items.retain(|item| item.command.as_ref().is_none_or(|(id, _)| *id != COMMAND && !TRACKER.contains(id)));
     }
 }
 
@@ -139,20 +152,48 @@ mod tests {
         asked
     }
 
-    // //// Neoffice — upstream's v0.12.0 Report a Problem can send a report straight to its makers (#956): never from a hosting page's tab.
+    // //// Neoffice — upstream's v0.12.0 Report a Problem can send a report straight to its makers (#956), and Feedback and Get Support open its
+    // //// Neoffice — issue tracker: none of it from a hosting page's tab.
     #[test]
-    fn a_hosting_pages_tab_has_no_way_to_send_a_report_to_mailcrafts_makers() {
+    fn a_hosting_pages_tab_has_no_way_to_report_to_mailcrafts_makers_nor_to_open_their_tracker() {
         // In upstream's window, a host with a relay offers Send report in the draft an agent or the owner opens.
         let mut open = app(false);
         let _ = with_relay(&mut open);
         open.execute(REPORT, json!({"via": "send", "what": "It stopped"})).unwrap();
         assert!(window(open, "Home").query_by_label("Send report").is_some());
-        // In a hosting page's tab, with the same host, it is not offered, and nothing is asked of the host.
+        // In a hosting page's tab, with the same host: the command is refused, whatever its params, no window opens, nothing is asked of the host.
         let mut hosted = app(true);
         let asked = with_relay(&mut hosted);
-        hosted.execute(REPORT, json!({"via": "send", "what": "It stopped"})).unwrap();
+        for params in [json!({}), json!({"what": "It stopped"}), json!({"via": "send", "what": "It stopped"})] {
+            let why = hosted.execute(REPORT, params.clone()).unwrap_err();
+            assert!(why.contains("not to MailCraft's makers"), "{params}: {why}");
+        }
+        assert!(hosted.execute("ui.dialog", json!({"name": "reportProblem"})).is_err());
+        assert!(hosted.dialog.is_none());
+        assert_eq!(*asked.lock().unwrap(), 0);
         let harness = window(hosted, "Home");
         assert!(harness.query_by_label("Send report").is_none());
-        assert_eq!(*asked.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn feedback_and_get_support_are_neither_in_the_help_tab_nor_in_search_commands_nor_run_in_a_hosting_pages_tab() {
+        let ids = |app: &MailApp| -> Vec<String> { crate::dialogs::all_commands(app).into_iter().map(|c| c.0).collect() };
+        // Upstream's window: both, in the tab and in the list.
+        let open = app(false);
+        let upstream_tab = help(app(false));
+        assert!(upstream_tab.contains(&"help.feedback") && upstream_tab.contains(&"help.support"));
+        assert!(ids(&open).iter().any(|id| id == "help.feedback") && ids(&open).iter().any(|id| id == "help.support"));
+        // A hosting page's tab: neither; Help, Show Training and What's New, which only open pages to read, stay.
+        let hosted = app(true);
+        let tab = help(app(true));
+        for gone in ["help.feedback", "help.support", REPORT, COMMAND] {
+            assert!(!tab.contains(&gone), "{gone} in {tab:?}");
+        }
+        for stays in ["help.help", "help.training", "help.whatsNew"] {
+            assert!(tab.contains(&stays), "{stays} in {tab:?}");
+        }
+        let listed = ids(&hosted);
+        assert!(!listed.iter().any(|id| id == "help.feedback" || id == "help.support"), "{listed:?}");
+        assert!(listed.iter().any(|id| id == "help.help"));
     }
 }

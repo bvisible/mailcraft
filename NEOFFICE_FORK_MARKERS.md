@@ -450,7 +450,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   keeps no log to copy (`crates/ui-egui/src/host_diagnostics.rs` and its tests; the pills' hunk in `chrome.rs`, the
   Help tab's in `ribbon.rs`, `describe`). The commands `ui.copyDiagnostics` and `ui.reportProblem` stay, as upstream
   has them; Search Commands lists neither, and no shortcut runs them. A window without a hosting page, the desktop's
-  among them, keeps all four.
+  among them, keeps all four. Help › Feedback and Get Support go the same way: they open the makers' issue tracker and
+  support page, so in such a tab they are refused and greyed with the reason (`kept_here::support_refusal`, a `.when` of
+  `help.support` and `help.feedback`), the Report a Problem dialog is not drawn for a stale request, and Search Commands
+  lists neither (the doc links of the Help tab stay: reading is harmless).
 - File › Info in a tab whose mailboxes a hosting page handed over (`Session::keeps_local` false): a mailbox's Settings
   opens the page of its site where it is set up (its servers, its password, its name on mail) in a new tab, in place of
   the window's own account settings, which the tab loses when it closes; and in place of Add Account, whose account
@@ -488,3 +491,6 @@ the marker check does not know as one that takes comments:
   entries as `fr.po`, in German, Spanish and Italian (translated by Haiku), read over upstream's catalogues the same
   way; `it.po` also writes a numeric date with dots, as in Switzerland (`crates/i18n/src/date.rs`, its test). When a
   text is added to `fr.po`, it is added to these three too.
+- `crates/i18n/po/neoffice/nl.po`: the Dutch of the fork's own texts that upstream's Dutch lacks (so far the inbox's tabs,
+  which a merge once left without a word in any language because they lived only in the generated catalogues; a test of
+  `stream_tabs_tests.rs` holds their French to the catalogue); read over upstream's Dutch the same way.

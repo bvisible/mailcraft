@@ -23,6 +23,9 @@ pub const NO_IMPORT_HERE: &str = "This page keeps nothing of its own between vis
 /// Why a contact's categories and whether it is a favourite can't be set: they are kept on this computer only.
 pub const NO_MARKS_HERE: &str = "This page keeps no categories or favorites: they would be gone at the next visit";
 
+/// Why a problem isn't reported to MailCraft's makers from such a page: it is a hosting page's, whose people tell theirs to whoever runs it.
+pub const NO_SUPPORT_HERE: &str = "This page reports problems to the people who run it, not to MailCraft's makers";
+
 /// Why Public keys are not imported or removed: they are kept in the mailbox, which a hosting page's tab doesn't keep.
 pub const NO_KEYS_HERE: &str = "This page keeps no certificates or keys: they would be gone at the next visit";
 
@@ -39,6 +42,12 @@ pub fn tasks_refusal(s: &Session) -> Option<&'static str> {
 /// Why a file is not imported, when it isn't.
 pub fn import_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_IMPORT_HERE)
+}
+
+/// Why Feedback and Get Support, which open MailCraft's own issue tracker, and Report a Problem, which starts a report to its makers,
+/// are not offered, when they aren't: the session is a hosting page's tab (it keeps nothing of its own).
+pub fn support_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_SUPPORT_HERE)
 }
 
 /// Why Public keys can't be imported or removed, when they can't.
@@ -84,6 +93,24 @@ mod tests {
         // The other modules open as ever.
         for id in ["view.mail", "view.calendar", "view.people"] {
             s.run(id, &json!({})).unwrap();
+        }
+    }
+
+    #[test]
+    fn feedback_and_get_support_open_no_tracker_in_a_tab_that_keeps_nothing() {
+        let mut s = sample(false);
+        for id in ["help.feedback", "help.support"] {
+            let refused = s.run(id, &json!({})).unwrap_err().to_string();
+            assert!(refused.contains(NO_SUPPORT_HERE), "{id}: {refused}");
+            assert_eq!(s.registry.get(id).and_then(|spec| (spec.enabled)(&s)), Some(NO_SUPPORT_HERE), "{id}");
+        }
+        // The pages that only say what MailCraft is stay, and a session that keeps its own offers all.
+        for id in ["help.help", "help.training", "help.whatsNew"] {
+            assert!(s.run(id, &json!({})).is_ok(), "{id}");
+        }
+        let mut open = sample(true);
+        for id in ["help.feedback", "help.support"] {
+            assert!(open.run(id, &json!({})).is_ok(), "{id}");
         }
     }
 
