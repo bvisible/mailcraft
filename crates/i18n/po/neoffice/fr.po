@@ -4499,10 +4499,6 @@ msgctxt "why automatic replies weren't changed"
 msgid "Microsoft no longer takes your sign-in."
 msgstr "Microsoft n'accepte plus votre connexion."
 
-msgctxt "what didn't happen, then why"
-msgid "{heading}: {reason}"
-msgstr "{heading} : {reason}"
-
 msgid "Your mailbox is sending automatic replies. Click to change them."
 msgstr "Votre boîte envoie des réponses automatiques. Cliquez pour les modifier."
 
