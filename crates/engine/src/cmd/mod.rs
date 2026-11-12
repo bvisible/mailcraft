@@ -4,6 +4,10 @@
 
 pub mod account;
 #[cfg(test)]
+mod account_color_tests;
+#[cfg(test)]
+mod account_order_tests;
+#[cfg(test)]
 mod agent_leaves_compose_tests;
 #[cfg(test)]
 mod agent_owners_message_tests;
@@ -17,10 +21,14 @@ pub mod calendar_extra;
 pub mod calendar_opened;
 pub mod calendar_settings;
 pub mod category;
+#[cfg(test)]
+mod category_tests;
 // //// Neoffice — the kind of sender of messages, for the inbox's tabs.
 pub mod compose;
 #[cfg(test)]
 mod compose_trust_tests;
+#[cfg(test)]
+mod conversation_thread_tests;
 pub mod edit;
 mod ews_down;
 pub mod ews_mail;
@@ -29,6 +37,8 @@ mod ews_up;
 mod favorites_tests;
 pub mod file;
 pub mod folder;
+#[cfg(test)]
+mod folder_empty_tests;
 #[cfg(test)]
 mod folder_properties_tests;
 pub mod format;
@@ -42,6 +52,9 @@ mod forward_attachment_tests;
 mod forward_several_tests;
 #[cfg(test)]
 mod full_count_tests;
+pub mod gmail_move;
+#[cfg(test)]
+mod gmail_move_tests;
 pub mod graph_down;
 pub mod graph_drafts;
 pub mod graph_mail;
@@ -76,6 +89,9 @@ mod stream_tests;
 pub mod kept_here;
 #[cfg(test)]
 mod keyboard_selection_tests;
+pub mod keys;
+#[cfg(test)]
+mod keys_tests;
 #[cfg(test)]
 mod leave_compose_tests;
 pub mod mail;
@@ -84,6 +100,8 @@ mod moves_between_accounts_tests;
 #[cfg(test)]
 mod newer_account_tests;
 // //// Neoffice — notes, the mailbox's own and a server's.
+// //// Neoffice — what upstream's .pst import keeps as notes and the journal, as commands (`cmd/pst_items.rs`).
+pub mod pst_items;
 pub mod notes;
 pub mod offline;
 #[cfg(test)]
@@ -98,15 +116,26 @@ pub mod picture;
 #[cfg(test)]
 mod picture_tests;
 #[cfg(test)]
+mod protected_moves_tests;
+#[cfg(test)]
 mod quote_tests;
 #[cfg(test)]
+mod range_select_tests;
+#[cfg(test)]
 mod read_receipt_tests;
+#[cfg(test)]
+mod refused_delete_tests;
 pub mod remote;
 // //// Neoffice — the address books of a server (JMAP for Contacts) and what the owner may do with their contacts.
 pub mod remote_contacts;
 #[cfg(test)]
+mod reply_to_first_tests;
+#[cfg(test)]
 mod resend_reply_to_tests;
 pub mod rules;
+pub mod rules_remote;
+#[cfg(test)]
+mod rules_remote_tests;
 #[cfg(test)]
 mod search_scope_tests;
 pub mod search_server;
@@ -122,12 +151,17 @@ pub mod tasks;
 pub mod tasks_remote;
 #[cfg(test)]
 mod tasks_remote_tests;
+#[cfg(test)]
+mod tasks_tests;
+mod thread_ids;
 pub mod view;
 #[cfg(test)]
 mod wipe_tests;
 pub mod writing_tools;
 #[cfg(test)]
 mod writing_tools_tests;
+#[cfg(test)]
+mod written_quote_tests;
 #[cfg(test)]
 mod zone_tests;
 pub mod zones;
@@ -147,6 +181,7 @@ pub fn registry() -> Registry {
     v.extend(help::specs());
     v.extend(edit::specs());
     v.extend(mail::specs());
+    v.extend(gmail_move::specs());
     v.extend(compose::specs());
     v.extend(format::specs());
     v.extend(picture::specs());
@@ -162,9 +197,13 @@ pub fn registry() -> Registry {
     v.extend(people_merge::specs());
     v.extend(tasks::specs());
     // //// Neoffice — see `notes`.
+    // //// Neoffice — see `pst_items`.
+    v.extend(pst_items::specs());
     v.extend(notes::specs());
     v.extend(rules::specs());
+    v.extend(rules_remote::specs());
     v.extend(junk::specs());
+    v.extend(keys::specs());
     v.extend(category::specs());
     // //// Neoffice — see `stream`.
     v.extend(stream::specs());
@@ -338,9 +377,11 @@ pub(crate) fn select_after_removal(s: &mut Session, before: &[Row], removed: &[I
     }
 }
 
-/// A message as agents see it in lists.
+/// A message as agents see it in lists. For a message of a Gmail account's Inbox, its
+/// `gmailCategory` too (#911): one of five words this program wrote, not message text, so it isn't
+/// framed as such.
 pub fn message_summary(s: &Session, m: &Message) -> Value {
-    json!({
+    let mut v = json!({
         "id": m.id,
         "folder": m.folder,
         "from": m.from.full(),
@@ -354,7 +395,11 @@ pub fn message_summary(s: &Session, m: &Message) -> Value {
         "categories": m.categories,
         "attachments": m.listed_attachments().map(|(_, a)| a.name.as_str()).collect::<Vec<_>>(),
         "snippet": crate::list::preview(m, 140),
-    })
+    });
+    if let (Some(category), Some(o)) = (m.gmail_category, v.as_object_mut()) {
+        o.insert("gmailCategory".into(), json!(category.code()));
+    }
+    v
 }
 
 /// A message in full.
@@ -405,7 +450,8 @@ pub(crate) fn deliver(v: &Value, name: &str, bytes: Vec<u8>) -> CmdResult {
         Some(path) => {
             #[cfg(not(target_arch = "wasm32"))]
             {
-                std::fs::write(path, &bytes).map_err(|e| fail(format!("{path}: {e}")))?;
+                // From mail: marked as a browser marks a download (AU3-V6).
+                crate::mark::write_from_mail(std::path::Path::new(path), &bytes).map_err(|e| fail(format!("{path}: {e}")))?;
                 Ok(json!({"path": path, "bytes": bytes.len()}))
             }
             #[cfg(target_arch = "wasm32")]

@@ -77,6 +77,51 @@ impl Origin {
     }
 }
 
+/// Whose items a list shows: every account's, those kept on this computer, or one account's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AccountChoice {
+    #[default]
+    All,
+    Here,
+    Account(Id),
+}
+
+impl AccountChoice {
+    /// What a command says for it: `"all"`, `"here"` (or 0, as `tasks.new` says it) or the
+    /// account's id.
+    pub fn parse(value: &serde_json::Value) -> Option<AccountChoice> {
+        match value {
+            serde_json::Value::String(s) if s == "all" => Some(AccountChoice::All),
+            serde_json::Value::String(s) if s == "here" => Some(AccountChoice::Here),
+            value => value.as_u64().map(|id| if id == 0 { AccountChoice::Here } else { AccountChoice::Account(id) }),
+        }
+    }
+
+    /// The same, for an answer.
+    pub fn code(self) -> serde_json::Value {
+        match self {
+            AccountChoice::All => "all".into(),
+            AccountChoice::Here => "here".into(),
+            AccountChoice::Account(id) => id.into(),
+        }
+    }
+
+    /// The choice that holds an item of this origin.
+    pub fn of(origin: &Origin) -> AccountChoice {
+        if origin.is_local() { AccountChoice::Here } else { AccountChoice::Account(origin.account) }
+    }
+
+    /// Whether the list shows an item of this origin.
+    pub fn shows(self, origin: &Origin) -> bool {
+        match self {
+            AccountChoice::All => true,
+            AccountChoice::Here => origin.is_local(),
+            AccountChoice::Account(account) => origin.account == account,
+        }
+    }
+}
+
 /// What a server's event is to a series.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -812,6 +857,10 @@ pub struct EventOp {
     /// ([`EventChange::replaces`]): the link to join its online meeting by, which the copy keeps. Empty otherwise.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub join_url: String,
+    /// The event is a meeting: people are invited to it (before the change or after), whoever
+    /// organizes it. A server may write to them for any change of it.
+    #[serde(skip_serializing_if = "is_false")]
+    pub meeting: bool,
 }
 
 impl EventOp {
@@ -837,14 +886,16 @@ impl EventOp {
         self.join_url = OnlineMeeting::clean_link(&self.join_url).unwrap_or_default();
     }
 
-    /// Whether the server sends mail to other people for this change (#70): an answer that is
-    /// sent, a meeting called off, a meeting forwarded, and a meeting made or changed with
-    /// people invited. From a shared mailbox that is sending from it.
+    /// Whether the server may send mail to other people for this change (#70): an answer that is
+    /// sent, a meeting forwarded, and any change to a meeting, whatever of it changes (a new
+    /// title or time is an update to the people invited, AU3-V2), a meeting called off or
+    /// deleted included. From a shared mailbox that is sending from it.
     pub fn mails_others(&self) -> bool {
+        let invited = self.meeting || self.fields.attendees.as_ref().is_some_and(|who| !who.is_empty());
         match self.kind {
             EventChangeKind::Respond | EventChangeKind::Forward => self.send,
-            EventChangeKind::Delete => self.cancel,
-            EventChangeKind::Create | EventChangeKind::Update => self.fields.attendees.as_ref().is_some_and(|who| !who.is_empty()),
+            EventChangeKind::Delete => self.cancel || invited,
+            EventChangeKind::Create | EventChangeKind::Update => invited,
         }
     }
 

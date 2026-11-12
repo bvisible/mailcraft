@@ -26,6 +26,7 @@
 pub(crate) mod colors;
 #[cfg(test)]
 mod colors_strong_tests;
+pub(crate) mod fonts;
 #[cfg(test)]
 mod header_tests;
 pub(crate) mod images;
@@ -38,6 +39,9 @@ mod select;
 mod sharing;
 #[cfg(test)]
 mod sharing_tests;
+mod signature;
+#[cfg(test)]
+mod signature_tests;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -56,6 +60,7 @@ pub(crate) use invitation::{list_marks, options as invitation_options, question 
 pub use remote::{Access, RemotePictures};
 pub use select::Selections;
 pub(crate) use select::{inspect as selection_inspect, select_all_params};
+pub(crate) use signature::row_seal as signature_seal;
 pub(crate) use view::char_at;
 pub(crate) use warnings::row_mark as warning_mark;
 
@@ -120,6 +125,8 @@ pub fn show_file_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place
 pub fn show(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let picked = app.session.sel.messages.len();
+    let preview_message = if picked == 1 { app.session.sel.focus() } else { None };
+    crate::attachment_preview::follow_message(app, ui.ctx().viewport_id(), preview_message);
     // What showing it needs (its body, the pictures in it, a calendar part) is brought into
     // memory first, when the mailbox keeps it on disk; the message then shows whole in this
     // very frame. (One that can't be read says so in its text, once.)
@@ -242,6 +249,9 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
     // header too wide for a narrow pane must not make the text run out of sight with it.
     let room = ui.available_rect_before_wrap().intersect(ui.clip_rect());
     ui.scope_builder(egui::UiBuilder::new().max_rect(room), |ui| {
+        if crate::attachment_preview::show(app, ui, m.id) {
+            return;
+        }
         view::page(app, place, ui).show(ui, |ui| {
             // Sideways too: a data table is never squeezed below its words, so a wide one scrolls.
             egui::ScrollArea::both().auto_shrink([false, false]).id_salt(("body", m.id)).show(ui, |ui| {
@@ -335,29 +345,67 @@ pub(crate) fn show_quote(app: &mut MailApp, ui: &mut Ui) {
 
 /// The carried original as a message to show: the original's sender, date and place (what its
 /// pictures are allowed by), with the quote's HTML for a body and the pictures the quote takes
-/// along. Kept from frame to frame while the quote stays the same.
+/// along. Kept from frame to frame while the quote stays the same, for each message being
+/// written (the windows of several share the context), and let go of with it.
 fn quote_message(app: &MailApp, ctx: &egui::Context) -> Option<Arc<Message>> {
     let c = app.session.compose.as_ref()?;
     let quote = c.quote.as_ref()?;
-    let key = egui::Id::unique("mailcraft-compose-quote");
-    let kept: Option<Arc<Message>> = ctx.data(|d| d.get_temp(key));
+    let key = quotes_key();
+    let mut kept: Vec<(u64, Arc<Message>)> = ctx.data(|d| d.get_temp(key)).unwrap_or_default();
     let source = c.source.and_then(|id| app.session.mailbox.messages.get(&id));
-    let pictures = if quote.pictures.is_empty() { &c.attachments } else { &quote.pictures };
-    let same = |m: &Arc<Message>| {
-        m.body.html.as_deref() == Some(quote.html.as_str()) && m.id == source.map_or(0, |s| s.id) && m.attachments.len() == pictures.len()
+    // The quote's own pictures (those the original showed, for an answer; those written into it,
+    // #602), and, but for an answer, the message's attachments: a forward carries the original's
+    // itself, its pictures among them, and so does one opened again as a draft (a picture its
+    // HTML calls by a Content-ID written otherwise, `cid:logo%40…`, stays among them).
+    let answer = matches!(c.mode, mailcraft_engine::ComposeMode::Reply | mailcraft_engine::ComposeMode::ReplyAll);
+    let forward = !answer || quote.pictures.is_empty();
+    let attached: &[mailcraft_model::Attachment] = if forward { &c.attachments } else { &[] };
+    let pictures = || quote.pictures.iter().chain(attached);
+    // The same pictures: the same parts, by their ids and their very bytes, in the same order.
+    let same_part = |a: &mailcraft_model::Attachment, b: &mailcraft_model::Attachment| {
+        a.content_id == b.content_id && a.name == b.name && Arc::ptr_eq(&a.data, &b.data)
     };
-    if let Some(m) = kept.filter(same) {
-        return Some(m);
+    let same = |m: &Arc<Message>| {
+        m.body.html.as_deref() == Some(quote.html.as_str())
+            && m.id == source.map_or(0, |s| s.id)
+            && m.attachments.len() == quote.pictures.len().saturating_add(attached.len())
+            && m.attachments.iter().zip(pictures()).all(|(a, b)| same_part(a, b))
+    };
+    if let Some((_, m)) = kept.iter().find(|(id, m)| *id == c.id && same(m)) {
+        return Some(m.clone());
     }
     let mut m = source.map(|s| (**s).clone()).unwrap_or_default();
     m.body = mailcraft_model::Body { text: quote.text.clone(), html: Some(quote.html.clone()) };
-    // A forward carries the original's attachments itself, its pictures among them.
-    m.attachments = pictures.clone();
+    m.attachments = pictures().cloned().collect();
     // Its body is the quote's, whole: nothing of it waits on disk.
     m.kept = None;
     let m = Arc::new(m);
-    ctx.data_mut(|d| d.insert_temp(key, m.clone()));
+    // This one's old quote goes (what is kept for a message no longer being written went at the
+    // start of the frame, [`let_go_of_quotes`]).
+    kept.retain(|(id, _)| *id != c.id);
+    kept.push((c.id, m.clone()));
+    ctx.data_mut(|d| d.insert_temp(key, kept));
     Some(m)
+}
+
+/// Where the carried originals are kept, in the context the windows share.
+fn quotes_key() -> egui::Id {
+    egui::Id::unique("mailcraft-compose-quote")
+}
+
+/// The carried originals of messages no longer being written go, with their pictures' bytes:
+/// once a frame, so a window that closes lets go of its own even when no other is open.
+fn let_go_of_quotes(app: &MailApp, ctx: &egui::Context) {
+    let key = quotes_key();
+    ctx.data_mut(|d| {
+        let Some(kept) = d.get_temp::<Vec<(u64, Arc<Message>)>>(key) else { return };
+        let left: Vec<(u64, Arc<Message>)> = kept.into_iter().filter(|(id, _)| app.session.all_composing().any(|open| open.id == *id)).collect();
+        if left.is_empty() {
+            d.remove::<Vec<(u64, Arc<Message>)>>(key);
+        } else {
+            d.insert_temp(key, left);
+        }
+    });
 }
 
 /// `m` shown read-only through the display blocks, as at `place` ([`Place::Preview`]): its own
@@ -366,8 +414,10 @@ pub(crate) fn show_plain_view(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, 
     view::show(app, ui, m, place, Access::Blocked);
 }
 
-/// Pictures the host has brought are taken in, whatever is on screen ([`remote::tick`]).
+/// Pictures the host has brought are taken in, whatever is on screen ([`remote::tick`]), and the
+/// quoted originals of messages no longer being written are let go of.
 pub(crate) fn tick(app: &mut MailApp, ctx: &egui::Context) {
+    let_go_of_quotes(app, ctx);
     remote::tick(app, ctx);
 }
 
@@ -417,6 +467,8 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
         ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
         // What may not be what it seems about it, above everything else (#508).
         warnings::banner(app, ui, m, place, &t);
+        // What checking its Digital signature found (#30).
+        signature::bar(app, ui, m, place, &t);
         // Subject, with the actions on the right (a window has them in its toolbar).
         let subject = if m.subject.trim().is_empty() { tl!("(no subject)") } else { m.subject.as_str() };
         // //// Neoffice — a subject left too little room beside the actions (a narrow pane, beside Nora's) goes under them,
@@ -596,7 +648,8 @@ fn notes(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, t: &Tokens, pictures:
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
         let mut x = r.min.x;
         for c in m.categories.iter().take(SHOWN_CATEGORIES) {
-            x += crate::widgets::category_chip(ui, pos2(x, r.center().y), c, crate::theme::c32(app.session.mailbox.category_color(c))) + 6.0;
+            x += crate::widgets::category_chip(ui, pos2(x, r.center().y), c, crate::theme::c32(app.session.mailbox.category_color_of(m.account, c)))
+                + 6.0;
         }
     }
     // The rest of the conversation, to jump to.
@@ -632,8 +685,11 @@ fn notes(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, t: &Tokens, pictures:
 fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
     // The calendar part of a meeting is what its bar shows: it is not one of the files.
     let meeting = invitation::info(app, ui.ctx(), m);
+    // The signature part of a message whose signature was checked (that very part, by its bytes)
+    // is what its bar says; it is reached from the bar's Details (#30).
+    let signature = app.session.digital_signature_known(m.id).and_then(|_| app.session.digital_signature_part(m.id));
     let files: Vec<(usize, &mailcraft_model::Attachment)> =
-        m.listed_attachments().filter(|(index, _)| !invitation::stands_for(meeting.as_deref(), *index)).collect();
+        m.listed_attachments().filter(|(index, _)| !invitation::stands_for(meeting.as_deref(), *index) && Some(*index) != signature).collect();
     if files.is_empty() {
         return;
     }
@@ -645,8 +701,36 @@ fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
             // override can make `fdp.exe` read as `exe.pdf`.
             let shown = mailcraft_engine::opening::file_name(&a.name);
             let name_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.clone(), regular(12.0), t.text).size().x).min(220.0);
-            let (r, resp) = ui.allocate_exact_size(vec2(name_w + 44.0, 38.0), Sense::click());
-            ui.painter().rect(r, 5.0, if resp.hovered() { t.hover } else { t.panel }, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            // The chip, and at its right end a `▾` that opens the menu a right-click opens (#785).
+            let (r, _) = ui.allocate_exact_size(vec2(name_w + 44.0 + crate::ribbon::DROP_W, 38.0), Sense::hover());
+            let drop_rect = Rect::from_min_max(pos2(r.max.x - crate::ribbon::DROP_W, r.min.y), r.max);
+            let main_rect = Rect::from_min_max(r.min, pos2(drop_rect.min.x, r.max.y));
+            let filed = m.id != 0;
+            let resp = ui.interact(main_rect, ui.make_persistent_id(("attachment", m.id, index)), Sense::click());
+            let drop_sense = if filed { Sense::click() } else { Sense::hover() };
+            let drop = ui.interact(drop_rect, ui.make_persistent_id(("attachmentMenu", m.id, index)), drop_sense);
+            app.hit.add("attachment", attachment_key(m.id, index), main_rect);
+            app.hit.add("attachmentMenu", attachment_key(m.id, index), drop_rect);
+            ui.painter().rect(r, 5.0, t.panel, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            let left = egui::CornerRadius { nw: 5, sw: 5, ne: 0, se: 0 };
+            let right = egui::CornerRadius { nw: 0, sw: 0, ne: 5, se: 5 };
+            let selected = crate::attachment_preview::selected(app, ui.ctx().viewport_id(), m.id, index);
+            if selected || resp.hovered() {
+                ui.painter().rect_filled(main_rect.shrink(1.0), left, if selected { t.pressed } else { t.hover });
+            }
+            if filed && (drop.hovered() || drop.is_pointer_button_down_on()) {
+                ui.painter().rect_filled(drop_rect.shrink(1.0), right, if drop.is_pointer_button_down_on() { t.pressed } else { t.hover });
+            }
+            let divider = ui.painter().round_to_pixel_center(drop_rect.min.x);
+            ui.painter().line_segment([pos2(divider, r.min.y + 7.0), pos2(divider, r.max.y - 7.0)], Stroke::new(1.0, t.border));
+            crate::ribbon::drop_mark(ui, drop_rect.center(), if filed { t.icon } else { t.text_disabled });
+            if resp.has_focus() {
+                ui.painter().rect_stroke(main_rect.shrink(1.0), left, Stroke::new(2.0, t.focus_ring), egui::StrokeKind::Inside);
+            }
+            if drop.has_focus() {
+                ui.painter().rect_stroke(drop_rect.shrink(1.0), right, Stroke::new(2.0, t.focus_ring), egui::StrokeKind::Inside);
+            }
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &shown));
             icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 17.0, r.center().y), vec2(20.0, 20.0)), "attach", t.icon, t.accent);
             paint_clipped(ui.painter(), pos2(r.min.x + 34.0, r.min.y + 13.0), name_w + 4.0, &shown, regular(12.0), t.text);
             ui.painter().text(
@@ -658,23 +742,61 @@ fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
             );
             // Double-click opens it, as in Outlook; its menu opens or saves it.
             // (A message that is not in the mailbox has no number to name it by: attachments are
-            // opened and saved once it is filed.)
-            if m.id == 0 {
-                resp.on_hover_text(tl!("Move the message to a folder to open or save its attachments"));
+            // opened and saved once it is filed, and its `▾` is greyed and opens nothing.)
+            if !filed {
+                let why = tl!("Move the message to a folder to open or save its attachments");
+                resp.on_hover_text(why);
+                drop.on_hover_text(why);
                 continue;
             }
-            let resp = resp.on_hover_text(crate::i18n::fmt(tl!("Double-click to open {name}; right-click to save it"), &[("name", &shown)]));
+            let can_preview = crate::attachment_preview::single_click_allowed(app, m.id, index);
+            let hint = if can_preview {
+                tl!("Click to preview {name}; double-click to open it")
+            } else {
+                tl!("Double-click to open {name}; right-click to save it")
+            };
+            let resp = resp.on_hover_text(crate::i18n::fmt(hint, &[("name", &shown)]));
             if resp.double_clicked() {
+                crate::attachment_preview::cancel_click(app);
                 let _ = app.run("mail.openAttachment", json!({"id": m.id, "index": index}));
+            } else if can_preview && resp.clicked() {
+                crate::attachment_preview::queue_click(app, ui.ctx(), m.id, index);
             }
-            resp.context_menu(|ui| {
-                crate::widgets::mi(ui, app, "Open", "mail.openAttachment", json!({"id": m.id, "index": index}));
-                crate::widgets::mi(ui, app, "Save As…", "mail.saveAttachment", json!({"id": m.id, "index": index}));
-                crate::widgets::mi(ui, app, "Save All Attachments…", "mail.saveAllAttachments", json!({"id": m.id}));
-                // //// Neoffice — what the hosting page does with an attachment: its Drive, its scanned documents, an editor (host_attachments.rs).
-                crate::host_attachments::menu(ui, app, m, index, a);
-                crate::widgets::mi(ui, app, "Remove Attachment", "mail.removeAttachment", json!({"id": m.id, "index": index}));
-            });
+            resp.context_menu(|ui| attachment_menu(ui, app, m.id, index));
+            // The `▾`: a click, or Enter or Space while it has the keyboard, opens the same menu.
+            let label = crate::i18n::fmt(tl!("Attachment options for {name}"), &[("name", &shown)]);
+            drop.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &label));
+            let drop = drop.on_hover_text(tl!("Attachment options"));
+            egui::Popup::menu(&drop).show(|ui| attachment_menu(ui, app, m.id, index));
         }
     });
+    crate::attachment_preview::finish_click(app, ui.ctx(), m.id);
+}
+
+/// The key of attachment `index` of message `id` in the hit map (`attachment` for the chip,
+/// `attachmentMenu` for its `▾`).
+pub(crate) fn attachment_key(id: u64, index: usize) -> u64 {
+    crate::ribbon::hit_id(&format!("{id}:{index}"))
+}
+
+/// An attachment's menu, the same from a right-click on its chip and from the chip's `▾` (#785).
+/// Each entry is greyed when its command can't run, and the command keeps its own refusals.
+pub(super) fn attachment_menu(ui: &mut Ui, app: &mut MailApp, id: u64, index: usize) {
+    if crate::attachment_preview::available(app, id, index) && ui.button(tl!("Preview Attachment")).clicked() {
+        if let Err(error) = crate::attachment_preview::open(app, ui.ctx().viewport_id(), id, index) {
+            app.status(error);
+        }
+        ui.close();
+    }
+    crate::widgets::mi(ui, app, "Open", "mail.openAttachment", json!({"id": id, "index": index}));
+    crate::widgets::mi(ui, app, "Save As…", "mail.saveAttachment", json!({"id": id, "index": index}));
+    crate::widgets::mi(ui, app, "Save All Attachments…", "mail.saveAllAttachments", json!({"id": id}));
+    // //// Neoffice — what the hosting page does with an attachment: its Drive, its scanned documents, an editor (host_attachments.rs).
+    let held = app.session.mailbox.message(id).cloned();
+    if let Some(m) = held.as_deref()
+        && let Some(a) = m.attachments.get(index)
+    {
+        crate::host_attachments::menu(ui, app, m, index, a);
+    }
+    crate::widgets::mi(ui, app, "Remove Attachment", "mail.removeAttachment", json!({"id": id, "index": index}));
 }

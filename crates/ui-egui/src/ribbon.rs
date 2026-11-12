@@ -39,7 +39,7 @@ const PAD: f32 = 8.0;
 const ICON: f32 = 20.0;
 const LABEL_GAP: f32 = 8.0;
 const LABEL_SIZE: f32 = 13.333;
-const DROP_W: f32 = 22.0;
+pub(crate) const DROP_W: f32 = 22.0;
 const DROP_GAP_LABEL: f32 = 2.0;
 const DROP_GAP_ICON: f32 = 5.0;
 /// Between two buttons, and between two that a rule parts (the rule is in the middle).
@@ -142,6 +142,7 @@ pub(crate) enum Menu {
     HostChat,
     MoveFolder,
     ReadingPane,
+    GmailCategories,
     Preview,
     ArrangeBy,
     Theme,
@@ -155,6 +156,68 @@ pub(crate) enum Menu {
     FontColor,
     Highlight,
     Junk,
+}
+
+impl Menu {
+    /// The command a menu stands for, when all it does is run it with a choice (the font menus):
+    /// it is greyed when that command can't run, as a button would be.
+    pub(crate) fn command(self) -> Option<&'static str> {
+        match self {
+            Menu::Font => Some("format.font"),
+            Menu::FontSize => Some("format.size"),
+            Menu::FontColor => Some("format.color"),
+            Menu::Highlight => Some("format.highlight"),
+            _ => None,
+        }
+    }
+}
+
+/// Whether a control can be used now: its command can run, or the command its menu stands for
+/// ([`Menu::command`]); a menu that stands for none always can. Every layout draws by it.
+pub(crate) fn usable(app: &MailApp, item: &Item) -> bool {
+    match (&item.command, item.menu) {
+        (Some((command, _)), _) => app.enabled(command),
+        (None, Some(menu)) => menu_usable(app, menu),
+        (None, None) => true,
+    }
+}
+
+/// Whether a menu can be opened now: the command it stands for can run, or it stands for none.
+fn menu_usable(app: &MailApp, menu: Menu) -> bool {
+    // //// Neoffice — and a menu whose entries all run one command greyed where that command can't run for the selection (`menu_refusal`).
+    menu.command().is_none_or(|command| app.enabled(command)) && menu_refusal(app, Some(menu)).is_none()
+}
+
+/// A menu as an entry of another (a `▾`, a `…`): it opens while it can ([`menu_usable`]), and is
+/// greyed otherwise, saying why when hovered.
+pub(crate) fn submenu(ui: &mut Ui, app: &mut MailApp, name: String, menu: Menu) {
+    if menu_usable(app, menu) {
+        ui.menu_button(name, |ui| menu_contents(ui, app, menu));
+        return;
+    }
+    // //// Neoffice — (a categorize menu says why through `menu_refusal`)
+    let reason = menu
+        .command()
+        .and_then(|c| app.session.registry.get(c))
+        .and_then(|spec| (spec.enabled)(&app.session))
+        .or_else(|| menu_refusal(app, Some(menu)));
+    let entry = ui.add_enabled(false, egui::Button::new(name).min_size(vec2(190.0, 0.0)));
+    if let Some(reason) = reason {
+        entry.on_disabled_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(reason))]));
+    }
+}
+
+/// A menu button's tooltip: its name, and when its menu stands for a command that can't run now
+/// ([`usable`]), why, as a greyed button's says.
+fn menu_tooltip(app: &MailApp, resp: egui::Response, item: &Item, on: bool) -> egui::Response {
+    // //// Neoffice — a categorize menu that is greyed says why in its tooltip (`menu_refusal`).
+    if !on && let Some(why) = menu_refusal(app, item.menu.filter(|_| item.command.is_none())) {
+        return menu_tip(resp, item.tip_text(), Some(why));
+    }
+    match item.menu.and_then(Menu::command) {
+        Some(command) if !on => command_tooltip(app, resp, &item.tip_text(), command),
+        _ => resp.on_hover_text(item.tip_text()),
+    }
 }
 
 /// How a control is drawn in the classic layout.
@@ -991,16 +1054,18 @@ fn view(app: &MailApp) -> Tab {
 fn view_of_any(app: &MailApp) -> Tab {
     let v = &app.session.view;
     let tight = app.session.prefs.tight_spacing;
+    let mut layout = vec![
+        Item::big("folderPane", "Folder\nPane", "view.folderPane", no()).checked(v.folder_pane).at(0, 1),
+        Item::big_menu("readingPane", "readingPane", "Reading\nPane", "Reading Pane", Menu::ReadingPane).at(0, 2),
+    ];
+    // Gmail's categories as folders or as tabs (#911): only with a Gmail account that shows them.
+    if mailcraft_engine::gmail::offered(&app.session).is_none() {
+        layout.push(Item::big_menu("gmailCategories", "inbox", "Gmail\nCategories", "Gmail Categories", Menu::GmailCategories).at(0, 3));
+    }
+    layout.push(Item::big_menu("ribbonLayout", "ribbon", "Ribbon\nLayout", "Ribbon Layout", Menu::RibbonLayout).at(3, 4));
     Tab::of(vec![
         g("Current View", vec![Item::big_menu("changeView", "changeView", "Change\nView", "Change View", Menu::ChangeView).at(0, 1)]),
-        g(
-            "Layout",
-            vec![
-                Item::big("folderPane", "Folder\nPane", "view.folderPane", no()).checked(v.folder_pane).at(0, 1),
-                Item::big_menu("readingPane", "readingPane", "Reading\nPane", "Reading Pane", Menu::ReadingPane).at(0, 2),
-                Item::big_menu("ribbonLayout", "ribbon", "Ribbon\nLayout", "Ribbon Layout", Menu::RibbonLayout).at(3, 4),
-            ],
-        ),
+        g("Layout", layout),
         g(
             "Messages",
             vec![
@@ -1045,7 +1110,9 @@ fn help() -> Tab {
                 Item::big("report", "Report a\nProblem", "ui.reportProblem", no()).at(0, 4),
             ],
         )],
-        note: "MailCraft is open source (MIT or Apache-2.0). Every button here runs a command that scripts and agents can run too: see Search Commands.",
+        note: tl!(
+            "MailCraft is open source (MIT or Apache-2.0). Every button here runs a command that scripts and agents can run too: see Search Commands."
+        ),
         note_width: 420.0,
     }
 }
@@ -1164,9 +1231,48 @@ pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, mut pick: impl FnMut(&mut Mai
     }
 }
 
-/// The categories as menu items that toggle one on the selection through `command`.
-pub fn category_menu(ui: &mut Ui, app: &mut MailApp, command: &str, has: impl Fn(&MailApp, &str) -> bool, clear: Option<&str>) {
-    let cats: Vec<(String, egui::Color32)> = app.session.mailbox.categories.iter().map(|c| (c.name.clone(), crate::theme::c32(c.color))).collect();
+/// The accounts of the selected messages, each once.
+pub(crate) fn selected_accounts(app: &MailApp) -> Vec<Id> {
+    let mut accounts: Vec<Id> = app.session.sel.messages.iter().filter_map(|id| app.session.mailbox.message(*id)).map(|m| m.account).collect();
+    accounts.sort_unstable();
+    accounts.dedup();
+    accounts
+}
+
+/// The categories the selected messages carry, each once.
+pub(crate) fn selected_categories(app: &MailApp) -> Vec<String> {
+    let messages = app.session.sel.messages.iter().filter_map(|id| app.session.mailbox.message(*id));
+    let mut names: Vec<String> = messages.flat_map(|m| m.categories.iter().cloned()).collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
+/// Most names off the list that the Categorize menu shows.
+const MAX_OFF_LIST: usize = 32;
+
+/// The categories of `accounts`, those of the selection's items (#633), and the names of `carried`
+/// (what the items have) that aren't on those lists, as menu items that toggle one on the
+/// selection through `command`: an item moved from another account, or a name its server stopped
+/// listing, can still have it taken off.
+pub fn category_menu(
+    ui: &mut Ui,
+    app: &mut MailApp,
+    accounts: &[Id],
+    carried: &[String],
+    command: &str,
+    has: impl Fn(&MailApp, &str) -> bool,
+    clear: Option<&str>,
+) {
+    let mailbox = &app.session.mailbox;
+    let mut cats: Vec<(String, egui::Color32)> = mailbox.categories_for(accounts).into_iter().map(|c| (c.name, crate::theme::c32(c.color))).collect();
+    let listed = cats.len();
+    for name in carried {
+        if cats.len() < listed + MAX_OFF_LIST && !cats.iter().any(|(c, _)| c.eq_ignore_ascii_case(name)) {
+            let color = accounts.iter().find_map(|a| mailbox.category_of(*a, name)).map_or(mailcraft_model::GREY_CATEGORY, |c| c.color);
+            cats.push((name.clone(), crate::theme::c32(color)));
+        }
+    }
     // //// Neoffice — greyed, saying why, where the command can't run (a calendar whose server keeps no categories, a tab
     // that keeps none of a contact's: `kept_here`).
     let enabled = app.enabled(command);
@@ -1194,7 +1300,7 @@ pub fn category_menu(ui: &mut Ui, app: &mut MailApp, command: &str, has: impl Fn
     }
     ui.separator();
     if ui.add(egui::Button::new(tl!("All Categories…")).min_size(vec2(190.0, 0.0))).clicked() {
-        let _ = app.run("ui.dialog", json!({"name": "categories"}));
+        let _ = app.run("ui.dialog", json!({"name": "categories", "account": accounts.first()}));
         ui.close();
     }
 }
@@ -1270,11 +1376,21 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
         }
         Menu::Rules => {
             if !app.session.sel.messages.is_empty() {
-                ui.menu_button(tl!("Always Move Messages From This Sender"), |ui| {
-                    folder_menu(ui, app, |app, folder| {
-                        let _ = app.run("rules.fromMessage", json!({"folder": folder}));
+                // A shared mailbox's rules are its own, which this version doesn't make: one for
+                // the owner's account would move the owner's own mail into the shared mailbox.
+                let mb = &app.session.mailbox;
+                let shared = app.session.sel.focus().and_then(|m| mb.message(m)).and_then(|m| mb.account(m.account)).is_some_and(|a| a.is_shared());
+                if shared {
+                    ui.add_enabled(false, egui::Button::new(tl!("Always Move Messages From This Sender")).min_size(vec2(190.0, 0.0)))
+                        .on_disabled_hover_text(tl!("A shared mailbox's rules are its own: this version doesn't make them"));
+                } else {
+                    ui.menu_button(tl!("Always Move Messages From This Sender"), |ui| {
+                        folder_menu(ui, app, |app, folder| {
+                            // The New rule filled in, for the owner to see and add, where it is kept too.
+                            let _ = app.run("ui.dialog", json!({"name": "rules", "folder": folder}));
+                        });
                     });
-                });
+                }
                 ui.separator();
             }
             mi(ui, app, "Run Rules Now", "rules.run", json!({}));
@@ -1285,9 +1401,13 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
         Menu::Junk => junk_menu(ui, app),
         Menu::CategorizeMail => {
             let ids = app.session.sel.messages.clone();
+            let accounts = selected_accounts(app);
+            let carried = selected_categories(app);
             category_menu(
                 ui,
                 app,
+                &accounts,
+                &carried,
                 "mail.categorize",
                 |app, name| !ids.is_empty() && ids.iter().all(|id| app.session.mailbox.message(*id).is_some_and(|m| m.has_category(name))),
                 Some("mail.clearCategories"),
@@ -1331,21 +1451,28 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
             let has = |app: &MailApp, name: &str| {
                 id.and_then(|id| app.session.mailbox.event(id)).is_some_and(|e| e.categories.iter().any(|c| c.eq_ignore_ascii_case(name)))
             };
-            category_menu(ui, app, "calendar.categorize", has, None);
+            let event = id.and_then(|id| app.session.mailbox.event(id));
+            let account = event.map(|e| app.session.mailbox.event_account(e));
+            let carried = event.map(|e| e.categories.clone()).unwrap_or_default();
+            category_menu(ui, app, account.as_slice(), &carried, "calendar.categorize", has, None);
         }
         Menu::CategorizeContact => {
             let id = app.session.sel.contact;
             let has = |app: &MailApp, name: &str| {
                 id.and_then(|id| app.session.mailbox.contact(id)).is_some_and(|c| c.categories.iter().any(|x| x.eq_ignore_ascii_case(name)))
             };
-            category_menu(ui, app, "people.categorize", has, None);
+            let contact = id.and_then(|id| app.session.mailbox.contact(id));
+            let (account, carried) = (contact.map(|c| c.origin.account), contact.map(|c| c.categories.clone()).unwrap_or_default());
+            category_menu(ui, app, account.as_slice(), &carried, "people.categorize", has, None);
         }
         Menu::CategorizeTask => {
             let id = app.session.sel.task;
             let has = |app: &MailApp, name: &str| {
                 id.and_then(|id| app.session.mailbox.task(id)).is_some_and(|x| x.categories.iter().any(|c| c.eq_ignore_ascii_case(name)))
             };
-            category_menu(ui, app, "tasks.categorize", has, None);
+            let task = id.and_then(|id| app.session.mailbox.task(id));
+            let (account, carried) = (task.map(|t| t.origin.account), task.map(|t| t.categories.clone()).unwrap_or_default());
+            category_menu(ui, app, account.as_slice(), &carried, "tasks.categorize", has, None);
         }
         Menu::FilterTasks => {
             let cur = app.session.view.task_filter;
@@ -1383,6 +1510,11 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
             for (label, code, pane) in [("Right", "right", Pane::Right), ("Bottom", "bottom", Pane::Bottom), ("Off", "off", Pane::Off)] {
                 mi_check(ui, app, label, cur == pane, "view.readingPane", json!({"value": code}));
             }
+        }
+        Menu::GmailCategories => {
+            let tabs = app.session.view.gmail_tabs;
+            mi_check(ui, app, "As Folders", !tabs, "view.gmailCategories", json!({"value": "folders"}));
+            mi_check(ui, app, "As Tabs above the Inbox", tabs, "view.gmailCategories", json!({"value": "tabs"}));
         }
         Menu::Preview => {
             let lines = app.session.prefs.preview_lines;
@@ -1697,9 +1829,7 @@ fn drop_menu(ui: &mut Ui, app: &mut MailApp, b: &Button<'_>) {
     for under in &b.drops {
         match under.menu {
             Some(menu) if alone => menu_contents(ui, app, menu),
-            Some(menu) => {
-                ui.menu_button(under.name(), |ui| menu_contents(ui, app, menu));
-            }
+            Some(menu) => submenu(ui, app, under.name(), menu),
             None => entry(ui, app, under),
         }
     }
@@ -1736,30 +1866,28 @@ fn more_entries(ui: &mut Ui, app: &mut MailApp, b: &Button<'_>) {
         return;
     }
     if b.item.command.is_none() {
-        // //// Neoffice — greyed where its command can't run (`menu_refusal`).
-        if menu_refusal(app, b.item.menu).is_some() {
-            ui.add_enabled(false, egui::Button::new(b.item.name()).min_size(vec2(190.0, 0.0)));
-            return;
+        match b.item.menu {
+            Some(menu) if b.drops.is_empty() => submenu(ui, app, b.item.name(), menu),
+            _ => {
+                ui.menu_button(b.item.name(), |ui| drop_menu(ui, app, b));
+            }
         }
-        ui.menu_button(b.item.name(), |ui| drop_menu(ui, app, b));
         return;
     }
     entry(ui, app, b.item);
     if let Some(menu) = b.item.menu {
-        ui.menu_button(b.item.tip_text(), |ui| menu_contents(ui, app, menu));
+        submenu(ui, app, b.item.tip_text(), menu);
     }
     for under in &b.drops {
         match under.menu {
-            Some(menu) => {
-                ui.menu_button(under.name(), |ui| menu_contents(ui, app, menu));
-            }
+            Some(menu) => submenu(ui, app, under.name(), menu),
             None => entry(ui, app, under),
         }
     }
 }
 
-/// A small `▾`, centred on `c`.
-fn drop_mark(ui: &Ui, c: egui::Pos2, color: egui::Color32) {
+/// A small `▾`, centred on `c` (also the one at an attachment chip's right end, #785).
+pub(crate) fn drop_mark(ui: &Ui, c: egui::Pos2, color: egui::Color32) {
     ui.painter().add(Shape::line(vec![pos2(c.x - 2.75, c.y - 1.0), pos2(c.x, c.y + 1.25), pos2(c.x + 2.75, c.y - 1.0)], Stroke::new(1.1, color)));
 }
 
@@ -1767,9 +1895,7 @@ fn drop_mark(ui: &Ui, c: egui::Pos2, color: egui::Color32) {
 fn simple_button(app: &mut MailApp, ui: &mut Ui, t: &Tokens, b: &Button<'_>, labelled: bool, rect: Rect) {
     let item = b.item;
     let id = ui.scope_id().with(("ribbon", item.key));
-    // //// Neoffice — and a menu of one command's entries, where that can run (`menu_refusal`).
-    let refused = menu_refusal(app, item.menu.filter(|_| item.command.is_none()));
-    let on = item.command.as_ref().is_none_or(|(command, _)| app.enabled(command)) && refused.is_none();
+    let on = usable(app, item);
     let drop_rect = Rect::from_min_max(pos2(rect.max.x - DROP_W, rect.min.y), rect.max);
     let main_rect = if b.is_split() { Rect::from_min_max(rect.min, pos2(drop_rect.min.x, rect.max.y)) } else { rect };
     // (A control still to be built takes no clicks and no keyboard.)
@@ -1796,9 +1922,8 @@ fn simple_button(app: &mut MailApp, ui: &mut Ui, t: &Tokens, b: &Button<'_>, lab
     let Some((command, params)) = &item.command else {
         // The whole button opens its menu.
         drop_mark(ui, drop_rect.center(), ink);
-        // //// Neoffice — (none where it is greyed: its tip says why)
-        let main = menu_tip(main, item.tip_text(), refused);
-        if refused.is_none() {
+        let main = menu_tooltip(app, main, item, on);
+        if on {
             egui::Popup::menu(&main).show(|ui| drop_menu(ui, app, b));
         }
         return;
@@ -1901,14 +2026,12 @@ fn classic_big(app: &mut MailApp, ui: &mut Ui, item: &Item) {
             }
         }
         (None, Some(menu)) => {
-            // //// Neoffice — greyed, saying why, where its entries' command can't run (`menu_refusal`).
-            let refused = menu_refusal(app, Some(menu));
-            let (resp, text) = big_frame(ui, item.icon, label, refused.is_none(), false, true);
-            let resp = menu_tip(resp, item.tip_text(), refused);
+            let on = usable(app, item);
+            let (resp, text) = big_frame(ui, item.icon, label, on, false, true);
+            let resp = menu_tooltip(app, resp, item, on);
             app.hit.add("ribbon", hit_id(item.key), resp.rect);
             app.hit.add("ribbonLabel", hit_id(item.key), text);
-            // //// Neoffice — (no menu where it is greyed)
-            if refused.is_none() {
+            if on {
                 egui::Popup::menu(&resp).show(|ui| {
                     ui.set_min_width(200.0);
                     menu_contents(ui, app, menu);
@@ -1945,12 +2068,10 @@ fn classic_column(app: &mut MailApp, ui: &mut Ui, items: &[&Item], labelled: boo
                     }
                 }
                 (None, Some(menu)) => {
-                    // //// Neoffice — see `classic_big`.
-                    let refused = menu_refusal(app, Some(menu));
-                    let resp = menu_tip(small_frame(ui, item.icon, label, refused.is_none(), false, true), item.tip_text(), refused);
+                    let on = usable(app, item);
+                    let resp = menu_tooltip(app, small_frame(ui, item.icon, label, on, false, true), item, on);
                     app.hit.add("ribbon", hit_id(item.key), resp.rect);
-                    // //// Neoffice — (no menu where it is greyed)
-                    if refused.is_none() {
+                    if on {
                         egui::Popup::menu(&resp).show(|ui| {
                             ui.set_min_width(200.0);
                             menu_contents(ui, app, menu);
@@ -1988,7 +2109,7 @@ fn group_entries(ui: &mut Ui, app: &mut MailApp, group: &Group) {
         } else if item.command.is_some() {
             entry(ui, app, item);
         } else if let Some(menu) = item.menu {
-            ui.menu_button(item.name(), |ui| menu_contents(ui, app, menu));
+            submenu(ui, app, item.name(), menu);
         }
     }
 }
@@ -2229,6 +2350,9 @@ fn band(app: &mut MailApp, ui: &mut Ui, tab: &Tab, id: egui::Id) {
 
 #[cfg(test)]
 mod fit_tests;
+
+#[cfg(test)]
+mod plain_tests;
 
 #[cfg(test)]
 mod tests {

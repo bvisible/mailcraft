@@ -54,6 +54,9 @@ pub struct TasksJob {
     pub refresh: String,
     /// What the server is to be told first.
     pub upload: TasksUpload,
+    /// The zone the calendar is shown in ([`mailcraft_engine::Session::zone`]): a to-do's start
+    /// and due dates are days there, read from and sent to the server as its midnights (#809).
+    pub zone: mailcraft_time::Zone,
     pub cancel: Arc<AtomicBool>,
 }
 
@@ -93,12 +96,19 @@ pub(crate) enum Permission {
     SignInOver(u64),
 }
 
+/// What a to-do job was started for: the mailbox opening ([`mailcraft_engine::Session::openings`])
+/// and the account as it was, whose address the answer is taken in for (AU3-08).
+struct Begun {
+    opening: u64,
+    account: mailcraft_model::Account,
+}
+
 /// The state of the to-do jobs, in the window.
 #[derive(Default)]
 pub struct TaskSync {
     /// The job under way: for which account, since when, the [`fingerprint`] of the refresh
     /// token it was given, and the answer to come.
-    rx: Option<(Id, f64, u64, Receiver<TasksResult>)>,
+    rx: Option<(Id, f64, u64, Begun, Receiver<TasksResult>)>,
     /// When each account's to-dos were last asked for, and the failures since the last answer.
     checked: HashMap<Id, f64>,
     failures: HashMap<Id, (u32, f64)>,
@@ -142,7 +152,12 @@ impl MailApp {
             return false;
         }
         // One thing at a time: the calendar's job, a Send/Receive and a sign-in go first.
-        if self.calendar.rx.is_some() || self.graph_rx.is_some() || self.sync_rx.is_some() || self.signing_in.is_some() || !self.sync_queue.is_empty()
+        if self.calendar.rx.is_some()
+            || self.rules.busy()
+            || self.graph_rx.is_some()
+            || self.sync_rx.is_some()
+            || self.signing_in.is_some()
+            || !self.sync_queue.is_empty()
         {
             return false;
         }
@@ -205,16 +220,22 @@ impl MailApp {
         let Some(owner) = self.session.mailbox.account(account).cloned() else { return false };
         let Some(oauth) = owner.oauth.clone() else { return false };
         let kept = self.tokens.get(&account).map(|t| t.refresh.clone()).filter(|r| !r.is_empty());
-        let refresh = kept.or_else(|| self.remembered("refresh", &owner.email)).unwrap_or_default();
+        let refresh = kept.or_else(|| self.remembered("refresh", owner.id)).unwrap_or_default();
         if refresh.is_empty() {
             // (Nothing to renew with: Send/Receive signs in first.)
             return false;
         }
         let Ok(upload) = tasks_remote::task_upload(&self.session.mailbox, account) else { return false };
         let given = fingerprint(&refresh);
-        let job = TasksJob { account: owner, oauth: self.effective_oauth(oauth), refresh, upload, cancel: Default::default() };
+        let deletes = tasks_remote::carries_delete(&upload);
+        let zone = self.session.zone();
+        let begun = Begun { opening: self.session.openings(), account: owner.clone() };
+        let job = TasksJob { account: owner, oauth: self.effective_oauth(oauth), refresh, upload, zone, cancel: Default::default() };
         let Some(graph) = self.services.graph_tasks.as_ref().filter(|_| !self.offline()) else { return false };
-        self.tasks.rx = Some((account, now, given, graph(job)));
+        let rx = graph(job);
+        // A delete that goes out can't be undone: the task would come back here, gone there (#706).
+        tasks_remote::mark_sent(&mut self.session, deletes);
+        self.tasks.rx = Some((account, now, given, begun, rx));
         self.tasks.checked.insert(account, now);
         true
     }
@@ -222,8 +243,16 @@ impl MailApp {
     /// The job answered: keep the refresh token, take in what the server made of the changes, and
     /// what it has. (Public for a host's tests.)
     pub fn poll_tasks(&mut self) {
-        let Some((account, started, given, rx)) = &self.tasks.rx else { return };
+        let Some((account, started, given, begun, rx)) = &self.tasks.rx else { return };
         let (account, started, given) = (*account, *started, *given);
+        // For a mailbox that has been closed since: its ids may name other accounts and tasks in
+        // this one, and the answer is nobody's (AU3-08).
+        if begun.opening != self.session.openings() {
+            log::info!("tasks: the answer is for a mailbox that is no longer open; let go of");
+            self.tasks = TaskSync::default();
+            return;
+        }
+        let ran_for = begun.account.clone();
         let result = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Empty) => return,
@@ -242,8 +271,7 @@ impl MailApp {
             && !tokens.refresh.is_empty()
             && !self.signed_in_as_other(account, tokens)
         {
-            let address = self.session.mailbox.account(account).map(|a| a.email.clone()).unwrap_or_default();
-            self.remember("refresh", &address, &tokens.refresh);
+            self.remember("refresh", account, &tokens.refresh);
             if let Some(mail) = self.tokens.get_mut(&account) {
                 mail.refresh = tokens.refresh.clone();
             }
@@ -282,7 +310,8 @@ impl MailApp {
         }
         let mut worked = false;
         if let Some(uploaded) = &result.uploaded {
-            let uploaded = uploaded.clone().for_account_of(&self.session.mailbox, account);
+            // (Taken in for the account as the job had it, never relabelled with what is here now.)
+            let uploaded = uploaded.clone().for_account(&ran_for);
             match tasks_remote::apply_task_changes(&mut self.session, &uploaded) {
                 Ok(merged) => {
                     errors.extend(merged.messages);
@@ -353,9 +382,17 @@ impl MailApp {
         tasks_remote::task_accounts(&self.session.mailbox).into_iter().filter(|a| self.tasks.perm.get(a) == Some(&Permission::Given)).collect()
     }
 
-    /// The first account whose To Do works: File › Info says what is local under it.
+    /// Whether a to-do put in `account` waits on this computer because a job found that To Do
+    /// isn't allowed there (nothing is known of an account no job has looked at yet).
+    pub(crate) fn tasks_held(&self, account: Id) -> bool {
+        !matches!(self.tasks.perm.get(&account), None | Some(Permission::Given))
+    }
+
+    /// The first account added whose To Do works, wherever the owner moved it (#702): File › Info
+    /// says what is local under it, and the question offers it first.
     pub(crate) fn tasks_working_first(&self) -> Option<Id> {
-        self.tasks_working().first().copied()
+        let working = self.tasks_working();
+        self.session.mailbox.accounts.iter().map(|a| a.id).find(|id| working.contains(id))
     }
 
     /// How many to-dos exist only on this computer and could be offered to an account's To Do;
@@ -373,17 +410,17 @@ impl MailApp {
             return false;
         }
         let address = |id: Id| self.session.mailbox.account(id).map(|a| a.email.trim().to_string()).unwrap_or_default();
-        let Some(first) = accounts.first().copied() else { return false };
+        let Some(first) = self.tasks_working_first() else { return false };
         let how_many = tln!(count, "Send your {n} local task to {address}'s To Do?", "Send your {n} local tasks to {address}'s To Do?");
         let title = crate::i18n::fmt(&how_many, &[("n", &count.to_string()), ("address", &address(first))]);
         let more_than_one = accounts.len() > 1;
         let text = if more_than_one {
             tl!(
-                "These tasks exist only on this computer. Choose the Microsoft account whose To Do gets them, and every task you make from now on. Until you choose, they stay here and nothing of them is sent."
+                "These tasks exist only on this computer. Choose the Microsoft account whose To Do gets them. Until you choose, they stay here and nothing of them is sent."
             )
         } else {
             tl!(
-                "These tasks exist only on this computer. If you send them, they and every task you make from now on are kept in step with Microsoft To Do. Until you do, they stay here and nothing of them is sent. File › Info offers this again."
+                "These tasks exist only on this computer. If you send them, they are kept in step with Microsoft To Do. Until you do, they stay here and nothing of them is sent. File › Info offers this again."
             )
         };
         let label = |id: Id| crate::i18n::fmt(tl!("Send to {address}"), &[("address", &address(id))]);
@@ -398,7 +435,7 @@ impl MailApp {
             cancel: Some(tl!("Not now").to_string()),
             tick: None,
         };
-        for id in accounts.iter().skip(1) {
+        for id in accounts.iter().filter(|id| **id != first) {
             ask.more.push((label(*id), json!({"account": id})));
         }
         self.tasks.offer_open = true;
@@ -472,7 +509,6 @@ impl MailApp {
         use crate::approval::NO_BROWSER;
         use crate::favorites_sync::{NEEDS_APPROVAL, REFUSED_BY_ORGANISATION, REFUSED_FOR_ACCOUNT};
         self.session.sync_status.clear();
-        let address = self.session.mailbox.account(account).map(|a| a.email.clone()).unwrap_or_default();
         match answer {
             // (Somebody else's tokens are neither used nor remembered, #103.)
             Ok(tokens) if self.signed_in_as_other(account, &tokens) => {
@@ -480,7 +516,7 @@ impl MailApp {
             }
             Ok(tokens) => {
                 if !tokens.refresh.is_empty() {
-                    self.remember("refresh", &address, &tokens.refresh);
+                    self.remember("refresh", account, &tokens.refresh);
                     if let Some(kept) = self.tokens.get_mut(&account) {
                         kept.refresh = tokens.refresh.clone();
                     }
@@ -533,20 +569,6 @@ impl MailApp {
             Some(Permission::SignInOver(_)) => (tl!("Tasks: Microsoft no longer takes the sign-in").to_string(), true),
             None => (tl!("Tasks: not asked yet").to_string(), false),
         })
-    }
-}
-
-trait ForAccount {
-    fn for_account_of(self, mailbox: &mailcraft_model::Mailbox, account: Id) -> TasksUploaded;
-}
-
-impl ForAccount for TasksUploaded {
-    /// The answer as one for `account` (the host only knows who signed in).
-    fn for_account_of(self, mailbox: &mailcraft_model::Mailbox, account: Id) -> TasksUploaded {
-        match mailbox.account(account) {
-            Some(a) => self.for_account(a),
-            None => self,
-        }
     }
 }
 

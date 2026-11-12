@@ -86,6 +86,8 @@ pub fn graph_mail_request(s: &Session, account: Id) -> Result<GraphMailRequest, 
         places: super::graph_place::place_changes(s, account, MAX_PLACES).0,
         inbox_pass: None,
         full: full_sweep_due(s, account),
+        // The conversation ids of mail listed before they were asked for (#795).
+        threads: super::thread_ids::to_ask(&s.mailbox, account),
     })
 }
 
@@ -205,6 +207,9 @@ pub(super) fn folder_changes(mb: &Mailbox, account: Id, limit: usize) -> (Vec<Fo
                 };
                 note(&|| FolderChange::Create { folder: f.id, name: f.name.clone(), parent: server_parent.clone(), parent_folder: local_parent });
             }
+            // One of the server's own folders is never renamed or moved (#756): the server would
+            // refuse it every run (a change an earlier version left is undone by the listing).
+            Some(server) if server.well_known => {}
             Some(server) => {
                 if f.kind == FolderKind::Custom && f.name != server.name {
                     note(&|| FolderChange::Rename { folder: f.id, id: server.id.clone(), name: f.name.clone() });
@@ -217,7 +222,7 @@ pub(super) fn folder_changes(mb: &Mailbox, account: Id, limit: usize) -> (Vec<Fo
     }
     for queued in mb.queued.iter().filter(|q| q.account() == account) {
         match queued {
-            Queued::DeleteFolder { id, .. } => note(&|| FolderChange::Delete { id: id.clone() }),
+            Queued::DeleteFolder { id, shown, .. } => note(&|| FolderChange::Delete { id: id.clone(), shown: shown.clone() }),
             // Changes of messages: sent with the message changes (R3.3.2).
             Queued::CopyMessage { .. } | Queued::DeleteMessage { .. } | Queued::PlaceMessage { .. } => {}
         }
@@ -246,7 +251,7 @@ pub fn graph_fetch_request(s: &Session, account: Id, message: Option<Id>, most: 
                 .message(id)
                 .filter(|m| m.account == account)
                 .ok_or_else(|| failed!("no message with id {id} in {name}", id, name = a.name))?;
-            m.server.as_ref().filter(|_| m.unfetched).map(|server| vec![server.id.clone()]).unwrap_or_default()
+            m.server.as_ref().filter(|_| graph_down::still_to_fetch(&s.mailbox, m)).map(|server| vec![server.id.clone()]).unwrap_or_default()
         }
         None => graph_down::fetch_queue_passing_over(&s.mailbox, account, most.clamp(1, 100), s.now(), &s.graph_unfetchable),
     };
@@ -317,6 +322,21 @@ pub(super) struct Taken {
     pub(super) added: usize,
     pub(super) updated: usize,
     pub(super) removed: usize,
+    /// The server ids of folders whose deletion the server refused as its own (#1069): marked so
+    /// once the listing has brought them back.
+    pub(super) own: Vec<String>,
+}
+
+/// Mark the folders of `account` whose server ids are in `own` as the server's own (#1069).
+pub(super) fn mark_own(mb: &mut Mailbox, account: Id, own: &[String]) {
+    if own.is_empty() {
+        return;
+    }
+    for f in mb.folders.iter_mut().filter(|f| f.account == account) {
+        if let Some(server) = f.server.as_mut().filter(|s| own.contains(&s.id)) {
+            server.well_known = true;
+        }
+    }
 }
 
 /// Take in what a Graph run brought back: what became of the changes sent, then the listing.
@@ -340,7 +360,7 @@ pub fn apply_graph_mail(s: &mut Session, result: GraphMailResult) -> CmdResult {
     let mut taken = Taken::default();
     let mut errors = result.errors.clone();
     for done in &result.changes {
-        if let Some(said) = change_done(&mut s.mailbox, account, &done.change, &done.outcome, &mut taken) {
+        if let Some(said) = change_done(&mut s.mailbox, account, &done.change, &done.outcome, s.interface_language, &mut taken) {
             errors.push(said);
         }
     }
@@ -388,6 +408,8 @@ pub fn apply_graph_mail(s: &mut Session, result: GraphMailResult) -> CmdResult {
     s.graph_said.extend(refused);
     if let Some(listing) = &result.listing {
         take_listing(&mut s.mailbox, account, listing, &mut taken);
+        mark_own(&mut s.mailbox, account, &taken.own);
+        errors.extend(graph_down::gone_with_folders(s, account, listing));
         if listing.complete {
             s.graph_listed_short.remove(&account);
         } else {
@@ -401,6 +423,8 @@ pub fn apply_graph_mail(s: &mut Session, result: GraphMailResult) -> CmdResult {
         graph_down::take_page(&mut s.mailbox, &mut index, account, page, &mut down);
     }
     s.graph_index = index;
+    // The conversations of mail listed before they were asked for (#795).
+    let threaded = super::thread_ids::take(&mut s.mailbox, account, &result.threads);
     // A rule moved new mail out of the account (#567). An undo of a step from before goes back to
     // a mailbox that never had it, and keeps only the Microsoft accounts' mail as it is now: once
     // the server's copy is removed, the mail would be gone for good. Until an undo leaves alone
@@ -419,7 +443,7 @@ pub fn apply_graph_mail(s: &mut Session, result: GraphMailResult) -> CmdResult {
     }
     // A shared mailbox is named as its server names it, once its Sent Items say so (#70).
     let named = s.mailbox.name_shared_from_sent(account);
-    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || named {
+    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || named || threaded {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there.
@@ -442,7 +466,10 @@ pub fn apply_graph_mail(s: &mut Session, result: GraphMailResult) -> CmdResult {
     // (The Inbox pass is never the end of the account's part of the run.)
     let last = !result.partial && !result.inbox_pass;
     if last {
+        // What nothing will answer any more is let go of (#30).
+        super::mail::check_again::settle(&mut s.mailbox);
         errors.extend(super::graph_place::unreadable_waiting(s, account));
+        errors.extend(super::graph_place::held_for_this_computer(s, account));
     }
     let piece = Piece { step, folders, new: down.new, sent, problems: &errors, last, stopped: result.stopped, timings: Some(&result.timings) };
     s.sync_progress.take(account, piece);
@@ -504,17 +531,40 @@ fn shown(name: &str) -> String {
 }
 
 /// Take in what became of one change. Answers what to tell the owner, when there is something.
-pub(super) fn change_done(mb: &mut Mailbox, account: Id, change: &FolderChange, outcome: &ChangeOutcome, taken: &mut Taken) -> Option<String> {
+pub(super) fn change_done(
+    mb: &mut Mailbox,
+    account: Id,
+    change: &FolderChange,
+    outcome: &ChangeOutcome,
+    lang: mailcraft_i18n::Lang,
+    taken: &mut Taken,
+) -> Option<String> {
     let mine = |mb: &Mailbox, id: Id| mb.folder(id).is_some_and(|f| f.account == account);
     match (change, outcome) {
-        (FolderChange::Delete { id }, ChangeOutcome::Done { .. } | ChangeOutcome::Gone) => {
-            mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id: queued } if *a == account && queued == id));
+        (FolderChange::Delete { id, shown: what }, ChangeOutcome::NotShown { items }) => {
+            // The server holds there what the owner hadn't seen (AU3-H7): it wasn't asked to delete
+            // it, and the listing brings the folder back here with it. Deleting it again asks again.
+            mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id: queued, .. } if *a == account && queued == id));
+            let name = if what.name.trim().is_empty() { lang.t("(no name)").to_string() } else { shown(&what.name) };
+            let line = lang.tn(
+                u64::from(*items),
+                "The folder \"{name}\" wasn't deleted: the server has {n} new item in it that you hadn't seen. It comes back with it; delete it again if you still want it gone.",
+                "The folder \"{name}\" wasn't deleted: the server has {n} new items in it that you hadn't seen. It comes back with them; delete it again if you still want it gone.",
+            );
+            Some(mailcraft_i18n::fmt(line, &[("name", &name), ("n", &items.to_string())]))
+        }
+        (FolderChange::Delete { id, .. }, ChangeOutcome::Done { .. } | ChangeOutcome::Gone) => {
+            mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id: queued, .. } if *a == account && queued == id));
             taken.pushed += 1;
             None
         }
-        (FolderChange::Delete { id }, ChangeOutcome::Refused { why }) => {
-            // The server keeps it: the listing brings it back here.
-            mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id: queued } if *a == account && queued == id));
+        (FolderChange::Delete { id, .. }, ChangeOutcome::Refused { why } | ChangeOutcome::OwnFolder { why }) => {
+            // The server keeps it: the listing brings it back here (marked as the server's own
+            // when that is why, #1069: `taken.own`).
+            mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id: queued, .. } if *a == account && queued == id));
+            if matches!(outcome, ChangeOutcome::OwnFolder { .. }) && taken.own.len() < MAX_FOLDER_CHANGES {
+                taken.own.push(id.clone());
+            }
             Some(format!("Couldn't delete a folder on the server: {why}"))
         }
         (FolderChange::Create { folder, name, .. }, ChangeOutcome::Done { folder: there }) => {
@@ -540,11 +590,12 @@ pub(super) fn change_done(mb: &mut Mailbox, account: Id, change: &FolderChange, 
                 round_ended: false,
                 counts: None,
                 sync_state: String::new(),
+                well_known: false,
             });
             taken.pushed += 1;
             None
         }
-        (FolderChange::Create { name, .. }, ChangeOutcome::Refused { why }) => {
+        (FolderChange::Create { name, .. }, ChangeOutcome::Refused { why } | ChangeOutcome::OwnFolder { why }) => {
             Some(format!("Couldn't make the folder \"{}\" on the server: {why}", shown(name)))
         }
         (FolderChange::Rename { folder, .. } | FolderChange::Move { folder, .. }, ChangeOutcome::Done { folder: there }) => {
@@ -557,12 +608,29 @@ pub(super) fn change_done(mb: &mut Mailbox, account: Id, change: &FolderChange, 
             taken.pushed += 1;
             None
         }
-        (FolderChange::Rename { folder, .. } | FolderChange::Move { folder, .. }, ChangeOutcome::Refused { why }) => {
-            // Put back to how the server has it, and said once.
+        (
+            FolderChange::Rename { folder, .. } | FolderChange::Move { folder, .. },
+            ChangeOutcome::Refused { why } | ChangeOutcome::OwnFolder { why },
+        ) => {
+            // Put back to how the server has it, its place and its name (a move into Deleted Items
+            // may have numbered it; a rename sent before the move is the server's name by now),
+            // and said once (#1069). Only one the server says is its own (`OwnFolder`, its own
+            // code for it) is marked so, and isn't offered for renaming, moving or deleting
+            // again: a bare refusal (a 403 may pass) leaves it the owner's.
             let server = mb.folder(*folder).filter(|f| f.account == account)?.server.clone()?;
             let back = if server.parent.is_empty() { None } else { mb.folder_by_server(account, &server.parent) };
             let f = mb.folder_mut(*folder).ok()?;
-            let was = shown(&f.name);
+            if matches!(outcome, ChangeOutcome::OwnFolder { .. })
+                && let Some(kept) = f.server.as_mut()
+            {
+                kept.well_known = true;
+            }
+            // (A refused rename is said by the name asked for; a refused move by the folder's own.)
+            let asked = shown(&f.name);
+            if f.kind == FolderKind::Custom {
+                f.name = server.name.clone();
+            }
+            let was = if matches!(change, FolderChange::Rename { .. }) { asked } else { shown(&f.name) };
             let said = match change {
                 FolderChange::Rename { .. } => {
                     f.name = server.name.clone();
@@ -576,15 +644,28 @@ pub(super) fn change_done(mb: &mut Mailbox, account: Id, change: &FolderChange, 
             taken.updated += 1;
             Some(said)
         }
-        // Gone from the server: the listing takes it away here.
-        (_, ChangeOutcome::Gone) => None,
+        // Gone from the server: the listing takes it away here. (Only a deletion is answered
+        // `NotShown`.)
+        (_, ChangeOutcome::Gone | ChangeOutcome::NotShown { .. }) => None,
     }
+}
+
+/// Drops the deletions queued of `account`'s folders whose server ids are in `own`, the server's
+/// own folders (#756, #779): the server keeps them, and would be asked every run.
+pub(super) fn drop_own_deletes(mb: &mut Mailbox, account: Id, own: &HashSet<String>) {
+    mb.queued.retain(|q| !matches!(q, Queued::DeleteFolder { account: a, id, .. } if *a == account && own.contains(id)));
 }
 
 /// Take in every folder the server listed, by server id (a JMAP server's too: its mailboxes are
 /// known by their ids as Graph's folders are).
 pub(super) fn take_listing(mb: &mut Mailbox, account: Id, listing: &FolderListing, taken: &mut Taken) {
-    release_outbox(mb, account, listing);
+    release_outbox(mb, account, listing, taken);
+    // A deletion an earlier version queued of a folder that is the server's own: the server
+    // keeps it, and would be asked every run (#756).
+    // (Marked by the listing, or earlier: `update` keeps the mark whatever one listing says.)
+    let kept = mb.folders.iter().filter(|f| f.account == account).filter_map(|f| f.server.as_ref()).filter(|s| s.well_known).map(|s| s.id.as_str());
+    let own: HashSet<String> = listing.folders.iter().filter(|l| l.well_known).map(|l| l.id.as_str()).chain(kept).map(str::to_owned).collect();
+    drop_own_deletes(mb, account, &own);
     let mut listed: HashSet<&str> = HashSet::new();
     // The server's folders as this mailbox has them, by server id, as they are found or made.
     let mut here: HashMap<String, Id> =
@@ -612,7 +693,13 @@ pub(super) fn take_listing(mb: &mut Mailbox, account: Id, listing: &FolderListin
                     parent: parent_here,
                     name: name.clone(),
                     kind: there.kind,
-                    server: Some(ServerFolder { id: there.id.clone(), name, parent: there.parent.clone(), ..Default::default() }),
+                    server: Some(ServerFolder {
+                        id: there.id.clone(),
+                        name,
+                        parent: there.parent.clone(),
+                        well_known: there.well_known,
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 });
                 here.insert(there.id.clone(), id);
@@ -641,14 +728,20 @@ pub(super) fn take_listing(mb: &mut Mailbox, account: Id, listing: &FolderListin
 /// The Outbox here is the queue mail is sent from; it follows no folder of the server (AU2-V2).
 /// 0.8.0 and before bound it to the server's Outbox, whose items were then sent from here with
 /// the owner's rights. A listing that now has that folder as a folder like another lets go of the
-/// bond; what the server delivered into it is forgotten here (it comes down again into the
+/// bond; so does a complete one that leaves it out (an empty server Outbox isn't listed, so that
+/// the folder pane doesn't show two), which would otherwise take this Outbox away with what waits
+/// in it. What the server delivered into it is forgotten here (it comes down again into the
 /// server's Outbox as a folder of its own) and is not sent.
-fn release_outbox(mb: &mut Mailbox, account: Id, listing: &FolderListing) {
+fn release_outbox(mb: &mut Mailbox, account: Id, listing: &FolderListing, taken: &mut Taken) {
+    let let_go = |server: &str| {
+        let mut there = listing.folders.iter().filter(|l| l.id == server).peekable();
+        if there.peek().is_none() { listing.complete } else { there.any(|l| l.kind != FolderKind::Outbox) }
+    };
     let bound: Vec<Id> = mb
         .folders
         .iter()
         .filter(|f| f.account == account && f.kind == FolderKind::Outbox)
-        .filter(|f| f.server.as_ref().is_some_and(|s| listing.folders.iter().any(|l| l.id == s.id && l.kind != FolderKind::Outbox)))
+        .filter(|f| f.server.as_ref().is_some_and(|s| let_go(&s.id)))
         .map(|f| f.id)
         .collect();
     for folder in bound {
@@ -658,6 +751,7 @@ fn release_outbox(mb: &mut Mailbox, account: Id, listing: &FolderListing) {
         }
         if let Ok(f) = mb.folder_mut(folder) {
             f.server = None;
+            taken.updated += 1;
         }
     }
 }
@@ -694,8 +788,11 @@ fn update(mb: &mut Mailbox, id: Id, there: &GraphFolder, name: &str, parent_here
     let last = f.server.clone().unwrap_or_default();
     // What the folder's parent is on the server, as this mailbox has it now.
     let parent_now = parent_on_server(mb, f);
-    let renamed_here = f.server.is_some() && f.name != last.name;
-    let moved_here = f.server.is_some() && parent_now.as_deref() != Some(last.parent.as_str());
+    // (One of the server's own folders is never renamed or moved here: a change left by an
+    // earlier version is undone.)
+    let own = there.well_known || last.well_known;
+    let renamed_here = f.server.is_some() && !own && f.name != last.name;
+    let moved_here = f.server.is_some() && !own && parent_now.as_deref() != Some(last.parent.as_str());
     // A place it can be: known here (or the top), and not inside itself (a move made here may
     // not have reached the server yet).
     let can_go = (there.parent.is_empty() || parent_here.is_some()) && !parent_here.is_some_and(|p| mb.subtree(id).contains(&p));
@@ -721,6 +818,8 @@ fn update(mb: &mut Mailbox, id: Id, there: &GraphFolder, name: &str, parent_here
         counts: last.counts,
         // (An Exchange server account's folder goes on from its sync state; the other kinds have none.)
         sync_state: last.sync_state,
+        // (Once the server's own, always: one odd answer doesn't clear it.)
+        well_known: own,
     });
     *f != before
 }
@@ -730,9 +829,21 @@ fn update(mb: &mut Mailbox, id: Id, there: &GraphFolder, name: &str, parent_here
 mod tests;
 
 #[cfg(test)]
+#[path = "graph_well_known_tests.rs"]
+mod well_known_tests;
+
+#[cfg(test)]
+#[path = "graph_delete_shown_tests.rs"]
+mod delete_shown_tests;
+
+#[cfg(test)]
 #[path = "graph_sweep_tests.rs"]
 mod sweep_tests;
 
 #[cfg(test)]
 #[path = "graph_inbox_first_tests.rs"]
 mod inbox_first_tests;
+
+#[cfg(test)]
+#[path = "graph_own_folder_tests.rs"]
+mod own_folder_tests;

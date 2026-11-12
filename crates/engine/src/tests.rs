@@ -712,7 +712,8 @@ fn rules_and_accounts() {
     let r = run(&mut s, "rules.fromMessage", json!({"id": book, "folder": news}));
     assert_eq!(r["matched"], 1);
     assert_eq!(s.mailbox.message(book).unwrap().folder, news);
-    assert!(s.mailbox.message(book).unwrap().has_category("Purple category"));
+    // The new rule alone ran, as Outlook offers for a rule just made: not the bookshop's.
+    assert!(!s.mailbox.message(book).unwrap().has_category("Purple category"));
     assert!(s.run("rules.add", &json!({"name": "Bad", "conditions": [], "actions": [{"type": "flag"}]})).is_err());
     assert!(
         s.run("rules.add", &json!({"name": "Bad", "conditions": [{"type": "hasAttachment"}], "actions": [{"type": "moveTo", "value": 424242}]}))
@@ -774,6 +775,14 @@ fn accounts_that_sign_in_on_the_providers_page() {
     // The provider's own domain needs nobody's exchangers.
     assert_eq!(run(&mut s, "account.preset", json!({"email": "a@outlook.com", "mx": ["aspmx.l.google.com"]}))["service"], "Outlook.com");
     assert_eq!(run(&mut s, "account.preset", json!({"email": "a@gmail.com"}))["incoming"]["host"], "imap.gmail.com");
+    // An existing Gmail account stays on the app-password path until its owner opts in.
+    assert_eq!(run(&mut s, "account.preset", json!({"email": "a@gmail.com"}))["auth"], "password");
+    // Explicit OAuth selects Google mail servers and never silently chooses Microsoft Graph.
+    let chosen = run(&mut s, "account.preset", json!({"email": "a@gmail.com", "provider": "google"}));
+    assert_eq!((chosen["auth"].as_str(), chosen["provider"].as_str()), (Some("oauth2"), Some("google")));
+    assert_eq!((chosen["service"].as_str(), chosen["incoming"]["host"].as_str()), (Some("Gmail"), Some("imap.gmail.com")));
+    let workspace = run(&mut s, "account.preset", json!({"email": "a@workspace.example", "provider": "google", "service": "google"}));
+    assert_eq!((workspace["service"].as_str(), workspace["auth"].as_str()), (Some("Google Workspace"), Some("oauth2")));
     for bad in [
         json!({}),
         json!({"email": "nobody"}),
@@ -1572,7 +1581,11 @@ mod two_way {
         let anew_with = |arrivals: Vec<Message>, s: &mut Session, a: Id, inbox: Id| {
             apply(
                 s,
-                SyncResult { account: a, folders: vec![news(Some(inbox), "INBOX", FolderKind::Inbox, 70, arrivals, vec![])], ..Default::default() },
+                SyncResult {
+                    account: a,
+                    folders: vec![FolderDelta { complete: true, ..news(Some(inbox), "INBOX", FolderKind::Inbox, 70, arrivals, vec![]) }],
+                    ..Default::default()
+                },
             )
         };
         let deletes = |s: &Session, a: Id| request(s, a).ops.iter().any(|op| matches!(op, RemoteOp::Delete { .. }));
@@ -1822,6 +1835,7 @@ mod two_way {
             conditions: vec![mailcraft_model::Condition::SubjectContains("report".into())],
             actions: vec![mailcraft_model::Action::MarkRead, mailcraft_model::Action::MoveTo(archive)],
             stop: false,
+            ..Default::default()
         });
         // The same UID twice in one answer is one message.
         let arrived = SyncResult {
@@ -2191,7 +2205,11 @@ mod two_way {
             vec![again(11, 1, "One"), again(12, 2, "Two"), again(13, 3, "Three"), Message { message_id: String::new(), ..from_server(14, "Four") }];
         let r = apply(
             &mut s,
-            SyncResult { account: a, folders: vec![news(Some(inbox), "INBOX", FolderKind::Inbox, 70, anew, vec![])], ..Default::default() },
+            SyncResult {
+                account: a,
+                folders: vec![FolderDelta { complete: true, ..news(Some(inbox), "INBOX", FolderKind::Inbox, 70, anew, vec![]) }],
+                ..Default::default()
+            },
         );
         let note = r["errors"][0].as_str().unwrap();
         assert!(note.contains("anew") && note.contains("3 change(s)") && note.contains("1 change(s)"), "{note}");
@@ -2384,7 +2402,17 @@ fn hostile_params_never_panic() {
     let mut s = session();
     // Shared mailboxes switched on, under a Microsoft account, so that their commands get past
     // the door (#70).
-    let _ = s.run("account.add", &json!({"email": "owner@example.org", "kind": "microsoft"}));
+    let owner = s.run("account.add", &json!({"email": "owner@example.org", "kind": "microsoft"})).ok().and_then(|v| v["id"].as_u64()).unwrap_or(0);
+    // Its server's rules, and its answers to changes, that make no sense: so that the merges are
+    // reached, not only the door (#566).
+    junk.push(json!({"download": {"account": owner, "email": "owner@example.org", "complete": true, "rules": [
+        {"id": "r1", "name": "\u{0}", "sequence": i32::MIN, "conditions": [{"type": "bodyContains", "value": ""}], "actions": [{"type": "moveTo", "value": 1}], "moveTo": "../x", "unknown": [" ", "\u{0}"]},
+        {"id": "r1", "sequence": i32::MAX}, {"id": "r 2", "name": "x".repeat(10_000)}, {},
+    ]}}));
+    junk.push(json!({"result": {"account": owner, "email": "owner@example.org", "outcomes": [
+        {"kind": "create", "rule": 18446744073709551615u64, "id": "r1", "result": "done", "sequence": i32::MIN},
+        {"kind": "update", "rule": 1, "id": "\u{0}", "result": "gone"}, {"kind": "delete", "result": "refused", "error": "x".repeat(100_000)}, {},
+    ]}}));
     // And one open, so that the folder pane's commands (Favorites, counts) meet its folders.
     let _ = s.run("account.addSharedMailbox", &json!({"address": "support@example.org"}));
     // //// Neoffice — and a JMAP account, so that every command meets one.

@@ -213,9 +213,7 @@ pub(crate) fn timings_report(app: &MailApp) -> String {
 /// The rows, in the run's order; then any account with problems that isn't in it.
 pub(crate) fn rows(app: &MailApp) -> Vec<Row> {
     let mb = &app.session.mailbox;
-    // //// Neoffice — the lines in the interface's language (run_words); they are kept as the run said them.
-    let shown = |lines: &[String]| -> Vec<String> { lines.iter().map(|l| crate::i18n::run_words::line(l, mb).into_owned()).collect() };
-    let problems = |account: Id| app.sync_problems.iter().find(|(a, ..)| *a == account).map(|(.., lines)| shown(lines)).unwrap_or_default();
+    let problems = |account: Id| app.account_problem_lines(account);
     let progress = &app.session.sync_progress;
     let (full, paused) = (|account: Id| progress.full(account), progress.full_paused);
     let mut rows: Vec<Row> = app
@@ -231,8 +229,7 @@ pub(crate) fn rows(app: &MailApp) -> Vec<Row> {
     for (account, name, _, lines) in &app.sync_problems {
         if !rows.iter().any(|r| r.account == *account) && !lines.is_empty() {
             let name = mb.account(*account).map_or_else(|| name.clone(), |a| a.name.clone());
-            // //// Neoffice — as above.
-            rows.push(Row { account: *account, name, run: None, problems: shown(lines), full: full(*account), paused });
+            rows.push(Row { account: *account, name, run: None, problems: problems(*account), full: full(*account), paused });
         }
     }
     rows

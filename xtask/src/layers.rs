@@ -46,11 +46,18 @@ pub const TABLE: &[(&str, Class)] = &[
     ("mime", Class::Layer(2)),
     ("ical", Class::Layer(2)),
     ("vcard", Class::Layer(2)),
+    ("pst", Class::Layer(2)),
+    // OpenPGP checking (#30): rPGP under it, no I/O, builds for the browser.
+    ("openpgp", Class::Layer(2)),
+    ("smime", Class::Layer(2)),
     ("proto", Class::Layer(3)),
     // JMAP over any HTTP, beside `proto` and `net`: no sockets and no browser APIs, so it builds for the browser too.
     ("jmap", Class::Layer(3)),
     // //// Neoffice — the fork's JMAP client (crates/jmap-fork), at the same place, for the same reasons.
     ("jmap-fork", Class::Layer(3)),
+    ("dav", Class::Layer(3)),
+    // Assuan and gpg-agent over any stream, beside `proto`: no sockets, so it builds for the browser too (which never uses it).
+    ("assuan", Class::Layer(3)),
     // Exchange Web Services over any HTTP, the same: no sockets, no browser APIs, and builds for the browser.
     ("ews", Class::Layer(3)),
     ("net", Class::Layer(3)),

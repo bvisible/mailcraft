@@ -29,17 +29,35 @@ pub mod arrivals;
 pub mod catalog;
 pub mod cmd;
 pub mod composing;
+mod conversations;
 pub mod counts;
+mod digital_signature;
+#[cfg(test)]
+mod digital_signature_tests;
+pub mod gmail;
+pub mod import_pst;
 pub mod import_tree;
 pub mod io;
 #[cfg(test)]
 mod launchable_tests;
 pub mod list;
+#[cfg(test)]
+mod mailbox_readers_tests;
 pub mod mark;
 #[cfg(test)]
 mod mark_tests;
 pub mod opening;
+#[cfg(test)]
+mod opening_tests;
+#[cfg(test)]
+mod openpgp_signature_tests;
 mod picture_fit;
+pub mod private_keys;
+#[cfg(test)]
+#[allow(dead_code)]
+mod private_keys_fixtures_tests;
+#[cfg(test)]
+mod private_keys_tests;
 pub mod sample;
 pub mod sender_warnings;
 mod session;
@@ -47,6 +65,8 @@ mod session;
 pub mod store;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod store_before;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 mod undo;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod words;
@@ -285,6 +305,15 @@ pub mod p {
     pub fn req_id(v: &Value, k: &str) -> Result<Id, CmdError> {
         id(v, k).ok_or_else(|| CmdError::Params(format!("`{k}` (id) is required")))
     }
+    /// `true` or `false` under `k`, read strictly: `None` when `k` isn't given; anything else
+    /// (`"false"`, `0`, `null`) is refused.
+    pub fn opt_bool(v: &Value, k: &str) -> Result<Option<bool>, CmdError> {
+        match v.get(k) {
+            None => Ok(None),
+            Some(Value::Bool(b)) => Ok(Some(*b)),
+            Some(_) => Err(CmdError::Params(format!("`{k}` is true or false"))),
+        }
+    }
     /// `ids` (an array of ids) or `id` (one), read strictly, for a command whose mistake reaches
     /// other people (#360): `None` when neither is given. Anything else under those names (`null`,
     /// which a look-up that found nothing gives (#512), an id as text, zero, a fraction, `ids`
@@ -398,13 +427,29 @@ mod ews_account_tests;
 #[cfg(test)]
 mod focus_stays_tests;
 #[cfg(test)]
+mod gmail_tests;
+#[cfg(test)]
+mod import_pst_calendar_tests;
+#[cfg(test)]
+mod import_pst_memory_tests;
+#[cfg(test)]
+mod import_pst_review_tests;
+#[cfg(test)]
+mod import_pst_tests;
+#[cfg(test)]
 mod import_tests;
 #[cfg(test)]
 mod import_tree_progress_tests;
 #[cfg(test)]
 mod import_tree_tests;
 #[cfg(test)]
+mod list_sort_tests;
+#[cfg(test)]
+mod many_folders_tests;
+#[cfg(test)]
 mod pop_out_tests;
+#[cfg(test)]
+mod sender_trust_tests;
 #[cfg(test)]
 mod sender_warnings_tests;
 #[cfg(test)]
@@ -413,3 +458,5 @@ mod strict_ids_all_tests;
 mod strict_ids_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod undo_removes_mail_tests;

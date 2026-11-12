@@ -68,9 +68,8 @@
 //! it was on its way, the server is told the opposite ([`apply_event_outcomes`]).
 //!
 //! Contacts and calendars as such are not sent back yet: the commands that would change or
-//! delete one that a server keeps refuse ([`changeable`]). The calendars of an account and the
-//! mailbox's categories are taken in as the server lists them ([`apply_calendars`],
-//! [`apply_categories`]).
+//! delete one that a server keeps refuse ([`changeable`]). The calendars of an account and its
+//! categories are taken in as the server lists them ([`apply_calendars`], [`apply_categories`]).
 // //// Neoffice — the contacts of a server's address book are the exception: they go back as events do (`remote_contacts::written`).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -85,6 +84,7 @@ use mailcraft_model::remote::{
     MAX_CHECK_AGE, MAX_CHECK_TRIES, MAX_CONTACTS, MAX_EVENT_CHANGES, MAX_EVENT_CHECKS, MAX_EVENT_OPS, MAX_EVENTS, MAX_FAVORITE_DEPTH, MAX_KEY,
     RemoteContact, RemoteEvent, RemoteEventKind, RemoteFavorite, clean_key, id_tag,
 };
+use mailcraft_model::sync::same_category;
 use mailcraft_model::zoned;
 use mailcraft_model::{
     Account, Attendee, Calendar, Contact, Event, FolderKind, Id, Importance, Mailbox, OnlineMeeting, Origin, Proposal, Response, Rights,
@@ -1402,6 +1402,11 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
         let cancel = change.kind == EventChangeKind::Delete
             && change.send
             && if change.of_occurrence() { series().is_some_and(|series| invited(series)) } else { change.base.as_deref().is_some_and(invited) };
+        // Whether people are invited to it, before the change or after, whoever organizes it: a
+        // server may write to them for any change of it (AU3-V2).
+        let meeting = event.is_some_and(|event| !event.attendees.is_empty())
+            || change.base.as_deref().is_some_and(|base| !base.attendees.is_empty())
+            || (change.of_occurrence() && series().is_some_and(|series| !series.attendees.is_empty()));
         let forwards = change.kind == EventChangeKind::Forward;
         let said = cancel || change.kind == EventChangeKind::Respond || forwards;
         // Another time is proposed with an answer that is sent, and only with one that isn't a yes.
@@ -1440,6 +1445,7 @@ pub fn event_upload(s: &Session, account: Id) -> Result<EventsUpload, CmdError> 
             // meetings keeps the room its link names, and makes no second one (the copy's fields don't ask for one, as
             // it has a link).
             join_url,
+            meeting,
         });
     }
     // (The zone the calendar is shown in: whole days are days there, and a series without a
@@ -2755,6 +2761,7 @@ fn settle_calendars(mailbox: &mut Mailbox) {
     if !mailbox.calendars.iter().any(|calendar| server_kept(mailbox, calendar)) {
         return;
     }
+    rehome_strays(mailbox);
     let renamed: Vec<Id> = mailbox
         .calendars
         .iter()
@@ -2779,6 +2786,41 @@ fn settle_calendars(mailbox: &mut Mailbox) {
     }
     mailbox.calendars.retain(|calendar| !(own.contains(&calendar.id) && !in_use.contains(&calendar.id)));
 }
+
+/// An event of the owner's own in a calendar that a server keeps (an `.ics` file put one there
+/// before #1050) is on that server nowhere, and nothing would ever send it: it goes to a calendar
+/// on this computer, which says where it is and offers to move it to the account's calendar.
+fn rehome_strays(mailbox: &mut Mailbox) {
+    let served = |mailbox: &Mailbox, calendar: Id| mailbox.calendar(calendar).is_some_and(|c| keeper(mailbox, &c.origin).is_some());
+    // What is on its way to a server is never a stray: one made or moved into a server's
+    // calendar has that account in its origin from then on ([`note_created`], [`note_moved`]),
+    // and anything a waiting change names stays where it is all the same.
+    let waiting: HashSet<Id> = mailbox.event_changes.iter().map(|change| change.event).collect();
+    let stray = |e: &Event| e.origin.is_local() && !waiting.contains(&e.id) && served(mailbox, e.calendar);
+    let strays: Vec<Id> = mailbox.events.values().filter(|e| stray(e)).map(|e| e.id).take(MAX_STRAYS).collect();
+    if strays.is_empty() {
+        return;
+    }
+    // (One that is shown, when there is one: what was in view stays in view.)
+    let own = || mailbox.calendars.iter().filter(|c| keeper(mailbox, &c.origin).is_none());
+    let home = match own().find(|c| c.visible).or_else(|| own().next()).map(|c| c.id) {
+        Some(calendar) => calendar,
+        None if mailbox.calendars.len() < MAX_CALENDARS => {
+            let (id, color) = (mailbox.alloc_id(), super::calendar::next_color(mailbox));
+            mailbox.calendars.push(Calendar { id, name: LOCAL_CALENDAR.into(), color, visible: true, ..Default::default() });
+            id
+        }
+        None => return,
+    };
+    for id in strays {
+        if let Ok(event) = mailbox.event_mut(id) {
+            event.calendar = home;
+        }
+    }
+}
+
+/// Most events [`rehome_strays`] moves in one go (the rest at the next download).
+const MAX_STRAYS: usize = 10_000;
 
 /// What a download makes of the changes that were sent and are yet to be seen ([`check_sent`]).
 #[derive(Default)]
@@ -3842,38 +3884,49 @@ pub(crate) fn forget_calendars(mailbox: &mut Mailbox, ids: &[Id]) -> usize {
 }
 
 /// Take in the mailbox's own categories as an account's server has them
-/// ([`CategoriesDownload`]): each is a category here, in the server's colour. Categories that
-/// are only here stay. Not an undo step.
+/// ([`CategoriesDownload`]): each is a category of a Microsoft account's own list (#633; any
+/// other's go on the shared list), in the server's colour. Categories that are only here stay,
+/// and one that its server has stopped listing leaves the list. Not an undo step.
 pub fn apply_categories(s: &mut Session, download: &CategoriesDownload) -> CmdResult {
-    owner(&s.mailbox, download.account, &download.email)?;
+    let microsoft = owner(&s.mailbox, download.account, &download.email)?.kind == mailcraft_model::AccountKind::Microsoft;
     let mut download = download.clone();
     download.tidy();
+    let list = if microsoft { s.mailbox.junk_owner(download.account) } else { 0 };
+    let names: Vec<String> = download.categories.iter().map(|c| c.name.clone()).collect();
+    if microsoft {
+        s.mailbox.start_account_categories(list, &names);
+    }
     let mut changed = 0usize;
     for category in &download.categories {
-        let have = s.mailbox.category(&category.name).map(|have| (have.name == category.name, have.color));
-        if have != Some((true, category.color)) && s.mailbox.categories.len() < 2 * mailcraft_model::remote::MAX_REMOTE_CATEGORIES {
-            // Under the server's spelling of the name, wherever it is used.
+        let have = s.mailbox.category_of(list, &category.name).map(|have| (have.name == category.name, have.color));
+        if have != Some((true, category.color)) && s.mailbox.categories_of(list).len() < 2 * mailcraft_model::remote::MAX_REMOTE_CATEGORIES {
+            // Under the server's spelling of the name, wherever that list is used.
             if have.is_some_and(|(same, _)| !same) {
-                let old = s.mailbox.category(&category.name).map(|have| have.name.clone()).unwrap_or_default();
-                let _ = s.mailbox.rename_category(&old, &category.name);
+                let old = s.mailbox.category_of(list, &category.name).map(|have| have.name.clone()).unwrap_or_default();
+                let _ = s.mailbox.rename_category(list, &old, &category.name);
             }
-            if s.mailbox.set_category(&category.name, category.color).is_ok() {
+            if s.mailbox.set_category(list, &category.name, category.color).is_ok() {
                 changed += 1;
             }
         }
     }
-    // Outlook's list, by name, for its colours to win here (R3 spec S18).
-    if s.mailbox.account(download.account).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Microsoft) {
-        let names: Vec<String> = download.categories.iter().map(|c| c.name.clone()).collect();
-        if s.mailbox.outlook_categories != names {
-            s.mailbox.outlook_categories = names;
+    // Outlook's list, by name, for its colours to win here (R3 spec S18). The items of a name that
+    // left it keep the name, in grey.
+    if microsoft {
+        let last = s.mailbox.server_categories.get(&list);
+        if last != Some(&names) {
+            let left: Vec<String> = last.into_iter().flatten().filter(|old| !names.iter().any(|name| same_category(name, old))).cloned().collect();
+            if let Some(own) = s.mailbox.account_categories.get_mut(&list) {
+                own.retain(|c| !left.iter().any(|old| same_category(old, &c.name)));
+            }
+            s.mailbox.server_categories.insert(list, names);
             changed += 1;
         }
     }
     if changed > 0 {
         s.mailbox_changed();
     }
-    Ok(json!({"changed": changed, "categories": s.mailbox.categories.len()}))
+    Ok(json!({"changed": changed, "categories": s.mailbox.categories_of(list).len()}))
 }
 
 /// The folder of `account` that a favourite of its server's list is: the special folder it says

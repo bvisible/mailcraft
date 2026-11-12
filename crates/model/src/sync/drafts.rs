@@ -132,6 +132,22 @@ pub struct ServerDraft {
     /// before: a message that never goes leaves its draft where it was).
     #[serde(skip_serializing_if = "String::is_empty")]
     pub sent_from: String,
+    /// The server's own version of a draft, kept beside one changed here (S26) on the server's
+    /// word that it is a draft: never taken for a sent copy an earlier version kept as a draft
+    /// (#611), wherever it lies.
+    #[serde(skip_serializing_if = "is_false")]
+    pub theirs: bool,
+}
+
+impl ServerDraft {
+    /// Whether nothing but a fetch made this: a draft fetched whole gets one that holds what the
+    /// server had (`synced`) and nothing else, where one written or saved here has a marker, what
+    /// it answers, a save waiting or saves counted. A message that was never a draft here may
+    /// carry one of these (a sent copy taken for a draft, #611). The server's own version of a
+    /// draft kept beside one changed here (`theirs`) is a draft on the server's word.
+    pub fn only_fetched(&self) -> bool {
+        self.marker.is_empty() && !self.pending && self.of.is_none() && self.saves == 0 && !self.theirs
+    }
 }
 
 fn is_false(b: &bool) -> bool {

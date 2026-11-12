@@ -14,10 +14,11 @@
 //! **The password** is what the owner types when the first run asks for it. It is kept in memory
 //! until the app closes (`MailApp::passwords`), never in the mailbox file, a log or a command's
 //! params, and goes to the server the account names now: a change of that address forgets it
-//! ([`MailApp::secret_key`]). Remembering it with the operating system comes with the Add Account
-//! page. A password the server turns down (a 401) is forgotten, so that the next Send/Receive asks
-//! again rather than send it once more; a round by itself leaves the account out until the owner
-//! asks for its Send/Receive.
+//! ([`MailApp::secret_key`]). It is remembered with the operating system, when the owner lets it
+//! be, by the Add Account page and by a run as soon as the server has answered it with its
+//! folders or its mail (#802). A password the server turns down (a 401) is forgotten, so that the
+//! next Send/Receive asks again rather than send it once more; a round by itself leaves the
+//! account out until the owner asks for its Send/Receive.
 //!
 //! **A certificate** the system doesn't trust, or one that is not the one trusted for the account,
 //! stops the run at its first request, before the password goes: the account says it needs the
@@ -66,8 +67,7 @@ impl MailApp {
         if let Some(typed) = self.passwords.get(&account) {
             return Some(typed.clone());
         }
-        let address = self.session.mailbox.account(account)?.email.clone();
-        self.remembered("password", &address)
+        self.remembered("password", account)
     }
 
     /// A Send/Receive of the Exchange server account `account`; `p` may carry the password the owner
@@ -84,14 +84,22 @@ impl MailApp {
             self.dialog = dialogs::Dialog::open("password", self, &json!({"account": account}));
             return Ok(json!({"pending": "password"}));
         };
-        let Some(run) = &self.services.ews else { return Err(tl!("This build can't connect to mail servers").to_string()) };
         let inbox_pass = p.get("inboxPass").and_then(Value::as_bool).unwrap_or(false);
         let params = json!({"account": account, "background": quiet, "inboxPass": inbox_pass});
         let request = self.session.run("sync.ewsRequest", &params).map_err(|e| e.to_string())?;
-        let request: EwsMailRequest = serde_json::from_value(request).map_err(|e| e.to_string())?;
+        let mut request: EwsMailRequest = serde_json::from_value(request).map_err(|e| e.to_string())?;
+        // A certificate a file trusts counts once the owner has confirmed the file (AU3-02).
+        if self.unconfirmed {
+            request.trusted.clear();
+        }
+        if self.services.ews.is_none() {
+            return Err(tl!("This build can't connect to mail servers").to_string());
+        }
         self.services.sync_cancel.store(false, Ordering::Relaxed);
-        let pieces = run(EwsJob { request, secret, cancel: self.services.sync_cancel.clone() });
-        self.sync_refused = false;
+        let sent = Some(secret.clone());
+        // What it sends is marked so, on disk, before it leaves (AU3-26).
+        let pieces = self.hand_ews(account, EwsJob { request, secret, cancel: self.services.sync_cancel.clone() })?;
+        (self.sync_refused, self.sync_password) = (false, sent);
         // (Something made here while the run is under way calls it off to go up first, as a Microsoft account's does.)
         self.sync_run = Some((account, Some(self.waiting_to_go(account)), false, quiet));
         self.sync_rx = Some(MailRun::Ews { account, opening: self.session.openings(), pieces });
@@ -113,7 +121,7 @@ impl MailApp {
                 Err(TryRecvError::Empty) => return,
                 Err(TryRecvError::Disconnected) => {
                     log::warn!("ews mail: the run stopped without its last piece (its thread ended early)");
-                    (self.sync_rx, self.sync_refused) = (None, false);
+                    (self.sync_rx, self.sync_refused, self.sync_password) = (None, false, None);
                     self.session.sync_status = tl!("Send/Receive stopped unexpectedly").to_string();
                     return;
                 }
@@ -125,7 +133,7 @@ impl MailApp {
             if opening != self.session.openings() {
                 self.services.sync_cancel.store(true, Ordering::Relaxed);
                 if last {
-                    (self.sync_rx, self.sync_run, self.sync_refused) = (None, None, false);
+                    (self.sync_rx, self.sync_run, self.sync_refused, self.sync_password) = (None, None, false, None);
                     self.session.sync_status.clear();
                     return;
                 }
@@ -137,6 +145,10 @@ impl MailApp {
                 self.fetching.wake();
             }
             let untrusted = !piece.untrusted.is_empty();
+            // The server answered with its folders or its mail: it took the password (#802).
+            if piece.server_answered() {
+                self.keep_accepted_password(account);
+            }
             // What File › Info says: how this run signed in, and a certificate that needs a say.
             if !piece.signed_in_with.is_empty() {
                 self.ews_signed_in.insert(account, piece.signed_in_with.clone());
@@ -163,6 +175,7 @@ impl MailApp {
                 }
                 Err(e) => {
                     self.status(e.to_string());
+                    self.send_doubt = true;
                     // A piece that was refused is not skipped over: the run is called off, and the
                     // pages after it (read from the state it would have kept) are left out by the
                     // engine, whichever of them still come ([`apply_ews_mail`]).
@@ -176,6 +189,8 @@ impl MailApp {
             }
             // The run is over.
             self.sync_rx = None;
+            // What it sent is filed, and what it didn't is known not to have gone (AU3-26).
+            self.run_answered(account);
             // Called off for something else (a shared mailbox's first read): it goes on after.
             if let Some((whose, _, true, quiet)) = self.sync_run.take() {
                 self.sync_queue.push_front((whose, quiet));
@@ -194,16 +209,13 @@ impl MailApp {
                 // The certificate question comes first (File › Info): no round by itself tries again.
                 self.jmap_refused.insert(account);
             } else if whole {
-                // It went through: that password is worth remembering (when the owner lets it be),
-                // and nothing is left of the last run's problems.
-                if let Some((address, password)) =
-                    self.session.mailbox.account(account).map(|a| a.email.clone()).zip(self.passwords.get(&account).cloned())
-                {
-                    self.remember("password", &address, &password);
-                }
+                // It went through: that password is worth remembering (when the owner lets it be,
+                // and no piece said so before), and nothing is left of the last run's problems.
+                self.keep_accepted_password(account);
                 self.ews_certificate.remove(&account);
                 self.note_sync_problems(account, &[], true);
             }
+            self.sync_password = None;
             self.note_pushed(account);
             return;
         }

@@ -47,6 +47,7 @@ fn request() -> JmapMailRequest {
         background: true,
         // //// Neoffice — an email to read by its id alone (`emails`), the address in it too.
         emails: vec![format!("E-{ME}")],
+        threads: vec!["E5".into()],
     }
 }
 
@@ -62,6 +63,7 @@ fn result() -> JmapMailResult {
     };
     JmapMailResult {
         account: 3,
+        threads: vec![crate::sync::ThreadOf { id: "E5".into(), thread: "T5".into(), ..Default::default() }],
         email: ME.into(),
         session: SESSION.into(),
         changes: vec![

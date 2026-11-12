@@ -48,8 +48,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DraftDone, DraftUp, FolderChange, FolderChangeDone, GraphFolder, GraphMessage, GraphProgress, MAX_LISTED_FOLDERS, MessageChange,
-    MessageChangeDone, PlaceDone, PlaceUp, ReadState, SendDone, SendUp, is_false,
+    DraftDone, DraftUp, FolderChange, FolderChangeDone, GraphFolder, GraphMessage, GraphProgress, MAX_LISTED_FOLDERS, MAX_THREAD_ASKS, MessageChange,
+    MessageChangeDone, PlaceDone, PlaceUp, ReadState, SendDone, SendUp, ThreadOf, Timings, is_false,
 };
 use crate::Id;
 
@@ -173,6 +173,10 @@ pub struct EwsMailRequest {
     /// Nobody is waiting for this run: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
+    /// Messages listed before their conversation ids were asked for, by server id: the server is
+    /// asked for those ids after the rest of the run, at most [`MAX_THREAD_ASKS`] (#795).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<String>,
 }
 
 /// Messages of an Exchange server account to fetch whole (their MIME content), by server id, in
@@ -219,6 +223,12 @@ pub struct EwsFolderDeltas {
     /// removed when the run ends. Otherwise it is a delta and nothing is removed for not being in it.
     #[serde(skip_serializing_if = "is_false")]
     pub afresh: bool,
+    /// The ids of the server's own folders (its distinguished ones: the Inbox and the other
+    /// special folders, Conversation History, Sync Issues and the like, #779), whether or not the
+    /// delta brings them: such a folder is never renamed, moved or deleted
+    /// ([`crate::Folder::server_owned`]). A folder that isn't in it keeps the mark it had.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub well_known: Vec<String>,
 }
 
 /// One page of a folder's changes (`SyncFolderItems`). The state to go on from is not here but in
@@ -264,6 +274,11 @@ pub struct EwsMessagePage {
 #[serde(default, rename_all = "camelCase")]
 pub struct EwsMailResult {
     pub account: Id,
+    /// What the server said of the conversations of the messages the run asked about
+    /// ([`EwsMailRequest::threads`], #795).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<ThreadOf>,
+
     /// The address of the account the run was for: an answer is not taken in by another account
     /// that happens to have the id.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -335,6 +350,10 @@ pub struct EwsMailResult {
     /// it never got as far as the server's offer.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub signed_in_with: String,
+    /// How long this piece's part of the run took, and how many requests it made (#276, #748):
+    /// measured by the host, which makes the requests.
+    #[serde(skip_serializing_if = "Timings::is_empty")]
+    pub timings: Timings,
 }
 
 /// Whether `id` may be a server id of a folder or an item: not empty, at most [`MAX_EWS_ID`] bytes,
@@ -372,6 +391,14 @@ fn message_content_ok(m: &GraphMessage) -> bool {
 }
 
 impl EwsMailResult {
+    /// Whether the server answered a request of the run's with what it holds (its folders, or a
+    /// page of a folder's messages): it took the password the run went with (#802). Not
+    /// [`signed_in_with`](Self::signed_in_with), which the server's offer sets before it has
+    /// taken anything.
+    pub fn server_answered(&self) -> bool {
+        self.folders.is_some() || !self.pages.is_empty()
+    }
+
     /// Whether this piece of an answer is within what is taken in, or why not. An answer comes
     /// from a host and may say anything: every list, string and id is held to a size here, before
     /// any of it is used. A piece that is refused is taken in by no part, so a cut-short answer
@@ -396,6 +423,12 @@ impl EwsMailResult {
         if self.blocked.len() > MAX_LISTED_FOLDERS || !self.blocked.iter().all(|id| id_ok(id)) {
             return Err(ODD_ID);
         }
+        if self.threads.len() > MAX_THREAD_ASKS {
+            return Err(TOO_MANY);
+        }
+        if !self.threads.iter().all(|t| id_ok(&t.id) && t.thread.len() <= super::MAX_THREAD_ID) {
+            return Err(ODD_ID);
+        }
         if !state_ok(&self.hierarchy) {
             return Err("has a folder state that can't be one");
         }
@@ -415,11 +448,14 @@ impl EwsMailResult {
             return Err("has a sync state that can't be one");
         }
         if let Some(folders) = &self.folders {
-            if folders.changed.len() > MAX_LISTED_FOLDERS || folders.deleted.len() > MAX_LISTED_FOLDERS {
+            if folders.changed.len() > MAX_LISTED_FOLDERS
+                || folders.deleted.len() > MAX_LISTED_FOLDERS
+                || folders.well_known.len() > MAX_LISTED_FOLDERS
+            {
                 return Err(TOO_MANY);
             }
             let odd = |f: &GraphFolder| !id_ok(&f.id) || (!f.parent.is_empty() && !id_ok(&f.parent)) || f.name.len() > 4096;
-            if folders.changed.iter().any(odd) || !folders.deleted.iter().all(|id| id_ok(id)) {
+            if folders.changed.iter().any(odd) || !folders.deleted.iter().all(|id| id_ok(id)) || !folders.well_known.iter().all(|id| id_ok(id)) {
                 return Err(ODD_ID);
             }
         }
@@ -462,12 +498,14 @@ impl EwsMailResult {
             folders.changed.extend(more.changed);
             folders.deleted.extend(more.deleted);
             folders.afresh |= more.afresh;
+            folders.well_known.extend(more.well_known);
         }
         if !piece.hierarchy.is_empty() {
             self.hierarchy = piece.hierarchy;
         }
         self.pages.extend(piece.pages);
         self.blocked.extend(piece.blocked);
+        self.threads.extend(piece.threads);
         self.errors.extend(piece.errors);
         self.busy_for = piece.busy_for.or(self.busy_for);
         (self.partial, self.whole, self.stopped) = (piece.partial, piece.whole, piece.stopped);
@@ -559,6 +597,7 @@ impl std::fmt::Debug for EwsMailResult {
             .field("auth_refused", &self.auth_refused)
             .field("untrusted", &!self.untrusted.is_empty())
             .field("signed_in_with", &self.signed_in_with)
+            .field("timings", &self.timings)
             .finish()
     }
 }

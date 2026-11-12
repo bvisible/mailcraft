@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use mailcraft_model::sync::{
     Created, Deleted, FlagsPushed, FolderState, Moved, RemoteFlags, RemoteOp, SyncPhase, SyncRequest, SyncResult, SyncStage,
 };
-use mailcraft_model::{Account, AccountKind, Address, FlagStatus, FolderKind, Id, Message, OAuth, Security, Server};
+use mailcraft_model::{Account, AccountKind, Address, FlagStatus, FolderKind, Id, Message, OAuth, OAuthProvider, Security, Server};
 use mailcraft_proto::ProtoError;
 
 use crate::fake::{Fake, FakeImap, FakeMailbox, FakeMessage, FakeSmtp, ImapWorld, SmtpWorld};
@@ -369,6 +369,95 @@ fn an_oauth_account_signs_in_with_its_token() {
 }
 
 #[test]
+fn google_xoauth2_reuses_imap_smtp_without_sending_a_password() {
+    let (imap, smtp) = token_servers();
+    let mut account = oauth_account(Some(&imap), Some(&smtp));
+    account.oauth.as_mut().unwrap().provider = mailcraft_model::OAuthProvider::Google;
+    assert_eq!(test_account(&account, TOKEN), Ok(()));
+    let mut request = request(account.clone(), local_folders());
+    request.access_token = TOKEN.into();
+    request.outbox = vec![hello()];
+    let result = sync(&request);
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
+    assert_eq!(send(&account, TOKEN, &hello()), Ok(()));
+    let (imap, smtp) = (imap.world(), smtp.world());
+    assert!(imap.log.iter().any(|line| line.contains("AUTHENTICATE XOAUTH2")));
+    assert!(smtp.log.iter().any(|line| line.starts_with("AUTH XOAUTH2")));
+    assert!(!imap.log.iter().chain(smtp.log.iter()).any(|line| line.contains(PASSWORD) || line.contains(TOKEN)));
+}
+
+#[test]
+fn oauth_named_mail_servers_reach_the_transport_security_check() {
+    // Use the real destination names, but refuse cleartext before DNS or a connection. The
+    // loopback protocol tests alone cannot catch a provider rejecting its own mail servers.
+    for (provider, incoming, outgoing) in [
+        (OAuthProvider::Google, "imap.gmail.com", "smtp.gmail.com"),
+        (OAuthProvider::Google, " IMAP.GMAIL.COM. ", " SMTP.GMAIL.COM. "),
+        (OAuthProvider::Microsoft, "outlook.office365.com", "smtp.office365.com"),
+        (OAuthProvider::Microsoft, " IMAP-MAIL.OUTLOOK.COM. ", " SMTP-MAIL.OUTLOOK.COM. "),
+    ] {
+        let mut account = oauth_account(None, None);
+        account.oauth.as_mut().unwrap().provider = provider;
+        account.incoming = Some(Server { host: incoming.into(), port: 0, security: Security::None });
+        account.outgoing = Some(Server { host: outgoing.into(), port: 0, security: Security::None });
+        for error in [test_account(&account, TOKEN).unwrap_err(), send(&account, TOKEN, &hello()).unwrap_err()] {
+            assert!(matches!(&error, NetError::Config(why) if why.to_string().contains("is set to use no encryption")), "{provider:?}: {error:?}");
+            assert!(!format!("{error} {error:?}").contains(TOKEN));
+        }
+    }
+}
+
+#[test]
+fn oauth_destinations_cannot_cross_providers_or_protocols() {
+    for (provider, incoming, outgoing) in [
+        (OAuthProvider::Google, "outlook.office365.com", "smtp.office365.com"),
+        (OAuthProvider::Google, "smtp.gmail.com", "imap.gmail.com"),
+        (OAuthProvider::Google, "mail.example.org", "relay.example.org"),
+        (OAuthProvider::Google, "imap.gmail.com.attacker.example", "smtp.gmail.com.attacker.example"),
+        (OAuthProvider::Google, "other.imap.gmail.com", "other.smtp.gmail.com"),
+        (OAuthProvider::Google, "imap.googlemail.com", "smtp.googlemail.com"),
+        (OAuthProvider::Microsoft, "imap.gmail.com", "smtp.gmail.com"),
+        (OAuthProvider::Microsoft, "mail.example.org", "relay.example.org"),
+        (OAuthProvider::Microsoft, "office365.com.attacker.example", "evil-outlook.com"),
+    ] {
+        let mut account = oauth_account(None, None);
+        account.oauth.as_mut().unwrap().provider = provider;
+        // Even a broken destination guard would stop at the encryption check without reaching
+        // a real server; the provider-specific error proves the guard ran first on each path.
+        account.incoming = Some(Server { host: incoming.into(), port: 0, security: Security::None });
+        account.outgoing = Some(Server { host: outgoing.into(), port: 0, security: Security::None });
+        let expected = match provider {
+            OAuthProvider::Google => "Google OAuth access tokens may only be sent",
+            OAuthProvider::Microsoft => "a Microsoft sign-in is only used",
+        };
+        for error in [test_account(&account, TOKEN).unwrap_err(), send(&account, TOKEN, &hello()).unwrap_err()] {
+            assert!(matches!(&error, NetError::Config(why) if why.to_string().starts_with(expected)), "{provider:?}: {error:?}");
+            assert!(!format!("{error} {error:?}").contains(TOKEN));
+        }
+    }
+}
+
+#[test]
+fn google_access_tokens_never_go_to_untrusted_imap_or_smtp_servers() {
+    let (imap, smtp) = token_servers();
+    let mut account = oauth_account(Some(&imap), Some(&smtp));
+    account.oauth.as_mut().unwrap().provider = mailcraft_model::OAuthProvider::Google;
+    account.incoming.as_mut().unwrap().host = "imap.attacker.example".into();
+    let error = test_account(&account, TOKEN).unwrap_err();
+    assert!(matches!(error, NetError::Config(_)));
+    assert_eq!(imap.world().connections, 0);
+    assert_eq!(smtp.world().connections, 0);
+
+    // An SMTP server supplied through a hostile mailbox cannot receive Google's bearer token.
+    account.incoming = None;
+    account.outgoing.as_mut().unwrap().host = "smtp.attacker.example".into();
+    let error = send(&account, TOKEN, &hello()).unwrap_err();
+    assert!(matches!(error, NetError::Config(_)));
+    assert_eq!(smtp.world().connections, 0);
+    assert!(!format!("{error:?}").contains(TOKEN));
+}
+
+#[test]
 fn a_microsoft_token_goes_only_to_microsoft_servers() {
     // AU2-V8: a mailbox file can name any server for an account; the token stays home.
     let account = Account {
@@ -445,7 +534,7 @@ fn a_refused_token_is_an_error_without_the_token() {
 fn an_oauth_account_without_a_token_is_told_to_sign_in_first() {
     let (imap, smtp) = token_servers();
     let account = oauth_account(Some(&imap), Some(&smtp));
-    let sign_in = NetError::Config("sign in to ada@example.org first".into());
+    let sign_in = NetError::Config(mailcraft_i18n::said!("sign in to {who} first", who = "ada@example.org"));
     assert_eq!(test_account(&account, ""), Err(sign_in.clone()));
     assert_eq!(test_account(&oauth_account(None, Some(&smtp)), ""), Err(sign_in.clone()));
     assert_eq!(send(&account, "", &hello()), Err(sign_in));
@@ -478,7 +567,7 @@ fn a_server_that_takes_no_tokens_is_not_shown_one() {
     assert_eq!(imap.world().log, ["A0001 AUTHENTICATE XOAUTH2", "A0001 AUTHENTICATE XOAUTH2"]);
 
     let error = send(&oauth_account(None, Some(&smtp)), TOKEN, &hello()).unwrap_err();
-    assert_eq!(error, NetError::Proto(ProtoError::Auth("the server offers no way to sign in with an access token".into())));
+    assert_eq!(error, NetError::Proto(ProtoError::Auth(mailcraft_i18n::said!("the server offers no way to sign in with an access token"))));
     // Nor is the mail sent unsigned, or with the token as if it were a password.
     assert_eq!(smtp.world().log, ["EHLO [127.0.0.1]"]);
     // A server that asks for no sign-in at all is no place for an account that needs one.
@@ -519,8 +608,8 @@ fn no_password_goes_out_unencrypted_to_another_machine() {
     let message = Message { id: 3, to: vec![Address::new("Bob", "bob@example.org")], subject: "Hello".into(), ..Default::default() };
 
     let started = std::time::Instant::now();
-    assert!(matches!(test_account(&elsewhere, PASSWORD), Err(NetError::Config(why)) if why.contains("mail.example.org")));
-    assert!(matches!(send(&elsewhere, PASSWORD, &message), Err(NetError::Config(why)) if why.contains("192.0.2.25")));
+    assert!(matches!(test_account(&elsewhere, PASSWORD), Err(NetError::Config(why)) if why.to_string().contains("mail.example.org")));
+    assert!(matches!(send(&elsewhere, PASSWORD, &message), Err(NetError::Config(why)) if why.to_string().contains("192.0.2.25")));
     let mut request = request(elsewhere, local_folders());
     request.outbox = vec![message];
     let result = sync(&request);
@@ -541,7 +630,7 @@ fn starttls_is_never_given_up_for_plain_text() {
     strict.incoming.as_mut().unwrap().security = Security::StartTls;
     strict.outgoing.as_mut().unwrap().security = Security::StartTls;
     let error = test_account(&strict, PASSWORD).unwrap_err();
-    assert_eq!(error, NetError::Tls { host: "127.0.0.1".into(), reason: "the server doesn't offer STARTTLS".into() });
+    assert_eq!(error, NetError::Tls { host: "127.0.0.1".into(), reason: mailcraft_i18n::said!("the server doesn't offer STARTTLS") });
     let mut request = request(strict.clone(), local_folders());
     request.outbox = vec![Message { id: 3, to: vec![Address::new("Bob", "bob@example.org")], ..Default::default() }];
     let result = sync(&request);
@@ -661,7 +750,7 @@ fn one_message_is_sent() {
     assert!(matches!(send(&account, PASSWORD, &Message::default()), Err(NetError::Config(_))));
     assert_eq!(smtp.world().connections, 1);
     smtp.world().refuse = vec!["bob@example.org".into()];
-    assert_eq!(send(&account, PASSWORD, &message), Err(NetError::Proto(ProtoError::Rejected("bob@example.org: 550 5.1.1 no such user".into()))));
+    assert_eq!(send(&account, PASSWORD, &message).map_err(|e| e.to_string()), Err("the server said: bob@example.org: 550 5.1.1 no such user".into()));
     assert!(matches!(send(&Account::default(), PASSWORD, &message), Err(NetError::Config(_))));
 }
 
@@ -1576,13 +1665,13 @@ fn a_copy_of_what_was_sent_is_kept_on_the_server() {
     // A server that keeps what is sent through it gets no second copy: the mailbox is told that
     // one is on its way, to be matched when it shows.
     let files_it_itself = SyncRequest { outbox: vec![hello()], ..request(account(Some(&imap), Some(&smtp)), folders.clone()) };
-    let result = whole(&files_it_itself, Limits::in_pieces(), Host { files_sent: true, microsoft: false });
+    let result = whole(&files_it_itself, Limits::in_pieces(), Host { files_sent: true, microsoft: false, gmail: false });
     assert_eq!(result.errors, Vec::<String>::new());
     assert_eq!((result.sent.as_slice(), result.filed.as_slice()), (&[9][..], &[9][..]));
     assert_eq!((sent(&imap, "APPEND"), server_uids(&imap, "Sent Items").len()), (2, 3));
     // Also when its incoming side can't be reached just now.
     imap.world().password = "changed".into();
-    let result = whole(&files_it_itself, Limits::in_pieces(), Host { files_sent: true, microsoft: false });
+    let result = whole(&files_it_itself, Limits::in_pieces(), Host { files_sent: true, microsoft: false, gmail: false });
     assert_eq!((result.errors.len(), result.sent.as_slice(), result.filed.as_slice()), (1, &[9][..], &[9][..]));
     // A server that doesn't, and can't be reached: the mailbox was told to expect the copy when
     // the message went, and is told that it didn't get there.
@@ -2181,7 +2270,7 @@ fn folders_with_such_names_on_another_kind_of_server_are_folders_of_mail() {
     assert_eq!(result.new_count(), 9);
     // From a server of Microsoft's, the same list is that of a mailbox at Outlook.com which was
     // never opened in Outlook: its "Notes" and "Outbox" are Exchange's own, and no mail to keep.
-    let result = whole(&asked, Limits::in_pieces(), Host { files_sent: true, microsoft: true });
+    let result = whole(&asked, Limits::in_pieces(), Host { files_sent: true, microsoft: true, gmail: false });
     assert_eq!(result.errors, Vec::<String>::new());
     assert_eq!(remotes(&result), ["INBOX", "Sent Items", "Entwürfe", "Deleted Items", "Junk Email", "Projects"]);
     assert_eq!((sent(&imap, "EXAMINE \"Notes\""), sent(&imap, "EXAMINE \"Outbox\"")), (1, 1));
@@ -2472,3 +2561,9 @@ fn a_server_that_floods_one_answer_is_given_up_on() {
         assert!(result.folders.iter().all(|folder| folder.new.is_empty()), "{at}");
     }
 }
+
+#[path = "gmail_sync_tests.rs"]
+mod gmail_sync;
+
+#[path = "protected_sync_tests.rs"]
+mod protected_sync;

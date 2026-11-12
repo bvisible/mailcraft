@@ -15,6 +15,7 @@ use std::time::Duration;
 use mailcraft_engine::Session;
 use mailcraft_ews::standin::{StandIn, block_on};
 use mailcraft_ews::{HttpExchange, HttpRequest, Secret};
+use mailcraft_model::sync::SyncPhase;
 use mailcraft_model::{FolderKind, Id, Mailbox};
 use mailcraft_ui_egui::{MailApp, Services};
 use serde_json::{Value, json};
@@ -167,11 +168,18 @@ fn the_window_reads_an_exchange_account_and_fetches_what_is_opened_or_answered_w
     }
     let sent = app.session.mailbox.folder_of_kind(account, FolderKind::Sent).unwrap();
     assert_eq!(here(&app, account, "Old minutes").map(|(_, folder, _)| folder), Some(sent));
+    // One Outbox, MailCraft's own: the server's, empty, isn't listed beside it (#747).
+    let outboxes: Vec<FolderKind> =
+        app.session.mailbox.folders.iter().filter(|f| f.account == account && f.name == "Outbox").map(|f| f.kind).collect();
+    assert_eq!(outboxes, vec![FolderKind::Outbox]);
     let (kickoff, ..) = here(&app, account, "Kickoff").unwrap();
     assert_eq!(app.session.mailbox.message(kickoff).unwrap().body.text, "Hello about Kickoff.");
     // Send/Receive Progress: the account's row, done, with what came.
     let row = app.session.sync_progress.accounts.iter().find(|r| r.account == account).unwrap();
     assert_eq!((row.state, row.new), (mailcraft_engine::cmd::sync_progress::RunState::Done, 4));
+    // With how long it took and the requests it made, by phase, as for a Microsoft account (#748).
+    let phases: Vec<SyncPhase> = row.timings.phases.iter().map(|p| p.phase).collect();
+    assert!(row.timings.requests() > 0 && phases.contains(&SyncPhase::Folders) && phases.contains(&SyncPhase::NewMail), "{:?}", row.timings);
     // Nothing but reading went to the server.
     assert!(server.standin.state().writes.is_empty());
     // (The first request of a run goes with no credential and is told how to sign in: that 401 is all that isn't 200.)
@@ -277,4 +285,57 @@ fn an_account_whose_server_cannot_be_reached_says_so_and_asks_nothing_of_the_own
     send_receive(&mut app, json!({"account": account, "password": PASSWORD}));
     assert!(app.session.sync_status.contains("Couldn't reach the server"), "{}", app.session.sync_status);
     assert!(app.dialog.is_none());
+}
+
+#[test]
+fn the_servers_own_folders_come_down_marked_and_cannot_be_deleted_moved_or_renamed() {
+    let server = serve();
+    let (history, mine) = {
+        let mut state = server.standin.state();
+        (
+            state.add_own_folder("conversationhistory", "Conversation History", "msgfolderroot"),
+            state.add_own_folder("", "Conversation History", "inbox"),
+        )
+    };
+    let (mut app, account) = window(&server);
+    send_receive(&mut app, json!({"account": account, "password": PASSWORD}));
+    assert!(app.session.sync_status.starts_with("Up to date"), "{}", app.session.sync_status);
+    let at = |app: &MailApp, id: &str| app.session.mailbox.folder_by_server(account, id).unwrap();
+    let (history, mine) = (at(&app, &history), at(&app, &mine));
+    assert!(app.session.mailbox.folder(history).unwrap().server_owned(), "the server's own, by its id (#779)");
+    assert!(!app.session.mailbox.folder(mine).unwrap().server_owned(), "the owner's folder of the same name is the owner's");
+    app.session.view.folder = history;
+    for id in ["folder.rename", "folder.move", "folder.delete"] {
+        assert!(!app.enabled(id), "{id} is greyed out");
+    }
+    assert!(app.execute("folder.delete", json!({"id": history})).is_err());
+    app.session.view.folder = mine;
+    assert!(app.enabled("folder.delete"));
+    // A second run, from the state the first gave, whose server now refuses to say which are its
+    // own: the run goes well, the mark stays, and nothing was asked that would change the folder.
+    server.standin.state().refuse_names = Some((vec!["conversationhistory".into()], 403));
+    send_receive(&mut app, json!({"account": account}));
+    assert!(app.session.sync_status.starts_with("Up to date"), "{}", app.session.sync_status);
+    assert!(app.session.mailbox.folder(history).unwrap().server_owned(), "a mark once set is kept");
+    let state = server.standin.state();
+    assert!(state.writes.is_empty());
+    assert!(state.requests.iter().any(|r| r.operation.is_empty() && r.status == 403), "the lookup was refused");
+}
+
+#[test]
+fn an_account_with_nothing_deleted_goes_on_from_the_folder_lists_state() {
+    // The server's own folders it names (#779) are all listed, or among the deleted (its empty
+    // Outbox): no run reads the folder list afresh for want of one.
+    let server = serve();
+    server.standin.state().add_own_folder("conversationhistory", "Conversation History", "msgfolderroot");
+    let (mut app, account) = window(&server);
+    let hierarchy = |app: &MailApp| app.session.mailbox.account(account).unwrap().ews.as_ref().unwrap().hierarchy.clone();
+    send_receive(&mut app, json!({"account": account, "password": PASSWORD}));
+    let first = hierarchy(&app);
+    assert!(!first.is_empty());
+    for _ in 0..2 {
+        send_receive(&mut app, json!({"account": account}));
+        assert!(app.session.sync_status.starts_with("Up to date"), "{}", app.session.sync_status);
+        assert!(!hierarchy(&app).is_empty(), "the folder list goes on from its state");
+    }
 }

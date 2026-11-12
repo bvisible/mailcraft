@@ -140,6 +140,8 @@ pub enum Dialog {
     AutomaticReplies(Box<crate::auto_replies::Draft>),
     /// What is in a folder of mbox files, before it is imported ([`crate::import_tree`]).
     ImportTree(Box<crate::import_tree::ImportTree>),
+    /// A .pst file, before and while its mail is imported ([`crate::import_pst`]).
+    ImportPst(Box<crate::import_pst::ImportPst>),
     /// People › Merge Duplicates (#506, [`crate::merge_contacts`]): it only collects what to
     /// merge, then runs `people.merge`.
     MergeContacts(Box<crate::merge_contacts::MergeContacts>),
@@ -148,6 +150,9 @@ pub enum Dialog {
     Pick(Box<crate::pick_item::Pick>),
     /// View Source: a message's source as plain text ([`crate::view_source`]).
     ViewSource(Box<crate::view_source::Source>),
+    /// File › Options › Security's: importing a private key, verifying a Public key (#30;
+    /// [`crate::security`]). Opened by their own window-only commands, never by `ui.dialog`.
+    Security(Box<crate::security::SecurityDialog>),
     /// Find and Replace in the message being written ([`crate::find_replace`]).
     FindReplace(crate::find_replace::FindReplace),
     /// Insert › Symbol ([`crate::symbol`]).
@@ -246,12 +251,14 @@ impl Dialog {
             Dialog::FolderProperties(_) => "folderProperties",
             Dialog::AutomaticReplies(_) => "automaticReplies",
             Dialog::ImportTree(_) => "importTree",
+            Dialog::ImportPst(_) => "importPst",
             Dialog::MergeContacts(_) => "mergeContacts",
             Dialog::Pick(p) => match p.kind {
                 crate::pick_item::PickKind::Message => "attachItem",
                 crate::pick_item::PickKind::Contact => "businessCard",
             },
             Dialog::ViewSource(_) => "viewSource",
+            Dialog::Security(d) => d.name(),
             Dialog::Symbol(_) => "symbol",
             Dialog::FindReplace(d) => {
                 if d.replace {
@@ -339,6 +346,8 @@ impl Dialog {
                 _ => Dialog::About(AboutTab::About),
             },
             "contributors" => Dialog::About(AboutTab::Contributors),
+            // (Never over a report being written or on its way.)
+            "reportProblem" if matches!(&app.dialog, Some(Dialog::ReportProblem(d)) if d.busy()) => return None,
             "reportProblem" => Dialog::ReportProblem(Box::new(crate::report_problem::Draft::new(app, params))),
             "testers" => Dialog::About(AboutTab::Testers),
             // An item that repeats is asked about before it opens: just this one, or the series?
@@ -389,6 +398,10 @@ pub(crate) fn open_dialog(app: &mut MailApp, name: &str, params: &Value) -> Opti
     if name == "mergeContacts" {
         return crate::merge_contacts::MergeContacts::open(app, params).map(|d| Dialog::MergeContacts(Box::new(d)));
     }
+    if name == "importPst" {
+        let path = params.get("path").and_then(Value::as_str)?;
+        return Some(Dialog::ImportPst(Box::new(crate::import_pst::ImportPst::open(app, path))));
+    }
     if name == "importTree" {
         let path = params.get("path").and_then(Value::as_str)?;
         return Some(Dialog::ImportTree(Box::new(crate::import_tree::ImportTree::open(app, path))));
@@ -423,6 +436,18 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
         "ui.removeAllData" if app.services.data_wipe.is_some() && !app.data_removed => Some(crate::data_removal::question()),
         // A mailbox from a file: where its accounts connect to.
         "ui.confirmServers" if app.unconfirmed => Some(app.confirm_servers_question()),
+        // Pictures in all mail, switched on from the bar above a message or File › Options (#910):
+        // what it tells every sender. Turning it off asks nothing.
+        "ui.downloadPicturesAutomatically" if !app.ui.download_pictures && params.get("value").and_then(Value::as_bool) != Some(false) => {
+            let text = format!(
+                "{} {}",
+                tl!(
+                    "Pictures on the web will be downloaded in every message you open. Each sender's server then learns when you opened the message and from which internet address."
+                ),
+                tl!("Mail in Junk E-mail still asks first. File › Options turns this off again.")
+            );
+            question(tl!("Download Pictures in All Mail"), text, tl!("Download in all mail"))
+        }
         // An Office file with macros, or a web page, from a message (#126).
         "mail.openAttachment" => {
             let (title, text, action) = crate::attachment_open::question(app, params)?;
@@ -576,6 +601,18 @@ pub fn confirmation(app: &MailApp, id: &str, params: &Value) -> Option<Question>
                     "{text} {}",
                     crate::i18n::fmt(tl!("The {n} shared mailboxes opened through it are removed from this device too."), &[("n", &n.to_string())])
                 ),
+            };
+            // Its rules go with it, as an account's rules are its own (#566); its server keeps its.
+            let rules = mb.rules.iter().filter(|r| r.account == a.id).count();
+            let text = if rules == 0 {
+                text
+            } else {
+                let going = tln!(
+                    rules,
+                    "Its {n} rule goes too; one its server keeps stays there.",
+                    "Its {n} rules go too; those its server keeps stay there."
+                );
+                format!("{text} {going}")
             };
             // The only account leaves an empty mailbox, as at a first start (#313).
             let text = if mb.accounts.iter().all(|x| x.id == a.id || x.shared_of == Some(a.id)) {
@@ -736,13 +773,15 @@ fn conversation_question(app: &MailApp, ids: &[u64]) -> Option<Question> {
     // Whole conversations only when nothing of them in the folder in view stays: a tab or a search
     // lists some of their messages, and may list them from other folders.
     let folder_id = s.view.folder;
-    let keys: HashSet<(Id, String)> = asking.iter().filter_map(|r| mb.message(r.id)).map(|m| (m.account, m.thread_key())).collect();
+    let threads = s.threads();
+    let keys: HashSet<(Id, mailcraft_model::ThreadKey)> =
+        asking.iter().filter_map(|r| mb.message(r.id)).map(|m| (m.account, threads.key(m.id))).collect();
     let accounts: HashSet<Id> = keys.iter().map(|(a, _)| *a).collect();
     // What of them stays: in this folder, and in the others the conversation is read from (not
     // Deleted Items or Junk E-mail), whatever the tab lists.
     let (mut stays_here, mut stays_elsewhere) = (false, false);
     for m in mb.messages.values().filter(|m| accounts.contains(&m.account) && !picked.contains(&m.id)) {
-        if !keys.contains(&(m.account, m.thread_key())) {
+        if !keys.contains(&(m.account, threads.key(m.id))) {
             continue;
         }
         if m.folder == folder_id {
@@ -1355,7 +1394,7 @@ fn host_and_port(typed: &str) -> bool {
 }
 
 /// Every command (engine and window) as `(id, label, location, shortcut, enabled)`, for search.
-fn all_commands(app: &MailApp) -> Vec<(String, String, String, String, bool)> {
+pub(crate) fn all_commands(app: &MailApp) -> Vec<(String, String, String, String, bool)> {
     let mut out: Vec<(String, String, String, String, bool)> = app
         .session
         .registry
@@ -1386,6 +1425,8 @@ fn all_commands(app: &MailApp) -> Vec<(String, String, String, String, bool)> {
                     | "tasks.select"
             ) && !c.id.ends_with(".get")
                 && !c.id.ends_with(".list")
+                // Not even greyed while it waits for Google's review (#911).
+                && (c.id != "mail.setGmailCategory" || crate::gmail_move::switched_on(app))
         })
         .map(|c| {
             (
@@ -1408,7 +1449,7 @@ fn all_commands(app: &MailApp) -> Vec<(String, String, String, String, bool)> {
 
 /// How well `query` matches a command: lower is better, `None` is no match. Every word must be
 /// found in the label, the location or the id.
-fn score(query: &str, label: &str, location: &str, id: &str) -> Option<u32> {
+pub(crate) fn score(query: &str, label: &str, location: &str, id: &str) -> Option<u32> {
     let (l, loc, i) = (label.to_lowercase(), location.to_lowercase(), id.to_lowercase());
     let mut total = 0;
     for word in query.to_lowercase().split_whitespace() {
@@ -1495,6 +1536,9 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
     });
     let mut close = escape;
     let mut reopen: Option<Dialog> = None;
+    // The Verify dialog's answer, run with the dialog in its place (`ui.markKeyVerified` does
+    // nothing without it).
+    let mut mark: Option<Value> = None;
     match &mut dialog {
         Dialog::Commands { query, selected } => {
             let open = window(ctx, tl!("Search Commands"), 520.0, |ui| {
@@ -2112,6 +2156,8 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             let mut done = false;
             let open = window(ctx, tl!("Report a Problem"), crate::report_problem::WIDTH, |ui| done = draft.show(app, ui));
             close |= !open || done;
+            // A report on its way keeps the window until its answer is said (the reference, or why not).
+            close &= draft.sending.is_none();
         }
         // (Enter is nobody's in these: what they send, they send from a button.)
         Dialog::Meeting(dialog) => {
@@ -2154,12 +2200,23 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             let open = window(ctx, tl!("Import a Folder of Mailboxes"), crate::import_tree::WIDTH, |ui| done = dialog.show(app, ui, enter));
             close |= !open || done;
         }
+        Dialog::ImportPst(dialog) => {
+            let mut done = false;
+            let open = window(ctx, tl!("Import a .pst File"), crate::import_pst::WIDTH, |ui| done = dialog.show(app, ui, enter));
+            // (Closed, or Escape, while it reads: the reading stops, and what was read goes in and
+            // the report is shown first.)
+            let asked = close || !open;
+            close = done || (asked && !dialog.stop());
+        }
         // (Enter is the date and time fields' to say OK with; the replies have lines of their own.)
         Dialog::AutomaticReplies(dialog) => {
             let mut done = false;
             let title = dialog.title();
             let open = window(ctx, &title, crate::auto_replies::WIDTH, |ui| done = dialog.show(app, ui));
             close |= !open || done;
+        }
+        Dialog::Security(security) => {
+            close |= crate::security::show_dialog(app, ctx, security, enter, &mut mark);
         }
         Dialog::FolderProperties(dialog) => {
             let idle = ctx.memory(|m| m.focused().is_none());
@@ -2174,6 +2231,13 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             }
             close |= !open || done;
         }
+    }
+    if let Some(params) = mark {
+        app.dialog = Some(dialog);
+        if let Err(e) = app.run("ui.markKeyVerified", params) {
+            app.status(e);
+        }
+        return;
     }
     if !close {
         // While it stays open the dialog is a modal layer: egui keeps the keyboard and the pointer

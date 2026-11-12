@@ -153,6 +153,8 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         background,
         // (A Send/Receive reads windows: no email by its id alone.)
         emails: Vec::new(),
+        // //// Neoffice — upstream's #795: the conversation ids of mail listed before they were asked for, in a run of every mailbox.
+        threads: if full || !tied { super::thread_ids::to_ask(&s.mailbox, account) } else { Vec::new() },
     })
 }
 
@@ -285,7 +287,7 @@ fn said(line: &str) -> String {
 
 /// Take in what a JMAP run brought back: the folder list, then each mailbox's window. Not an undo
 /// step: the server is the source of truth, but for what was changed here and hasn't reached it.
-pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
+pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult {
     let account = result.account;
     // //// Neoffice — whose answer it is, as upstream checks it (its server too, `session`); the rest is the fork's run.
     receiving(&s.mailbox, account, &result.email, &result.session)?;
@@ -395,7 +397,10 @@ pub fn apply_jmap_mail(s: &mut Session, result: JmapMailResult) -> CmdResult {
     if result.whole {
         graph_down::sweep(&mut s.mailbox, account, &mut down);
     }
-    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() {
+    // //// Neoffice — the conversations of mail listed before they were asked for (upstream's #795, `thread_ids`).
+    super::thread_ids::bounded(&mut result.threads, plausible_id);
+    let threaded = super::thread_ids::take(&mut s.mailbox, account, &result.threads);
+    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || threaded {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there.

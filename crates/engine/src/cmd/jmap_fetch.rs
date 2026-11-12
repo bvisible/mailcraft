@@ -24,6 +24,7 @@ use mailcraft_model::sync::{GraphFetchResult, JmapFetchRequest};
 use mailcraft_model::{AccountKind, FolderKind, Id, Message};
 use serde_json::{Value, json};
 
+use super::graph_down;
 use super::graph_mail::apply_graph_fetch;
 use super::jmap_down::plausible_id;
 use super::{bad, fail};
@@ -68,7 +69,12 @@ pub fn jmap_fetch_request(s: &Session, account: Id, message: Option<Id>, most: u
         Some(id) => {
             let m = s.mailbox.message(id).filter(|m| m.account == account).ok_or_else(|| fail(format!("no message with id {id} in {}", a.name)))?;
             // One whose id this account doesn't have yet (a moved message waiting to be found again) can't be asked for.
-            m.server.as_ref().filter(|server| m.unfetched && plausible_id(&server.id)).map(|server| vec![server.id.clone()]).unwrap_or_default()
+            // //// Neoffice — as upstream's fetch of a message (`graph_down::still_to_fetch`): not one a draft being edited or the Outbox holds.
+            m.server
+                .as_ref()
+                .filter(|server| graph_down::still_to_fetch(&s.mailbox, m) && plausible_id(&server.id))
+                .map(|server| vec![server.id.clone()])
+                .unwrap_or_default()
         }
         None => queue(s, account, most.clamp(1, MOST)),
     };
@@ -108,7 +114,7 @@ fn scope(s: &Session, account: Id) -> Vec<(Standing, &str)> {
         .into_iter()
         .filter_map(|m| {
             let server = m.server.as_ref().filter(|server| !server.gone && plausible_id(&server.id))?;
-            if !m.unfetched {
+            if !graph_down::still_to_fetch(mb, m) {
                 return Some((Standing::Whole, server.id.as_str()));
             }
             if m.incomplete || s.graph_unfetchable.contains(&(account, server.id.clone())) {

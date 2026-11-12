@@ -25,20 +25,21 @@
 //!
 //! **The lines of trouble** name no folder, no address and nothing a server said.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::FolderKind;
 use mailcraft_model::sync::{
-    EwsFetchRequest, EwsFolderDeltas, EwsMailRequest, EwsMailResult, EwsMessagePage, EwsScope, GraphFetchResult, GraphFetched, GraphProgress,
+    EwsFetchRequest, EwsFolderDeltas, EwsMailRequest, EwsMailResult, EwsMessagePage, EwsScope, FolderChange, GraphFetchResult, GraphFetched,
+    GraphFolder, GraphProgress, MAX_THREAD_ASKS, ThreadOf,
 };
 
 use crate::client::Client;
 use crate::error::{Error, ResponseCode};
-use crate::folder::{DistinguishedFolder, GetFolder};
-use crate::hierarchy::SyncFolderHierarchy;
+use crate::folder::{DistinguishedFolder, FolderInfo, GetFolder};
+use crate::hierarchy::{MAX_NAME, SyncFolderHierarchy};
 use crate::http::{HttpExchange, TransportError};
-use crate::items::{GetItemMime, Shape, SyncFolderItems};
+use crate::items::{GetItemConversations, GetItemMime, MAX_CONVERSATIONS, Shape, SyncFolderItems};
 use crate::reply::Reply;
 use crate::soap::Element;
 
@@ -129,6 +130,12 @@ pub(crate) struct Run<'a, E: HttpExchange> {
     pub(crate) flag_lacking: bool,
     /// A read-state change that said no state was passed over: said once a run, with no id.
     pub(crate) read_unsaid: bool,
+    /// The ids of the server's other own folders ([`OWN`]) it has, as far as it said (#779): a
+    /// change of one is never sent.
+    pub(crate) own: HashSet<String>,
+    /// A folder deleted here is still on the server (it refused, or it is one of its own): the
+    /// folder list is read afresh, as a delta wouldn't bring it back.
+    pub(crate) reread_folders: bool,
 }
 
 impl<E: HttpExchange> Run<'_, E> {
@@ -188,15 +195,38 @@ impl<E: HttpExchange> Run<'_, E> {
     }
 }
 
-/// The distinguished folders a run asks the ids of, with the kind each is.
-const KNOWN: [(DistinguishedFolder, Option<FolderKind>); 6] = [
+/// The distinguished folders a run asks the ids of, with the kind each is. The server's Outbox is
+/// no kind of MailCraft's (AU2-V2: mail goes from MailCraft's own Outbox): it is asked for to be
+/// left out of the folder list while it is empty ([`server_outbox`]).
+const KNOWN: [(DistinguishedFolder, Option<FolderKind>); 7] = [
     (DistinguishedFolder::MessageRoot, None),
     (DistinguishedFolder::Inbox, Some(FolderKind::Inbox)),
     (DistinguishedFolder::Drafts, Some(FolderKind::Drafts)),
     (DistinguishedFolder::SentItems, Some(FolderKind::Sent)),
     (DistinguishedFolder::DeletedItems, Some(FolderKind::Deleted)),
     (DistinguishedFolder::JunkEmail, Some(FolderKind::Junk)),
+    (DistinguishedFolder::Outbox, None),
 ];
+
+/// The server's own folders that are no kind of MailCraft's (#779), and its Outbox, which isn't
+/// either (AU2-V2): asked for in a request of their own, so that a server that doesn't know one of
+/// the names loses nothing else. They are never renamed, moved or deleted (the server refuses it,
+/// or should). These are the mail folders among the schema's `DistinguishedFolderIdNameType` names
+/// that lie under the top of the mail; Graph's `clutter` and `scheduled` have no such name, and
+/// what lies under the top of the mailbox (`searchfolders`, `recoverableitems…`) is never listed.
+const OWN: [DistinguishedFolder; 6] = [
+    DistinguishedFolder::Outbox,
+    DistinguishedFolder::ConversationHistory,
+    DistinguishedFolder::SyncIssues,
+    DistinguishedFolder::Conflicts,
+    DistinguishedFolder::LocalFailures,
+    DistinguishedFolder::ServerFailures,
+];
+
+/// How [`OWN`] is asked for when a server won't take the names together: the Outbox, which every
+/// server knows, Conversation History, and Sync Issues with the three folders in it (a group that
+/// fails too is asked name by name).
+const OWN_GROUPS: [std::ops::Range<usize>; 3] = [0..1, 1..2, 2..6];
 
 /// What the server calls its special folders.
 #[derive(Default)]
@@ -204,9 +234,94 @@ struct Specials {
     root: Option<String>,
     inbox: Option<String>,
     kinds: HashMap<String, FolderKind>,
+    /// The server's Outbox, as it is now.
+    outbox: Option<FolderInfo>,
+}
+
+/// The server's Outbox is left out of the folder list while it holds nothing and has no folder in
+/// it, as an Exchange mailbox's is over IMAP and a Microsoft account's (#743), so that the account
+/// shows one Outbox, MailCraft's own, not two (#747). A list that had it loses it (its id is among
+/// the deleted). While it holds mail it is listed like any other folder, so nothing is hidden: a
+/// delta that doesn't bring it has it as the server says it is now, at the top of the mail, where
+/// every server keeps it. Never sent from, either way. The id it left out, if it did.
+fn server_outbox(deltas: &mut EwsFolderDeltas, specials: &Specials) -> Option<String> {
+    let outbox = specials.outbox.as_ref()?;
+    let id = outbox.id.as_str();
+    if outbox.total_count == Some(0) && outbox.child_folder_count == Some(0) {
+        deltas.changed.retain(|f| f.id != id);
+        if !deltas.deleted.iter().any(|have| have == id) {
+            deltas.deleted.push(id.to_owned());
+        }
+        return Some(id.to_owned());
+    }
+    let name: String = outbox.display_name.chars().filter(|c| !c.is_control()).take(MAX_NAME).collect();
+    if !name.is_empty() && !deltas.changed.iter().any(|f| f.id == id) {
+        deltas.changed.push(GraphFolder {
+            id: id.to_owned(),
+            name,
+            kind: FolderKind::Custom,
+            total: outbox.total_count.unwrap_or(0),
+            unread: outbox.unread_count.unwrap_or(0),
+            counted: outbox.total_count.is_some() && outbox.unread_count.is_some(),
+            ..GraphFolder::default()
+        });
+    }
+    None
+}
+
+impl Specials {
+    /// The ids of the server's own folders: these, and `own` (not the top of the mail, which is
+    /// no folder here). Sorted, so that a run says them the same way each time.
+    fn own(&self, own: &HashSet<String>) -> Vec<String> {
+        let mut ids: Vec<String> = own.iter().chain(self.kinds.keys()).cloned().chain(self.outbox.iter().map(|o| o.id.as_str().to_owned())).collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    }
+}
+
+/// Whether a request that failed with `asked` ends the run even when it was only for the server's
+/// own folders (#779): it was called off, the sign-in was refused, or the server asked to be left
+/// alone (a 429, a 503 or `ErrorServerBusy`, which the next request would meet as well).
+/// Anything else of theirs is taken as "not there", so that Send/Receive never fails over them
+/// (and a mark once set stays).
+fn ends_the_run(asked: &Asked) -> bool {
+    matches!(asked, Asked::Stop(Stop::Cancelled | Stop::Auth | Stop::Busy(_)))
 }
 
 impl<E: HttpExchange> Run<'_, E> {
+    /// The ids of the folders of [`OWN`] the server has: one request for them all, and, when the
+    /// server won't take it (a schema that lacks one of the names), one for each of
+    /// [`OWN_GROUPS`], and name by name for a group it won't take either. Whatever it says of one,
+    /// but for what [`ends_the_run`], is "not there".
+    async fn own_folders(&mut self) -> Result<HashSet<String>, Asked> {
+        let mut found = HashSet::new();
+        let mut asks: Vec<&[DistinguishedFolder]> = vec![&OWN];
+        let mut at = 0usize;
+        // (At most the whole list, its groups and each name: 1 + 3 + 6 requests.)
+        while let Some(names) = asks.get(at).copied() {
+            at = at.saturating_add(1);
+            let get = GetFolder::new(names);
+            match self.ask(&get.element(), &|reply| get.answer(reply)).await {
+                Ok(answers) => found.extend(answers.into_iter().flatten().map(|info| info.id.as_str().to_owned())),
+                Err(stop) if ends_the_run(&stop) => return Err(stop),
+                // (Unreachable, refused, no secure connection: nothing more is asked of them. A
+                // change of one is then refused by the engine's mark, once a run has set it.)
+                Err(Asked::Stop(_)) => {
+                    log::info!("ews folders: the server's own folders couldn't be asked for; those not answered are taken as not there");
+                    break;
+                }
+                Err(_) if names.len() == OWN.len() => {
+                    log::info!("ews folders: the server didn't take the names of its own folders together; asking them in groups");
+                    asks.extend(OWN_GROUPS.iter().filter_map(|group| OWN.get(group.clone())));
+                }
+                Err(_) if names.len() > 1 => asks.extend(names.chunks(1)),
+                Err(_) => {}
+            }
+        }
+        Ok(found)
+    }
+
     async fn specials(&mut self) -> Result<Specials, Asked> {
         let get = GetFolder::new(&KNOWN.map(|(folder, _)| folder));
         let found = self.ask(&get.element(), &|reply| get.answer(reply)).await?;
@@ -216,6 +331,7 @@ impl<E: HttpExchange> Run<'_, E> {
             let id = info.id.as_str().to_owned();
             match (folder, kind) {
                 (DistinguishedFolder::MessageRoot, _) => out.root = Some(id),
+                (DistinguishedFolder::Outbox, _) => out.outbox = Some(info),
                 (DistinguishedFolder::Inbox, Some(kind)) => {
                     out.inbox = Some(id.clone());
                     out.kinds.insert(id, *kind);
@@ -282,7 +398,17 @@ pub async fn sync_mail<E: HttpExchange>(
     wait: &mut dyn FnMut(u32) -> bool,
     emit: &mut dyn FnMut(EwsMailResult),
 ) {
-    let mut run = Run { client, exchange, cancel, wait, shape: Shape::Full, flag_lacking: false, read_unsaid: false };
+    let mut run = Run {
+        client,
+        exchange,
+        cancel,
+        wait,
+        shape: Shape::Full,
+        flag_lacking: false,
+        read_unsaid: false,
+        own: HashSet::new(),
+        reread_folders: false,
+    };
     let mut out = Outcome::default();
     if let Err(stop) = run.all(request, &mut out, emit).await {
         match stop {
@@ -293,6 +419,13 @@ pub async fn sync_mail<E: HttpExchange>(
             }
         }
     }
+    // Then the conversations of mail listed before they were asked for (#795), unless the run was
+    // stopped or the server asked to be left alone. Never worth failing the run for.
+    let threads = if request.threads.is_empty() || out.stopped || out.busy_for.is_some() || out.auth_refused {
+        Vec::new()
+    } else {
+        run.conversations(&request.threads, &mut out).await
+    };
     if !out.blocked.is_empty() {
         // (Once a run, and no id: the engine names the folders by what the owner calls them.)
         log::warn!("ews mail: {} folders hold a change that can't be taken in; they are left where they were", out.blocked.len());
@@ -306,12 +439,55 @@ pub async fn sync_mail<E: HttpExchange>(
         stopped: out.stopped,
         auth_refused: out.auth_refused,
         blocked: out.blocked,
+        threads,
         ..base(request)
     });
 }
 
 impl<E: HttpExchange> Run<'_, E> {
+    /// The conversation of each of the items `ids` ([`GetItemConversations`]), a hundred to a
+    /// request, at most [`MAX_THREAD_ASKS`]: what the server answered for, until it doesn't. A busy
+    /// server is said in `outcome`; a request it refused is each of its items refused.
+    async fn conversations(&mut self, ids: &[String], outcome: &mut Outcome) -> Vec<ThreadOf> {
+        let mut out = Vec::new();
+        let ids = ids.get(..ids.len().min(MAX_THREAD_ASKS)).unwrap_or_default();
+        for some in ids.chunks(MAX_CONVERSATIONS) {
+            let op = GetItemConversations::new(some);
+            let said = match self.ask(&op.element(), &|reply| op.answer(reply)).await {
+                Ok(said) => said,
+                Err(Asked::Stop(Stop::Busy(seconds))) => {
+                    outcome.busy_for = Some(seconds.max(1));
+                    break;
+                }
+                Err(Asked::Code(_)) => {
+                    log::info!("ews mail: the server refused to say the conversations; asked again in a later run, a few times");
+                    out.extend(op.ids().iter().map(|id| ThreadOf::refused(id)));
+                    break;
+                }
+                Err(_) => {
+                    log::info!("ews mail: conversations not asked for now; a later run goes on");
+                    break;
+                }
+            };
+            // (Nothing answered, or every one refused: the server isn't saying these now.)
+            let answered = said.iter().any(|t| !t.refused);
+            out.extend(said);
+            if !answered {
+                break;
+            }
+        }
+        log::info!("ews mail: the conversations of {} of {} messages asked for", out.len(), ids.len());
+        out
+    }
+}
+
+impl<E: HttpExchange> Run<'_, E> {
     async fn all(&mut self, request: &EwsMailRequest, out: &mut Outcome, emit: &mut dyn FnMut(EwsMailResult)) -> Result<(), Asked> {
+        // The server's own folders (#779), before anything goes up: a change of one is never sent.
+        let changes_existing = request.changes.iter().any(|c| !matches!(c, FolderChange::Create { .. }));
+        if !request.inbox_pass && (request.list_folders || changes_existing) {
+            self.own = self.own_folders().await?;
+        }
         // What was changed, written and sent here goes first (not in the Inbox pass).
         if !request.inbox_pass {
             self.push(request, emit).await?;
@@ -323,8 +499,13 @@ impl<E: HttpExchange> Run<'_, E> {
             out.line("Couldn't find the Inbox on the server");
         }
         let mut order: Vec<String> = Vec::new();
-        if request.list_folders && !request.inbox_pass {
-            let (deltas, state) = match self.folders(&request.hierarchy, &specials).await {
+        // (The server's Outbox, when the list leaves it out: there is nothing in it to read.)
+        let mut left_out: Option<String> = None;
+        // (A run that lists no folders still reads them afresh when a folder deleted here is kept there.)
+        if (request.list_folders || self.reread_folders) && !request.inbox_pass {
+            // (A folder deleted here that the server keeps comes back only in a read afresh.)
+            let from = if self.reread_folders { "" } else { request.hierarchy.as_str() };
+            let (mut deltas, state) = match self.folders(from, &specials).await {
                 Ok(found) => found,
                 Err(Asked::Stop(stop)) => return Err(Asked::Stop(stop)),
                 Err(_) => {
@@ -333,13 +514,15 @@ impl<E: HttpExchange> Run<'_, E> {
                     return Ok(());
                 }
             };
+            left_out = server_outbox(&mut deltas, &specials);
+            deltas.well_known = specials.own(&self.own);
             order.extend(deltas.changed.iter().map(|f| f.id.clone()));
             emit(EwsMailResult { folders: Some(deltas), hierarchy: state, partial: true, ..base(request) });
         }
         // Which folders are read, in which order.
         let mut read: Vec<String> = Vec::new();
         let put = |id: &str, read: &mut Vec<String>| {
-            if !id.is_empty() && !read.iter().any(|have| have == id) && read.len() < MAX_FOLDERS {
+            if !id.is_empty() && left_out.as_deref() != Some(id) && !read.iter().any(|have| have == id) && read.len() < MAX_FOLDERS {
                 read.push(id.to_owned());
             }
         };
@@ -469,7 +652,17 @@ pub async fn fetch_messages<E: HttpExchange>(
     cancel: &AtomicBool,
     wait: &mut dyn FnMut(u32) -> bool,
 ) -> GraphFetchResult {
-    let mut run = Run { client, exchange, cancel, wait, shape: Shape::Full, flag_lacking: false, read_unsaid: false };
+    let mut run = Run {
+        client,
+        exchange,
+        cancel,
+        wait,
+        shape: Shape::Full,
+        flag_lacking: false,
+        read_unsaid: false,
+        own: HashSet::new(),
+        reread_folders: false,
+    };
     let mut out = GraphFetchResult { account: request.account, email: request.email.clone(), ..GraphFetchResult::default() };
     let mut outcome = Outcome::default();
     for id in request.ids.iter().take(MAX_FETCH) {

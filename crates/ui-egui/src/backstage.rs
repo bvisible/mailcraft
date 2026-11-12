@@ -308,6 +308,20 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             }
             ui.add_space(4.0);
         }
+        // Where keeping rules on the server stands, with a way to ask again (#566).
+        if let Some((line, again)) = app.rules_line(a.id) {
+            ui.horizontal(|ui| {
+                ui.add_space(36.0);
+                ui.label(egui::RichText::new(line).font(regular(11.5)).color(t.text_dim));
+                let tip = tl!(
+                    "Ask for permission to change the rules on the server: Microsoft's page opens in your browser. Without it, new rules stay on this computer and nothing of them is sent."
+                );
+                if again && ui.link(tl!("Ask again")).on_hover_text(tip).clicked() {
+                    app.ask_rules_again(a.id);
+                }
+            });
+            ui.add_space(4.0);
+        }
         // Where the automatic replies stand, and whether MailCraft may change them, with a way
         // to sign in again or to ask for that permission again.
         if let Some((line, again)) = app.auto_replies_line(a.id) {
@@ -338,7 +352,7 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         }
         // Which messages are kept whole on this computer (R3.2); a shared mailbox keeps as much
         // as its owner's account (#70).
-        if a.kind == AccountKind::Microsoft && !a.is_shared() {
+        if a.kind.has_offline_window() && !a.is_shared() {
             download_in_full(app, ui, a);
             // How far back mail is kept in full (#143), beside it.
             ui.horizontal(|ui| {
@@ -470,6 +484,9 @@ fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     {
         let _ = app.run("file.importFolderTree", json!({}));
     }
+    if tile(ui, "import", tl!("Import a .pst File"), tl!("The mail, contacts, calendar, tasks and notes of a .pst file, onto this computer"), t) {
+        let _ = app.run("file.importPst", json!({}));
+    }
     if tile(ui, "open", tl!("Open Mailbox File"), tl!("Replace what is open with a .mailcraft file"), t) {
         let _ = app.run("ui.open", json!({}));
     }
@@ -486,17 +503,17 @@ fn open(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         let _ = app.run("ui.dialog", json!({"name": "openCalendar"}));
     }
     section(ui, tl!("Save out"), t);
-    if tile(ui, "save", tl!("Save Mailbox As"), tl!("Everything here in one .mailcraft file"), t) {
-        let _ = app.run("file.saveAs", json!({}));
-    }
-    if tile(ui, "export", tl!("Export Folder"), tl!("The messages of the folder in view, as .mbox"), t) {
-        let _ = app.run("file.exportFolder", json!({}));
-    }
-    if tile(ui, "calendar", tl!("Save Calendar"), tl!("Every event and task, as .ics"), t) {
-        let _ = app.run("file.exportCalendar", json!({}));
-    }
-    if tile(ui, "people", tl!("Export Contacts"), tl!("Every contact, as .vcf"), t) {
-        let _ = app.run("file.exportContacts", json!({}));
+    let save_out = [
+        ("save", tl!("Save Mailbox As"), tl!("Everything here in one .mailcraft file"), "file.saveAs"),
+        ("save", tl!("Save Message As"), tl!("The selected message, as .eml"), "file.exportMessage"),
+        ("export", tl!("Export Folder"), tl!("The messages of the folder in view, as .mbox"), "file.exportFolder"),
+        ("calendar", tl!("Save Calendar"), tl!("Every event and task, as .ics"), "file.exportCalendar"),
+        ("people", tl!("Export Contacts"), tl!("Every contact, as .vcf"), "file.exportContacts"),
+    ];
+    for (icon, title, text, command) in save_out {
+        if tile(ui, icon, title, text, t) {
+            let _ = app.run(command, json!({}));
+        }
     }
     section(ui, tl!("Start over"), t);
     if tile(ui, "mail", tl!("Sample Mailbox"), tl!("Invented mail, meetings, people and tasks to try things on"), t) {
@@ -624,10 +641,6 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             }
         });
     });
-    if app.services.update_check.is_some() {
-        section(ui, tl!("Updates"), t);
-        crate::updates::options(app, ui, t);
-    }
     let prefs = app.session.prefs.clone();
     let set = |app: &mut MailApp, params: serde_json::Value| {
         let _ = app.run("file.options", params);
@@ -640,6 +653,16 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     let mut quote = prefs.quote_on_reply;
     if ui.checkbox(&mut quote, tl!("Include the original message when replying")).changed() {
         set(app, json!({"quoteOnReply": quote}));
+    }
+    let mut lists = prefs.auto_lists;
+    if ui
+        .checkbox(&mut lists, tl!("Automatic bulleted and numbered lists"))
+        .on_hover_text(tl!(
+            "Typing * or - and a space at the start of a line starts a bulleted list, 1. or 1) a numbered one. Undo puts what you typed back."
+        ))
+        .changed()
+    {
+        set(app, json!({"autoLists": lists}));
     }
     let mut in_window = app.ui.replies_in_window;
     let switch = ui
@@ -667,7 +690,9 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
                         set(app, json!({"syncLimit": n}));
                     }
                 }
-            });
+            })
+            .response
+            .on_hover_text(tl!("For IMAP accounts. Microsoft and Exchange server accounts keep mail by Mail to keep offline, in File › Info."));
     });
     // (Whose Favorites the folder pane shows, for an account that signs in with Microsoft.)
     crate::favorites_sync::options(app, ui, t);
@@ -679,6 +704,7 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     section(ui, tl!("Pictures in mail"), t);
     crate::reading::remote::options(app, ui, t);
     crate::sender_images::options(app, ui, t);
+    crate::attachment_preview::options(app, ui);
     section(ui, tl!("Accounts"), t);
     let mut remember = app.ui.remember_sign_in;
     if ui
@@ -705,6 +731,17 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             let _ = app.execute("ui.microsoftClientId", json!({"value": id.trim()}));
         }
     });
+    row(ui, tl!("Google Desktop application ID"), |ui| {
+        let mut id = app.ui.google_client_id.clone();
+        let hint = if app.services.google_client_id.is_empty() {
+            tl!("Waiting for MailCraft's Google registration")
+        } else {
+            tl!("The one this build came with")
+        };
+        if ui.add(egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0)).changed() {
+            let _ = app.execute("ui.googleClientId", json!({"value": id.trim()}));
+        }
+    });
     row(ui, tl!("Send and receive automatically"), |ui| {
         let label = |n: u32| match n {
             0 => tl!("Only when I ask").to_string(),
@@ -719,6 +756,8 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             }
         });
     });
+    section(ui, tl!("Security"), t);
+    crate::security::options(app, ui, t);
     section(ui, tl!("Calendar"), t);
     let mut twelve = prefs.twelve_hour;
     if ui.checkbox(&mut twelve, tl!("Use a 12-hour clock (3:05 PM)")).changed() {

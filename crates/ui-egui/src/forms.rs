@@ -34,7 +34,8 @@ pub enum Form {
 impl Form {
     /// The form called `name`: `event` / `meeting` / `contact` / `task` start something new (`params` may
     /// prefill it), `editEvent` / `editContact` / `editTask` edit the selected one (or `params.id`),
-    /// `account`, `categories` and `rules` manage those. `None` for an unknown name or nothing to edit.
+    /// `account`, `categories` and `rules` manage those (`rules` with a `folder` has the New rule filled
+    /// in to move the selected message's sender there). `None` for an unknown name or nothing to edit.
     pub fn open(name: &str, app: &MailApp, params: &Value) -> Option<Form> {
         let s = &app.session;
         Some(match name {
@@ -46,8 +47,8 @@ impl Form {
             "task" => Form::Task(Box::new(task::TaskForm::new(s, params))),
             "editTask" => Form::Task(Box::new(task::TaskForm::edit(s, params)?)),
             "account" => Form::Account(Box::new(account::AccountForm::open(app, params)?)),
-            "categories" => Form::Categories(Box::new(categories::CategoriesForm::new(s))),
-            "rules" => Form::Rules(Box::new(rules::RulesForm::new(s))),
+            "categories" => Form::Categories(Box::new(categories::CategoriesForm::new(s, params)?)),
+            "rules" => Form::Rules(Box::new(rules::RulesForm::new(s, params))),
             "junkOptions" => Form::Junk(Box::new(junk::JunkForm::new(s, params))),
             _ => return None,
         })
@@ -780,14 +781,10 @@ pub(crate) mod kit {
         ui.label(egui::RichText::new(shown(message, 400)).color(t.red));
     }
 
-    /// Text from elsewhere cut to `max` characters on one line, for a label.
-    pub fn shown(text: &str, max: usize) -> String {
-        let mut out: String = text.chars().map(|c| if c.is_control() { ' ' } else { c }).take(max).collect();
-        if text.chars().nth(max).is_some() {
-            out.push('…');
-        }
-        out
-    }
+    /// Text from elsewhere for a label, as a name is shown (#454): one line, without control
+    /// characters or characters that show nothing, spaces run together, at most `max` characters,
+    /// the last an ellipsis where it was cut.
+    pub use mailcraft_names::shown;
 
     /// Which of the buttons at the bottom was clicked.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -1101,128 +1098,11 @@ pub(crate) mod kit {
         }
 
         #[cfg(test)]
-        mod tests {
-            use super::*;
-
-            fn item(key: &'static str, section: u8, rank: u8, plain: bool) -> Item {
-                Item {
-                    key,
-                    icon: "save",
-                    label: key.to_string(),
-                    tip: key.to_string(),
-                    section,
-                    rank,
-                    plain,
-                    menu: false,
-                    checked: false,
-                    primary: false,
-                    on: true,
-                }
-            }
-
-            #[test]
-            fn labels_give_way_before_buttons_and_what_matters_most_last() {
-                let items = [item("save", 0, 1, false), item("delete", 0, 3, true), item("showAs", 1, 5, false), item("private", 1, 6, true)];
-                // Each button is 40 wide, and 100 with its label.
-                let width = |_: usize, labelled: bool| if labelled { 100.0 } else { 40.0 };
-                let all = |available: f32| fit(&items, &width, available);
-                // Everything fits: 4 × 100, two gaps of 2 and a rule's 9.
-                assert_eq!(all(413.0), (vec![(0, true), (1, true), (2, true), (3, true)], vec![]));
-                // A little less: the labels of what its icon explains go, the last first.
-                assert_eq!(all(412.0).0, [(0, true), (1, true), (2, true), (3, false)]);
-                assert_eq!(all(300.0).0, [(0, true), (1, false), (2, true), (3, false)]);
-                // Then the other labels, all but the first rank's.
-                assert_eq!(all(240.0), (vec![(0, true), (1, false), (2, false), (3, false)], vec![]));
-                // Then buttons go behind `…`, which takes room of its own; the first rank stays.
-                assert_eq!(all(230.0), (vec![(0, true), (1, false), (2, false)], vec![3]));
-                assert_eq!(all(150.0), (vec![(0, true)], vec![1, 2, 3]));
-                // Last its label, and then the button itself.
-                assert_eq!(all(100.0), (vec![(0, false)], vec![1, 2, 3]));
-                assert_eq!(all(0.0), (vec![], vec![0, 1, 2, 3]));
-                // Nothing to fit, and nonsense for a width.
-                assert_eq!(fit(&[], &width, 100.0), (vec![], vec![]));
-                assert_eq!(all(f32::NAN).1.len(), 4);
-                assert_ne!(hit_id(1, "save"), hit_id(2, "save"));
-            }
-        }
+        mod tests;
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn date_and_time_fields_read_what_people_type() {
-            assert!(date_ok("2026-10-16", true) && date_ok(" 20261016 ", true));
-            assert!(!date_ok("2026-02-30", true) && !date_ok("16/10/2026", false) && !date_ok("tomorrow", false));
-            // An empty field is fine only where a date may be left out.
-            assert!(date_ok("  ", false) && !date_ok("", true));
-            assert_eq!(parse_clock("9"), Some((9, 0)));
-            assert_eq!(parse_clock("9:30"), Some((9, 30)));
-            assert_eq!(parse_clock("9am"), Some((9, 0)));
-            assert_eq!(parse_clock("14:15"), Some((14, 15)));
-            assert_eq!(parse_clock(" 9:30 PM "), Some((21, 30)));
-            assert_eq!(parse_clock("12am"), Some((0, 0)));
-            for wrong in ["", "25:00", "9:75", "13pm", "noon", "9.5", "-1"] {
-                assert_eq!(parse_clock(wrong), None, "{wrong}");
-            }
-            assert!(time_ok("", false) && !time_ok("", true) && time_ok("7pm", true) && !time_ok("7 o'clock", false));
-            assert_eq!((clock_text(870, false).as_str(), clock_text(870, true).as_str()), ("14:30", "2:30 PM"));
-            let _ = clock_text(u32::MAX, true);
-        }
-
-        #[test]
-        fn fields_become_command_values() {
-            assert_eq!(stamp("2026-10-16", "3pm"), "2026-10-16T15:00");
-            assert_eq!(stamp(" 2026-10-16 ", "09:05"), "2026-10-16T09:05");
-            // Text that isn't a date or a time goes as typed, for the command to refuse.
-            assert_eq!(stamp(" soon ", "late "), "soonTlate");
-            assert_eq!(date_value("2026-10-16"), json!("2026-10-16"));
-            assert_eq!(date_value("20261016"), json!("2026-10-16"));
-            assert_eq!(date_value("   "), Value::Null);
-            assert_eq!(date_value(" 2026-1-1 "), json!("2026-1-1"));
-        }
-
-        #[test]
-        fn time_menus_list_half_hours() {
-            let all = slots(None, true);
-            assert_eq!(all.len(), 48);
-            assert_eq!(all.first(), Some(&(0, "12:00 AM".to_string())));
-            assert_eq!(all.last(), Some(&(1410, "11:30 PM".to_string())));
-            assert_eq!(slots(None, false).get(29), Some(&(870, "14:30".to_string())));
-            // After a start, later times that day with how long the event would be.
-            let after = slots(Some(15 * 60), true);
-            assert_eq!(after.first(), Some(&(930, "3:30 PM (30 minutes)".to_string())));
-            assert_eq!(after.get(1), Some(&(960, "4:00 PM (1 hour)".to_string())));
-            assert_eq!(after.get(2).map(|s| s.1.as_str()), Some("4:30 PM (1.5 hours)"));
-            assert_eq!(after.last().map(|s| s.0), Some(1410));
-            // Nothing is left of the day after 11:30 PM: the whole list again.
-            assert_eq!(slots(Some(23 * 60 + 45), true).len(), 48);
-            assert_eq!(slots(Some(u32::MAX), true).len(), 48);
-        }
-
-        #[test]
-        fn only_what_changed_is_sent() {
-            let before = object(json!({"title": "A", "start": "s", "end": "e", "allDay": false, "private": false}));
-            let same = changes(&before, &before, &[&["start", "end", "allDay"]]);
-            assert!(same.is_empty());
-            let now = object(json!({"title": "B", "start": "s2", "end": "e", "allDay": false, "private": false, "calendar": 3}));
-            let got = changes(&before, &now, &[&["start", "end", "allDay"]]);
-            // A new start brings the end and All day along; a new field counts as changed.
-            assert_eq!(Value::Object(got), json!({"title": "B", "start": "s2", "end": "e", "allDay": false, "calendar": 3}));
-            assert_eq!(object(json!([1, 2])), Map::new());
-        }
-
-        #[test]
-        fn hostile_text_is_cut_for_labels() {
-            assert_eq!(shown("a\tb\nc\u{7}", 10), "a b c ");
-            assert_eq!(shown("abcdef", 3), "abc…");
-            // Cut by characters, never inside one.
-            let long = "é\u{202e}\u{0}".repeat(10_000);
-            assert_eq!(shown(&long, 400).chars().count(), 401);
-            assert_eq!(shown("", 5), "");
-        }
-    }
+    mod tests;
 }
 
 /// The appointment and meeting form.
@@ -3135,13 +3015,25 @@ mod event {
                 self.online_dropped |= self.online;
                 self.online = false;
             }
+
+        /// The account whose categories the event takes: its calendar's.
+        pub(crate) fn category_account(&self, s: &Session) -> Id {
+            s.mailbox.calendar(self.calendar).map_or(0, |c| c.origin.account)
+        }
+
+        /// What the window's Categorize menu offers: the list of the event's account, then in
+        /// grey what the event has off it, as its chips do.
+        pub(crate) fn offered_categories(&self, s: &Session) -> Vec<(String, egui::Color32)> {
+            let account = self.category_account(s);
+            let listed = s.mailbox.categories_of(account).iter().map(|c| (c.name.clone(), c32(c.color)));
+            let off_list = self.categories.iter().filter(|name| s.mailbox.category_of(account, name).is_none());
+            listed.chain(off_list.map(|name| (name.clone(), c32(mailcraft_model::GREY_CATEGORY)))).take(200).collect()
         }
 
         /// The window's own bar. The key of the button that was clicked.
         fn bar(&mut self, app: &mut MailApp, ui: &mut Ui) -> Option<&'static str> {
             let items = self.bar_items();
-            let categories: Vec<(String, egui::Color32)> =
-                app.session.mailbox.categories.iter().map(|c| (c.name.clone(), c32(c.color))).take(200).collect();
+            let categories = self.offered_categories(&app.session);
             let mut menu = |ui: &mut Ui, key: &'static str| match key {
                 "showAs" => {
                     for x in ShowAs::ALL {
@@ -3328,7 +3220,7 @@ mod event {
                 // //// Neoffice — greyed, saying why, where its calendar's server keeps no categories (`options_refused`).
                 let refused = self.options_refused;
                 tall_row(ui, tl!("Categories"), |ui| {
-                    let chips = ui.add_enabled_ui(refused.is_none(), |ui| category_chips(ui, &s.mailbox.categories, &mut self.categories));
+                    let chips = ui.add_enabled_ui(refused.is_none(), |ui| category_chips(ui, s.mailbox.categories_of(self.category_account(s)), &mut self.categories));
                     if let Some(why) = refused {
                         chips.response.on_disabled_hover_text(crate::i18n::fmt(tl!("Not available: {reason}"), &[("reason", tl!(why))]));
                     }
@@ -3352,8 +3244,7 @@ mod event {
                         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
                         let mut off = None;
                         for name in self.categories.iter().take(100) {
-                            let color =
-                                s.mailbox.categories.iter().find(|c| c.name.eq_ignore_ascii_case(name)).map_or(t.text_disabled, |c| c32(c.color));
+                            let color = s.mailbox.category_of(self.category_account(s), name).map_or(t.text_disabled, |c| c32(c.color));
                             // //// Neoffice — see `kit::category_shown`.
                             if chip(ui, &kit::shown(kit::category_shown(name), 60), true, color) {
                                 off = Some(name.clone());
@@ -3675,1297 +3566,7 @@ mod event {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        /// Wednesday 2026-10-14 16:00 UTC.
-        const NOW: i64 = 1_791_993_600;
-
-        fn session() -> Session {
-            Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0)
-        }
-
-        // //// Neoffice — an online meeting of a JMAP account's calendar, whose server makes them of its own service.
-        #[test]
-        fn the_toggle_says_online_meeting_in_a_calendar_whose_server_makes_them() {
-            let mut s = session();
-            let added = s.run(
-                "account.add",
-                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
-            );
-            let account = added.unwrap()["id"].as_u64().unwrap();
-            let list = |services: Vec<mailcraft_model::OnlineProvider>| mailcraft_model::remote::CalendarsDownload {
-                account,
-                email: "ada@example.org".into(),
-                complete: true,
-                refused: Vec::new(),
-                calendars: vec![mailcraft_model::remote::RemoteCalendar {
-                    id: "C1".into(),
-                    name: "Ada".into(),
-                    main: true,
-                    plain: true,
-                    online_providers: Some(services),
-                    ..Default::default()
-                }],
-            };
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(vec![mailcraft_model::OnlineProvider::Other])).unwrap();
-            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
-            let teams = |f: &EventForm| f.bar_items().into_iter().find(|item| item.key == "teams").map(|item| (item.label, item.tip));
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), true);
-            assert_eq!(teams(&f), Some(("Online Meeting".to_string(), "Online Meeting".to_string())));
-            // Made by its server, it stays one: the button says so, as an online meeting.
-            let made = EventForm { online: true, online_made: true, ..EventForm::new(&s, &json!({"title": "Sync", "calendar": calendar}), true) };
-            assert_eq!(teams(&made).map(|(_, tip)| tip), Some("The account's server has made this an online meeting, and it stays one".to_string()));
-            // A calendar of this computer's, or a Microsoft account's: Teams, as before.
-            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": own}), true);
-            assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
-            // (Also one whose server allows only a service it doesn't name: the engine says it can't make Teams meetings.)
-            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
-            let microsoft = added.unwrap()["id"].as_u64().unwrap();
-            let list = mailcraft_model::remote::CalendarsDownload {
-                account: microsoft,
-                email: "bo@example.org".into(),
-                ..list(vec![mailcraft_model::OnlineProvider::Other])
-            };
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
-            let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": theirs}), true);
-            assert_eq!(teams(&f).map(|(label, _)| label), Some("Teams Meeting".to_string()));
-        }
-
-        // //// Neoffice — what a calendar whose server keeps no categories, importance or response options greys, saying why.
-        #[test]
-        fn a_plain_calendar_greys_categories_importance_and_response_options_with_one_reason() {
-            let mut s = session();
-            let added = s.run(
-                "account.add",
-                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
-            );
-            let account = added.unwrap()["id"].as_u64().unwrap();
-            let list = mailcraft_model::remote::CalendarsDownload {
-                account,
-                email: "ada@example.org".into(),
-                complete: true,
-                refused: Vec::new(),
-                calendars: vec![mailcraft_model::remote::RemoteCalendar {
-                    id: "C1".into(),
-                    name: "Ada".into(),
-                    main: true,
-                    plain: true,
-                    ..Default::default()
-                }],
-            };
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
-            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
-            let key = |f: &EventForm, key: &str| f.bar_items().into_iter().find(|item| item.key == key);
-            let reason = mailcraft_engine::cmd::calendar::PLAIN_KEEPS_NO;
-            // A meeting there: the four are greyed, each saying why; the rest is not.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), true);
-            for greyed in ["categorize", "importanceHigh", "importanceLow", "responseOptions"] {
-                assert!(key(&f, greyed).is_some_and(|item| !item.on && item.tip.contains(reason)), "{greyed}");
-            }
-            for open in ["showAs", "reminder", "private", "send"] {
-                assert!(key(&f, open).is_some_and(|item| item.on), "{open}");
-            }
-            // Moved to a calendar of this computer's in the form: offered again.
-            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
-            f.calendar = own;
-            f.follow_calendar(&s);
-            for offered in ["categorize", "importanceHigh", "importanceLow", "responseOptions"] {
-                assert!(key(&f, offered).is_some_and(|item| item.on), "{offered}");
-            }
-            // An appointment with a category, High importance and no responses asked for, moved into the plain calendar in
-            // the form: what it keeps none of goes, which the greyed controls could no longer do, and it saves there.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": own}), false);
-            f.categories = vec!["Blue category".into()];
-            f.importance = Importance::High;
-            f.options.request_responses = false;
-            f.calendar = calendar;
-            f.follow_calendar(&s);
-            assert_eq!((f.categories.len(), f.importance, f.options), (0, Importance::Normal, ResponseOptions::default()));
-            let (command, params) = f.command();
-            assert!(params.get("categories").is_none_or(|c| c.as_array().is_some_and(Vec::is_empty)), "{params}");
-            s.run(command, &params).unwrap_or_else(|e| panic!("{params}: {e}"));
-            // Opened there with a category asked for, it starts without it.
-            let f = EventForm::new(&s, &json!({"title": "Sync", "calendar": calendar, "categories": ["Blue category"], "importance": "high"}), false);
-            assert!(f.categories.is_empty() && f.importance == Importance::Normal && !f.dirty());
-        }
-
-        // //// Neoffice — an appointment of a JMAP account's calendar whose server makes rooms may be held online without
-        // becoming a meeting; elsewhere an appointment has no such button, as upstream.
-        #[test]
-        fn an_appointment_where_the_server_makes_rooms_offers_online_meeting_and_is_saved_as_an_appointment() {
-            let mut s = session();
-            let added = s.run(
-                "account.add",
-                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
-            );
-            let account = added.unwrap()["id"].as_u64().unwrap();
-            let list = |account: Id, email: &str, services: Vec<mailcraft_model::OnlineProvider>| mailcraft_model::remote::CalendarsDownload {
-                account,
-                email: email.into(),
-                complete: true,
-                refused: Vec::new(),
-                calendars: vec![mailcraft_model::remote::RemoteCalendar {
-                    id: "C1".into(),
-                    name: "Ada".into(),
-                    main: true,
-                    plain: true,
-                    online_providers: Some(services),
-                    ..Default::default()
-                }],
-            };
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(account, "ada@example.org", vec![mailcraft_model::OnlineProvider::Other]))
-                .unwrap();
-            let calendar = s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
-            let keys = |f: &EventForm| f.bar_items().into_iter().map(|item| (item.key, item.label)).collect::<Vec<_>>();
-            let visit = json!({"start": "2026-10-16T15:00", "end": "2026-10-16T16:00", "title": "Site visit", "calendar": calendar});
-            let mut f = EventForm::new(&s, &visit, false);
-            let bar = keys(&f);
-            assert!(bar.contains(&("teams", "Online Meeting".to_string())), "{bar:?}");
-            assert!(bar.iter().any(|(key, _)| *key == "save") && bar.iter().all(|(key, _)| *key != "send"), "saved, not sent: {bar:?}");
-            // On: saved as an appointment held online, nobody invited.
-            f.online = true;
-            let (command, params) = f.save_command();
-            assert_eq!((command, params["online"].as_bool(), params.get("attendees")), ("calendar.new", Some(true), None));
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let made = s.mailbox.event(id).unwrap();
-            assert!(made.attendees.is_empty() && made.online.as_ref().is_some_and(|o| o.provider == mailcraft_model::OnlineProvider::Other));
-            // Off, as it opens: nothing of it is said.
-            let f = EventForm::new(&s, &visit, false);
-            assert_eq!(f.save_command().1["online"].as_bool(), Some(false));
-            // An appointment of this computer's calendar, or of a Microsoft account's: no button, as before.
-            let own = s.mailbox.calendars.iter().find(|c| c.origin.account == 0).map(|c| c.id).unwrap();
-            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
-            let microsoft = added.unwrap()["id"].as_u64().unwrap();
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list(microsoft, "bo@example.org", vec![mailcraft_model::OnlineProvider::Teams]))
-                .unwrap();
-            let theirs = s.mailbox.calendars.iter().find(|c| c.origin.account == microsoft).map(|c| c.id).unwrap();
-            for calendar in [own, theirs] {
-                let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": calendar}), false);
-                assert!(keys(&f).iter().all(|(key, _)| *key != "teams"), "{calendar}");
-                assert!(f.save_command().1.get("online").is_none());
-            }
-        }
-
-        // //// Neoffice — the two lines of an online meeting its server has yet to make say it of « la réunion en ligne »
-        // in French, alike.
-        #[test]
-        fn the_two_lines_of_an_online_meeting_still_to_be_made_read_alike_in_french() {
-            let french = crate::i18n::Lang::French;
-            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
-            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
-            let (meeting, appointment) = (crate::i18n::t_in(french, meeting), crate::i18n::t_in(french, appointment));
-            assert_eq!(meeting, "Le serveur du compte la crée à l'envoi de la réunion\u{202f}; le lien pour rejoindre revient avec elle.");
-            assert_eq!(appointment, meeting.replace("l'envoi de la réunion", "l'enregistrement du rendez-vous"), "alike");
-        }
-
-        // //// Neoffice — what the form says of an online meeting follows its calendar, and only where that changes it.
-        /// A JMAP account's calendar whose server makes rooms (`rooms`: its list of services), and a Microsoft
-        /// account's that allows Teams. The session and the two calendars.
-        fn jmap_and_microsoft(rooms: Option<Vec<mailcraft_model::OnlineProvider>>) -> (Session, Id, Id) {
-            let mut s = session();
-            let added = s.run(
-                "account.add",
-                &json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}}),
-            );
-            let jmap = added.unwrap()["id"].as_u64().unwrap();
-            let added = s.run("account.add", &json!({"email": "bo@example.org", "incoming": {"host": "outlook.example.org"}, "auth": "oauth2"}));
-            let microsoft = added.unwrap()["id"].as_u64().unwrap();
-            for (account, email, services) in
-                [(jmap, "ada@example.org", rooms), (microsoft, "bo@example.org", Some(vec![mailcraft_model::OnlineProvider::Teams]))]
-            {
-                let calendar = mailcraft_model::remote::RemoteCalendar {
-                    id: "C1".into(),
-                    name: "Main".into(),
-                    main: true,
-                    online_providers: services,
-                    ..Default::default()
-                };
-                let list = mailcraft_model::remote::CalendarsDownload {
-                    account,
-                    email: email.into(),
-                    complete: true,
-                    calendars: vec![calendar],
-                    refused: Vec::new(),
-                };
-                mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
-            }
-            let of = |s: &Session, account: Id| s.mailbox.calendars.iter().find(|c| c.origin.account == account).map(|c| c.id).unwrap();
-            let (jmap, microsoft) = (of(&s, jmap), of(&s, microsoft));
-            (s, jmap, microsoft)
-        }
-
-        #[test]
-        fn a_teams_meeting_turned_into_an_appointment_and_back_is_still_held_online() {
-            let (s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
-            // Teams Meeting on, then Cancel Invitation, then Invite Attendees, a frame after each.
-            f.online = true;
-            f.follow_calendar(&s);
-            f.meeting = false;
-            f.follow_calendar(&s);
-            f.meeting = true;
-            f.follow_calendar(&s);
-            assert!(f.online);
-            assert_eq!(f.command().1["online"], true);
-        }
-
-        #[test]
-        fn a_microsoft_appointment_whose_teams_meeting_waits_shows_it() {
-            let (mut s, _, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            // Made a Teams meeting here, the server not told yet: no id there, and nobody invited.
-            let id =
-                s.run("calendar.new", &json!({"title": "Focus", "start": "2026-10-16T15:00", "calendar": microsoft, "online": true})).unwrap()["id"]
-                    .as_u64()
-                    .unwrap();
-            assert!(s.mailbox.event(id).is_some_and(|e| e.online.is_some() && e.origin.id.is_empty() && e.attendees.is_empty()));
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            f.follow_calendar(&s);
-            assert!(f.online && !f.meeting, "its row is shown");
-        }
-
-        #[test]
-        fn the_row_says_an_appointment_is_made_online_when_saved_only_where_it_is() {
-            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            let meeting = "The account's server makes it when the meeting is sent; the link to join by comes back with it.";
-            let appointment = "The account's server makes it when the appointment is saved; the link to join by comes back with it.";
-            // A Teams meeting turned into an appointment (Cancel Invitation): its save makes nothing, as upstream says.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": microsoft}), true);
-            f.online = true;
-            f.meeting = false;
-            f.follow_calendar(&s);
-            assert_eq!(f.still_to_make(), meeting);
-            assert!(f.save_command().1.get("online").is_none());
-            // An appointment held online where the server makes rooms: made when it is saved.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Visit", "calendar": jmap}), false);
-            f.follow_calendar(&s);
-            f.online = true;
-            assert_eq!(f.still_to_make(), appointment);
-        }
-
-        #[test]
-        fn an_appointment_whose_calendar_stops_making_rooms_while_it_is_open_is_saved_without_its_request() {
-            let (mut s, jmap, _) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            let made = s.run("calendar.new", &json!({"title": "Visit", "start": "2026-10-16T15:00", "calendar": jmap, "online": true}));
-            let id = made.unwrap()["id"].as_u64().unwrap();
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            f.follow_calendar(&s);
-            assert!(f.online && f.online_rooms && !f.online_made);
-            // The server's list says it makes no rooms any more while the form is open.
-            let account = s.mailbox.calendar(jmap).map(|c| c.origin.account).unwrap();
-            let calendar = mailcraft_model::remote::RemoteCalendar {
-                id: "C1".into(),
-                name: "Main".into(),
-                main: true,
-                online_providers: Some(Vec::new()),
-                ..Default::default()
-            };
-            let list = mailcraft_model::remote::CalendarsDownload {
-                account,
-                email: "ada@example.org".into(),
-                complete: true,
-                calendars: vec![calendar],
-                refused: Vec::new(),
-            };
-            mailcraft_engine::cmd::remote::apply_calendars(&mut s, &list).unwrap();
-            f.follow_calendar(&s);
-            assert!(!f.online);
-            // Saved: the engine is told, and the request goes.
-            let (command, params) = f.command();
-            assert_eq!((command, params["online"].as_bool()), ("calendar.edit", Some(false)));
-            s.run(command, &params).unwrap();
-            assert!(s.mailbox.event(id).is_some_and(|e| e.online.is_none()));
-        }
-
-        #[test]
-        fn a_form_in_the_dialog_follows_its_calendar_too() {
-            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            let mut app = MailApp::new(s, crate::Services::default());
-            app.autosave = false;
-            app.execute("ui.dialog", json!({"name": "event", "calendar": jmap, "start": "2026-10-16T15:00", "title": "Visit"})).unwrap();
-            let mut h = egui_kittest::Harness::builder()
-                .with_accessibility_check(false)
-                .allow_missing_glyphs()
-                .with_size(egui::vec2(1280.0, 800.0))
-                .build_ui_state(
-                    |ui, app: &mut MailApp| {
-                        let ctx = ui.ctx().clone();
-                        app.logic(&ctx);
-                        app.ui(ui);
-                    },
-                    app,
-                );
-            h.run_steps(4);
-            // Its calendar changed in the form (the combo), to the Microsoft account's.
-            match &mut h.state_mut().dialog {
-                Some(crate::dialogs::Dialog::Form(super::super::Form::Event(f))) => {
-                    assert!(f.online_rooms);
-                    f.online = true;
-                    f.calendar = microsoft;
-                }
-                _ => panic!("the form is in the dialog"),
-            }
-            h.run_steps(2);
-            match &h.state().dialog {
-                Some(crate::dialogs::Dialog::Form(super::super::Form::Event(f))) => assert!(!f.online_rooms && !f.online_own && !f.online),
-                _ => panic!("the form is in the dialog"),
-            }
-        }
-
-        #[test]
-        fn an_appointment_of_a_jmap_calendar_whose_server_makes_no_rooms_has_no_online_button() {
-            for rooms in [Some(Vec::new()), None] {
-                let (s, jmap, _) = jmap_and_microsoft(rooms.clone());
-                let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": jmap}), false);
-                f.follow_calendar(&s);
-                assert!(f.bar_items().iter().all(|item| item.key != "teams"), "{rooms:?}");
-                assert!(f.save_command().1.get("online").is_none(), "{rooms:?}");
-            }
-            // Where it makes them, there is one; moved in the form to a calendar without them, it is held online no more.
-            let (s, jmap, microsoft) = jmap_and_microsoft(Some(vec![mailcraft_model::OnlineProvider::Other]));
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync", "calendar": jmap}), false);
-            f.follow_calendar(&s);
-            assert!(f.bar_items().iter().any(|item| item.key == "teams"));
-            f.online = true;
-            f.calendar = microsoft;
-            f.follow_calendar(&s);
-            assert!(!f.online && f.bar_items().iter().all(|item| item.key != "teams"));
-        }
-
-        fn day(y: i32, m: u8, d: u8) -> Date {
-            Date::new(y, m, d).unwrap()
-        }
-
-        fn event_id(s: &Session, title: &str) -> Id {
-            s.mailbox.events.values().find(|e| e.title == title).map(|e| e.id).unwrap()
-        }
-
-        /// The form's four date and time fields.
-        fn span(f: &EventForm) -> (&str, &str, &str, &str) {
-            (&f.start_date, &f.start_time, &f.end_date, &f.end_time)
-        }
-
-        #[test]
-        fn a_date_knows_which_of_its_weekday_it_is() {
-            assert_eq!(nth_weekday(day(2026, 10, 14)), (2, Weekday::Wed));
-            assert_eq!(nth_weekday(day(2026, 10, 1)), (1, Weekday::Thu));
-            assert_eq!(nth_weekday(day(2026, 10, 21)), (3, Weekday::Wed));
-            assert_eq!(nth_weekday(day(2026, 10, 30)), (-1, Weekday::Fri));
-            assert_eq!(nth_choices(day(2026, 10, 14)), [2]);
-            // A fourth one that is also the last can be counted either way; a fifth is the last.
-            assert_eq!(nth_weekday(day(2026, 10, 28)), (-1, Weekday::Wed));
-            assert_eq!(nth_choices(day(2026, 10, 28)), [4, -1]);
-            assert_eq!(nth_choices(day(2026, 10, 29)), [-1]);
-            // February 2026 has four of every day.
-            assert_eq!(nth_weekday(day(2026, 2, 21)), (3, Weekday::Sat));
-            assert_eq!(nth_choices(day(2026, 2, 22)), [4, -1]);
-            // A count that fits the date stays; one that doesn't is read from the date.
-            assert_eq!((fit_nth(day(2026, 10, 28), 4), fit_nth(day(2026, 10, 28), 2), fit_nth(day(2026, 10, 14), -1)), (4, -1, 2));
-            assert_eq!((ordinal(2), ordinal(-1), ordinal(i8::MIN)), ("second", "last", "last"));
-        }
-
-        #[test]
-        fn a_new_appointment_starts_where_the_command_would_put_it() {
-            let mut s = session();
-            let f = EventForm::new(&s, &json!({}), false);
-            // The next half hour today.
-            assert_eq!(span(&f), ("2026-10-14", "4:30 PM", "2026-10-14", "5:00 PM"));
-            assert_eq!(
-                (f.reminder, f.all_day, f.meeting, f.minutes, f.calendar),
-                (Some(15), false, false, 30, s.mailbox.default_calendar().unwrap())
-            );
-            assert_eq!((f.name(), f.title().as_str()), ("event", "New Appointment"));
-            // Another day in view: the start of the working day.
-            s.view.date = day(2026, 10, 20);
-            let f = EventForm::new(&s, &json!({}), true);
-            assert_eq!(span(&f), ("2026-10-20", "8:00 AM", "2026-10-20", "8:30 AM"));
-            assert_eq!((f.name(), f.title().as_str(), f.meeting), ("meeting", "New Meeting", true));
-            // The fields show times the way the clock preference says.
-            s.prefs.twelve_hour = false;
-            assert_eq!(EventForm::new(&s, &json!({}), false).start_time, "08:00");
-            s.prefs.default_reminder = None;
-            assert_eq!(EventForm::new(&s, &json!({}), false).reminder, None);
-        }
-
-        #[test]
-        fn a_new_event_takes_what_the_params_say() {
-            let s = session();
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Review", "location": "Room 4"}), false);
-            assert_eq!((f.title.as_str(), f.location.as_str()), ("Review", "Room 4"));
-            assert_eq!(span(&f), ("2026-10-16", "3:00 PM", "2026-10-16", "3:30 PM"));
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "end": "2026-10-17T09:15"}), false);
-            assert_eq!((span(&f), f.minutes), (("2026-10-16", "3:00 PM", "2026-10-17", "9:15 AM"), 18 * 60 + 15));
-            // A day alone gets the time the command would pick on that day.
-            assert_eq!(span(&EventForm::new(&s, &json!({"start": "2026-10-16"}), false)), ("2026-10-16", "8:00 AM", "2026-10-16", "8:30 AM"));
-            assert_eq!(span(&EventForm::new(&s, &json!({"start": "2026-10-14"}), false)), ("2026-10-14", "4:30 PM", "2026-10-14", "5:00 PM"));
-            // Whole days: `end` is the last day; the reminder is the afternoon before, and the days show as free.
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16", "end": "2026-10-18", "allDay": true}), false);
-            assert_eq!(
-                (f.all_day, f.start_date.as_str(), f.end_date.as_str(), f.days, f.reminder),
-                (true, "2026-10-16", "2026-10-18", 2, Some(1080))
-            );
-            assert_eq!(f.show_as, ShowAs::Free);
-            let f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "allDay": true, "reminder": 30}), false);
-            assert_eq!((f.start_date.as_str(), f.end_date.as_str(), f.days, f.reminder), ("2026-10-16", "2026-10-16", 0, Some(30)));
-            // An end before the start, and nonsense, fall back to what a new event gets.
-            assert_eq!(
-                span(&EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "end": "2026-10-16T14:00"}), false)),
-                ("2026-10-16", "3:00 PM", "2026-10-16", "3:30 PM")
-            );
-            let f = EventForm::new(
-                &s,
-                &json!({"start": "soon", "end": 7, "allDay": "yes", "title": 3, "reminder": "x", "categories": "Blue category"}),
-                false,
-            );
-            assert_eq!(
-                (span(&f), f.title.as_str(), f.reminder, f.categories.len()),
-                (("2026-10-14", "4:30 PM", "2026-10-14", "5:00 PM"), "", Some(15), 0)
-            );
-            // Someone to invite makes it a meeting, whatever it was opened as.
-            let f = EventForm::new(&s, &json!({"attendees": "maya@lumen.example", "showAs": "tentative", "private": true, "reminder": null}), false);
-            assert_eq!(
-                (f.meeting, f.name(), f.title().as_str(), f.show_as, f.private, f.reminder),
-                (true, "event", "New Meeting", ShowAs::Tentative, true, None)
-            );
-        }
-
-        #[test]
-        fn a_new_appointment_sends_every_field() {
-            let s = session();
-            let calendar = s.mailbox.default_calendar().unwrap();
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00"}), false);
-            f.title = "Design review".into();
-            f.location = "Room 4".into();
-            f.categories = vec!["Blue category".into()];
-            assert_eq!(
-                f.command(),
-                (
-                    "calendar.new",
-                    json!({
-                        "title": "Design review", "location": "Room 4", "description": "",
-                        "start": "2026-10-16T15:00", "end": "2026-10-16T15:30", "allDay": false,
-                        "reminder": 15, "showAs": "busy", "categories": ["Blue category"], "private": false, "calendar": calendar,
-                        "importance": "normal",
-                    })
-                )
-            );
-            // The same as a meeting: all day, repeating, with everything set.
-            f.meeting = true;
-            f.required = "maya@lumen.example; Tomás <tomas@lumen.example>".into();
-            f.optional = "priya@lumen.example".into();
-            f.set_all_day(true, Some(15), true);
-            f.repeat = Repeat {
-                freq: Some(Freq::Weekly),
-                interval: 2,
-                days: vec![Weekday::Fri, Weekday::Mon],
-                ends: Ends::After,
-                count: 6,
-                ..Default::default()
-            };
-            f.show_as = ShowAs::OutOfOffice;
-            f.private = true;
-            f.description = "Bring\nnotes".into();
-            // And what a meeting has beyond an appointment: how much it matters, what the people
-            // invited are asked for, and that it is to be a Teams meeting.
-            f.importance = Importance::High;
-            f.options.allow_proposals = false;
-            f.online = true;
-            assert_eq!(
-                f.command(),
-                (
-                    "calendar.newMeeting",
-                    json!({
-                        "title": "Design review", "location": "Room 4", "description": "Bring\nnotes",
-                        "start": "2026-10-16", "end": "2026-10-16", "allDay": true,
-                        "attendees": "maya@lumen.example; Tomás <tomas@lumen.example>", "optional": "priya@lumen.example",
-                        "recurrence": {"freq": "weekly", "interval": 2, "byDay": ["mon", "fri"], "count": 6},
-                        // A new whole-day event reminds the afternoon before (18 hours).
-                        "reminder": 1080, "showAs": "outOfOffice", "categories": ["Blue category"], "private": true, "calendar": calendar,
-                        "importance": "high", "requestResponses": true, "allowProposals": false, "online": true,
-                    })
-                )
-            );
-        }
-
-        #[test]
-        fn importance_response_options_and_teams_are_in_the_bar_and_in_what_is_saved() {
-            let mut s = session();
-            let key = |f: &EventForm, key: &str| f.bar_items().into_iter().find(|item| item.key == key);
-            // An appointment: High and Low Importance, each on or off; nothing of a meeting's.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Dentist"}), false);
-            assert!(key(&f, "importanceHigh").is_some_and(|item| !item.checked) && key(&f, "importanceLow").is_some());
-            assert!(key(&f, "teams").is_none() && key(&f, "responseOptions").is_none() && key(&f, "forward").is_none());
-            f.importance = Importance::Low;
-            assert!(key(&f, "importanceLow").is_some_and(|item| item.checked) && key(&f, "importanceHigh").is_some_and(|item| !item.checked));
-            let (command, params) = f.command();
-            assert_eq!(
-                (command, &params["importance"], params.get("online"), params.get("allowProposals")),
-                ("calendar.new", &json!("low"), None, None)
-            );
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            assert_eq!(s.mailbox.event(id).unwrap().importance, Importance::Low);
-            // Opened again it says so, has Forward in its bar, and sends only what changes.
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            assert!(key(&f, "importanceLow").is_some_and(|item| item.checked) && key(&f, "forward").is_some() && !f.dirty());
-            f.importance = Importance::High;
-            assert_eq!(f.command(), ("calendar.edit", json!({"id": id, "importance": "high"})));
-            // A meeting the owner organizes: Teams Meeting and Response Options beside them.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync"}), true);
-            assert!(key(&f, "teams").is_some_and(|item| item.on && !item.checked) && key(&f, "responseOptions").is_some_and(|item| item.menu));
-            f.online = true;
-            assert!(key(&f, "teams").is_some_and(|item| item.checked));
-            // One that its server has made a Teams meeting stays one: the button says so.
-            let event = mailcraft_model::Event {
-                title: "Made".into(),
-                attendees: vec![mailcraft_model::Attendee { address: Address::new("Maya", "maya@lumen.example"), ..Default::default() }],
-                online: Some(mailcraft_model::OnlineMeeting { join_url: "https://teams.example.org/l/meetup-join/1".into(), ..Default::default() }),
-                response_options: ResponseOptions { request_responses: false, allow_proposals: true },
-                proposals: vec![mailcraft_model::Proposal::default(); 2],
-                ..Default::default()
-            };
-            let made = s.mailbox.add_event(event).unwrap();
-            let f = EventForm::edit(&s, &json!({"id": made})).unwrap();
-            assert_eq!(f.meeting_state(), (Importance::Normal, true, "https://teams.example.org/l/meetup-join/1"));
-            assert_eq!((f.options.request_responses, f.options.allow_proposals, f.proposals, f.online_made), (false, true, 2, false));
-            // (Kept here, no server made it: it can still be taken back.)
-            assert!(key(&f, "teams").is_some_and(|item| item.on && item.checked));
-            let made_there = EventForm { online_made: true, ..EventForm::edit(&s, &json!({"id": made})).unwrap() };
-            assert!(key(&made_there, "teams").is_some_and(|item| !item.on && item.checked && item.tip.contains("stays one")));
-            // Somebody else's meeting has neither: both are its organizer's to say.
-            let theirs = EventForm { guest: true, ..EventForm::edit(&s, &json!({"id": made})).unwrap() };
-            assert!(key(&theirs, "teams").is_none() && key(&theirs, "responseOptions").is_none() && key(&theirs, "importanceHigh").is_some());
-            // Another time that was proposed goes into the fields, and is then a change to send.
-            let mut f =
-                EventForm::edit(&s, &json!({"id": made, "proposed": {"start": "2026-10-20T14:00:00", "end": "2026-10-20T15:30:00"}})).unwrap();
-            assert_eq!((f.start_date.as_str(), f.end_date.as_str(), f.minutes, f.dirty()), ("2026-10-20", "2026-10-20", 90, true));
-            let (_, params) = f.command();
-            assert_eq!((&params["start"], &params["end"]), (&json!("2026-10-20T14:00"), &json!("2026-10-20T15:30")));
-            // A proposal that is none (backwards, unreadable) changes nothing.
-            f.take_proposal(DateTime::at_midnight(Date::new(2026, 10, 21).unwrap()), DateTime::at_midnight(Date::new(2026, 10, 20).unwrap()), true);
-            assert_eq!(f.start_date, "2026-10-20");
-            let f = EventForm::edit(&s, &json!({"id": made, "proposed": {"start": "soon", "end": 7}})).unwrap();
-            assert!(!f.dirty());
-        }
-
-        #[test]
-        fn the_commands_run_and_their_errors_come_back() {
-            let mut s = session();
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Sync"}), true);
-            f.required = "maya@lumen.example".into();
-            f.repeat = Repeat { freq: Some(Freq::Monthly), nth: Some(3), ..Default::default() };
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let e = s.mailbox.event(id).unwrap();
-            assert_eq!(
-                (e.title.as_str(), e.start.iso().as_str(), e.duration_minutes(), e.attendees.len(), e.reminder_minutes),
-                ("Sync", "2026-10-16T15:00:00", 30, 1, Some(15))
-            );
-            assert_eq!(e.recurrence.as_ref().map(|r| r.describe(e.start.date)).as_deref(), Some("Every month on the third Friday"));
-            // Whole days: the end field names the last day.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-19", "end": "2026-10-21", "allDay": true, "title": "Offsite"}), false);
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let e = s.mailbox.event(id).unwrap();
-            assert_eq!(
-                (e.all_day, e.start.iso().as_str(), e.end.iso().as_str(), e.reminder_minutes, e.show_as),
-                (true, "2026-10-19T00:00:00", "2026-10-22T00:00:00", Some(1080), ShowAs::Free)
-            );
-            // An end before the start: the command says so and nothing is added.
-            let before = s.mailbox.events.len();
-            f.end_date = "2026-10-18".into();
-            let (command, params) = f.command();
-            assert_eq!(s.run(command, &params).unwrap_err().to_string(), "the end is before the start");
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "title": "Backwards"}), false);
-            f.end_time = "1pm".into();
-            let (command, params) = f.command();
-            assert_eq!(s.run(command, &params).unwrap_err().to_string(), "the end is before the start");
-            // Someone who isn't an address.
-            f.end_time = "4pm".into();
-            f.meeting = true;
-            f.required = "maya".into();
-            let (command, params) = f.command();
-            assert_eq!(s.run(command, &params).unwrap_err().to_string(), "\"maya\" isn't an e-mail address");
-            assert_eq!(s.mailbox.events.len(), before);
-        }
-
-        #[test]
-        fn time_zones_keep_the_clock_time_and_go_with_the_times_they_are_for() {
-            let zone = |name: &str| Zone::named(name).unwrap();
-            // The calendar is shown in Chicago's time.
-            let mut s = Session::in_zone(mailcraft_model::Mailbox::with_local_account("", ""), NOW, zone("America/Chicago"));
-            let mut f = EventForm::new(&s, &json!({"title": "Call", "start": "2026-10-13T15:00", "end": "2026-10-13T16:00"}), false);
-            // Without Time Zones nothing is said of zones, as ever.
-            assert!(!f.zones && f.command().1.get("startZone").is_none());
-            assert!(f.bar_items().iter().any(|item| item.key == "timeZones" && !item.checked && item.on));
-            // Turned on, the start and the end say the calendar's own zone.
-            f.set_zones(true);
-            assert_eq!((f.start_zone.as_str(), f.end_zone.as_str()), ("America/Chicago", "America/Chicago"));
-            assert!(f.bar_items().iter().any(|item| item.key == "timeZones" && item.checked));
-            // Another zone for the start: the time on the clock stays (and so the event moves),
-            // and the end's zone goes with the start's.
-            f.pick_zone(zone("America/New_York"), false);
-            assert_eq!(span(&f), ("2026-10-13", "3:00 PM", "2026-10-13", "4:00 PM"));
-            let (command, params) = f.command();
-            assert_eq!(command, "calendar.new");
-            assert_eq!(
-                (params["start"].as_str(), params["startZone"].as_str(), params["endZone"].is_null()),
-                (Some("2026-10-13T15:00"), Some("America/New_York"), true)
-            );
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let made = s.mailbox.event(id).unwrap().clone();
-            assert_eq!((made.start.iso(), made.start_zone.as_str()), ("2026-10-13T14:00:00".to_string(), "America/New_York"));
-            assert_eq!(s.prefs.recent_zones, Vec::<String>::new());
-
-            // Opened again, it shows its own clock and its zones, and nothing is to be sent.
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            assert!(f.zones && f.had_zones);
-            assert_eq!(
-                (span(&f), f.start_zone.as_str(), f.end_zone.as_str()),
-                (("2026-10-13", "3:00 PM", "2026-10-13", "4:00 PM"), "America/New_York", "America/New_York")
-            );
-            assert_eq!(f.command(), ("calendar.edit", json!({"id": id})));
-            // Opened to take up another time that somebody proposed, which is said by the clock
-            // here: the fields show that moment by the event's own clock (four here is five there).
-            let proposed = json!({"start": "2026-10-14T16:00:00", "end": "2026-10-14T17:00:00"});
-            let taken = EventForm::edit(&s, &json!({"id": id, "proposed": proposed})).unwrap();
-            assert_eq!(span(&taken), ("2026-10-14", "5:00 PM", "2026-10-14", "6:00 PM"));
-            // Another title is only that.
-            f.title = "Call with Bo".into();
-            assert_eq!(f.command().1, json!({"id": id, "title": "Call with Bo"}));
-            // Another time goes with the zone it is by.
-            f.start_time = "5:00 PM".into();
-            f.start_moved(true);
-            assert_eq!(
-                f.command().1,
-                json!({"id": id, "title": "Call with Bo", "start": "2026-10-13T17:00", "end": "2026-10-13T18:00", "allDay": false, "startZone": "America/New_York", "endZone": null})
-            );
-            // The end in a zone of its own: how long it is, is counted in instants; and moving
-            // the start keeps that length.
-            // (Six in the evening in Berlin is before five in New York: no length to keep yet.)
-            f.pick_zone(zone("Europe/Berlin"), true);
-            assert_eq!((f.start_zone.as_str(), f.end_zone.as_str(), f.minutes, f.length()), ("America/New_York", "Europe/Berlin", 60, None));
-            f.end_date = "2026-10-14".into();
-            f.end_time = "7:00 AM".into();
-            f.end_moved();
-            assert_eq!((f.minutes, f.length().as_deref()), (8 * 60, Some("8 hours")));
-            f.start_time = "6:00 PM".into();
-            f.start_moved(true);
-            assert_eq!(span(&f), ("2026-10-13", "6:00 PM", "2026-10-14", "8:00 AM"));
-            let params = f.command().1;
-            assert_eq!((params["startZone"].as_str(), params["endZone"].as_str()), (Some("America/New_York"), Some("Europe/Berlin")));
-            s.run("calendar.edit", &params).unwrap();
-            let flight = s.mailbox.event(id).unwrap().clone();
-            assert_eq!((flight.start.iso(), flight.end.iso()), ("2026-10-13T17:00:00".to_string(), "2026-10-14T01:00:00".to_string()));
-            // Time Zones turned off: no zones any more, and the times as they stand on the clock.
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            f.set_zones(false);
-            let params = f.command().1;
-            assert_eq!(
-                (params["start"].as_str(), params["startZone"].is_null(), params["endZone"].is_null()),
-                (Some("2026-10-13T18:00"), true, true)
-            );
-            s.run("calendar.edit", &params).unwrap();
-            let plain = s.mailbox.event(id).unwrap().clone();
-            assert_eq!(
-                (plain.start.iso(), plain.end.iso(), plain.start_zone.as_str()),
-                ("2026-10-13T18:00:00".to_string(), "2026-10-14T08:00:00".to_string(), "")
-            );
-            // Whole days have no zones: the button is off, and none are sent.
-            let mut f = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            f.set_zones(true);
-            f.set_all_day(true, None, true);
-            assert!(f.bar_items().iter().any(|item| item.key == "timeZones" && !item.checked && !item.on));
-            assert!(f.command().1.get("startZone").is_none());
-        }
-
-        #[test]
-        fn an_open_form_follows_the_calendar_to_another_zone() {
-            let zone = |name: &str| Zone::named(name).unwrap();
-            let (chicago, london) = (zone("America/Chicago"), zone("Europe/London"));
-            let mut s = Session::in_zone(mailcraft_model::Mailbox::with_local_account("", ""), NOW, chicago);
-            let id = s.run("calendar.new", &json!({"title": "Lunch", "start": "2026-10-13T12:00", "end": "2026-10-13T13:00"})).unwrap()["id"]
-                .as_u64()
-                .unwrap();
-            let abroad = s.run("calendar.new", &json!({"title": "Call", "start": "2026-10-13T15:00", "startZone": "Asia/Tokyo"})).unwrap()["id"]
-                .as_u64()
-                .unwrap();
-            let (mut lunch, mut call) = (EventForm::edit(&s, &json!({"id": id})).unwrap(), EventForm::edit(&s, &json!({"id": abroad})).unwrap());
-            let mut typed = EventForm::edit(&s, &json!({"id": id})).unwrap();
-            typed.title = "Long lunch".into();
-            typed.end_time = "2:00 PM".into();
-            typed.end_moved();
-            // The computer is in London now; the mailbox and the forms are told.
-            s.clock.zone = Some(london);
-            assert!(s.settle_zone());
-            for form in [&mut lunch, &mut call, &mut typed] {
-                form.rezone(chicago, london, true);
-            }
-            // Lunch reads by London's clock, as the calendar shows it, and saving it changes nothing.
-            assert_eq!(span(&lunch), ("2026-10-13", "6:00 PM", "2026-10-13", "7:00 PM"));
-            assert!(!lunch.dirty());
-            assert_eq!(lunch.command(), ("calendar.edit", json!({"id": id})));
-            // The call is by Tokyo's clock, here as there.
-            assert_eq!((span(&call), call.start_zone.as_str()), (("2026-10-13", "3:00 PM", "2026-10-13", "3:30 PM"), "Asia/Tokyo"));
-            assert_eq!(call.command(), ("calendar.edit", json!({"id": abroad})));
-            // What was typed stays typed, at the instant it was typed for.
-            assert_eq!(span(&typed), ("2026-10-13", "6:00 PM", "2026-10-13", "8:00 PM"));
-            let params = typed.command().1;
-            assert_eq!(
-                (params["title"].as_str(), params["start"].as_str(), params["end"].as_str()),
-                (Some("Long lunch"), Some("2026-10-13T18:00"), Some("2026-10-13T20:00"))
-            );
-            s.run("calendar.edit", &params).unwrap();
-            let saved = s.mailbox.event(id).unwrap();
-            assert_eq!(
-                (london.instant(saved.start), london.instant(saved.end)),
-                (
-                    chicago.instant(DateTime::new(day(2026, 10, 13), 12, 0, 0).unwrap()),
-                    chicago.instant(DateTime::new(day(2026, 10, 13), 14, 0, 0).unwrap())
-                )
-            );
-        }
-
-        #[test]
-        fn an_existing_event_fills_the_form() {
-            let mut s = session();
-            // Nothing selected and nothing named: no form.
-            assert!(EventForm::edit(&s, &json!({})).is_none());
-            assert!(EventForm::edit(&s, &json!({"id": 999_999})).is_none());
-            let dentist = event_id(&s, "Dentist");
-            s.sel.event = Some(dentist);
-            let f = EventForm::edit(&s, &json!({})).unwrap();
-            assert_eq!((f.name(), f.title().as_str(), f.id), ("editEvent", "Appointment", Some(dentist)));
-            assert_eq!((span(&f), f.minutes), (("2026-10-17", "8:30 AM", "2026-10-17", "9:15 AM"), 45));
-            assert_eq!((f.show_as, f.private, f.reminder, f.meeting, f.repeat.freq), (ShowAs::OutOfOffice, true, Some(60), false, None));
-            // `id` wins over the selection. A meeting shows who is invited.
-            let review = event_id(&s, "Design review: homepage");
-            let f = EventForm::edit(&s, &json!({"id": review})).unwrap();
-            assert_eq!((f.title().as_str(), f.meeting, f.optional.as_str()), ("Meeting", true, ""));
-            assert_eq!(f.required, "Maya Okafor <maya@lumen.example>; Tomás Rivera <tomas@lumen.example>; Priya Nair <priya@lumen.example>");
-            assert_eq!((f.categories.as_slice(), f.description.starts_with("Round three")), (["Blue category".to_string()].as_slice(), true));
-            // Whole days: the end field is the last day, and times wait for All day to be cleared.
-            let f = EventForm::edit(&s, &json!({"id": event_id(&s, "Planning days")})).unwrap();
-            assert_eq!((f.all_day, span(&f), f.days), (true, ("2026-10-21", "8:00 AM", "2026-10-22", "8:30 AM"), 1));
-            // Series.
-            let f = EventForm::edit(&s, &json!({"id": event_id(&s, "1:1 with Priya")})).unwrap();
-            assert_eq!(f.repeat, Repeat { freq: Some(Freq::Weekly), days: vec![Weekday::Tue], ..Default::default() });
-            let f = EventForm::edit(&s, &json!({"id": event_id(&s, "Budget sync")})).unwrap();
-            assert_eq!((f.repeat.freq, f.repeat.nth, f.repeat.ends), (Some(Freq::Monthly), Some(2), Ends::Never));
-            let f = EventForm::edit(&s, &json!({"id": event_id(&s, "Dev's birthday")})).unwrap();
-            assert_eq!((f.repeat.freq, f.repeat.nth, f.all_day, f.start_date.as_str()), (Some(Freq::Yearly), None, true, "2025-03-14"));
-        }
-
-        #[test]
-        fn an_edit_sends_only_what_changed() {
-            let mut s = session();
-            let dentist = event_id(&s, "Dentist");
-            let mut f = EventForm::edit(&s, &json!({"id": dentist})).unwrap();
-            assert_eq!(f.command(), ("calendar.edit", json!({"id": dentist})));
-            f.title = "Dentist (check-up)".into();
-            f.private = false;
-            assert_eq!(f.command(), ("calendar.edit", json!({"id": dentist, "title": "Dentist (check-up)", "private": false})));
-            // A new start goes with its end, which kept its distance.
-            f.start_time = "10am".into();
-            f.start_moved(true);
-            assert_eq!(f.end_time, "10:45 AM");
-            assert_eq!(
-                f.command().1,
-                json!({"id": dentist, "title": "Dentist (check-up)", "private": false, "start": "2026-10-17T10:00", "end": "2026-10-17T10:45", "allDay": false})
-            );
-            // Repeating from now on, and inviting someone.
-            f.repeat.set_freq(Some(Freq::Weekly), Date::parse_iso(&f.start_date));
-            assert_eq!(f.command().1["recurrence"], json!({"freq": "weekly", "interval": 1, "byDay": ["sat"]}));
-            f.meeting = true;
-            f.required = "maya@lumen.example".into();
-            assert_eq!((&f.command().1["attendees"], &f.command().1["optional"]), (&json!("maya@lumen.example"), &json!("")));
-            let (command, params) = f.command();
-            s.run(command, &params).unwrap();
-            let e = s.mailbox.event(dentist).unwrap();
-            assert_eq!(
-                (e.title.as_str(), e.private, e.start.iso().as_str(), e.duration_minutes(), e.is_meeting()),
-                ("Dentist (check-up)", false, "2026-10-17T10:00:00", 45, true)
-            );
-            // What the form doesn't show stays as it was.
-            assert_eq!((e.show_as, e.reminder_minutes), (ShowAs::OutOfOffice, Some(60)));
-        }
-
-        #[test]
-        fn ending_a_series_and_removing_attendees_say_so() {
-            let mut s = session();
-            let standup = event_id(&s, "Team stand-up");
-            let mut f = EventForm::edit(&s, &json!({"id": standup})).unwrap();
-            // A rule the form shows only in part isn't sent back unless Repeat changes.
-            assert_eq!(f.command().1, json!({"id": standup}));
-            f.repeat.interval = 2;
-            assert_eq!(f.command().1["recurrence"], json!({"freq": "daily", "interval": 2, "byDay": ["mon", "tue", "wed", "thu", "fri"]}));
-            f.repeat.set_freq(None, None);
-            assert_eq!(f.command().1, json!({"id": standup, "recurrence": null}));
-            let (command, params) = f.command();
-            s.run(command, &params).unwrap();
-            assert!(s.mailbox.event(standup).unwrap().recurrence.is_none());
-            // A rule that doesn't match its start stays untouched too.
-            let budget = event_id(&s, "Budget sync");
-            assert_eq!(EventForm::edit(&s, &json!({"id": budget})).unwrap().command().1, json!({"id": budget}));
-            // A meeting stops being one.
-            let review = event_id(&s, "Design review: homepage");
-            let mut f = EventForm::edit(&s, &json!({"id": review})).unwrap();
-            f.meeting = false;
-            assert_eq!((f.title().as_str(), f.command().1), ("Appointment", json!({"id": review, "attendees": "", "optional": ""})));
-            let (command, params) = f.command();
-            s.run(command, &params).unwrap();
-            assert!(!s.mailbox.event(review).unwrap().is_meeting());
-        }
-
-        #[test]
-        fn moving_the_start_keeps_the_length() {
-            let s = session();
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T15:00", "end": "2026-10-16T16:30"}), false);
-            assert_eq!(f.length().as_deref(), Some("1.5 hours"));
-            f.start_time = "11:15pm".into();
-            f.start_moved(true);
-            assert_eq!(span(&f), ("2026-10-16", "11:15pm", "2026-10-17", "12:45 AM"));
-            // A new end is the length from then on.
-            f.end_date = "2026-10-16".into();
-            f.end_time = "23:45".into();
-            f.end_moved();
-            assert_eq!(f.minutes, 30);
-            f.start_date = "2026-11-02".into();
-            f.start_moved(false);
-            assert_eq!((f.end_date.as_str(), f.end_time.as_str(), f.last_start), ("2026-11-02", "23:45", Some(day(2026, 11, 2))));
-            // An end before the start, or text that isn't a time, changes nothing.
-            f.end_time = "9".into();
-            f.end_moved();
-            assert_eq!((f.minutes, f.length()), (30, None));
-            f.start_time = "soon".into();
-            f.start_moved(true);
-            assert_eq!((f.end_time.as_str(), f.length()), ("9", None));
-        }
-
-        #[test]
-        fn all_day_covers_the_days_and_gives_the_times_back() {
-            let s = session();
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-16T22:00", "end": "2026-10-18T00:00"}), false);
-            f.set_all_day(true, Some(15), true);
-            // An end at midnight belongs to the day before. A new event's reminder becomes the
-            // afternoon before, and the days show as free.
-            assert_eq!((f.start_date.as_str(), f.end_date.as_str(), f.days, f.reminder), ("2026-10-16", "2026-10-17", 1, Some(1080)));
-            assert_eq!(f.show_as, ShowAs::Free);
-            assert_eq!(f.length().as_deref(), Some("2 days"));
-            f.start_date = "2026-10-20".into();
-            f.start_moved(true);
-            assert_eq!(f.end_date, "2026-10-21");
-            f.end_date = "2026-10-24".into();
-            f.end_moved();
-            assert_eq!((f.days, f.length().as_deref()), (4, Some("5 days")));
-            // Back to times: the length it had before.
-            f.set_all_day(false, Some(15), true);
-            assert_eq!((span(&f), f.reminder), (("2026-10-20", "10:00 PM", "2026-10-22", "12:00 AM"), Some(15)));
-            // A reminder chosen in the form is left alone.
-            f.reminder = Some(60);
-            f.reminder_set = true;
-            f.set_all_day(true, Some(15), true);
-            assert_eq!((f.reminder, f.end_date.as_str()), (Some(60), "2026-10-21"));
-        }
-
-        #[test]
-        fn repeat_fields_make_rules() {
-            let wed = day(2026, 10, 14);
-            assert_eq!(Repeat::default().rule(wed), None);
-            let json = |r: &Repeat, start: Date| r.rule(start).map(|r| rule_json(&r));
-            let weekly = Repeat {
-                freq: Some(Freq::Weekly),
-                interval: 2,
-                days: vec![Weekday::Wed, Weekday::Mon, Weekday::Wed],
-                ends: Ends::After,
-                count: 5,
-                ..Default::default()
-            };
-            assert_eq!(json(&weekly, wed), Some(json!({"freq": "weekly", "interval": 2, "byDay": ["mon", "wed"], "count": 5})));
-            // No day picked: the start's own.
-            assert_eq!(
-                json(&Repeat { freq: Some(Freq::Weekly), ..Default::default() }, wed),
-                Some(json!({"freq": "weekly", "interval": 1, "byDay": ["wed"]}))
-            );
-            let monthly = Repeat { freq: Some(Freq::Monthly), nth: Some(2), ends: Ends::Until, until: "2027-03-31".into(), ..Default::default() };
-            assert_eq!(json(&monthly, wed), Some(json!({"freq": "monthly", "interval": 1, "byDay": ["wed"], "nth": 2, "until": "2027-03-31"})));
-            assert_eq!(monthly.rule(wed).unwrap().describe(wed), "Every month on the second Wednesday, until Mar 31, 2027");
-            assert_eq!(json(&Repeat { freq: Some(Freq::Monthly), ..Default::default() }, wed), Some(json!({"freq": "monthly", "interval": 1})));
-            // The weekday and its count come from the start date.
-            let yearly = Repeat { freq: Some(Freq::Yearly), nth: Some(-1), ..Default::default() };
-            assert_eq!(json(&yearly, day(2026, 10, 30)), Some(json!({"freq": "yearly", "interval": 1, "byDay": ["fri"], "nth": -1})));
-            assert_eq!(json(&yearly, wed), Some(json!({"freq": "yearly", "interval": 1, "byDay": ["wed"], "nth": 2})));
-            // Numbers out of range are brought back in.
-            let wild =
-                Repeat { freq: Some(Freq::Daily), interval: 0, ends: Ends::After, count: u32::MAX, until: "ignored".into(), ..Default::default() };
-            assert_eq!(json(&wild, wed), Some(json!({"freq": "daily", "interval": 1, "count": 9999})));
-        }
-
-        #[test]
-        fn rules_come_back_as_they_were_and_follow_the_start() {
-            let tue = day(2026, 10, 13);
-            let r = Recurrence { by_day: vec![Weekday::Tue], nth: Some(2), count: Some(12), ..Recurrence::every(Freq::Monthly) };
-            assert_eq!(Repeat::of(Some(&r), tue).rule(tue), Some(r.clone()));
-            let until =
-                Recurrence { interval: 3, until: Some(day(2027, 1, 1)), by_day: vec![Weekday::Mon, Weekday::Thu], ..Recurrence::every(Freq::Weekly) };
-            assert_eq!(Repeat::of(Some(&until), tue).rule(tue), Some(until));
-            assert_eq!(Repeat::of(None, tue), Repeat::default());
-            // A weekly rule without days is on the start's day, and moves with it.
-            let mut weekly = Repeat::of(Some(&Recurrence::every(Freq::Weekly)), tue);
-            assert_eq!(weekly.days, [Weekday::Tue]);
-            weekly.follow(Some(tue), day(2026, 10, 15));
-            assert_eq!(weekly.days, [Weekday::Thu]);
-            // Days that were picked stay.
-            weekly.days = vec![Weekday::Mon, Weekday::Thu];
-            weekly.follow(Some(day(2026, 10, 15)), tue);
-            assert_eq!(weekly.days, [Weekday::Mon, Weekday::Thu]);
-            // The second Tuesday moved to the last one.
-            let mut monthly = Repeat::of(Some(&r), tue);
-            monthly.follow(Some(tue), day(2026, 10, 27));
-            assert_eq!(monthly.nth, Some(-1));
-            monthly.set_freq(Some(Freq::Weekly), Some(tue));
-            assert_eq!((monthly.days.as_slice(), monthly.nth, monthly.ends, monthly.count), ([Weekday::Tue].as_slice(), None, Ends::After, 12));
-        }
-
-        #[test]
-        fn ok_waits_for_the_required_fields() {
-            let s = session();
-            let mut f = EventForm::new(&s, &json!({}), false);
-            assert!(!f.ready());
-            f.title = " x ".into();
-            assert!(f.ready());
-            f.start_time = "soon".into();
-            assert!(!f.ready());
-            f.all_day = true;
-            assert!(f.ready());
-            f.end_date = "2026-13-01".into();
-            assert!(!f.ready());
-            f.end_date = "2026-12-01".into();
-            // A new meeting needs someone to invite.
-            f.meeting = true;
-            assert!(!f.ready());
-            f.optional = "a@b.example".into();
-            assert!(f.ready());
-            // A series that ends on a date needs the date.
-            f.repeat = Repeat { freq: Some(Freq::Daily), ends: Ends::Until, ..Default::default() };
-            assert!(!f.ready());
-            f.repeat.until = "2027-01-01".into();
-            assert!(f.ready());
-        }
-
-        #[test]
-        fn hostile_text_goes_through_without_harm() {
-            let mut s = session();
-            let junk = "\u{0}\u{202e}é\n<b>".repeat(40_000);
-            let p = json!({"title": junk, "location": junk, "description": junk, "attendees": junk, "optional": junk, "start": junk, "end": junk,
-                "categories": [junk, 7, null], "reminder": 1e300, "calendar": u64::MAX, "showAs": junk, "allDay": junk});
-            let mut f = EventForm::new(&s, &p, false);
-            assert_eq!((f.start_date.as_str(), f.reminder, f.calendar), ("2026-10-14", Some(15), s.mailbox.default_calendar().unwrap()));
-            for text in [&mut f.start_date, &mut f.start_time, &mut f.end_date, &mut f.end_time, &mut f.repeat.until] {
-                text.clone_from(&junk);
-            }
-            f.start_moved(true);
-            f.end_moved();
-            f.set_all_day(true, None, false);
-            f.set_all_day(false, None, false);
-            assert!(!f.ready() && f.length().is_none());
-            // Dates that aren't dates go as typed, and the command refuses them.
-            let (command, params) = f.command();
-            assert!(s.run(command, &params).is_err());
-            // With real dates the command takes it, cleaned.
-            (f.start_date, f.start_time, f.end_date, f.end_time) = ("2026-10-16".into(), "9".into(), "2026-10-16".into(), "10".into());
-            let (command, params) = f.command();
-            let refused = s.run(command, &params).unwrap_err().to_string();
-            assert!(refused.contains("isn't an e-mail address"));
-            assert!(super::super::kit::shown(&refused, 400).chars().count() <= 401);
-            f.meeting = false;
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let e = s.mailbox.event(id).unwrap();
-            assert!(e.title.chars().count() <= 500 && !e.title.contains('\n') && e.duration_minutes() == 60);
-        }
-
-        /// The Appointment Recurrence dialog as it opens on a form.
-        fn dialog(f: &EventForm) -> RecurrenceDialog {
-            RecurrenceDialog::open(&f.repeat, f.series_start(), &f.start_time, &f.end_time, f.minutes, f.all_day)
-        }
-
-        /// A form for half an hour on Tuesday 2026-10-13, the second Tuesday of its month.
-        fn tuesday(s: &Session) -> EventForm {
-            EventForm::new(s, &json!({"start": "2026-10-13T09:30", "end": "2026-10-13T10:00", "title": "Sync"}), false)
-        }
-
-        #[test]
-        fn the_recurrence_dialog_round_trips_every_kind_of_rule() {
-            let s = session();
-            let tue = day(2026, 10, 13);
-            let rules = vec![
-                Recurrence::every(Freq::Daily),
-                Recurrence { interval: 3, count: Some(5), ..Recurrence::every(Freq::Daily) },
-                Recurrence { by_day: WEEKDAYS.to_vec(), ..Recurrence::every(Freq::Daily) },
-                Recurrence { by_day: vec![Weekday::Tue, Weekday::Sat], ..Recurrence::every(Freq::Daily) },
-                Recurrence { by_day: vec![Weekday::Tue], ..Recurrence::every(Freq::Weekly) },
-                Recurrence {
-                    interval: 2,
-                    by_day: vec![Weekday::Mon, Weekday::Tue, Weekday::Fri],
-                    until: Some(day(2027, 3, 1)),
-                    ..Recurrence::every(Freq::Weekly)
-                },
-                Recurrence::every(Freq::Monthly),
-                Recurrence { interval: 6, count: Some(12), ..Recurrence::every(Freq::Monthly) },
-                Recurrence { by_day: vec![Weekday::Tue], nth: Some(2), ..Recurrence::every(Freq::Monthly) },
-                Recurrence::every(Freq::Yearly),
-                Recurrence { interval: 4, until: Some(day(2040, 1, 1)), ..Recurrence::every(Freq::Yearly) },
-                Recurrence { by_day: vec![Weekday::Tue], nth: Some(2), count: Some(3), ..Recurrence::every(Freq::Yearly) },
-            ];
-            for rule in rules {
-                let mut f = tuesday(&s);
-                f.repeat = Repeat::of(Some(&rule), tue);
-                assert_eq!(f.repeat.rule(tue), Some(rule.clone()), "{rule:?}");
-                let before = f.clone();
-                // Opened and left with OK, nothing touched: the dialog says the same rule for
-                // the same day, and the form is as it was.
-                let d = dialog(&f);
-                assert!(!d.touched() && d.had_rule && d.wrong().is_none(), "{rule:?}");
-                assert_eq!((d.first_day(tue), d.as_repeat().rule(tue)), (Some(tue), Some(rule.clone())), "{rule:?}");
-                f.apply_recurrence(&d, true);
-                assert_eq!(f, before, "{rule:?}");
-                // Something else chosen for its end: that changes, and the rest of the rule stays.
-                let mut d = dialog(&f);
-                (d.repeat.ends, d.repeat.count) = (Ends::After, 7);
-                assert!(d.touched());
-                f.apply_recurrence(&d, true);
-                assert_eq!(f.repeat.rule(tue), Some(Recurrence { count: Some(7), until: None, ..rule.clone() }), "{rule:?}");
-                assert_eq!(span(&f), span(&before), "{rule:?}");
-                // And every way of ending, and none.
-                let mut d = dialog(&f);
-                (d.repeat.ends, d.repeat.until) = (Ends::Until, "2031-05-06".into());
-                f.apply_recurrence(&d, true);
-                assert_eq!(f.repeat.rule(tue), Some(Recurrence { count: None, until: Some(day(2031, 5, 6)), ..rule.clone() }), "{rule:?}");
-                let mut d = dialog(&f);
-                d.repeat.ends = Ends::Never;
-                f.apply_recurrence(&d, true);
-                assert_eq!(f.repeat.rule(tue), Some(Recurrence { count: None, until: None, ..rule.clone() }), "{rule:?}");
-            }
-            // The last one of a month, and a fourth one that is also the last, each stay what
-            // they were said to be.
-            let last = day(2026, 10, 27);
-            for nth in [4, -1] {
-                let rule = Recurrence { by_day: vec![Weekday::Tue], nth: Some(nth), ..Recurrence::every(Freq::Monthly) };
-                let mut f = tuesday(&s);
-                f.start_date = last.iso();
-                f.start_moved(true);
-                f.repeat = Repeat::of(Some(&rule), last);
-                let mut d = dialog(&f);
-                assert_eq!((d.first_day(last), d.as_repeat().rule(last)), (Some(last), Some(rule.clone())));
-                d.repeat.interval = 2;
-                f.apply_recurrence(&d, true);
-                assert_eq!(f.repeat.rule(last), Some(Recurrence { interval: 2, ..rule }));
-            }
-        }
-
-        #[test]
-        fn a_pattern_on_another_day_starts_the_series_on_the_first_such_day() {
-            let s = session();
-            let tue = day(2026, 10, 13);
-            let mut f = tuesday(&s);
-            assert_eq!(f.recurrence_line(true), None);
-            // Nothing repeats yet: the dialog offers every week on the item's own day, and OK
-            // makes it so.
-            let d = dialog(&f);
-            assert_eq!((d.freq(), d.repeat.days.as_slice(), d.had_rule, d.touched()), (Freq::Weekly, [Weekday::Tue].as_slice(), false, false));
-            f.apply_recurrence(&d, true);
-            assert_eq!(f.repeat.rule(tue).map(|r| r.describe(tue)).as_deref(), Some("Every week on Tuesday"));
-            assert_eq!(f.recurrence_line(true).as_deref(), Some("Every week on Tuesday, from Oct 13, 2026, 9:30 AM – 10:00 AM"));
-            assert_eq!(f.recurrence_line(false).as_deref(), Some("Every week on Tuesday, from Oct 13, 2026, 09:30 – 10:00"));
-            // On Thursdays and Fridays instead: the series starts on Thursday the 15th, at the
-            // same time of day.
-            let mut d = dialog(&f);
-            d.repeat.days = vec![Weekday::Fri, Weekday::Thu, Weekday::Fri];
-            assert_eq!(d.first_day(tue), Some(day(2026, 10, 15)));
-            f.apply_recurrence(&d, true);
-            assert_eq!(span(&f), ("2026-10-15", "9:30 AM", "2026-10-15", "10:00 AM"));
-            assert_eq!(f.command().1["recurrence"], json!({"freq": "weekly", "interval": 1, "byDay": ["thu", "fri"]}));
-            // Monthly: by its date to begin with; the 31st is in the first month that has one.
-            let mut d = dialog(&f);
-            d.set_freq(Freq::Monthly);
-            assert_eq!((d.day, d.repeat.nth, d.first_day(day(2026, 10, 15))), (15, None, Some(day(2026, 10, 15))));
-            d.day = 31;
-            assert_eq!(d.first_day(day(2026, 10, 15)), Some(day(2026, 10, 31)));
-            assert_eq!(d.first_day(day(2026, 11, 1)), Some(day(2026, 12, 31)));
-            // The last Friday; and the first Monday, which this month is already past.
-            (d.repeat.nth, d.weekday) = (Some(-1), Weekday::Fri);
-            assert_eq!(d.first_day(day(2026, 10, 15)), Some(day(2026, 10, 30)));
-            (d.repeat.nth, d.weekday) = (Some(1), Weekday::Mon);
-            assert_eq!(d.first_day(day(2026, 10, 15)), Some(day(2026, 11, 2)));
-            f.apply_recurrence(&d, true);
-            assert_eq!(span(&f), ("2026-11-02", "9:30 AM", "2026-11-02", "10:00 AM"));
-            assert_eq!(f.command().1["recurrence"], json!({"freq": "monthly", "interval": 1, "byDay": ["mon"], "nth": 1}));
-            assert_eq!(f.recurrence_line(true).as_deref(), Some("Every month on the first Monday, from Nov 2, 2026, 9:30 AM – 10:00 AM"));
-            // Yearly: February 29th waits for a leap year; the third Thursday of November.
-            let mut d = dialog(&f);
-            d.set_freq(Freq::Yearly);
-            (d.month, d.day) = (2, 29);
-            assert_eq!(d.first_day(day(2026, 11, 2)), Some(day(2028, 2, 29)));
-            (d.repeat.nth, d.weekday, d.month) = (Some(3), Weekday::Thu, 11);
-            assert_eq!(d.first_day(day(2026, 11, 2)), Some(day(2026, 11, 19)));
-            f.apply_recurrence(&d, true);
-            assert_eq!(f.command().1["recurrence"], json!({"freq": "yearly", "interval": 1, "byDay": ["thu"], "nth": 3}));
-            assert_eq!(f.start_date, "2026-11-19");
-            // Daily on weekdays, from a Saturday: Monday.
-            let mut d = dialog(&f);
-            d.set_freq(Freq::Daily);
-            d.repeat.days = WEEKDAYS.to_vec();
-            assert_eq!((d.first_day(day(2026, 11, 21)), d.first_day(day(2026, 11, 19))), (Some(day(2026, 11, 23)), Some(day(2026, 11, 19))));
-            // The time of day is the dialog's too: a new start keeps the length, a new end is it.
-            d.start_time = "2pm".into();
-            d.start_time_moved(true);
-            assert_eq!(d.end_time, "2:30 PM");
-            d.end_time = "3:30 PM".into();
-            d.end_time_moved();
-            f.apply_recurrence(&d, true);
-            assert_eq!((span(&f), f.minutes), (("2026-11-19", "2:00 PM", "2026-11-19", "3:30 PM"), 90));
-            // An end before the start is on the day after.
-            let mut d = dialog(&f);
-            (d.start_time, d.end_time) = ("11pm".into(), "1am".into());
-            d.end_time_moved();
-            assert_eq!(d.minutes, 120);
-            // What can't be is said, and changes nothing.
-            let before = f.clone();
-            let mut d = dialog(&f);
-            d.set_freq(Freq::Yearly);
-            (d.month, d.day) = (2, 30);
-            assert_eq!((d.first_day(tue), d.wrong()), (None, Some("No day fits this pattern")));
-            f.apply_recurrence(&d, true);
-            assert_eq!(f, before);
-            for (start, time, until) in [("soon", "9", "2027-01-01"), ("2026-10-13", "late", "2027-01-01"), ("2026-10-13", "9", "never")] {
-                let mut d = dialog(&f);
-                (d.start, d.start_time, d.repeat.ends, d.repeat.until) = (start.into(), time.into(), Ends::Until, until.into());
-                assert!(d.wrong().is_some(), "{start} {time} {until}");
-            }
-            // A whole day has no time of day to it.
-            let mut f = EventForm::new(&s, &json!({"start": "2026-10-13", "allDay": true, "title": "Fair"}), false);
-            let mut d = dialog(&f);
-            d.start_time = "nonsense".into();
-            assert!(d.wrong().is_none());
-            d.repeat.days = vec![Weekday::Sat];
-            f.apply_recurrence(&d, true);
-            assert_eq!((f.start_date.as_str(), f.end_date.as_str(), f.all_day), ("2026-10-17", "2026-10-17", true));
-            assert_eq!(f.recurrence_line(true).as_deref(), Some("Every week on Saturday, from Oct 17, 2026"));
-            // Numbers and text from nowhere do no harm.
-            let junk = "\u{0}\u{202e}é\n".repeat(10_000);
-            let mut d = dialog(&f);
-            (d.day, d.month, d.repeat.interval, d.repeat.count, d.repeat.nth) = (u32::MAX, u8::MAX, u32::MAX, u32::MAX, Some(i8::MIN));
-            (d.start, d.start_time, d.end_time, d.repeat.until) = (junk.clone(), junk.clone(), junk.clone(), junk);
-            d.start_time_moved(true);
-            d.end_time_moved();
-            for freq in [Freq::Daily, Freq::Weekly, Freq::Monthly, Freq::Yearly] {
-                d.repeat.freq = Some(freq);
-                let _ = (d.first_day(day(9999, 12, 31)), d.first_day(day(1, 1, 1)), d.wrong(), d.as_repeat());
-                f.apply_recurrence(&d, false);
-            }
-        }
-
-        #[test]
-        fn names_on_the_attendee_lines_are_checked_as_the_composer_checks_them() {
-            let s = session();
-            // A name that is one contact's becomes that contact; an address stays as typed.
-            let (line, unresolved) = check_names(&s, "maya; someone@else.example;  Tomás Rivera <tomas@lumen.example>");
-            assert_eq!(line, "Maya Okafor <maya@lumen.example>; someone@else.example; Tomás Rivera <tomas@lumen.example>");
-            assert!(unresolved.is_empty());
-            // Nobody's name, and a name several have, stay and are said.
-            let (line, unresolved) = check_names(&s, "zzzz; lumen");
-            assert_eq!((line.as_str(), unresolved), ("zzzz; lumen", vec!["zzzz".to_string(), "lumen".to_string()]));
-            assert_eq!(check_names(&s, " ; ;"), (String::new(), Vec::new()));
-            // On the form: both lines, and only what changes is changed.
-            let mut f = EventForm::new(&s, &json!({"attendees": "priya@lumen.example;maya", "optional": "nobody at all"}), true);
-            assert_eq!(f.check_names(&s), ["nobody at all"]);
-            assert_eq!((f.required.as_str(), f.optional.as_str()), ("priya@lumen.example; Maya Okafor <maya@lumen.example>", "nobody at all"));
-            // What a line shows of the people on it: a name each, the contact's when the line
-            // has only the address; what is nobody stands out.
-            let t = crate::theme::Tokens::light();
-            let job = names_job(&s, "priya@lumen.example; Maya Okafor <maya@lumen.example>; who@nowhere.example; bob", egui::FontId::default(), &t);
-            assert_eq!(job.text, "Priya Nair; Maya Okafor; who@nowhere.example; bob");
-            let colors: Vec<egui::Color32> = job.sections.iter().map(|section| section.format.color).collect();
-            assert_eq!(colors.last(), Some(&t.red));
-            assert!(colors.iter().filter(|c| **c == t.red).count() == 1);
-            // Hostile lines are cut to size.
-            let junk = "\u{0}\u{202e}é<b>;".repeat(20_000);
-            let (line, unresolved) = check_names(&s, &junk);
-            assert!(unresolved.len() <= 500 && unresolved.iter().all(|name| name.chars().count() <= 80) && !line.is_empty());
-            assert!(names_job(&s, &junk, egui::FontId::default(), &t).text.chars().count() < 200_000);
-        }
-
-        #[test]
-        fn one_occurrence_shows_on_its_own_day_and_is_saved_as_that_one() {
-            let mut s = session();
-            let standup = event_id(&s, "Team stand-up");
-            let series = (**s.mailbox.events.get(&standup).unwrap()).clone();
-            let friday = day(2026, 10, 16);
-            // Opened as the one on Friday: the form shows Friday, and the command says which.
-            let f = EventForm::edit(&s, &json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-16"})).unwrap();
-            assert_eq!((f.scope, f.start_date.as_str(), f.end_date.as_str()), (Some(Scope::One(friday)), "2026-10-16", "2026-10-16"));
-            assert_eq!(f.start_time, series.start.time_short(true));
-            assert!(!f.dirty());
-            assert_eq!(f.command(), ("calendar.edit", json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-16"})));
-            // It has no rule of its own to change, and its bar has no Recurrence.
-            let mut f = f;
-            f.open_recurrence();
-            assert!(f.recurrence.is_none() && !f.bar_items().iter().any(|item| item.key == "recurrence"));
-            assert!(f.recurrence_line(true).is_some());
-            // Another time that day, the title left alone: the command is told the change as
-            // one to the series' first day, which is how one occurrence is changed, and that
-            // occurrence becomes an event of its own on its own day.
-            f.start_time = "11am".into();
-            f.start_moved(true);
-            let (command, params) = f.command();
-            assert_eq!(
-                (params["start"].as_str(), params["occurrence"].as_str(), params.get("title"), params.get("recurrence")),
-                (Some(format!("{}T11:00", series.start.date.iso()).as_str()), Some("2026-10-16"), None, None)
-            );
-            let made = s.run(command, &params).unwrap();
-            let one = (**s.mailbox.events.get(&made["id"].as_u64().unwrap()).unwrap()).clone();
-            assert_eq!(
-                (one.start.date, one.start.hour, one.duration_minutes(), one.recurrence.is_none()),
-                (friday, 11, series.duration_minutes(), true)
-            );
-            let after = (**s.mailbox.events.get(&standup).unwrap()).clone();
-            assert_eq!((after.start, after.recurrence.clone(), after.exceptions.contains(&friday)), (series.start, series.recurrence.clone(), true));
-            // Moved to another day: by as many days.
-            let mut f = EventForm::edit(&s, &json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-20"})).unwrap();
-            let rule = f.repeat.clone();
-            f.start_date = "2026-10-24".into();
-            f.start_moved(true);
-            assert_eq!(f.repeat, rule, "the series' rule is not the occurrence's to move");
-            let (command, params) = f.command();
-            let made = s.run(command, &params).unwrap();
-            assert_eq!(s.mailbox.events.get(&made["id"].as_u64().unwrap()).unwrap().start.date, day(2026, 10, 24));
-            // Deleting it deletes that one.
-            let f = EventForm::edit(&s, &json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-21"})).unwrap();
-            assert_eq!(f.scoped(json!({"id": standup})), json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-21"}));
-            // The series: said so, and it shows its own first day.
-            let f = EventForm::edit(&s, &json!({"id": standup, "scope": "series"})).unwrap();
-            assert_eq!((f.scope, f.start_date.as_str(), f.apart), (Some(Scope::Series), series.start.date.iso().as_str(), 0));
-            assert_eq!(f.command().1, json!({"id": standup, "scope": "series"}));
-            assert!(f.bar_items().iter().any(|item| item.key == "recurrence"));
-            // Nothing said, a day the series doesn't happen on, an item that doesn't repeat, and
-            // nonsense: nothing is assumed, and the command says nothing of it.
-            let dentist = event_id(&s, "Dentist");
-            for (id, p) in [
-                (standup, json!({"id": standup})),
-                (standup, json!({"id": standup, "scope": "occurrence", "occurrence": "2026-10-17"})),
-                (standup, json!({"id": standup, "scope": "occurrence", "occurrence": "never"})),
-                (standup, json!({"id": standup, "scope": 7, "occurrence": [1]})),
-                (standup, json!({"id": standup, "scope": "everything"})),
-                (dentist, json!({"id": dentist, "scope": "occurrence", "occurrence": "2026-10-17"})),
-                (dentist, json!({"id": dentist, "scope": "series"})),
-            ] {
-                let f = EventForm::edit(&s, &p).unwrap();
-                assert_eq!((f.scope, f.apart, f.command().1), (None, 0, json!({"id": id})), "{p}");
-            }
-        }
-    }
+    mod tests;
 }
 
 /// The contact form.
@@ -4975,12 +3576,13 @@ mod contact {
 
     use egui::Ui;
     use mailcraft_engine::Session;
-    use mailcraft_model::{Id, Labeled, PostalAddress};
+    use mailcraft_model::{ContactKey, Id, Labeled, PostalAddress};
     use mailcraft_time::Date;
     use serde_json::{Map, Value, json};
 
     use super::kit::{Pass, body, category_chips, changes, date_hint, date_ok, date_value, error, footer, multiline, object, row, shown, tall_row};
     use crate::MailApp;
+    use crate::files::base64_lite::encode;
     use crate::widgets::icon_button;
 
     const EMAIL_LABELS: [&str; 3] = ["work", "home", "other"];
@@ -5040,6 +3642,23 @@ mod contact {
         }
     }
 
+    /// One of the card's keys in the form (#30 R11): one it had, by its place on the card, or
+    /// one added from a file (a Public key, checked as `people.edit` checks it), with its bytes
+    /// as base64 for the command.
+    #[derive(Clone, Debug, PartialEq)]
+    enum CardKey {
+        Had(usize, ContactKey),
+        Added { key: ContactKey, data: String },
+    }
+
+    impl CardKey {
+        fn key(&self) -> &ContactKey {
+            match self {
+                CardKey::Had(_, key) | CardKey::Added { key, .. } => key,
+            }
+        }
+    }
+
     /// The contact form: a new contact, or an existing one being edited.
     #[derive(Clone, Debug, Default, PartialEq)]
     pub struct ContactForm {
@@ -5063,6 +3682,11 @@ mod contact {
         favorite: bool,
         // //// Neoffice — where a new contact goes, when the owner picked it (`pim_rights`): a server's address book (its id), or the mailbox's own (0).
         book: Option<Id>,
+        /// The card's certificates and keys.
+        keys: Vec<CardKey>,
+        /// The number of the Add from file… pick this form asked for: a key picked goes only to
+        /// the form that asked for it.
+        key_pick: Option<u64>,
         error: String,
         focus: bool,
         /// The fields as the form opened; OK sends what differs from them.
@@ -5073,6 +3697,25 @@ mod contact {
     }
 
     impl ContactForm {
+        /// The number of the Add from file… pick this form asked for, if any.
+        pub fn key_pick(&self) -> Option<u64> {
+            self.key_pick
+        }
+
+        /// Add a Public key from a file to the card (Add from file…), when there is room and it
+        /// isn't there already.
+        pub fn add_key(&mut self, key: ContactKey) -> Result<(), String> {
+            if self.keys.len() >= mailcraft_model::Contact::MAX_KEYS {
+                return Err(tl!("A contact's card keeps at most 32 certificates and keys").to_string());
+            }
+            if self.keys.iter().any(|k| k.key().data == key.data) {
+                return Err(tl!("That key is on the card already").to_string());
+            }
+            let data = encode(&key.data);
+            self.keys.push(CardKey::Added { key, data });
+            Ok(())
+        }
+
         /// A new contact, prefilled from `p` (`first`, `last`, `email`, and the other one-line
         /// fields of `people.new`).
         pub fn new(p: &Value) -> ContactForm {
@@ -5119,6 +3762,7 @@ mod contact {
                 notes: c.notes.clone(),
                 categories: c.categories.clone(),
                 favorite: c.favorite,
+                keys: c.keys.iter().take(mailcraft_model::Contact::MAX_KEYS).cloned().enumerate().map(|(i, k)| CardKey::Had(i, k)).collect(),
                 focus: true,
                 ..Default::default()
             };
@@ -5176,6 +3820,10 @@ mod contact {
                 "notes": self.notes,
                 "categories": self.categories,
                 "favorite": self.favorite,
+                "keys": self.keys.iter().map(|k| match k {
+                    CardKey::Had(i, _) => json!({"keep": i}),
+                    CardKey::Added { data, .. } => json!({"data": data}),
+                }).collect::<Vec<_>>(),
             }))
         }
 
@@ -5212,8 +3860,10 @@ mod contact {
 
         /// Lay out the form. Returns `true` when the dialog should close.
         pub fn show(&mut self, app: &mut MailApp, ui: &mut Ui) -> bool {
+            let mut add_key = false;
             let mut pass = Pass::new(ui, &app.session, &mut self.focus);
-            let categories = app.session.mailbox.categories.clone();
+            let account = self.id.and_then(|id| app.session.mailbox.contact(id)).map_or(0, |c| c.origin.account);
+            let categories = app.session.mailbox.categories_of(account).to_vec();
             // //// Neoffice — what the contact's address book keeps decides the rows (`pim_rights`): what it wouldn't keep is not offered, and a new contact says where it goes.
             let keeps = crate::pim_rights::contact_keeps(&app.session, self.id, self.book);
             body(ui, |ui| {
@@ -5293,6 +3943,32 @@ mod contact {
                     });
                 }
                 crate::pim_rights::kept_note(ui, &keeps);
+                  // //// Neoffice — a server's address book keeps no certificates and keys: not offered where the card's book is one (see `keeps`).
+                  if keeps.everything {
+                    // The card's certificates and keys (#30 R11), and the Public keys kept for its
+                    // addresses, which are shown and not the card's to change.
+                    tall_row(ui, tl!("Certificates"), |ui| {
+                        let t = crate::theme::Tokens::get(ui.ctx());
+                        let mut gone = None;
+                        for (i, k) in self.keys.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                if ui.small_button(tl!("Remove")).on_hover_text(tl!("Take this key off the card")).clicked() {
+                                    gone = Some(i);
+                                }
+                                crate::security::card_key_line(app, ui, k.key(), &t);
+                            });
+                        }
+                        if let Some(i) = gone {
+                            self.keys.remove(i);
+                        }
+                        let emails: Vec<String> = self.emails.iter().map(|e| e.value.clone()).collect();
+                        crate::security::kept_key_lines(app, ui, &emails, &t);
+                        add_key |= ui
+                            .button(tl!("Add from file…"))
+                            .on_hover_text(tl!("An X.509 certificate (.cer, .pem) or an OpenPGP Public key (.asc) of this contact's"))
+                            .clicked();
+                    });
+                  }
             });
             error(ui, &self.error);
             let ready = self.ready();
@@ -5314,6 +3990,9 @@ mod contact {
             } else {
                 None
             };
+            if add_key {
+                self.key_pick = Some(crate::security::ask_card_key(app));
+            }
             match run.map(|(command, params)| app.execute(command, params)) {
                 Some(Ok(_)) => true,
                 Some(Err(e)) => {
@@ -5326,182 +4005,14 @@ mod contact {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        /// Wednesday 2026-10-14 16:00 UTC.
-        const NOW: i64 = 1_791_993_600;
-
-        fn session() -> Session {
-            Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0)
-        }
-
-        fn contact_id(s: &Session, name: &str) -> Id {
-            s.mailbox.contacts.values().find(|c| c.name() == name).map(|c| c.id).unwrap()
-        }
-
-        #[test]
-        fn a_new_contact_sends_what_was_filled_in() {
-            let mut f = ContactForm::new(&json!({"first": "Ada", "last": "Lovelace", "email": "ada@example.org"}));
-            assert_eq!((f.name(), f.title().as_str()), ("contact", "New Contact"));
-            assert_eq!(
-                f.command(),
-                ("people.new", json!({"first": "Ada", "last": "Lovelace", "emails": [{"label": "work", "value": "ada@example.org"}]}))
-            );
-            f.display = "Countess of Lovelace".into();
-            f.company = "Analytical Engines".into();
-            f.title = "Programmer".into();
-            f.department = "Research".into();
-            f.emails.push(Labeled::new("home", "ada@home.example"));
-            // A row left empty isn't sent.
-            f.emails.push(Labeled::new("other", "  "));
-            f.phones = vec![Labeled::new("mobile", "+44 20 7946 0000")];
-            f.address = PostalAddress {
-                label: "home".into(),
-                street: "12 St James's Square\nSecond floor".into(),
-                city: "London".into(),
-                region: String::new(),
-                postal_code: "SW1Y 4JH".into(),
-                country: "UK".into(),
-            };
-            f.website = "https://example.org/ada".into();
-            f.birthday = "1815-12-10".into();
-            f.notes = "Met at the lecture.".into();
-            f.categories = vec!["Blue category".into()];
-            f.favorite = true;
-            let (command, params) = f.command();
-            assert_eq!(
-                params,
-                json!({
-                    "first": "Ada", "last": "Lovelace", "displayName": "Countess of Lovelace",
-                    "company": "Analytical Engines", "title": "Programmer", "department": "Research",
-                    "emails": [{"label": "work", "value": "ada@example.org"}, {"label": "home", "value": "ada@home.example"}],
-                    "phones": [{"label": "mobile", "value": "+44 20 7946 0000"}],
-                    "address": {"label": "home", "street": "12 St James's Square\nSecond floor", "city": "London", "region": "", "postalCode": "SW1Y 4JH", "country": "UK"},
-                    "website": "https://example.org/ada", "birthday": "1815-12-10", "notes": "Met at the lecture.",
-                    "categories": ["Blue category"], "favorite": true,
-                })
-            );
-            // And the command takes it.
-            let mut s = session();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let c = s.mailbox.contact(id).unwrap();
-            assert_eq!((c.name().as_str(), c.emails.len(), c.birthday, c.favorite), ("Countess of Lovelace", 2, Date::new(1815, 12, 10), true));
-            assert_eq!(c.addresses.first().map(|a| a.one_line()).as_deref(), Some("12 St James's Square\nSecond floor, London SW1Y 4JH, UK"));
-        }
-
-        #[test]
-        fn an_existing_contact_fills_the_form_and_sends_its_changes() {
-            let mut s = session();
-            // Nobody selected and nobody named: no form.
-            assert!(ContactForm::edit(&s, &json!({})).is_none());
-            assert!(ContactForm::edit(&s, &json!({"id": 999_999})).is_none());
-            let dev = contact_id(&s, "Dev Patel");
-            s.sel.contact = Some(dev);
-            let mut f = ContactForm::edit(&s, &json!({})).unwrap();
-            assert_eq!((f.name(), f.title().as_str(), f.id), ("editContact", "Contact", Some(dev)));
-            assert_eq!(
-                (f.first.as_str(), f.last.as_str(), f.company.as_str(), f.title.as_str(), f.birthday.as_str()),
-                ("Dev", "Patel", "Patel & Rowe", "Architect", "1988-03-14")
-            );
-            assert_eq!(f.emails, [Labeled::new("work", "dev.patel@example.org"), Labeled::new("home", "dev@patel.example")]);
-            assert_eq!(f.phones, [Labeled::new("mobile", "+1 555 0142")]);
-            // Untouched, nothing is sent but who it is.
-            assert_eq!(f.command(), ("people.edit", json!({"id": dev})));
-            f.birthday.clear();
-            f.phones[0].value = "+1 555 0199".into();
-            f.phones.push(Labeled::new("work", "+1 555 0100"));
-            f.favorite = true;
-            let (command, params) = f.command();
-            assert_eq!(
-                params,
-                json!({"id": dev, "birthday": null, "favorite": true,
-                    "phones": [{"label": "mobile", "value": "+1 555 0199"}, {"label": "work", "value": "+1 555 0100"}]})
-            );
-            s.run(command, &params).unwrap();
-            let c = s.mailbox.contact(dev).unwrap();
-            assert_eq!((c.birthday, c.phones.len(), c.favorite, c.emails.len(), c.company.as_str()), (None, 2, true, 2, "Patel & Rowe"));
-            // An address and a website; `id` wins over the selection.
-            let lin = contact_id(&s, "Lin Zhao");
-            let mut f = ContactForm::edit(&s, &json!({"id": lin})).unwrap();
-            assert_eq!(
-                (f.address.street.as_str(), f.address.city.as_str(), f.address.postal_code.as_str(), f.website.as_str()),
-                ("40 Dock Road", "Port Haven", "20417", "https://harborworks.example")
-            );
-            assert_eq!(f.categories, ["Orange category"]);
-            f.address.country = "Freedonia".into();
-            assert_eq!(
-                f.command().1,
-                json!({"id": lin, "address": {"label": "work", "street": "40 Dock Road", "city": "Port Haven", "region": "", "postalCode": "20417", "country": "Freedonia"}})
-            );
-            // A contact without a phone still gets a row to type one in.
-            let books = contact_id(&s, "Harbor Books");
-            let f = ContactForm::edit(&s, &json!({"id": books})).unwrap();
-            assert_eq!((f.phones.as_slice(), f.address.label.as_str()), ([Labeled::new("mobile", "")].as_slice(), "work"));
-            assert_eq!(f.command().1, json!({"id": books}));
-        }
-
-        #[test]
-        fn ok_waits_for_someone_to_save() {
-            let mut f = ContactForm::new(&json!({}));
-            assert!(!f.ready());
-            assert_eq!(f.command(), ("people.new", json!({})));
-            f.notes = "Only a note".into();
-            assert!(!f.ready());
-            f.company = "Harbor Books".into();
-            assert!(f.ready());
-            f.company.clear();
-            f.emails[0].value = "x@example.org".into();
-            assert!(f.ready());
-            // A birthday that isn't a date holds OK back.
-            f.birthday = "14 March".into();
-            assert!(!f.ready());
-            f.birthday = "1988-03-14".into();
-            assert!(f.ready());
-            assert_eq!((label_text("WORK").as_str(), label_text("pager").as_str(), label_text("").as_str()), ("Work", "pager", ""));
-        }
-
-        #[test]
-        fn hostile_text_goes_through_without_harm() {
-            let junk = "\u{0}\u{202e}é\n".repeat(40_000);
-            let p = json!({"first": junk, "last": 7, "email": junk, "phone": junk, "displayName": junk, "company": [junk]});
-            let mut f = ContactForm::new(&p);
-            assert!(f.ready() && f.last.is_empty() && f.company.is_empty());
-            (f.address.street, f.address.label, f.website, f.notes) = (junk.clone(), junk.clone(), junk.clone(), junk.clone());
-            f.categories = vec![junk.clone(); 50];
-            f.birthday.clone_from(&junk);
-            assert!(!f.ready());
-            // A birthday that isn't a date goes as typed, and the command refuses it.
-            let mut s = session();
-            let (command, params) = f.command();
-            assert!(s.run(command, &params).unwrap_err().to_string().contains("`birthday` must be a date"));
-            f.birthday.clear();
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            // The command cut the one-line fields down.
-            assert!(s.mailbox.contact(id).unwrap().first.chars().count() <= 300);
-            assert!(label_text(&junk).chars().count() <= 41);
-        }
-
-        // //// Neoffice — where a new contact goes, when the owner picked it (`pim_rights`).
-        #[test]
-        fn a_new_contact_says_the_address_book_the_owner_picked() {
-            let mut f = ContactForm::new(&json!({"first": "Gus"}));
-            assert_eq!(f.command(), ("people.new", json!({"first": "Gus"})), "where the engine puts it, unless picked");
-            f.book = Some(0);
-            assert_eq!(f.command(), ("people.new", json!({"first": "Gus", "book": 0})));
-            let s = session();
-            let mut f = ContactForm::edit(&s, &json!({"id": contact_id(&s, "Dev Patel")})).unwrap();
-            f.book = Some(7);
-            assert!(f.command().1.get("book").is_none(), "an existing contact stays in its book");
-        }
-    }
+    mod tests;
 }
 
 /// The task form.
 mod task {
     use egui::Ui;
     use mailcraft_engine::Session;
+    use mailcraft_engine::cmd::{tasks, tasks_remote};
     use mailcraft_model::{Id, Importance};
     use mailcraft_time::{Date, time_short};
     use serde_json::{Map, Value, json};
@@ -5535,6 +4046,11 @@ mod task {
     pub struct TaskForm {
         /// The task being edited; `None` for a new one.
         id: Option<Id>,
+        /// Where the task is: an account, or 0 for this computer. `None` for a new one that
+        /// nobody has said where to put: it stays here, like one that isn't put anywhere.
+        pub(super) place: Option<Id>,
+        /// The place as the form opened: choosing another is something to ask about.
+        opened_place: Option<Id>,
         title: String,
         due: String,
         start: String,
@@ -5566,6 +4082,8 @@ mod task {
             let text = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
             (f.title, f.due, f.start, f.notes) = (text("title"), text("due"), text("start"), text("notes"));
             f.importance = p.get("importance").and_then(Value::as_str).and_then(Importance::parse).unwrap_or_default();
+            f.place = p.get("account").and_then(Value::as_u64).or_else(|| tasks::new_task_place(s));
+            f.opened_place = f.place;
             f.opened = f.fields();
             f
         }
@@ -5577,6 +4095,8 @@ mod task {
             let reminder = t.reminder.map(|r| s.local(r));
             let mut f = TaskForm {
                 id: Some(id),
+                place: Some(t.origin.account),
+                opened_place: Some(t.origin.account),
                 title: t.title.clone(),
                 due: t.due.map(Date::iso).unwrap_or_default(),
                 start: t.start.map(Date::iso).unwrap_or_default(),
@@ -5606,10 +4126,10 @@ mod task {
             if self.id.is_some() { tl!("Task") } else { tl!("New Task") }.to_string()
         }
 
-        /// Whether the fields differ from what the form opened with, Completed too: there is
-        /// something to save.
+        /// Whether the fields differ from what the form opened with, Completed and the Account
+        /// list too: there is something to save.
         pub fn dirty(&self) -> bool {
-            self.fields() != self.opened || self.completed != self.was_completed
+            self.fields() != self.opened || self.completed != self.was_completed || self.place != self.opened_place
         }
 
         /// The task it changes; `None` for a new one.
@@ -5655,7 +4175,12 @@ mod task {
                     m.insert("id".into(), json!(id));
                     ("tasks.edit", Value::Object(m))
                 }
-                None => ("tasks.new", Value::Object(m)),
+                None => {
+                    if let Some(place) = self.place {
+                        m.insert("account".into(), json!(place));
+                    }
+                    ("tasks.new", Value::Object(m))
+                }
             }
         }
 
@@ -5676,15 +4201,59 @@ mod task {
                 && time_ok(&self.remind_time, false)
         }
 
+        /// The account whose categories the task takes: the one its Account list says.
+        pub(crate) fn category_account(&self) -> Id {
+            self.place.unwrap_or(0)
+        }
+
+        /// A new task that nobody had said a place for when the form opened ("On this computer
+        /// for now") stays on this computer once something says one meanwhile (the list moved to
+        /// an account, a task put somewhere else): OK puts it where the form says, not there.
+        pub(crate) fn hold_place(&mut self, s: &Session) {
+            if self.id.is_none() && self.place.is_none() && tasks::new_task_place(s).is_some() {
+                (self.place, self.opened_place) = (Some(0), Some(0));
+            }
+        }
+
         /// Lay out the form. Returns `true` when the dialog should close.
         pub fn show(&mut self, app: &mut MailApp, ui: &mut Ui) -> bool {
+            self.hold_place(&app.session);
             let mut pass = Pass::new(ui, &app.session, &mut self.focus);
             let today = pass.today;
-            let categories = app.session.mailbox.categories.clone();
+            let mailbox = &app.session.mailbox;
+            let categories = mailbox.categories_of(self.category_account()).to_vec();
+            let place = self.place.unwrap_or(0);
+            let places: Vec<(Id, String)> =
+                tasks_remote::task_accounts(mailbox).into_iter().chain([0]).map(|a| (a, crate::widgets::place_name(mailbox, a))).collect();
+            // Nobody has said: it can still be offered to an account.
+            let place_name =
+                if self.place.is_some() { crate::widgets::place_name(mailbox, place) } else { tl!("On this computer for now").to_string() };
+            let held = place != 0 && app.tasks_held(place);
             body(ui, |ui| {
                 row(ui, tl!("Title"), |ui| {
                     pass.text(ui, "title", &mut self.title, f32::INFINITY, "");
                 });
+                if self.id.is_some() && (places.len() > 1 || place != 0) {
+                    // Where it is, as it stays there.
+                    row(ui, tl!("Account"), |ui| {
+                        ui.add(egui::Label::new(place_name.as_str()).truncate());
+                    });
+                } else if places.len() > 1 {
+                    row(ui, tl!("Account"), |ui| {
+                        egui::ComboBox::from_id_salt("task_account").width(220.0).selected_text(place_name.as_str()).truncate().show_ui(ui, |ui| {
+                            for (account, name) in &places {
+                                if ui.selectable_label(self.place == Some(*account), name.as_str()).clicked() {
+                                    self.place = Some(*account);
+                                }
+                            }
+                        });
+                    });
+                    if held {
+                        row(ui, "", |ui| {
+                            ui.label(egui::RichText::new(tl!("It waits on this computer until To Do is allowed for this account")).size(11.5));
+                        });
+                    }
+                }
                 row(ui, tl!("Due date"), |ui| {
                     pass.date(ui, "due", &mut self.due, false);
                     date_note(ui, &self.due, false);
@@ -5759,139 +4328,7 @@ mod task {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        /// Wednesday 2026-10-14 16:00 UTC.
-        const NOW: i64 = 1_791_993_600;
-
-        fn session() -> Session {
-            Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0)
-        }
-
-        fn task_id(s: &Session, title: &str) -> Id {
-            s.mailbox.tasks.values().find(|t| t.title == title).map(|t| t.id).unwrap()
-        }
-
-        #[test]
-        fn a_new_task_sends_what_was_filled_in() {
-            let mut s = session();
-            let mut f = TaskForm::new(&s, &json!({"title": "Book flights", "due": "2026-10-20"}));
-            assert_eq!((f.name(), f.title().as_str(), f.ready()), ("task", "New Task", true));
-            assert_eq!(f.command(), ("tasks.new", json!({"title": "Book flights", "due": "2026-10-20"})));
-            assert_eq!(f.completion(), None);
-            f.start = "20261015".into();
-            f.importance = Importance::High;
-            f.notes = "Aisle seat".into();
-            f.categories = vec!["Red category".into()];
-            // A reminder with a day and no time is for the start of the working day.
-            f.remind_date = "2026-10-19".into();
-            assert_eq!(
-                f.command().1,
-                json!({"title": "Book flights", "due": "2026-10-20", "start": "2026-10-15", "importance": "high", "notes": "Aisle seat",
-                    "categories": ["Red category"], "reminder": "2026-10-19T08:00"})
-            );
-            f.remind_time = "5:30pm".into();
-            assert_eq!(f.command().1["reminder"], "2026-10-19T17:30");
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let t = s.mailbox.task(id).unwrap();
-            assert_eq!(
-                (t.title.as_str(), t.due, t.start, t.importance),
-                ("Book flights", Date::new(2026, 10, 20), Date::new(2026, 10, 15), Importance::High)
-            );
-            assert_eq!(t.reminder.map(|r| s.local(r).iso()).as_deref(), Some("2026-10-19T17:30:00"));
-            // Prefilled the other ways.
-            let f = TaskForm::new(&s, &json!({"title": 5, "importance": "LOW", "notes": "n", "start": "2026-10-15"}));
-            assert_eq!((f.title.as_str(), f.importance, f.ready()), ("", Importance::Low, false));
-            assert_eq!(f.command().1, json!({"importance": "low", "notes": "n", "start": "2026-10-15"}));
-        }
-
-        #[test]
-        fn an_existing_task_fills_the_form_and_sends_its_changes() {
-            let mut s = session();
-            // Nothing selected and nothing named: no form.
-            assert!(TaskForm::edit(&s, &json!({})).is_none());
-            assert!(TaskForm::edit(&s, &json!({"id": 999_999})).is_none());
-            let id = task_id(&s, "Review the Q4 roadmap draft");
-            s.run("tasks.edit", &json!({"id": id, "reminder": "2026-10-15T09:30"})).unwrap();
-            s.sel.task = Some(id);
-            let mut f = TaskForm::edit(&s, &json!({})).unwrap();
-            assert_eq!((f.name(), f.title().as_str(), f.id), ("editTask", "Task", Some(id)));
-            assert_eq!(
-                (f.title.as_str(), f.due.as_str(), f.start.as_str(), f.importance),
-                ("Review the Q4 roadmap draft", "2026-10-14", "", Importance::High)
-            );
-            assert_eq!(
-                (f.remind_date.as_str(), f.remind_time.as_str(), f.completed, f.notes.as_str()),
-                ("2026-10-15", "9:30 AM", false, "Bring the Atlas estimate as a range.")
-            );
-            // Untouched, nothing is sent but which task it is, and it isn't completed.
-            assert_eq!((f.command(), f.completion()), (("tasks.edit", json!({"id": id})), None));
-            f.due.clear();
-            f.remind_date.clear();
-            f.remind_time.clear();
-            f.importance = Importance::Normal;
-            f.completed = true;
-            assert_eq!(f.command().1, json!({"id": id, "due": null, "reminder": null, "importance": "normal"}));
-            assert_eq!(f.completion(), Some(("tasks.complete", json!({"id": id, "value": true}))));
-            let (command, params) = f.command();
-            s.run(command, &params).unwrap();
-            let (command, params) = f.completion().unwrap();
-            s.run(command, &params).unwrap();
-            let t = s.mailbox.task(id).unwrap();
-            assert_eq!((t.due, t.reminder, t.importance, t.is_complete()), (None, None, Importance::Normal, true));
-            // A finished task opens ticked, and clearing the box reopens it.
-            let done = task_id(&s, "Renew the studio domain");
-            let mut f = TaskForm::edit(&s, &json!({"id": done})).unwrap();
-            assert!(f.completed && f.completion().is_none());
-            f.completed = false;
-            assert_eq!(f.completion(), Some(("tasks.complete", json!({"id": done, "value": false}))));
-        }
-
-        #[test]
-        fn dates_and_reminders_are_checked_before_ok() {
-            let s = session();
-            let mut f = TaskForm::new(&s, &json!({"title": "x"}));
-            assert!(f.ready());
-            f.due = "next week".into();
-            assert!(!f.ready());
-            f.due = "2026-10-19".into();
-            // A reminder time needs its day.
-            f.remind_time = "9".into();
-            assert!(!f.ready());
-            f.remind_date = "2026-10-18".into();
-            assert!(f.ready());
-            assert_eq!(f.reminder(), json!("2026-10-18T09:00"));
-            f.remind_time = "soon".into();
-            assert!(!f.ready());
-            assert_eq!(f.reminder(), json!("2026-10-18Tsoon"));
-            f.title = "  ".into();
-            f.remind_time.clear();
-            assert!(!f.ready());
-            // Next week starts on its Monday.
-            let day = |d: u8| Date::new(2026, 10, d).unwrap();
-            assert_eq!((next_week(day(14)), next_week(day(18)), next_week(day(19))), (day(19), day(19), day(26)));
-        }
-
-        #[test]
-        fn hostile_text_goes_through_without_harm() {
-            let mut s = session();
-            let junk = "\u{0}\u{202e}é\n".repeat(40_000);
-            let mut f = TaskForm::new(&s, &json!({"title": junk, "due": junk, "start": junk, "notes": junk, "importance": junk}));
-            assert!(!f.ready());
-            f.remind_date.clone_from(&junk);
-            f.remind_time.clone_from(&junk);
-            f.categories = vec![junk.clone(); 20];
-            // Dates that aren't dates go as typed, and the command refuses them.
-            let (command, params) = f.command();
-            assert!(s.run(command, &params).unwrap_err().to_string().contains("must be a date"));
-            (f.due, f.start, f.remind_date, f.remind_time) = (String::new(), String::new(), String::new(), String::new());
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            assert!(s.mailbox.task(id).unwrap().title.chars().count() <= 500);
-        }
-    }
+    mod tests;
 }
 
 /// Add Account and Account Settings: the wizard in `account_setup`.
@@ -5901,14 +4338,14 @@ mod account {
 
 /// The Categories dialog: recolour, rename, delete, add.
 mod categories {
-    use egui::{Sense, Stroke, StrokeKind, Ui, vec2};
+    use egui::{Ui, vec2};
     use mailcraft_engine::Session;
-    use mailcraft_model::{Category, Rgb};
+    use mailcraft_model::{AccountKind, Category, Id, Mailbox, Rgb};
     use serde_json::{Value, json};
 
-    use super::kit::{ROW_H, body, close_button, error, field_id};
+    use super::kit::{ROW_H, body, close_button, error, field_id, shown};
     use crate::MailApp;
-    use crate::theme::{Tokens, c32};
+    use crate::theme::Tokens;
     use crate::widgets::icon_button;
 
     /// The colours a category can take: the theme's twelve.
@@ -5921,79 +4358,109 @@ mod categories {
 
     /// A colour swatch that opens the palette. Returns the colour picked there, if one was.
     fn swatch(ui: &mut Ui, color: Rgb) -> Option<Rgb> {
-        let t = Tokens::get(ui.ctx());
-        let (r, resp) = ui.allocate_exact_size(vec2(ROW_H, ROW_H), Sense::click());
-        ui.painter().rect(
-            r.shrink(2.0),
-            5.0,
-            c32(color),
-            Stroke::new(1.0, if resp.hovered() { t.text_dim } else { t.border_strong }),
-            StrokeKind::Inside,
-        );
-        let resp = resp.on_hover_text(tl!("Change the colour"));
-        let mut picked = None;
-        egui::Popup::menu(&resp).show(|ui| {
-            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-            for line in PALETTE.chunks(6) {
-                ui.horizontal(|ui| {
-                    for choice in line {
-                        let (cell, cell_resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-                        let current = *choice == color;
-                        ui.painter().rect(
-                            cell,
-                            4.0,
-                            c32(*choice),
-                            Stroke::new(if current { 2.0 } else { 1.0 }, if current || cell_resp.hovered() { t.text } else { t.border_strong }),
-                            StrokeKind::Inside,
-                        );
-                        if cell_resp.clicked() {
-                            picked = Some(*choice);
-                        }
-                    }
-                });
-            }
-        });
-        picked
+        crate::widgets::color_swatch(ui, ROW_H, Some(color), None).flatten()
+    }
+
+    /// The lists the Categories dialog can show (#633): each account's own, then the one the rest
+    /// share, whose account is 0.
+    fn lists(mailbox: &Mailbox) -> Vec<(Id, String)> {
+        let own = mailbox.accounts.iter().filter(|a| mailbox.account_categories.contains_key(&a.id));
+        let mut lists: Vec<(Id, String)> = own.map(|a| (a.id, shown(if a.email.is_empty() { &a.name } else { &a.email }, 60))).collect();
+        let others = mailbox.accounts.iter().any(|a| a.kind != AccountKind::Local && mailbox.category_list_owner(a.id).is_none());
+        lists.push((0, if others { tl!("Other accounts and On this computer") } else { tl!("On this computer") }.to_string()));
+        lists
     }
 
     /// The Categories dialog.
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     pub struct CategoriesForm {
+        /// The account whose list is in view; 0 for the list that accounts without their own share.
+        account: Id,
         /// The name being retyped: the category it belongs to, and the text so far.
         editing: Option<(String, String)>,
-        new_name: String,
+        /// What is typed to be added.
+        pub new_name: String,
         new_color: Rgb,
         error: String,
         focus: bool,
     }
 
     impl CategoriesForm {
-        /// The dialog, with a colour no category has yet ready for a new one.
-        pub fn new(s: &Session) -> CategoriesForm {
-            CategoriesForm { new_color: unused_color(&s.mailbox.categories), focus: true, ..Default::default() }
+        /// The dialog, on the list of `params.account`, else of the selected message's account,
+        /// else of the first, with a colour no category has yet ready for a new one. An `account`
+        /// of 0 is the shared list, as an item of no account says it. `None` when `params.account`
+        /// is anything else that isn't an account.
+        pub fn new(s: &Session, params: &Value) -> Option<CategoriesForm> {
+            let named = match params.get("account") {
+                None | Some(Value::Null) => None,
+                Some(a) if a.as_u64() == Some(0) => Some(0),
+                Some(_) => Some(mailcraft_engine::cmd::category::list_account(s, params).ok()?),
+            };
+            let account = named
+                .or_else(|| s.sel.messages.last().and_then(|m| s.mailbox.message(*m)).map(|m| m.account))
+                .or_else(|| s.mailbox.default_account().map(|a| a.id))
+                .and_then(|a| s.mailbox.category_list_owner(a))
+                .unwrap_or(0);
+            Some(CategoriesForm { account, new_color: unused_color(s.mailbox.categories_of(account)), focus: true, ..Default::default() })
+        }
+
+        /// Put the list of `account` in view; nothing begun on the last one carries over.
+        fn show_list(&mut self, mailbox: &Mailbox, account: Id) {
+            self.account = account;
+            self.editing = None;
+            self.new_name.clear();
+            self.error.clear();
+            self.new_color = unused_color(mailbox.categories_of(account));
+        }
+
+        /// A command's `params` for the list in view.
+        fn on_list(&self, mut params: Value) -> Value {
+            if let Some(params) = params.as_object_mut().filter(|_| self.account != 0) {
+                params.insert("account".to_string(), self.account.into());
+            }
+            params
         }
 
         /// The command that adds the category typed at the bottom.
         pub fn add_command(&self) -> (&'static str, Value) {
-            ("category.set", json!({"name": self.new_name, "color": self.new_color.hex()}))
+            ("category.set", self.on_list(json!({"name": self.new_name, "color": self.new_color.hex()})))
         }
 
         /// Lay out the form. Returns `true` when the dialog should close.
         pub fn show(&mut self, app: &mut MailApp, ui: &mut Ui) -> bool {
             let t = Tokens::get(ui.ctx());
             let enter = crate::keys::enter(ui.ctx(), ui.layer_id());
-            let list = app.session.mailbox.categories.clone();
+            let lists = lists(&app.session.mailbox);
+            if !lists.iter().any(|(id, _)| *id == self.account) {
+                self.show_list(&app.session.mailbox, 0);
+            }
+            let list = app.session.mailbox.categories_of(self.account).to_vec();
             // Once Outlook's list of categories was read, those not on it say so (R3 spec S18).
-            let outlook = &app.session.mailbox.outlook_categories;
+            let outlook = app.session.mailbox.server_categories.get(&self.account);
             let not_outlooks: Vec<bool> =
-                list.iter().map(|c| !outlook.is_empty() && !outlook.iter().any(|o| mailcraft_model::sync::same_category(o, &c.name))).collect();
+                list.iter().map(|c| outlook.is_some_and(|names| !names.iter().any(|o| mailcraft_model::sync::same_category(o, &c.name)))).collect();
             let mut run: Option<(&'static str, Value)> = None;
             let mut adding = false;
+            let mut picked = None;
             body(ui, |ui| {
+                if lists.len() > 1 {
+                    ui.horizontal(|ui| {
+                        ui.label(tl!("Account"));
+                        let now = lists.iter().find(|(id, _)| *id == self.account).map(|(_, name)| name.clone()).unwrap_or_default();
+                        egui::ComboBox::from_id_salt("categories_account").selected_text(now).width(280.0).show_ui(ui, |ui| {
+                            for (id, name) in &lists {
+                                if ui.selectable_label(self.account == *id, name).clicked() && self.account != *id {
+                                    picked = Some(*id);
+                                }
+                            }
+                        });
+                    });
+                    ui.add_space(6.0);
+                }
                 for (i, c) in list.iter().enumerate() {
                     ui.horizontal(|ui| {
                         if let Some(color) = swatch(ui, c.color) {
-                            run = Some(("category.set", json!({"name": c.name, "color": color.hex()})));
+                            run = Some(("category.set", self.on_list(json!({"name": c.name, "color": color.hex()}))));
                         }
                         let mut text = match &self.editing {
                             Some((name, text)) if *name == c.name => text.clone(),
@@ -6010,10 +4477,10 @@ mod categories {
                             && let Some((from, to)) = self.editing.take_if(|e| e.0 == c.name)
                             && to.trim() != from
                         {
-                            run = Some(("category.rename", json!({"from": from, "to": to})));
+                            run = Some(("category.rename", self.on_list(json!({"from": from, "to": to}))));
                         }
                         if icon_button(ui, "delete", tl!("Delete this category"), 14.0, true).clicked() {
-                            run = Some(("category.remove", json!({"name": c.name})));
+                            run = Some(("category.remove", self.on_list(json!({"name": c.name}))));
                         }
                     });
                     if not_outlooks.get(i).copied().unwrap_or(false) {
@@ -6050,6 +4517,9 @@ mod categories {
                     }
                 });
             });
+            if let Some(account) = picked {
+                self.show_list(&app.session.mailbox, account);
+            }
             if let Some((command, params)) = run {
                 match app.execute(command, params) {
                     Ok(_) => {
@@ -6057,7 +4527,7 @@ mod categories {
                         if adding {
                             // Ready for the next one.
                             self.new_name.clear();
-                            self.new_color = unused_color(&app.session.mailbox.categories);
+                            self.new_color = unused_color(app.session.mailbox.categories_of(self.account));
                             self.focus = true;
                         }
                     }
@@ -6070,57 +4540,34 @@ mod categories {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        /// Wednesday 2026-10-14 16:00 UTC.
-        const NOW: i64 = 1_791_993_600;
-
-        #[test]
-        fn the_palette_has_twelve_colours_and_offers_a_free_one() {
-            let distinct: std::collections::BTreeSet<String> = PALETTE.iter().map(|c| c.hex()).collect();
-            assert_eq!(distinct.len(), 12);
-            // The six categories a mailbox starts with take red to green, blue and purple.
-            let mut s = Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0);
-            assert_eq!(unused_color(&s.mailbox.categories), Rgb(0x1A, 0x9B, 0xA6));
-            assert_eq!(unused_color(&[]), PALETTE[0]);
-            let all: Vec<Category> = PALETTE.iter().map(|c| Category { name: c.hex(), color: *c }).collect();
-            assert_eq!(unused_color(&all), PALETTE[0]);
-            // The row at the bottom adds a category in that colour.
-            let mut f = CategoriesForm::new(&s);
-            f.new_name = "Travel".into();
-            assert_eq!(f.add_command(), ("category.set", json!({"name": "Travel", "color": "#1A9BA6"})));
-            let (command, params) = f.add_command();
-            s.run(command, &params).unwrap();
-            assert_eq!(s.mailbox.category("travel").map(|c| c.color), Some(Rgb(0x1A, 0x9B, 0xA6)));
-            assert_eq!(unused_color(&s.mailbox.categories), Rgb(0xC2, 0x4E, 0x9A));
-            // A hostile name is the command's to clean.
-            f.new_name = "\u{0}\u{202e}é\n".repeat(40_000);
-            let (command, params) = f.add_command();
-            s.run(command, &params).unwrap();
-            assert!(s.mailbox.categories.iter().all(|c| c.name.chars().count() <= mailcraft_model::MAX_NAME));
-        }
-    }
+    mod tests;
 }
 
+#[cfg(test)]
+mod categories_tests;
 mod junk;
 #[cfg(test)]
 mod junk_tests;
+#[cfg(test)]
+mod task_place_tests;
 
 /// The Rules dialog: the rules, Run Rules Now, and a builder for a new rule.
-mod rules {
+pub(crate) mod rules {
     use egui::{Align2, Rect, Sense, Ui, pos2, vec2};
     use mailcraft_engine::Session;
-    use mailcraft_model::{Action, Condition, FolderKind, Id, Importance, Mailbox, Rule};
+    use mailcraft_engine::cmd::rules::{NotOnServer, server_cannot, server_cannot_draft};
+    use mailcraft_model::{Action, FolderKind, Id, Importance, Keep, Mailbox, Rule};
     use serde_json::{Value, json};
 
-    use super::kit::{Pass, body, close_button, error, row, shown};
+    use super::kit::{Pass, body, close_button, error, row, shown, tall_row};
     use crate::MailApp;
     use crate::theme::{paint_clipped, regular, semibold};
     use crate::widgets::icon_button;
 
     /// Most conditions, and most actions, the builder takes.
     const MAX_PARTS: usize = 5;
+    /// The width of a rule's button (an icon of 14 points, as `icon_button` lays it out).
+    const BUTTON: f32 = 22.0;
 
     /// What a condition looks at.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -6146,6 +4593,20 @@ mod rules {
                 When::Attachment => "Has an attachment",
                 When::Importance => "Importance is",
             }
+        }
+
+        /// The label for a rule of an account whose server looks for a sender's or a recipient's
+        /// words in their addresses alone (#566).
+        fn what(self) -> &'static str {
+            match self {
+                When::From => "Sender's address contains",
+                When::To => "Recipient's address contains",
+                other => other.label(),
+            }
+        }
+
+        fn label_as(self, addresses: bool) -> &'static str {
+            if addresses { self.what() } else { self.label() }
         }
 
         /// The condition's `type` in `rules.add`.
@@ -6241,9 +4702,35 @@ mod rules {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| icon_button(ui, "close", tip, 10.0, true).clicked()).inner
     }
 
-    /// The account whose folders a new rule can move mail to: the one in view.
+    /// The accounts the dialog shows the rules of (#566): every account but a shared mailbox and
+    /// one of a kind this version doesn't know, with what it is called, in the order the owner
+    /// put them in the folder pane (#702).
+    pub fn rule_accounts(mb: &Mailbox) -> Vec<(Id, String)> {
+        mb.accounts_in_order()
+            .into_iter()
+            .filter(|a| has_rules(a))
+            .map(|a| (a.id, if a.email.trim().is_empty() { a.name.clone() } else { a.email.trim().to_string() }))
+            .collect()
+    }
+
+    /// Whether the dialog shows an account's rules: not a shared mailbox's, nor one of a kind this
+    /// version doesn't know.
+    fn has_rules(a: &mailcraft_model::Account) -> bool {
+        !a.is_shared() && a.kind != mailcraft_model::AccountKind::Unknown
+    }
+
+    /// The account the dialog falls back on when none is in view: the first added that has
+    /// rules, whatever order the owner put the accounts in (#702).
+    fn first_with_rules(mb: &Mailbox) -> Option<Id> {
+        mb.accounts.iter().find(|a| has_rules(a)).map(|a| a.id)
+    }
+
+    /// The account the dialog opens on: the one in view, as Outlook's "Apply changes to this
+    /// folder" starts on the mailbox in view.
     fn account_in_view(s: &Session) -> Id {
-        s.mailbox.folder(s.view.folder).map(|f| f.account).or(s.mailbox.default_account().map(|a| a.id)).unwrap_or(0)
+        let shown = rule_accounts(&s.mailbox);
+        let in_view = s.mailbox.folder(s.view.folder).map(|f| f.account).or(s.mailbox.default_account().map(|a| a.id));
+        in_view.filter(|a| shown.iter().any(|(id, _)| id == a)).or_else(|| first_with_rules(&s.mailbox)).unwrap_or(0)
     }
 
     /// An account's folders as a rule can move mail to them: id and path, in the folder pane's
@@ -6262,15 +4749,36 @@ mod rules {
         out
     }
 
+    /// The folders a new rule of `account` can move mail to: the account's own, then those of the
+    /// owner's other accounts, named with their account (a rule moving mail there is kept on this
+    /// computer).
+    pub fn move_choices(mb: &Mailbox, account: Id) -> Vec<(Id, String)> {
+        let mut out = folder_choices(mb, account);
+        for (other, name) in rule_accounts(mb).into_iter().filter(|(id, _)| *id != account) {
+            let theirs = folder_choices(mb, other);
+            out.extend(
+                theirs.into_iter().map(|(id, path)| (id, crate::i18n::fmt(tl!("{folder} - {mailbox}"), &[("folder", &path), ("mailbox", &name)]))),
+            );
+        }
+        out
+    }
+
     /// The rule in words, naming the folder a move goes to:
     /// `When from contains "x": move it to Inbox/Projects, flag it`.
     pub fn describe(mb: &Mailbox, r: &Rule) -> String {
-        let when = r.conditions.iter().map(Condition::describe).collect::<Vec<_>>().join(" and ");
+        let addresses = mb.rule_reads_addresses(r);
+        let when = r.conditions.iter().map(|c| c.describe_as(addresses)).collect::<Vec<_>>().join(" and ");
         let then = r
             .actions
             .iter()
             .map(|a| match a {
-                Action::MoveTo(f) if mb.folder(*f).is_some() => format!("move it to {}", crate::nav::folder_path(mb, *f)),
+                Action::MoveTo(f) if mb.folder(*f).is_some_and(|f| f.account == r.account || r.account == 0) => {
+                    format!("move it to {}", crate::nav::folder_path(mb, *f))
+                }
+                Action::MoveTo(f) if let Some(other) = mb.folder(*f).and_then(|f| mb.account(f.account)) => {
+                    let who = if other.email.trim().is_empty() { other.name.trim() } else { other.email.trim() };
+                    format!("move it to {} - {who}", crate::nav::folder_path(mb, *f))
+                }
                 Action::MoveTo(_) => "move it to a folder that is gone".to_string(),
                 other => other.describe(),
             })
@@ -6279,15 +4787,154 @@ mod rules {
         format!("When {when}: {then}")
     }
 
+    /// Where a rule is kept, and why, as the dialog says it under the rule (#566).
+    pub(crate) fn mark(app: &MailApp, r: &Rule, account: Id) -> String {
+        let mb = &app.session.mailbox;
+        let why = |n: NotOnServer| tl!(n.said()).to_string();
+        let only_here = |why: &str| crate::i18n::fmt(tl!("Only on this computer: {why}"), &[("why", why)]);
+        if r.account == 0 {
+            return tl!("On this computer, for the mail of every account").to_string();
+        }
+        // A change the server isn't told of while MailCraft may not change its rules: the server
+        // still has the rule as it was, and runs it so.
+        if r.changed_here() && app.rules_held(r.account) {
+            return tl!("On the server, still as it was: your change waits for permission (File › Info)").to_string();
+        }
+        if let Some(server) = r.server.as_ref().filter(|_| r.on_server()) {
+            return if !server.unknown.is_empty() {
+                tl!("On the server: here it can be switched on or off, moved or deleted").to_string()
+            } else if server.read_only {
+                tl!("On the server, which doesn't let it be changed").to_string()
+            } else if server.error {
+                tl!("On the server, which says something in it is wrong: Outlook on the web shows what").to_string()
+            } else {
+                tl!("On the server").to_string()
+            };
+        }
+        if r.waiting() {
+            let reason = server_cannot(mb, r, account).map_or_else(|| app.rules_wait_reason(account), why);
+            return crate::i18n::fmt(tl!("Only on this computer for now: {why}"), &[("why", &reason)]);
+        }
+        if !mb.keeps_rules(r.account) {
+            return tl!("On this computer").to_string();
+        }
+        if !r.refused.is_empty() {
+            let said = crate::i18n::fmt(tl!("the server didn't take it ({why})"), &[("why", &shown(&r.refused, 120))]);
+            return only_here(&said);
+        }
+        match server_cannot(mb, r, r.account) {
+            Some(NotOnServer::NoServer) | None => tl!("Only on this computer").to_string(),
+            Some(n) => only_here(&why(n)),
+        }
+    }
+
+    /// A list's heading, with what it means on hover.
+    fn heading(ui: &mut Ui, t: crate::theme::Tokens, title: &str, tip: &str) {
+        ui.label(egui::RichText::new(title).font(semibold(12.0)).color(t.text_dim)).on_hover_text(tip);
+    }
+
+    /// One rule of a list: switched on or off, its name, what it does and where it is kept; to the
+    /// right, a place up or down, keeping it on the server, deleting it.
+    #[allow(clippy::too_many_arguments)]
+    fn rule_row(
+        ui: &mut Ui,
+        app: &MailApp,
+        r: &Rule,
+        mark: &str,
+        (up, down): (bool, bool),
+        account: Id,
+        servers: &[(Id, String)],
+        run: &mut Option<(&'static str, Value)>,
+    ) {
+        let t = crate::theme::Tokens::get(ui.ctx());
+        let mb = &app.session.mailbox;
+        let fixed = r.read_only();
+        // The servers that could keep it: its own account's, or for a rule for every account, any.
+        let to: Vec<&(Id, String)> = if r.keep == Keep::Here && !r.on_server() {
+            servers.iter().filter(|(id, _)| (r.account == 0 || r.account == *id) && server_cannot(mb, r, *id).is_none()).collect()
+        } else {
+            Vec::new()
+        };
+        ui.horizontal(|ui| {
+            let mut on = r.enabled;
+            let tip = if fixed { tl!("The server doesn't let this rule be changed") } else { tl!("Run this rule on mail as it arrives") };
+            if ui.add_enabled(!fixed, egui::Checkbox::without_text(&mut on)).on_hover_text(tip).on_disabled_hover_text(tip).changed() {
+                *run = Some(("rules.enable", json!({"id": r.id, "value": on})));
+            }
+            // Four buttons to the right, the same in every row, so that they stand in a column.
+            let buttons = 4.0 * BUTTON + 4.0 * ui.spacing().item_spacing.x;
+            let width = (ui.available_width() - buttons).max(40.0);
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, 54.0), Sense::hover());
+            let words = if r.known() {
+                shown(&describe(mb, r), 600)
+            } else {
+                tl!("Made in another program or on the web, with parts MailCraft can't show").to_string()
+            };
+            let shade = if r.enabled { t.text } else { t.text_disabled };
+            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 11.0), width, &shown(&r.name, 200), semibold(12.5), shade);
+            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 27.0), width, &words, regular(11.5), t.text_dim);
+            let held = r.changed_here() && app.rules_held(r.account);
+            let mark_colour = if r.waiting() || !r.refused.is_empty() || held { t.orange } else { t.text_dim };
+            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 43.0), width, mark, regular(11.0), mark_colour);
+            resp.on_hover_text(format!("{words}\n{mark}"));
+            let place = |direction: &str| json!({"id": r.id, "direction": direction, "account": account});
+            if icon_button(ui, "moveUp", tl!("Move this rule up: it runs earlier"), 14.0, up && !fixed).clicked() && up && !fixed {
+                *run = Some(("rules.move", place("up")));
+            }
+            if icon_button(ui, "moveDown", tl!("Move this rule down: it runs later"), 14.0, down && !fixed).clicked() && down && !fixed {
+                *run = Some(("rules.move", place("down")));
+            }
+            match to.as_slice() {
+                [] => {
+                    ui.add_space(BUTTON);
+                }
+                [(only, address)] => {
+                    let tip = crate::i18n::fmt(
+                        tl!("Keep this rule on the server of {address}: it then runs there whether MailCraft is open or not, for that account's mail"),
+                        &[("address", &shown(address, 80))],
+                    );
+                    if icon_button(ui, "server", &tip, 14.0, true).clicked() {
+                        *run = Some(("rules.keepOnServer", json!({"id": r.id, "account": only})));
+                    }
+                }
+                several => {
+                    let tip = tl!("Keep this rule on an account's server: choose which. It then runs there whether MailCraft is open or not, for that account's mail");
+                    let resp = icon_button(ui, "server", tip, 14.0, true);
+                    egui::Popup::menu(&resp).show(|ui| {
+                        for (id, address) in several {
+                            let label = crate::i18n::fmt(tl!("Keep on the server of {address}"), &[("address", &shown(address, 80))]);
+                            if ui.button(label).clicked() {
+                                *run = Some(("rules.keepOnServer", json!({"id": r.id, "account": id})));
+                                ui.close();
+                            }
+                        }
+                    });
+                }
+            }
+            if icon_button(ui, "delete", tl!("Delete this rule"), 14.0, !fixed).clicked() && !fixed {
+                *run = Some(("rules.remove", json!({"id": r.id})));
+            }
+        });
+    }
+
     /// The Rules dialog.
     #[derive(Clone, Debug, Default, PartialEq, Eq)]
     pub struct RulesForm {
+        /// The account whose rules are shown, and whose arriving mail a new rule is for.
+        account: Id,
         /// The New rule builder is unfolded.
         open: bool,
         name: String,
         conds: Vec<Cond>,
         acts: Vec<Act>,
         stop: bool,
+        /// Keep on the server: ticked when the builder starts, the owner's to untick; while the
+        /// server can't do the rule it is greyed and the rule stays here.
+        server: bool,
+        /// Opened by Always Move Messages From This Sender: the folder the message is in, and its
+        /// path. Once the rule is added, the rules are run over that folder while this is ticked.
+        run_in: Option<(Id, String)>,
+        then_run: bool,
         /// The folders a move can go to: id and path.
         folders: Vec<(Id, String)>,
         /// The folder and category a fresh action starts with.
@@ -6300,21 +4947,69 @@ mod rules {
     }
 
     impl RulesForm {
-        /// The dialog, with the builder unfolded when there are no rules yet.
-        pub fn new(s: &Session) -> RulesForm {
-            let account = account_in_view(s);
-            let folders = folder_choices(&s.mailbox, account);
-            let first_folder = s.mailbox.folder_of_kind(account, FolderKind::Archive).or(folders.first().map(|f| f.0)).unwrap_or(0);
-            let first_category = s.mailbox.categories.first().map(|c| c.name.clone()).unwrap_or_default();
-            let mut f = RulesForm { open: s.mailbox.rules.is_empty(), folders, first_folder, first_category, focus: true, ..Default::default() };
+        /// The dialog, with the builder unfolded when there are no rules yet. With a `folder`, as
+        /// Always Move Messages From This Sender opens it, the builder is unfolded and filled in to
+        /// move the mail of the selected message's sender (or message `id`'s) there.
+        pub fn new(s: &Session, params: &Value) -> RulesForm {
+            let first_category = s.mailbox.every_category().into_iter().next().map(|c| c.name).unwrap_or_default();
+            let mut f = RulesForm { open: s.mailbox.rules.is_empty(), first_category, focus: true, ..Default::default() };
+            f.choose(&s.mailbox, account_in_view(s));
             f.reset();
+            if let Some(folder) = params.get("folder").and_then(Value::as_u64) {
+                f.fill_from_message(s, folder, params.get("id").and_then(Value::as_u64).or(s.sel.focus()));
+            }
             f
+        }
+
+        /// Fill the builder in for the mail of message `id`'s sender to go to `folder`, for the
+        /// account the message came to, as `rules.fromMessage` makes it. Nothing for a message or
+        /// folder that isn't there, a send queue, a sender with no address, or a shared mailbox's
+        /// message (its rules are its own; one for its owner's account would move the owner's mail
+        /// into it).
+        fn fill_from_message(&mut self, s: &Session, folder: Id, id: Option<Id>) {
+            let mb = &s.mailbox;
+            let Some(m) = id.and_then(|id| mb.message(id)) else { return };
+            let Some(target) = mb.folder(folder).filter(|_| !mb.is_send_queue(folder)) else { return };
+            let sender = m.from.email.trim();
+            let account = m.account;
+            if sender.is_empty() || !rule_accounts(mb).iter().any(|(id, _)| *id == account) {
+                return;
+            }
+            self.choose(mb, account);
+            let name = crate::i18n::fmt(tl!("{sender} to {folder}"), &[("sender", m.from.display()), ("folder", &target.name)]);
+            self.name = name.chars().take(mailcraft_model::MAX_NAME).collect();
+            self.conds = vec![Cond { kind: When::From, text: sender.to_string(), ..Default::default() }];
+            self.acts = vec![Act { kind: Do::Move, folder, ..self.fresh_action() }];
+            self.open = true;
+            self.run_in = Some((m.folder, crate::nav::folder_path(mb, m.folder)));
+            self.then_run = true;
+        }
+
+        /// Show the rules of `account`: a new rule is for its mail, and moves it to its folders.
+        fn choose(&mut self, mb: &Mailbox, account: Id) {
+            self.account = account;
+            self.folders = move_choices(mb, account);
+            self.first_folder = mb.folder_of_kind(account, FolderKind::Archive).or(self.folders.first().map(|f| f.0)).unwrap_or(0);
+            let (folders, first) = (&self.folders, self.first_folder);
+            for a in &mut self.acts {
+                if !folders.iter().any(|f| f.0 == a.folder) {
+                    a.folder = first;
+                }
+            }
+            // The mail already there that the new rule may run over is the account's own.
+            if self.run_in.as_ref().is_some_and(|(f, _)| mb.folder(*f).is_none_or(|f| f.account != account)) {
+                self.run_in = None;
+                self.then_run = false;
+            }
         }
 
         /// Start the builder over: one empty condition, one action.
         fn reset(&mut self) {
             self.name.clear();
             self.stop = false;
+            self.server = true;
+            self.run_in = None;
+            self.then_run = false;
             self.conds = vec![Cond::default()];
             self.acts = vec![self.fresh_action()];
         }
@@ -6346,7 +5041,14 @@ mod rules {
                     Do::Delete => json!({"type": "delete"}),
                 })
                 .collect();
-            ("rules.add", json!({"name": self.name, "conditions": conditions, "actions": actions, "stop": self.stop}))
+            let mut params = json!({"name": self.name, "conditions": conditions, "actions": actions, "stop": self.stop});
+            if self.account != 0 {
+                params["account"] = json!(self.account);
+                if !self.server {
+                    params["server"] = json!(false);
+                }
+            }
+            ("rules.add", params)
         }
 
         /// Whether Add can run: the rule has a name, every text condition a text, every move a
@@ -6363,44 +5065,86 @@ mod rules {
 
         /// Lay out the form. Returns `true` when the dialog should close.
         pub fn show(&mut self, app: &mut MailApp, ui: &mut Ui) -> bool {
+            // A held Space on a rule's button is one press: its repeats would reach the button
+            // that takes its place, the next rule's, and delete or move that one too.
+            ui.input_mut(|i| crate::keys::drop_repeats(i, &[egui::Key::Space]));
             let mut pass = Pass::new(ui, &app.session, &mut false);
             let t = pass.t;
-            let rules = app.session.mailbox.rules.clone();
-            let categories: Vec<String> = app.session.mailbox.categories.iter().map(|c| c.name.clone()).collect();
-            let folder_in_view = crate::nav::folder_path(&app.session.mailbox, app.session.view.folder);
+            let accounts = rule_accounts(&app.session.mailbox);
+            if !accounts.iter().any(|(id, _)| *id == self.account)
+                && let Some(first) = first_with_rules(&app.session.mailbox)
+            {
+                self.choose(&app.session.mailbox, first);
+            }
+            let account = self.account;
+            let mb = &app.session.mailbox;
+            let on_server = mb.keeps_rules(account);
+            let rules: Vec<Rule> = mb.rules_in_order(account).into_iter().filter_map(|i| mb.rules.get(i).cloned()).collect();
+            let (there, here): (Vec<Rule>, Vec<Rule>) = rules.into_iter().partition(|r| r.account == account && r.keep == Keep::Server);
+            let servers = rule_accounts(mb).into_iter().filter(|(id, _)| mb.keeps_rules(*id)).collect::<Vec<_>>();
+            let categories: Vec<String> = mb.every_category().into_iter().map(|c| c.name).collect();
+            let folder_in_view = crate::nav::folder_path(mb, app.session.view.folder);
+            let marks: Vec<(Id, String)> = there.iter().chain(&here).map(|r| (r.id, mark(app, r, account))).collect();
+            let held = app.rules_held(account);
+            let gone = if held { mb.rule_gone.iter().filter(|g| g.account == account && !g.id.is_empty()).count() } else { 0 };
+            // Whether the rule being made could be kept on the server, and why not (an account on
+            // this computer alone has none).
+            let place = mb
+                .account(account)
+                .filter(|a| self.open && a.kind != mailcraft_model::AccountKind::Local)
+                .map(|a| (a.email.clone(), server_cannot_draft(&app.session, &self.command().1)));
             let mut run: Option<(&'static str, Value)> = None;
+            let mut chosen = None;
             let mut add = false;
             body(ui, |ui| {
-                for r in &rules {
-                    ui.horizontal(|ui| {
-                        let mut on = r.enabled;
-                        if ui.checkbox(&mut on, "").on_hover_text(tl!("Run this rule on mail as it arrives")).changed() {
-                            run = Some(("rules.enable", json!({"id": r.id, "value": on})));
-                        }
-                        let width = (ui.available_width() - 34.0).max(40.0);
-                        let (rect, resp) = ui.allocate_exact_size(vec2(width, 38.0), Sense::hover());
-                        let words = shown(&describe(&app.session.mailbox, r), 600);
-                        paint_clipped(
-                            ui.painter(),
-                            pos2(rect.min.x, rect.min.y + 11.0),
-                            width,
-                            &shown(&r.name, 200),
-                            semibold(12.5),
-                            if r.enabled { t.text } else { t.text_disabled },
-                        );
-                        paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 28.0), width, &words, regular(11.5), t.text_dim);
-                        resp.on_hover_text(words);
-                        if icon_button(ui, "delete", tl!("Delete this rule"), 14.0, true).clicked() {
-                            run = Some(("rules.remove", json!({"id": r.id})));
-                        }
+                // Whose rules: Outlook's "Apply changes to this folder".
+                if accounts.len() > 1 {
+                    row(ui, tl!("Rules for"), |ui| {
+                        let current = accounts.iter().find(|(id, _)| *id == account).map(|(_, name)| shown(name, 120)).unwrap_or_default();
+                        egui::ComboBox::from_id_salt("rules_account").width(260.0).selected_text(current).truncate().show_ui(ui, |ui| {
+                            for (id, name) in &accounts {
+                                if ui.selectable_label(*id == account, shown(name, 120)).clicked() {
+                                    chosen = Some(*id);
+                                }
+                            }
+                        });
                     });
+                    ui.add_space(4.0);
                 }
-                if rules.is_empty() {
+                let mark_of = |id: Id| marks.iter().find(|(m, _)| *m == id).map(|(_, m)| m.as_str()).unwrap_or("");
+                if on_server {
+                    heading(ui, t, tl!("On the server"), tl!("Run by the server as mail arrives, whether MailCraft is open or not"));
+                    for (i, r) in there.iter().enumerate() {
+                        // A rule waiting to go stands after those the server has, and moves among them once it is there.
+                        let up = i > 0 && there.get(i - 1).is_some_and(|p| p.on_server() == r.on_server());
+                        let down = there.get(i + 1).is_some_and(|n| n.on_server() == r.on_server());
+                        rule_row(ui, app, r, mark_of(r.id), (up, down), account, &servers, &mut run);
+                    }
+                    if there.is_empty() {
+                        ui.label(egui::RichText::new(tl!("None yet.")).color(t.text_dim).size(11.5));
+                    }
+                    // Deleted here, and still run by the server while it isn't told.
+                    if gone > 0 {
+                        let said = tln!(
+                            gone,
+                            "{n} rule deleted here is still on the server until MailCraft may change the server's rules (File › Info › Ask again).",
+                            "{n} rules deleted here are still on the server until MailCraft may change the server's rules (File › Info › Ask again)."
+                        );
+                        ui.label(egui::RichText::new(said).color(t.orange).size(11.5));
+                    }
+                    ui.add_space(6.0);
+                    heading(ui, t, tl!("On this computer"), tl!("Run by MailCraft as mail arrives, while it is open"));
+                }
+                for (i, r) in here.iter().enumerate() {
+                    rule_row(ui, app, r, mark_of(r.id), (i > 0, i + 1 < here.len()), account, &servers, &mut run);
+                }
+                if there.is_empty() && here.is_empty() {
                     ui.label(egui::RichText::new(tl!("No rules yet. A rule files, flags or deletes mail as it arrives.")).color(t.text_dim));
                 }
                 ui.horizontal(|ui| {
                     let tip = crate::i18n::fmt(tl!("Run every rule that is switched on over {folder}"), &[("folder", &folder_in_view)]);
-                    if ui.add_enabled(!rules.is_empty(), egui::Button::new(tl!("Run Rules Now"))).on_hover_text(tip).clicked() {
+                    let any = !(there.is_empty() && here.is_empty());
+                    if ui.add_enabled(any, egui::Button::new(tl!("Run Rules Now"))).on_hover_text(tip).clicked() {
                         run = Some(("rules.run", json!({})));
                     }
                     if let Some(n) = self.ran {
@@ -6427,9 +5171,14 @@ mod rules {
                     self.focus = self.open;
                 }
                 if self.open {
-                    add = self.builder(ui, &mut pass, &categories);
+                    add = self.builder(ui, &mut pass, &categories, place.as_ref(), held);
                 }
             });
+            if let Some(id) = chosen {
+                self.choose(&app.session.mailbox, id);
+                self.ran = None;
+                self.error.clear();
+            }
             if add {
                 run = Some(self.command());
             }
@@ -6440,6 +5189,15 @@ mod rules {
                         // The count is of the last run; it goes when the rules change.
                         self.ran = v.get("matched").and_then(Value::as_u64).filter(|_| command == "rules.run");
                         if add {
+                            // Then the new rule alone over the mail already in the folder, as the
+                            // menu that opened it says and Outlook offers.
+                            let made = v.get("id").and_then(Value::as_u64);
+                            if let Some(((folder, _), rule)) = self.run_in.take().filter(|_| self.then_run).zip(made) {
+                                match app.execute("rules.run", json!({"folder": folder, "id": rule})) {
+                                    Ok(v) => self.ran = v.get("matched").and_then(Value::as_u64),
+                                    Err(e) => self.error = e,
+                                }
+                            }
                             self.reset();
                         }
                     }
@@ -6451,8 +5209,18 @@ mod rules {
         }
 
         /// The New rule builder. Returns `true` when Add was asked for and can run.
-        fn builder(&mut self, ui: &mut Ui, pass: &mut Pass, categories: &[String]) -> bool {
+        fn builder(
+            &mut self,
+            ui: &mut Ui,
+            pass: &mut Pass,
+            categories: &[String],
+            place: Option<&(String, Option<NotOnServer>)>,
+            held: bool,
+        ) -> bool {
             let t = pass.t;
+            // A rule kept on the server looks at addresses alone, as the server does; one kept here
+            // at names too.
+            let on_server = self.server && place.is_some_and(|(_, cannot)| cannot.is_none());
             row(ui, tl!("Name"), |ui| {
                 let resp = pass.text(ui, "rule_name", &mut self.name, f32::INFINITY, "");
                 if std::mem::take(&mut self.focus) {
@@ -6463,9 +5231,9 @@ mod rules {
             let many = self.conds.len() > 1;
             for (i, c) in self.conds.iter_mut().enumerate() {
                 row(ui, if i == 0 { tl!("When") } else { tl!("and") }, |ui| {
-                    egui::ComboBox::from_id_salt(("when", i)).width(150.0).selected_text(tl!(c.kind.label())).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt(("when", i)).width(190.0).selected_text(tl!(c.kind.label_as(on_server))).show_ui(ui, |ui| {
                         for kind in When::ALL {
-                            if ui.selectable_label(kind == c.kind, tl!(kind.label())).clicked() {
+                            if ui.selectable_label(kind == c.kind, tl!(kind.label_as(on_server))).clicked() {
                                 c.kind = kind;
                             }
                         }
@@ -6552,6 +5320,52 @@ mod rules {
             row(ui, "", |ui| {
                 ui.checkbox(&mut self.stop, tl!("Stop processing more rules"));
             });
+            // Where it is kept: the owner says, while the server can do all of it; greyed, with why,
+            // when it can't.
+            if let Some((address, cannot)) = place {
+                let can = cannot.is_none();
+                let mut ticked = self.server && can;
+                let label = crate::i18n::fmt(tl!("Keep on the server of {address}"), &[("address", address)]);
+                row(ui, "", |ui| {
+                    if ui.add_enabled(can, egui::Checkbox::new(&mut ticked, label)).changed() {
+                        self.server = ticked;
+                    }
+                });
+                let (said, warn) = match cannot {
+                    Some(NotOnServer::NoServer) => {
+                        (tl!("MailCraft keeps this account's rules on this computer: the rule runs while MailCraft is open.").to_string(), false)
+                    }
+                    Some(why) => (
+                        crate::i18n::fmt(
+                            tl!("This rule can't be kept on the server: {why}. It runs on this computer, while MailCraft is open."),
+                            &[("why", tl!(why.said()))],
+                        ),
+                        true,
+                    ),
+                    None if ticked && held => (
+                        tl!("It goes to the server once MailCraft may change the server's rules (File › Info › Ask again); until then it runs on this computer, while MailCraft is open.")
+                            .to_string(),
+                        true,
+                    ),
+                    None if ticked => {
+                        (tl!("It runs there whether MailCraft is open or not, and shows in Outlook on the web and on your phone.").to_string(), false)
+                    }
+                    None => (tl!("It runs on this computer, while MailCraft is open.").to_string(), false),
+                };
+                // Wrapped within the dialog: a reason can be long.
+                tall_row(ui, "", |ui| {
+                    ui.label(egui::RichText::new(said).color(if warn { t.orange } else { t.text_dim }).size(11.5));
+                });
+            }
+            if let Some(label) = self
+                .run_in
+                .as_ref()
+                .map(|(_, path)| crate::i18n::fmt(tl!("Then run it over the mail already in {folder}"), &[("folder", &shown(path, 80))]))
+            {
+                row(ui, "", |ui| {
+                    ui.checkbox(&mut self.then_run, label);
+                });
+            }
             row(ui, "", |ui| {
                 add = ui.add_enabled(ready, egui::Button::new(tl!("Add Rule")).min_size(vec2(84.0, 24.0))).clicked();
                 if !ready {
@@ -6563,445 +5377,11 @@ mod rules {
     }
 
     #[cfg(test)]
-    mod tests {
-        use super::*;
+    mod keep_tests;
 
-        /// Wednesday 2026-10-14 16:00 UTC.
-        const NOW: i64 = 1_791_993_600;
-
-        fn session() -> Session {
-            Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0)
-        }
-
-        fn folder_id(s: &Session, path: &str) -> Id {
-            s.mailbox.folders.iter().find(|f| s.mailbox.folder_path(f.id) == path).map(|f| f.id).unwrap()
-        }
-
-        #[test]
-        fn a_new_rule_is_spelled_out_for_the_command() {
-            let mut s = session();
-            let mut f = RulesForm::new(&s);
-            // The sample has a rule, so the builder starts folded, with one condition and a move to Archive.
-            assert!(!f.open && !f.ready());
-            assert_eq!((f.conds.len(), f.acts.len(), f.first_folder, f.first_category.as_str()), (1, 1, folder_id(&s, "Archive"), "Red category"));
-            let receipts = folder_id(&s, "Receipts");
-            f.name = "Invoices".into();
-            f.conds = vec![
-                Cond { kind: When::From, text: "billing".into(), ..Default::default() },
-                Cond { kind: When::To, text: "accounts@".into(), ..Default::default() },
-                Cond { kind: When::Subject, text: "invoice".into(), ..Default::default() },
-                Cond { kind: When::Body, text: "amount due".into(), ..Default::default() },
-                Cond { kind: When::Attachment, text: "left over".into(), ..Default::default() },
-            ];
-            f.acts = vec![
-                Act { kind: Do::Move, folder: receipts, ..f.fresh_action() },
-                Act { kind: Do::Categorize, category: "Green category".into(), ..f.fresh_action() },
-                Act { kind: Do::Flag, ..f.fresh_action() },
-                Act { kind: Do::MarkRead, ..f.fresh_action() },
-                Act { kind: Do::SetImportance, importance: Importance::Low, ..f.fresh_action() },
-            ];
-            f.stop = true;
-            assert!(f.ready());
-            let (command, params) = f.command();
-            assert_eq!(command, "rules.add");
-            assert_eq!(
-                params,
-                json!({
-                    "name": "Invoices",
-                    "conditions": [
-                        {"type": "fromContains", "value": "billing"}, {"type": "toContains", "value": "accounts@"},
-                        {"type": "subjectContains", "value": "invoice"}, {"type": "bodyContains", "value": "amount due"}, {"type": "hasAttachment"},
-                    ],
-                    "actions": [
-                        {"type": "moveTo", "value": receipts}, {"type": "categorize", "value": "Green category"},
-                        {"type": "flag"}, {"type": "markRead"}, {"type": "setImportance", "value": "low"},
-                    ],
-                    "stop": true,
-                })
-            );
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let rule = s.mailbox.rules.iter().find(|r| r.id == id).unwrap();
-            assert!(rule.enabled && rule.stop);
-            assert_eq!(
-                describe(&s.mailbox, rule),
-                "When from contains \"billing\" and sent to \"accounts@\" and subject contains \"invoice\" and body contains \"amount due\" and has an attachment: \
-                 move it to Receipts, categorize it as \"Green category\", flag it, mark it as read, set importance to low"
-            );
-            // The other kinds.
-            f.conds = vec![Cond { kind: When::Importance, ..Default::default() }];
-            f.acts = vec![Act { kind: Do::Delete, ..f.fresh_action() }];
-            assert_eq!(
-                f.command().1,
-                json!({"name": "Invoices", "conditions": [{"type": "importance", "value": "high"}], "actions": [{"type": "delete"}], "stop": true})
-            );
-            // Starting over.
-            f.reset();
-            assert_eq!(
-                (f.name.as_str(), f.stop, f.conds.as_slice(), f.acts.as_slice()),
-                ("", false, [Cond::default()].as_slice(), [f.fresh_action()].as_slice())
-            );
-        }
-
-        #[test]
-        fn add_waits_for_what_a_rule_needs() {
-            let s = session();
-            let mut f = RulesForm::new(&s);
-            f.name = "News".into();
-            assert!(!f.ready());
-            f.conds[0].text = " digest ".into();
-            assert!(f.ready());
-            // A move needs a folder, Categorize a category.
-            f.acts[0].folder = 0;
-            assert!(!f.ready());
-            f.acts[0].kind = Do::Categorize;
-            assert!(f.ready());
-            f.acts[0].category.clear();
-            assert!(!f.ready());
-            f.acts[0].kind = Do::Flag;
-            assert!(f.ready());
-            // Conditions that take no text.
-            f.conds = vec![Cond { kind: When::Attachment, ..Default::default() }, Cond { kind: When::Importance, ..Default::default() }];
-            assert!(f.ready());
-            f.name = " ".into();
-            assert!(!f.ready());
-            // On an empty mailbox the builder is unfolded: there is nothing else to show.
-            assert!(RulesForm::new(&Session::empty()).open);
-        }
-
-        #[test]
-        fn rules_and_folders_read_as_people_know_them() {
-            let mut s = session();
-            let account = account_in_view(&s);
-            let paths: Vec<String> = folder_choices(&s.mailbox, account).into_iter().map(|f| f.1).collect();
-            assert_eq!(
-                paths,
-                [
-                    "Inbox",
-                    "Inbox/Projects",
-                    "Inbox/Projects/Atlas",
-                    "Drafts",
-                    "Sent Items",
-                    "Deleted Items",
-                    "Archive",
-                    "Junk Email",
-                    "Outbox",
-                    "Receipts"
-                ]
-            );
-            assert!(folder_choices(&s.mailbox, 999_999).is_empty());
-            let atlas = folder_id(&s, "Inbox/Projects/Atlas");
-            let rule = Rule {
-                conditions: vec![Condition::SubjectContains("Atlas".into())],
-                actions: vec![Action::MoveTo(atlas), Action::MarkRead],
-                ..Default::default()
-            };
-            assert_eq!(describe(&s.mailbox, &rule), "When subject contains \"Atlas\": move it to Inbox/Projects/Atlas, mark it as read");
-            // The folder went away.
-            let gone = Rule { actions: vec![Action::MoveTo(999_999)], ..rule };
-            assert_eq!(describe(&s.mailbox, &gone), "When subject contains \"Atlas\": move it to a folder that is gone");
-            // The rule the sample comes with.
-            let first = s.mailbox.rules.first().cloned().unwrap();
-            assert_eq!(describe(&s.mailbox, &first), "When from contains \"harborbooks\": categorize it as \"Purple category\"");
-            // Hostile text in a rule is the command's to cut down.
-            let junk = "\u{0}\u{202e}é\n".repeat(40_000);
-            let mut f = RulesForm::new(&s);
-            f.name.clone_from(&junk);
-            f.conds[0].text.clone_from(&junk);
-            f.acts[0] = Act { kind: Do::Categorize, category: junk.clone(), ..f.fresh_action() };
-            let (command, params) = f.command();
-            let id = s.run(command, &params).unwrap()["id"].as_u64().unwrap();
-            let rule = s.mailbox.rules.iter().find(|r| r.id == id).cloned().unwrap();
-            assert!(rule.name.chars().count() <= mailcraft_model::MAX_NAME);
-            assert!(shown(&describe(&s.mailbox, &rule), 600).chars().count() <= 601);
-        }
-    }
+    #[cfg(test)]
+    mod tests;
 }
 
-/// The forms together: opening by name, and typing into them in a window without a screen.
 #[cfg(test)]
-mod tests {
-    use egui_kittest::Harness;
-    use egui_kittest::kittest::Queryable as _;
-    use mailcraft_engine::Session;
-    use serde_json::json;
-
-    use super::Form;
-    use crate::dialogs::Dialog;
-    use crate::{MailApp, Services};
-
-    /// Wednesday 2026-10-14 16:00 UTC.
-    const NOW: i64 = 1_791_993_600;
-
-    fn app() -> MailApp {
-        let mut app = MailApp::new(Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0), Services::default());
-        app.autosave = false;
-        app
-    }
-
-    /// The whole window, laid out a few frames so the dialog is up and its first field has the keyboard.
-    fn window(app: MailApp, size: (f32, f32)) -> Harness<'static, MailApp> {
-        let mut harness =
-            Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(size.0, size.1)).build_ui_state(
-                |ui, app: &mut MailApp| {
-                    let ctx = ui.ctx().clone();
-                    app.logic(&ctx);
-                    app.ui(ui);
-                },
-                app,
-            );
-        harness.run_steps(6);
-        harness
-    }
-
-    /// The window with the dialog `name` open.
-    fn dialog(name: &str, params: serde_json::Value) -> Harness<'static, MailApp> {
-        let mut a = app();
-        let mut p = params;
-        p["name"] = json!(name);
-        a.execute("ui.dialog", p).unwrap();
-        window(a, (1280.0, 800.0))
-    }
-
-    fn type_text(h: &mut Harness<'static, MailApp>, text: &str) {
-        h.event(egui::Event::Text(text.to_string()));
-        h.run_steps(3);
-    }
-
-    fn press(h: &mut Harness<'static, MailApp>, key: egui::Key) {
-        h.key_press(key);
-        h.run_steps(4);
-    }
-
-    fn open_dialog(h: &Harness<'static, MailApp>) -> Option<&'static str> {
-        h.state().dialog.as_ref().map(Dialog::name)
-    }
-
-    #[test]
-    fn forms_open_by_name() {
-        let mut a = app();
-        for (name, title, width) in [
-            ("event", "New Appointment", 580.0),
-            ("meeting", "New Meeting", 580.0),
-            ("contact", "New Contact", 540.0),
-            ("task", "New Task", 580.0),
-            ("account", "Add Account", 520.0),
-            ("categories", "Categories", 420.0),
-            ("rules", "Rules", 620.0),
-        ] {
-            let f = Form::open(name, &a, &json!({})).unwrap_or_else(|| panic!("{name}"));
-            assert_eq!((f.name(), f.title().as_str(), f.width()), (name, title, width));
-        }
-        assert!(Form::open("nonsense", &a, &json!({})).is_none());
-        assert!(Form::open("", &a, &json!({"id": 1})).is_none());
-        // The edit forms need something to edit: the selection, or `id`.
-        for name in ["editEvent", "editContact", "editTask"] {
-            assert!(Form::open(name, &a, &json!({})).is_none(), "{name}");
-            assert!(Form::open(name, &a, &json!({"id": 0})).is_none(), "{name}");
-        }
-        let event = a.session.mailbox.events.keys().next().copied().unwrap();
-        let contact = a.session.mailbox.contacts.keys().next().copied().unwrap();
-        let task = a.session.mailbox.tasks.keys().next().copied().unwrap();
-        for (name, id) in [("editEvent", event), ("editContact", contact), ("editTask", task)] {
-            assert_eq!(Form::open(name, &a, &json!({"id": id})).map(|f| f.name()), Some(name));
-        }
-        (a.session.sel.event, a.session.sel.contact, a.session.sel.task) = (Some(event), Some(contact), Some(task));
-        for (name, title) in [("editEvent", "Appointment"), ("editContact", "Contact"), ("editTask", "Task")] {
-            let f = Form::open(name, &a, &json!({})).unwrap();
-            // The first sample event is a meeting or an appointment; either way it says which.
-            assert!(f.title() == title || (name == "editEvent" && f.title() == "Meeting"), "{name}: {}", f.title());
-        }
-        // The commands that ask for input open these forms.
-        assert_eq!(a.run("tasks.new", json!({})).unwrap()["pending"], "task");
-        assert_eq!(a.dialog.as_ref().map(Dialog::name), Some("task"));
-        // An appointment's form opens in a window of its own; the dialog that was up stays.
-        assert_eq!(a.run("calendar.edit", json!({})).unwrap()["pending"], "editEvent");
-        assert_eq!((a.dialog.as_ref().map(Dialog::name), a.windows.of_event(event).is_some()), (Some("task"), true));
-    }
-
-    #[test]
-    fn the_first_field_has_the_keyboard_and_enter_saves() {
-        // A task: type its title, press Enter.
-        let mut h = dialog("task", json!({}));
-        type_text(&mut h, "Water the plants");
-        assert_eq!(open_dialog(&h), Some("task"));
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), None);
-        assert!(h.state().session.mailbox.tasks.values().any(|t| t.title == "Water the plants" && t.due.is_none()));
-
-        // An appointment lands on the next half hour.
-        let mut h = dialog("event", json!({}));
-        type_text(&mut h, "Call the printer");
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), None);
-        let s = &h.state().session;
-        let e = s.mailbox.events.values().find(|e| e.title == "Call the printer").unwrap();
-        assert_eq!(
-            (e.start.iso().as_str(), e.duration_minutes(), e.reminder_minutes, s.sel.event),
-            ("2026-10-14T16:30:00", 30, Some(15), Some(e.id))
-        );
-
-        // Tab moves on to the next field.
-        let mut h = dialog("contact", json!({}));
-        type_text(&mut h, "Noor");
-        press(&mut h, egui::Key::Tab);
-        type_text(&mut h, "Haddad");
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), None);
-        assert!(h.state().session.mailbox.contacts.values().any(|c| c.first == "Noor" && c.last == "Haddad"));
-
-        // An account is a wizard: Enter is Connect on the address page, Connect on the page with
-        // the servers it suggests, and Done on the last one.
-        let mut h = dialog("account", json!({}));
-        type_text(&mut h, "noor@example.org");
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), Some("account"));
-        assert!(!h.state().session.mailbox.accounts.iter().any(|a| a.email == "noor@example.org"));
-        press(&mut h, egui::Key::Enter);
-        assert!(h.state().session.mailbox.accounts.iter().any(|a| a.email == "noor@example.org"));
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), None);
-    }
-
-    #[test]
-    fn enter_waits_while_ok_is_off_and_errors_stay_in_the_form() {
-        // Nothing typed: Enter does nothing.
-        let mut h = dialog("task", json!({}));
-        let tasks = h.state().session.mailbox.tasks.len();
-        press(&mut h, egui::Key::Enter);
-        assert_eq!((open_dialog(&h), h.state().session.mailbox.tasks.len()), (Some("task"), tasks));
-        // A meeting needs someone to invite.
-        let mut h = dialog("meeting", json!({}));
-        let events = h.state().session.mailbox.events.len();
-        type_text(&mut h, "Kick-off");
-        press(&mut h, egui::Key::Enter);
-        assert_eq!((open_dialog(&h), h.state().session.mailbox.events.len()), (Some("meeting"), events));
-        // What the command refuses is said in the form, which stays open.
-        let mut h = dialog("account", json!({}));
-        let accounts = h.state().session.mailbox.accounts.len();
-        type_text(&mut h, "not an address");
-        press(&mut h, egui::Key::Enter);
-        assert_eq!((open_dialog(&h), h.state().session.mailbox.accounts.len()), (Some("account"), accounts));
-        assert!(h.query_by_label_contains("isn't an e-mail address").is_some());
-        // Escape closes without saving.
-        press(&mut h, egui::Key::Escape);
-        assert_eq!((open_dialog(&h), h.state().session.mailbox.accounts.len()), (None, accounts));
-    }
-
-    #[test]
-    fn enter_in_a_multi_line_field_is_a_new_line() {
-        use egui::accesskit::Role;
-        let mut h = dialog("task", json!({"title": "Plan the week"}));
-        // Notes is the form's one multi-line field.
-        h.get_by_role(Role::MultilineTextInput).focus();
-        h.run_steps(3);
-        type_text(&mut h, "one");
-        press(&mut h, egui::Key::Enter);
-        type_text(&mut h, "two");
-        assert_eq!(open_dialog(&h), Some("task"));
-        assert!(!h.state().session.mailbox.tasks.values().any(|t| t.title == "Plan the week"));
-        // Back in the title, Enter saves, notes and all.
-        h.get_all_by_role(Role::TextInput).find(|n| n.value().as_deref() == Some("Plan the week")).unwrap().focus();
-        h.run_steps(3);
-        press(&mut h, egui::Key::Enter);
-        assert_eq!(open_dialog(&h), None);
-        let task = h.state().session.mailbox.tasks.values().find(|t| t.title == "Plan the week").unwrap();
-        assert_eq!(task.notes, "one\ntwo");
-    }
-
-    #[test]
-    fn categories_are_added_one_after_another() {
-        let mut h = dialog("categories", json!({}));
-        type_text(&mut h, "Travel");
-        press(&mut h, egui::Key::Enter);
-        // The dialog stays, ready for the next name.
-        assert_eq!(open_dialog(&h), Some("categories"));
-        type_text(&mut h, "Reading");
-        press(&mut h, egui::Key::Enter);
-        let s = &h.state().session;
-        let color = |name: &str| s.mailbox.category(name).map(|c| c.color.hex());
-        assert_eq!((color("Travel").as_deref(), color("Reading").as_deref()), (Some("#1A9BA6"), Some("#C24E9A")));
-        assert_eq!(s.mailbox.categories.len(), 8);
-    }
-
-    /// Never-crash: every form lays out over a mailbox full of hostile text, small and large.
-    #[test]
-    fn forms_lay_out_over_hostile_data() {
-        use mailcraft_model::{Action, Address, Attendee, Category, Condition, Contact, Event, Labeled, PostalAddress, Recurrence, Rgb, Rule, Task};
-        let junk = "\u{0}\u{202e}é\t<b>&amp;\n".repeat(300);
-        let lines = |n: usize| vec![Labeled::new(junk.clone(), junk.clone()); n];
-        for (size, theme) in [((1280.0, 800.0), "light"), ((760.0, 480.0), "dark"), ((240.0, 160.0), "light")] {
-            let mut a = app();
-            a.execute("ui.theme", json!({"value": theme})).unwrap();
-            let mb = &mut a.session.mailbox;
-            mb.categories = (0..60).map(|i| Category { name: format!("{i}{junk}"), color: Rgb(i, 0, 255 - i) }).collect();
-            let contact = mb.add_contact(Contact {
-                display_name: junk.clone(),
-                first: junk.clone(),
-                emails: lines(40),
-                phones: lines(40),
-                addresses: vec![PostalAddress { label: junk.clone(), street: junk.clone(), city: junk.clone(), ..Default::default() }],
-                websites: vec![junk.clone()],
-                notes: junk.clone(),
-                categories: vec![junk.clone(); 30],
-                ..Default::default()
-            });
-            let at = |hour| mailcraft_time::DateTime::new(mailcraft_time::Date::new(9999, 12, 31).unwrap(), hour, 59, 59).unwrap();
-            let event = mb
-                .add_event(Event {
-                    title: junk.clone(),
-                    location: junk.clone(),
-                    description: junk.clone(),
-                    // It ends before it starts, at the end of time.
-                    start: at(23),
-                    end: at(1),
-                    attendees: vec![Attendee { address: Address::new(junk.clone(), junk.clone()), ..Default::default() }; 50],
-                    recurrence: Some(Recurrence {
-                        interval: u32::MAX,
-                        nth: Some(i8::MIN),
-                        count: Some(u32::MAX),
-                        by_day: vec![mailcraft_time::Weekday::Sun; 40],
-                        ..Default::default()
-                    }),
-                    reminder_minutes: Some(u32::MAX),
-                    categories: vec![junk.clone(); 30],
-                    calendar: 999_999,
-                    ..Default::default()
-                })
-                .unwrap();
-            let task = mb.add_task(Task {
-                title: junk.clone(),
-                notes: junk.clone(),
-                reminder: Some(i64::MAX),
-                completed: Some(i64::MIN),
-                categories: vec![junk.clone(); 30],
-                ..Default::default()
-            });
-            for i in 0..40 {
-                mb.rules.push(Rule {
-                    id: 500_000 + i,
-                    name: junk.clone(),
-                    enabled: i % 2 == 0,
-                    conditions: vec![Condition::BodyContains(junk.clone()); 20],
-                    actions: vec![Action::MoveTo(i), Action::Categorize(junk.clone())],
-                    stop: true,
-                });
-            }
-            let p = json!({"title": junk, "first": junk, "email": junk, "start": junk, "attendees": junk, "displayName": junk});
-            for name in ["event", "meeting", "contact", "task", "account", "categories", "rules", "editEvent", "editContact", "editTask"] {
-                let mut b = MailApp::new(Session::at(a.session.mailbox.clone(), NOW, 0), Services::default());
-                b.autosave = false;
-                b.ui = a.ui.clone();
-                (b.session.sel.event, b.session.sel.contact, b.session.sel.task) = (Some(event), Some(contact), Some(task));
-                let mut params = p.clone();
-                params["name"] = json!(name);
-                b.execute("ui.dialog", params).unwrap_or_else(|e| panic!("{name}: {e}"));
-                let mut h = window(b, size);
-                // Keys reach whatever has the keyboard, and nothing falls over.
-                type_text(&mut h, &junk);
-                press(&mut h, egui::Key::Tab);
-                press(&mut h, egui::Key::Enter);
-                assert!(h.state().dialog.is_none() || open_dialog(&h) == Some(name), "{name}");
-            }
-        }
-    }
-}
+mod tests;

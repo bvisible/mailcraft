@@ -218,6 +218,23 @@ pub fn send(token: &str, message: &Message, options: &SendOptions) -> Result<(),
     send_at(&graph_base(), token, message, options)
 }
 
+/// Whether an error from [`send`] leaves it unknown whether the message went (AU3-26): the
+/// request may have reached Microsoft (a timeout, a connection that broke, an answer that doesn't
+/// say). One that was refused before anything went (not a message that can go, no connection),
+/// a sign-in or a permission that wasn't taken, and "busy, try later" (429, 503) are known not to
+/// have gone.
+pub fn send_unsure(e: &NetError) -> bool {
+    !matches!(
+        e,
+        NetError::Config(_)
+            | NetError::Connect { .. }
+            | NetError::Forbidden(_)
+            | NetError::ConsentNeeded(_)
+            | NetError::Busy { .. }
+            | NetError::Proto(ProtoError::Auth(_))
+    ) && !e.is_refused_sign_in()
+}
+
 /// The events of the account's main calendar that fall between `from` and `to` (Unix seconds),
 /// for the owner of `token` (an access token for Graph).
 ///
@@ -317,6 +334,7 @@ enum Doing {
     Folders,
     Mail,
     Tasks,
+    Rules,
     /// Reading the automatic replies, and changing them.
     Replies,
     ChangingReplies,
@@ -334,6 +352,7 @@ impl Doing {
             Doing::Folders => "folders",
             Doing::Mail => "mail",
             Doing::Tasks => "tasks",
+            Doing::Rules => "rules",
             Doing::Replies | Doing::ChangingReplies => "automatic replies",
         }
     }
@@ -788,7 +807,7 @@ fn wait_of(retry_after: Option<&str>, now: Timestamp) -> Option<u32> {
 fn refusal(doing: Doing, reply: &Reply, sent: &[&str], now: Timestamp) -> NetError {
     let code = || code_of(&reply.body, sent);
     match reply.status {
-        401 => NetError::Proto(ProtoError::Auth(format!("Microsoft Graph didn't take the sign-in{}", code()))),
+        401 => NetError::Proto(ProtoError::Auth(format!("Microsoft Graph didn't take the sign-in{}", code()).into())),
         403 => {
             let what = match doing {
                 Doing::Sending => "this account may not send through Microsoft Graph",
@@ -800,11 +819,14 @@ fn refusal(doing: Doing, reply: &Reply, sent: &[&str], now: Timestamp) -> NetErr
                 Doing::Folders => "this account may not read or change its folders through Microsoft Graph",
                 Doing::Mail => "this account may not read its mail through Microsoft Graph",
                 Doing::Tasks => "this account may not read or change its to-dos through Microsoft Graph",
+                Doing::Rules => "this account may not read or change its rules through Microsoft Graph",
                 Doing::Replies => "this account may not read its automatic replies through Microsoft Graph",
                 Doing::ChangingReplies => "this account may not change its automatic replies through Microsoft Graph",
             };
             NetError::Forbidden(format!("{what}{}", code()))
         }
+        // A gateway that gave up waiting doesn't say whether a message went.
+        504 if doing == Doing::Sending => NetError::Proto(ProtoError::Rejected(format!("Microsoft Graph answered with status 504{}", code()).into())),
         429 | 503 | 504 => {
             let retry_after = wait_of(reply.retry_after.as_deref(), now);
             let text = match retry_after {
@@ -815,7 +837,7 @@ fn refusal(doing: Doing, reply: &Reply, sent: &[&str], now: Timestamp) -> NetErr
             NetError::Busy { text, retry_after }
         }
         413 if doing == Doing::Sending => NetError::Proto(ProtoError::Rejected("the message is too large to send through Microsoft Graph".into())),
-        status => NetError::Proto(ProtoError::Rejected(format!("Microsoft Graph answered with status {status}{}", code()))),
+        status => NetError::Proto(ProtoError::Rejected(format!("Microsoft Graph answered with status {status}{}", code()).into())),
     }
 }
 
@@ -849,7 +871,7 @@ fn mime_body_with(message: &Message, options: &SendOptions) -> Result<String, Ne
         }
         if !is_address(email) {
             let shown: String = email.chars().filter(|c| !c.is_control()).take(80).collect();
-            return Err(NetError::Config(format!("\"{shown}\" isn't an address mail can be sent to")));
+            return Err(NetError::Config(format!("\"{shown}\" isn't an address mail can be sent to").into()));
         }
         anyone = true;
     }
@@ -901,7 +923,7 @@ fn events_in_at(base: &str, token: &str, query: &EventsQuery) -> Result<EventsDo
     for fields in [EVENT_FIELDS_OPTIONS, EVENT_FIELDS_FULL, EVENT_FIELDS, EVENT_FIELDS_PLAIN] {
         listed = events_with(&graph, &listed_calendar, from, to, fields);
         match &listed {
-            Err(NetError::Proto(ProtoError::Rejected(why))) if why.starts_with(BAD_REQUEST) => {
+            Err(NetError::Proto(ProtoError::Rejected(why))) if why.to_string().starts_with(BAD_REQUEST) => {
                 log::debug!("calendar: asked again with fewer fields");
                 // The first refusal costs the newest fields, the next one the categories too.
                 full &= options;
@@ -1525,7 +1547,7 @@ impl Graph<'_> {
                 (EventChangeKind::Create | EventChangeKind::Update, 400) if online => {
                     online = false;
                     no_online = match why() {
-                        NetError::Proto(ProtoError::Rejected(words)) => words,
+                        NetError::Proto(ProtoError::Rejected(words)) => words.to_string(),
                         other => other.to_string(),
                     };
                     continue;
@@ -1542,7 +1564,7 @@ impl Graph<'_> {
             let error = why();
             // In Graph's own words where it has any, without "the server said" before them.
             let words = match &error {
-                NetError::Proto(ProtoError::Rejected(words)) => words.clone(),
+                NetError::Proto(ProtoError::Rejected(words)) => words.to_string(),
                 other => other.to_string(),
             };
             let zone_sent = said_in(zone, own);
@@ -1983,39 +2005,11 @@ fn calendar_color(name: &str) -> Option<Rgb> {
     COLORS.iter().find(|(known, _)| *known == name).map(|(_, color)| *color)
 }
 
-/// Our own colours for the numbered colours Graph gives a category (`preset0` to `preset24`:
-/// red, orange, brown, yellow, green, teal, olive, blue, purple, cranberry, steel, dark steel,
-/// gray, dark gray, black, then the dark ones of the first ten); grey for none or any other.
+/// Our own colours for the numbered colours Graph gives a category (`preset0` to `preset24`,
+/// [`mailcraft_model::preset_category_color`]); grey for none or any other.
 fn category_color(name: &str) -> Rgb {
-    const COLORS: [Rgb; 25] = [
-        Rgb(0xD1, 0x3B, 0x3B),
-        Rgb(0xE0, 0x7B, 0x1F),
-        Rgb(0x9C, 0x6B, 0x3F),
-        Rgb(0xD9, 0xA4, 0x0C),
-        Rgb(0x2E, 0x8B, 0x57),
-        Rgb(0x1A, 0x9B, 0xA6),
-        Rgb(0x7A, 0x8B, 0x2E),
-        Rgb(0x2F, 0x6F, 0xD0),
-        Rgb(0x7E, 0x57, 0xC2),
-        Rgb(0xB0, 0x2E, 0x6B),
-        Rgb(0x6E, 0x8A, 0xA5),
-        Rgb(0x4A, 0x5F, 0x73),
-        Rgb(0x8A, 0x8A, 0x8A),
-        Rgb(0x5A, 0x5A, 0x5A),
-        Rgb(0x2B, 0x2B, 0x2B),
-        Rgb(0x8E, 0x1F, 0x1F),
-        Rgb(0xA8, 0x52, 0x0C),
-        Rgb(0x6B, 0x45, 0x23),
-        Rgb(0x9A, 0x73, 0x00),
-        Rgb(0x1C, 0x5E, 0x38),
-        Rgb(0x0F, 0x66, 0x6E),
-        Rgb(0x52, 0x5E, 0x1A),
-        Rgb(0x1B, 0x45, 0x8A),
-        Rgb(0x52, 0x35, 0x8A),
-        Rgb(0x78, 0x1B, 0x47),
-    ];
-    let number = name.to_ascii_lowercase().strip_prefix("preset").and_then(|n| n.parse::<usize>().ok());
-    number.and_then(|n| COLORS.get(n).copied()).unwrap_or(Rgb(0x8A, 0x8A, 0x8A))
+    let number = name.to_ascii_lowercase().strip_prefix("preset").and_then(|n| n.parse::<i64>().ok());
+    number.and_then(mailcraft_model::preset_category_color).unwrap_or(mailcraft_model::GREY_CATEGORY)
 }
 
 /// One calendar of a list as the mailbox can take it, in the group called `group`.
@@ -2055,7 +2049,7 @@ fn calendars_of(graph: &Graph<'_>, path: &str, group: &str, download: &mut Calen
         whole =
             graph.list(Doing::Calendar, url, &[], MAX_REMOTE_CALENDARS, &mut |entry: &Value| download.calendars.extend(calendar_of(entry, group)));
         match &whole {
-            Err(NetError::Proto(ProtoError::Rejected(why))) if why.starts_with(BAD_REQUEST) => {
+            Err(NetError::Proto(ProtoError::Rejected(why))) if why.to_string().starts_with(BAD_REQUEST) => {
                 log::debug!("calendars: asked again with fewer fields")
             }
             _ => break,
@@ -2226,6 +2220,9 @@ pub use people::{Opened, open_calendar};
 mod tasks;
 pub use tasks::{push_tasks, tasks};
 
+mod rules;
+pub use rules::{MAX_FOLDER_LOOKUPS, push_rules, rules};
+
 mod settings;
 pub use settings::{MailboxSettings, WorkingHours, mailbox_settings};
 
@@ -2251,9 +2248,13 @@ mod auto_replies_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]
+mod rules_tests;
+#[cfg(test)]
 mod shared_calendar_tests;
 #[cfg(test)]
 mod shared_calendar_write_tests;
+#[cfg(test)]
+mod task_dates_tests;
 #[cfg(test)]
 mod tasks_tests;
 

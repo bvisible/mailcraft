@@ -207,7 +207,12 @@ fn a_deleted_folder_goes_with_its_mail_and_a_renamed_one_keeps_where_it_went_on_
     let (mut s, account) = session();
     list(&mut s, account);
     read(&mut s, account, page("F5", vec![mail("P1", "Plan", 1_000)], true, true), "S-P");
-    let delta = EwsFolderDeltas { changed: vec![folder("F5", "", "Projects (old)", FolderKind::Custom)], deleted: vec!["F3".into()], afresh: false };
+    let delta = EwsFolderDeltas {
+        changed: vec![folder("F5", "", "Projects (old)", FolderKind::Custom)],
+        deleted: vec!["F3".into()],
+        afresh: false,
+        ..Default::default()
+    };
     apply_ews_mail(&mut s, EwsMailResult { folders: Some(delta), hierarchy: "HIER-2".into(), ..piece(account) }).unwrap();
     let projects = s.mailbox.folder_by_server(account, "F5").unwrap();
     assert_eq!(s.mailbox.folder(projects).unwrap().name, "Projects (old)");
@@ -360,6 +365,8 @@ fn what_a_run_says_of_trouble_is_told_and_a_certificate_asks() {
 #[test]
 fn messages_are_fetched_whole_within_what_the_account_keeps() {
     let (mut s, account) = session();
+    // (Mail of 1970: kept whole only when the account keeps all of it, #966.)
+    s.run("account.edit", &json!({"id": account, "keepOffline": "all"})).unwrap();
     list(&mut s, account);
     read(&mut s, account, page("F1", vec![mail("A1", "Kickoff", 1_000), mail("A2", "Budget", 2_000)], true, true), "S-1");
     let queue = ews_fetch_request(&s, account, None, 10).unwrap();

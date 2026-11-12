@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 
 // //// Neoffice — a message to send goes whole as a `JmapSend` (with the copy of its draft the server has), not as
 // Graph's `SendUp`: sending from a JMAP account works here (`mailcraft-jmap`'s `send`).
-use super::{FolderListing, GraphProgress, MessagePage, SendDone, is_false};
+use super::{FolderListing, GraphProgress, MessagePage, SendDone, ThreadOf, is_false};
 // //// Neoffice — the folder changes of a JMAP account go up as a Microsoft account's do (`JmapMailRequest::folders`).
 use super::{FolderChange, FolderChangeDone};
 use crate::{Id, Message};
@@ -115,6 +115,10 @@ pub struct JmapMailRequest {
     /// nothing is sent, no window is read).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub emails: Vec<String>,
+    /// Messages listed before their conversation ids were asked for, by server id: the server is
+    /// asked for those ids after the rest of the run, at most [`super::MAX_THREAD_ASKS`] (#795).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<String>,
 }
 
 // //// Neoffice — see `JmapMailRequest::emails`.
@@ -319,6 +323,11 @@ pub struct JmapChangeDone {
 #[serde(default, rename_all = "camelCase")]
 pub struct JmapMailResult {
     pub account: Id,
+    /// What the server said of the conversations of the messages the run asked about
+    /// ([`JmapMailRequest::threads`], #795).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub threads: Vec<ThreadOf>,
+
     /// The address of the account the run was for: an answer is not taken in by another account
     /// that happens to have the id.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -407,6 +416,7 @@ impl JmapMailResult {
             self.listing = piece.listing;
         }
         self.pages.extend(piece.pages);
+        self.threads.extend(piece.threads);
         self.errors.extend(piece.errors);
         self.busy_for = piece.busy_for.or(self.busy_for);
         (self.partial, self.whole, self.stopped) = (piece.partial, piece.whole, piece.stopped);

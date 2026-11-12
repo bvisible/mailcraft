@@ -32,8 +32,8 @@
 //! changed here since the server last said. No server id and no sync state is logged.
 
 use mailcraft_model::sync::{
-    EwsFetchRequest, EwsFolderState, EwsMailRequest, EwsMailResult, EwsScope, GraphFetchResult, MAX_DRAFTS, MAX_EWS_STATE_BYTES, MAX_EWS_STATES,
-    MAX_FOLDER_CHANGES, MAX_MESSAGE_CHANGES, MessageOutcome, SendOutcome, SyncPhase,
+    ChangeOutcome, EwsFetchRequest, EwsFolderState, EwsMailRequest, EwsMailResult, EwsScope, FolderChange, FolderChangeDone, GraphFetchResult,
+    MAX_DRAFTS, MAX_EWS_STATE_BYTES, MAX_EWS_STATES, MAX_FOLDER_CHANGES, MAX_MESSAGE_CHANGES, MessageOutcome, SendOutcome, SyncPhase,
 };
 use mailcraft_model::{Account, AccountKind, EwsServer, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
@@ -155,6 +155,10 @@ pub fn ews_mail_request(s: &Session, account: Id, light: bool) -> Result<EwsMail
         .take(MAX_EWS_STATES)
         .map(|server| EwsFolderState { folder: server.id.clone(), state: server.sync_state.clone() })
         .collect();
+    // The conversation ids of mail listed before they were asked for, in a run of every folder (#795).
+    if !light {
+        request.threads = super::thread_ids::to_ask(mb, account);
+    }
     Ok(request)
 }
 
@@ -199,7 +203,11 @@ pub fn ews_fetch_request(s: &Session, account: Id, message: Option<Id>, most: us
                 .message(id)
                 .filter(|m| m.account == account)
                 .ok_or_else(|| failed!("no message with id {id} in {name}", id, name = a.name))?;
-            m.server.as_ref().filter(|server| m.unfetched && ews_down::is_id(&server.id)).map(|server| vec![server.id.clone()]).unwrap_or_default()
+            m.server
+                .as_ref()
+                .filter(|server| graph_down::still_to_fetch(&s.mailbox, m) && ews_down::is_id(&server.id))
+                .map(|server| vec![server.id.clone()])
+                .unwrap_or_default()
         }
         None => graph_down::fetch_queue_passing_over(&s.mailbox, account, most.clamp(1, 100), s.now(), &s.graph_unfetchable)
             .into_iter()
@@ -294,9 +302,24 @@ fn take_in(s: &mut Session, result: EwsMailResult) -> CmdResult {
     // refusal is said once per kind and reason), the drafts, and what was sent.
     let mut errors = result.errors.clone();
     for done in &result.changes {
-        if let Some(said) = graph_mail::change_done(&mut s.mailbox, account, &done.change, &done.outcome, &mut taken) {
+        if let Some(said) = graph_mail::change_done(&mut s.mailbox, account, &done.change, &done.outcome, s.interface_language, &mut taken) {
             errors.push(said);
         }
+    }
+    // A folder deleted here that the server refused to delete comes back only in a read of the
+    // folder list afresh (#779): its state goes, and the run's folder piece, when the run gets
+    // that far, sets it again. A run that stops first (a 429, called off, a read that failed)
+    // leaves the next one to read the list afresh.
+    let refused_delete = |done: &FolderChangeDone| {
+        matches!(
+            (&done.change, &done.outcome),
+            (FolderChange::Delete { .. }, ChangeOutcome::Refused { .. } | ChangeOutcome::OwnFolder { .. } | ChangeOutcome::NotShown { .. })
+        )
+    };
+    if result.changes.iter().any(refused_delete)
+        && let Some(server) = s.mailbox.account_mut(account).ok().and_then(|a| a.ews.as_mut())
+    {
+        server.hierarchy.clear();
     }
     let mut refusals = Refusals::default();
     for done in &result.messages {
@@ -327,12 +350,14 @@ fn take_in(s: &mut Session, result: EwsMailResult) -> CmdResult {
     errors.extend(refused.iter().cloned());
     s.graph_said.extend(refused);
     if let Some(deltas) = &result.folders {
-        down.removed = ews_down::take_folders(&mut s.mailbox, account, deltas, &mut taken);
-        // The folder list goes on from here (with the folders it brought, in one step).
-        if !result.hierarchy.is_empty()
+        let lost;
+        (down.removed, lost) = ews_down::take_folders(&mut s.mailbox, account, deltas, &mut taken);
+        // The folder list goes on from here (with the folders it brought, in one step), or from
+        // its start when one of the server's own folders is missing here (#779).
+        if (lost || !result.hierarchy.is_empty())
             && let Some(server) = s.mailbox.account_mut(account).ok().and_then(|a| a.ews.as_mut())
         {
-            server.hierarchy = result.hierarchy.clone();
+            server.hierarchy = if lost { String::new() } else { result.hierarchy.clone() };
         }
     }
     let mut index = std::mem::take(&mut s.graph_index);
@@ -363,7 +388,9 @@ fn take_in(s: &mut Session, result: EwsMailResult) -> CmdResult {
     if result.whole && !result.partial && !run_cut {
         graph_down::sweep(&mut s.mailbox, account, &mut down);
     }
-    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() {
+    // The conversations of mail listed before they were asked for (#795).
+    let threaded = super::thread_ids::take(&mut s.mailbox, account, &result.threads);
+    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || threaded {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there.
@@ -406,7 +433,7 @@ fn take_in(s: &mut Session, result: EwsMailResult) -> CmdResult {
         problems: &errors,
         last: !result.partial,
         stopped: result.stopped,
-        timings: None,
+        timings: Some(&result.timings),
     };
     s.sync_progress.take(account, piece);
     let summary = errors.first().cloned().unwrap_or_else(|| "Up to date".to_string());
@@ -473,3 +500,7 @@ mod tests;
 #[cfg(test)]
 #[path = "ews_up_tests.rs"]
 mod up_tests;
+
+#[cfg(test)]
+#[path = "ews_well_known_tests.rs"]
+mod well_known_tests;

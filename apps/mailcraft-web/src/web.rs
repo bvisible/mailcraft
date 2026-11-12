@@ -8,7 +8,7 @@
 use mailcraft_engine::Session;
 use mailcraft_model::Mailbox;
 use mailcraft_ui_egui::opening::{Arrival, Trouble};
-use mailcraft_ui_egui::{Inbox, MailApp, Services, UiState};
+use mailcraft_ui_egui::{Delivered, Inbox, MailApp, Services, UiState, Unread};
 use wasm_bindgen::JsCast as _;
 
 use crate::page;
@@ -62,8 +62,9 @@ pub fn start() {
                         // //// Neoffice — and the page asks before it is left while a note's change waits (hosted/leave.rs).
                         crate::hosted::leave::install();
                         let mut app = hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone());
-                        if let Some(ui) = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
-                            app.apply_prefs(ui);
+                        match stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
+                            Some(ui) => app.apply_prefs(ui),
+                            None => app.fresh_prefs(),
                         }
                         // //// Neoffice — (its mailboxes were added by hosted_app, not by upstream's page hook)
                         app
@@ -78,9 +79,16 @@ pub fn start() {
                         // //// Neoffice — a JMAP account is read by this fork's runner (jmap_services.rs, in `services`), not by
                         // //// Neoffice — upstream's page hook (`jmap.rs`, which this fork leaves out).
                         let build: mailcraft_ui_egui::opening::Build = Box::new(move |arrival| {
-                            let mut app = MailApp::new(Session::new(arrival.mailbox), services(build_inbox, ctx.clone()));
-                            if let Some(ui) = prefs {
-                                app.apply_prefs(ui);
+                            let mut session = Session::new(arrival.mailbox);
+                            // The browser trusts no certification authority for mail (#30): handed in as
+                            // none, so that its signers say so, not that they are still being read.
+                            session.set_trust_anchors(Vec::<Vec<u8>>::new());
+                            // The steps every opening takes (#793).
+                            mailcraft_engine::cmd::file::after_opening(&mut session);
+                            let mut app = MailApp::new(session, services(build_inbox, ctx.clone()));
+                            match prefs {
+                                Some(ui) => app.apply_prefs(ui),
+                                None => app.fresh_prefs(),
                             }
                             // //// Neoffice — (no page hook's accounts added here: see above)
                             app
@@ -180,7 +188,7 @@ impl eframe::App for WebShell {
                 let name = f.path().file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "dropped".into());
                 match f.bytes_async().await {
                     Ok(bytes) => {
-                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+                        inbox.lock().unwrap_or_else(|e| e.into_inner()).push(Delivered::dropped(name, bytes));
                         ctx.request_repaint();
                     }
                     Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
@@ -276,22 +284,58 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         chat: crate::nora::chat(),
         open: crate::nora::opener(),
     });
+    // Each pick is numbered, so that two for one message are never one batch.
+    let picks = std::cell::Cell::new(0u64);
     Services {
-        open_async: Some(Box::new(move |purpose: &str| {
+        open_async: Some(Box::new(move |purpose: &str, asking: Option<u64>| {
             let inbox = open_inbox.clone();
             let ctx = ctx.clone();
+            let picked_for = purpose.to_string();
+            let pick = picks.get().wrapping_add(1);
+            picks.set(pick);
             let dialog = match purpose {
                 "mailbox" => rfd::AsyncFileDialog::new().add_filter("MailCraft mailbox", MAILBOX_EXTS),
                 "import" => rfd::AsyncFileDialog::new().add_filter("Mail, calendar and contact files", IMPORT_EXTS),
                 // Anything can be attached.
                 _ => rfd::AsyncFileDialog::new(),
             };
+            // Files to attach may be picked several at once; anything else is one file.
+            let many = purpose == "attach";
             wasm_bindgen_futures::spawn_local(async move {
-                let Some(file) = dialog.pick_file().await else {
+                let picked = if many { dialog.pick_files().await } else { dialog.pick_file().await.map(|f| vec![f]) };
+                let Some(files) = picked else {
                     return;
                 };
-                let bytes = file.read().await;
-                inbox.lock().unwrap_or_else(|e| e.into_inner()).push((file.file_name(), bytes));
+                // Each file as it was picked for: a picker's answer is never taken for another's.
+                // Of files to attach, what is read is decided from their sizes before any is
+                // read: a page can't hold a pick of large files, and the message being written
+                // would go down with it (never crash). A file over the most a message carries,
+                // one past the most files of a pick, and every one from the first that would
+                // take the pick past the most bytes together are delivered unread, saying why.
+                // The one file of any other pick (a mailbox, a file to import) is read whole,
+                // whatever its size: those caps are an attachment's, not a mailbox's.
+                let plan = if many {
+                    let sizes: Vec<u64> = files.iter().map(|f| f.inner().size() as u64).collect();
+                    mailcraft_ui_egui::files::reads_of_pick(&sizes)
+                } else {
+                    vec![None; files.len()]
+                };
+                let mut read = Vec::with_capacity(files.len());
+                for (file, unread) in files.iter().zip(plan) {
+                    let name = file.file_name();
+                    if let Some(why) = unread {
+                        read.push(Delivered::unread(name, why, &picked_for, asking, pick));
+                        continue;
+                    }
+                    read.push(match read_file(file.inner()).await {
+                        Ok(bytes) => Delivered::picked(name, bytes, &picked_for, asking, pick),
+                        Err(e) => {
+                            log::error!("couldn't read picked file {name}: {e}");
+                            Delivered::unread(name.clone(), Unread::Failed(e), &picked_for, asking, pick)
+                        }
+                    });
+                }
+                inbox.lock().unwrap_or_else(|e| e.into_inner()).extend(read);
                 ctx.request_repaint();
             });
         })),
@@ -309,7 +353,10 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         // The browser's language, for an interface language left on Automatic; and the page says
         // which language it is in (`<html lang>`), for screen readers and the browser's own tools.
         // //// Neoffice — the hosting page's language first (the person's, host.rs), else the browser's.
+        // //// Neoffice — the hosting page's language first (the person's, host.rs), else the browser's.
         system_locale: crate::host::language().or_else(|| web_sys::window().and_then(|w| w.navigator().language())),
+        // The same language's region (`en-GB`) is the one English dates are written for (#978).
+        system_time_locale: web_sys::window().and_then(|w| w.navigator().language()),
         on_language: Some(Box::new(|code: &str| {
             let root = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element());
             if let Some(root) = root {
@@ -369,6 +416,10 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
     }
     // What set the page's mailboxes up is no change of the owner's: nothing to undo.
     session.forget_history();
+    // //// Neoffice — as the opening of a mailbox kept in this browser does (upstream's): the browser trusts no certification authority
+    // //// Neoffice — for mail (#30), and the steps every opening takes (#793).
+    session.set_trust_anchors(Vec::<Vec<u8>>::new());
+    mailcraft_engine::cmd::file::after_opening(&mut session);
     // A clock of 24 hours, but for a page in English.
     if crate::host::language().is_some_and(|tag| !tag.to_ascii_lowercase().starts_with("en")) {
         session.prefs.twelve_hour = false;
@@ -429,6 +480,13 @@ fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Co
         jmap_pim: crate::jmap_services::jmap_pim_service(ctx, credentials, gate),
     };
     crate::hosted::hosted_window(session, services, runners)
+}
+
+/// A picked file's bytes, as the browser gives them: a read that fails (the file moved or changed
+/// since it was picked) is an error, never a stop of the page.
+async fn read_file(file: &web_sys::File) -> Result<Vec<u8>, String> {
+    let buffer = wasm_bindgen_futures::JsFuture::from(file.array_buffer()).await.map_err(|e| format!("{e:?}"))?;
+    Ok(js_sys::Uint8Array::new(&buffer).to_vec())
 }
 
 /// Keep the mailbox in the browser's storage. A full store is the usual failure: say so plainly.

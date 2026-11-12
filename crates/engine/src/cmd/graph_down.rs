@@ -93,6 +93,9 @@ pub fn take_page(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page: &
     // Then the rules (#567), on what arrives in the Inbox and only when the lists sort. Never in a
     // shared mailbox: the rules, like the lists, are the owner's.
     let inbox = mb.folder(folder).is_some_and(|f| f.kind == FolderKind::Inbox);
+    // (Of a Microsoft or Exchange server account alone, as the repair that puts right what an
+    // earlier version kept: a JMAP server's Sent folder is read through here too.)
+    let sent_items = mb.folder(folder).is_some_and(|f| f.kind == FolderKind::Sent) && mb.keeps_drafts_on_server(account);
     let ruling = sorting && mb.account(account).is_some_and(|a| !a.is_shared());
     // The server's copies of messages being moved out of the account are not new mail.
     let mut moving_out: HashSet<String> =
@@ -106,10 +109,11 @@ pub fn take_page(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page: &
                 s.gone = true;
             }
             // Being moved out of the account: still in that folder only if the listing has it (#451).
+            // Until the listing has ended, it may be in a page to come (#30): `listing`.
             if m.moving_out.as_ref().is_some_and(|out| out.account == account && out.folder == page.folder && !out.left)
                 && let Some(out) = std::sync::Arc::make_mut(m).moving_out.as_mut()
             {
-                out.left = true;
+                (out.left, out.listing) = (true, true);
             }
         }
     }
@@ -122,7 +126,7 @@ pub fn take_page(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page: &
                 && let Ok(m) = mb.message_mut(m)
                 && let Some(out) = m.moving_out.as_mut().filter(|out| out.folder == page.folder)
             {
-                out.left = true;
+                (out.left, out.listing) = (true, false);
             }
             continue;
         };
@@ -162,11 +166,21 @@ pub fn take_page(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page: &
                     && let Ok(m) = mb.message_mut(m)
                     && let Some(out) = m.moving_out.as_mut()
                 {
-                    (out.folder, out.left) = (page.folder.clone(), false);
+                    (out.folder, out.left, out.listing) = (page.folder.clone(), false, false);
                 }
             }
             None => {
-                if let Ok(m) = mb.add_message(new_message(folder, &page.folder, there)) {
+                let mut message = new_message(folder, &page.folder, there);
+                // New to this mailbox and in Sent Items, it was sent: Exchange files the copy of a
+                // message sent as MIME (`sendMail`, how a message never saved as a draft goes;
+                // #611) under an id this mailbox has never seen, with `isDraft` still true, and it
+                // would be shown as a draft for ever. A draft this mailbox knows that turns up in
+                // Sent Items (moved there by the owner, which Outlook keeps as a draft) is sent
+                // only when the server says so (`update`), and is a draft again when moved back.
+                if sent_items {
+                    message.draft = false;
+                }
+                if let Ok(m) = mb.add_message(message) {
                     index.note(mb, account, &there.server.id, m);
                     // By the Safe and Blocked Senders lists first (#504), then the rules: mail a
                     // list sends to Junk E-mail isn't the rules' to file, and a safe sender's taken
@@ -184,6 +198,16 @@ pub fn take_page(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page: &
                     }
                     down.new += 1;
                 }
+            }
+        }
+    }
+    // A listing afresh that ended without a copy being moved out: it left that folder (#30).
+    if page.caught_up {
+        for m in mb.messages.values_mut() {
+            if m.moving_out.as_ref().is_some_and(|out| out.account == account && out.folder == page.folder && out.listing)
+                && let Some(out) = std::sync::Arc::make_mut(m).moving_out.as_mut()
+            {
+                out.listing = false;
             }
         }
     }
@@ -237,14 +261,23 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     // A draft the server has changed (its change key differs from what was last seen of it).
     let changed_there = m.draft && !last.change_key.is_empty() && !there.server.change_key.is_empty() && last.change_key != there.server.change_key;
     if changed_there && m.server_draft.as_ref().is_some_and(|d| d.pending) {
-        // Changed here too: both are kept (S26).
-        let copy = new_message(folder, server_folder, there);
+        // Changed here too: both are kept (S26). The server's is a draft of its own, unless the
+        // server says it is one no longer: sent meanwhile and filed in Sent Items (#611), it is
+        // the sent message, and only what was changed here stays a draft.
+        let mut copy = new_message(folder, server_folder, there);
+        copy.draft = there.draft.unwrap_or(true);
+        // The server's own version, a draft on its word: so kept through a save and the repair
+        // of sent copies an earlier version took for drafts, wherever the server has it.
+        if copy.draft {
+            copy.server_draft = Some(mailcraft_model::sync::ServerDraft { theirs: true, ..Default::default() });
+        }
         return super::graph_drafts::keep_twice(mb, id, Some(copy)).is_some();
     }
     // Where the server last had it, as this mailbox has that folder: a message still there here
     // follows the server; one moved here since stays where it was put (that move goes up, R3.3).
     let was_here = mb.folder_by_server(account, &last.folder);
     let follows = last.gone || was_here.is_none_or(|was| m.folder == was);
+    let in_drafts = mb.folder(folder).is_some_and(|f| f.kind == FolderKind::Drafts);
     let Ok(m) = mb.message_mut(id) else { return false };
     let now = &there.server;
     if m.read == last.read {
@@ -286,7 +319,18 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
         m.draft = false;
         m.server_draft = None;
     }
-    if changed_there || sent {
+    // And the other way: one taken for sent because it was new to this mailbox in Sent Items (a
+    // draft another program moved there, or in an account added fresh) is a draft again once the
+    // server lists it in Drafts and says so; what it is now is fetched afresh. Only one that is
+    // where the server has it and was never a draft here: a draft sent here waits in the Outbox
+    // with the server's id and its own draft state until the send clears, and the server may list
+    // it in Drafts meanwhile (the send refused or its answer lost, a listing afresh, another
+    // program touching the draft); it stays the message queued, not a [Draft] in the Outbox.
+    let drafted = !m.draft && in_drafts && follows && m.server_draft.is_none() && there.draft == Some(true);
+    if drafted {
+        m.draft = true;
+    }
+    if changed_there || sent || drafted {
         // Changed elsewhere only: the server's version, fetched afresh.
         (m.subject, m.to, m.cc, m.unfetched) = (there.subject.clone(), there.to.clone(), there.cc.clone(), true);
         m.attachments_on_server = there.has_attachments;
@@ -299,7 +343,11 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     // fetched and may be smaller than the background fetch's limit, which its old size is held
     // against. Until then the list says what is here, its old version.
     let size = if now.size > 0 || changed_there { now.size } else { last.size };
-    m.server = Some(ServerMessage { folder: server_folder.to_string(), gone: false, size, ..now.clone() });
+    // The conversation id, as the size: one a listing doesn't say (a JMAP server's marks alone)
+    // is the last one known (#795).
+    let (thread, thread_asked, thread_tries) =
+        if now.thread.is_empty() { (last.thread.clone(), last.thread_asked, last.thread_tries) } else { (now.thread.clone(), false, 0) };
+    m.server = Some(ServerMessage { folder: server_folder.to_string(), gone: false, size, thread, thread_asked, thread_tries, ..now.clone() });
     *m != before
 }
 
@@ -373,7 +421,7 @@ pub fn fetch_queue_passing_over(mb: &Mailbox, account: Id, most: usize, now: Tim
     let mut out: Vec<String> = mb
         .messages
         .values()
-        .filter(|m| m.unfetched && !m.incomplete)
+        .filter(|m| (still_to_fetch(mb, m) || wants_from_source(m)) && !m.incomplete)
         .filter_map(|m| m.moving_out.as_ref().filter(|out| out.account == account && !skip(&out.id)).map(|out| out.id.clone()))
         .take(most)
         .collect();
@@ -387,7 +435,7 @@ fn fetch_queue_of_account(mb: &Mailbox, account: Id, most: usize, now: Timestamp
     let mut waiting: Vec<(i64, &str)> = mb
         .messages
         .values()
-        .filter(|m| m.account == account && m.unfetched && window.within(m))
+        .filter(|m| m.account == account && still_to_fetch(mb, m) && window.within(m))
         .filter_map(|m| {
             m.server.as_ref().filter(|s| !s.gone && limit.is_none_or(|limit| s.size <= limit) && !skip(&s.id)).map(|s| (m.received, s.id.as_str()))
         })
@@ -427,7 +475,7 @@ pub fn full_counts(mb: &Mailbox, account: Id, now: Timestamp) -> FullCounts {
     let mut counts = FullCounts::default();
     for m in mb.messages.values().filter(|m| m.account == account && (m.server.is_some() || m.unfetched) && window.within(m)) {
         counts.all = counts.all.saturating_add(1);
-        if m.unfetched {
+        if still_to_fetch(mb, m) {
             let size = m.server.as_ref().map_or(0, |s| s.size);
             counts.waiting = counts.waiting.saturating_add(1);
             counts.large = counts.large.saturating_add(usize::from(limit.is_some_and(|limit| size > limit)));
@@ -446,8 +494,39 @@ pub fn take_fetched(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, id: 
 /// [`take_fetched`], answering which message it was.
 pub fn take_fetched_as(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, id: &str, mime: &[u8]) -> Option<Id> {
     let here = index.find(mb, account, id).or_else(|| moving_out(mb, account, id))?;
-    let read = crate::mime::parse(mime);
+    // Only while it is still what it was when it was asked for (AU3-16): headers only, no change
+    // of the owner's waiting to go up, not queued to be sent. An answer that comes after it was
+    // fetched another way, edited or sent is dropped, so that it never undoes what was done here.
+    if !mb.message(here).is_some_and(|m| still_to_fetch(mb, m) || wants_from_source(m)) {
+        return None;
+    }
+    let mut read = crate::mime::parse_fetched(mime);
+    // What came brought no original (#30): the server's copy isn't protected either.
+    let brought = read.original.is_some();
+    // Within what the mailbox keeps of originals in all (#30), counting the one it replaces.
+    let replaced = mb.message(here).and_then(|m| m.original.as_ref()).map_or(0, mailcraft_model::Original::size);
+    // (No room for it: how much room it needs, which there must be before it is asked again.)
+    let mut no_room = 0;
+    let needs = read.original.as_ref().map_or(0, |o| o.size().saturating_sub(replaced));
+    if read.original.is_some() && !mb.room_for_original(needs) {
+        read.original = None;
+        no_room = needs.max(1);
+    }
     let m = mb.message_mut(here).ok()?;
+    // Check again asked for the bytes it came as alone (#30), or a move asked the copy it came
+    // from for them: nothing else of it changes.
+    if std::mem::take(&mut m.original_wanted) {
+        m.original_asked |= !brought;
+        if no_room > 0 {
+            m.original_no_room = no_room;
+        }
+        // (A copy that brings none, one put on the server from its parts, takes nothing away.)
+        if !m.parts_removed && read.original.is_some() {
+            m.original = read.original;
+        }
+        (m.unfetched, m.attachments_on_server) = (false, false);
+        return Some(here);
+    }
     m.message_id = read.message_id;
     m.in_reply_to = read.in_reply_to;
     m.references = read.references;
@@ -471,7 +550,20 @@ pub fn take_fetched_as(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, i
     m.body = read.body;
     m.hidden_text = read.hidden_text;
     m.attachments = read.attachments;
-    m.headers = read.headers;
+    // The bytes it came as, when it is Digitally signed or Encrypted (#30): with its files from
+    // the same download, so nothing removed here before comes back in one and not the other.
+    // A copy that brings none (one put on the server from its parts, as Microsoft Graph puts a
+    // message) leaves the one kept here: it is the message as it came, and what Save As and a
+    // move to another server write.
+    if read.original.is_some() {
+        m.original = read.original;
+    }
+    m.parts_removed = false;
+    (m.headers, m.fresh_stamps) = (read.headers, read.fresh_stamps);
+    // Fetched to go on to another account's server: this server's stamps stay behind (#781).
+    if m.account != account {
+        mailcraft_model::auth_results::forget_stamps(m);
+    }
     // What it is now is all of it: nothing the mailbox kept on disk of its preview is its body.
     m.kept = None;
     m.unfetched = false;
@@ -493,8 +585,60 @@ pub fn take_fetched_as(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, i
     Some(here)
 }
 
+/// The copies being moved out of `account` that a listing afresh of their folder hadn't come to
+/// when a complete listing of the folders left that folder out (#30): no page of it will come, so
+/// they went with it. What waited for the bytes it came as from one goes made of its parts, and
+/// says so (at most [`crate::cmd::imap_again::MAX_AGAIN`] are said).
+pub(crate) fn gone_with_folders(s: &mut crate::Session, account: Id, listing: &mailcraft_model::sync::FolderListing) -> Vec<String> {
+    if !listing.complete {
+        return Vec::new();
+    }
+    let listed: HashSet<&str> = listing.folders.iter().map(|f| f.id.as_str()).collect();
+    let gone: Vec<Id> = s
+        .mailbox
+        .messages
+        .values()
+        .filter(|m| m.moving_out.as_ref().is_some_and(|out| out.account == account && out.listing && !listed.contains(out.folder.as_str())))
+        .map(|m| m.id)
+        .collect();
+    let mut said = Vec::new();
+    for id in gone {
+        if let Ok(m) = s.mailbox.message_mut(id)
+            && let Some(out) = m.moving_out.as_mut()
+        {
+            out.listing = false;
+        }
+        let Some(m) = s.mailbox.message(id) else { continue };
+        if said.len() < crate::cmd::imap_again::MAX_AGAIN && !m.may_release() && !s.original_readable(m, true) {
+            let subject: String = m.subject.chars().filter(|c| !c.is_control()).take(80).collect();
+            said.push(format!(
+                "\"{subject}\": the copy it was moved out of went with its folder on the server, so it goes made of its parts, without the bytes it came as"
+            ));
+        }
+    }
+    crate::cmd::mail::check_again::settle(&mut s.mailbox);
+    said
+}
+
+/// Whether `m`, being moved out of a Microsoft account, asks the copy it came from there for the
+/// bytes it came as (#30, [`crate::cmd::mail::check_again::ask_source`]): fetched for them alone,
+/// all it has here staying as it is.
+pub(crate) fn wants_from_source(m: &Message) -> bool {
+    m.original_wanted && !m.unfetched && m.moving_out.as_ref().is_some_and(|out| !out.left && !out.id.is_empty())
+}
+
+/// Whether `m` is one to fetch whole, and may take what was fetched: it is still only its headers
+/// here, has no change of the owner's waiting to go up, and isn't in an Outbox. Only such a message
+/// is asked for, so that one whose answer would be dropped is never asked for again and again.
+pub(crate) fn still_to_fetch(mb: &Mailbox, m: &Message) -> bool {
+    let queued = mb.folder(m.folder).is_some_and(|f| f.kind == FolderKind::Outbox);
+    let edited = m.server_draft.as_ref().is_some_and(|d| d.pending);
+    m.unfetched && !edited && !queued
+}
+
 /// Back to its headers and `preview` (#143): what [`take_fetched`] brought in goes, and the
-/// message is not fetched again, as it was when it came down. Everything else stays as it is:
+/// message is not fetched again, as it was when it came down. Everything else stays as it is
+/// (the bytes a protected message came as, #30, too):
 /// where it is, its marks, the server's state of it, what waits to go up, its headers. It wears
 /// the paperclip still when it had attachments; opening it fetches it whole again.
 pub fn thin_message(m: &mut Message, preview: String) {
@@ -505,6 +649,9 @@ pub fn thin_message(m: &mut Message, preview: String) {
     m.hidden_text = String::new();
     m.attachments.clear();
     m.kept = None;
+    // The bytes a Digitally signed or Encrypted message came as stay (#30): the server's copy
+    // may be one put there from its parts, which brings none back.
+    m.original_wanted = false;
     m.unfetched = true;
 }
 
@@ -546,6 +693,49 @@ pub fn refetch_unreadable(mb: &mut Mailbox) -> usize {
             let m = std::sync::Arc::make_mut(m);
             m.attachments_on_server = m.has_attachments();
             m.unfetched = true;
+            // Fetched whole: what comes is taken whole, original and all, not for the original
+            // alone (#30).
+            m.original_wanted = false;
+            marked = marked.saturating_add(1);
+        }
+    }
+    marked
+}
+
+/// Once a mailbox (#793): the messages of Microsoft and Exchange server accounts that look as
+/// 0.5.0 up to #793 put back a message whose delete for good the server refused (no text, or a
+/// file of no bytes, with nothing kept on disk for them: [`Message::looks_hollow`]) are marked
+/// not fetched, so that they are fetched whole again from the server, which has them, before
+/// anything moves or copies them anywhere (an empty copy would be made there and the original
+/// deleted). One being moved out of such an account is fetched from its original there. Drafts,
+/// and messages no server has, are left alone. How many were marked; none once the mailbox has
+/// been looked through ([`Mailbox::unhollowed`]).
+pub fn refetch_hollow(mb: &mut Mailbox) -> usize {
+    if mb.unhollowed {
+        return 0;
+    }
+    let servers: HashSet<Id> = mb
+        .accounts
+        .iter()
+        .filter(|a| matches!(a.kind, mailcraft_model::AccountKind::Microsoft | mailcraft_model::AccountKind::Exchange))
+        .map(|a| a.id)
+        .collect();
+    if servers.is_empty() {
+        return 0;
+    }
+    mb.unhollowed = true;
+    let mut marked = 0usize;
+    for m in mb.messages.values_mut() {
+        let on_server = servers.contains(&m.account) && m.server.as_ref().is_some_and(|s| !s.gone && !s.id.is_empty());
+        let original = m.moving_out.as_ref().is_some_and(|o| servers.contains(&o.account) && !o.left && !o.id.is_empty());
+        let candidate = !m.unfetched && !m.incomplete && !m.draft && m.server_draft.is_none() && m.held.is_empty() && (on_server || original);
+        if candidate && m.looks_hollow() {
+            let m = std::sync::Arc::make_mut(m);
+            m.attachments_on_server = m.has_attachments();
+            m.unfetched = true;
+            // Fetched whole: what comes is taken whole, original and all, not for the original
+            // alone (#30).
+            m.original_wanted = false;
             marked = marked.saturating_add(1);
         }
     }
@@ -563,6 +753,10 @@ fn keeps_whole(mb: &Mailbox, account: Id) -> Option<u64> {
 #[cfg(test)]
 #[path = "graph_down_size_tests.rs"]
 mod size_tests;
+
+#[cfg(test)]
+#[path = "graph_sent_not_draft_tests.rs"]
+mod sent_not_draft_tests;
 
 #[cfg(test)]
 mod tests {

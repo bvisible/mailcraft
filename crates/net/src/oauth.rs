@@ -72,6 +72,9 @@ use crate::http::{self, Answer, Url};
 
 /// How long the owner has to finish on the provider's page.
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+/// Canonical, non-sensitive reason that Google's refresh grant was revoked or expired.
+/// A provider's error description is never used to decide whether to discard a token.
+pub const GOOGLE_REFRESH_REVOKED: &str = "Google's previous authorization has expired or been revoked";
 /// How often the wait looks for the browser and at the cancel flag.
 const TICK: Duration = Duration::from_millis(25);
 /// Largest request taken from the browser, and how long it may take to arrive.
@@ -97,6 +100,13 @@ const MAX_LIFETIME: i64 = 7 * 24 * 3_600;
 const MAX_IDENTITY: usize = 254;
 
 const MICROSOFT_LOGIN: &str = "https://login.microsoftonline.com";
+const GOOGLE_AUTHORIZE: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN: &str = "https://oauth2.googleapis.com/token";
+const GOOGLE_SCOPE: &str = "https://mail.google.com/ openid email";
+const GOOGLE_DESKTOP_SECRET: &str = match option_env!("MAILCRAFT_GOOGLE_CLIENT_SECRET") {
+    Some(secret) => secret,
+    None => "",
+};
 /// IMAP and SMTP, a refresh token to go with the access token, and who it is that signed in.
 const MICROSOFT_SCOPE: &str =
     "https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send offline_access openid profile email";
@@ -145,13 +155,15 @@ const MICROSOFT_GRAPH_SHARED_CALENDARS: &str = "https://graph.microsoft.com/Cale
 /// the to-dos asks for it by itself ([`refresh_graph_tasks`]); a sign-in that doesn't cover it
 /// gets [`NetError::ConsentNeeded`], and the window asks the owner ([`sign_in_for_tasks`]).
 const MICROSOFT_GRAPH_TASKS: &str = "https://graph.microsoft.com/Tasks.ReadWrite";
-/// What changing the automatic replies of the mailbox takes (File › Info › Automatic Replies):
-/// changing its settings. Asked for by itself, the first time the owner changes them and after
-/// the window has asked him, never with a sign-in, and on the administrator's list; a sign-in
-/// reads them with [`MICROSOFT_GRAPH_EXTRAS`] as ever. A job that changes them asks for it
-/// ([`refresh_graph_replies`]); a sign-in that doesn't cover it gets [`NetError::ConsentNeeded`],
-/// and the window asks the owner ([`sign_in_for_replies`]). The categories and the working hours
-/// are never written with it, nor anything else of the settings.
+/// What changing the mailbox's settings takes: its automatic replies (File › Info › Automatic
+/// Replies) and the rules of its Inbox (`messageRules`, #566). Asked for by itself, the first
+/// time the owner changes either and after the window has asked him, never with a sign-in, so
+/// that a sign-in never waits on it, and on the administrator's list; a sign-in reads both with
+/// [`MICROSOFT_GRAPH_EXTRAS`] as ever. A job that changes them asks for it
+/// ([`refresh_graph_replies`], [`refresh_graph_rules`]); a sign-in that doesn't cover it gets
+/// [`NetError::ConsentNeeded`], and the window asks the owner ([`sign_in_for_replies`],
+/// [`sign_in_for_rules`]). The categories and the working hours are never written with it, nor
+/// anything else of the settings.
 const MICROSOFT_GRAPH_SETTINGS_WRITE: &str = "https://graph.microsoft.com/MailboxSettings.ReadWrite";
 /// Whether the page of an ordinary sign-in also puts the Favorites' permissions to the owner,
 /// so that one page settles everything. **Off**: Microsoft's permissions reference lists
@@ -279,6 +291,13 @@ impl Endpoints {
                     lesser,
                 }
             }
+            OAuthProvider::Google => Endpoints {
+                authorize: GOOGLE_AUTHORIZE.into(),
+                token: GOOGLE_TOKEN.into(),
+                scope: GOOGLE_SCOPE.into(),
+                consent: String::new(),
+                lesser: String::new(),
+            },
         }
     }
 }
@@ -309,6 +328,9 @@ pub fn sign_in(oauth: &OAuth, login_hint: &str, open: &dyn Fn(&str), cancel: &At
 /// ([`Tokens::email`]): the owner picks the account on the page, and it may not be the one the
 /// tokens were wanted for.
 pub fn sign_in_for(oauth: &OAuth, login_hint: &str, open: &dyn Fn(&str), cancel: &AtomicBool, resource: Resource) -> Result<Tokens, NetError> {
+    if oauth.provider == OAuthProvider::Google && resource != Resource::Mail {
+        return Err(NetError::Config("Google sign-in supports mail only, not Microsoft Graph".into()));
+    }
     sign_in_at(&Endpoints::for_resource(oauth, resource), oauth, login_hint, open, cancel)
 }
 
@@ -316,6 +338,9 @@ pub fn sign_in_for(oauth: &OAuth, login_hint: &str, open: &dyn Fn(&str), cancel:
 /// (with [`Endpoints::consent`] empty, nothing but the tokens' own scopes is put to the owner).
 /// The addresses must be `https://` ones, or `http://` ones on this machine.
 pub fn sign_in_at(endpoints: &Endpoints, oauth: &OAuth, login_hint: &str, open: &dyn Fn(&str), cancel: &AtomicBool) -> Result<Tokens, NetError> {
+    if oauth.provider == OAuthProvider::Google {
+        return sign_in_google_at(endpoints, oauth, GOOGLE_DESKTOP_SECRET, login_hint, open, cancel);
+    }
     sign_in_within(endpoints, oauth, login_hint, open, cancel, SIGN_IN_TIMEOUT)
 }
 
@@ -328,6 +353,10 @@ pub fn sign_in_explained(
     open: &dyn Fn(&str),
     cancel: &AtomicBool,
 ) -> Result<Tokens, SignInEnd> {
+    if oauth.provider == OAuthProvider::Google {
+        return google::sign_in_google_refused(endpoints, oauth, GOOGLE_DESKTOP_SECRET, login_hint, open, cancel, SIGN_IN_TIMEOUT)
+            .map_err(SignInEnd::from);
+    }
     sign_in_refused(endpoints, oauth, login_hint, open, cancel, SIGN_IN_TIMEOUT).map_err(SignInEnd::from)
 }
 
@@ -430,8 +459,9 @@ pub enum FavoritesRefusal {
 /// too. That is what a sign-in's page asks for (IMAP, SMTP, a refresh token and who signs in;
 /// Microsoft Graph's sending, calendar, contacts, mailbox settings and, for an account kept in step
 /// through Graph, its mail), what reading the Favorites of Outlook through Graph takes, and what
-/// reading a shared mailbox and sending from one take, what reading its calendars takes, and what
-/// keeping the to-dos in step with Microsoft To Do takes.
+/// reading a shared mailbox and sending from one take, what reading its calendars takes, what
+/// keeping the to-dos in step with Microsoft To Do takes, and what keeping rules on the server
+/// takes.
 ///
 /// A sign-in asks for no more than is here: a page that asked for one permission an
 /// administrator had not approved would send the owner to find one again.
@@ -527,7 +557,7 @@ impl From<Refused> for AdminRefusal {
     fn from(refused: Refused) -> AdminRefusal {
         // What the provider said, without what this program puts before it.
         let words = |error: &NetError| match error {
-            NetError::Proto(ProtoError::Auth(text) | ProtoError::Rejected(text)) => text.clone(),
+            NetError::Proto(ProtoError::Auth(text) | ProtoError::Rejected(text)) => text.to_string(),
             other => other.to_string(),
         };
         match (refused.policy, &refused.error) {
@@ -820,7 +850,8 @@ pub fn refresh_graph_tasks_at(
 }
 
 /// Tokens at `endpoints` for a permission that is asked for by itself (the to-dos', the
-/// automatic replies'): a sign-in that doesn't cover it gets [`NetError::ConsentNeeded`].
+/// automatic replies' and the rules'): a sign-in that doesn't cover it gets
+/// [`NetError::ConsentNeeded`].
 /// Microsoft says no to a personal account that never agreed in the words of a sign-in that is
 /// over (#520), so a no is put to the account's `mail` with the same refresh token: if it still
 /// takes it, it is the permission. `what` names it, for the error.
@@ -846,6 +877,39 @@ fn refresh_by_itself_at(
         },
         Err(error) => Err(error),
     }
+}
+
+/// What the tokens of a rules job that has changes to send are asked for (#566): what the
+/// account's mail takes, and changing the mailbox's settings on top.
+fn rules_scope() -> String {
+    format!("{MICROSOFT_GRAPH} {MICROSOFT_GRAPH_MAIL} {MICROSOFT_GRAPH_SETTINGS_WRITE} {SIGN_IN_SCOPE}")
+}
+
+/// Ask the owner, on the provider's page, to let this program change the rules his server keeps
+/// (`MailboxSettings.ReadWrite`, the permission the automatic replies are changed with). Only
+/// when a rule is to go to the server and the sign-in doesn't cover it, after the window has
+/// asked him, and never with an ordinary sign-in. A no says whose it is ([`FavoritesRefusal`]);
+/// nothing is tried a second time.
+pub fn sign_in_for_rules(oauth: &OAuth, login_hint: &str, open: &dyn Fn(&str), cancel: &AtomicBool) -> Result<Tokens, FavoritesRefusal> {
+    let plain = Endpoints::for_resource(oauth, Resource::GraphMail);
+    let endpoints = Endpoints { scope: rules_scope(), consent: String::new(), lesser: String::new(), ..plain };
+    sign_in_for_favorites_within(&endpoints, oauth, login_hint, open, cancel, SIGN_IN_TIMEOUT)
+}
+
+/// [`refresh_graph_mail`] for a rules job with changes to send (#566): the tokens are asked for
+/// with `MailboxSettings.ReadWrite`, and for nothing less. A sign-in that doesn't cover it gets
+/// [`NetError::ConsentNeeded`]: nothing of the rules is sent, everything else goes on, and the
+/// window asks the owner ([`sign_in_for_rules`]).
+pub fn refresh_graph_rules(oauth: &OAuth, refresh_token: &str) -> Result<GraphTokens, NetError> {
+    let endpoints = Endpoints::for_resource(oauth, Resource::GraphMail);
+    refresh_graph_rules_at(&endpoints, &endpoints, oauth, refresh_token)
+}
+
+/// [`refresh_graph_rules`] at endpoints other than the provider's usual ones: `mail` for the
+/// account's mail.
+pub fn refresh_graph_rules_at(endpoints: &Endpoints, mail: &Endpoints, oauth: &OAuth, refresh_token: &str) -> Result<GraphTokens, NetError> {
+    let endpoints = Endpoints { scope: rules_scope(), ..endpoints.clone() };
+    refresh_by_itself_at(&endpoints, (mail, Resource::GraphMail), oauth, refresh_token, "changing the rules")
 }
 
 /// What the tokens of a job that changes the automatic replies are asked for: what Graph is
@@ -960,6 +1024,12 @@ pub fn refresh_at(endpoints: &Endpoints, oauth: &OAuth, refresh_token: &str) -> 
 /// [`refresh_for`] at endpoints other than the provider's usual ones: the tokens are asked for
 /// [`Endpoints::scope`], and a refusal is read as one of a token for `resource`.
 pub fn refresh_for_at(endpoints: &Endpoints, oauth: &OAuth, refresh_token: &str, resource: Resource) -> Result<Tokens, NetError> {
+    if oauth.provider == OAuthProvider::Google {
+        if resource != Resource::Mail {
+            return Err(NetError::Config("Google sign-in supports mail only, not Microsoft Graph".into()));
+        }
+        return refresh_google_at(endpoints, oauth, GOOGLE_DESKTOP_SECRET, refresh_token);
+    }
     let client_id = client_id(oauth)?;
     tenant(oauth)?;
     let token_endpoint = Url::parse(&endpoints.token)?;
@@ -973,7 +1043,7 @@ pub fn refresh_for_at(endpoints: &Endpoints, oauth: &OAuth, refresh_token: &str,
         // provider's page is how either is put right, or shown for what it is.
         (Resource::Graph | Resource::GraphMail, About::Consent | About::Scope, NetError::Proto(ProtoError::Auth(why))) => {
             // Said in a code alone, this reads like a sign-in that is over, which it isn't.
-            NetError::ConsentNeeded(if why == STALE { "the sign-in doesn't cover Microsoft Graph".to_string() } else { why })
+            NetError::ConsentNeeded(if why.to_string() == STALE { "the sign-in doesn't cover Microsoft Graph".to_string() } else { why.to_string() })
         }
         (_, _, error) => error,
     })
@@ -1184,10 +1254,10 @@ fn shown(text: &str) -> String {
 fn client_id(oauth: &OAuth) -> Result<&str, NetError> {
     let id = oauth.client_id.trim();
     if id.is_empty() {
-        return Err(NetError::Config(format!("an application (client) id is needed to sign in with {}", oauth.provider.label())));
+        return Err(NetError::Config(format!("an application (client) id is needed to sign in with {}", oauth.provider.label()).into()));
     }
     if id.len() > 200 || !id.bytes().all(|b| b.is_ascii_graphic()) {
-        return Err(NetError::Config(format!("\"{}\" can't be an application (client) id", shown(id))));
+        return Err(NetError::Config(format!("\"{}\" can't be an application (client) id", shown(id)).into()));
     }
     Ok(id)
 }
@@ -1204,11 +1274,14 @@ fn tenant(oauth: &OAuth) -> Result<&str, NetError> {
     if plain && edges(tenant.bytes().next()) && edges(tenant.bytes().next_back()) && !tenant.contains("..") {
         Ok(tenant)
     } else {
-        Err(NetError::Config(format!(
-            "\"{}\" can't be a {} tenant: use common, consumers, organizations, or a directory's id or domain",
-            shown(tenant),
-            oauth.provider.label()
-        )))
+        Err(NetError::Config(
+            format!(
+                "\"{}\" can't be a {} tenant: use common, consumers, organizations, or a directory's id or domain",
+                shown(tenant),
+                oauth.provider.label()
+            )
+            .into(),
+        ))
     }
 }
 
@@ -1278,8 +1351,8 @@ fn refusal(error: &str, description: &str) -> NetError {
     };
     NetError::Proto(match code.as_str() {
         // Not a no: the server can't just now.
-        "server_error" | "temporarily_unavailable" => ProtoError::Rejected(text),
-        _ => ProtoError::Auth(text),
+        "server_error" | "temporarily_unavailable" => ProtoError::Rejected(text.into()),
+        _ => ProtoError::Auth(text.into()),
     })
 }
 
@@ -1706,5 +1779,24 @@ impl Redirect {
     }
 }
 
+/// Sign in using this installation's Google Desktop registration (from File > Options, or
+/// its build defaults), preserving the same detailed refusal classification as Microsoft.
+/// The registration's client secret is a public *installed-app* value, not an owner token.
+pub fn sign_in_google_explained_at(
+    endpoints: &Endpoints,
+    oauth: &OAuth,
+    client_secret: &str,
+    login_hint: &str,
+    open: &dyn Fn(&str),
+    cancel: &AtomicBool,
+) -> Result<Tokens, SignInEnd> {
+    google::sign_in_google_refused(endpoints, oauth, client_secret, login_hint, open, cancel, SIGN_IN_TIMEOUT).map_err(SignInEnd::from)
+}
+
+mod google;
+pub use google::{refresh_google_at, sign_in_google_at};
+
+#[cfg(test)]
+mod google_tests;
 #[cfg(test)]
 mod tests;

@@ -46,6 +46,20 @@ pub fn microsoft(consumer: bool) -> Preset {
     }
 }
 
+/// Gmail or Google Workspace, when the owner explicitly chooses Google OAuth (#232).
+/// Discovery still supplies compatible IMAP/SMTP settings; account setup recommends
+/// Google sign-in first when a desktop OAuth registration is available.
+pub fn google(consumer: bool) -> Preset {
+    let name = if consumer { "Gmail" } else { "Google Workspace" };
+    Preset {
+        service: name,
+        oauth: Some(OAuthProvider::Google),
+        incoming: server("imap.gmail.com", 993, Security::Tls),
+        outgoing: server("smtp.gmail.com", 465, Security::Tls),
+        note: "Google sign-in opens the provider's page; MailCraft does not ask for your Google password.",
+    }
+}
+
 /// Whether `host` is the IMAP server of Microsoft's own mail (Exchange Online, Outlook.com).
 pub fn is_microsoft_imap_host(host: &str) -> bool {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
@@ -208,7 +222,9 @@ pub fn by_mx(host: &str) -> Option<Preset> {
     // The host itself or anything under it, never a look-alike (`evilgoogle.com`).
     let under = |parent: &str| host == parent || host.ends_with(&format!(".{parent}"));
     let (tls, starttls) = (Security::Tls, Security::StartTls);
-    if under("olc.protection.outlook.com") {
+    // Outlook.com's legacy custom domains keep their personalized Hotmail MX record:
+    // https://support.microsoft.com/en-us/outlook/configure-a-custom-email-domain-account-as-an-exchange-account-in-outlook
+    if under("olc.protection.outlook.com") || under("pamx1.hotmail.com") {
         return Some(microsoft(true));
     }
     if under("mail.protection.outlook.com") || under("mx.microsoft") {
@@ -260,6 +276,9 @@ pub fn guess(domain: &str) -> Preset {
         note: "",
     }
 }
+
+#[cfg(test)]
+mod custom_domain_tests;
 
 #[cfg(test)]
 mod tests {

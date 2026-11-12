@@ -331,12 +331,102 @@ pub fn category_chip(ui: &Ui, left_center: egui::Pos2, name: &str, color: Color3
     w
 }
 
+/// What a place is called: an account by its address (two accounts of one person can have one
+/// name), 0 this computer.
+pub fn place_name(mailbox: &mailcraft_model::Mailbox, account: mailcraft_model::Id) -> String {
+    match mailbox.account(account) {
+        Some(a) => crate::people_view::one_line(&a.email, 200),
+        None => tl!("On this computer").to_string(),
+    }
+}
+
+/// Whose items a list shows, at the top of its pane: All accounts, each of `accounts`, On this
+/// computer. Returns what was picked.
+pub fn account_choice(
+    ui: &mut Ui,
+    mailbox: &mailcraft_model::Mailbox,
+    accounts: &[mailcraft_model::Id],
+    current: mailcraft_model::AccountChoice,
+) -> Option<mailcraft_model::AccountChoice> {
+    use mailcraft_model::AccountChoice;
+    let label = |choice: AccountChoice| match choice {
+        AccountChoice::All => tl!("All accounts").to_string(),
+        AccountChoice::Here => place_name(mailbox, 0),
+        AccountChoice::Account(account) => place_name(mailbox, account),
+    };
+    let choices = std::iter::once(AccountChoice::All).chain(accounts.iter().copied().map(AccountChoice::Account)).chain([AccountChoice::Here]);
+    let mut picked = None;
+    ui.horizontal(|ui| {
+        ui.add_space(10.0);
+        let width = (ui.available_width() - 10.0).max(60.0);
+        egui::ComboBox::from_id_salt("account_choice").width(width).selected_text(label(current)).truncate().show_ui(ui, |ui| {
+            for choice in choices {
+                if ui.selectable_label(choice == current, label(choice)).clicked() {
+                    picked = Some(choice);
+                }
+            }
+        });
+    });
+    picked
+}
+
 /// A section heading inside a side pane (`My Calendars`, `My Tasks`), in the size and weight of
 /// the folder pane's own headings.
 pub fn pane_heading(ui: &mut Ui, text: &str) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
     crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 10.0, r.center().y), r.width() - 16.0, text, regular(14.667), t.text);
+}
+
+/// A colour swatch `size` square that opens the palette (`mailcraft_model::PALETTE`), with a
+/// ring and a heavier edge on the colour in use. `color` is the one in use; `None` is drawn as an
+/// empty square with a stroke through it. With `none` the palette has a button of that name
+/// under it, which takes the colour away. Answers what was picked there: `Some(Some(colour))`, or
+/// `Some(None)` for the button; `None` when nothing was.
+pub fn color_swatch(ui: &mut Ui, size: f32, color: Option<mailcraft_model::Rgb>, none: Option<&str>) -> Option<Option<mailcraft_model::Rgb>> {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(size, size), Sense::click());
+    let edge = Stroke::new(1.0, if resp.hovered() { t.text_dim } else { t.border_strong });
+    let square = r.shrink(2.0);
+    match color {
+        Some(color) => {
+            ui.painter().rect(square, 5.0, crate::theme::c32(color), edge, egui::StrokeKind::Inside);
+        }
+        None => {
+            ui.painter().rect_stroke(square, 5.0, edge, egui::StrokeKind::Inside);
+            let inner = square.shrink(4.0);
+            ui.painter().line_segment([inner.left_bottom(), inner.right_top()], edge);
+        }
+    }
+    let resp = resp.on_hover_text(tl!("Change the colour"));
+    let mut picked = None;
+    egui::Popup::menu(&resp).show(|ui| {
+        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+        for line in mailcraft_model::PALETTE.chunks(6) {
+            ui.horizontal(|ui| {
+                for choice in line {
+                    let (cell, cell_resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                    let current = Some(*choice) == color;
+                    ui.painter().rect(
+                        cell,
+                        4.0,
+                        crate::theme::c32(*choice),
+                        Stroke::new(if current { 2.0 } else { 1.0 }, if current || cell_resp.hovered() { t.text } else { t.border_strong }),
+                        egui::StrokeKind::Inside,
+                    );
+                    if cell_resp.clicked() {
+                        picked = Some(Some(*choice));
+                    }
+                }
+            });
+        }
+        if let Some(none) = none
+            && ui.add_enabled(color.is_some(), egui::Button::new(none)).clicked()
+        {
+            picked = Some(None);
+        }
+    });
+    picked
 }
 
 #[cfg(test)]
