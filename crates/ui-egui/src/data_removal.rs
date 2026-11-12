@@ -147,6 +147,8 @@ const IDLE_WAIT: std::time::Duration = if cfg!(test) { std::time::Duration::from
 
 impl MailApp {
     /// `ui.removeAllData`: remove all of MailCraft's data from this computer, then quit.
+    // //// Neoffice — a desktop's alone: it needs the host's `data_wipe` and `saver`, which the browser build has none of.
+    #[allow(clippy::disallowed_methods)]
     pub(crate) fn remove_all_data(&mut self) -> Result<Value, String> {
         if self.data_removed {
             return Err(tl!("MailCraft's data has been removed already").to_string());

@@ -71,6 +71,8 @@ fn read(store: &dyn SecretStore, asks: Vec<Ask>, migrated: bool) -> SecretRead {
 impl MailApp {
     /// Start reading the store for this mailbox's accounts, unless a read is under way.
     /// `migrate`: move secrets kept under their old names first.
+    // //// Neoffice — a desktop's alone: it reads a store of the system's (`services.secrets`), which the browser build has none of.
+    #[allow(clippy::disallowed_methods)]
     pub(crate) fn start_secret_read(&mut self, migrate: bool) {
         // (Nothing is read for a mailbox whose servers nobody has confirmed: one from a file, or
         // one where two accounts have the same address, AU3-03.)

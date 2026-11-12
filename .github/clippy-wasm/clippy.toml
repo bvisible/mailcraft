@@ -1,0 +1,23 @@
+# //// Neoffice — added file (no upstream equivalent)
+# What the browser build (wasm32-unknown-unknown) must never call: std has no clock there, and `Instant::now()` or
+# `SystemTime::now()` panics ("time not implemented on this platform") at the first frame that reaches it. Upstream's
+# 0.12.0 web build died that way in `poll_sync`, and nothing but a run in a browser found it. Read by the wasm clippy
+# pass of `.github/workflows/neoffice-ci.yml` alone (`CLIPPY_CONF_DIR`); the browser's own clock is `mailcraft_time::now`
+# and `mailcraft_ui_egui::now_ms`.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+disallowed-methods = [
+    { path = "std::time::Instant::now", reason = "panics on wasm32-unknown-unknown: use mailcraft_time::now / mailcraft_ui_egui::now_ms, or gate the code with #[cfg(not(target_arch = \"wasm32\"))]" },
+    { path = "std::time::SystemTime::now", reason = "panics on wasm32-unknown-unknown: use mailcraft_time::now / mailcraft_ui_egui::now_ms, or gate the code with #[cfg(not(target_arch = \"wasm32\"))]" },
+    { path = "std::thread::sleep", reason = "no thread to sleep on wasm32-unknown-unknown" },
+    { path = "std::thread::spawn", reason = "no threads on wasm32-unknown-unknown" },
+    { path = "std::thread::Builder::spawn", reason = "no threads on wasm32-unknown-unknown" },
+    { path = "std::thread::scope", reason = "no threads on wasm32-unknown-unknown" },
+    { path = "std::sync::mpsc::Receiver::recv", reason = "a blocking wait hangs the one thread of the page: use try_recv" },
+    { path = "std::sync::mpsc::Receiver::recv_timeout", reason = "a blocking wait hangs the one thread of the page: use try_recv" },
+    { path = "std::sync::Condvar::wait", reason = "a blocking wait hangs the one thread of the page" },
+    { path = "std::sync::Condvar::wait_timeout", reason = "a blocking wait hangs the one thread of the page" },
+    { path = "std::thread::JoinHandle::join", reason = "no threads on wasm32-unknown-unknown" },
+]

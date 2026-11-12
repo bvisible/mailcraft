@@ -240,6 +240,8 @@ mod hosted_signatures;
 // //// Neoffice — File › Info in a tab of a hosting page: its mailboxes are set up on its site, and their Settings open it.
 mod hosted_accounts;
 mod signatures;
+// //// Neoffice — a stopwatch that runs in the browser (`Instant::now()` panics there).
+mod stopwatch;
 mod symbol;
 mod sync_panel;
 pub mod task_sync;
@@ -4756,7 +4758,8 @@ impl MailApp {
         // What is waiting, taken in together, for as long as a frame can spare (#991): each time
         // reads the whole account and has the lists made again, whatever the pieces bring, and a
         // run with thousands of folders hands over a piece or more for each.
-        let started = std::time::Instant::now();
+        // //// Neoffice — the browser has no `Instant` (it panics at the first frame): the stopwatch reads the browser's clock there.
+        let started = stopwatch::Stopwatch::start();
         let mut first = true;
         while std::mem::take(&mut first) || started.elapsed() < SYNC_FRAME_BUDGET {
             // //// Neoffice — (a JMAP account's run has pieces of its own, polled apart: jmap_job.rs)

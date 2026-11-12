@@ -277,7 +277,8 @@ pub(super) fn info(app: &mut MailApp, ctx: &egui::Context, m: &Message) -> Optio
         }
     }
     // (Asked with the store let go of: the command is the engine's, and may take its time.)
-    let began = std::time::Instant::now();
+    // //// Neoffice — as `poll_sync`: the browser has no `Instant`, and a meeting's message is read there too.
+    let began = crate::stopwatch::Stopwatch::start();
     let info = engine_says(app, m.id).map(Arc::new);
     let slow = began.elapsed() > SLOW;
     let mut store = store.lock().unwrap_or_else(|e| e.into_inner());

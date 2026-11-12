@@ -211,8 +211,12 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 - `.github/workflows/neoffice-markers.yml`: the marker check above.
 - `.github/workflows/neoffice-ci.yml`: upstream's gate (`cargo xtask ci`, then `cargo xtask deny`) in one job on a GitHub
-  runner, and a `cargo check` of the web app for wasm32, which `cargo xtask wasm` leaves out; upstream's own workflows are
-  disabled on this fork.
+  runner, a `cargo check` of the web app for wasm32, which `cargo xtask wasm` leaves out, and a clippy pass over the same
+  build that refuses a call of what the browser lacks (`std::time::Instant::now`, `SystemTime::now`, a thread, a blocking wait:
+  `.github/clippy-wasm/clippy.toml`, read by that pass alone through `CLIPPY_CONF_DIR`). Upstream's 0.12.0 took the time with
+  `Instant::now()` in `poll_sync`, at every frame, and its browser build panicked at the first one ("time not implemented on
+  this platform"): `ui-egui/src/stopwatch.rs` reads the browser's clock there, in `poll_sync` and in the read of a meeting's
+  message (`reading/invitation.rs`, the same call since 0.10.0). Upstream's own workflows are disabled on this fork.
 - `.github/workflows/neoffice-web.yml`: the browser build by upstream's packaging script, kept as an artifact or published
   as a release (`web-<version>-<short sha>`).
 - `crates/jmap-fork/` (`mailcraft-jmap-fork`, layer 3, taken by the apps under the name `mailcraft-jmap`): this fork's

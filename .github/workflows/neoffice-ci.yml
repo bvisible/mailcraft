@@ -64,6 +64,14 @@ jobs:
       # globals) would otherwise be compiled only by the manual browser build (neoffice-web.yml).
       - name: The web app builds for wasm32
         run: cargo check --target wasm32-unknown-unknown -p mailcraft-web --locked
+      # Compiling for wasm32 says nothing of what a browser runs: std has no clock there, and `Instant::now()` panicked at
+      # the first frame of the 0.12.0 build, which every other gate passed. This pass refuses, in the code the browser build
+      # compiles, a call of what the browser lacks (a std clock, a thread, a blocking wait): `.github/clippy-wasm/clippy.toml`,
+      # read by this pass alone. A call a desktop host alone reaches says so with `#[allow(clippy::disallowed_methods)]`.
+      - name: The browser build calls no clock, thread or blocking wait that the browser lacks
+        env:
+          CLIPPY_CONF_DIR: ${{ github.workspace }}/.github/clippy-wasm
+        run: cargo clippy --target wasm32-unknown-unknown -p mailcraft-web --locked -- -A clippy::all -D clippy::disallowed_methods
       - name: Install cargo-deny 0.20.2 (SHA-256 pinned)
         run: |
           set -euo pipefail
