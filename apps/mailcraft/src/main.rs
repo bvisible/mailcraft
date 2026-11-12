@@ -856,6 +856,21 @@ fn favorites_refusal(refusal: mailcraft_net::oauth::FavoritesRefusal) -> String 
 const CALENDAR_BEHIND: i64 = 31 * 86_400;
 const CALENDAR_AHEAD: i64 = 366 * 86_400;
 
+// //// Neoffice — the clock the calendar's stretches are cut from: the system's, but in the tests of this crate the one their sessions run on
+// //// Neoffice — (`1_791_993_600`, 14 Oct 2026, the `NOW` of every flow test). They put their events on fixed days of October 2026, and the system's
+// //// Neoffice — clock moved past the last of them by more than CALENDAR_BEHIND on 12 Nov 2026 at 14:00 UTC, so a refresh no longer brought them down
+// //// Neoffice — (19 tests of `calendar_flow` failed from then on, in upstream's too). Remove when upstream's tests no longer read the system's clock.
+fn calendar_now() -> i64 {
+    #[cfg(test)]
+    {
+        1_791_993_600
+    }
+    #[cfg(not(test))]
+    {
+        mailcraft_time::now()
+    }
+}
+
 /// This machine's time zone by a name Microsoft Graph knows, for an upload that doesn't name
 /// the zone the calendar is shown in (the engine names it whenever it has a name: this is what
 /// is left for a zone it can't name); empty when the system doesn't say either. The name is the
@@ -1213,7 +1228,8 @@ fn graph_sending_with(mut request: GraphRequest, zone: &str, renew: Renew<'_>, r
         out.uploaded = Some(uploaded);
     }
     // The wide stretch with the contacts, every quarter of an hour; otherwise the days on screen.
-    let now = mailcraft_time::now();
+    // //// Neoffice — `calendar_now`, for the tests' fixed days (above).
+    let now = calendar_now();
     let stretch = if request.directory { Some((now - CALENDAR_BEHIND, now + CALENDAR_AHEAD)) } else { request.calendar };
     // A shared mailbox's calendars (#70): asked for and written at its own address, and only
     // those that are ticked are asked for (the window says which, in the asks); no contacts,
@@ -1593,7 +1609,8 @@ fn check_calendar_in(request: CalendarCheckRequest, zone: &str, offset_at: &dyn 
             }
         }
     }
-    let check = graph::check_calendar(&access, mailcraft_time::now(), zone, offset_at);
+    // //// Neoffice — `calendar_now`, as above.
+    let check = graph::check_calendar(&access, calendar_now(), zone, offset_at);
     (out.ok, out.cleaned_up, out.token_refused) = (check.ok(), check.cleaned_up, check.token_refused);
     out.steps = check
         .steps
