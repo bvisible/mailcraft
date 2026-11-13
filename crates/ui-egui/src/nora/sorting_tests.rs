@@ -1105,3 +1105,138 @@ fn the_plan_shown_while_she_reads_is_read_again_with_what_she_read() {
     take(&mut app);
     assert_eq!(made(&calls, PLAN).len(), plans);
 }
+
+// ---- a plan by party ----
+
+/// What `state` says where Nora files by party too: « Par tiers » first, the kinds it may keep, the server's ticked.
+pub(crate) fn with_parties(mut said: Value) -> Value {
+    let mut modes = vec![json!({"code": "parties", "label": "By party: clients, suppliers, leads"})];
+    modes.extend(said["modes"].as_array().cloned().unwrap_or_default());
+    said["modes"] = json!(modes);
+    said["party_types"] = json!([
+        {"code": "clients", "label": "Clients", "default": true},
+        {"code": "suppliers", "label": "Suppliers", "default": true},
+        {"code": "leads", "label": "Leads", "default": true},
+        {"code": "employees", "label": "Employees", "default": false}
+    ]);
+    said
+}
+
+/// What `survey` says of the parties that wrote, her reading done.
+pub(crate) fn survey_with_parties() -> Value {
+    let mut said = survey();
+    said["parties"] = json!([
+        {"code": "clients", "label": "Clients", "default": true, "entities": 22, "mails": 187},
+        {"code": "suppliers", "label": "Suppliers", "default": true, "entities": 8, "mails": 41},
+        {"code": "leads", "label": "Leads", "default": true, "entities": 3, "mails": 5},
+        {"code": "employees", "label": "Employees", "default": false, "entities": 0, "mails": 0}
+    ]);
+    said
+}
+
+/// A plan by party, a folder for each party (`per_entity`) or for its kind only, its counts final or still `counting`.
+pub(crate) fn party_plan(per_entity: bool, counting: bool) -> Value {
+    json!({
+        "account": BOX, "address": BOX, "status": "Proposed", "mode": "parties", "may_set": true, "keep_unread_hours": 24,
+        "per_entity": per_entity, "counting": counting,
+        "folders": [
+            {"folder": "Clients", "holds": "One folder per client", "count": 187, "takes": "clients", "entities": 22, "examples": []},
+            {"folder": "Fournisseurs", "holds": "One folder per supplier", "count": 41, "takes": "suppliers", "entities": 8, "examples": []},
+            {"folder": "Notifications", "holds": "Tools", "count": 316, "takes": "notifications"},
+            {"folder": "Factures reçues", "holds": "Invoices", "count": 18, "takes": "invoices"}
+        ],
+        "parties": {
+            "clients": {"shown": [{"name": "Atelier Exemple", "count": 33}, {"name": "Garage Exemple", "count": 14}], "more": 20, "more_count": 140, "total": 22, "mails": 187},
+            "suppliers": {"shown": [{"name": "Grossiste Exemple", "count": 12}], "more": 7, "more_count": 29, "total": 8, "mails": 41}
+        },
+        "reading": reading(if counting { "running" } else { "done" })
+    })
+}
+
+#[test]
+fn a_plan_by_party_is_read_field_by_field() {
+    let state = read_state(&with_parties(state(false, "", true)));
+    assert_eq!(state.modes[0].code, "parties");
+    let ticked: Vec<&str> = state.party_types.iter().filter(|p| p.default).map(|p| p.code.as_str()).collect();
+    assert_eq!(ticked, ["clients", "suppliers", "leads"]);
+    let survey = read_survey(&survey_with_parties());
+    assert_eq!(
+        survey.parties.iter().map(|p| (p.code.as_str(), p.entities, p.mails)).collect::<Vec<_>>()[..2],
+        [("clients", 22, 187), ("suppliers", 8, 41)]
+    );
+    let by_party = read_plan(&party_plan(true, true));
+    assert!(by_party.per_entity && by_party.counting);
+    assert_eq!((by_party.folders[1].takes.as_str(), by_party.folders[1].entities, by_party.folders[1].count), ("suppliers", 8, 41));
+    assert_eq!(by_party.parties_of("suppliers").map(|c| (c.shown.len(), c.more)), Some((1, 7)));
+    // A plan by client from before: its clients still said by `clients`.
+    assert!(read_plan(&plan("Proposed")).parties_of("clients").is_some_and(|c| c.shown.len() == 2));
+    // A kind that is no code, and no words: none.
+    let odd = read_state(&json!({"party_types": [{"code": "Fournisseurs!", "label": "x"}, {"code": "suppliers", "label": ""}, 3]}));
+    assert!(odd.party_types.is_empty());
+}
+
+#[test]
+fn a_plan_by_party_is_asked_after_nora_s_question_with_the_kinds_ticked_and_the_depth_chosen() {
+    let (mut app, calls) = hosted();
+    take(&mut app);
+    reply(&calls, STATE, 200, ok(with_parties(state(false, "", true))));
+    take(&mut app);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(with_parties(state(false, "", true))));
+    reply(&calls, SURVEY, 200, ok(survey_with_parties()));
+    take(&mut app);
+    let parties = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
+    act(&mut app, Intent::Choose(parties));
+    // She asks first: nothing proposed, the server's kinds ticked.
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.party_types.clone()), (Stage::Parties, vec!["clients".to_string(), "suppliers".into(), "leads".into()]));
+    assert!(made(&calls, PROPOSE).is_empty());
+    // The person ticks the employees, unticks the leads, and wants a folder for each kind only.
+    act(&mut app, Intent::PartyType("employees".into()));
+    act(&mut app, Intent::PartyType("leads".into()));
+    act(&mut app, Intent::PerEntity(false));
+    assert_eq!(
+        made(&calls, PROPOSE),
+        vec![json!({"account": BOX, "mode": "parties", "types": ["clients", "suppliers", "employees"], "per_entity": 0, "keep_unread": 1})]
+    );
+    reply(&calls, PROPOSE, 200, ok(party_plan(false, true)));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.per_entity), (Stage::Plan, Some(false)));
+    // Its counts still growing (`counting`), it is read again with what she read, her reading of the survey done or not.
+    let plans = made(&calls, PLAN).len();
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, PLAN).len(), plans + 1);
+    reply(&calls, PLAN, 200, ok(party_plan(false, false)));
+    reply(&calls, SURVEY, 200, ok(survey_with_parties()));
+    take(&mut app);
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, PLAN).len(), plans + 1, "counted: read no more");
+    // No kind ticked: nothing asked.
+    act(&mut app, Intent::NewPlan);
+    let parties = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
+    act(&mut app, Intent::Choose(parties));
+    for kind in ["clients", "suppliers", "leads"] {
+        act(&mut app, Intent::PartyType(kind.into()));
+    }
+    act(&mut app, Intent::PerEntity(true));
+    assert_eq!(made(&calls, PROPOSE).len(), 1);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Parties);
+}
+
+#[test]
+fn the_card_s_plan_by_party_asks_nora_s_question_first() {
+    let (mut app, calls) = with_state(false, "", true);
+    app.nora.sorting.boxes.get_mut(BOX).unwrap().state = Some(read_state(&with_parties(state(false, "", true))));
+    act(&mut app, Intent::Switch { account: BOX.into(), on: true });
+    app.nora.sorting.card.as_mut().unwrap().mode = "parties".into();
+    act(&mut app, Intent::Activate);
+    let mut started = with_parties(state(false, "", true));
+    started["needs_plan"] = json!(true);
+    reply(&calls, SWITCH, 200, ok(started));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Parties);
+    assert!(made(&calls, PROPOSE).is_empty());
+}

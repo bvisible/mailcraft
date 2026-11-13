@@ -48,7 +48,9 @@ fn window(app: MailApp, size: (f32, f32)) -> Window {
 
 /// The JSON of the server's answers, from the logic's tests.
 mod answers {
-    pub(crate) use super::super::super::sorting::tests::{first_reading, journal, plan, reading, state, survey, unread_state};
+    pub(crate) use super::super::super::sorting::tests::{
+        first_reading, journal, party_plan, plan, reading, state, survey, survey_with_parties, unread_state, with_parties,
+    };
 }
 
 /// A hosting page's tab, its Inbox in view, the server having said `state` of its mailbox (and the run of `latest`).
@@ -283,16 +285,35 @@ fn every_word_of_it_is_translated_in_every_language_of_the_fork() {
 
 /// What the server says in the person's language (its ways to file, its questions), in French.
 fn in_french(app: &mut MailApp) {
-    let french = [("clients", "Un dossier par client"), ("activity", "Par activité"), ("streams", "Notifications et newsletters seulement")];
+    let french = [
+        ("parties", "Par tiers : clients, fournisseurs, prospects"),
+        ("clients", "Un dossier par client"),
+        ("activity", "Par activité"),
+        ("streams", "Notifications et newsletters seulement"),
+    ];
+    let kinds = [("clients", "Clients"), ("suppliers", "Fournisseurs"), ("leads", "Prospects"), ("employees", "Employés")];
+    let say = |code: &str, words: &[(&str, &str)]| words.iter().find(|(c, _)| *c == code).map(|(_, w)| (*w).to_string());
     if let Some(state) = app.nora.sorting.boxes.get_mut(BOX).and_then(|k| k.state.as_mut()) {
         for mode in &mut state.modes {
-            if let Some((_, label)) = french.iter().find(|(code, _)| *code == mode.code) {
-                mode.label = (*label).to_string();
+            if let Some(label) = say(&mode.code, &french) {
+                mode.label = label;
+            }
+        }
+        for kind in &mut state.party_types {
+            if let Some(label) = say(&kind.code, &kinds) {
+                kind.label = label;
             }
         }
     }
-    if let Some(chosen) = app.nora.sorting.flow.as_mut().and_then(|flow| flow.chosen.as_mut()) {
-        chosen.label = "Un dossier par client".into();
+    if let Some(flow) = app.nora.sorting.flow.as_mut() {
+        if let Some(chosen) = flow.chosen.as_mut() {
+            chosen.label = say(&chosen.code, &french).unwrap_or_else(|| "Un dossier par client".into());
+        }
+        for kind in flow.survey.iter_mut().flat_map(|s| s.parties.iter_mut()) {
+            if let Some(label) = say(&kind.code, &kinds) {
+                kind.label = label;
+            }
+        }
     }
     for ask in &mut app.nora.sorting.questions.list {
         if ask.name == "ASK-1" {
@@ -326,6 +347,8 @@ fn sorting_screens_in_french() {
             "9-range-en-lisant",
             "10-sans-droit",
             "11-refus",
+            "12-par-tiers-question",
+            "13-par-tiers-plan",
         ] {
             let mut app = match screen {
                 "1-bouton-bandeau" => hosted(answers::state(true, "validated", true), true),
@@ -353,6 +376,8 @@ fn sorting_screens_in_french() {
                     app
                 }
                 "9-range-en-lisant" => tidying_as_she_reads(),
+                "12-par-tiers-question" => asking_parties(),
+                "13-par-tiers-plan" => party_planned(true, true),
                 "10-sans-droit" => unstarted(),
                 "7-question-dossier" => {
                     // The result's « Nora vous demande »: a folder question still open, the answer to another with the
@@ -399,7 +424,7 @@ fn sorting_screens_in_french() {
                 app.nora.sorting.flow.as_mut().unwrap().error = super::super::answer::sorting(&refused).err();
             }
             let _ = app.run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
-            let tall = matches!(screen, "3-conversation" | "4-resultat" | "7-question-dossier" | "9-range-en-lisant");
+            let tall = matches!(screen, "3-conversation" | "4-resultat" | "7-question-dossier" | "9-range-en-lisant" | "13-par-tiers-plan");
             let mut h = window(app, (1440.0, if tall { 1150.0 } else { 900.0 }));
             h.run_steps(8);
             let image = h.render().expect("drawn");
@@ -564,4 +589,64 @@ fn the_plans_counts_are_said_to_be_provisional_while_she_reads() {
     assert!(has(&h, "File now"), "filing stays possible: she files as she reads");
     let h = window(in_flow(Stage::Plan, true), (1440.0, 1150.0));
     assert!(!contains(&h, "Provisional counts"));
+}
+
+/// Her pane on Nora's question before a plan by party, the server's kinds ticked.
+fn asking_parties() -> MailApp {
+    let mut app = in_flow(Stage::Parties, true);
+    let said = read_state(&answers::with_parties(answers::state(false, "", true)));
+    app.nora.sorting.boxes.insert(BOX.to_string(), Known::said(said.clone(), None));
+    let flow = app.nora.sorting.flow.as_mut().unwrap();
+    flow.chosen = Some(said.modes[0].clone());
+    flow.plan = None;
+    flow.survey = Some(read_survey(&answers::survey_with_parties()));
+    flow.party_types = vec!["clients".into(), "suppliers".into(), "leads".into()];
+    app
+}
+
+/// Her pane on a plan by party, a folder for each party or for its kind only, its counts final or still growing.
+fn party_planned(per_entity: bool, counting: bool) -> MailApp {
+    let mut app = asking_parties();
+    let flow = app.nora.sorting.flow.as_mut().unwrap();
+    flow.stage = Stage::Plan;
+    flow.per_entity = Some(per_entity);
+    flow.plan = Some(read_plan(&answers::party_plan(per_entity, counting)));
+    app
+}
+
+#[test]
+fn nora_asks_which_kinds_of_party_and_how_deep_before_a_plan_by_party() {
+    let mut h = window(asking_parties(), (1440.0, 1150.0));
+    assert!(contains(&h, "Among your correspondents I found: Clients 22, Suppliers 8 and Leads 3."));
+    assert!(contains(&h, "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them"));
+    assert!(contains(&h, "a notification a client sends goes to the client's folder"));
+    for kind in ["Clients · 22", "Suppliers · 8", "Leads · 3", "Employees"] {
+        assert!(has(&h, kind), "{kind}");
+    }
+    assert!(has(&h, "A subfolder for each client, supplier…") && has(&h, "Only a folder for each kind"));
+    // A kind ticked and the depth: the plan asked.
+    h.get_by_label("Employees").click();
+    h.run_steps(2);
+    assert!(h.state().nora.sorting.flow.as_ref().unwrap().party_types.contains(&"employees".to_string()));
+    h.get_by_label("Only a folder for each kind").click();
+    h.run_steps(2);
+    assert_eq!(h.state().nora.sorting.flow.as_ref().unwrap().stage, Stage::Proposing);
+}
+
+#[test]
+fn a_plan_by_party_shows_each_kind_with_its_parties_and_its_messages() {
+    let h = window(party_planned(true, false), (1440.0, 1150.0));
+    assert!(has(&h, "Clients › 22 entities") && has(&h, "Fournisseurs › 8 entities"));
+    assert!(contains(&h, "Atelier Exemple, Garage Exemple and 20 others"));
+    assert!(contains(&h, "A subfolder for each client, supplier…"), "the person's answer, as theirs");
+    assert!(!contains(&h, "Provisional counts"));
+    // A folder for each kind only; its counts still growing: said so.
+    let h = window(party_planned(false, true), (1440.0, 1150.0));
+    assert!(has(&h, "Clients · 22 entities") && contains(&h, "Provisional counts: I'm still reading your mailbox."));
+    assert!(has(&h, "File now"), "filing stays possible: she files as she reads");
+    // The journal says the suppliers' messages.
+    assert_eq!(
+        kinds_said(&[("suppliers".to_string(), 4), ("leads".to_string(), 1)].into_iter().collect()),
+        "4 messages from suppliers and 1 message from leads"
+    );
 }

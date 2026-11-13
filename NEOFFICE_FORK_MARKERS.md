@@ -313,7 +313,11 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   her reading (`state.tidy.waiting_for`) says « Nora range au fur et à mesure qu'elle lit », read at her reading's pace;
   a refusal is the server's sentence, never an HTTP code (`answer::sorting`). While she reads, the plan shown is read
   again with what she read (its counts brought up to date, not while the person changes it) and says its counts are
-  provisional; « Ranger maintenant » stays possible.
+  provisional; « Ranger maintenant » stays possible. A plan by party (`parties`, first of `state.modes`): Nora asks first
+  whom she found among the correspondents (`survey.parties`), the kinds to keep (`state.party_types`, the server's ticked)
+  and how deep (a subfolder for each party, or a folder for each kind only: `propose(types, per_entity)`); the plan shows
+  each kind with its parties and its messages (« Clients › 22 entités 187 », some by name) and is read again while its
+  counts grow (`plan.counting`); the journal names the suppliers', leads' and employees' messages.
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).

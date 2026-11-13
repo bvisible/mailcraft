@@ -105,6 +105,18 @@ pub(crate) struct Mode {
     pub(crate) label: String,
 }
 
+/// A kind of the ERP's parties (`state.party_types`, and `survey.parties` with how many wrote): `clients`, `suppliers`,
+/// `leads`, `employees`, its words in the site's language.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PartyType {
+    pub(crate) code: String,
+    pub(crate) label: String,
+    pub(crate) default: bool,
+    /// In `survey.parties`: how many parties of it wrote, and how many messages.
+    pub(crate) entities: u64,
+    pub(crate) mails: u64,
+}
+
 /// The tidying of the inbox (`state.tidy`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Tidy {
@@ -181,6 +193,8 @@ pub(crate) struct BoxState {
     /// Whether the Inbox has its tabs by kind of sender on this site.
     pub(crate) streams: bool,
     pub(crate) modes: Vec<Mode>,
+    /// The kinds of the ERP's parties a plan by party (`parties`) may keep, the server's choice ticked (`default`).
+    pub(crate) party_types: Vec<PartyType>,
     pub(crate) intervals: Vec<u64>,
     pub(crate) secretary: bool,
     /// Whether the caller may change anything (the person in charge of the box).
@@ -234,6 +248,8 @@ pub(crate) struct Survey {
     pub(crate) catch_up: String,
     /// Where her reading of these days stands (`null` without a secretary, and from a server older than it).
     pub(crate) reading: Option<Reading>,
+    /// Each kind of party that wrote: how many parties, how many messages.
+    pub(crate) parties: Vec<PartyType>,
 }
 
 impl Survey {
@@ -269,8 +285,11 @@ pub(crate) struct PlanFolder {
     pub(crate) folder: String,
     pub(crate) holds: String,
     pub(crate) count: u64,
-    /// What a rule sends there: `clients`, `notifications`, `newsletters`, `invoices`, `spam`, or "".
+    /// What a rule sends there: `clients`, `suppliers`, `leads`, `employees`, `notifications`, `newsletters`, `invoices`,
+    /// `spam`, or "".
     pub(crate) takes: String,
+    /// A kind of party's folder: how many parties it would receive (« Fournisseurs › 8 entités »).
+    pub(crate) entities: u64,
 }
 
 /// The clients whose mail a plan by client would file, each in a folder of its own (`plan.clients`).
@@ -299,6 +318,19 @@ pub(crate) struct Plan {
     pub(crate) waiting: String,
     /// Why the last plan by activity could not be made: `too few`, `model`, `empty`, `error`.
     pub(crate) error: String,
+    /// A plan by party: a folder of each party under the folder of its kind.
+    pub(crate) per_entity: bool,
+    /// The parties of each kind kept, as `clients` says the clients.
+    pub(crate) parties: BTreeMap<String, Clients>,
+    /// She still reads the mailbox: the counts grow (a plan by rules is counted again at each read).
+    pub(crate) counting: bool,
+}
+
+impl Plan {
+    /// The parties a folder that takes `takes` would get a folder each for: `parties`, or `clients` for the clients.
+    pub(crate) fn parties_of(&self, takes: &str) -> Option<&Clients> {
+        self.parties.get(takes).or(if takes == "clients" { self.clients.as_ref() } else { None })
+    }
 }
 
 /// A folder a run filed mail into.
@@ -478,12 +510,14 @@ pub(crate) fn read_state(m: &Value) -> BoxState {
         .take(6)
         .collect();
     let intervals = items(m, "intervals").filter_map(|n| n.as_u64()).filter(|n| (1..=1440).contains(n)).take(6).collect();
+    let party_types = read_party_types(m, "party_types");
     BoxState {
         address: text(m, "address"),
         available: flag(m, "available"),
         unavailable: status(m, "unavailable"),
         streams: flag(m, "streams"),
         modes,
+        party_types,
         intervals,
         secretary: flag(m, "secretary"),
         may_set: flag(m, "may_set"),
@@ -499,6 +533,21 @@ pub(crate) fn read_state(m: &Value) -> BoxState {
         last_run,
         needs_plan: flag(m, "needs_plan"),
     }
+}
+
+/// `state.party_types`, `survey.parties`: each a code, its words, whether the server ticks it, how many wrote.
+fn read_party_types(m: &Value, key: &str) -> Vec<PartyType> {
+    items(m, key)
+        .map(|p| PartyType {
+            code: text(p, "code"),
+            label: text(p, "label"),
+            default: flag(p, "default"),
+            entities: count(p, "entities"),
+            mails: count(p, "mails"),
+        })
+        .filter(|p| is_code(&p.code) && !p.label.is_empty())
+        .take(8)
+        .collect()
 }
 
 /// `state.tidy`, and the answers of `tidy` and `stop_tidy`.
@@ -540,20 +589,41 @@ pub(crate) fn read_survey(m: &Value) -> Survey {
         read_since: text(m, "read_since"),
         catch_up: status(m, "catch_up"),
         reading: m.get("reading").filter(|r| r.is_object()).map(read_reading),
+        parties: read_party_types(m, "parties"),
+    }
+}
+
+/// The parties a plan names for a kind (`plan.clients`, each of `plan.parties`).
+fn read_clients(c: &Value) -> Clients {
+    Clients {
+        shown: items(c, "shown").map(|s| (text(s, "name"), count(s, "count"))).filter(|(n, _)| !n.is_empty()).take(5).collect(),
+        more: count(c, "more"),
+        more_count: count(c, "more_count"),
     }
 }
 
 /// `plan`, and the answers of `propose` and `validate`.
 pub(crate) fn read_plan(m: &Value) -> Plan {
     let folders = items(m, "folders")
-        .map(|f| PlanFolder { folder: text(f, "folder"), holds: text(f, "holds"), count: count(f, "count"), takes: status(f, "takes") })
+        .map(|f| PlanFolder {
+            folder: text(f, "folder"),
+            holds: text(f, "holds"),
+            count: count(f, "count"),
+            takes: status(f, "takes"),
+            entities: count(f, "entities"),
+        })
         .filter(|f| !f.folder.is_empty())
         .collect();
-    let clients = m.get("clients").filter(|c| c.is_object()).map(|c| Clients {
-        shown: items(c, "shown").map(|s| (text(s, "name"), count(s, "count"))).filter(|(n, _)| !n.is_empty()).take(5).collect(),
-        more: count(c, "more"),
-        more_count: count(c, "more_count"),
-    });
+    let clients = m.get("clients").filter(|c| c.is_object()).map(read_clients);
+    let parties = m
+        .get("parties")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .take(8)
+        .filter(|(k, c)| is_code(k) && c.is_object())
+        .map(|(k, c)| (k.clone(), read_clients(c)))
+        .collect();
     Plan {
         status: status(m, "status"),
         mode: status(m, "mode"),
@@ -566,6 +636,9 @@ pub(crate) fn read_plan(m: &Value) -> Plan {
         waiting: status(m, "waiting"),
         // « too few » is `too_few`.
         error: status(m, "error"),
+        per_entity: flag(m, "per_entity"),
+        parties,
+        counting: flag(m, "counting"),
     }
 }
 
@@ -722,6 +795,8 @@ pub(crate) enum Stage {
     Loading,
     /// « Comment voulez-vous que je range ? »
     Choose,
+    /// A plan by party: which kinds of party, and a folder for each party or for its kind only?
+    Parties,
     /// « Je vous explique »: the person's own words for a plan by activity.
     Explain,
     /// The plan is being made.
@@ -754,6 +829,12 @@ pub(crate) struct Flow {
     pub(crate) journal: Option<Journal>,
     /// The way to file the person chose (its words are shown as theirs).
     pub(crate) chosen: Option<Mode>,
+    /// A plan by party: the kinds of party ticked (the server's, at first), and the person's answer to « a folder for each
+    /// party, or for its kind only? » (`per_entity`).
+    pub(crate) party_types: Vec<String>,
+    pub(crate) per_entity: Option<bool>,
+    /// What the plan was last asked with (`propose`), to ask it again the same way.
+    proposed: Option<Value>,
     /// Their own words for a plan by activity.
     pub(crate) wishes: String,
     /// The plan as they are changing it.
@@ -812,6 +893,9 @@ impl Flow {
             read_from: now,
             survey_next: now + SURVEY_EVERY_MS,
             filing: false,
+            party_types: Vec::new(),
+            per_entity: None,
+            proposed: None,
         }
     }
 
@@ -937,6 +1021,10 @@ pub(crate) enum Intent {
     /// Leave the flow: her conversation again.
     Back,
     Choose(Mode),
+    /// A plan by party: a kind of party ticked or unticked; the answer to « a folder for each party, or for its kind
+    /// only? », which asks for the plan.
+    PartyType(String),
+    PerEntity(bool),
     /// « Je vous explique ».
     Explain,
     /// A plan by activity, after the person's words.
@@ -1066,10 +1154,12 @@ fn follow_flow(app: &mut MailApp, now: f64) -> Option<f64> {
     let flow = app.nora.sorting.flow.as_mut()?;
     let account = flow.account.clone();
     // Read again while she reads now; not while the inbox is tidied (the state says how far her reading is then).
+    // A plan by rules is counted again at each read while she reads (`counting`): read again at the same pace.
+    let counting = flow.stage == Stage::Plan && flow.plan.as_ref().is_some_and(|p| p.counting) && now - flow.read_from < SURVEY_GIVE_UP_MS;
     let reading = flow.surveyed
         && !flow.journal_first
         && flow.stage != Stage::Tidying
-        && flow.survey.as_ref().is_some_and(|s| s.read_again(flow.read_from, now));
+        && (counting || flow.survey.as_ref().is_some_and(|s| s.read_again(flow.read_from, now)));
     let read_again = reading && now >= flow.survey_next;
     if read_again {
         flow.survey_next = now + SURVEY_EVERY_MS;
@@ -1357,7 +1447,7 @@ fn read_now(app: &mut MailApp, account: &str, result: Result<Value, String>, sta
             if moved {
                 let empty = flow.plan.as_ref().is_some_and(|p| p.folders.is_empty() && p.status != "validated");
                 match (flow.stage, flow.chosen.as_ref()) {
-                    (Stage::Plan, Some(mode)) if empty && mode.code != "activity" => then = Some((PROPOSE, mode.code.clone())),
+                    (Stage::Plan, Some(mode)) if empty && mode.code != "activity" => then = Some((PROPOSE, String::new())),
                     (Stage::Done, _) => then = Some((JOURNAL, String::new())),
                     _ => {}
                 }
@@ -1369,12 +1459,13 @@ fn read_now(app: &mut MailApp, account: &str, result: Result<Value, String>, sta
     settle(flow, state.as_ref(), now);
     let account = account.to_string();
     match then {
-        Some((PROPOSE, mode)) => {
-            if let Some(flow) = flow_of(app, &account) {
-                flow.enter(Stage::Proposing, now);
-                flow.next = now + PLAN_EVERY_MS;
-            }
-            call(app, PROPOSE, json!({"account": account, "mode": mode, "keep_unread": 1}), Asking::Propose(account.clone()));
+        Some((PROPOSE, _)) => {
+            // The same way as it was asked (a plan by party: its kinds and its depth).
+            let mode = flow_of(app, &account).and_then(|f| f.chosen.as_ref()).map(|m| m.code.clone()).unwrap_or_default();
+            let args = flow_of(app, &account)
+                .and_then(|f| f.proposed.clone())
+                .unwrap_or_else(|| json!({"account": account, "mode": mode, "keep_unread": 1}));
+            propose(app, &account, args, now);
         }
         Some(_) => {
             call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account.clone()));
@@ -1405,6 +1496,16 @@ fn begun(app: &mut MailApp, account: &str, result: Result<Value, String>, status
             read_now(app, account, result, status, now);
         }
     }
+}
+
+/// Ask for a plan (`propose`) with `args`, kept to ask it again the same way; the flow waits for it.
+fn propose(app: &mut MailApp, account: &str, args: Value, now: f64) {
+    if let Some(flow) = flow_of(app, account) {
+        flow.proposed = Some(args.clone());
+        flow.enter(Stage::Proposing, now);
+        flow.next = now + PLAN_EVERY_MS;
+    }
+    call(app, PROPOSE, args, Asking::Propose(account.to_string()));
 }
 
 /// The flow's mailbox, read: what Nora read of it (`survey`) where she has a secretary for it; where she has none (the
@@ -1607,6 +1708,17 @@ fn switched(app: &mut MailApp, account: &str, after: AfterSwitch, result: Result
     let needs_plan = state.needs_plan;
     app.nora.sorting.boxes.entry(account.to_string()).or_default().state = Some(state.clone());
     match after {
+        AfterSwitch::FromCard(mode) if needs_plan && mode == "parties" => {
+            // A plan by party: Nora asks first, in the flow (which kinds, how deep).
+            app.nora.sorting.card = None;
+            open(app, account, false);
+            if let Some(flow) = flow_of(app, account) {
+                flow.on_intent = true;
+            }
+            if let Some(chosen) = state.modes.iter().find(|m| m.code == mode).cloned() {
+                act(app, Intent::Choose(chosen));
+            }
+        }
         AfterSwitch::FromCard(mode) => {
             app.nora.sorting.card = None;
             if needs_plan {
@@ -1740,16 +1852,57 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
     match intent {
         Intent::Open { account, journal } => open(app, &account, journal),
         Intent::Back => app.nora.sorting.flow = None,
+        Intent::Choose(mode) if mode.code == "parties" => {
+            // Nora asks first: which kinds of party (the server's ticked), and how deep.
+            let Some(account) = flow_account else { return };
+            let ticked: Vec<String> = app
+                .nora
+                .sorting
+                .available(&account)
+                .map(|s| s.party_types.iter().filter(|p| p.default).map(|p| p.code.clone()).collect())
+                .unwrap_or_default();
+            if let Some(flow) = app.nora.sorting.flow.as_mut() {
+                flow.error = None;
+                flow.said = None;
+                flow.chosen = Some(mode);
+                flow.party_types = ticked;
+                flow.per_entity = None;
+                flow.enter(Stage::Parties, now);
+            }
+        }
         Intent::Choose(mode) => {
             let Some(account) = flow_account else { return };
             if let Some(flow) = app.nora.sorting.flow.as_mut() {
                 flow.error = None;
                 flow.said = None;
                 flow.chosen = Some(mode.clone());
-                flow.enter(Stage::Proposing, now);
-                flow.next = now + PLAN_EVERY_MS;
+                flow.per_entity = None;
             }
-            call(app, PROPOSE, json!({"account": account, "mode": mode.code, "keep_unread": 1}), Asking::Propose(account));
+            propose(app, &account, json!({"account": account, "mode": mode.code, "keep_unread": 1}), now);
+        }
+        Intent::PartyType(code) => {
+            if let Some(flow) = app.nora.sorting.flow.as_mut().filter(|f| f.stage == Stage::Parties) {
+                if let Some(at) = flow.party_types.iter().position(|c| *c == code) {
+                    flow.party_types.remove(at);
+                } else {
+                    flow.party_types.push(code);
+                }
+            }
+        }
+        Intent::PerEntity(per_entity) => {
+            let Some(account) = flow_account else { return };
+            // The kinds ticked, in the server's order; none ticked: nothing asked.
+            let order: Vec<String> =
+                app.nora.sorting.available(&account).map(|s| s.party_types.iter().map(|p| p.code.clone()).collect()).unwrap_or_default();
+            let Some(flow) = app.nora.sorting.flow.as_mut().filter(|f| f.stage == Stage::Parties) else { return };
+            let types: Vec<String> = order.into_iter().filter(|c| flow.party_types.contains(c)).collect();
+            if types.is_empty() {
+                return;
+            }
+            flow.per_entity = Some(per_entity);
+            flow.error = None;
+            let args = json!({"account": account, "mode": "parties", "types": types, "per_entity": u8::from(per_entity), "keep_unread": 1});
+            propose(app, &account, args, now);
         }
         Intent::Explain => {
             if let Some(flow) = app.nora.sorting.flow.as_mut() {
@@ -1764,9 +1917,7 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
             let label = if wishes.is_empty() { tl!("Let me explain").to_string() } else { wishes.clone() };
             flow.chosen = Some(Mode { code: "activity".into(), label });
             flow.error = None;
-            flow.enter(Stage::Proposing, now);
-            flow.next = now + PLAN_EVERY_MS;
-            call(app, PROPOSE, json!({"account": account, "mode": "activity", "wishes": wishes, "keep_unread": 1}), Asking::Propose(account));
+            propose(app, &account, json!({"account": account, "mode": "activity", "wishes": wishes, "keep_unread": 1}), now);
         }
         Intent::Edit => {
             if let Some(flow) = app.nora.sorting.flow.as_mut()
@@ -1792,6 +1943,7 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
             if let Some(flow) = app.nora.sorting.flow.as_mut() {
                 flow.editing = None;
                 flow.chosen = None;
+                flow.per_entity = None;
                 flow.enter(Stage::Choose, now);
             }
         }

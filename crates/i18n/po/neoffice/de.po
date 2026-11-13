@@ -4136,3 +4136,48 @@ msgstr "Nora konnte den Plan nach Tätigkeit nicht erstellen: Versuchen Sie es i
 # The counts of a plan shown while Nora still reads the mailbox.
 msgid "Provisional counts: I'm still reading your mailbox."
 msgstr "Vorläufige Zahlen: Ich lese Ihr Postfach noch."
+
+# A plan by party: Nora's question before it (the kinds of party, a folder for each party or for its kind only), the
+# parties a folder of the plan receives, and the messages of each kind in her journal.
+msgid "Among your correspondents I found: {list}."
+msgstr "Unter Ihren Korrespondenzpartnern habe ich gefunden: {list}."
+
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr "Soll ich für jede Art von Geschäftspartner (Kunden, Lieferanten…) einen Ordner mit einem Unterordner für jeden Einzelnen anlegen oder nur einen Ordner pro Art?"
+
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr "Die Rechnung eines Lieferanten kommt in die erhaltenen Rechnungen; eine Benachrichtigung, die ein Kunde sendet, kommt in den Ordner des Kunden."
+
+msgid "A subfolder for each client, supplier…"
+msgstr "Ein Unterordner pro Kunde, Lieferant…"
+
+msgid "Only a folder for each kind"
+msgstr "Nur ein Ordner pro Art"
+
+msgid "Another way to file"
+msgstr "Eine andere Art der Einordnung"
+
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] "{n} Geschäftspartner"
+msgstr[1] "{n} Geschäftspartner"
+
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] "{n} weiterer"
+msgstr[1] "{n} weitere"
+
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
+msgstr[0] "{n} Nachricht von Lieferanten"
+msgstr[1] "{n} Nachrichten von Lieferanten"
+
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] "{n} Nachricht von Interessenten"
+msgstr[1] "{n} Nachrichten von Interessenten"
+
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] "{n} Nachricht von Mitarbeitenden"
+msgstr[1] "{n} Nachrichten von Mitarbeitenden"

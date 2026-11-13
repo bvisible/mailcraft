@@ -629,6 +629,16 @@ msgid "A signature is open in File › Signatures: what Nora writes would go int
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "A subfolder for each client, supplier…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "A web address, an email address, a phone number (tel:) or another address such as ms-settings:network-vpn. With nothing selected, the address is put in as it is."
 msgstr ""
@@ -1127,6 +1137,11 @@ msgid "Always from @{domain}"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Among your correspondents I found: {list}."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/agent_gate.rs
 msgid "An Agent Is Asking"
 msgstr ""
@@ -1241,6 +1256,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 msgid "Another time was proposed to {name}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Another way to file"
 msgstr ""
 
 #. interface
@@ -8831,6 +8851,11 @@ msgid "Only a PDF or a picture goes to the scanned documents."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Only a folder for each kind"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/windows.rs
 msgid "Only a meeting you organize has Find a Time"
 msgstr ""
@@ -11491,6 +11516,11 @@ msgstr ""
 #. name
 #: crates/ui-egui/src/menubar.rs
 msgid "Settings…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
 msgstr ""
 
 #. ribbon
@@ -20412,6 +20442,13 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/lib.rs
 msgid "{n} event"
 msgid_plural "{n} events"
@@ -20649,6 +20686,27 @@ msgstr[1] ""
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "{n} message from clients"
 msgid_plural "{n} messages from clients"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -20910,6 +20968,13 @@ msgstr[1] ""
 #: crates/ui-egui/src/chrome.rs
 msgid "{n} open task"
 msgid_plural "{n} open tasks"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} other"
+msgid_plural "{n} others"
 msgstr[0] ""
 msgstr[1] ""
 

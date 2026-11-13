@@ -692,6 +692,16 @@ msgid "A signature is open in File › Signatures: what Nora writes would go int
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "A subfolder for each client, supplier…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "A web address, an email address, a phone number (tel:) or another address such as ms-settings:network-vpn. With nothing selected, the address is put in as it is."
 msgstr ""
@@ -1271,6 +1281,11 @@ msgid "Always from @{domain}"
 msgstr "Immer von @{domain}"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Among your correspondents I found: {list}."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/agent_gate.rs
 #, fuzzy
 msgid "An Agent Is Asking"
@@ -1396,6 +1411,11 @@ msgstr "Andere Zeit vorgeschlagen: {title}"
 #, fuzzy
 msgid "Another time was proposed to {name}"
 msgstr "{name} wurde eine andere Zeit vorgeschlagen"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Another way to file"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/report_problem.rs
@@ -9867,6 +9887,11 @@ msgid "Only a PDF or a picture goes to the scanned documents."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Only a folder for each kind"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/windows.rs
 msgid "Only a meeting you organize has Find a Time"
 msgstr ""
@@ -12848,6 +12873,11 @@ msgstr "Einstellungen"
 #: crates/ui-egui/src/menubar.rs
 msgid "Settings…"
 msgstr "Einstellungen …"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -22626,6 +22656,13 @@ msgstr[0] "{n} heruntergeladenes Bild ist auf diesem Computer gespeichert ({size
 msgstr[1] "{n} heruntergeladene Bilder sind auf diesem Computer gespeichert ({size})."
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "{n} event"
@@ -22874,6 +22911,27 @@ msgstr[1] ""
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "{n} message from clients"
 msgid_plural "{n} messages from clients"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -23153,6 +23211,13 @@ msgid "{n} open task"
 msgid_plural "{n} open tasks"
 msgstr[0] "{n} offene Aufgabe"
 msgstr[1] "{n} offene Aufgaben"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs

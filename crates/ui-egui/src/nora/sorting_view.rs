@@ -367,12 +367,20 @@ fn when_short(started: &str, today: Date) -> String {
 /// What a run filed, by kind: « 18 notifications, 6 newsletters et 5 messages de clients ».
 pub(crate) fn kinds_said(kinds: &BTreeMap<String, u64>) -> String {
     let n = |k: &str| kinds.get(k).copied().unwrap_or(0);
-    let other: u64 =
-        kinds.iter().filter(|(k, _)| !matches!(k.as_str(), "notifications" | "newsletters" | "clients" | "invoices" | "inbox")).map(|(_, n)| n).sum();
+    let other: u64 = kinds
+        .iter()
+        .filter(|(k, _)| {
+            !matches!(k.as_str(), "notifications" | "newsletters" | "clients" | "suppliers" | "leads" | "employees" | "invoices" | "inbox")
+        })
+        .map(|(_, n)| n)
+        .sum();
     let parts: Vec<String> = [
         (n("notifications"), tln!(n("notifications"), "{n} notification", "{n} notifications")),
         (n("newsletters"), tln!(n("newsletters"), "{n} newsletter", "{n} newsletters")),
         (n("clients"), tln!(n("clients"), "{n} message from clients", "{n} messages from clients")),
+        (n("suppliers"), tln!(n("suppliers"), "{n} message from suppliers", "{n} messages from suppliers")),
+        (n("leads"), tln!(n("leads"), "{n} message from leads", "{n} messages from leads")),
+        (n("employees"), tln!(n("employees"), "{n} message from employees", "{n} messages from employees")),
         (n("invoices"), tln!(n("invoices"), "{n} invoice", "{n} invoices")),
         (n("inbox"), tln!(n("inbox"), "{n} message back in the inbox", "{n} messages back in the inbox")),
         (other, tln!(other, "{n} other message", "{n} other messages")),
@@ -621,6 +629,14 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
                 intent = Some(Intent::KeepPlan);
             }
         }
+        Stage::Parties if may_set => {
+            if let Some(chosen) = &flow.chosen {
+                mine(ui, &ds, &chosen.label);
+            }
+            if let Some(asked) = parties_question(ui, &ds, flow, state, enabled) {
+                intent = Some(asked);
+            }
+        }
         Stage::Explain if may_set => {
             hers(ui, &ds, |ui| {
                 said(ui, &ds, tl!("Tell me how you file your mail: by activity, by kind of document, what goes where."));
@@ -640,9 +656,15 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
         _ => {}
     }
     if let Some(chosen) = &flow.chosen
-        && !matches!(flow.stage, Stage::Choose | Stage::Explain)
+        && !matches!(flow.stage, Stage::Choose | Stage::Explain | Stage::Parties)
     {
         mine(ui, &ds, &chosen.label);
+        // A plan by party: the person's answer to her question, as theirs.
+        if chosen.code == "parties"
+            && let Some(per_entity) = flow.per_entity
+        {
+            mine(ui, &ds, depth_words(per_entity));
+        }
     }
     if flow.stage == Stage::Proposing {
         let seconds = ((crate::now_ms() - flow.since) / 1000.0).max(0.0) as u64;
@@ -775,6 +797,85 @@ fn joined(said: String, then: &str) -> String {
     if said.ends_with('.') { format!("{said} {then}") } else { format!("{said} · {then}") }
 }
 
+/// The person's answer to « a folder for each party, or for its kind only? ».
+fn depth_words(per_entity: bool) -> &'static str {
+    if per_entity { tl!("A subfolder for each client, supplier…") } else { tl!("Only a folder for each kind") }
+}
+
+/// Nora's question before a plan by party: whom she found among the correspondents (`survey.parties`), the kinds to keep
+/// (ticked as the server ticks them, each with how many wrote), and how deep; then the plan is asked.
+fn parties_question(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>, enabled: bool) -> Option<Intent> {
+    let mut intent = None;
+    let found = flow.survey.as_ref().map(|s| s.parties.iter().filter(|p| p.entities > 0).collect::<Vec<_>>()).unwrap_or_default();
+    hers(ui, ds, |ui| {
+        if !found.is_empty() {
+            let named: Vec<String> = found.iter().map(|p| format!("{} {}", p.label, p.entities)).collect();
+            let list = match named.split_last() {
+                Some((last, [])) => last.clone(),
+                Some((last, rest)) => fmt(tl!("{list} and {last}"), &[("list", &rest.join(", ")), ("last", last)]),
+                None => String::new(),
+            };
+            said(ui, ds, &fmt(tl!("Among your correspondents I found: {list}."), &[("list", &list)]));
+        }
+        said(
+            ui,
+            ds,
+            tl!(
+                "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+            ),
+        );
+        note(ui, ds, tl!("A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."));
+    });
+    if let Some(kinds) = state.map(|s| &s.party_types) {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            for kind in kinds {
+                let wrote = found.iter().find(|p| p.code == kind.code).map(|p| p.entities);
+                let words = match wrote {
+                    Some(n) => format!("{} · {n}", kind.label),
+                    None => kind.label.clone(),
+                };
+                let ticked = flow.party_types.contains(&kind.code);
+                if chip(ui, ds, &words, ticked, enabled).clicked() {
+                    intent = Some(Intent::PartyType(kind.code.clone()));
+                }
+            }
+        });
+    }
+    let any = !flow.party_types.is_empty();
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+        for per_entity in [true, false] {
+            if secondary(ui, ds, depth_words(per_entity), enabled && any).clicked() {
+                intent = Some(Intent::PerEntity(per_entity));
+            }
+        }
+    });
+    if pane_link(ui, ds, tl!("Another way to file"), TextStyle::Button, 13.0).clicked() {
+        intent = Some(Intent::NewPlan);
+    }
+    intent
+}
+
+/// A kind of party's folder in the plan: « Clients › 22 entités  187 » (a subfolder each; its kind only: « Clients · 22
+/// entités »), and some of them by name.
+fn party_folder(ui: &mut Ui, ds: &Ds, plan: &Plan, folder: &sorting::PlanFolder) {
+    let entities = tln!(folder.entities, "{n} entity", "{n} entities");
+    let words = if plan.per_entity { format!("{} › {entities}", folder.folder) } else { format!("{} · {entities}", folder.folder) };
+    line(ui, ds, &words, Some(folder.count));
+    let Some(parties) = plan.parties_of(&folder.takes).filter(|c| !c.shown.is_empty()) else { return };
+    let mut named: Vec<String> = parties.shown.iter().map(|(name, _)| name.clone()).collect();
+    if parties.more > 0 {
+        named.push(tln!(parties.more, "{n} other", "{n} others"));
+    }
+    let list = match named.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => fmt(tl!("{list} and {last}"), &[("list", &rest.join(", ")), ("last", last)]),
+        None => return,
+    };
+    note(ui, ds, &list);
+}
+
 /// « Voici ce que je ferais : » and the plan's folders, with « Ranger maintenant » and « Modifier » while it may be acted on.
 fn plan_bubble(ui: &mut Ui, ds: &Ds, flow: &mut Flow, plan: &Plan, act: bool) -> Option<Intent> {
     let mut intent = None;
@@ -818,6 +919,11 @@ fn plan_bubble(ui: &mut Ui, ds: &Ds, flow: &mut Flow, plan: &Plan, act: bool) ->
             }
             None => {
                 for folder in &plan.folders {
+                    // A kind of party's folder: how many parties, how many messages, some of them by name.
+                    if folder.entities > 0 {
+                        party_folder(ui, ds, plan, folder);
+                        continue;
+                    }
                     match plan.clients.as_ref().filter(|c| folder.takes == "clients" && !c.shown.is_empty()) {
                         Some(clients) => {
                             for (name, count) in &clients.shown {
@@ -834,7 +940,7 @@ fn plan_bubble(ui: &mut Ui, ds: &Ds, flow: &mut Flow, plan: &Plan, act: bool) ->
             }
         }
         // Counts of what she has read so far, while she reads: said so, never shown as final.
-        if flow.reading(crate::now_ms()) {
+        if plan.counting || flow.reading(crate::now_ms()) {
             note(ui, ds, tl!("Provisional counts: I'm still reading your mailbox."));
         }
         let kept = if plan.keep_unread_hours > 0 {

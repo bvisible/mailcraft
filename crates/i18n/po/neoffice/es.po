@@ -4154,3 +4154,48 @@ msgstr "Nora no pudo hacer el plan por actividad: inténtalo de nuevo en un mome
 # The counts of a plan shown while Nora still reads the mailbox.
 msgid "Provisional counts: I'm still reading your mailbox."
 msgstr "Recuentos provisionales: todavía estoy leyendo tu buzón."
+
+# A plan by party: Nora's question before it (the kinds of party, a folder for each party or for its kind only), the
+# parties a folder of the plan receives, and the messages of each kind in her journal.
+msgid "Among your correspondents I found: {list}."
+msgstr "Entre tus correspondentes encontré: {list}."
+
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr "¿Creo una carpeta para cada tipo de tercero (Clientes, Proveedores…) con una subcarpeta para cada uno, o solo una carpeta por tipo?"
+
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr "La factura de un proveedor va a las facturas recibidas; una notificación que envía un cliente va a la carpeta del cliente."
+
+msgid "A subfolder for each client, supplier…"
+msgstr "Una subcarpeta por cliente, proveedor…"
+
+msgid "Only a folder for each kind"
+msgstr "Solo una carpeta por tipo"
+
+msgid "Another way to file"
+msgstr "Otra forma de clasificar"
+
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] "{n} tercero"
+msgstr[1] "{n} terceros"
+
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] "{n} otro"
+msgstr[1] "{n} otros"
+
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
+msgstr[0] "{n} mensaje de proveedores"
+msgstr[1] "{n} mensajes de proveedores"
+
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] "{n} mensaje de clientes potenciales"
+msgstr[1] "{n} mensajes de clientes potenciales"
+
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] "{n} mensaje de empleados"
+msgstr[1] "{n} mensajes de empleados"

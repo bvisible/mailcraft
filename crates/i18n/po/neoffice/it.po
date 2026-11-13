@@ -4152,3 +4152,48 @@ msgstr "Nora non è riuscita a fare il piano per attività: riprova tra poco opp
 # The counts of a plan shown while Nora still reads the mailbox.
 msgid "Provisional counts: I'm still reading your mailbox."
 msgstr "Conteggi provvisori: sto ancora leggendo la tua casella."
+
+# A plan by party: Nora's question before it (the kinds of party, a folder for each party or for its kind only), the
+# parties a folder of the plan receives, and the messages of each kind in her journal.
+msgid "Among your correspondents I found: {list}."
+msgstr "Tra i tuoi corrispondenti ho trovato: {list}."
+
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr "Creo una cartella per ogni tipo di soggetto (Clienti, Fornitori…) con una sottocartella per ciascuno, oppure solo una cartella per tipo?"
+
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr "La fattura di un fornitore va nelle fatture ricevute; una notifica inviata da un cliente va nella cartella del cliente."
+
+msgid "A subfolder for each client, supplier…"
+msgstr "Una sottocartella per ogni cliente, fornitore…"
+
+msgid "Only a folder for each kind"
+msgstr "Solo una cartella per tipo"
+
+msgid "Another way to file"
+msgstr "Un altro modo di smistare"
+
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] "{n} soggetto"
+msgstr[1] "{n} soggetti"
+
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] "{n} altro"
+msgstr[1] "{n} altri"
+
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
+msgstr[0] "{n} messaggio da fornitori"
+msgstr[1] "{n} messaggi da fornitori"
+
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] "{n} messaggio da potenziali clienti"
+msgstr[1] "{n} messaggi da potenziali clienti"
+
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] "{n} messaggio da dipendenti"
+msgstr[1] "{n} messaggi da dipendenti"

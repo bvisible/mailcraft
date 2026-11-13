@@ -484,3 +484,48 @@ msgstr "Nora kon het plan op activiteit niet maken: probeer het zo dadelijk opni
 # The counts of a plan shown while Nora still reads the mailbox.
 msgid "Provisional counts: I'm still reading your mailbox."
 msgstr "Voorlopige aantallen: ik lees uw postbus nog."
+
+# A plan by party: Nora's question before it (the kinds of party, a folder for each party or for its kind only), the
+# parties a folder of the plan receives, and the messages of each kind in her journal.
+msgid "Among your correspondents I found: {list}."
+msgstr "Onder uw correspondenten heb ik gevonden: {list}."
+
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr "Zal ik voor elk type relatie (Klanten, Leveranciers…) een map maken met een submap voor elk ervan, of alleen een map per type?"
+
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr "Een factuur van een leverancier gaat naar de ontvangen facturen; een melding die een klant stuurt, gaat naar de map van de klant."
+
+msgid "A subfolder for each client, supplier…"
+msgstr "Een submap per klant, leverancier…"
+
+msgid "Only a folder for each kind"
+msgstr "Alleen een map per type"
+
+msgid "Another way to file"
+msgstr "Een andere manier om te sorteren"
+
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] "{n} relatie"
+msgstr[1] "{n} relaties"
+
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] "{n} andere"
+msgstr[1] "{n} andere"
+
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
+msgstr[0] "{n} bericht van leveranciers"
+msgstr[1] "{n} berichten van leveranciers"
+
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] "{n} bericht van prospects"
+msgstr[1] "{n} berichten van prospects"
+
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] "{n} bericht van medewerkers"
+msgstr[1] "{n} berichten van medewerkers"

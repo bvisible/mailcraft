@@ -5121,3 +5121,48 @@ msgstr "Nora n’a pas pu faire le plan par activité : réessayez dans un momen
 # The counts of a plan shown while Nora still reads the mailbox.
 msgid "Provisional counts: I'm still reading your mailbox."
 msgstr "Comptes provisoires : je lis encore votre boîte."
+
+# A plan by party: Nora's question before it (the kinds of party, a folder for each party or for its kind only), the
+# parties a folder of the plan receives, and the messages of each kind in her journal.
+msgid "Among your correspondents I found: {list}."
+msgstr "Parmi vos correspondants, j’ai trouvé : {list}."
+
+msgid "Shall I make a folder for each kind of party (Clients, Suppliers…) with a subfolder for each of them, or only a folder for each kind?"
+msgstr "Je crée un dossier par type de tiers (Clients, Fournisseurs…) avec un sous-dossier pour chacun, ou seulement un dossier par type ?"
+
+msgid "A supplier's invoice goes to the invoices received; a notification a client sends goes to the client's folder."
+msgstr "La facture d’un fournisseur va dans les factures reçues ; une notification envoyée par un client va dans le dossier du client."
+
+msgid "A subfolder for each client, supplier…"
+msgstr "Un sous-dossier par client, fournisseur…"
+
+msgid "Only a folder for each kind"
+msgstr "Un dossier par type seulement"
+
+msgid "Another way to file"
+msgstr "Une autre façon de ranger"
+
+msgid "{n} entity"
+msgid_plural "{n} entities"
+msgstr[0] "{n} entité"
+msgstr[1] "{n} entités"
+
+msgid "{n} other"
+msgid_plural "{n} others"
+msgstr[0] "{n} autre"
+msgstr[1] "{n} autres"
+
+msgid "{n} message from suppliers"
+msgid_plural "{n} messages from suppliers"
+msgstr[0] "{n} message de fournisseurs"
+msgstr[1] "{n} messages de fournisseurs"
+
+msgid "{n} message from leads"
+msgid_plural "{n} messages from leads"
+msgstr[0] "{n} message de prospects"
+msgstr[1] "{n} messages de prospects"
+
+msgid "{n} message from employees"
+msgid_plural "{n} messages from employees"
+msgstr[0] "{n} message d’employés"
+msgstr[1] "{n} messages d’employés"
