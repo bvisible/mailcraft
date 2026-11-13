@@ -1155,7 +1155,7 @@ dependencies = [
 [[package]]
 name = "craft-nora"
 version = "0.1.0"
-source = "git+https://github.com/bvisible/craft-libs?rev=4864e32e56a8f6ce20c0e0e283f6fee0131030a0#4864e32e56a8f6ce20c0e0e283f6fee0131030a0"
+source = "git+https://github.com/bvisible/craft-libs?rev=324738706bc87d5cb8d87ab19414fd19c15eef34#324738706bc87d5cb8d87ab19414fd19c15eef34"
 dependencies = [
  "serde",
  "serde_json",
@@ -1164,10 +1164,13 @@ dependencies = [
 [[package]]
 name = "craft-nora-ui"
 version = "0.1.0"
-source = "git+https://github.com/bvisible/craft-libs?rev=4864e32e56a8f6ce20c0e0e283f6fee0131030a0#4864e32e56a8f6ce20c0e0e283f6fee0131030a0"
+source = "git+https://github.com/bvisible/craft-libs?rev=324738706bc87d5cb8d87ab19414fd19c15eef34#324738706bc87d5cb8d87ab19414fd19c15eef34"
 dependencies = [
  "craft-nora",
  "egui",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

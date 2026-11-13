@@ -472,3 +472,23 @@ fn an_appointment_card_that_comes_after_her_first_answer_is_shown() {
     perform(&mut app, outputs);
     assert!(!app.nora.assist.busy() && app.nora.assist.session.last_error().is_none());
 }
+
+/// The words the panel took from craft-libs 32473870 (its close button, its greeting, the line of what Nora is doing, the
+/// microphone's) are this fork's texts: each has its translation in every language of the fork's catalogues (`po/neoffice/`),
+/// read in what is compiled in, not only in the catalogues a merge regenerates.
+#[test]
+fn the_panels_own_words_are_translated_in_every_language_of_the_fork() {
+    let source = include_str!("assist.rs");
+    let start = source.find("fn pane_words() -> PaneWords {").expect("pane_words is in assist.rs");
+    let end = source.find("fn resume_words() -> ResumeWords {").expect("resume_words is in assist.rs");
+    let words: Vec<&str> = source[start..end].split("tl!(\"").skip(1).filter_map(|rest| rest.split_once("\")").map(|(text, _)| text)).collect();
+    assert!(words.len() >= 15, "the scan finds the panel's words: {words:?}");
+    use mailcraft_i18n::Lang;
+    for lang in [Lang::French, Lang::German, Lang::Spanish, Lang::Italian, Lang::Dutch] {
+        let catalogue = mailcraft_i18n::catalogue(lang).expect("the language is compiled in");
+        let missing: Vec<&&str> = words.iter().filter(|text| catalogue.get(text).is_none()).collect();
+        assert!(missing.is_empty(), "{lang:?} has no word for {missing:?}: add them to crates/i18n/po/neoffice/");
+    }
+    // The mail's words, not the document's that the panel says by default.
+    assert!(!words.iter().any(|w| w.contains("document")), "{words:?}");
+}

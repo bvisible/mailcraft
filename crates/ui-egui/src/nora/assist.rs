@@ -45,8 +45,8 @@ use std::time::Duration;
 use craft_nora::{
     AppKind, CommandPolicy, DocActionKind, DocumentInfo, HttpRequest, HttpResponse, Input, NoraError, NoraSession, Output, PageContext, SessionConfig,
 };
-use craft_nora_ui::{CorrectionWords, NoraLabels, NoraPanel, NoraStyle, PanelAction, ResumeWords};
-use egui::{Margin, RichText, Sense, Stroke, Ui, vec2};
+use craft_nora_ui::{ActivityWords, CorrectionWords, NoraLabels, NoraPanel, PaneWords, PanelAction, ResumeWords, VoiceWords};
+use egui::{Margin, RichText, Stroke, Ui};
 use mailcraft_engine::ComposeMode;
 use mailcraft_model::Id;
 use mailcraft_model::RichText as MailText;
@@ -164,7 +164,7 @@ impl Default for Assist {
             open: false,
             typing: false,
             session: NoraSession::new(config, PageContext::editor(AppKind::Mail, DocumentInfo::named(""))),
-            panel: NoraPanel::new().with_error_words(error_words),
+            panel: panel(),
             calls: Vec::new(),
             changes: Vec::new(),
             held: None,
@@ -180,6 +180,16 @@ impl Assist {
     pub(crate) fn busy(&self) -> bool {
         self.session.is_busy()
     }
+}
+
+/// The panel that draws her conversation: its own head (her sphere and her name, New conversation, and the close button the
+/// pane has no other of: [`side`]), in the interface's language. No microphone: the hosting page carries none of a dictation to
+/// her server (`nora.api.stt.transcribe` takes a form, which neither `/neomail` nor Neodesk's shell makes for NeoMail).
+fn panel() -> NoraPanel {
+    let mut panel = NoraPanel::new().with_error_words(error_words);
+    panel.closable = true;
+    panel.dictation = false;
+    panel
 }
 
 /// What the conversation refuses before an action reaches the pane.
@@ -237,8 +247,9 @@ fn close(app: &mut MailApp) {
     perform(app, outputs);
 }
 
-/// The pane at the right of the window, while it is open: its title with a close button, then the
-/// conversation. What the person did in it goes to the conversation at once.
+/// The pane at the right of the window, while it is open: the conversation, in the panel's own look (the Neoffice design
+/// system's: the paper, ink, Karla and Forum, her sphere), under its head with her name, New conversation and the close button;
+/// above it, the card of a write into a shared mailbox while it waits. What the person did in it goes to the conversation at once.
 pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     if !app.nora.assist.open || !available(app) {
         app.nora.assist.typing = false;
@@ -261,29 +272,37 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     } else {
         egui::Panel::right("nora_assistant").default_size(app.nora.assist.width).size_range(240.0..=widest).resizable(true)
     };
-    let drawn = panel.frame(egui::Frame::NONE.fill(t.panel).inner_margin(Margin::same(10)).stroke(Stroke::new(1.0, t.border))).show(ui, |ui| {
-        closing = title(ui, &t);
-        ui.add_space(4.0);
+    // No margin: the panel paints its own canvas and head; the side panel's line is the only one between it and the mail.
+    let drawn = panel.frame(egui::Frame::NONE.fill(t.panel)).show(ui, |ui| {
         if let Some(mailbox) = &held {
-            answered = shared_card(ui, &t, mailbox);
-            ui.add_space(6.0);
+            egui::Frame::NONE.inner_margin(Margin::same(10)).show(ui, |ui| answered = shared_card(ui, &t, mailbox));
         }
-        // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
-        let input = ui.scope_id().with("nora").with("input");
-        let assist = &mut app.nora.assist;
-        assist.panel.labels = labels();
-        assist.panel.resume_words = resume_words();
-        assist.panel.correction_words = correction_words();
-        assist.panel.style = style(&t);
-        assist.panel.open_links = opens;
-        // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
-        // come from a message rather than from her.
-        assist.panel.links_on_cards_only = true;
-        // The recipes, while there is nothing yet to read in the conversation: under the panel's header and in place of its
-        // hint (which they carry), a click asks what the person would have typed.
-        let mut empty = |ui: &mut Ui, hint: &str| recipes::show(ui, &t, hint);
-        actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
-        typing = ui.ctx().memory(|m| m.has_focus(input));
+        // The panel paints over all the room it is given: under the card, a room of its own, under an id of its own (the
+        // card coming and going moves neither its text box nor where its conversation was scrolled to).
+        let room = ui.available_rect_before_wrap();
+        ui.scope_builder(egui::UiBuilder::new().id_salt("nora_pane").max_rect(room), |ui| {
+            // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
+            let input = ui.make_persistent_id("nora").with("input");
+            let assist = &mut app.nora.assist;
+            assist.panel.labels = labels();
+            assist.panel.pane_words = pane_words();
+            assist.panel.activity_words = activity_words();
+            assist.panel.voice_words = voice_words();
+            assist.panel.resume_words = resume_words();
+            assist.panel.correction_words = correction_words();
+            assist.panel.closable = true;
+            assist.panel.dictation = false;
+            assist.panel.open_links = opens;
+            // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
+            // come from a message rather than from her.
+            assist.panel.links_on_cards_only = true;
+            // The recipes, while there is nothing yet to read in the conversation: under the panel's greeting and in place of
+            // its hint (which they carry), a click asks what the person would have typed.
+            let mut empty = |ui: &mut Ui, hint: &str| recipes::show(ui, &t, hint);
+            actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
+            closing = assist.panel.take_close_request();
+            typing = ui.ctx().memory(|m| m.has_focus(input));
+        });
     });
     if !narrowed {
         app.nora.assist.width = drawn.response.rect.width();
@@ -436,26 +455,12 @@ fn drop_held(app: &mut MailApp, why: String) -> Vec<Output> {
     }
 }
 
-/// The pane's title: Nora's sphere and her name, and a button that closes the pane. Whether it was clicked.
-fn title(ui: &mut Ui, t: &Tokens) -> bool {
-    let tone = look::tone(t);
-    let mut close = false;
-    ui.horizontal(|ui| {
-        let (mark, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-        look::orb(ui.painter(), mark, tone.orb);
-        ui.label(RichText::new(tl!("Nora")).font(semibold(13.0)).color(tone.text));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            close = crate::widgets::icon_button(ui, "close", tl!("Close Nora's pane"), 12.0, true).clicked();
-        });
-    });
-    close
-}
-
 /// The panel's words, in the interface's language. Its button says Ask, not Send: in a mail program, Send
 /// is the message's.
 fn labels() -> NoraLabels {
     NoraLabels {
-        title: String::new(),
+        // Her name, beside her sphere at the head of the panel: a name, the same in every language.
+        title: "Nora".into(),
         new_conversation: tl!("New conversation").into(),
         undo: tl!("Undo").into(),
         undo_hint: tl!("Take back the last thing Nora wrote in your message").into(),
@@ -470,6 +475,45 @@ fn labels() -> NoraLabels {
         refuse: tl!("Refuse").into(),
         open: tl!("Open").into(),
         describe,
+    }
+}
+
+/// The panel's close button, its greeting on an empty conversation and the button under what Nora changed, in the interface's
+/// language. No ready requests of the panel's: the recipes stand in their place ([`recipes::show`]).
+fn pane_words() -> PaneWords {
+    PaneWords {
+        close: tl!("Close").into(),
+        undo_change: tl!("Undo this change").into(),
+        greeting: tl!("How can I help?").into(),
+        suggestions: Vec::new(),
+    }
+}
+
+/// What the line under the conversation says of what Nora is doing, in the words of mail (the panel's own speak of a document),
+/// in the interface's language.
+fn activity_words() -> ActivityWords {
+    ActivityWords {
+        thinking: tl!("Nora is thinking…").into(),
+        reading: tl!("Nora is reading your mail…").into(),
+        writing: tl!("Nora is preparing the reply…").into(),
+        handing: tl!("Nora is finishing up…").into(),
+        // The symbol of the second, the same in every language.
+        seconds: "s".into(),
+    }
+}
+
+/// The microphone's words, in the interface's language: given for the day a hosting page carries a dictation (the pane offers
+/// none today, [`panel`]).
+fn voice_words() -> VoiceWords {
+    VoiceWords {
+        dictate: tl!("Dictate").into(),
+        stop: tl!("Stop and keep what you said").into(),
+        cancel: tl!("Cancel").into(),
+        transcribing: tl!("Writing down what you said…").into(),
+        nothing_heard: tl!("I did not hear anything. Try again, a little closer to the microphone.").into(),
+        denied: tl!("The microphone is blocked. Allow it for this page, then try again.").into(),
+        no_microphone: tl!("No microphone found on this computer.").into(),
+        failed: tl!("The dictation did not work. Try again, or type your request.").into(),
     }
 }
 
@@ -494,12 +538,6 @@ fn describe(kind: &DocActionKind) -> String {
         DocActionKind::Save => tl!("Save the message").to_string(),
         _ => tl!("Change the message you are writing").to_string(),
     }
-}
-
-/// The panel's colours: the window's own, with Nora's clay for her bubbles.
-fn style(t: &Tokens) -> NoraStyle {
-    let tone = look::tone(t);
-    NoraStyle { user_fill: Some(t.selection), user_text: Some(t.text), nora_fill: Some(tone.fill), nora_text: Some(t.text), ..NoraStyle::default() }
 }
 
 /// A failure of the connection to Nora, in the interface's language.

@@ -1881,8 +1881,46 @@ msgstr "Fragen"
 msgid "Change the message you are writing"
 msgstr "Die Nachricht ändern, die Sie schreiben"
 
-msgid "Close Nora's pane"
-msgstr "Noras Panel schliessen"
+# The words of Nora's pane since craft-libs 32473870 (its own head, greeting and line of what she is doing; the
+# microphone's, for the day the pane offers it).
+msgid "Undo this change"
+msgstr "Diese Änderung rückgängig machen"
+
+msgid "How can I help?"
+msgstr "Wie kann ich Ihnen helfen?"
+
+msgid "Nora is thinking…"
+msgstr "Nora denkt nach…"
+
+msgid "Nora is reading your mail…"
+msgstr "Nora liest Ihre E-Mails…"
+
+msgid "Nora is preparing the reply…"
+msgstr "Nora bereitet die Antwort vor…"
+
+msgid "Nora is finishing up…"
+msgstr "Nora schliesst ab…"
+
+msgid "Dictate"
+msgstr "Diktieren"
+
+msgid "Stop and keep what you said"
+msgstr "Beenden und Gesagtes behalten"
+
+msgid "Writing down what you said…"
+msgstr "Nora schreibt mit, was Sie gesagt haben…"
+
+msgid "I did not hear anything. Try again, a little closer to the microphone."
+msgstr "Ich habe nichts gehört. Versuchen Sie es erneut, etwas näher am Mikrofon."
+
+msgid "The microphone is blocked. Allow it for this page, then try again."
+msgstr "Das Mikrofon ist blockiert. Erlauben Sie es für diese Seite und versuchen Sie es erneut."
+
+msgid "No microphone found on this computer."
+msgstr "Auf diesem Computer wurde kein Mikrofon gefunden."
+
+msgid "The dictation did not work. Try again, or type your request."
+msgstr "Das Diktat hat nicht funktioniert. Versuchen Sie es erneut oder schreiben Sie Ihre Anfrage."
 
 msgid "New conversation"
 msgstr "Neue Unterhaltung"

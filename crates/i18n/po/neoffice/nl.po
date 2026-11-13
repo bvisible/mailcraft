@@ -29,3 +29,44 @@ msgstr "Selectie wissen"
 
 msgid "Set Streams"
 msgstr "Streams instellen"
+
+# The words of Nora's pane since craft-libs 32473870 (its own head, greeting and line of what she is doing; the
+# microphone's, for the day the pane offers it).
+msgid "Undo this change"
+msgstr "Deze wijziging ongedaan maken"
+
+msgid "How can I help?"
+msgstr "Hoe kan ik u helpen?"
+
+msgid "Nora is thinking…"
+msgstr "Nora denkt na…"
+
+msgid "Nora is reading your mail…"
+msgstr "Nora leest uw e-mail…"
+
+msgid "Nora is preparing the reply…"
+msgstr "Nora bereidt het antwoord voor…"
+
+msgid "Nora is finishing up…"
+msgstr "Nora rondt af…"
+
+msgid "Dictate"
+msgstr "Dicteren"
+
+msgid "Stop and keep what you said"
+msgstr "Stoppen en wat u gezegd hebt bewaren"
+
+msgid "Writing down what you said…"
+msgstr "Nora schrijft op wat u gezegd heeft…"
+
+msgid "I did not hear anything. Try again, a little closer to the microphone."
+msgstr "Ik heb niets gehoord. Probeer het opnieuw, iets dichter bij de microfoon."
+
+msgid "The microphone is blocked. Allow it for this page, then try again."
+msgstr "De microfoon is geblokkeerd. Sta hem toe voor deze pagina en probeer het daarna opnieuw."
+
+msgid "No microphone found on this computer."
+msgstr "Er is geen microfoon gevonden op deze computer."
+
+msgid "The dictation did not work. Try again, or type your request."
+msgstr "Het dicteren is niet gelukt. Probeer het opnieuw of typ uw verzoek."

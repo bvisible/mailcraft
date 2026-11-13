@@ -155,8 +155,11 @@ arboard = { version = "3.7", default-features = false }
 # //// Neoffice — replies and their card (crates/ui-egui/src/nora/ready.rs), and whose panel builds on
 # //// Neoffice — egui 0.36 (the editors) or 0.37 (here); both depend on egui alone, serde and serde_json.
 # //// Neoffice — The pane's empty conversation is the app's to draw there (`NoraPanel::show_with`: the recipes, recipes.rs).
-craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "4864e32e56a8f6ce20c0e0e283f6fee0131030a0" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "4864e32e56a8f6ce20c0e0e283f6fee0131030a0" }
+# //// Neoffice — 32473870 (craft-libs version-15, the revision the four editors pin): the pane in the Neoffice design system's look
+# //// Neoffice — (paper, ink, Karla and Forum, her sphere, the line that says what she is doing), its own head with a close
+# //// Neoffice — button (`closable`), and dictation, which NeoMail leaves off (`dictation = false`: its host has no door for it).
+craft-nora = { git = "https://github.com/bvisible/craft-libs", rev = "324738706bc87d5cb8d87ab19414fd19c15eef34" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "324738706bc87d5cb8d87ab19414fd19c15eef34" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

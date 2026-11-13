@@ -548,3 +548,27 @@ fn shots_of_nora() {
         }
     }
 }
+
+/// Her pane draws itself, in the Neoffice design system's look (craft-libs 32473870): its own head with her name, New
+/// conversation and a close button, which closes the pane; its greeting over the recipes; and its families (Karla, Forum)
+/// among the window's fonts, which the window's own fonts don't take away.
+#[test]
+fn the_pane_draws_its_own_head_and_greeting_and_its_close_button_closes_it() {
+    let (mut app, _, _) = page(true);
+    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+    let size = (1440.0, 900.0);
+    let mut harness = window(app, size);
+    harness.run_steps(4);
+    assert!(harness.query_by_label("How can I help?").is_some(), "the panel's greeting");
+    assert!(harness.query_by_label("Morning summary").is_some(), "the recipes under it");
+    assert!(harness.query_by_label("New conversation").is_some(), "the panel's head");
+    let families = harness.ctx.fonts(|fonts| fonts.definitions().families.keys().cloned().collect::<Vec<_>>());
+    for name in ["nora-sans", "nora-medium", "nora-title"] {
+        assert!(families.contains(&egui::FontFamily::Name(name.into())), "{name} isn't among the window's fonts: {families:?}");
+    }
+    // The pane's close button: the one at the right of the window.
+    let close = harness.query_all_by_label("Close").map(|node| node.rect()).find(|r| r.min.x > size.0 - 400.0).expect("the pane's close button");
+    click_at(&mut harness, close.center());
+    assert!(!harness.state().nora.assist.open, "the pane is closed");
+    assert!(harness.query_by_label("How can I help?").is_none());
+}

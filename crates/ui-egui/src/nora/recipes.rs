@@ -3,7 +3,7 @@
 // //// Neoffice — added file (no upstream equivalent): ready-made requests to Nora about the whole mailbox.
 
 //! Recipes: ready-made requests to Nora about the person's whole mailbox, listed in her pane while the conversation is
-//! empty (a morning summary, what needs a reply, what nobody answered), under the pane's hint and its header's buttons
+//! empty (a morning summary, what needs a reply, what nobody answered), under the pane's greeting and in place of its hint
 //! (`NoraPanel::show_with`). A click asks her, as if the person had typed it.
 //!
 //! A recipe is a request and nothing more: the words Nora is asked, as a few steps that name her mail tools (`nora_mail_news`,
@@ -15,10 +15,10 @@
 //! conversation like any other question, as data a stranger wrote and never as instructions; nothing is sent, deleted or
 //! moved by one.
 
-use egui::{Align2, CursorIcon, Role, Sense, Stroke, Ui, WidgetInfo, vec2};
+use egui::{Align2, CursorIcon, FontFamily, FontId, Role, Sense, Stroke, TextStyle, Ui, WidgetInfo, vec2};
 
 use super::look;
-use crate::theme::{Tokens, regular, semibold};
+use crate::theme::Tokens;
 
 /// How tall a recipe's row is.
 const ROW_H: f32 = 28.0;
@@ -85,17 +85,27 @@ pub(crate) fn groups() -> Vec<Group> {
     ]
 }
 
-/// What the pane shows while the conversation is empty, under its header: the hint it always had (`hint`), then the
+/// What the pane shows while the conversation is empty, under its greeting: the hint it always had (`hint`), then the
 /// recipes. The request of the one clicked, if any (the panel sends it as if the person had typed it).
+///
+/// In the panel's own look, which it sets on the `Ui` it hands over (craft-nora-ui): its ink and its weak words, Karla for the
+/// words (its families, or the window's own until they are installed), ink for the ring of a row reached by the keyboard;
+/// Nora's clay only for a row under the pointer and its chevron.
 pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str) -> Option<String> {
     let tone = look::tone(t);
+    let ink = ui.visuals().text_color();
+    let weak = ui.visuals().weak_text_color();
+    // The family the panel set for each kind of text (no panic for one that isn't there: the window's own family).
+    let sized =
+        |style: TextStyle, size: f32| FontId::new(size, ui.style().text_styles.get(&style).map_or(FontFamily::Proportional, |f| f.family.clone()));
+    let (title, heading, note) = (sized(TextStyle::Body, 13.5), sized(TextStyle::Button, 12.5), sized(TextStyle::Small, 11.5));
     let mut asked = None;
     ui.vertical_centered(|ui| ui.weak(hint));
     ui.add_space(14.0);
-    ui.label(egui::RichText::new(tl!("Recipes")).font(semibold(12.0)).color(t.text_dim));
+    ui.label(egui::RichText::new(tl!("Recipes")).font(heading.clone()).color(weak));
     for group in groups() {
         ui.add_space(6.0);
-        ui.label(egui::RichText::new(&group.heading).font(semibold(12.0)).color(tone.text));
+        ui.label(egui::RichText::new(&group.heading).font(heading.clone()).color(ink));
         for recipe in &group.recipes {
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
             resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, &recipe.title));
@@ -105,13 +115,13 @@ pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str) -> Option<String> {
                 if resp.hovered() || resp.is_pointer_button_down_on() {
                     painter.rect_filled(rect, 6.0, tone.fill);
                 }
-                painter.text(egui::pos2(rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, &recipe.title, regular(13.0), t.text);
+                painter.text(egui::pos2(rect.min.x + 8.0, rect.center().y), Align2::LEFT_CENTER, &recipe.title, title.clone(), ink);
                 let chevron = egui::Rect::from_center_size(egui::pos2(rect.max.x - 12.0, rect.center().y), vec2(10.0, 10.0));
                 crate::icons::paint(painter, chevron, "collapsed", tone.text, tone.text);
                 painter.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(0.5, t.border));
                 // Reached by the keyboard, a row says so.
                 if resp.has_focus() {
-                    painter.rect_stroke(rect, 6.0, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
+                    painter.rect_stroke(rect, 6.0, Stroke::new(1.5, ink), egui::StrokeKind::Inside);
                 }
             }
             if resp.clicked() {
@@ -120,7 +130,7 @@ pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str) -> Option<String> {
         }
     }
     ui.add_space(8.0);
-    ui.label(egui::RichText::new(tl!("Nora only reads your mail, with your own rights.")).font(regular(11.0)).color(t.text_dim));
+    ui.label(egui::RichText::new(tl!("Nora only reads your mail, with your own rights.")).font(note).color(weak));
     ui.add_space(8.0);
     asked
 }

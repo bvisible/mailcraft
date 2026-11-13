@@ -264,7 +264,13 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   the pane drawn before the module's central panel), `crates/engine/src/agent.rs` (`ui.noraAssistant` is never an
   agent's), `apps/mailcraft-web/src/nora.rs` and `web.rs`, and `crates/ui-egui/src/compose.rs` (in a narrow window, or
   beside her pane, Attach, Save draft and Discard are their icons, and the message's state is cut to the room left
-  rather than drawn over them).
+  rather than drawn over them). Since craft-libs `32473870` (the revision the four editors pin, 2026-11-13) the panel draws
+  itself in the Neoffice design system's look (the paper, ink, Karla and Forum, her sphere, the line that says what she is
+  doing, in mail's words) with its own head and close button (`closable`): the pane's own title and colours are gone, the
+  recipes (`nora/recipes.rs`) stand in place of the panel's hint under its greeting, in its colours and families, and the
+  microphone stays off (`dictation = false`: neither `/neomail` nor Neodesk's shell carries a recording to
+  `nora.api.stt.transcribe`). Its words are in `crates/i18n/po/neoffice/` in the five languages (`assist_tests.rs` holds
+  them there).
 - In a hosting page's tab (nothing kept here, `Session::keeps_local` false): the mark at the top left of the title bar is
   Neoffice's icon (`crates/ui-egui/src/host_mark.rs`, the hunk in `chrome.rs`), `assets/neoffice/neoffice-icon-64.png`,
   the design system's `assets/logo/favicon.png` (`bvisible/neoffice-design-system`) copied byte for byte, and the browser
@@ -482,8 +488,10 @@ the marker check does not know as one that takes comments:
 - `Cargo.lock`: the `mailcraft-jmap-fork` package (the workspace's version, with its dependencies on
   `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
-  `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision; `serde`, `serde_json` and `egui`
-  under them, the workspace's egui 0.37) and the dependencies of `mailcraft-ui-egui` on them (Nora's pane); nothing
+  `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision, `32473870` as the editors'; `serde`,
+  `serde_json` and `egui` under them, the workspace's egui 0.37, and the browser's `js-sys`, `wasm-bindgen`,
+  `wasm-bindgen-futures` and `web-sys` of the panel's microphone, already in the tree) and the dependencies of
+  `mailcraft-ui-egui` on them (Nora's pane); nothing
   else (upstream's `mailcraft-jmap` has upstream's lines; upstream's lock has the `ctutils` past RUSTSEC-2026-0385 now).
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po`,
   `crates/i18n/po/it.po` and `crates/i18n/po/nl.po` (upstream's Dutch, 0.8.1 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
@@ -502,4 +510,5 @@ the marker check does not know as one that takes comments:
   takes no comment; `ATTRIBUTION.md` names it, with a marked row).
 - `crates/i18n/po/neoffice/nl.po`: the Dutch of the fork's own texts that upstream's Dutch lacks (so far the inbox's tabs,
   which a merge once left without a word in any language because they lived only in the generated catalogues; a test of
-  `stream_tabs_tests.rs` holds their French to the catalogue); read over upstream's Dutch the same way.
+  `stream_tabs_tests.rs` holds their French to the catalogue, and the words Nora's pane took from craft-libs `32473870`);
+  read over upstream's Dutch the same way.

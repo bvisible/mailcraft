@@ -2997,7 +2997,7 @@ msgid "Clipboard"
 msgstr "Klembord"
 
 #. interface, ribbon
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
 #, fuzzy
 msgid "Close"
 msgstr "Sluiten"
@@ -3024,11 +3024,6 @@ msgstr "Sluit MailCraft, installeer de nieuwe versie en start het programma opni
 #, fuzzy
 msgid "Close Message"
 msgstr "Bericht sluiten"
-
-#. interface
-#: crates/ui-egui/src/nora/assist.rs
-msgid "Close Nora's pane"
-msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/view.rs
@@ -4110,6 +4105,11 @@ msgstr "Diagnose gekopieerd. Er is niets verzonden."
 #, fuzzy
 msgid "Diagram"
 msgstr "Diagram"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Dictate"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/mail.rs
@@ -6113,6 +6113,11 @@ msgid "Horizontal Line"
 msgstr "Horizontale lijn"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "How can I help?"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/keep_offline.rs
 #, fuzzy
 msgid "How far back mail is kept in full on this computer. Older mail keeps its headers and a preview, and downloads when you open it. It stays on the server."
@@ -6129,6 +6134,11 @@ msgstr "Hoe het terugkeert, is aan de organisator."
 #, fuzzy
 msgid "How many messages each folder holds and the space they take"
 msgstr "Hoeveel berichten elke map bevat en hoeveel ruimte ze innemen"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "I did not hear anything. Try again, a little closer to the microphone."
+msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
@@ -9104,6 +9114,11 @@ msgid "No message is open: open the message to answer first."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "No microphone found on this computer."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/updates.rs
 #, fuzzy
 msgid "No new version is ready to install."
@@ -9257,7 +9272,7 @@ msgid "None yet."
 msgstr "Nog geen."
 
 #. interface, ribbon location
-#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
+#: crates/ui-egui/src/lib.rs crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs
 msgid "Nora"
 msgstr ""
 
@@ -9352,6 +9367,11 @@ msgid "Nora is already writing a reply."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is finishing up…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Nora is learning your style from your sent emails."
 msgstr ""
@@ -9367,8 +9387,23 @@ msgid "Nora is preparing a reply in your style…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is preparing the reply…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is reading your mail…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/flow.rs
 msgid "Nora is rewriting the text…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Nora is thinking…"
 msgstr ""
 
 #. interface
@@ -13896,6 +13931,11 @@ msgid "Stop"
 msgstr "Stoppen"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Stop and keep what you said"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/security.rs
 msgid "Stop keeping this Public key"
 msgstr ""
@@ -14882,6 +14922,11 @@ msgid "The diagnostics weren't saved, so GitHub's page wasn't opened. Try again,
 msgstr "De diagnosegegevens zijn niet opgeslagen, dus de pagina van GitHub is niet geopend. Probeer het opnieuw, of vink Diagnose opnemen uit."
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The dictation did not work. Try again, or type your request."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "The draft stays in Drafts. {why}"
@@ -15177,6 +15222,11 @@ msgstr ""
 #, fuzzy
 msgid "The messages of the folder in view, as .mbox"
 msgstr "De berichten van de map in beeld, als .mbox"
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "The microphone is blocked. Allow it for this page, then try again."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs
@@ -17504,6 +17554,11 @@ msgid "Undo Typing"
 msgstr "Typen ongedaan maken"
 
 #. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Undo this change"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/chrome.rs
 #, fuzzy
 msgid "Undo {what}"
@@ -18220,6 +18275,11 @@ msgstr "Schrijf uw handtekening"
 #. interface
 #: crates/ui-egui/src/nora/own_text.rs
 msgid "Write your text first: Nora works on it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs
+msgid "Writing down what you said…"
 msgstr ""
 
 #. interface
