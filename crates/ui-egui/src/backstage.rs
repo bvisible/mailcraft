@@ -618,11 +618,14 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         let _ = app.run("ui.highContrast", json!({"on": strong}));
     }
     // The swatches wrap under the label in a narrow window rather than widening the page.
-    ui.horizontal_wrapped(|ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(210.0, 24.0), Sense::hover());
-        ui.painter().text(pos2(r.min.x, r.center().y), Align2::LEFT_CENTER, tl!("Accent"), regular(12.5), t.text);
-        accent_swatches(app, ui, t);
-    });
+    // //// Neoffice — none in a hosting page's tab: it takes the Neoffice design system's look, whatever accent (theme/neoffice.rs).
+    if app.session.keeps_local {
+        ui.horizontal_wrapped(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(210.0, 24.0), Sense::hover());
+            ui.painter().text(pos2(r.min.x, r.center().y), Align2::LEFT_CENTER, tl!("Accent"), regular(12.5), t.text);
+            accent_swatches(app, ui, t);
+        });
+    }
     let mut light = app.ui.light_messages;
     if ui
         .checkbox(&mut light, tl!("Show messages on a light background in the dark theme"))

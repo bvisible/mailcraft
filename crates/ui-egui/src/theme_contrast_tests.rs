@@ -140,3 +140,20 @@ fn token_pairs_meet_their_contrast() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
+
+// //// Neoffice — added: the Neoffice design system's look of a hosting page's tab (theme/neoffice.rs) meets the same
+// //// Neoffice — contrasts as upstream's looks, in light and dark.
+#[test]
+fn the_neoffice_look_meets_the_same_contrast() {
+    let mut wrong = Vec::new();
+    for dark in [false, true] {
+        let t = Tokens::neoffice(dark);
+        for (name, fg, bg, min) in PAIRS {
+            let got = ratio(fg(&t), bg(&t));
+            if got < *min {
+                wrong.push(format!("{name} (neoffice {}) is {got:.2}, needs {min}", if dark { "dark" } else { "light" }));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}

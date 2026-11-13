@@ -9,6 +9,8 @@ use mailcraft_model::rich::Font;
 
 mod accent;
 pub use accent::{Accent, AccentInk, lenient_bool};
+// //// Neoffice — the Neoffice design system's look of the window in a hosting page's tab (theme/neoffice.rs).
+mod neoffice;
 
 /// MailCraft's own colour, the teal of its icon (and its darker ink for text on light
 /// backgrounds). The interface itself is neutral greys with a blue accent: see [`Tokens`].
@@ -141,6 +143,8 @@ fn c(r: u8, g: u8, b: u8) -> Color32 {
 #[derive(Clone, Copy, Debug)]
 pub struct Tokens {
     pub dark: bool,
+    // //// Neoffice — the Neoffice design system's look (theme/neoffice.rs): its avatars take its own hues (`avatar_color`).
+    pub neoffice: bool,
     /// High contrast is on: the colours of a message are raised to 7:1 against its paper.
     pub high_contrast: bool,
     /// Set only while a message is laid out: the message brings its own design for dark windows
@@ -286,6 +290,8 @@ impl Tokens {
         let input_border = c(0x7F, 0x8A, 0x9E);
         Tokens {
             dark: false,
+            // //// Neoffice — upstream's look (theme/neoffice.rs is the other).
+            neoffice: false,
             high_contrast: false,
             sender_dark: false,
             title_bar: window,
@@ -383,6 +389,8 @@ impl Tokens {
         let input_border = c(0x7D, 0x88, 0x9C);
         Tokens {
             dark: true,
+            // //// Neoffice — upstream's look (theme/neoffice.rs is the other).
+            neoffice: false,
             high_contrast: false,
             sender_dark: false,
             title_bar: window,
@@ -472,6 +480,12 @@ impl Tokens {
         palette.tokens(dark)
     }
 
+    // //// Neoffice — added: the light half of the palette in force, for a message shown on a light page in the dark
+    // //// Neoffice — theme (the Neoffice look's paper in a hosting page's tab, not MailCraft's own light tokens).
+    pub fn light_of(ctx: &egui::Context) -> Tokens {
+        ctx.data(|d| d.get_temp::<Palette>(Palette::slot())).unwrap_or_else(Palette::builtin).light
+    }
+
     /// A chip's fill, from a colour of the mailbox (a category's, a calendar's).
     pub fn data_fill(&self, rgb: Color32) -> Color32 {
         rgb.linear_multiply(self.data_tint)
@@ -514,6 +528,11 @@ impl Palette {
         Palette { light: Tokens::light(), dark: Tokens::dark() }
     }
 
+    // //// Neoffice — added: the Neoffice design system's look (theme/neoffice.rs).
+    pub fn neoffice() -> Palette {
+        Palette { light: Tokens::neoffice(false), dark: Tokens::neoffice(true) }
+    }
+
     /// The built-in look in `accent`, with high contrast on or off.
     pub fn for_choice(accent: Accent, high_contrast: bool) -> Palette {
         Palette { light: Tokens::build(false, accent, high_contrast), dark: Tokens::build(true, accent, high_contrast) }
@@ -534,11 +553,21 @@ pub struct ThemeChoice {
     pub appearance: Appearance,
     pub accent: Accent,
     pub high_contrast: bool,
+    // //// Neoffice — the window is a hosting page's tab (`Session::keeps_local` false): it takes the Neoffice design
+    // //// Neoffice — system's look, in light and dark, whatever accent was picked.
+    pub neoffice: bool,
 }
 
 impl ThemeChoice {
     /// The palette this choice shows.
     pub fn palette(&self) -> Palette {
+        // //// Neoffice — the design system's look in a hosting page's tab; with high contrast, upstream's (the design
+        // //// Neoffice — system has no ramp at 7:1) in its graphite, never its blue.
+        match (self.neoffice, self.high_contrast) {
+            (true, false) => return Palette::neoffice(),
+            (true, true) => return Palette::for_choice(Accent::Graphite, true),
+            _ => {}
+        }
         Palette::for_choice(self.accent, self.high_contrast)
     }
 }
@@ -1367,7 +1396,20 @@ pub fn avatar_color(key: &str, t: &Tokens) -> Color32 {
         (0x8A, 0x5A, 0x44),
     ];
     let hash = key.to_lowercase().bytes().fold(0x811C_9DC5u32, |h, b| (h ^ u32::from(b)).wrapping_mul(0x0100_0193));
-    let (r, g, b) = PALETTE.get(hash as usize % PALETTE.len()).copied().unwrap_or((0x0B, 0x7F, 0xAB));
+    // //// Neoffice — in the Neoffice design system's look, its own deep tones (clay, green, sand, the signal's deep, amber,
+    // //// Neoffice — red), white initials at 4.5:1 or more on each, never upstream's blues.
+    const NEOFFICE: [(u8, u8, u8); 8] = [
+        (0xA1, 0x5A, 0x2E),
+        (0x17, 0x83, 0x47),
+        (0x52, 0x4B, 0x41),
+        (0xAA, 0x37, 0x00),
+        (0x92, 0x61, 0x0C),
+        (0xC1, 0x37, 0x2C),
+        (0x7E, 0x45, 0x23),
+        (0x11, 0x66, 0x3A),
+    ];
+    let palette: &[(u8, u8, u8)] = if t.neoffice { &NEOFFICE } else { &PALETTE };
+    let (r, g, b) = palette.get(hash as usize % palette.len()).copied().unwrap_or((0x0B, 0x7F, 0xAB));
     let c = Color32::from_rgb(r, g, b);
     c.linear_multiply(t.avatar_shade)
 }

@@ -77,3 +77,43 @@ fn the_window_shows_the_accent_and_high_contrast_at_once() {
     a.logic(&ctx);
     assert_eq!(Tokens::get(&ctx).accent, Tokens::light().accent);
 }
+
+// //// Neoffice — added: a hosting page's tab takes the Neoffice design system's look (theme/neoffice.rs), in light and
+// //// Neoffice — dark, whatever accent was picked; the program that keeps its mail keeps upstream's.
+#[test]
+fn a_hosting_pages_tab_takes_the_neoffice_look_in_light_and_dark() {
+    let mut a = app();
+    a.session.keeps_local = false;
+    a.execute("ui.accent", json!({"accent": "violet"})).unwrap();
+    let ctx = egui::Context::default();
+    for (value, dark) in [("light", false), ("dark", true)] {
+        a.execute("ui.theme", json!({"value": value})).unwrap();
+        a.logic(&ctx);
+        let (t, neo) = (Tokens::get(&ctx), Tokens::neoffice(dark));
+        assert_eq!(t.dark, dark);
+        assert_eq!((t.canvas, t.panel, t.surface, t.ribbon), (neo.canvas, neo.panel, neo.surface, neo.ribbon), "{value}");
+        assert_eq!((t.accent, t.selection, t.accent_soft, t.selection_edge), (neo.accent, neo.selection, neo.accent_soft, neo.selection_edge));
+        // A message on a light page in the dark theme: the paper's white, not upstream's.
+        assert_eq!(Tokens::light_of(&ctx).accent_text, Tokens::neoffice(false).accent_text);
+    }
+    // Every action ink (dark: the bright paper), the signal only as a field and a gesture; no blue.
+    let (light, dark) = (Tokens::neoffice(false), Tokens::neoffice(true));
+    assert_eq!((light.accent, dark.accent), (egui::Color32::from_rgb(0x14, 0x14, 0x14), egui::Color32::from_rgb(0xFF, 0xFD, 0xF8)));
+    assert_eq!((light.selection_edge, light.canvas), (egui::Color32::from_rgb(0xF5, 0x5D, 0x1A), egui::Color32::from_rgb(0xFA, 0xF3, 0xEA)));
+    for t in [light, dark] {
+        let avatars = ["ada@example.org", "grace@example.org", "alan@example.org", "edsger@example.org", "barbara@example.org", "ken@example.org"]
+            .map(|who| crate::theme::avatar_color(who, &t));
+        for c in [t.accent, t.accent_text, t.selection, t.accent_soft, t.checked, t.today, t.canvas, t.surface].into_iter().chain(avatars) {
+            assert!(!(c.b() > c.r().saturating_add(24) && c.b() > c.g()), "{c:?} is blue");
+        }
+    }
+    // High contrast: upstream's, in graphite (the design system has no ramp at 7:1).
+    a.execute("ui.highContrast", json!({"on": true})).unwrap();
+    a.logic(&ctx);
+    assert_eq!(Tokens::get(&ctx).accent, Accent::Graphite.ink(true, true).accent);
+    // The program that keeps its mail on the computer: upstream's look, in the accent picked.
+    a.session.keeps_local = true;
+    a.execute("ui.highContrast", json!({"on": false})).unwrap();
+    a.logic(&ctx);
+    assert_eq!(Tokens::get(&ctx).accent, Accent::Violet.ink(true, false).accent);
+}

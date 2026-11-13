@@ -320,7 +320,8 @@ impl Laid {
         if self.done {
             return;
         }
-        let base = if self.light { Tokens::light() } else { Tokens::get(ctx) };
+        // //// Neoffice — the light half of the palette in force (the Neoffice look's in a hosting page's tab), not MailCraft's own.
+        let base = if self.light { Tokens::light_of(ctx) } else { Tokens::get(ctx) };
         let t = Tokens { sender_dark: self.sender_dark && base.dark, ..base };
         let cuts = self.cuts.clone();
         let mut cx = Cx {

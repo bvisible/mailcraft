@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent): how Nora looks in the window: her clay, her sphere, her pills.
+// //// Neoffice — added file (no upstream equivalent): how Nora looks in the window: the signal's tint, her sphere, her pills.
 
 //! How Nora looks, the same in the band of a message being written, the reading pane and the ribbon:
-//! her colours are the clay of Neoffice rather than the window's own accent, as the desk shows her (a
-//! mark of hers, kept in this file rather than among the theme's tokens); her sphere is the Nora app's
+//! her colours are the Neoffice design system's signal as a field (`--color-accent-soft`, its ink
+//! `--color-accent-soft-fg`, its edge `--signal-100`) and her sphere's clay (`--clay-600`, dark `--clay-400`),
+//! as Nora's pane draws them (craft-nora-ui `look.rs`), kept in this file rather than among the theme's
+//! tokens; her sphere is the Nora app's
 //! orb, rings of latitude on a sphere, the near half of each strong and the far half faint; her
 //! buttons are pills with rounded ends, a mark, the words, and a chevron when they open a menu. The
 //! marks are drawn here, in the one-stroke, round-ended way of the window's icons.
@@ -24,20 +26,22 @@ pub(crate) struct Tone {
 
 pub(crate) fn tone(t: &Tokens) -> Tone {
     if t.dark {
+        // The signal at 16 % (--color-accent-soft), 24 % under the pointer, 30 % as an edge; --signal-200 on it.
         Tone {
             orb: Color32::from_rgb(0xD6, 0x8A, 0x59),
-            text: Color32::from_rgb(0xE7, 0xB4, 0x8F),
-            fill: Color32::from_rgb(0x3A, 0x2A, 0x21),
-            hover: Color32::from_rgb(0x46, 0x33, 0x2A),
-            border: Color32::from_rgb(0x7A, 0x4A, 0x2C),
+            text: Color32::from_rgb(0xFF, 0xB5, 0x99),
+            fill: Color32::from_rgba_unmultiplied(0xF5, 0x5D, 0x1A, 41),
+            hover: Color32::from_rgba_unmultiplied(0xF5, 0x5D, 0x1A, 61),
+            border: Color32::from_rgba_unmultiplied(0xF5, 0x5D, 0x1A, 77),
         }
     } else {
+        // --signal-50, --signal-100 under the pointer and as an edge; --signal-700 on it.
         Tone {
             orb: Color32::from_rgb(0xA1, 0x5A, 0x2E),
-            text: Color32::from_rgb(0x8A, 0x4A, 0x22),
-            fill: Color32::from_rgb(0xF7, 0xEB, 0xE3),
-            hover: Color32::from_rgb(0xF0, 0xDC, 0xCE),
-            border: Color32::from_rgb(0xE2, 0xB5, 0x97),
+            text: Color32::from_rgb(0x81, 0x30, 0x0F),
+            fill: Color32::from_rgb(0xFF, 0xEA, 0xE2),
+            hover: Color32::from_rgb(0xFF, 0xD1, 0xC1),
+            border: Color32::from_rgb(0xFF, 0xD1, 0xC1),
         }
     }
 }

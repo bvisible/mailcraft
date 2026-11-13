@@ -278,6 +278,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Notes and Journal there (`nav.rs`): upstream keeps them for a .pst file's items, which have no view yet and which such a
   tab never imports, beside the server's Notes. A server whose session lacks the Inbox tabs' capability
   (`https://neoffice.me/jmap/neomail-stream`) is said once in the console (`apps/mailcraft-web/src/streams.rs`).
+- In a hosting page's tab the whole window takes the Neoffice design system's look, in light and dark
+  (`crates/ui-egui/src/theme/neoffice.rs`: `tokens/colors.css`, `:root` and `.theme-dark`, the values Nora's pane takes in
+  craft-nora-ui `look.rs`): the warm paper (dark: the espresso), white sheets (dark: `--surface-card`), the sand ramp for
+  text, borders, hovers; every action ink (dark: the bright paper), the signal only as a field and a gesture (what is
+  chosen, a count, today, a selected row's edge, the focus ring, selected text), never the upstream blue. Marked hunks:
+  `ThemeChoice::neoffice` and its palette in `theme.rs` (with high contrast, upstream's in graphite: the design system has
+  no ramp at 7:1), set from `Session::keeps_local` in `lib.rs`; `Tokens::light_of` for a message shown on a light page
+  in the dark theme (`reading/layout.rs`); no accent swatches in File › Options there (`backstage.rs`). Nora's pills and
+  cards take the signal's tint (`nora/look.rs`). The contrast pairs of upstream's looks hold for it
+  (`theme_contrast_tests.rs`, `theme_choice_tests.rs`). Upstream's looks stay the desktop's.
 - « Trier avec Nora » (`crates/ui-egui/src/nora/sorting.rs`, `sorting_view.rs`, tests in `sorting_tests.rs` and
   `sorting_view_tests.rs`): in a hosting page's tab whose host carries its calls (`Host::sorting`: the page's own `fetch`, or
   `window.mailcraftNoraSorting` of a host that makes the calls itself, Neodesk's shell once its `NORA_SORTING_METHODS` has
