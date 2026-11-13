@@ -3228,6 +3228,16 @@ msgid "Correct with Nora"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Correction"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Correction: {about}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup/help.rs
 msgid "Could not open Google sign-in"
 msgstr "Impossibile aprire la pagina di accesso Google"
@@ -22740,6 +22750,13 @@ msgid "{n} message"
 msgid_plural "{n} messages"
 msgstr[0] "{n} messaggio"
 msgstr[1] "{n} messaggi"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message back in the inbox"
+msgid_plural "{n} messages back in the inbox"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs

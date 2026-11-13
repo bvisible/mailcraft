@@ -16,7 +16,8 @@
 //! - Nora's questions to the person, of all their mailboxes ([`Questions`], `nora.api.asks.mine`, read when the window starts,
 //!   every fifteen minutes and when her pane opens): the number on her button of the ribbon, the section « Nora vous demande »
 //!   of her pane's home and of the flow's result, answered by a button, in the person's own words (Nora says what she would
-//!   keep, the person confirms it), or « later ».
+//!   keep, the person confirms it), or « later »; an answer to a question of a family's folder moves what Nora had filed of
+//!   it, a correction that « Annuler » undoes (`run` of the answer).
 //!
 //! Nothing of it exists in a window that keeps its mail on the computer, nor where the host doesn't carry these calls
 //! ([`super::Host::sorting`]), nor where the server says it isn't available (`state.available`: a plan without Nora's
@@ -235,8 +236,11 @@ impl RunFolder {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Run {
     pub(crate) run: String,
-    /// `reading` (a reading that moved mail) or `tidy` (the inbox tidied).
+    /// `reading` (a reading that moved mail), `tidy` (the inbox tidied) or `correction` (an answer to a question of a family's
+    /// folder moved what was filed of it).
     pub(crate) kind: String,
+    /// What a correction was about (the family of mails its question named).
+    pub(crate) about: String,
     /// `running`, `done`, `undone`, `partly_undone`.
     pub(crate) status: String,
     pub(crate) started_at: String,
@@ -465,6 +469,7 @@ pub(crate) fn read_journal(m: &Value) -> Journal {
         .map(|r| Run {
             run: name(r, "run"),
             kind: status(r, "kind"),
+            about: text(r, "about"),
             status: status(r, "status"),
             started_at: text(r, "started_at"),
             seconds: seconds(r, "seconds"),
@@ -563,6 +568,8 @@ enum Asking {
     Said(String),
     Confirm(String),
     Later(String),
+    /// The correction an answer made, undone: the mailbox, the run.
+    UndoCorrection(String, String),
 }
 
 /// What follows a switch.
@@ -712,9 +719,19 @@ pub(crate) struct Questions {
     pub(crate) drafts: BTreeMap<String, String>,
     /// What Nora would keep of their words, by the question's name, as they change it before confirming.
     pub(crate) confirming: BTreeMap<String, Confirming>,
-    /// What Nora said of the last answer (« Noté : … »).
-    pub(crate) noted: Option<String>,
+    /// What Nora said of the last answer (« Noté : … »), and the correction it made, which « Annuler » undoes.
+    pub(crate) noted: Option<Noted>,
     pub(crate) error: Option<String>,
+    undo_rounds: u32,
+}
+
+/// What Nora said of an answer, and the correction it made (`run`, "" when nothing moved), in which mailbox.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Noted {
+    pub(crate) words: String,
+    /// The mailbox, by the name of the server's account for it.
+    pub(crate) account: String,
+    pub(crate) run: String,
 }
 
 impl Questions {
@@ -770,6 +787,7 @@ impl Sorting {
                     | Asking::Said(_)
                     | Asking::Confirm(_)
                     | Asking::Later(_)
+                    | Asking::UndoCorrection(..)
             )
         })
     }
@@ -808,6 +826,8 @@ pub(crate) enum Intent {
     ConfirmAnswer(String),
     Rephrase(String),
     Later(String),
+    /// « Annuler » under what Nora noted: the correction the answer made, undone.
+    UndoNoted,
     /// The pane's switch.
     Switch {
         account: String,
@@ -1116,20 +1136,68 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
             Ok(_) => app.nora.sorting.questions.settled(&ask),
             Err(why) => refused(app, &ask, why, status),
         },
+        Asking::UndoCorrection(account, run) => correction_undone(app, &account, &run, result),
     }
 }
 
-/// A question answered (by a button, or the person's own words confirmed): it goes, and what Nora noted is said.
+/// A question answered (by a button, or the person's own words confirmed): it goes, and what Nora noted is said, with the
+/// correction it made (a question of a family's folder: what she had filed of it moved where the answer says).
 fn noted(app: &mut MailApp, ask: &str, result: Result<Value, String>, status: u16) {
     match result {
         Ok(v) => {
+            let mailbox = app.nora.sorting.questions.list.iter().find(|a| a.name == ask).map(|a| a.mailbox.clone()).unwrap_or_default();
+            let account = account_of(app, &mailbox);
             let questions = &mut app.nora.sorting.questions;
             questions.settled(ask);
-            let said = read_noted(&v);
-            questions.noted = (!said.is_empty()).then_some(said);
+            let words = read_noted(&v);
+            let run = name(&v, "run");
+            questions.noted = (!words.is_empty() || !run.is_empty()).then_some(Noted { words, account, run });
             questions.error = None;
         }
         Err(why) => refused(app, ask, why, status),
+    }
+}
+
+/// The name of the server's account for the mailbox of `address`, as the hosting page handed it over (its address where it
+/// said no other).
+fn account_of(app: &MailApp, address: &str) -> String {
+    let handed = app.services.nora.as_ref().and_then(|host| host.mailboxes.iter().find(|m| m.address.trim().eq_ignore_ascii_case(address.trim())));
+    handed.map(|m| m.name.trim()).filter(|n| !n.is_empty()).unwrap_or(address.trim()).to_string()
+}
+
+/// The correction an answer made, undone: called again while the server says some are left, then said.
+fn correction_undone(app: &mut MailApp, account: &str, run: &str, result: Result<Value, String>) {
+    match result {
+        Ok(v) => {
+            let done = read_undone(&v);
+            let questions = &mut app.nora.sorting.questions;
+            if done.remaining > 0 && questions.undo_rounds < MAX_UNDO_ROUNDS {
+                questions.undo_rounds += 1;
+                call(app, UNDO, json!({"account": account, "run": run}), Asking::UndoCorrection(account.to_string(), run.to_string()));
+                return;
+            }
+            questions.undo_rounds = 0;
+            let mut said = vec![tln!(done.undone, "{n} message is back where it was.", "{n} messages are back where they were.")];
+            if done.moved > 0 {
+                said.push(tln!(
+                    done.moved,
+                    "{n} message moved by someone since stays where they put it.",
+                    "{n} messages moved by someone since stay where they put them."
+                ));
+            }
+            questions.noted = Some(Noted { words: said.join(" "), account: account.to_string(), run: String::new() });
+            questions.error = None;
+        }
+        Err(why) => {
+            let questions = &mut app.nora.sorting.questions;
+            questions.undo_rounds = 0;
+            questions.error = Some(why);
+        }
+    }
+    // The flow of that mailbox reads its journal again.
+    if flow_of(app, account).is_some() {
+        let account = account.to_string();
+        call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account));
     }
 }
 
@@ -1486,6 +1554,11 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
         }
         Intent::Later(ask) => {
             call(app, LATER, json!({"name": ask}), Asking::Later(ask));
+        }
+        Intent::UndoNoted => {
+            let Some(noted) = app.nora.sorting.questions.noted.clone().filter(|n| !n.run.is_empty() && !n.account.is_empty()) else { return };
+            app.nora.sorting.questions.undo_rounds = 0;
+            call(app, UNDO, json!({"account": noted.account, "run": noted.run}), Asking::UndoCorrection(noted.account.clone(), noted.run.clone()));
         }
         Intent::Switch { account, on } => {
             let Some((may_set, validated)) = app.nora.sorting.available(&account).map(|s| (s.may_set, s.validated())) else { return };

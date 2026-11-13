@@ -5054,3 +5054,15 @@ msgstr[1] "{n} questions de Nora"
 
 msgid "Nora could not make out your answer: say it again, or choose one of hers."
 msgstr "Nora n’a pas compris votre réponse : redites-la, ou choisissez une des siennes."
+
+# A correction in Nora's journal (an answer to a question of a family's folder), and the mail it put back in the inbox.
+msgid "Correction"
+msgstr "Correction"
+
+msgid "Correction: {about}"
+msgstr "Correction : {about}"
+
+msgid "{n} message back in the inbox"
+msgid_plural "{n} messages back in the inbox"
+msgstr[0] "{n} message remis dans la boîte de réception"
+msgstr[1] "{n} messages remis dans la boîte de réception"

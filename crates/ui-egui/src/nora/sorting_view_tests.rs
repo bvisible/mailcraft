@@ -10,7 +10,7 @@ use egui::vec2;
 use egui_kittest::kittest::Queryable as _;
 use serde_json::json;
 
-use super::super::sorting::{Card, Flow, Known, Questions, Stage, read_asks, read_journal, read_plan, read_state, read_survey};
+use super::super::sorting::{Card, Flow, Known, Noted, Questions, Stage, read_asks, read_journal, read_plan, read_state, read_survey};
 use super::super::testing::{ME, page};
 use super::*;
 use crate::MailApp;
@@ -297,9 +297,10 @@ fn in_french(app: &mut MailApp) {
     for ask in &mut app.nora.sorting.questions.list {
         if ask.name == "ASK-1" {
             ask.title = "Les avis de paiement de votre banque : j’en fais une tâche chaque fois ?".into();
+            ask.context = "3 ce mois-ci".into();
             ask.choices = vec![("task".into(), "Oui, une tâche".into()), ("none".into(), "Non, rangez-les".into())];
-        } else {
-            ask.title = format!("Garage Exemple {} : un client ou un fournisseur ?", ask.name);
+        } else if ask.choices.first().is_some_and(|(code, _)| code == "client") {
+            ask.title = format!("Garage Exemple {} : un client ou un fournisseur ?", ask.name.trim_start_matches("ASK-"));
             ask.choices = vec![("client".into(), "Un client".into()), ("supplier".into(), "Un fournisseur".into())];
         }
     }
@@ -313,7 +314,7 @@ fn sorting_screens_in_french() {
     let Some(dir) = std::env::var_os("NORA_SORTING_SHOTS").map(std::path::PathBuf::from) else { return };
     let _language = crate::i18n::RestoreLanguage::hold();
     for dark in [false, true] {
-        for screen in ["1-bouton-bandeau", "2-volet-interrupteur", "3-conversation", "4-resultat", "5-carte", "6-questions"] {
+        for screen in ["1-bouton-bandeau", "2-volet-interrupteur", "3-conversation", "4-resultat", "5-carte", "6-questions", "7-question-dossier"] {
             let mut app = match screen {
                 "1-bouton-bandeau" => hosted(answers::state(true, "validated", true), true),
                 "2-volet-interrupteur" => {
@@ -330,6 +331,34 @@ fn sorting_screens_in_french() {
                     app
                 }
                 "4-resultat" => in_flow(Stage::Done, true),
+                "7-question-dossier" => {
+                    // The result's « Nora vous demande »: a folder question still open, the answer to another with the
+                    // correction it made and its « Annuler », and that correction in the journal.
+                    let mut app = in_flow(Stage::Done, true);
+                    let folder = json!({"asks": [{"name": "ASK-0007", "kind": "Family", "topic": "Folder",
+                        "title": "« Avis n° 117 » : je les mets dans « Factures reçues » ou dans « Notifications » ?",
+                        "context": "Ces 30 derniers jours, j’en ai rangé 4 dans « Factures reçues » et 3 dans « Notifications ».",
+                        "choices": [{"code": "folder_1", "label": "Factures reçues"}, {"code": "folder_2", "label": "Notifications"},
+                                    {"code": "inbox", "label": "Les laisser dans la boîte de réception"}], "box": BOX}], "retained": 0});
+                    app.nora.sorting.questions = Questions::said(read_asks(&folder).0);
+                    app.nora.sorting.questions.noted = Some(Noted {
+                        words:
+                            "C’est noté : les relevés de « Banque Exemple » vont dans « Factures reçues ». 5 messages de cette famille y sont passés."
+                                .into(),
+                        account: BOX.into(),
+                        run: "NFR-C1".into(),
+                    });
+                    let mut journal = answers::journal("NFR-3");
+                    journal["runs"].as_array_mut().unwrap().insert(
+                        0,
+                        json!({"run": "NFR-C1", "kind": "correction", "ask": "ASK-0005", "about": "Relevés de Banque Exemple", "status": "done",
+                            "started_at": "2026-10-14 15:58:00", "filed": 5, "still_filed": 5,
+                            "folders": [{"folder": "Factures reçues", "parent": "", "leaf": "Factures reçues", "count": 5}],
+                            "kinds": {"invoices": 5}, "can_undo": true}),
+                    );
+                    app.nora.sorting.flow.as_mut().unwrap().journal = Some(read_journal(&journal));
+                    app
+                }
                 _ => {
                     // From her pane's switch, as it opens.
                     let mut app = hosted(answers::state(false, "", true), false);
@@ -342,11 +371,32 @@ fn sorting_screens_in_french() {
             in_french(&mut app);
             app.execute("ui.language", json!({"language": "fr"})).unwrap();
             let _ = app.run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
-            let tall = matches!(screen, "3-conversation" | "4-resultat");
+            let tall = matches!(screen, "3-conversation" | "4-resultat" | "7-question-dossier");
             let mut h = window(app, (1440.0, if tall { 1150.0 } else { 900.0 }));
             h.run_steps(8);
             let image = h.render().expect("drawn");
             image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
         }
     }
+}
+
+#[test]
+fn a_guillemet_is_never_alone_at_the_start_or_the_end_of_a_line() {
+    let said = tied("« Avis n° 117 » : je les mets dans « Factures reçues » ou dans « Notifications » ?");
+    assert_eq!(said, "«\u{a0}Avis n° 117\u{a0}»\u{a0}: je les mets dans «\u{a0}Factures reçues\u{a0}» ou dans «\u{a0}Notifications\u{a0}»\u{a0}?");
+    // Already tied, or English: as it is.
+    assert_eq!(tied("«\u{a0}A\u{a0}»"), "«\u{a0}A\u{a0}»");
+    assert_eq!(tied("Shall I file them? Yes: now."), "Shall I file them? Yes: now.");
+    assert_eq!(kinds_said(&[("inbox".to_string(), 3)].into_iter().collect()), "3 messages back in the inbox");
+}
+
+#[test]
+fn the_journal_says_a_correction_and_what_it_was_about() {
+    let mut app = in_flow(Stage::Done, true);
+    let correction = json!({"runs": [{"run": "NFR-C1", "kind": "correction", "ask": "ASK-1", "about": "Payment notices", "status": "done",
+        "started_at": "2026-10-14 15:58:00", "filed": 4, "still_filed": 4, "folders": [{"folder": "Notifications", "parent": "", "leaf": "Notifications", "count": 4}],
+        "kinds": {"notifications": 4}, "can_undo": true}], "learned": [], "may_set": true});
+    app.nora.sorting.flow.as_mut().unwrap().journal = Some(read_journal(&correction));
+    let h = window(app, (1440.0, 1150.0));
+    assert!(contains(&h, "Correction: Payment notices · 4 messages filed"));
 }

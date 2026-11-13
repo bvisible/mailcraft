@@ -184,14 +184,31 @@ fn mine(ui: &mut Ui, ds: &Ds, words: &str) {
     });
 }
 
+/// French typography as the window draws it: a guillemet never alone at the start or the end of a line, nor « ? », « ! », « : »
+/// or « ; » at the start of one. The space the server (or a translation) put inside « … » and before them becomes a no-break
+/// space (U+00A0, the one egui never breaks at); a text without such spaces is left as it is.
+pub(crate) fn tied(words: &str) -> String {
+    let chars: Vec<char> = words.chars().collect();
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let before = i.checked_sub(1).and_then(|j| chars.get(j)).copied();
+            let after = chars.get(i + 1).copied();
+            let tie = *c == ' ' && (before == Some('«') || matches!(after, Some('»' | '?' | '!' | ':' | ';')));
+            if tie { '\u{a0}' } else { *c }
+        })
+        .collect()
+}
+
 /// Words of a reply.
 fn said(ui: &mut Ui, ds: &Ds, words: &str) {
-    ui.add(Label::new(RichText::new(words).font(face(ui, TextStyle::Body, 14.0)).color(ds.text)).wrap());
+    ui.add(Label::new(RichText::new(tied(words)).font(face(ui, TextStyle::Body, 14.0)).color(ds.text)).wrap());
 }
 
 /// Weak words under a reply.
 fn note(ui: &mut Ui, ds: &Ds, words: &str) {
-    ui.add(Label::new(RichText::new(words).font(face(ui, TextStyle::Small, 12.0)).color(ds.weak)).wrap());
+    ui.add(Label::new(RichText::new(tied(words)).font(face(ui, TextStyle::Small, 12.0)).color(ds.weak)).wrap());
 }
 
 /// A choice offered: a white pill, its border ink when it is the one chosen.
@@ -258,7 +275,7 @@ fn notice(ui: &mut Ui, ds: &Ds, words: &str, error: bool) {
     let (fill, ink) = if error { (ds.error_fill, ds.error_text) } else { (ds.warn_fill, ds.warn_text) };
     Frame::new().fill(fill).corner_radius(CornerRadius::same(10)).inner_margin(Margin::symmetric(12, 9)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.add(Label::new(RichText::new(words).font(face(ui, TextStyle::Body, 13.0)).color(ink)).wrap());
+        ui.add(Label::new(RichText::new(tied(words)).font(face(ui, TextStyle::Body, 13.0)).color(ink)).wrap());
     });
 }
 
@@ -351,12 +368,13 @@ fn when_short(started: &str, today: Date) -> String {
 pub(crate) fn kinds_said(kinds: &BTreeMap<String, u64>) -> String {
     let n = |k: &str| kinds.get(k).copied().unwrap_or(0);
     let other: u64 =
-        kinds.iter().filter(|(k, _)| !matches!(k.as_str(), "notifications" | "newsletters" | "clients" | "invoices")).map(|(_, n)| n).sum();
+        kinds.iter().filter(|(k, _)| !matches!(k.as_str(), "notifications" | "newsletters" | "clients" | "invoices" | "inbox")).map(|(_, n)| n).sum();
     let parts: Vec<String> = [
         (n("notifications"), tln!(n("notifications"), "{n} notification", "{n} notifications")),
         (n("newsletters"), tln!(n("newsletters"), "{n} newsletter", "{n} newsletters")),
         (n("clients"), tln!(n("clients"), "{n} message from clients", "{n} messages from clients")),
         (n("invoices"), tln!(n("invoices"), "{n} invoice", "{n} invoices")),
+        (n("inbox"), tln!(n("inbox"), "{n} message back in the inbox", "{n} messages back in the inbox")),
         (other, tln!(other, "{n} other message", "{n} other messages")),
     ]
     .into_iter()
@@ -443,7 +461,7 @@ pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui) {
                         let (mark, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
                         craft_nora_ui::orb::paint(ui.painter(), mark, ds.orb, None);
                         ui.add(Label::new(RichText::new(tl!("Nora files your mail.")).font(semibold(13.0)).color(ds.text)).selectable(false));
-                        ui.add(Label::new(RichText::new(said).font(regular(13.0)).color(ds.text)).wrap().selectable(false));
+                        ui.add(Label::new(RichText::new(tied(&said)).font(regular(13.0)).color(ds.text)).wrap().selectable(false));
                         if link(ui, &ds, tl!("See the journal"), semibold(13.0)).clicked() {
                             intent = Some(Intent::Open { account: account.clone(), journal: true });
                         }
@@ -896,10 +914,9 @@ pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str
                     ui.horizontal(|ui| {
                         let width = (ui.available_width() - 96.0).max(80.0);
                         let field = TextEdit::singleline(draft).hint_text(tl!("Answer Nora…")).desired_width(width).char_limit(1000);
-                        let response = ui.add_enabled(enabled, field.font(face(ui, TextStyle::Body, 13.0)));
+                        ui.add_enabled(enabled, field.font(face(ui, TextStyle::Body, 13.0)));
                         let typed = !draft.trim().is_empty();
-                        let entered = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                        if secondary(ui, &ds, tl!("Send my answer"), enabled && typed).clicked() || (enabled && typed && entered) {
+                        if secondary(ui, &ds, tl!("Send my answer"), enabled && typed).clicked() {
                             intent = Some(Intent::SayAnswer(name.clone()));
                         }
                     });
@@ -911,7 +928,15 @@ pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str
         });
     }
     if let Some(noted) = &asked.noted {
-        hers(ui, &ds, |ui| said(ui, &ds, noted));
+        hers(ui, &ds, |ui| {
+            if !noted.words.is_empty() {
+                said(ui, &ds, &noted.words);
+            }
+            // The correction the answer made (what Nora had filed of the family, moved where the answer says): undone here.
+            if !noted.run.is_empty() && secondary(ui, &ds, tl!("Undo"), enabled).clicked() {
+                intent = Some(Intent::UndoNoted);
+            }
+        });
     }
     if let Some(error) = &asked.error {
         notice(ui, &ds, error, true);
@@ -967,7 +992,14 @@ fn journal(ui: &mut Ui, ds: &Ds, flow: &Flow, cx: &FlowCx, enabled: bool) -> Opt
                 ui.add_space(6.0);
             }
             for run in journal.runs.iter().take(8) {
-                let mut words = format!("{} · {}", when_short(&run.started_at, cx.today), tln!(run.filed, "{n} message filed", "{n} messages filed"));
+                let filed = tln!(run.filed, "{n} message filed", "{n} messages filed");
+                let mut words = if run.kind == "correction" {
+                    let what =
+                        if run.about.is_empty() { tl!("Correction").to_string() } else { fmt(tl!("Correction: {about}"), &[("about", &run.about)]) };
+                    format!("{} · {what} · {filed}", when_short(&run.started_at, cx.today))
+                } else {
+                    format!("{} · {filed}", when_short(&run.started_at, cx.today))
+                };
                 match run.status.as_str() {
                     "undone" => words = format!("{words} · {}", tl!("undone")),
                     "partly_undone" => words = format!("{words} · {}", tl!("partly undone")),
@@ -976,7 +1008,12 @@ fn journal(ui: &mut Ui, ds: &Ds, flow: &Flow, cx: &FlowCx, enabled: bool) -> Opt
                 }
                 ui.horizontal(|ui| {
                     ui.set_min_height(30.0);
-                    ui.add(Label::new(RichText::new(words).font(face(ui, TextStyle::Body, 13.0)).color(ds.text)).selectable(false));
+                    let width = ui.available_width() - if run.can_undo && enabled { 70.0 } else { 0.0 };
+                    let label = Label::new(RichText::new(tied(&words)).font(face(ui, TextStyle::Body, 13.0)).color(ds.text)).wrap().selectable(false);
+                    ui.scope(|ui| {
+                        ui.set_max_width(width.max(80.0));
+                        ui.add(label);
+                    });
                     if run.can_undo && enabled {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if pane_link(ui, ds, tl!("Undo"), TextStyle::Button, 13.0).clicked() {
@@ -990,7 +1027,7 @@ fn journal(ui: &mut Ui, ds: &Ds, flow: &Flow, cx: &FlowCx, enabled: bool) -> Opt
                 ui.horizontal(|ui| {
                     ui.set_min_height(30.0);
                     let words = fmt(tl!("You moved “{folder}”: I remember this folder."), &[("folder", &learned.leaf)]);
-                    ui.add(Label::new(RichText::new(words).font(face(ui, TextStyle::Body, 13.0)).color(ds.text_2)).wrap().selectable(false));
+                    ui.add(Label::new(RichText::new(tied(&words)).font(face(ui, TextStyle::Body, 13.0)).color(ds.text_2)).wrap().selectable(false));
                 });
             }
         },

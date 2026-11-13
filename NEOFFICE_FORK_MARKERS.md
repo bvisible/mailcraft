@@ -290,7 +290,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Nora's questions to the person, of all their mailboxes (`nora.api.asks.mine`, read when the window starts, every fifteen
   minutes and when her pane opens): their number on her buttons of the ribbon (the other marked hunk in `lib.rs`, drawn
   over the ribbon where it put them this frame) and one section « Nora vous demande », first in her pane's home and under the
-  flow's result, answered by a button, in the person's own words (what Nora would keep, confirmed by them) or « later ».
+  flow's result, answered by a button, in the person's own words (what Nora would keep, confirmed by them) or « later »; the
+  answer to a question of a family's folder (`topic: "Folder"`) moves what Nora had filed of it, a correction (`run`) that
+  « Annuler » undoes and that the journal says (`kind: "correction"`). Her sentences keep a guillemet, « ? », « ! », « : » and
+  « ; » on the line of their words (a no-break space, `sorting_view::tied`).
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).

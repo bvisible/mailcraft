@@ -545,11 +545,12 @@ fn a_question_answered_by_a_button_goes_and_nora_says_what_she_noted() {
     let (mut app, calls) = with_questions();
     act(&mut app, Intent::Answer("ASK-0001".into(), "task".into()));
     assert_eq!(made(&calls, ANSWER), vec![json!({"name": "ASK-0001", "choice": "task", "channel": "button"})]);
-    reply(&calls, ANSWER, 200, ok(json!({"done": true, "said": "Noted: Yes, a task", "corrected": "2 notices made into tasks."})));
+    reply(&calls, ANSWER, 200, ok(json!({"done": true, "said": "Noted: Yes, a task", "corrected": "2 notices made into tasks.", "run": ""})));
     take(&mut app);
     let questions = &app.nora.sorting.questions;
     assert_eq!(questions.list.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["ASK-0002"]);
-    assert_eq!(questions.noted.as_deref(), Some("Noted: Yes, a task 2 notices made into tasks."));
+    let noted = questions.noted.clone().unwrap();
+    assert_eq!((noted.words.as_str(), noted.run.as_str()), ("Noted: Yes, a task 2 notices made into tasks.", ""), "nothing moved: nothing to undo");
 }
 
 #[test]
@@ -582,7 +583,7 @@ fn an_answer_in_ones_own_words_is_confirmed_as_nora_would_keep_it() {
     take(&mut app);
     let questions = &app.nora.sorting.questions;
     assert!(questions.list.iter().all(|a| a.name != "ASK-0002") && questions.drafts.is_empty() && questions.confirming.is_empty());
-    assert_eq!(questions.noted.as_deref(), Some("Noted: Garage Exemple repairs our vans: a supplier."));
+    assert_eq!(questions.noted.as_ref().map(|n| n.words.as_str()), Some("Noted: Garage Exemple repairs our vans: a supplier."));
 }
 
 #[test]
@@ -645,4 +646,49 @@ fn every_call_is_one_of_the_methods_with_a_plain_object() {
     assert_eq!(every(15), "Every 15 minutes");
     assert_eq!(every(60), "Every hour");
     assert_eq!(every(120), "Every 2 hours");
+}
+
+#[test]
+fn an_answer_to_a_question_of_a_familys_folder_moves_what_was_filed_and_annuler_undoes_it() {
+    let (mut app, calls) = hosted();
+    take(&mut app);
+    reply(
+        &calls,
+        MINE,
+        200,
+        ok(json!({"asks": [{"name": "ASK-0007", "kind": "Family", "topic": "Folder",
+            "title": "« Payment notice no. 117 »: shall I put them in « Invoices received » or in « Notifications »?",
+            "context": "In the last 30 days I filed 4 in « Invoices received » and 3 in « Notifications ».",
+            "choices": [{"code": "folder_1", "label": "Invoices received"}, {"code": "folder_2", "label": "Notifications"}, {"code": "inbox", "label": "Leave them in the inbox"}],
+            "box": BOX}], "retained": 0})),
+    );
+    take(&mut app);
+    act(&mut app, Intent::Answer("ASK-0007".into(), "folder_2".into()));
+    assert_eq!(made(&calls, ANSWER), vec![json!({"name": "ASK-0007", "choice": "folder_2", "channel": "button"})]);
+    reply(
+        &calls,
+        ANSWER,
+        200,
+        ok(
+            json!({"done": true, "said": "Noted: Notifications", "corrected": "4 mails of this family were moved to « Notifications ».", "run": "NFR-C1"}),
+        ),
+    );
+    take(&mut app);
+    let noted = app.nora.sorting.questions.noted.clone().unwrap();
+    assert_eq!((noted.account.as_str(), noted.run.as_str()), (BOX, "NFR-C1"));
+    assert!(app.nora.sorting.questions.list.is_empty());
+    // « Annuler »: the correction undone in its mailbox, called again while some are left.
+    act(&mut app, Intent::UndoNoted);
+    assert_eq!(made(&calls, UNDO), vec![json!({"account": BOX, "run": "NFR-C1"})]);
+    reply(&calls, UNDO, 200, ok(json!({"undone": 3, "moved": 0, "gone": 0, "failed": 0, "remaining": 1})));
+    take(&mut app);
+    assert_eq!(made(&calls, UNDO).len(), 2);
+    reply(&calls, UNDO, 200, ok(json!({"undone": 1, "moved": 0, "gone": 0, "failed": 0, "remaining": 0})));
+    take(&mut app);
+    let noted = app.nora.sorting.questions.noted.clone().unwrap();
+    assert_eq!((noted.words.as_str(), noted.run.as_str()), ("1 message is back where it was.", ""));
+    // The journal's correction: what it was about.
+    let journal = read_journal(&json!({"runs": [{"run": "NFR-C1", "kind": "correction", "ask": "ASK-0007", "about": "Payment notice no. 117",
+        "status": "undone", "started_at": "2026-10-14 15:58:00", "filed": 4, "still_filed": 0, "folders": [], "kinds": {"notifications": 4, "inbox": 0}, "can_undo": false}]}));
+    assert_eq!((journal.runs[0].kind.as_str(), journal.runs[0].about.as_str()), ("correction", "Payment notice no. 117"));
 }
