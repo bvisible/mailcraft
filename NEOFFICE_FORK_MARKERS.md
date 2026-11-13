@@ -265,6 +265,13 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   agent's), `apps/mailcraft-web/src/nora.rs` and `web.rs`, and `crates/ui-egui/src/compose.rs` (in a narrow window, or
   beside her pane, Attach, Save draft and Discard are their icons, and the message's state is cut to the room left
   rather than drawn over them).
+- In a hosting page's tab (nothing kept here, `Session::keeps_local` false): the mark at the top left of the title bar is
+  Neoffice's icon (`crates/ui-egui/src/host_mark.rs`, the hunk in `chrome.rs`), `assets/neoffice/neoffice-icon-64.png`,
+  the design system's `assets/logo/favicon.png` (`bvisible/neoffice-design-system`) copied byte for byte, and the browser
+  build's tab icon (`apps/mailcraft-web/index.html`); MailCraft's tile stays on the desktop. The module bar draws no greyed
+  Notes and Journal there (`nav.rs`): upstream keeps them for a .pst file's items, which have no view yet and which such a
+  tab never imports, beside the server's Notes. A server whose session lacks the Inbox tabs' capability
+  (`https://neoffice.me/jmap/neomail-stream`) is said once in the console (`apps/mailcraft-web/src/streams.rs`).
 - `.github/workflows/neoffice-i18n.yml`: `cargo xtask i18n` on a runner, by hand, its catalogues kept as an artifact to
   commit (the maintainer's Mac can't build the extractor).
 - `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`
@@ -491,6 +498,8 @@ the marker check does not know as one that takes comments:
   entries as `fr.po`, in German, Spanish and Italian (translated by Haiku), read over upstream's catalogues the same
   way; `it.po` also writes a numeric date with dots, as in Switzerland (`crates/i18n/src/date.rs`, its test). When a
   text is added to `fr.po`, it is added to these three too.
+- `assets/neoffice/neoffice-icon-64.png`: Neoffice's icon, the design system's `assets/logo/favicon.png` as it is (a PNG
+  takes no comment; `ATTRIBUTION.md` names it, with a marked row).
 - `crates/i18n/po/neoffice/nl.po`: the Dutch of the fork's own texts that upstream's Dutch lacks (so far the inbox's tabs,
   which a merge once left without a word in any language because they lived only in the generated catalogues; a test of
   `stream_tabs_tests.rs` holds their French to the catalogue); read over upstream's Dutch the same way.

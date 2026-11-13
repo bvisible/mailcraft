@@ -195,3 +195,21 @@ fn a_window_without_modules_of_a_page_s_draws_its_own_only() {
     assert!(h.state().hit.rect("hostModule", 0).is_none());
     assert!(h.state().hit.rect("module", Module::Calendar as u64).is_some());
 }
+
+/// A hosting page's tab keeps nothing here: no .pst file comes in, and its Notes are the server's (the module above Calendar's
+/// neighbours). The greyed Notes and Journal that upstream keeps for a .pst file's items, which open nothing, are not drawn there;
+/// the program that keeps its mail on the computer keeps them.
+#[test]
+fn a_hosting_page_s_tab_has_no_greyed_notes_or_journal_of_a_pst_file() {
+    for keeps_local in [true, false] {
+        let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
+        app.autosave = false;
+        app.auto_sync = false;
+        app.session.keeps_local = keeps_local;
+        let h = drawn(app);
+        let pending = [0, 1].map(|i| h.state().hit.rect("pendingModule", i));
+        assert_eq!(pending.map(|r| r.is_some()), [keeps_local; 2], "keeps_local {keeps_local}: {pending:?}");
+        // The window's own modules are there either way.
+        assert!(h.state().hit.rect("module", Module::Mail as u64).is_some(), "keeps_local {keeps_local}");
+    }
+}

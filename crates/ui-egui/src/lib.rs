@@ -128,6 +128,8 @@ mod graph_switch;
 pub mod host_attachments;
 // //// Neoffice — no Copy Diagnostics nor Report a Problem in a hosting page's tab: their pills and Help's buttons are for testers of MailCraft.
 mod host_diagnostics;
+// //// Neoffice — the mark at the top left of a hosting page's tab: Neoffice's icon, from its design system, not MailCraft's tile.
+mod host_mark;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
 pub mod host_menu;
 // //// Neoffice — modules a hosting page draws itself, beside the window's own (Synk, in Neodesk's NeoMail window).

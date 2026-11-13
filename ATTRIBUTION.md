@@ -65,3 +65,6 @@ Generated-in-code art is original and has no file to list: the UI icon set (`cra
 | `crates/smime/testdata/nocerts.eml` | MailCraft contributors | as `detached.eml`, `-nocerts` | MIT OR Apache-2.0 | Test vector (#30): no certificate in the message |
 | `fuzz/seeds/smime/detached` | MailCraft contributors | the CMS of a detached signature as `detached.eml`'s, in DER | MIT OR Apache-2.0 | Fuzz seed (#30) |
 | `fuzz/seeds/smime/opaque-ber` | MailCraft contributors | the CMS of `opaque-ber.eml` | MIT OR Apache-2.0 | Fuzz seed (#30) |
+| `assets/neoffice/neoffice-icon-64.png` | Neoservice (the Neoffice design system) | `assets/logo/favicon.png` of `bvisible/neoffice-design-system`, the 64 px render of its `neoffice-icon.svg`, copied byte for byte | Neoffice's mark, not under this project's licence: for Neoffice's builds only | Neoffice's icon: the title bar's mark in a hosting page's tab, and the browser build's tab icon |
+
+<!-- //// Neoffice — the last row is the fork's: Neoffice's icon, which its builds show in place of MailCraft's (crates/ui-egui/src/host_mark.rs, apps/mailcraft-web/index.html). It is Neoffice's own mark, not open: the policy above is upstream's, for MailCraft's assets. -->

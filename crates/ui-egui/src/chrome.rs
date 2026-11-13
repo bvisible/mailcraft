@@ -342,7 +342,8 @@ pub fn title_bar(app: &mut MailApp, ui: &mut Ui) {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
                 // MailCraft's mark, then the Quick Access Toolbar: Send/Receive, Undo, Redo.
                 let (mark, _) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::hover());
-                icons::app_mark(ui.painter(), mark);
+                // //// Neoffice — Neoffice's icon from its design system in a hosting page's tab, MailCraft's tile on the desktop (host_mark.rs).
+                crate::host_mark::paint(app, ui, mark);
                 ui.add_space(8.0);
                 let sync_tip = if app.syncing() { tl!("Sending and receiving…") } else { tl!("Send/Receive All Folders") };
                 qat_button(ui, app, "sync", sync_tip, "ui.sync");

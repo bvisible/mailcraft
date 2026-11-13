@@ -99,8 +99,15 @@ pub fn module_bar(app: &mut MailApp, ui: &mut Ui) {
             }
         }
         // What a .pst file's notes and journal entries will be read in: kept, with no view yet.
-        for (icon, name) in [("notes", tl!("Notes")), ("journal", tl!("Journal"))] {
+        // //// Neoffice — not in a hosting page's tab (nothing kept here: `Session::keeps_local` false). Upstream draws a greyed
+        // //// Neoffice — Notes and Journal for a .pst file's items, which have no view yet; there no .pst comes in
+        // //// Neoffice — (`kept_here::import_refusal`) and the Notes above are the server's, so a second, greyed Notes and a
+        // //// Neoffice — Journal that open nothing only misled. To drop once upstream gives them a view a hosting page can use.
+        let pending = if app.session.keeps_local { 2 } else { 0 };
+        for (i, (icon, name)) in [("notes", tl!("Notes")), ("journal", tl!("Journal"))].into_iter().enumerate().take(pending) {
             let (r, resp) = ui.allocate_exact_size(vec2(RAIL_W, RAIL_PITCH), Sense::hover());
+            // //// Neoffice — where each is, for the tests (a hosting page's tab draws neither: host_modules/tests.rs).
+            app.hit.add("pendingModule", i as u64, r);
             let ink = t.icon.linear_multiply(0.45);
             icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), icon, ink, ink);
             resp.on_hover_text(format!("{name}: {}", tl!("Pending development")));

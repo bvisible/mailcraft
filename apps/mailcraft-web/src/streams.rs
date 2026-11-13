@@ -348,6 +348,8 @@ mod run {
                 if s.book.waiting() { PENDING_MS } else { SOON_MS }
             }
             Err(Failure::Unsupported) => {
+                // Said once a mailbox (it is never asked again), and nothing of it: why its Inbox shows no tabs.
+                log::info!("neomail streams: the server does not offer the Inbox tabs (Main, Notifications, Newsletters)");
                 s.unsupported.insert(ended.email);
                 SOON_MS
             }
