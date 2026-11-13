@@ -91,9 +91,10 @@ fn a_page_with_its_own_menu_hides_the_module_bar_and_mail_s_folder_pane_and_noth
     let mut own = sample(false);
     let mut menu = sample(true);
     let (with, without) = (kinds(&mut menu), kinds(&mut own));
-    // Exactly what the page's menu draws in their place.
+    // Exactly what the page's menu draws in their place: the module bar goes whole, the greyed Notes and Journal of a .pst
+    // file with it (`pendingModule`: this sample keeps its mail here, so the window draws them, nav.rs).
     let gone: BTreeSet<String> = without.difference(&with).cloned().collect();
-    assert_eq!(gone, names(&["folder", "folderHeading", "folderPaneHide", "module"]));
+    assert_eq!(gone, names(&["folder", "folderHeading", "folderPaneHide", "module", "pendingModule"]));
     assert!(with.is_subset(&without), "nothing new: {:?}", with.difference(&without).collect::<Vec<_>>());
     // Not even the strip that stays when the pane is put away: the list starts at the window's left edge.
     assert!(rect(&menu, "folderPaneShow", 0).is_none());
@@ -114,12 +115,12 @@ fn a_page_with_its_own_menu_hides_the_module_bar_and_mail_s_folder_pane_and_noth
         if module == Module::Calendar {
             let (with, without) = (kinds(&mut menu), kinds(&mut own));
             assert!(with.contains("calendar") && with.contains("miniDay"), "the calendars' pane: {with:?}");
-            assert_eq!(without.difference(&with).cloned().collect::<BTreeSet<_>>(), names(&["module"]));
+            assert_eq!(without.difference(&with).cloned().collect::<BTreeSet<_>>(), names(&["module", "pendingModule"]));
         }
         if module == Module::People {
             let (with, without) = (kinds(&mut menu), kinds(&mut own));
             assert!(with.contains("contact"), "{with:?}");
-            assert_eq!(without.difference(&with).cloned().collect::<BTreeSet<_>>(), names(&["module"]));
+            assert_eq!(without.difference(&with).cloned().collect::<BTreeSet<_>>(), names(&["module", "pendingModule"]));
         }
     }
 }
