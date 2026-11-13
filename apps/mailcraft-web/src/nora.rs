@@ -21,7 +21,7 @@
 //! Only the six methods the window calls go out ([`METHODS`]), and the seven of Nora's conversation that
 //! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), and the two of her ready replies
 //! ([`READY_METHODS`]), these only where they can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), and
-//! the fourteen of « Trier avec Nora » ([`SORTING_METHODS`], where they can go: [`sorting`]), each with a plain JSON
+//! the sixteen of « Trier avec Nora » ([`SORTING_METHODS`], where they can go: [`sorting`]), each with a plain JSON
 //! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
 //! [`MAX_ANSWER`] bytes, its text as UTF-8 with what isn't replaced; a call is given up after
 //! [`GIVE_UP_MS`]. A call that got no answer comes back with status 0 and why, which the window says.
@@ -479,18 +479,18 @@ mod tests {
             assert_eq!(allowed(&call(method, json!({"action": "get"}))), Ok(r#"{"action":"get"}"#.to_string()));
             assert!(allowed(&call(method, json!({"cmd": "frappe.client.delete"}))).is_err(), "{method}");
         }
-        // « Trier avec Nora »: the twelve methods of the mailbox's filing and the two answers to her questions, numbers and
+        // « Trier avec Nora »: the twelve methods of the mailbox's filing and the four of her questions, numbers and
         // lists among their arguments, and no other of the server's filing or questions.
         for method in SORTING_METHODS {
             let args = json!({"account": "ada@example.org", "on": 1, "folders": [{"folder": "Clients", "takes": "clients"}]});
             assert!(allowed(&call(method, args.clone())).is_ok(), "{method}");
             assert!(allowed(&call(method, json!({"account": "ada@example.org", "cmd": "frappe.client.delete"}))).is_err(), "{method}");
         }
-        assert_eq!(SORTING_METHODS.len(), 14);
+        assert_eq!(SORTING_METHODS.len(), 16);
         assert!(SORTING_METHODS.iter().all(|m| m.starts_with("nora.api.v2.mail_sorting.") || m.starts_with("nora.api.asks.")));
         for (method, args) in [
             ("nora.api.v2.mail_sorting.reset", json!({})),
-            ("nora.api.asks.confirm", json!({})),
+            ("nora.api.asks.retained", json!({})),
             ("nora.api.asks.reopen", json!({})),
             ("nora.api.v2.secretary_plan.validate", json!({})),
             ("nora.api.nora_webmail.get_style_profile", json!({})),

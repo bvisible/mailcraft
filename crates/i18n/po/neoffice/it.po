@@ -4061,3 +4061,27 @@ msgstr "{when}: {what} smistati."
 
 msgid "‹ Back to the conversation"
 msgstr "‹ Torna alla conversazione"
+
+# Nora's questions in NeoMail (nora/sorting_view.rs, `questions`, `ribbon_badge`): answered by a button, in one's own words, later.
+msgid "Nora would keep:"
+msgstr "Nora terrebbe:"
+
+msgid "That's it"
+msgstr "Esatto"
+
+msgid "Say it otherwise"
+msgstr "Dillo in un altro modo"
+
+msgid "Answer Nora…"
+msgstr "Rispondi a Nora…"
+
+msgid "Send my answer"
+msgstr "Invia la mia risposta"
+
+msgid "{n} question from Nora"
+msgid_plural "{n} questions from Nora"
+msgstr[0] "{n} domanda di Nora"
+msgstr[1] "{n} domande di Nora"
+
+msgid "Nora could not make out your answer: say it again, or choose one of hers."
+msgstr "Nora non ha capito la tua risposta: ripetila oppure scegline una delle sue."

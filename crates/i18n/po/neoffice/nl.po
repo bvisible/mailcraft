@@ -393,3 +393,27 @@ msgstr "‹ Terug naar het gesprek"
 
 msgid "the connection stopped before Nora answered"
 msgstr "de verbinding werd verbroken voordat Nora antwoordde"
+
+# Nora's questions in NeoMail (nora/sorting_view.rs, `questions`, `ribbon_badge`): answered by a button, in one's own words, later.
+msgid "Nora would keep:"
+msgstr "Nora zou behouden:"
+
+msgid "That's it"
+msgstr "Dat klopt"
+
+msgid "Say it otherwise"
+msgstr "Anders formuleren"
+
+msgid "Answer Nora…"
+msgstr "Nora antwoorden…"
+
+msgid "Send my answer"
+msgstr "Mijn antwoord verzenden"
+
+msgid "{n} question from Nora"
+msgid_plural "{n} questions from Nora"
+msgstr[0] "{n} vraag van Nora"
+msgstr[1] "{n} vragen van Nora"
+
+msgid "Nora could not make out your answer: say it again, or choose one of hers."
+msgstr "Nora kon uw antwoord niet begrijpen: formuleert u het opnieuw of kies een van haar opties."

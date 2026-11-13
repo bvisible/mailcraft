@@ -103,10 +103,11 @@ pub const CHAT_METHODS: [&str; 7] = [
 
 /// The methods of « Trier avec Nora » ([`sorting`]): what the server says of a mailbox's filing (its state, what Nora read,
 /// her plan, her journal, the mails of a run, her questions), what the person in charge of the box changes (the switch,
-/// a plan proposed then validated, the tidying of the inbox and its stop, a run undone), and the person's answer to one of
-/// her questions or « later ». They go out where her conversation's do, and through a host that makes the calls itself
+/// a plan proposed then validated, the tidying of the inbox and its stop, a run undone), and Nora's questions (the person's
+/// questions of all their mailboxes, an answer by a button or in their words, the words Nora keeps confirmed, « later »).
+/// They go out where her conversation's do, and through a host that makes the calls itself
 /// only when it says it takes them ([`Host::sorting`]: Neodesk's shell lets its own list through, `mail.js`).
-pub const SORTING_METHODS: [&str; 14] = [
+pub const SORTING_METHODS: [&str; 16] = [
     sorting::STATE,
     sorting::SURVEY,
     sorting::PLAN,
@@ -119,7 +120,9 @@ pub const SORTING_METHODS: [&str; 14] = [
     sorting::TIDY,
     sorting::STOP_TIDY,
     sorting::UNDO,
+    sorting::MINE,
     sorting::ANSWER,
+    sorting::CONFIRM,
     sorting::LATER,
 ];
 

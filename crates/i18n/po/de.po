@@ -1403,6 +1403,11 @@ msgid "Another window is open: the report wasn't filled in."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Answer Nora…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/invitation.rs
 #, fuzzy
 msgid "Answer the invitation in your calendar. The organizer can't be written to from this account."
@@ -9014,6 +9019,11 @@ msgid "Nora can propose replies in your own style. To do so she reads the messag
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora could not make out your answer: say it again, or choose one of hers."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora couldn't answer: {reason}"
 msgstr ""
@@ -9250,6 +9260,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora works on the mailboxes of your Neoffice account only."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora would keep:"
 msgstr ""
 
 #. interface
@@ -11987,6 +12002,11 @@ msgid "Saving…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Say it otherwise"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 msgid "Say that this is meant with \"confirmed\": true."
 msgstr ""
@@ -12415,6 +12435,11 @@ msgstr ""
 #, fuzzy
 msgid "Send from a Shared Mailbox"
 msgstr "Aus einem freigegebenen Postfach senden"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Send my answer"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
@@ -14101,6 +14126,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/report_problem.rs
 msgid "That's as much as a link to GitHub can carry: add the rest on GitHub once the page is open."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "That's it"
 msgstr ""
 
 #. interface
@@ -23083,6 +23113,13 @@ msgid "{n} problem"
 msgid_plural "{n} problems"
 msgstr[0] "{n} Problem"
 msgstr[1] "{n} Probleme"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} question from Nora"
+msgid_plural "{n} questions from Nora"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs

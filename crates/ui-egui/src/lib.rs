@@ -5593,6 +5593,8 @@ impl MailApp {
                 host_modules::place(self, ui);
             } else {
                 ribbon::show(self, ui);
+                // //// Neoffice — the number of Nora's questions to the person on her buttons of the ribbon (nora/sorting_view.rs).
+                nora::sorting_view::ribbon_badge(self, ui);
                 // //// Neoffice — Nora's pane at the right of the window, while it is open (nora/assist.rs).
                 nora::assist::side(self, ui);
                 // //// Neoffice — the Échanges pane at the right of the window, while it is open; Nora's and it never stand together (exchanges_pane.rs).

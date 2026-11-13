@@ -12,7 +12,9 @@
 //!   que je range ? » with the ways the server knows (`state.modes`), « Voici ce que je ferais » with its folders and counts,
 //!   « Ranger maintenant » / « Modifier », the tidying as it goes, « C'est rangé » with « Annuler ce rangement », « Ensuite, je
 //!   continue toute seule ? », « Nora vous demande » and the journal;
-//! - the activation card, a modal window ([`card`]).
+//! - the activation card, a modal window ([`card`]);
+//! - Nora's questions to the person ([`questions`]), one section in her pane's home (all of them) and under the flow's result
+//!   (those of its mailbox), and their number on her button of the ribbon ([`ribbon_badge`]).
 //!
 //! What the server can't do isn't drawn: no « Par projet » (the ways are the server's), no switch « Séparer les
 //! notifications » (the Inbox's tabs are the site's: `state.streams`), no question of a family's folder. The look is the
@@ -27,7 +29,7 @@ use egui::{
 };
 use mailcraft_time::Date;
 
-use super::sorting::{self, BoxState, Flow, Intent, Plan, Run, Stage, every};
+use super::sorting::{self, BoxState, Flow, Intent, Plan, Questions, Run, Stage, every};
 use crate::MailApp;
 use crate::i18n::fmt;
 use crate::theme::{Tokens, regular, semibold};
@@ -146,6 +148,8 @@ pub(crate) struct FlowCx {
     pub(crate) address: String,
     /// A call that changes something is in flight: its buttons wait.
     pub(crate) changing: bool,
+    /// The person has more than one mailbox here: each question says which it is about.
+    pub(crate) show_box: bool,
 }
 
 // ---- the parts ----
@@ -525,7 +529,7 @@ pub(crate) fn home_switch(ui: &mut Ui, home: &Home) -> Option<Intent> {
 // ---- the flow ----
 
 /// The flow of « Trier avec Nora », where her panel draws an empty conversation. What the person asked, if anything.
-pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, cx: &FlowCx) -> Option<Intent> {
+pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked: &mut Questions, cx: &FlowCx) -> Option<Intent> {
     let ds = Ds::of(ui.visuals().dark_mode);
     let mut intent = None;
     let may_set = state.is_some_and(|s| s.may_set);
@@ -642,8 +646,9 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, cx: &
         }
     }
     if matches!(flow.stage, Stage::Done | Stage::Plan) || flow.journal_first {
-        if let Some(asked) = asks(ui, &ds, flow, enabled) {
-            intent = Some(asked);
+        // Her questions about this mailbox: the section of her pane's home, for this mailbox only.
+        if let Some(answered) = questions(ui, asked, Some(&cx.address), cx.show_box, may_set && !cx.changing) {
+            intent = Some(answered);
         }
         if let Some(asked) = journal(ui, &ds, flow, cx, enabled) {
             intent = Some(asked);
@@ -832,30 +837,117 @@ fn folders(ui: &mut Ui, ds: &Ds, run: &Run) {
     }
 }
 
-/// « Nora vous demande »: her questions about the mailbox, each with the answers she offers and « Plus tard ».
-fn asks(ui: &mut Ui, ds: &Ds, flow: &Flow, enabled: bool) -> Option<Intent> {
+/// « Nora vous demande »: her questions, each with the answers she offers, a field to answer in one's own words and « Plus
+/// tard »; what she would keep of those words, to confirm or say otherwise; what she noted of the last answer. The same
+/// section in her pane's home (all the person's questions) and under the flow's result (those of its mailbox, `mailbox`).
+pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str>, show_box: bool, enabled: bool) -> Option<Intent> {
+    let ds = Ds::of(ui.visuals().dark_mode);
     let mut intent = None;
-    for ask in &flow.asks {
-        hers(ui, ds, |ui| {
-            ui.add(Label::new(RichText::new(tl!("Nora asks you")).font(face(ui, TextStyle::Button, 14.0)).color(ds.text)).selectable(false));
-            said(ui, ds, &ask.title);
-            if !ask.context.is_empty() {
-                note(ui, ds, &ask.context);
-            }
+    // Which mailbox each is about, where they are about more than one or the person has several.
+    let mut boxes: Vec<String> = asked.list.iter().map(|a| a.mailbox.to_lowercase()).collect();
+    boxes.sort();
+    boxes.dedup();
+    let show_box = show_box || boxes.len() > 1;
+    let shown: Vec<sorting::Ask> =
+        asked.list.iter().filter(|a| mailbox.is_none_or(|m| a.mailbox.is_empty() || a.mailbox.eq_ignore_ascii_case(m))).cloned().collect();
+    for ask in shown {
+        let name = ask.name.clone();
+        hers(ui, &ds, |ui| {
             ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                for (code, label) in &ask.choices {
-                    if chip(ui, ds, label, false, enabled).clicked() {
-                        intent = Some(Intent::Answer(ask.name.clone(), code.clone()));
-                    }
+                ui.add(Label::new(RichText::new(tl!("Nora asks you")).font(face(ui, TextStyle::Button, 14.0)).color(ds.text)).selectable(false));
+                if show_box && !ask.mailbox.is_empty() {
+                    ui.add(Label::new(RichText::new(&ask.mailbox).font(face(ui, TextStyle::Small, 11.5)).color(ds.weak)).selectable(false));
                 }
             });
-            if enabled && pane_link(ui, ds, tl!("Later"), TextStyle::Button, 13.0).clicked() {
-                intent = Some(Intent::Later(ask.name.clone()));
+            said(ui, &ds, &ask.title);
+            if !ask.context.is_empty() {
+                note(ui, &ds, &ask.context);
+            }
+            match asked.confirming.get_mut(&name) {
+                // What Nora would keep of the person's words: theirs to change, then to confirm.
+                Some(confirming) => {
+                    note(ui, &ds, tl!("Nora would keep:"));
+                    ui.add(TextEdit::multiline(&mut confirming.retained).desired_rows(2).desired_width(f32::INFINITY).char_limit(500).font(face(
+                        ui,
+                        TextStyle::Body,
+                        13.0,
+                    )));
+                    let ready = enabled && !confirming.retained.trim().is_empty();
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        if primary(ui, &ds, tl!("That's it"), ready).clicked() {
+                            intent = Some(Intent::ConfirmAnswer(name.clone()));
+                        }
+                        if enabled && pane_link(ui, &ds, tl!("Say it otherwise"), TextStyle::Button, 13.0).clicked() {
+                            intent = Some(Intent::Rephrase(name.clone()));
+                        }
+                    });
+                }
+                None => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                        for (code, label) in &ask.choices {
+                            if chip(ui, &ds, label, false, enabled).clicked() {
+                                intent = Some(Intent::Answer(name.clone(), code.clone()));
+                            }
+                        }
+                    });
+                    let draft = asked.drafts.entry(name.clone()).or_default();
+                    ui.horizontal(|ui| {
+                        let width = (ui.available_width() - 96.0).max(80.0);
+                        let field = TextEdit::singleline(draft).hint_text(tl!("Answer Nora…")).desired_width(width).char_limit(1000);
+                        let response = ui.add_enabled(enabled, field.font(face(ui, TextStyle::Body, 13.0)));
+                        let typed = !draft.trim().is_empty();
+                        let entered = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if secondary(ui, &ds, tl!("Send my answer"), enabled && typed).clicked() || (enabled && typed && entered) {
+                            intent = Some(Intent::SayAnswer(name.clone()));
+                        }
+                    });
+                    if enabled && pane_link(ui, &ds, tl!("Later"), TextStyle::Button, 13.0).clicked() {
+                        intent = Some(Intent::Later(name.clone()));
+                    }
+                }
             }
         });
     }
+    if let Some(noted) = &asked.noted {
+        hers(ui, &ds, |ui| said(ui, &ds, noted));
+    }
+    if let Some(error) = &asked.error {
+        notice(ui, &ds, error, true);
+    }
     intent
+}
+
+/// The number on her button for `count` questions: 1 to 9, then « 9+ ».
+pub(crate) fn badge_words(count: usize) -> String {
+    if count > 9 { "9+".to_string() } else { count.to_string() }
+}
+
+/// The number of Nora's questions to the person on her buttons of the ribbon (« Nora » of Mail's Home tab, « Ask Nora » of a
+/// message being written), as they were drawn this frame: an ink disc with its number in paper (paper and ink in the dark),
+/// 1 to 9, then « 9+ ». Nothing without a question.
+pub(crate) fn ribbon_badge(app: &mut MailApp, ui: &Ui) {
+    let count = app.nora.sorting.questions.list.len();
+    if count == 0 || !sorting::offered(app) {
+        return;
+    }
+    let ds = Ds::of(Tokens::get(ui.ctx()).dark);
+    let words = badge_words(count);
+    let label = tln!(count, "{n} question from Nora", "{n} questions from Nora");
+    for key in ["nora", "ui.noraAssistant"] {
+        let Some(button) = app.hit.rect("ribbon", crate::ribbon::hit_id(key)) else { continue };
+        let galley = ui.painter().layout_no_wrap(words.clone(), semibold(10.5), ds.primary_fg);
+        let width = (galley.size().x + 8.0).max(16.0);
+        let disc = egui::Rect::from_center_size(pos2(button.max.x - width / 2.0 - 1.0, button.min.y + 8.0), vec2(width, 16.0));
+        let response = ui.interact(disc, ui.scope_id().with(("nora_questions_badge", key)), Sense::hover());
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
+        let response = response.on_hover_text(&label);
+        let painter = ui.painter();
+        painter.rect(disc, CornerRadius::same(255), ds.primary, Stroke::new(1.5, ds.paper), egui::StrokeKind::Outside);
+        painter.galley(pos2(disc.center().x - galley.size().x / 2.0, disc.center().y - galley.size().y / 2.0), galley, ds.primary_fg);
+        app.hit.add("noraQuestions", u64::from(key == "nora"), response.rect);
+    }
 }
 
 /// « Journal »: her runs, each with « Annuler » while it can be undone, and what she learnt from the mail people moved.

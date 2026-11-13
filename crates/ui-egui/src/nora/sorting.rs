@@ -12,7 +12,11 @@
 //! - the flow in her pane ([`Flow`]) reads what Nora read (`survey`), her plan, her journal and her questions, and asks for a
 //!   plan (`propose`), validates it and tidies the inbox (`validate`, `tidy`), follows the tidying, undoes a run (`undo`, called
 //!   again while the server says some are left), answers a question (`nora.api.asks.answer`, `later`);
-//! - the activation card ([`Card`]) turns the filing on (`switch`) and, without a validated plan, opens the flow on a plan.
+//! - the activation card ([`Card`]) turns the filing on (`switch`) and, without a validated plan, opens the flow on a plan;
+//! - Nora's questions to the person, of all their mailboxes ([`Questions`], `nora.api.asks.mine`, read when the window starts,
+//!   every fifteen minutes and when her pane opens): the number on her button of the ribbon, the section « Nora vous demande »
+//!   of her pane's home and of the flow's result, answered by a button, in the person's own words (Nora says what she would
+//!   keep, the person confirms it), or « later ».
 //!
 //! Nothing of it exists in a window that keeps its mail on the computer, nor where the host doesn't carry these calls
 //! ([`super::Host::sorting`]), nor where the server says it isn't available (`state.available`: a plan without Nora's
@@ -47,7 +51,9 @@ pub const VALIDATE: &str = "nora.api.v2.mail_sorting.validate";
 pub const TIDY: &str = "nora.api.v2.mail_sorting.tidy";
 pub const STOP_TIDY: &str = "nora.api.v2.mail_sorting.stop_tidy";
 pub const UNDO: &str = "nora.api.v2.mail_sorting.undo";
+pub const MINE: &str = "nora.api.asks.mine";
 pub const ANSWER: &str = "nora.api.asks.answer";
+pub const CONFIRM: &str = "nora.api.asks.confirm";
 pub const LATER: &str = "nora.api.asks.later";
 
 /// The calls of « Trier avec Nora » are numbered apart from the window's other calls of Nora's.
@@ -60,6 +66,13 @@ pub(crate) const TIDY_EVERY_MS: f64 = 2_000.0;
 /// How often a plan made in the background (by activity: 6 to 25 seconds) is read again, and when it is given up.
 pub(crate) const PLAN_EVERY_MS: f64 = 3_000.0;
 pub(crate) const PLAN_GIVE_UP_MS: f64 = 120_000.0;
+/// How often Nora's questions are read again, in milliseconds (each read shows the person at most two new ones a day), and
+/// how old a read may be when her pane opens.
+pub(crate) const QUESTIONS_EVERY_MS: f64 = 15.0 * 60_000.0;
+const QUESTIONS_FRESH_MS: f64 = 60_000.0;
+/// The longest answer in the person's own words sent, and the longest sentence of Nora's they confirm.
+const MAX_SAID: usize = 1_000;
+const MAX_RETAINED: usize = 500;
 /// How many times an undo is called again while the server says some mails are left (500 a call).
 const MAX_UNDO_ROUNDS: u32 = 20;
 /// The days of the inbox « Ranger maintenant » tidies (the planche's « les 30 derniers jours »).
@@ -251,13 +264,23 @@ pub(crate) struct Journal {
     pub(crate) may_set: bool,
 }
 
-/// One of Nora's questions about the mailbox (`asks`).
+/// One of Nora's questions to the person (`nora.api.asks.mine`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Ask {
     pub(crate) name: String,
     pub(crate) title: String,
     pub(crate) context: String,
     pub(crate) choices: Vec<(String, String)>,
+    /// The address of the mailbox it is about.
+    pub(crate) mailbox: String,
+}
+
+/// What Nora would keep of the person's own words, for them to confirm (`answer` with `text`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Confirming {
+    pub(crate) retained: String,
+    pub(crate) choice: String,
+    pub(crate) scope: String,
 }
 
 /// What an undo did (`undo`).
@@ -461,9 +484,9 @@ pub(crate) fn read_journal(m: &Value) -> Journal {
     Journal { runs, learned, may_set: flag(m, "may_set") }
 }
 
-/// `asks`.
-pub(crate) fn read_asks(m: &Value) -> Vec<Ask> {
-    items(m, "asks")
+/// `nora.api.asks.mine` (and the box's own `asks`): the questions, and how many answers Nora keeps.
+pub(crate) fn read_asks(m: &Value) -> (Vec<Ask>, u64) {
+    let asks = items(m, "asks")
         .map(|a| Ask {
             name: name(a, "name"),
             title: text(a, "title"),
@@ -473,10 +496,25 @@ pub(crate) fn read_asks(m: &Value) -> Vec<Ask> {
                 .filter(|(code, label)| !code.is_empty() && !label.is_empty())
                 .take(6)
                 .collect(),
+            mailbox: text(a, "box"),
         })
         .filter(|a| !a.name.is_empty() && !a.title.is_empty())
-        .take(5)
-        .collect()
+        .take(10)
+        .collect();
+    (asks, count(m, "retained"))
+}
+
+/// The answer of `answer` in the person's own words: what Nora would keep, to confirm.
+pub(crate) fn read_confirm(m: &Value) -> Option<Confirming> {
+    let c = m.get("confirm").filter(|c| c.is_object())?;
+    let retained = c.get("retained").and_then(Value::as_str).map(|r| r.split_whitespace().collect::<Vec<_>>().join(" "))?;
+    let retained: String = retained.chars().filter(|ch| !ch.is_control()).take(MAX_RETAINED).collect();
+    (!retained.is_empty()).then(|| Confirming { retained, choice: name(c, "choice"), scope: name(c, "scope") })
+}
+
+/// What Nora says once an answer is kept (`said`, « Noté : … »), and what she put right meanwhile (`corrected`).
+pub(crate) fn read_noted(m: &Value) -> String {
+    [text(m, "said"), text(m, "corrected")].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ")
 }
 
 /// `undo`.
@@ -509,7 +547,8 @@ enum Asking {
     Survey(String),
     Plan(String),
     Journal(String),
-    Asks(String),
+    /// Nora's questions, of all the person's mailboxes.
+    Mine,
     Switch(String, AfterSwitch),
     Propose(String),
     /// Validated, the inbox tidied too when `true`.
@@ -519,8 +558,11 @@ enum Asking {
     Tidy(String),
     StopTidy(String),
     Undo(String, String),
-    Answer(String, String),
-    Later(String, String),
+    /// A question answered by a button, in the person's words, confirmed, put off: the question.
+    Answer(String),
+    Said(String),
+    Confirm(String),
+    Later(String),
 }
 
 /// What follows a switch.
@@ -592,7 +634,6 @@ pub(crate) struct Flow {
     pub(crate) survey: Option<Survey>,
     pub(crate) plan: Option<Plan>,
     pub(crate) journal: Option<Journal>,
-    pub(crate) asks: Vec<Ask>,
     /// The way to file the person chose (its words are shown as theirs).
     pub(crate) chosen: Option<Mode>,
     /// Their own words for a plan by activity.
@@ -625,7 +666,6 @@ impl Flow {
             survey: None,
             plan: None,
             journal: None,
-            asks: Vec::new(),
             chosen: None,
             wishes: String::new(),
             editing: None,
@@ -660,6 +700,38 @@ pub(crate) struct Card {
     pub(crate) busy: bool,
 }
 
+/// Nora's questions to the person, of all their mailboxes, and what they are answering.
+#[derive(Default)]
+pub(crate) struct Questions {
+    pub(crate) list: Vec<Ask>,
+    /// How many answers Nora keeps.
+    pub(crate) retained: u64,
+    /// When they were last read (milliseconds).
+    asked_at: f64,
+    /// The person's own words for a question, by its name, as they type them.
+    pub(crate) drafts: BTreeMap<String, String>,
+    /// What Nora would keep of their words, by the question's name, as they change it before confirming.
+    pub(crate) confirming: BTreeMap<String, Confirming>,
+    /// What Nora said of the last answer (« Noté : … »).
+    pub(crate) noted: Option<String>,
+    pub(crate) error: Option<String>,
+}
+
+impl Questions {
+    /// The questions as if the server had just said them (for the tests that draw them).
+    #[cfg(test)]
+    pub(crate) fn said(list: Vec<Ask>) -> Questions {
+        Questions { list, asked_at: crate::now_ms(), ..Questions::default() }
+    }
+
+    /// A question is answered or set aside: it goes, with what was typed for it.
+    fn settled(&mut self, ask: &str) {
+        self.list.retain(|a| a.name != ask);
+        self.drafts.remove(ask);
+        self.confirming.remove(ask);
+    }
+}
+
 /// What the window knows of « Trier avec Nora » while it runs. Nothing of it is kept between runs.
 #[derive(Default)]
 pub(crate) struct Sorting {
@@ -669,6 +741,7 @@ pub(crate) struct Sorting {
     pub(crate) boxes: BTreeMap<String, Known>,
     pub(crate) flow: Option<Flow>,
     pub(crate) card: Option<Card>,
+    pub(crate) questions: Questions,
 }
 
 impl Sorting {
@@ -693,8 +766,10 @@ impl Sorting {
                     | Asking::Tidy(_)
                     | Asking::StopTidy(_)
                     | Asking::Undo(..)
-                    | Asking::Answer(..)
-                    | Asking::Later(..)
+                    | Asking::Answer(_)
+                    | Asking::Said(_)
+                    | Asking::Confirm(_)
+                    | Asking::Later(_)
             )
         })
     }
@@ -726,7 +801,12 @@ pub(crate) enum Intent {
     Undo(String),
     /// « Ensuite, je continue ? »: a rhythm in minutes, or none.
     Continue(Option<u64>),
+    /// A question answered by one of its buttons (its name, the choice's code); in the person's own words (what they typed
+    /// for it); what Nora would keep of them confirmed, or put aside to say it again; « Plus tard ».
     Answer(String, String),
+    SayAnswer(String),
+    ConfirmAnswer(String),
+    Rephrase(String),
     Later(String),
     /// The pane's switch.
     Switch {
@@ -782,8 +862,18 @@ pub(crate) fn poll(app: &mut MailApp) {
     let now = crate::now_ms();
     take_answers(app, now);
     let mut wake: Option<f64> = None;
-    if let Some(account) = box_in_view(app, false) {
-        wake = look_at(app, &account, now);
+    if offered(app) {
+        let questions = &mut app.nora.sorting.questions;
+        if questions.asked_at <= 0.0 || now - questions.asked_at >= QUESTIONS_EVERY_MS {
+            questions.asked_at = now;
+            call(app, MINE, json!({}), Asking::Mine);
+        }
+        wake = Some(app.nora.sorting.questions.asked_at + QUESTIONS_EVERY_MS);
+    }
+    if let Some(account) = box_in_view(app, false)
+        && let Some(at) = look_at(app, &account, now)
+    {
+        wake = Some(wake.map_or(at, |w| w.min(at)));
     }
     if let Some(at) = follow_flow(app, now) {
         wake = Some(wake.map_or(at, |w| w.min(at)));
@@ -848,20 +938,20 @@ fn take_answers(app: &mut MailApp, now: f64) {
     let mut landed = Vec::new();
     for a in asked {
         let result = match a.answer.try_recv() {
-            Ok(answer) if answer.id == a.id => Some(answer::sorting(&answer)),
-            Ok(_) | Err(TryRecvError::Disconnected) => Some(Err(answer::not_reached(tl!("the connection stopped before Nora answered")))),
-            Err(TryRecvError::Empty) if now - a.since > DEADLINE_MS => Some(Err(tl!("it took too long").to_string())),
+            Ok(answer) if answer.id == a.id => Some((answer::sorting(&answer), answer.status)),
+            Ok(_) | Err(TryRecvError::Disconnected) => Some((Err(answer::not_reached(tl!("the connection stopped before Nora answered"))), 0)),
+            Err(TryRecvError::Empty) if now - a.since > DEADLINE_MS => Some((Err(tl!("it took too long").to_string()), 0)),
             Err(TryRecvError::Empty) => None,
         };
         match result {
             None => kept.push(a),
-            Some(result) => landed.push((a.what, result)),
+            Some((result, status)) => landed.push((a.what, result, status)),
         }
     }
     kept.append(&mut app.nora.sorting.asked);
     app.nora.sorting.asked = kept;
-    for (what, result) in landed {
-        land(app, what, result, now);
+    for (what, result, status) in landed {
+        land(app, what, result, status, now);
     }
 }
 
@@ -870,7 +960,7 @@ fn flow_of<'a>(app: &'a mut MailApp, account: &str) -> Option<&'a mut Flow> {
     app.nora.sorting.flow.as_mut().filter(|f| f.account == account)
 }
 
-fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, now: f64) {
+fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: u16, now: f64) {
     match what {
         Asking::State(account) => match result {
             Ok(v) => {
@@ -931,9 +1021,19 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, now: f64
                 }
             }
         }
-        Asking::Asks(account) => {
-            if let (Some(flow), Ok(v)) = (flow_of(app, &account), result) {
-                flow.asks = read_asks(&v);
+        Asking::Mine => {
+            let questions = &mut app.nora.sorting.questions;
+            match result {
+                Ok(v) => {
+                    let (list, retained) = read_asks(&v);
+                    questions.drafts.retain(|name, _| list.iter().any(|a| a.name == *name));
+                    questions.confirming.retain(|name, _| list.iter().any(|a| a.name == *name));
+                    questions.list = list;
+                    questions.retained = retained;
+                }
+                // Not the person's to answer (a portal account, a session that ended): none shown; anything else waits.
+                Err(_) if matches!(status, 401 | 403) => questions.list.clear(),
+                Err(_) => {}
             }
         }
         Asking::Switch(account, after) => switched(app, &account, after, result, now),
@@ -1010,19 +1110,61 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, now: f64
             refresh(app, &account);
         }
         Asking::Undo(account, run) => undone(app, &account, &run, result),
-        Asking::Answer(account, ask) | Asking::Later(account, ask) => {
-            let Some(flow) = flow_of(app, &account) else { return };
-            match result {
-                Ok(v) => {
-                    flow.asks.retain(|a| a.name != ask);
-                    let said = text(&v, "said");
-                    if !said.is_empty() {
-                        flow.said = Some(said);
-                    }
+        Asking::Answer(ask) | Asking::Confirm(ask) => noted(app, &ask, result, status),
+        Asking::Said(ask) => said_back(app, &ask, result, status),
+        Asking::Later(ask) => match result {
+            Ok(_) => app.nora.sorting.questions.settled(&ask),
+            Err(why) => refused(app, &ask, why, status),
+        },
+    }
+}
+
+/// A question answered (by a button, or the person's own words confirmed): it goes, and what Nora noted is said.
+fn noted(app: &mut MailApp, ask: &str, result: Result<Value, String>, status: u16) {
+    match result {
+        Ok(v) => {
+            let questions = &mut app.nora.sorting.questions;
+            questions.settled(ask);
+            let said = read_noted(&v);
+            questions.noted = (!said.is_empty()).then_some(said);
+            questions.error = None;
+        }
+        Err(why) => refused(app, ask, why, status),
+    }
+}
+
+/// The person answered in their own words: what Nora would keep of them, for them to confirm or change.
+fn said_back(app: &mut MailApp, ask: &str, result: Result<Value, String>, status: u16) {
+    match result {
+        Ok(v) => {
+            let questions = &mut app.nora.sorting.questions;
+            match read_confirm(&v) {
+                Some(confirming) => {
+                    questions.confirming.insert(ask.to_string(), confirming);
+                    questions.error = None;
                 }
-                Err(why) => flow.error = Some(why),
+                None => questions.error = Some(tl!("Nora could not make out your answer: say it again, or choose one of hers.").to_string()),
             }
         }
+        Err(why) => refused(app, ask, why, status),
+    }
+}
+
+/// A refusal of an answer: a question that isn't the person's to answer (403) goes without a word; anything else is said.
+fn refused(app: &mut MailApp, ask: &str, why: String, status: u16) {
+    let questions = &mut app.nora.sorting.questions;
+    if status == 403 {
+        questions.settled(ask);
+    } else {
+        questions.error = Some(why);
+    }
+}
+
+/// Nora's questions are read again at the next frame, unless they were a moment ago (her pane opens, a run is over).
+pub(crate) fn fresh_questions(app: &mut MailApp) {
+    let questions = &mut app.nora.sorting.questions;
+    if crate::now_ms() - questions.asked_at > QUESTIONS_FRESH_MS {
+        questions.asked_at = 0.0;
     }
 }
 
@@ -1039,8 +1181,8 @@ fn took_state(app: &mut MailApp, account: &str, state: BoxState, now: f64) {
         }
         flow.enter(Stage::Done, now);
         let account = account.to_string();
-        call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account.clone()));
-        call(app, ASKS, json!({"account": account}), Asking::Asks(account));
+        call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account));
+        app.nora.sorting.questions.asked_at = 0.0;
         return;
     }
     if flow.stage == Stage::Loading && state.tidying() {
@@ -1187,7 +1329,7 @@ fn open(app: &mut MailApp, account: &str, journal: bool) {
     let account = account.to_string();
     refresh(app, &account);
     call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account.clone()));
-    call(app, ASKS, json!({"account": account}), Asking::Asks(account.clone()));
+    fresh_questions(app);
     if !journal {
         call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account));
     }
@@ -1311,14 +1453,39 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
             }
         }
         Intent::Answer(ask, choice) => {
-            if let Some(account) = flow_account {
-                call(app, ANSWER, json!({"name": ask, "choice": choice, "channel": "button"}), Asking::Answer(account, ask));
+            app.nora.sorting.questions.noted = None;
+            call(app, ANSWER, json!({"name": ask, "choice": choice, "channel": "button"}), Asking::Answer(ask));
+        }
+        Intent::SayAnswer(ask) => {
+            let questions = &mut app.nora.sorting.questions;
+            let words: String = questions.drafts.get(&ask).map(|w| w.split_whitespace().collect::<Vec<_>>().join(" ")).unwrap_or_default();
+            let words: String = words.chars().take(MAX_SAID).collect();
+            if words.is_empty() {
+                return;
             }
+            questions.noted = None;
+            call(app, ANSWER, json!({"name": ask, "text": words, "channel": "text"}), Asking::Said(ask));
+        }
+        Intent::ConfirmAnswer(ask) => {
+            let Some(confirming) = app.nora.sorting.questions.confirming.get(&ask).cloned() else { return };
+            let retained: String = confirming.retained.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(MAX_RETAINED).collect();
+            if retained.is_empty() {
+                return;
+            }
+            let mut args = json!({"name": ask, "retained": retained});
+            if !confirming.choice.is_empty() {
+                args["choice"] = json!(confirming.choice);
+            }
+            if !confirming.scope.is_empty() {
+                args["scope"] = json!(confirming.scope);
+            }
+            call(app, CONFIRM, args, Asking::Confirm(ask));
+        }
+        Intent::Rephrase(ask) => {
+            app.nora.sorting.questions.confirming.remove(&ask);
         }
         Intent::Later(ask) => {
-            if let Some(account) = flow_account {
-                call(app, LATER, json!({"name": ask}), Asking::Later(account, ask));
-            }
+            call(app, LATER, json!({"name": ask}), Asking::Later(ask));
         }
         Intent::Switch { account, on } => {
             let Some((may_set, validated)) = app.nora.sorting.available(&account).map(|s| (s.may_set, s.validated())) else { return };

@@ -286,7 +286,11 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Nora » above the Inbox's list and the banner of her last run (the marked hunk in `mail_view.rs`), « Trier ma boîte » and
   the switch « Nora range mon courrier » in her pane's home, the flow in her pane where the panel draws an empty
   conversation (what she read, the ways the server knows, her plan to file now or change, the tidying followed, « Annuler
-  ce rangement », her questions and her journal), and the activation card, a modal window (the marked hunk in `lib.rs`).
+  ce rangement », her questions and her journal), and the activation card, a modal window (a marked hunk in `lib.rs`).
+  Nora's questions to the person, of all their mailboxes (`nora.api.asks.mine`, read when the window starts, every fifteen
+  minutes and when her pane opens): their number on her buttons of the ribbon (the other marked hunk in `lib.rs`, drawn
+  over the ribbon where it put them this frame) and one section « Nora vous demande », first in her pane's home and under the
+  flow's result, answered by a button, in the person's own words (what Nora would keep, confirmed by them) or « later ».
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).

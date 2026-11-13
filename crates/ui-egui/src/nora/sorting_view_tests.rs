@@ -10,7 +10,7 @@ use egui::vec2;
 use egui_kittest::kittest::Queryable as _;
 use serde_json::json;
 
-use super::super::sorting::{Card, Flow, Known, Stage, read_asks, read_journal, read_plan, read_state, read_survey};
+use super::super::sorting::{Card, Flow, Known, Questions, Stage, read_asks, read_journal, read_plan, read_state, read_survey};
 use super::super::testing::{ME, page};
 use super::*;
 use crate::MailApp;
@@ -113,9 +113,7 @@ fn in_flow(stage: Stage, may_set: bool) -> MailApp {
     if stage == Stage::Done {
         flow.tidy_run = "NFR-3".into();
         flow.journal = Some(read_journal(&answers::journal("NFR-3")));
-        flow.asks =
-            read_asks(&json!({"asks": [{"name": "ASK-1", "title": "Payment notices from your bank: shall I make a task of each?", "context": "",
-            "choices": [{"code": "task", "label": "Yes, a task"}, {"code": "none", "label": "No, file them"}]}]}));
+        app.nora.sorting.questions = Questions::said(read_asks(&questions(1)).0);
     }
     app.nora.sorting.flow = Some(flow);
     app
@@ -173,6 +171,47 @@ fn the_card_turns_nora_on_in_the_ways_the_server_knows() {
     h.get_by_label("Later").click();
     h.run_steps(2);
     assert!(h.state().nora.sorting.card.is_none());
+}
+
+/// `count` questions of Nora's, as `nora.api.asks.mine` says them, the first about the page's mailbox.
+fn questions(count: usize) -> serde_json::Value {
+    let asks: Vec<serde_json::Value> = (1..=count)
+        .map(|i| {
+            if i == 1 {
+                json!({"name": "ASK-1", "title": "Payment notices from your bank: shall I make a task of each?", "context": "3 this month",
+                       "choices": [{"code": "task", "label": "Yes, a task"}, {"code": "none", "label": "No, file them"}], "box": BOX})
+            } else {
+                json!({"name": format!("ASK-{i}"), "title": format!("Is Garage Exemple {i} a client or a supplier?"), "context": "",
+                       "choices": [{"code": "client", "label": "A client"}, {"code": "supplier", "label": "A supplier"}], "box": "team@example.org"})
+            }
+        })
+        .collect();
+    json!({"asks": asks, "retained": 0})
+}
+
+#[test]
+fn her_questions_are_first_in_her_pane_and_their_number_is_on_her_button_of_the_ribbon() {
+    // None: no number, no section.
+    let h = window(hosted(answers::state(false, "validated", true), false), (1440.0, 900.0));
+    assert!(h.state().hit.rect("noraQuestions", 1).is_none());
+    // One, then ten (« 9+ »: the read gives ten at most, as the server shows them).
+    for (count, label, shown) in [(1, "1 question from Nora", "1"), (10, "10 questions from Nora", "9+")] {
+        let mut app = hosted(answers::state(false, "validated", true), false);
+        app.nora.sorting.questions = Questions::said(read_asks(&questions(count)).0);
+        let mut h = window(app, (1440.0, 900.0));
+        let badge = h.state().hit.rect("noraQuestions", 1).expect("the number on her button");
+        let button = h.state().hit.rect("ribbon", crate::ribbon::hit_id("nora")).unwrap();
+        assert!(button.intersects(badge), "{badge:?} on {button:?}");
+        assert!(has(&h, label), "{label}");
+        assert_eq!(badge_words(count), shown);
+        // Her pane's home: the questions first, each with its answers, a field and « Later ».
+        h.state_mut().run("ui.noraAssistant", json!({"open": true})).unwrap();
+        h.run_steps(4);
+        assert!(has(&h, "Nora asks you") && has(&h, "Yes, a task") && has(&h, "Later") && has(&h, "Send my answer"));
+        if count > 1 {
+            assert!(has(&h, "team@example.org"), "which mailbox, where the person has several");
+        }
+    }
 }
 
 /// The string literals of `text`, in order.
@@ -252,13 +291,16 @@ fn in_french(app: &mut MailApp) {
             }
         }
     }
-    if let Some(flow) = app.nora.sorting.flow.as_mut() {
-        if let Some(chosen) = flow.chosen.as_mut() {
-            chosen.label = "Un dossier par client".into();
-        }
-        for ask in &mut flow.asks {
+    if let Some(chosen) = app.nora.sorting.flow.as_mut().and_then(|flow| flow.chosen.as_mut()) {
+        chosen.label = "Un dossier par client".into();
+    }
+    for ask in &mut app.nora.sorting.questions.list {
+        if ask.name == "ASK-1" {
             ask.title = "Les avis de paiement de votre banque : j’en fais une tâche chaque fois ?".into();
             ask.choices = vec![("task".into(), "Oui, une tâche".into()), ("none".into(), "Non, rangez-les".into())];
+        } else {
+            ask.title = format!("Garage Exemple {} : un client ou un fournisseur ?", ask.name);
+            ask.choices = vec![("client".into(), "Un client".into()), ("supplier".into(), "Un fournisseur".into())];
         }
     }
 }
@@ -271,7 +313,7 @@ fn sorting_screens_in_french() {
     let Some(dir) = std::env::var_os("NORA_SORTING_SHOTS").map(std::path::PathBuf::from) else { return };
     let _language = crate::i18n::RestoreLanguage::hold();
     for dark in [false, true] {
-        for screen in ["1-bouton-bandeau", "2-volet-interrupteur", "3-conversation", "4-resultat", "5-carte"] {
+        for screen in ["1-bouton-bandeau", "2-volet-interrupteur", "3-conversation", "4-resultat", "5-carte", "6-questions"] {
             let mut app = match screen {
                 "1-bouton-bandeau" => hosted(answers::state(true, "validated", true), true),
                 "2-volet-interrupteur" => {
@@ -280,6 +322,13 @@ fn sorting_screens_in_french() {
                     app
                 }
                 "3-conversation" => in_flow(Stage::Plan, true),
+                "6-questions" => {
+                    // Her questions: their number on her button of the ribbon, and the section at the head of her pane's home.
+                    let mut app = hosted(answers::state(true, "validated", true), true);
+                    app.nora.sorting.questions = Questions::said(read_asks(&questions(2)).0);
+                    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+                    app
+                }
                 "4-resultat" => in_flow(Stage::Done, true),
                 _ => {
                     // From her pane's switch, as it opens.

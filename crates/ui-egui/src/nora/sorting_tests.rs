@@ -217,10 +217,11 @@ fn the_plan_the_survey_the_journal_and_the_questions_are_read() {
     assert_eq!(run.folders[2].said(), "Clients › Atelier Exemple");
     assert_eq!(run.folders[0].said(), "Factures reçues");
     assert_eq!(journal.learned[0].leaf, "Notifications");
-    let asked = read_asks(&asks());
+    let (asked, retained) = read_asks(&asks());
     assert_eq!(asked[0].choices, vec![("task".to_string(), "Yes, a task".to_string()), ("none".to_string(), "No, file them".to_string())]);
+    assert_eq!((asked[0].mailbox.as_str(), retained), (BOX, 2));
     // A question without a name or a title, a choice without a label: left out.
-    assert!(read_asks(&json!({"asks": [{"name": "", "title": "t"}, {"name": "A", "title": ""}]})).is_empty());
+    assert!(read_asks(&json!({"asks": [{"name": "", "title": "t"}, {"name": "A", "title": ""}]})).0.is_empty());
     let undone = read_undone(&json!({"undone": 500, "moved": 2, "gone": 1, "failed": 0, "remaining": 23}));
     assert_eq!(undone, Undone { undone: 500, moved: 2, gone: 1, failed: 0, remaining: 23 });
 }
@@ -280,14 +281,13 @@ fn with_a_validated_plan_the_switch_turns_nora_on_and_off_at_once() {
 fn the_flow_reads_what_nora_read_offers_the_servers_ways_and_a_plan_by_activity_is_read_again_until_proposed() {
     let (mut app, calls) = with_state(false, "", true);
     act(&mut app, Intent::Open { account: BOX.into(), journal: false });
-    for method in [SURVEY, JOURNAL, ASKS] {
+    for method in [SURVEY, JOURNAL] {
         assert!(waiting(&calls, method), "{method}");
     }
     assert_eq!(made(&calls, SURVEY), vec![json!({"account": BOX, "days": 30})]);
     reply(&calls, STATE, 200, ok(state(false, "", true)));
     reply(&calls, SURVEY, 200, ok(survey()));
     reply(&calls, JOURNAL, 200, ok(json!({"runs": [], "learned": [], "may_set": true})));
-    reply(&calls, ASKS, 200, ok(json!({"asks": [], "retained": 0})));
     take(&mut app);
     assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Choose);
     assert!(made(&calls, PLAN).is_empty(), "no plan yet: none is asked");
@@ -356,7 +356,7 @@ fn file_now_validates_and_follows_the_tidying_until_it_is_done_then_reads_the_jo
     reply(&calls, STATE, 200, ok(done));
     take(&mut app);
     assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Done);
-    assert!(waiting(&calls, JOURNAL) && waiting(&calls, ASKS));
+    assert!(waiting(&calls, JOURNAL));
     reply(&calls, JOURNAL, 200, ok(journal("NFR-7")));
     take(&mut app);
     let flow = app.nora.sorting.flow.as_ref().unwrap();
@@ -490,17 +490,121 @@ fn carrying_on_validates_the_filing_then_sets_the_rhythm_and_an_answer_goes_by_b
     // « Non, quand je le demande »: nothing asked of the server.
     act(&mut app, Intent::Continue(None));
     assert_eq!(made(&calls, VALIDATE).len(), 1);
-    // « Nora vous demande »: the answer by its button, the question gone, what she noted said.
-    reply(&calls, ASKS, 200, ok(asks()));
+}
+
+/// Two questions of two mailboxes, as `nora.api.asks.mine` says them.
+fn mine() -> Value {
+    json!({"asks": [
+        {"name": "ASK-0001", "kind": "Family", "topic": "Task", "title": "Payment notices from your bank: shall I make a task of each?",
+         "context": "3 this month", "choices": [{"code": "task", "label": "Yes, a task"}, {"code": "none", "label": "No, file them"}], "box": BOX},
+        {"name": "ASK-0002", "kind": "Sender", "topic": "Side", "title": "Is Garage Exemple a client or a supplier?",
+         "context": "", "choices": [{"code": "client", "label": "A client"}, {"code": "supplier", "label": "A supplier"}], "box": "team@example.org"}
+    ], "retained": 2})
+}
+
+/// The window with Nora's questions said.
+fn with_questions() -> (MailApp, Calls) {
+    let (mut app, calls) = hosted();
     take(&mut app);
-    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().asks.len(), 1);
+    assert_eq!(made(&calls, MINE), vec![json!({})], "all the person's questions, of all their mailboxes");
+    reply(&calls, MINE, 200, ok(mine()));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.questions.list.len(), 2);
+    (app, calls)
+}
+
+#[test]
+fn nora_s_questions_are_read_when_the_window_starts_every_fifteen_minutes_and_when_her_pane_opens() {
+    let (mut app, calls) = with_questions();
+    take(&mut app);
+    assert_eq!(made(&calls, MINE).len(), 1, "not again at once: each read shows new ones");
+    // Her pane opens a minute later: read again; a moment later: not.
+    app.nora.sorting.questions.asked_at -= QUESTIONS_FRESH_MS + 1.0;
+    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+    take(&mut app);
+    assert_eq!(made(&calls, MINE).len(), 2);
+    reply(&calls, MINE, 200, ok(json!({"asks": [], "retained": 2})));
+    take(&mut app);
+    assert!(app.nora.sorting.questions.list.is_empty());
+    app.run("ui.noraAssistant", json!({"open": false})).unwrap();
+    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+    take(&mut app);
+    assert_eq!(made(&calls, MINE).len(), 2);
+    // Fifteen minutes on.
+    app.nora.sorting.questions.asked_at -= QUESTIONS_EVERY_MS;
+    take(&mut app);
+    assert_eq!(made(&calls, MINE).len(), 3);
+    // A person who has none to answer (a portal account): none shown.
+    reply(&calls, MINE, 403, thrown("PermissionError", "Not permitted"));
+    take(&mut app);
+    assert!(app.nora.sorting.questions.list.is_empty());
+}
+
+#[test]
+fn a_question_answered_by_a_button_goes_and_nora_says_what_she_noted() {
+    let (mut app, calls) = with_questions();
     act(&mut app, Intent::Answer("ASK-0001".into(), "task".into()));
     assert_eq!(made(&calls, ANSWER), vec![json!({"name": "ASK-0001", "choice": "task", "channel": "button"})]);
-    reply(&calls, ANSWER, 200, ok(json!({"done": true, "said": "Noted: Yes, a task", "corrected": ""})));
+    reply(&calls, ANSWER, 200, ok(json!({"done": true, "said": "Noted: Yes, a task", "corrected": "2 notices made into tasks."})));
     take(&mut app);
-    let flow = app.nora.sorting.flow.as_ref().unwrap();
-    assert!(flow.asks.is_empty());
-    assert_eq!(flow.said.as_deref(), Some("Noted: Yes, a task"));
+    let questions = &app.nora.sorting.questions;
+    assert_eq!(questions.list.iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["ASK-0002"]);
+    assert_eq!(questions.noted.as_deref(), Some("Noted: Yes, a task 2 notices made into tasks."));
+}
+
+#[test]
+fn an_answer_in_ones_own_words_is_confirmed_as_nora_would_keep_it() {
+    let (mut app, calls) = with_questions();
+    // Nothing typed: nothing sent.
+    act(&mut app, Intent::SayAnswer("ASK-0002".into()));
+    assert!(made(&calls, ANSWER).is_empty());
+    app.nora.sorting.questions.drafts.insert("ASK-0002".into(), "  it repairs  our vans, a supplier ".into());
+    act(&mut app, Intent::SayAnswer("ASK-0002".into()));
+    assert_eq!(made(&calls, ANSWER), vec![json!({"name": "ASK-0002", "text": "it repairs our vans, a supplier", "channel": "text"})]);
+    reply(&calls, ANSWER, 200, ok(json!({"confirm": {"retained": "Garage Exemple is a supplier.", "choice": "supplier", "scope": "sender"}})));
+    take(&mut app);
+    let confirming = app.nora.sorting.questions.confirming.get("ASK-0002").cloned().unwrap();
+    assert_eq!(confirming, Confirming { retained: "Garage Exemple is a supplier.".into(), choice: "supplier".into(), scope: "sender".into() });
+    // « Dire autrement » puts it aside; the person changes Nora's sentence and confirms it.
+    act(&mut app, Intent::Rephrase("ASK-0002".into()));
+    assert!(app.nora.sorting.questions.confirming.is_empty());
+    app.nora
+        .sorting
+        .questions
+        .confirming
+        .insert("ASK-0002".into(), Confirming { retained: "Garage Exemple repairs our vans: a supplier.".into(), ..confirming });
+    act(&mut app, Intent::ConfirmAnswer("ASK-0002".into()));
+    assert_eq!(
+        made(&calls, CONFIRM),
+        vec![json!({"name": "ASK-0002", "retained": "Garage Exemple repairs our vans: a supplier.", "choice": "supplier", "scope": "sender"})]
+    );
+    reply(&calls, CONFIRM, 200, ok(json!({"done": true, "said": "Noted: Garage Exemple repairs our vans: a supplier.", "corrected": ""})));
+    take(&mut app);
+    let questions = &app.nora.sorting.questions;
+    assert!(questions.list.iter().all(|a| a.name != "ASK-0002") && questions.drafts.is_empty() && questions.confirming.is_empty());
+    assert_eq!(questions.noted.as_deref(), Some("Noted: Garage Exemple repairs our vans: a supplier."));
+}
+
+#[test]
+fn later_puts_a_question_off_and_a_question_that_isnt_the_persons_goes_without_a_word() {
+    let (mut app, calls) = with_questions();
+    act(&mut app, Intent::Later("ASK-0001".into()));
+    assert_eq!(made(&calls, LATER), vec![json!({"name": "ASK-0001"})]);
+    reply(&calls, LATER, 200, ok(json!({"ok": true})));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.questions.list.len(), 1);
+    // 403: not the person's to answer (the person in charge changed meanwhile): it goes, nothing said.
+    act(&mut app, Intent::Answer("ASK-0002".into(), "client".into()));
+    reply(&calls, ANSWER, 403, thrown("PermissionError", "Only the person in charge of this mailbox answers Nora's questions."));
+    take(&mut app);
+    assert!(app.nora.sorting.questions.list.is_empty() && app.nora.sorting.questions.error.is_none());
+    // 417: the server's words.
+    let (mut app, calls) = with_questions();
+    act(&mut app, Intent::Answer("ASK-0001".into(), "maybe".into()));
+    reply(&calls, ANSWER, 417, thrown("ValidationError", "Cette réponse n'est pas une de celles que Nora proposait."));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.questions.list.len(), 2);
+    assert!(app.nora.sorting.questions.error.as_deref().is_some_and(|e| e.contains("Cette réponse n'est pas une de celles que Nora proposait.")));
 }
 
 #[test]

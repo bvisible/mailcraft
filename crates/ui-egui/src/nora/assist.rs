@@ -190,6 +190,8 @@ struct Home {
     today: mailcraft_time::Date,
     changing: bool,
     shown: Option<sorting_view::Home>,
+    /// The person has more than one mailbox here: each of Nora's questions says which it is about.
+    show_box: bool,
 }
 
 /// The panel that draws her conversation: its own head (her sphere and her name, New conversation, and the close button the
@@ -234,6 +236,8 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     };
     if open && !app.nora.assist.open {
         app.nora.assist.panel.focus_input();
+        // Nora's questions, read again unless they were a moment ago.
+        sorting::fresh_questions(app);
         // The Échanges pane stands where hers does: the two never stand together.
         app.exchanges.open = false;
     }
@@ -275,7 +279,8 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
     // « Trier avec Nora »: what its flow and the pane's home need of the window, and what the person asked of it.
-    let home = Home { today: app.session.today(), changing: app.nora.sorting.changing(), shown: sorting_view::home_of(app) };
+    let show_box = app.services.nora.as_ref().is_some_and(|host| host.mailboxes.len() > 1);
+    let home = Home { today: app.session.today(), changing: app.nora.sorting.changing(), shown: sorting_view::home_of(app), show_box };
     let mut sorted = None;
     let in_flow = app.nora.sorting.flow.is_some();
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep
@@ -323,9 +328,11 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                         now: ui.input(|i| i.time),
                         address: state.map(|s| s.address.clone()).filter(|a| !a.is_empty()).unwrap_or_else(|| flow.account.clone()),
                         changing: home.changing,
+                        show_box: home.show_box,
                     };
+                    let questions = &mut sorting.questions;
                     let mut drawn = |ui: &mut Ui, _hint: &str| {
-                        if let Some(asked) = sorting_view::flow(ui, flow, state, &cx) {
+                        if let Some(asked) = sorting_view::flow(ui, flow, state, questions, &cx) {
                             sorted = Some(asked);
                         }
                         None
@@ -337,6 +344,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                 // the switch « Nora range mon courrier » after them, where Nora files the mailbox in view.
                 None => {
                     let shown = home.shown.clone();
+                    let questions = &mut sorting.questions;
                     let mut empty = |ui: &mut Ui, hint: &str| {
                         let mut first = |ui: &mut Ui| {
                             if let Some(asked) = shown.as_ref().and_then(|home| sorting_view::home_chip(ui, home)) {
@@ -347,13 +355,21 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                         if let Some(asked) = shown.as_ref().and_then(|home| sorting_view::home_switch(ui, home)) {
                             sorted = Some(asked);
                         }
+                        // « Nora vous demande »: her questions of all the person's mailboxes, answered here. Last, where the pane
+                        // opens: the panel keeps its conversation's area at its end, so what is first above is out of sight.
+                        if let Some(asked) = sorting_view::questions(ui, questions, None, home.show_box, !home.changing) {
+                            sorted = Some(asked);
+                        }
                         asked
                     };
                     actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
                 }
             }
             closing = assist.panel.take_close_request();
-            typing = ui.ctx().memory(|m| m.has_focus(input));
+            // The keyboard is the pane's while its text box, or a field of its own (an answer to Nora, a plan's folder), has it.
+            let pane = ui.max_rect();
+            let focused = ui.ctx().memory(|m| m.focused());
+            typing = focused.is_some_and(|id| id == input || ui.ctx().read_response(id).is_some_and(|r| pane.contains_rect(r.rect)));
         });
     });
     if !narrowed {
