@@ -159,10 +159,15 @@ pub(crate) fn ready(answer: &NoraAnswer) -> Result<Value, String> {
 /// The `message` object of a good answer of « Trier avec Nora » ([`super::sorting`]), read further there field by field; or
 /// what to tell the person: the server's own sentence for a refusal (« Vous ne lisez pas cette boîte dans NeoMail. », « Les
 /// assistants en arrière-plan de Nora ne font pas partie de votre plan. »), as `frappe.throw` writes it in French.
+///
+/// A refusal that says nothing of why (no message of the server's, no exception: an empty answer, a page of something
+/// between) is said in words, never as its HTTP status: the person reads the flow, not a code.
 pub(crate) fn sorting(answer: &NoraAnswer) -> Result<Value, String> {
     let task = Task::Sort;
-    let body = parse(answer, task)?;
-    body.get("message").filter(|m| m.is_object()).cloned().ok_or_else(|| task.failed(&reason(&body, answer.status)))
+    let bare = task.failed(&format!("HTTP {}", answer.status));
+    let worded = |why: String| if why == bare { task.failed(tl!("the server turned it down without saying why")) } else { why };
+    let body = parse(answer, task).map_err(worded)?;
+    body.get("message").filter(|m| m.is_object()).cloned().ok_or_else(|| worded(task.failed(&reason(&body, answer.status))))
 }
 
 /// Why a call was refused, from its whole answer (`body` is its JSON, or nothing): a sign-in that ended,

@@ -5066,3 +5066,29 @@ msgid "{n} message back in the inbox"
 msgid_plural "{n} messages back in the inbox"
 msgstr[0] "{n} message remis dans la boîte de réception"
 msgstr[1] "{n} messages remis dans la boîte de réception"
+
+# The first time Nora reads a mailbox (her catch-up of its past mail): what she says while she reads and files as she reads;
+# the person who may not start her on it; a refusal of the server's that says nothing of why.
+msgid "Only the person in charge of this mailbox can start the filing."
+msgstr "Seule la personne responsable de cette boîte peut lancer le rangement."
+
+msgid "I'm reading your mailbox…"
+msgstr "Je lis votre boîte…"
+
+msgid "I'm reading your mailbox… {read} of {total} messages"
+msgstr "Je lis votre boîte… {read} messages sur {total}"
+
+msgid "I'm still reading your mailbox: these numbers will grow."
+msgstr "Je lis encore votre boîte : ces chiffres vont augmenter."
+
+msgid "Nora files as she reads"
+msgstr "Nora range au fur et à mesure qu’elle lit"
+
+msgid "I'm still reading your mailbox: I file the messages as I read them."
+msgstr "Je lis encore votre boîte : je range les messages au fur et à mesure."
+
+msgid "I'm still reading your mailbox: I file the rest as I read it."
+msgstr "Je lis encore votre boîte : je range le reste au fur et à mesure."
+
+msgid "the server turned it down without saying why"
+msgstr "le serveur a refusé sans dire pourquoi"

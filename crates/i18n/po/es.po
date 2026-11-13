@@ -5970,6 +5970,31 @@ msgstr "Soy administrador: aprobar MailCraft para mi organización"
 msgid "I'm an administrator: approve it for my organisation"
 msgstr "Soy administrador: aprobarlo para mi organización"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I'm reading your mailbox…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I'm reading your mailbox… {read} of {total} messages"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I'm still reading your mailbox: I file the messages as I read them."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I'm still reading your mailbox: I file the rest as I read it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I'm still reading your mailbox: these numbers will grow."
+msgstr ""
+
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
 msgid "Icons"
@@ -9099,6 +9124,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora files as she reads"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Nora files my mail"
 msgstr ""
 
@@ -9905,6 +9935,11 @@ msgstr "Solo el organizador de la reunión puede cambiar su hora."
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Only the person in charge of this mailbox can change this."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Only the person in charge of this mailbox can start the filing."
 msgstr ""
 
 #. interface
@@ -21017,6 +21052,11 @@ msgstr "el servidor tardó demasiado"
 #, fuzzy
 msgid "the server took too long to answer"
 msgstr "el servidor tardó demasiado en responder"
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "the server turned it down without saying why"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/compose.rs

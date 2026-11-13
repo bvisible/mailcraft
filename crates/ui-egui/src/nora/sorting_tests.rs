@@ -692,3 +692,221 @@ fn an_answer_to_a_question_of_a_familys_folder_moves_what_was_filed_and_annuler_
         "status": "undone", "started_at": "2026-10-14 15:58:00", "filed": 4, "still_filed": 0, "folders": [], "kinds": {"notifications": 4, "inbox": 0}, "can_undo": false}]}));
     assert_eq!((journal.runs[0].kind.as_str(), journal.runs[0].about.as_str()), ("correction", "Payment notice no. 117"));
 }
+
+// ---- the first time: a mailbox Nora has never read ----
+
+/// What `state` says of a box Nora has never read (no secretary yet): `may_set` for whoever reads it, nothing else.
+pub(crate) fn unread_state(may_set: bool) -> Value {
+    let mut said = state(false, "", may_set);
+    for (key, value) in [("secretary", json!(false)), ("reading", Value::Null), ("tidy", Value::Null), ("asks", json!(0))] {
+        said[key] = value;
+    }
+    said
+}
+
+/// What `survey` says while Nora reads a mailbox for the first time: nothing read yet, her reading `catch_up`.
+pub(crate) fn first_reading(mails: u64, catch_up: &str) -> Value {
+    json!({"days": 30, "mails": mails, "sorted": 0, "kinds": {}, "clients": 0, "client_mails": 0, "in_inbox": mails, "read_since": "",
+           "catch_up": catch_up, "secretary": true, "progress": {"read": 120, "total": 1248}})
+}
+
+/// The flow opened on a box whose state the server says now is `said`.
+fn opened_on(said: Value) -> (MailApp, Calls) {
+    let (mut app, calls) = hosted();
+    take(&mut app);
+    reply(&calls, STATE, 200, ok(said.clone()));
+    take(&mut app);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    (app, calls)
+}
+
+#[test]
+fn a_mailbox_nora_has_never_read_is_started_on_first_then_read_and_the_way_to_file_is_chosen() {
+    let (mut app, calls) = opened_on(unread_state(true));
+    // Nothing read nor proposed of it before the server says what it is now.
+    assert!(made(&calls, SURVEY).is_empty() && made(&calls, SWITCH).is_empty() && made(&calls, PROPOSE).is_empty());
+    reply(&calls, STATE, 200, ok(unread_state(true)));
+    take(&mut app);
+    // Started on (its secretary made), at a quarter of an hour, before anything is read or proposed.
+    assert_eq!(made(&calls, SWITCH), vec![json!({"account": BOX, "on": 1, "interval": 15})]);
+    assert!(made(&calls, SURVEY).is_empty() && made(&calls, PROPOSE).is_empty());
+    take(&mut app);
+    assert_eq!(made(&calls, SWITCH).len(), 1, "started on once");
+    // No validated plan (`needs_plan`) is what comes next, not an error: what she read, then the choice.
+    let mut started = state(false, "", true);
+    started["needs_plan"] = json!(true);
+    reply(&calls, SWITCH, 200, ok(started));
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY), vec![json!({"account": BOX, "days": 30})]);
+    assert!(app.nora.sorting.card.is_none(), "no card: the flow goes on");
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.error.as_deref()), (Stage::Choose, None));
+    assert!(!flow.on_intent, "started on to be read: « Ensuite, je continue toute seule ? » is still asked");
+    let mode = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
+    act(&mut app, Intent::Choose(mode));
+    assert_eq!(made(&calls, PROPOSE), vec![json!({"account": BOX, "mode": "clients", "keep_unread": 1})]);
+    // A box known to have her secretary is read at once, never started on again.
+    let (mut app, calls) = with_state(false, "", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "", true)));
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY).len(), 1);
+    assert!(made(&calls, SWITCH).is_empty());
+}
+
+#[test]
+fn the_person_who_may_not_start_nora_on_a_mailbox_is_told_so_and_nothing_is_asked() {
+    let (mut app, calls) = opened_on(unread_state(false));
+    reply(&calls, STATE, 200, ok(unread_state(false)));
+    take(&mut app);
+    for method in [SWITCH, SURVEY, PROPOSE] {
+        assert!(made(&calls, method).is_empty(), "{method}");
+    }
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert!(flow.unstarted && flow.error.is_none());
+    // Starting her refused all the same (a 403 in the server's words): said, the flow goes no further.
+    let (mut app, calls) = opened_on(unread_state(true));
+    reply(&calls, STATE, 200, ok(unread_state(true)));
+    take(&mut app);
+    reply(
+        &calls,
+        SWITCH,
+        403,
+        thrown("PermissionError", "Seule la personne qui a lancé la secrétaire ou le propriétaire de la boîte peut faire cela."),
+    );
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert!(flow.error.as_deref().is_some_and(|e| e.contains("Seule la personne")), "{:?}", flow.error);
+    assert!(made(&calls, SURVEY).is_empty());
+}
+
+#[test]
+fn what_nora_read_is_read_again_while_she_still_reads_the_mailbox() {
+    // Read field by field: her reading, how far it is.
+    let reading = read_survey(&first_reading(0, "Running"));
+    assert_eq!((reading.catch_up.as_str(), reading.progress), ("running", Some((120, 1248))));
+    assert_eq!(read_survey(&json!({"progress": {"read": 3, "total": 0}})).progress, None, "no total, no progress");
+    // Still reading: her reading running or paused, half an hour at most; a mailbox read nothing of with no reading said, a
+    // few minutes after it was started on; never once it is done, nor a mailbox she has read.
+    assert!(reading.reading(0.0, SURVEY_FRESH_MS + 1.0) && !reading.reading(0.0, SURVEY_GIVE_UP_MS + 1.0));
+    assert!(read_survey(&first_reading(0, "paused")).reading(0.0, 1.0));
+    let fresh = read_survey(&first_reading(0, ""));
+    assert!(fresh.reading(0.0, 1.0) && !fresh.reading(0.0, SURVEY_FRESH_MS + 1.0));
+    assert!(!read_survey(&first_reading(0, "done")).reading(0.0, 1.0));
+    assert!(!read_survey(&first_reading(40, "")).reading(0.0, 1.0));
+
+    let (mut app, calls) = with_state(false, "", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "", true)));
+    reply(&calls, SURVEY, 200, ok(first_reading(0, "running")));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!(flow.stage, Stage::Choose, "the way to file may be chosen meanwhile");
+    assert!(flow.reading(crate::now_ms()));
+    // Not again before its time (every 10 to 15 seconds), then again.
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY).len(), 1);
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY).len(), 2);
+    // A passing failure of a read again waits for the next; a refusal is said.
+    reply(&calls, SURVEY, 502, json!({}));
+    take(&mut app);
+    assert!(app.nora.sorting.flow.as_ref().unwrap().error.is_none());
+    // Chosen while she reads: a plan with no folder yet, asked again once she has read her first messages.
+    let mode = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
+    act(&mut app, Intent::Choose(mode));
+    reply(&calls, PROPOSE, 200, ok(json!({"status": "Proposed", "mode": "clients", "folders": [], "may_set": true})));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Plan);
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    reply(&calls, SURVEY, 200, ok(first_reading(40, "running")));
+    take(&mut app);
+    assert_eq!(made(&calls, PROPOSE).len(), 2);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Proposing);
+    reply(&calls, PROPOSE, 200, ok(plan("Proposed")));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Plan);
+    // Her reading done: read no more, and the plan isn't asked again (it has its folders).
+    let asked = made(&calls, SURVEY).len();
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY).len(), asked + 1);
+    assert_eq!(made(&calls, PROPOSE).len(), 2);
+}
+
+#[test]
+fn file_now_while_she_reads_follows_her_reading_and_reads_the_journal_again_when_it_moves() {
+    let (mut app, calls) = with_state(false, "proposed", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "proposed", true)));
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(plan("Proposed")));
+    reply(&calls, SURVEY, 200, ok(first_reading(0, "running")));
+    take(&mut app);
+    act(&mut app, Intent::FileNow);
+    let mut validated = plan("Validated");
+    validated["tidy"] = tidy("running", "NFR-8", 0);
+    reply(&calls, VALIDATE, 200, ok(validated));
+    take(&mut app);
+    let mut done = state(false, "validated", true);
+    done["tidy"] = tidy("done", "NFR-8", 0);
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, STATE, 200, ok(done));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert!(flow.stage == Stage::Done && flow.filing && flow.reading(crate::now_ms()));
+    reply(&calls, JOURNAL, 200, ok(journal("NFR-8")));
+    take(&mut app);
+    let journals = made(&calls, JOURNAL).len();
+    // Her reading moves on (her first messages): the journal is read again, to show what she filed as she read.
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    reply(&calls, SURVEY, 200, ok(first_reading(40, "running")));
+    take(&mut app);
+    assert_eq!(made(&calls, JOURNAL).len(), journals + 1);
+}
+
+#[test]
+fn a_refusal_in_the_flow_is_said_in_the_servers_words_and_never_as_a_code() {
+    // A plan asked of a box with no secretary (417): the server's sentence, and back to the choice.
+    let (mut app, calls) = with_state(false, "", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "", true)));
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    let mode = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
+    act(&mut app, Intent::Choose(mode.clone()));
+    reply(&calls, PROPOSE, 417, thrown("ValidationError", "Cette boîte n'a pas encore de secrétaire."));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!(flow.stage, Stage::Choose);
+    assert_eq!(flow.error.as_deref(), Some("Nora couldn't do it: Cette boîte n'a pas encore de secrétaire."));
+    // A plan made in the background, refused when read again (417): said at once, not waited out for two minutes.
+    let activity = app.nora.sorting.available(BOX).unwrap().modes[1].clone();
+    act(&mut app, Intent::Choose(activity));
+    reply(&calls, PROPOSE, 200, ok(json!({"queued": true, "mode": "activity"})));
+    take(&mut app);
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 417, thrown("ValidationError", "Les assistants en arrière-plan de Nora ne font pas partie de votre plan."));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!(flow.stage, Stage::Choose);
+    assert!(flow.error.as_deref().is_some_and(|e| e.contains("ne font pas partie de votre plan")), "{:?}", flow.error);
+    // A refusal with nothing in it (no message, no exception): words, never « HTTP 417 ».
+    act(&mut app, Intent::Choose(mode));
+    reply(&calls, PROPOSE, 417, json!({}));
+    take(&mut app);
+    let said = app.nora.sorting.flow.as_ref().unwrap().error.clone().unwrap_or_default();
+    assert_eq!(said, "Nora couldn't do it: the server turned it down without saying why");
+    assert!(!said.contains("417"));
+}

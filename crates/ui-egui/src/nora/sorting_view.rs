@@ -567,20 +567,38 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
     }
     if !flow.journal_first {
         mine(ui, &ds, tl!("Sort my mailbox"));
+        let reading = flow.reading(cx.now);
+        let choosing = matches!(flow.stage, Stage::Choose | Stage::Explain);
         match &flow.survey {
+            // Still reading a mailbox she has read nothing of yet (her first time on it): never « 0 messages »; the way to
+            // file may be chosen meanwhile.
+            Some(survey) if reading && survey.mails == 0 => {
+                working(ui, &ds, &reading_said(survey), None, cx.now, true);
+                if choosing {
+                    hers(ui, &ds, |ui| said(ui, &ds, tl!("How do you want me to file?")));
+                }
+            }
             Some(survey) => {
                 hers(ui, &ds, |ui| {
                     said(ui, &ds, &survey_said(survey, &cx.address));
-                    if matches!(flow.stage, Stage::Choose | Stage::Explain) {
+                    if reading {
+                        note(ui, &ds, &reading_said(survey));
+                    }
+                    if choosing {
                         said(ui, &ds, tl!("How do you want me to file?"));
                     }
                 });
             }
-            None if flow.error.is_none() => working(ui, &ds, tl!("Nora is reading your mailbox…"), None, cx.now, true),
+            None if flow.unstarted => {
+                hers(ui, &ds, |ui| said(ui, &ds, tl!("Only the person in charge of this mailbox can start the filing.")));
+            }
+            None if flow.error.is_none() && flow.stage == Stage::Loading => {
+                working(ui, &ds, tl!("Nora is reading your mailbox…"), None, cx.now, true);
+            }
             None => {}
         }
     }
-    if !may_set && state.is_some() && !flow.journal_first {
+    if !may_set && state.is_some() && !flow.journal_first && !flow.unstarted {
         note(ui, &ds, tl!("You read this mailbox: only the person in charge of it changes how Nora files it."));
     }
     match flow.stage {
@@ -706,6 +724,18 @@ pub(crate) fn survey_said(survey: &sorting::Survey, address: &str) -> String {
     said.join(" ")
 }
 
+/// While Nora reads the mailbox: « Je lis votre boîte… », with how far she is when the server says it; or, once she has
+/// read some, that the numbers will grow.
+pub(crate) fn reading_said(survey: &sorting::Survey) -> String {
+    match survey.progress {
+        Some((read, total)) => {
+            fmt(tl!("I'm reading your mailbox… {read} of {total} messages"), &[("read", &read.min(total).to_string()), ("total", &total.to_string())])
+        }
+        None if survey.mails > 0 => tl!("I'm still reading your mailbox: these numbers will grow.").to_string(),
+        None => tl!("I'm reading your mailbox…").to_string(),
+    }
+}
+
 /// « Voici ce que je ferais : » and the plan's folders, with « Ranger maintenant » and « Modifier » while it may be acted on.
 fn plan_bubble(ui: &mut Ui, ds: &Ds, flow: &mut Flow, plan: &Plan, act: bool) -> Option<Intent> {
     let mut intent = None;
@@ -801,9 +831,22 @@ fn result_run(flow: &Flow) -> Option<&Run> {
 /// « C'est rangé », what changed folder, « Annuler ce rangement »; then « Ensuite, je continue toute seule ? ».
 fn result(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>, cx: &FlowCx, enabled: bool) -> Option<Intent> {
     let mut intent = None;
-    if let Some(run) = result_run(flow) {
+    // « Ranger maintenant » while Nora still reads the mailbox (her first time on it), or a tidying that waits for her
+    // reading: she files as she reads, never « 0 messages » as if it were over.
+    let waits = state.and_then(|s| s.tidy.as_ref()).is_some_and(|t| t.status == "waiting");
+    let as_she_reads = flow.filing && !flow.journal_first && (flow.reading(cx.now) || waits);
+    let run = result_run(flow);
+    if as_she_reads {
+        working(ui, ds, tl!("Nora files as she reads"), None, cx.now, true);
+        if run.is_none_or(|r| r.filed == 0) {
+            hers(ui, ds, |ui| said(ui, ds, tl!("I'm still reading your mailbox: I file the messages as I read them.")));
+        }
+    }
+    if let Some(run) = run.filter(|r| !as_she_reads || r.filed > 0) {
         let seconds = run.seconds.round() as u64;
-        working(ui, ds, tl!("Nora filed your mailbox"), Some(seconds), cx.now, false);
+        if !as_she_reads {
+            working(ui, ds, tl!("Nora filed your mailbox"), Some(seconds), cx.now, false);
+        }
         hers(ui, ds, |ui| {
             if run.filed == 0 {
                 said(ui, ds, tl!("Nothing needed filing: your inbox stays as it was."));
@@ -811,6 +854,9 @@ fn result(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>, cx: &Flow
             }
             let changed = tln!(run.filed, "{n} message changed folder; nothing is deleted.", "{n} messages changed folder; nothing is deleted.");
             said(ui, ds, &format!("{} {changed}", tl!("It's filed.")));
+            if as_she_reads {
+                note(ui, ds, tl!("I'm still reading your mailbox: I file the rest as I read it."));
+            }
             folders(ui, ds, run);
             match run.status.as_str() {
                 "undone" => note(ui, ds, tl!("This filing was undone.")),
@@ -823,7 +869,7 @@ fn result(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>, cx: &Flow
         });
     }
     let on = state.is_some_and(|s| s.on);
-    if !flow.journal_first && !flow.on_intent && !flow.continued && !on && enabled && result_run(flow).is_some() {
+    if !flow.journal_first && !flow.on_intent && !flow.continued && !on && enabled && (result_run(flow).is_some() || as_she_reads) {
         hers(ui, ds, |ui| said(ui, ds, tl!("Next, shall I carry on by myself?")));
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
@@ -986,12 +1032,14 @@ fn journal(ui: &mut Ui, ds: &Ds, flow: &Flow, cx: &FlowCx, enabled: bool) -> Opt
         |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing.y = 0.0;
-            if journal.runs.is_empty() && journal.learned.is_empty() {
+            // A run that filed nothing (a tidying while she was still reading the mailbox) is no line of it: no « 0 messages ».
+            let runs: Vec<&Run> = journal.runs.iter().filter(|r| r.filed > 0 || r.status == "running").take(8).collect();
+            if runs.is_empty() && journal.learned.is_empty() {
                 ui.add_space(6.0);
                 note(ui, ds, tl!("Nothing filed yet."));
                 ui.add_space(6.0);
             }
-            for run in journal.runs.iter().take(8) {
+            for run in runs {
                 let filed = tln!(run.filed, "{n} message filed", "{n} messages filed");
                 let mut words = if run.kind == "correction" {
                     let what =

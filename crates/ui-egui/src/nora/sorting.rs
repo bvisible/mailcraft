@@ -11,7 +11,9 @@
 //!   switch of her pane) and the summary of its last run;
 //! - the flow in her pane ([`Flow`]) reads what Nora read (`survey`), her plan, her journal and her questions, and asks for a
 //!   plan (`propose`), validates it and tidies the inbox (`validate`, `tidy`), follows the tidying, undoes a run (`undo`, called
-//!   again while the server says some are left), answers a question (`nora.api.asks.answer`, `later`);
+//!   again while the server says some are left), answers a question (`nora.api.asks.answer`, `later`); a mailbox she has
+//!   never read (no secretary yet: every mailbox, the first time) is started on first (`switch`), and what she read is read
+//!   again while she is still reading it;
 //! - the activation card ([`Card`]) turns the filing on (`switch`) and, without a validated plan, opens the flow on a plan;
 //! - Nora's questions to the person, of all their mailboxes ([`Questions`], `nora.api.asks.mine`, read when the window starts,
 //!   every fifteen minutes and when her pane opens): the number on her button of the ribbon, the section « Nora vous demande »
@@ -67,6 +69,14 @@ pub(crate) const TIDY_EVERY_MS: f64 = 2_000.0;
 /// How often a plan made in the background (by activity: 6 to 25 seconds) is read again, and when it is given up.
 pub(crate) const PLAN_EVERY_MS: f64 = 3_000.0;
 pub(crate) const PLAN_GIVE_UP_MS: f64 = 120_000.0;
+/// How often what Nora read (`survey`) is read again while she is still reading the mailbox (its catch-up `running`, or a
+/// mailbox she has just started on and read nothing of yet), how long a mailbox just started on is taken to be read, and
+/// when the reading is no longer followed.
+pub(crate) const SURVEY_EVERY_MS: f64 = 12_000.0;
+pub(crate) const SURVEY_FRESH_MS: f64 = 180_000.0;
+pub(crate) const SURVEY_GIVE_UP_MS: f64 = 30.0 * 60_000.0;
+/// The rhythm a mailbox Nora has never read is started at (minutes).
+const FIRST_INTERVAL: u64 = 15;
 /// How often Nora's questions are read again, in milliseconds (each read shows the person at most two new ones a day), and
 /// how old a read may be when her pane opens.
 pub(crate) const QUESTIONS_EVERY_MS: f64 = 15.0 * 60_000.0;
@@ -173,11 +183,26 @@ pub(crate) struct Survey {
     pub(crate) client_mails: u64,
     pub(crate) in_inbox: u64,
     pub(crate) read_since: String,
+    /// Her reading of the mailbox's past (its catch-up): "", `running`, `paused`, `done`.
+    pub(crate) catch_up: String,
+    /// How far that reading is, when the server says it: messages read, of how many.
+    pub(crate) progress: Option<(u64, u64)>,
 }
 
 impl Survey {
     pub(crate) fn kind(&self, kind: &str) -> u64 {
         self.kinds.get(kind).copied().unwrap_or(0)
+    }
+
+    /// Whether Nora is still reading the mailbox, `read_from` being when something that may have started her reading was
+    /// done (the flow opened, the mailbox started on, a plan asked for): her catch-up running (or paused till its hours);
+    /// a mailbox she has read nothing of, for a few minutes after; never once the reading is done, nor after half an hour.
+    pub(crate) fn reading(&self, read_from: f64, now: f64) -> bool {
+        match self.catch_up.as_str() {
+            "done" => false,
+            "running" | "paused" => now - read_from < SURVEY_GIVE_UP_MS,
+            _ => self.mails == 0 && now - read_from < SURVEY_FRESH_MS,
+        }
     }
 }
 
@@ -437,6 +462,8 @@ pub(crate) fn read_survey(m: &Value) -> Survey {
         client_mails: count(m, "client_mails"),
         in_inbox: count(m, "in_inbox"),
         read_since: text(m, "read_since"),
+        catch_up: status(m, "catch_up"),
+        progress: m.get("progress").filter(|p| p.is_object()).map(|p| (count(p, "read"), count(p, "total"))).filter(|(_, total)| *total > 0),
     }
 }
 
@@ -581,6 +608,8 @@ enum AfterSwitch {
     FromCard(String),
     /// The rhythm asked by « Ensuite, je continue ? ».
     Rhythm(u64),
+    /// The flow opened on a mailbox Nora has never read: started (its secretary made), then read.
+    Wake,
 }
 
 /// What the window knows of a mailbox's filing.
@@ -661,8 +690,18 @@ pub(crate) struct Flow {
     pub(crate) continued: bool,
     /// When the stage began, and when to read again (milliseconds).
     pub(crate) since: f64,
-    next: f64,
+    pub(crate) next: f64,
     undo_rounds: u32,
+    /// What Nora read was asked; the mailbox, which she had never read, was started on (`switch`); it can't be: she has
+    /// never read it and the person may not start her on it.
+    surveyed: bool,
+    woke: bool,
+    pub(crate) unstarted: bool,
+    /// When something that may have started her reading was done, and when to read what she read again (milliseconds).
+    pub(crate) read_from: f64,
+    pub(crate) survey_next: f64,
+    /// « Ranger maintenant » was asked in this flow.
+    pub(crate) filing: bool,
 }
 
 impl Flow {
@@ -685,7 +724,18 @@ impl Flow {
             since: now,
             next: now,
             undo_rounds: 0,
+            surveyed: false,
+            woke: false,
+            unstarted: false,
+            read_from: now,
+            survey_next: now + SURVEY_EVERY_MS,
+            filing: false,
         }
+    }
+
+    /// Whether Nora is still reading the mailbox, as what she read last said it.
+    pub(crate) fn reading(&self, now: f64) -> bool {
+        self.survey.as_ref().is_some_and(|s| s.reading(self.read_from, now))
     }
 
     fn enter(&mut self, stage: Stage, now: f64) {
@@ -927,10 +977,31 @@ fn look_at(app: &mut MailApp, account: &str, now: f64) -> Option<f64> {
     Some(due)
 }
 
-/// What the flow waits for: a plan made in the background, the tidying of the inbox. When to look again.
+/// What the flow waits for: what Nora read while she is still reading the mailbox, a plan made in the background, the
+/// tidying of the inbox. When to look again.
 fn follow_flow(app: &mut MailApp, now: f64) -> Option<f64> {
     let flow = app.nora.sorting.flow.as_mut()?;
     let account = flow.account.clone();
+    let reading = flow.surveyed && !flow.journal_first && flow.reading(now);
+    let read_again = reading && now >= flow.survey_next;
+    if read_again {
+        flow.survey_next = now + SURVEY_EVERY_MS;
+    }
+    let survey_at = reading.then_some(flow.survey_next);
+    if read_again {
+        call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account.clone()));
+    }
+    let staged = follow_stage(app, &account, now);
+    match (survey_at, staged) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// What the flow's stage waits for: a plan made in the background, the tidying of the inbox. When to look again.
+fn follow_stage(app: &mut MailApp, account: &str, now: f64) -> Option<f64> {
+    let flow = app.nora.sorting.flow.as_mut()?;
+    let account = account.to_string();
     match flow.stage {
         Stage::Proposing if now - flow.since > PLAN_GIVE_UP_MS => {
             flow.error = Some(tl!("Nora is taking too long to make the plan. Try again in a moment.").to_string());
@@ -1005,16 +1076,7 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
                 known.latest = read_journal(&v).runs.into_iter().next();
             }
         }
-        Asking::Survey(account) => {
-            let state = app.nora.sorting.boxes.get(&account).and_then(|k| k.state.clone());
-            if let Some(flow) = flow_of(app, &account) {
-                match result {
-                    Ok(v) => flow.survey = Some(read_survey(&v)),
-                    Err(why) => flow.error = Some(why),
-                }
-                settle(flow, state.as_ref(), now);
-            }
-        }
+        Asking::Survey(account) => read_now(app, &account, result, status, now),
         Asking::Plan(account) => {
             let state = app.nora.sorting.boxes.get(&account).and_then(|k| k.state.clone());
             let Some(flow) = flow_of(app, &account) else { return };
@@ -1027,9 +1089,15 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
                         flow.enter(Stage::Plan, now);
                     }
                 }
-                // A plan being made, read again: its errors wait for the next read.
-                Err(_) if flow.stage == Stage::Proposing => {}
-                Err(why) => flow.error = Some(why),
+                // A plan being made, read again: a passing failure waits for the next read; the server's refusal (no
+                // secretary, a plan that is not the person's to see) is said at once.
+                Err(_) if flow.stage == Stage::Proposing && !refusal(status) => {}
+                Err(why) => {
+                    flow.error = Some(why);
+                    if flow.stage == Stage::Proposing {
+                        flow.enter(Stage::Choose, now);
+                    }
+                }
             }
             settle(flow, state.as_ref(), now);
         }
@@ -1061,6 +1129,8 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
             let Some(flow) = flow_of(app, &account) else { return };
             match result {
                 Ok(v) => {
+                    // Asking for a plan may start her reading of a mailbox she had read nothing of.
+                    flow.read_from = now;
                     let plan = read_plan(&v);
                     if plan.queued || plan.status.is_empty() {
                         // Made in the background: read again until it is proposed.
@@ -1137,6 +1207,78 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
             Err(why) => refused(app, &ask, why, status),
         },
         Asking::UndoCorrection(account, run) => correction_undone(app, &account, &run, result),
+    }
+}
+
+/// Whether a failure is the server's refusal (a session that ended, a box not the person's, `frappe.throw`): said at once,
+/// never waited out as a passing one.
+fn refusal(status: u16) -> bool {
+    matches!(status, 401 | 403 | 417)
+}
+
+/// What Nora read came (`survey`). Read again while she is still reading, a passing failure waits for the next read. When
+/// her reading moves on (her first messages read, or her reading done): a plan that had no folder yet is asked again in
+/// the way chosen (by rules, at once: never the model's again), and the result's journal is read again.
+fn read_now(app: &mut MailApp, account: &str, result: Result<Value, String>, status: u16, now: f64) {
+    let state = app.nora.sorting.boxes.get(account).and_then(|k| k.state.clone());
+    let Some(flow) = flow_of(app, account) else { return };
+    flow.survey_next = now + SURVEY_EVERY_MS;
+    let mut then = None;
+    match result {
+        Ok(v) => {
+            let survey = read_survey(&v);
+            let was = flow.survey.as_ref().map(|s| (s.mails, s.reading(flow.read_from, now)));
+            let moved = was.is_some_and(|(mails, reading)| reading && ((mails == 0 && survey.mails > 0) || !survey.reading(flow.read_from, now)));
+            flow.survey = Some(survey);
+            if moved {
+                let empty = flow.plan.as_ref().is_some_and(|p| p.folders.is_empty() && p.status != "validated");
+                match (flow.stage, flow.chosen.as_ref()) {
+                    (Stage::Plan, Some(mode)) if empty && mode.code != "activity" => then = Some((PROPOSE, mode.code.clone())),
+                    (Stage::Done, _) => then = Some((JOURNAL, String::new())),
+                    _ => {}
+                }
+            }
+        }
+        Err(_) if flow.survey.is_some() && !refusal(status) => {}
+        Err(why) => flow.error = Some(why),
+    }
+    settle(flow, state.as_ref(), now);
+    let account = account.to_string();
+    match then {
+        Some((PROPOSE, mode)) => {
+            if let Some(flow) = flow_of(app, &account) {
+                flow.enter(Stage::Proposing, now);
+                flow.next = now + PLAN_EVERY_MS;
+            }
+            call(app, PROPOSE, json!({"account": account, "mode": mode, "keep_unread": 1}), Asking::Propose(account.clone()));
+        }
+        Some(_) => {
+            call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account.clone()));
+        }
+        None => {}
+    }
+}
+
+/// The flow's mailbox, read: what Nora read of it (`survey`) where she has a secretary for it; where she has none (the
+/// first time, for every mailbox), started on first (`switch` on, which makes it; without a validated plan the answer
+/// says `needs_plan`, and the flow goes on to the choice of a way to file), then read; where the person may not start
+/// her, said so.
+fn start_reading(app: &mut MailApp, account: &str, state: &BoxState, now: f64) {
+    let Some(flow) = flow_of(app, account) else { return };
+    if !state.available || flow.journal_first || flow.surveyed || flow.woke || flow.unstarted {
+        return;
+    }
+    let account = account.to_string();
+    if state.secretary {
+        flow.surveyed = true;
+        call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account.clone()));
+    } else if state.may_set {
+        flow.woke = true;
+        let interval = if state.intervals.is_empty() || state.intervals.contains(&FIRST_INTERVAL) { FIRST_INTERVAL } else { state.intervals[0] };
+        call(app, SWITCH, json!({"account": account, "on": 1, "interval": interval}), Asking::Switch(account.clone(), AfterSwitch::Wake));
+    } else {
+        flow.unstarted = true;
+        flow.enter(Stage::Done, now);
     }
 }
 
@@ -1260,7 +1402,11 @@ fn took_state(app: &mut MailApp, account: &str, state: BoxState, now: f64) {
         return;
     }
     let wants_plan = flow.stage == Stage::Loading && ask_plan && flow.plan.is_none() && !flow.journal_first;
+    let read = flow.stage == Stage::Loading;
     settle(flow, Some(&state), now);
+    if read {
+        start_reading(app, account, &state, now);
+    }
     if wants_plan {
         let account = account.to_string();
         call(app, PLAN, json!({"account": account}), Asking::Plan(account));
@@ -1328,6 +1474,15 @@ fn switched(app: &mut MailApp, account: &str, after: AfterSwitch, result: Result
                 }
                 call(app, PROPOSE, json!({"account": account, "mode": mode, "keep_unread": 1}), Asking::Propose(account.to_string()));
             }
+        }
+        AfterSwitch::Wake => {
+            // Started on: no plan yet is what comes next (`needs_plan`), what she read first.
+            if let Some(flow) = flow_of(app, account) {
+                flow.read_from = now;
+                flow.surveyed = true;
+            }
+            let account = account.to_string();
+            call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account.clone()));
         }
         AfterSwitch::Rhythm(minutes) => {
             if let Some(flow) = flow_of(app, account) {
@@ -1398,8 +1553,11 @@ fn open(app: &mut MailApp, account: &str, journal: bool) {
     refresh(app, &account);
     call(app, JOURNAL, json!({"account": account, "limit": JOURNAL_RUNS}), Asking::Journal(account.clone()));
     fresh_questions(app);
-    if !journal {
-        call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account));
+    // A mailbox known to have her secretary is read at once; any other waits for its state, read again above: one she has
+    // never read is started on first, and only on what the server says now.
+    let known = app.nora.sorting.boxes.get(&account).and_then(|k| k.state.clone()).filter(|s| s.secretary);
+    if let Some(state) = known {
+        start_reading(app, &account, &state, now);
     }
 }
 
@@ -1600,6 +1758,7 @@ fn file_now(app: &mut MailApp) {
     let account = flow.account.clone();
     flow.error = None;
     flow.said = None;
+    flow.filing = true;
     let validated = flow.plan.as_ref().is_some_and(|p| p.status == "validated");
     let edited = flow.editing.as_ref().map(|rows| {
         rows.iter()

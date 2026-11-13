@@ -293,7 +293,12 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   flow's result, answered by a button, in the person's own words (what Nora would keep, confirmed by them) or « later »; the
   answer to a question of a family's folder (`topic: "Folder"`) moves what Nora had filed of it, a correction (`run`) that
   « Annuler » undoes and that the journal says (`kind: "correction"`). Her sentences keep a guillemet, « ? », « ! », « : » and
-  « ; » on the line of their words (a no-break space, `sorting_view::tied`).
+  « ; » on the line of their words (a no-break space, `sorting_view::tied`). The first time, on a mailbox Nora has never
+  read (`state.secretary` false), the flow starts her on it (`switch` on, at a quarter of an hour; `needs_plan` is what
+  comes next, the choice of a way to file) before anything is read or proposed, or says that only the person in charge
+  can; while she reads it (`survey.catch_up`), « Je lis votre boîte… » and what she read read again every twelve seconds,
+  never « 0 messages », and after « Ranger maintenant » that she files as she reads; a refusal is the server's sentence,
+  never an HTTP code (`answer::sorting`).
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).

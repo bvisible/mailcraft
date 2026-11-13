@@ -4097,3 +4097,29 @@ msgid "{n} message back in the inbox"
 msgid_plural "{n} messages back in the inbox"
 msgstr[0] "{n} messaggio rimesso nella posta in arrivo"
 msgstr[1] "{n} messaggi rimessi nella posta in arrivo"
+
+# The first time Nora reads a mailbox (her catch-up of its past mail): what she says while she reads and files as she reads;
+# the person who may not start her on it; a refusal of the server's that says nothing of why.
+msgid "Only the person in charge of this mailbox can start the filing."
+msgstr "Solo la persona responsabile di questa casella può avviare lo smistamento."
+
+msgid "I'm reading your mailbox…"
+msgstr "Sto leggendo la tua casella…"
+
+msgid "I'm reading your mailbox… {read} of {total} messages"
+msgstr "Sto leggendo la tua casella… {read} messaggi su {total}"
+
+msgid "I'm still reading your mailbox: these numbers will grow."
+msgstr "Sto ancora leggendo la tua casella: questi numeri aumenteranno."
+
+msgid "Nora files as she reads"
+msgstr "Nora smista mentre legge"
+
+msgid "I'm still reading your mailbox: I file the messages as I read them."
+msgstr "Sto ancora leggendo la tua casella: smisto i messaggi mentre li leggo."
+
+msgid "I'm still reading your mailbox: I file the rest as I read it."
+msgstr "Sto ancora leggendo la tua casella: smisto il resto mentre la leggo."
+
+msgid "the server turned it down without saying why"
+msgstr "il server lo ha rifiutato senza dire perché"

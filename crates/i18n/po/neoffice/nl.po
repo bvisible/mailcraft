@@ -429,3 +429,29 @@ msgid "{n} message back in the inbox"
 msgid_plural "{n} messages back in the inbox"
 msgstr[0] "{n} bericht teruggezet in de inbox"
 msgstr[1] "{n} berichten teruggezet in de inbox"
+
+# The first time Nora reads a mailbox (her catch-up of its past mail): what she says while she reads and files as she reads;
+# the person who may not start her on it; a refusal of the server's that says nothing of why.
+msgid "Only the person in charge of this mailbox can start the filing."
+msgstr "Alleen de persoon die verantwoordelijk is voor dit postbus kan het sorteren starten."
+
+msgid "I'm reading your mailbox…"
+msgstr "Ik lees uw postbus…"
+
+msgid "I'm reading your mailbox… {read} of {total} messages"
+msgstr "Ik lees uw postbus… {read} van {total} berichten"
+
+msgid "I'm still reading your mailbox: these numbers will grow."
+msgstr "Ik lees uw postbus nog: deze cijfers zullen nog oplopen."
+
+msgid "Nora files as she reads"
+msgstr "Nora sorteert tijdens het lezen"
+
+msgid "I'm still reading your mailbox: I file the messages as I read them."
+msgstr "Ik lees uw postbus nog: ik sorteer de berichten terwijl ik ze lees."
+
+msgid "I'm still reading your mailbox: I file the rest as I read it."
+msgstr "Ik lees uw postbus nog: de rest sorteer ik terwijl ik het lees."
+
+msgid "the server turned it down without saying why"
+msgstr "de server heeft het geweigerd zonder te zeggen waarom"

@@ -48,7 +48,7 @@ fn window(app: MailApp, size: (f32, f32)) -> Window {
 
 /// The JSON of the server's answers, from the logic's tests.
 mod answers {
-    pub(crate) use super::super::super::sorting::tests::{journal, plan, state, survey};
+    pub(crate) use super::super::super::sorting::tests::{first_reading, journal, plan, state, survey, unread_state};
 }
 
 /// A hosting page's tab, its Inbox in view, the server having said `state` of its mailbox (and the run of `latest`).
@@ -314,7 +314,19 @@ fn sorting_screens_in_french() {
     let Some(dir) = std::env::var_os("NORA_SORTING_SHOTS").map(std::path::PathBuf::from) else { return };
     let _language = crate::i18n::RestoreLanguage::hold();
     for dark in [false, true] {
-        for screen in ["1-bouton-bandeau", "2-volet-interrupteur", "3-conversation", "4-resultat", "5-carte", "6-questions", "7-question-dossier"] {
+        for screen in [
+            "1-bouton-bandeau",
+            "2-volet-interrupteur",
+            "3-conversation",
+            "4-resultat",
+            "5-carte",
+            "6-questions",
+            "7-question-dossier",
+            "8-premiere-lecture",
+            "9-range-en-lisant",
+            "10-sans-droit",
+            "11-refus",
+        ] {
             let mut app = match screen {
                 "1-bouton-bandeau" => hosted(answers::state(true, "validated", true), true),
                 "2-volet-interrupteur" => {
@@ -331,6 +343,17 @@ fn sorting_screens_in_french() {
                     app
                 }
                 "4-resultat" => in_flow(Stage::Done, true),
+                "8-premiere-lecture" | "11-refus" => {
+                    // The first time: she reads the mailbox, the way to file chosen meanwhile; and a refusal of the server's.
+                    let mut app = in_flow(Stage::Choose, true);
+                    let flow = app.nora.sorting.flow.as_mut().unwrap();
+                    flow.chosen = None;
+                    flow.plan = None;
+                    flow.survey = Some(read_survey(&answers::first_reading(0, "running")));
+                    app
+                }
+                "9-range-en-lisant" => as_she_reads(),
+                "10-sans-droit" => unstarted(),
                 "7-question-dossier" => {
                     // The result's « Nora vous demande »: a folder question still open, the answer to another with the
                     // correction it made and its « Annuler », and that correction in the journal.
@@ -370,8 +393,13 @@ fn sorting_screens_in_french() {
             };
             in_french(&mut app);
             app.execute("ui.language", json!({"language": "fr"})).unwrap();
+            if screen == "11-refus" {
+                // As the window says it when the server answers so: in the person's language, the server's own sentence.
+                let refused = super::super::NoraAnswer { id: 1, status: 417, body: thrown("Cette boîte n’a pas encore de secrétaire.") };
+                app.nora.sorting.flow.as_mut().unwrap().error = super::super::answer::sorting(&refused).err();
+            }
             let _ = app.run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
-            let tall = matches!(screen, "3-conversation" | "4-resultat" | "7-question-dossier");
+            let tall = matches!(screen, "3-conversation" | "4-resultat" | "7-question-dossier" | "9-range-en-lisant");
             let mut h = window(app, (1440.0, if tall { 1150.0 } else { 900.0 }));
             h.run_steps(8);
             let image = h.render().expect("drawn");
@@ -399,4 +427,95 @@ fn the_journal_says_a_correction_and_what_it_was_about() {
     app.nora.sorting.flow.as_mut().unwrap().journal = Some(read_journal(&correction));
     let h = window(app, (1440.0, 1150.0));
     assert!(contains(&h, "Correction: Payment notices · 4 messages filed"));
+}
+
+/// Frappe's refusal (`frappe.throw`, 417) as the server writes it: the person's sentence in `_server_messages`.
+fn thrown(words: &str) -> String {
+    let shown = json!({"message": words}).to_string();
+    json!({"exc_type": "ValidationError", "_server_messages": json!([shown]).to_string()}).to_string()
+}
+
+/// The result of « Ranger maintenant » asked while Nora still reads the mailbox (her first time on it): what she filed so
+/// far, `filed` of the run.
+fn as_she_reads_filed(filed: u64) -> MailApp {
+    let mut app = in_flow(Stage::Done, true);
+    let flow = app.nora.sorting.flow.as_mut().unwrap();
+    flow.filing = true;
+    flow.survey = Some(read_survey(&answers::first_reading(40, "running")));
+    let mut journal = answers::journal("NFR-3");
+    journal["runs"][0]["filed"] = json!(filed);
+    flow.journal = Some(read_journal(&journal));
+    app
+}
+
+fn as_she_reads() -> MailApp {
+    as_she_reads_filed(0)
+}
+
+/// The flow on a mailbox Nora has never read, opened by a person who may not start her on it.
+fn unstarted() -> MailApp {
+    let mut app = hosted(answers::unread_state(false), false);
+    app.run("ui.noraAssistant", json!({"open": true})).unwrap();
+    let mut flow = Flow::new(BOX.to_string(), false, crate::now_ms());
+    flow.unstarted = true;
+    flow.stage = Stage::Done;
+    flow.journal = Some(read_journal(&json!({"runs": [], "learned": [], "may_set": false})));
+    app.nora.sorting.flow = Some(flow);
+    app
+}
+
+#[test]
+fn the_first_time_she_says_she_reads_never_zero_messages_and_the_way_to_file_may_be_chosen() {
+    let mut app = in_flow(Stage::Choose, true);
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&answers::first_reading(0, "running")));
+    let h = window(app, (1440.0, 900.0));
+    assert!(contains(&h, "I'm reading your mailbox… 120 of 1248 messages"));
+    assert!(!contains(&h, "I read the last") && !contains(&h, "I have not read any message"), "never « 0 messages »");
+    assert!(has(&h, "One folder per client") && has(&h, "How do you want me to file?"), "the way to file may be chosen meanwhile");
+    // Some read already: what she read, and that it will grow.
+    let mut app = in_flow(Stage::Choose, true);
+    let mut some = answers::first_reading(40, "running");
+    some["progress"] = serde_json::Value::Null;
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&some));
+    let h = window(app, (1440.0, 900.0));
+    assert!(contains(&h, "40 messages.") && contains(&h, "I'm still reading your mailbox: these numbers will grow."));
+}
+
+#[test]
+fn file_now_while_she_reads_says_she_files_as_she_reads_never_that_nothing_needed_filing() {
+    let h = window(as_she_reads(), (1440.0, 1150.0));
+    assert!(contains(&h, "Nora files as she reads"));
+    assert!(contains(&h, "I'm still reading your mailbox: I file the messages as I read them."));
+    assert!(!contains(&h, "Nothing needed filing") && !contains(&h, "Nora filed your mailbox"));
+    assert!(!contains(&h, "0 messages filed"), "a run that filed nothing is no line of the journal");
+    assert!(contains(&h, "Next, shall I carry on by myself?"), "the rhythm is still asked");
+    // What she filed already is said, and that she files the rest as she reads.
+    let h = window(as_she_reads_filed(23), (1440.0, 1150.0));
+    assert!(contains(&h, "It's filed.") && contains(&h, "I'm still reading your mailbox: I file the rest as I read it."));
+    // A tidying that waits for her reading (`tidy.status` « waiting »), her reading done: the same.
+    let mut app = as_she_reads();
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&answers::survey()));
+    let mut waits = answers::state(false, "validated", true);
+    waits["tidy"]["status"] = json!("waiting");
+    app.nora.sorting.boxes.insert(BOX.to_string(), Known::said(read_state(&waits), None));
+    let h = window(app, (1440.0, 1150.0));
+    assert!(contains(&h, "Nora files as she reads"));
+    // Her reading done, nothing waiting: over.
+    let mut app = as_she_reads();
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&answers::survey()));
+    let h = window(app, (1440.0, 1150.0));
+    assert!(!contains(&h, "Nora files as she reads") && contains(&h, "Nothing needed filing"));
+}
+
+#[test]
+fn the_person_who_may_not_start_her_is_told_so_and_a_refusal_is_the_servers_sentence() {
+    let h = window(unstarted(), (1440.0, 900.0));
+    assert!(contains(&h, "Only the person in charge of this mailbox can start the filing."));
+    assert!(!contains(&h, "Nora is reading your mailbox") && !contains(&h, "Try again"));
+    // A refusal: the server's sentence, and « Réessayer ».
+    let mut app = in_flow(Stage::Choose, true);
+    let refused = super::super::NoraAnswer { id: 1, status: 417, body: thrown("Cette boîte n’a pas encore de secrétaire.") };
+    app.nora.sorting.flow.as_mut().unwrap().error = super::super::answer::sorting(&refused).err();
+    let h = window(app, (1440.0, 900.0));
+    assert!(contains(&h, "Nora couldn't do it: Cette boîte n’a pas encore de secrétaire.") && has(&h, "Try again"));
 }
