@@ -5930,6 +5930,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I carry on tonight."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
 msgid "I delete nothing."
 msgstr ""
 
@@ -5951,6 +5956,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "I have not read any message of {address} yet: I read the new mail as it comes, then propose a plan."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."
 msgstr ""
 
 #. interface
@@ -9063,6 +9073,16 @@ msgid "Nora could not make out your answer: say it again, or choose one of hers.
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora could not reach her model to make the plan: try again in a moment, or choose another way."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora couldn't answer: {reason}"
 msgstr ""
@@ -9145,6 +9165,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Nora files your mail."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora found no folder to propose by activity: explain it otherwise, or choose another way."
 msgstr ""
 
 #. interface
@@ -16300,6 +16325,11 @@ msgid "This link goes somewhere other than its text says."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "This mailbox has too few messages for a plan by activity (fewer than 20 in 30 days): choose another way."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
 msgid "This mailbox is in Microsoft 365"
 msgstr ""
@@ -22839,6 +22869,13 @@ msgstr[1] ""
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "{n} message filed"
 msgid_plural "{n} messages filed"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message filed so far"
+msgid_plural "{n} messages filed so far"
 msgstr[0] ""
 msgstr[1] ""
 

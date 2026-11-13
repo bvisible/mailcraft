@@ -455,3 +455,28 @@ msgstr "Ik lees uw postbus nog: de rest sorteer ik terwijl ik het lees."
 
 msgid "the server turned it down without saying why"
 msgstr "de server heeft het geweigerd zonder te zeggen waarom"
+
+# Her reading of a mailbox she reads for the first time, carried on tonight; a plan by activity that waits for it, or
+# could not be made; what a tidying that waits for her reading has filed so far.
+msgid "I carry on tonight."
+msgstr "Ik ga vanavond door."
+
+msgid "I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."
+msgstr "Ik moet nog wat meer van uw postbus lezen voor een plan op activiteit: ik maak het zodra ik genoeg heb gelezen."
+
+msgid "{n} message filed so far"
+msgid_plural "{n} messages filed so far"
+msgstr[0] "{n} bericht tot nu toe gesorteerd"
+msgstr[1] "{n} berichten tot nu toe gesorteerd"
+
+msgid "This mailbox has too few messages for a plan by activity (fewer than 20 in 30 days): choose another way."
+msgstr "Deze postbus heeft te weinig berichten voor een plan op activiteit (minder dan 20 in 30 dagen): kies een andere manier van sorteren."
+
+msgid "Nora could not reach her model to make the plan: try again in a moment, or choose another way."
+msgstr "Nora kon haar model niet bereiken om het plan te maken: probeer het zo dadelijk opnieuw of kies een andere manier van sorteren."
+
+msgid "Nora found no folder to propose by activity: explain it otherwise, or choose another way."
+msgstr "Nora heeft geen map gevonden om op activiteit voor te stellen: leg het anders uit of kies een andere manier van sorteren."
+
+msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
+msgstr "Nora kon het plan op activiteit niet maken: probeer het zo dadelijk opnieuw of kies een andere manier van sorteren."

@@ -4125,3 +4125,28 @@ msgstr "Todavía estoy leyendo tu buzón: clasifico el resto mientras lo leo."
 
 msgid "the server turned it down without saying why"
 msgstr "el servidor lo rechazó sin decir por qué"
+
+# Her reading of a mailbox she reads for the first time, carried on tonight; a plan by activity that waits for it, or
+# could not be made; what a tidying that waits for her reading has filed so far.
+msgid "I carry on tonight."
+msgstr "Sigo esta noche."
+
+msgid "I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."
+msgstr "Necesito leer un poco más de tu buzón para un plan por actividad: lo preparo en cuanto haya leído lo suficiente."
+
+msgid "{n} message filed so far"
+msgid_plural "{n} messages filed so far"
+msgstr[0] "{n} mensaje clasificado hasta ahora"
+msgstr[1] "{n} mensajes clasificados hasta ahora"
+
+msgid "This mailbox has too few messages for a plan by activity (fewer than 20 in 30 days): choose another way."
+msgstr "Este buzón tiene muy pocos mensajes para un plan por actividad (menos de 20 en 30 días): elige otra forma de clasificar."
+
+msgid "Nora could not reach her model to make the plan: try again in a moment, or choose another way."
+msgstr "Nora no pudo conectarse con su modelo para hacer el plan: inténtalo de nuevo en un momento o elige otra forma de clasificar."
+
+msgid "Nora found no folder to propose by activity: explain it otherwise, or choose another way."
+msgstr "Nora no encontró ninguna carpeta que proponer por actividad: explícalo de otra manera o elige otra forma de clasificar."
+
+msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
+msgstr "Nora no pudo hacer el plan por actividad: inténtalo de nuevo en un momento o elige otra forma de clasificar."

@@ -704,10 +704,17 @@ pub(crate) fn unread_state(may_set: bool) -> Value {
     said
 }
 
-/// What `survey` says while Nora reads a mailbox for the first time: nothing read yet, her reading `catch_up`.
-pub(crate) fn first_reading(mails: u64, catch_up: &str) -> Value {
+/// Where her reading of the days stands, as `survey.reading` and `state.tidy.reading` say it: `status`, 120 of 1248 sorted.
+pub(crate) fn reading(status: &str) -> Value {
+    json!({"status": status, "since": "2026-09-14", "read": 120, "total": 1248, "counted": true, "reaches": false,
+           "done": status == "done", "now": true, "error": ""})
+}
+
+/// What `survey` (and `begin`) says while Nora reads a mailbox for the first time: `mails` read so far, her reading
+/// `status` ("": a server that doesn't say where it stands).
+pub(crate) fn first_reading(mails: u64, status: &str) -> Value {
     json!({"days": 30, "mails": mails, "sorted": 0, "kinds": {}, "clients": 0, "client_mails": 0, "in_inbox": mails, "read_since": "",
-           "catch_up": catch_up, "secretary": true, "progress": {"read": 120, "total": 1248}})
+           "catch_up": status, "secretary": true, "reading": if status.is_empty() { Value::Null } else { reading(status) }})
 }
 
 /// The flow opened on a box whose state the server says now is `said`.
@@ -727,23 +734,24 @@ fn a_mailbox_nora_has_never_read_is_started_on_first_then_read_and_the_way_to_fi
     assert!(made(&calls, SURVEY).is_empty() && made(&calls, SWITCH).is_empty() && made(&calls, PROPOSE).is_empty());
     reply(&calls, STATE, 200, ok(unread_state(true)));
     take(&mut app);
-    // Started on (its secretary made), at a quarter of an hour, before anything is read or proposed.
-    assert_eq!(made(&calls, SWITCH), vec![json!({"account": BOX, "on": 1, "interval": 15})]);
-    assert!(made(&calls, SURVEY).is_empty() && made(&calls, PROPOSE).is_empty());
+    // Started on (`begin`: her secretary made, her reading of its last 30 days started), before anything is proposed.
+    assert_eq!(made(&calls, BEGIN), vec![json!({"account": BOX, "days": 30})]);
+    assert!(made(&calls, SWITCH).is_empty() && made(&calls, SURVEY).is_empty() && made(&calls, PROPOSE).is_empty());
     take(&mut app);
-    assert_eq!(made(&calls, SWITCH).len(), 1, "started on once");
-    // No validated plan (`needs_plan`) is what comes next, not an error: what she read, then the choice.
-    let mut started = state(false, "", true);
-    started["needs_plan"] = json!(true);
-    reply(&calls, SWITCH, 200, ok(started));
-    take(&mut app);
-    assert_eq!(made(&calls, SURVEY), vec![json!({"account": BOX, "days": 30})]);
-    assert!(app.nora.sorting.card.is_none(), "no card: the flow goes on");
-    reply(&calls, SURVEY, 200, ok(survey()));
+    assert_eq!(made(&calls, BEGIN).len(), 1, "started on once");
+    // Its answer is what she read so far: « Je lis votre boîte… », the way to file chosen meanwhile; read again until done.
+    reply(&calls, BEGIN, 200, ok(first_reading(0, "running")));
     take(&mut app);
     let flow = app.nora.sorting.flow.as_ref().unwrap();
     assert_eq!((flow.stage, flow.error.as_deref()), (Stage::Choose, None));
+    assert!(flow.reading(crate::now_ms()));
     assert!(!flow.on_intent, "started on to be read: « Ensuite, je continue toute seule ? » is still asked");
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY), vec![json!({"account": BOX, "days": 30})]);
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    assert!(!app.nora.sorting.flow.as_ref().unwrap().reading(crate::now_ms()), "done: read no more");
     let mode = app.nora.sorting.available(BOX).unwrap().modes[0].clone();
     act(&mut app, Intent::Choose(mode));
     assert_eq!(made(&calls, PROPOSE), vec![json!({"account": BOX, "mode": "clients", "keep_unread": 1})]);
@@ -772,30 +780,65 @@ fn the_person_who_may_not_start_nora_on_a_mailbox_is_told_so_and_nothing_is_aske
     take(&mut app);
     reply(
         &calls,
-        SWITCH,
+        BEGIN,
         403,
         thrown("PermissionError", "Seule la personne qui a lancé la secrétaire ou le propriétaire de la boîte peut faire cela."),
     );
     take(&mut app);
     let flow = app.nora.sorting.flow.as_ref().unwrap();
     assert!(flow.error.as_deref().is_some_and(|e| e.contains("Seule la personne")), "{:?}", flow.error);
-    assert!(made(&calls, SURVEY).is_empty());
+    assert!(made(&calls, SURVEY).is_empty() && made(&calls, SWITCH).is_empty());
+}
+
+#[test]
+fn a_host_whose_list_is_older_than_begin_starts_her_by_the_switch() {
+    // Neodesk 1.3.6 refuses `begin` with a bare 403: she is started by the switch, which makes her secretary and starts the
+    // same reading; no validated plan (`needs_plan`) is what comes next, not an error.
+    let (mut app, calls) = opened_on(unread_state(true));
+    reply(&calls, STATE, 200, ok(unread_state(true)));
+    take(&mut app);
+    reply(&calls, BEGIN, 403, json!(""));
+    take(&mut app);
+    assert_eq!(made(&calls, SWITCH), vec![json!({"account": BOX, "on": 1, "interval": 15})]);
+    assert!(app.nora.sorting.flow.as_ref().unwrap().error.is_none());
+    let mut started = state(false, "", true);
+    started["needs_plan"] = json!(true);
+    reply(&calls, SWITCH, 200, ok(started));
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY), vec![json!({"account": BOX, "days": 30})]);
+    assert!(app.nora.sorting.card.is_none(), "no card: the flow goes on");
+    reply(&calls, SURVEY, 200, ok(first_reading(0, "running")));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.error.as_deref()), (Stage::Choose, None));
 }
 
 #[test]
 fn what_nora_read_is_read_again_while_she_still_reads_the_mailbox() {
-    // Read field by field: her reading, how far it is.
+    // Read field by field: her reading, how far it is (nothing while she counts what there is).
     let reading = read_survey(&first_reading(0, "Running"));
-    assert_eq!((reading.catch_up.as_str(), reading.progress), ("running", Some((120, 1248))));
-    assert_eq!(read_survey(&json!({"progress": {"read": 3, "total": 0}})).progress, None, "no total, no progress");
-    // Still reading: her reading running or paused, half an hour at most; a mailbox read nothing of with no reading said, a
-    // few minutes after it was started on; never once it is done, nor a mailbox she has read.
-    assert!(reading.reading(0.0, SURVEY_FRESH_MS + 1.0) && !reading.reading(0.0, SURVEY_GIVE_UP_MS + 1.0));
-    assert!(read_survey(&first_reading(0, "paused")).reading(0.0, 1.0));
+    let said = reading.reading.clone().unwrap();
+    assert_eq!((said.status.as_str(), said.done, said.now, said.progress()), ("running", false, true, Some((120, 1248))));
+    let counting = read_reading(&json!({"status": "running", "read": 3, "total": 0, "counted": false, "done": false, "now": true}));
+    assert_eq!(counting.progress(), None, "no total, no progress");
+    // Still reading: until `done` (two hours at most), and read again while she reads now; not once turned off or gone wrong.
+    assert!(reading.still_reading(0.0, SURVEY_FRESH_MS + 1.0) && !reading.still_reading(0.0, SURVEY_GIVE_UP_MS + 1.0));
+    assert!(reading.read_again(0.0, 1.0));
+    let mut tonight = first_reading(0, "paused");
+    tonight["reading"]["now"] = json!(false);
+    let tonight = read_survey(&tonight);
+    assert!(tonight.still_reading(0.0, 1.0) && !tonight.read_again(0.0, 1.0), "she carries on tonight: not read again every few seconds");
+    assert!(!read_survey(&first_reading(0, "done")).still_reading(0.0, 1.0));
+    assert!(!read_survey(&first_reading(0, "off")).still_reading(0.0, 1.0));
+    let mut wrong = first_reading(0, "running");
+    wrong["reading"]["error"] = json!("imap");
+    assert!(!read_survey(&wrong).still_reading(0.0, 1.0));
+    // A server that doesn't say where her reading stands: her catch-up; a mailbox read nothing of, a few minutes after it
+    // was started on; never a mailbox she has read.
     let fresh = read_survey(&first_reading(0, ""));
-    assert!(fresh.reading(0.0, 1.0) && !fresh.reading(0.0, SURVEY_FRESH_MS + 1.0));
-    assert!(!read_survey(&first_reading(0, "done")).reading(0.0, 1.0));
-    assert!(!read_survey(&first_reading(40, "")).reading(0.0, 1.0));
+    assert!(fresh.still_reading(0.0, 1.0) && !fresh.still_reading(0.0, SURVEY_FRESH_MS + 1.0));
+    assert!(read_survey(&json!({"mails": 0, "catch_up": "running"})).still_reading(0.0, SURVEY_FRESH_MS + 1.0));
+    assert!(!read_survey(&first_reading(40, "")).still_reading(0.0, 1.0));
 
     let (mut app, calls) = with_state(false, "", true);
     act(&mut app, Intent::Open { account: BOX.into(), journal: false });
@@ -909,4 +952,102 @@ fn a_refusal_in_the_flow_is_said_in_the_servers_words_and_never_as_a_code() {
     let said = app.nora.sorting.flow.as_ref().unwrap().error.clone().unwrap_or_default();
     assert_eq!(said, "Nora couldn't do it: the server turned it down without saying why");
     assert!(!said.contains("417"));
+}
+
+#[test]
+fn a_plan_by_activity_waits_for_her_reading_and_says_why_it_could_not_be_made() {
+    let (mut app, calls) = with_state(false, "", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "", true)));
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    let activity = app.nora.sorting.available(BOX).unwrap().modes[1].clone();
+    act(&mut app, Intent::Choose(activity.clone()));
+    reply(&calls, PROPOSE, 200, ok(json!({"queued": true, "mode": "activity"})));
+    take(&mut app);
+    // She has not read 20 sorted messages yet (`waiting` « reading »): made as soon as she has, not given up meanwhile,
+    // whatever the last one's failure says.
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(json!({"status": "", "folders": [], "waiting": "reading", "error": "too few", "may_set": true})));
+    take(&mut app);
+    app.nora.sorting.flow.as_mut().unwrap().since -= PLAN_GIVE_UP_MS + PLAN_ERROR_AFTER_MS;
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.error.as_deref()), (Stage::Proposing, None));
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(plan("Proposed")));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Plan);
+    // It could not be made: why, once its job has had the time to end (before, the failure may be the last one's).
+    act(&mut app, Intent::NewPlan);
+    act(&mut app, Intent::Choose(activity));
+    reply(&calls, PROPOSE, 200, ok(json!({"queued": true, "mode": "activity"})));
+    take(&mut app);
+    let failed = json!({"status": "", "folders": [], "waiting": "", "error": "model", "may_set": true});
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(failed.clone()));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Proposing);
+    let flow = app.nora.sorting.flow.as_mut().unwrap();
+    flow.since -= PLAN_ERROR_AFTER_MS;
+    flow.next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(failed));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!(flow.stage, Stage::Choose);
+    assert!(flow.error.as_deref().is_some_and(|e| e.contains("could not reach her model")), "{:?}", flow.error);
+    // Each failure in its words.
+    assert!(plan_failed("too_few").is_some_and(|w| w.contains("fewer than 20")));
+    assert!(plan_failed("empty").is_some_and(|w| w.contains("no folder")));
+    assert!(plan_failed("error").is_some_and(|w| w.contains("could not make the plan")));
+    assert!(plan_failed("").is_none());
+}
+
+#[test]
+fn a_tidying_that_waits_for_her_reading_is_followed_at_its_pace_until_the_days_are_read() {
+    let (mut app, calls) = with_state(false, "validated", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "validated", true)));
+    take(&mut app);
+    reply(&calls, PLAN, 200, ok(plan("Validated")));
+    reply(&calls, SURVEY, 200, ok(first_reading(0, "running")));
+    take(&mut app);
+    act(&mut app, Intent::FileNow);
+    assert_eq!(made(&calls, TIDY), vec![json!({"account": BOX, "days": 30})]);
+    reply(&calls, TIDY, 200, ok(tidy("running", "NFR-9", 0)));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Tidying);
+    // All she sorted is filed, she reads the rest (`waiting_for` « reading »): the state at the reading's pace, the tidying
+    // not over.
+    let mut waits = state(false, "validated", true);
+    waits["tidy"] = tidy("running", "NFR-9", 5);
+    waits["tidy"]["waiting_for"] = json!("reading");
+    waits["tidy"]["reading"] = reading("running");
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, STATE, 200, ok(waits));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Tidying);
+    let known = app.nora.sorting.available(BOX).unwrap();
+    let tidying = known.tidy.clone().unwrap();
+    assert!(tidying.as_she_reads() && tidying.reading.as_ref().and_then(Reading::progress) == Some((120, 1248)));
+    assert_eq!(known.tidy_every(), SURVEY_EVERY_MS);
+    // What she read isn't read again meanwhile: the state says it.
+    let surveys = made(&calls, SURVEY).len();
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, SURVEY).len(), surveys);
+    // Done once the days are read: the result, its journal.
+    let mut done = state(false, "validated", true);
+    done["tidy"] = tidy("done", "NFR-9", 23);
+    app.nora.sorting.flow.as_mut().unwrap().next = 0.0;
+    take(&mut app);
+    reply(&calls, STATE, 200, ok(done));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Done);
+    assert!(waiting(&calls, JOURNAL));
 }

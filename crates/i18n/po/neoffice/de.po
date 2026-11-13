@@ -4107,3 +4107,28 @@ msgstr "Ich lese Ihr Postfach noch: Den Rest sortiere ich beim Lesen ein."
 
 msgid "the server turned it down without saying why"
 msgstr "der Server hat es ohne Angabe eines Grundes abgelehnt"
+
+# Her reading of a mailbox she reads for the first time, carried on tonight; a plan by activity that waits for it, or
+# could not be made; what a tidying that waits for her reading has filed so far.
+msgid "I carry on tonight."
+msgstr "Ich mache heute Nacht weiter."
+
+msgid "I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."
+msgstr "Für einen Plan nach Tätigkeit muss ich noch etwas mehr von Ihrem Postfach lesen: Ich erstelle ihn, sobald ich genug gelesen habe."
+
+msgid "{n} message filed so far"
+msgid_plural "{n} messages filed so far"
+msgstr[0] "{n} Nachricht bisher einsortiert"
+msgstr[1] "{n} Nachrichten bisher einsortiert"
+
+msgid "This mailbox has too few messages for a plan by activity (fewer than 20 in 30 days): choose another way."
+msgstr "Dieses Postfach hat zu wenige Nachrichten für einen Plan nach Tätigkeit (weniger als 20 in 30 Tagen): Wählen Sie eine andere Art der Einordnung."
+
+msgid "Nora could not reach her model to make the plan: try again in a moment, or choose another way."
+msgstr "Nora konnte ihr Modell für den Plan nicht erreichen: Versuchen Sie es in einem Moment erneut oder wählen Sie eine andere Art der Einordnung."
+
+msgid "Nora found no folder to propose by activity: explain it otherwise, or choose another way."
+msgstr "Nora hat keinen Ordner gefunden, den sie nach Tätigkeit vorschlagen könnte: Erklären Sie es anders oder wählen Sie eine andere Art der Einordnung."
+
+msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
+msgstr "Nora konnte den Plan nach Tätigkeit nicht erstellen: Versuchen Sie es in einem Moment erneut oder wählen Sie eine andere Art der Einordnung."

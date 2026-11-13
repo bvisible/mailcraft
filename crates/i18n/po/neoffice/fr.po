@@ -5092,3 +5092,28 @@ msgstr "Je lis encore votre boîte : je range le reste au fur et à mesure."
 
 msgid "the server turned it down without saying why"
 msgstr "le serveur a refusé sans dire pourquoi"
+
+# Her reading of a mailbox she reads for the first time, carried on tonight; a plan by activity that waits for it, or
+# could not be made; what a tidying that waits for her reading has filed so far.
+msgid "I carry on tonight."
+msgstr "Je continue cette nuit."
+
+msgid "I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."
+msgstr "Je dois encore lire un peu de votre boîte pour un plan par activité : je le prépare dès que j’en ai assez lu."
+
+msgid "{n} message filed so far"
+msgid_plural "{n} messages filed so far"
+msgstr[0] "{n} message rangé jusqu’ici"
+msgstr[1] "{n} messages rangés jusqu’ici"
+
+msgid "This mailbox has too few messages for a plan by activity (fewer than 20 in 30 days): choose another way."
+msgstr "Cette boîte a trop peu de messages pour un plan par activité (moins de 20 en 30 jours) : choisissez une autre façon de ranger."
+
+msgid "Nora could not reach her model to make the plan: try again in a moment, or choose another way."
+msgstr "Nora n’a pas pu joindre son modèle pour faire le plan : réessayez dans un moment, ou choisissez une autre façon de ranger."
+
+msgid "Nora found no folder to propose by activity: explain it otherwise, or choose another way."
+msgstr "Nora n’a trouvé aucun dossier à proposer par activité : expliquez-le autrement, ou choisissez une autre façon de ranger."
+
+msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
+msgstr "Nora n’a pas pu faire le plan par activité : réessayez dans un moment, ou choisissez une autre façon de ranger."

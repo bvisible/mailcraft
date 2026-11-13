@@ -647,6 +647,11 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
     if flow.stage == Stage::Proposing {
         let seconds = ((crate::now_ms() - flow.since) / 1000.0).max(0.0) as u64;
         working(ui, &ds, tl!("Nora is preparing the plan…"), Some(seconds), cx.now, true);
+        if flow.plan.as_ref().is_some_and(|p| p.waiting == "reading") {
+            hers(ui, &ds, |ui| {
+                said(ui, &ds, tl!("I need to read a little more of your mailbox for a plan by activity: I make it as soon as I have."));
+            });
+        }
     }
     let plan = flow.plan.clone();
     if matches!(flow.stage, Stage::Plan | Stage::Tidying | Stage::Done)
@@ -660,9 +665,23 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
     }
     if flow.stage == Stage::Tidying {
         let seconds = ((crate::now_ms() - flow.since) / 1000.0).max(0.0) as u64;
-        let filed = state.and_then(|s| s.tidy.as_ref()).map_or(0, |t| t.filed);
-        let words = tln!(filed, "Nora is filing your mailbox: {n} message so far", "Nora is filing your mailbox: {n} messages so far");
-        working(ui, &ds, &words, Some(seconds), cx.now, true);
+        let tidy = state.and_then(|s| s.tidy.as_ref());
+        let filed = tidy.map_or(0, |t| t.filed);
+        match tidy.filter(|t| t.as_she_reads()) {
+            // All she has sorted is filed, and she reads the rest of those days: she files as she reads.
+            Some(tidy) => {
+                working(ui, &ds, tl!("Nora files as she reads"), Some(seconds), cx.now, true);
+                let mut words = tonight(progress_said(tidy.reading.as_ref()), tidy.reading.as_ref());
+                if filed > 0 {
+                    words = joined(words, &tln!(filed, "{n} message filed so far", "{n} messages filed so far"));
+                }
+                note(ui, &ds, &words);
+            }
+            None => {
+                let words = tln!(filed, "Nora is filing your mailbox: {n} message so far", "Nora is filing your mailbox: {n} messages so far");
+                working(ui, &ds, &words, Some(seconds), cx.now, true);
+            }
+        }
         if may_set && pane_link(ui, &ds, tl!("Stop filing"), TextStyle::Button, 13.0).clicked() {
             intent = Some(Intent::StopTidy);
         }
@@ -727,13 +746,33 @@ pub(crate) fn survey_said(survey: &sorting::Survey, address: &str) -> String {
 /// While Nora reads the mailbox: « Je lis votre boîte… », with how far she is when the server says it; or, once she has
 /// read some, that the numbers will grow.
 pub(crate) fn reading_said(survey: &sorting::Survey) -> String {
-    match survey.progress {
-        Some((read, total)) => {
-            fmt(tl!("I'm reading your mailbox… {read} of {total} messages"), &[("read", &read.min(total).to_string()), ("total", &total.to_string())])
-        }
+    let said = match survey.reading.as_ref().and_then(sorting::Reading::progress) {
+        Some(_) => progress_said(survey.reading.as_ref()),
         None if survey.mails > 0 => tl!("I'm still reading your mailbox: these numbers will grow.").to_string(),
         None => tl!("I'm reading your mailbox…").to_string(),
+    };
+    tonight(said, survey.reading.as_ref())
+}
+
+/// « Je lis votre boîte… 120 messages sur 1 248 », or without its numbers while she counts what there is.
+fn progress_said(reading: Option<&sorting::Reading>) -> String {
+    match reading.and_then(sorting::Reading::progress) {
+        Some((read, total)) => {
+            fmt(tl!("I'm reading your mailbox… {read} of {total} messages"), &[("read", &read.to_string()), ("total", &total.to_string())])
+        }
+        None => tl!("I'm reading your mailbox…").to_string(),
     }
+}
+
+/// What she says of her reading, and that she carries on tonight when she doesn't read now (the rest of a long history
+/// waits for the site's night).
+fn tonight(said: String, reading: Option<&sorting::Reading>) -> String {
+    if reading.is_some_and(|r| r.going() && !r.now) { joined(said, tl!("I carry on tonight.")) } else { said }
+}
+
+/// Two things said on one line: after a sentence, the next; after words that end no sentence, a dot between.
+fn joined(said: String, then: &str) -> String {
+    if said.ends_with('.') { format!("{said} {then}") } else { format!("{said} · {then}") }
 }
 
 /// « Voici ce que je ferais : » and the plan's folders, with « Ranger maintenant » and « Modifier » while it may be acted on.
@@ -833,7 +872,7 @@ fn result(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>, cx: &Flow
     let mut intent = None;
     // « Ranger maintenant » while Nora still reads the mailbox (her first time on it), or a tidying that waits for her
     // reading: she files as she reads, never « 0 messages » as if it were over.
-    let waits = state.and_then(|s| s.tidy.as_ref()).is_some_and(|t| t.status == "waiting");
+    let waits = state.and_then(|s| s.tidy.as_ref()).is_some_and(sorting::Tidy::as_she_reads);
     let as_she_reads = flow.filing && !flow.journal_first && (flow.reading(cx.now) || waits);
     let run = result_run(flow);
     if as_she_reads {

@@ -48,7 +48,7 @@ fn window(app: MailApp, size: (f32, f32)) -> Window {
 
 /// The JSON of the server's answers, from the logic's tests.
 mod answers {
-    pub(crate) use super::super::super::sorting::tests::{first_reading, journal, plan, state, survey, unread_state};
+    pub(crate) use super::super::super::sorting::tests::{first_reading, journal, plan, reading, state, survey, unread_state};
 }
 
 /// A hosting page's tab, its Inbox in view, the server having said `state` of its mailbox (and the run of `latest`).
@@ -352,7 +352,7 @@ fn sorting_screens_in_french() {
                     flow.survey = Some(read_survey(&answers::first_reading(0, "running")));
                     app
                 }
-                "9-range-en-lisant" => as_she_reads(),
+                "9-range-en-lisant" => tidying_as_she_reads(),
                 "10-sans-droit" => unstarted(),
                 "7-question-dossier" => {
                     // The result's « Nora vous demande »: a folder question still open, the answer to another with the
@@ -452,6 +452,24 @@ fn as_she_reads() -> MailApp {
     as_she_reads_filed(0)
 }
 
+/// « Ranger maintenant » on a mailbox she still reads: the tidying has filed all she sorted, 12 messages, and waits for her
+/// reading of the rest of its days (`waiting_for` « reading »).
+fn tidying_as_she_reads() -> MailApp {
+    let mut waits = answers::state(false, "validated", true);
+    waits["tidy"]["status"] = json!("running");
+    waits["tidy"]["run"] = json!("NFR-3");
+    waits["tidy"]["filed"] = json!(12);
+    waits["tidy"]["waiting_for"] = json!("reading");
+    waits["tidy"]["reading"] = answers::reading("running");
+    let mut app = in_flow(Stage::Tidying, true);
+    app.nora.sorting.boxes.insert(BOX.to_string(), Known::said(read_state(&waits), None));
+    let flow = app.nora.sorting.flow.as_mut().unwrap();
+    flow.plan = Some(read_plan(&answers::plan("Validated")));
+    flow.filing = true;
+    flow.tidy_run = "NFR-3".into();
+    app
+}
+
 /// The flow on a mailbox Nora has never read, opened by a person who may not start her on it.
 fn unstarted() -> MailApp {
     let mut app = hosted(answers::unread_state(false), false);
@@ -475,7 +493,7 @@ fn the_first_time_she_says_she_reads_never_zero_messages_and_the_way_to_file_may
     // Some read already: what she read, and that it will grow.
     let mut app = in_flow(Stage::Choose, true);
     let mut some = answers::first_reading(40, "running");
-    some["progress"] = serde_json::Value::Null;
+    some["reading"]["counted"] = json!(false);
     app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&some));
     let h = window(app, (1440.0, 900.0));
     assert!(contains(&h, "40 messages.") && contains(&h, "I'm still reading your mailbox: these numbers will grow."));
@@ -518,4 +536,21 @@ fn the_person_who_may_not_start_her_is_told_so_and_a_refusal_is_the_servers_sent
     app.nora.sorting.flow.as_mut().unwrap().error = super::super::answer::sorting(&refused).err();
     let h = window(app, (1440.0, 900.0));
     assert!(contains(&h, "Nora couldn't do it: Cette boîte n’a pas encore de secrétaire.") && has(&h, "Try again"));
+}
+
+#[test]
+fn a_tidying_that_waits_for_her_reading_says_she_files_as_she_reads_and_how_far_she_is() {
+    let h = window(tidying_as_she_reads(), (1440.0, 1150.0));
+    assert!(contains(&h, "Nora files as she reads"));
+    assert!(contains(&h, "I'm reading your mailbox… 120 of 1248 messages · 12 messages filed so far"));
+    assert!(!contains(&h, "Nora is filing your mailbox"), "{}", "not the tidying's words while it waits for her reading");
+    // Her reading of a long history waits for the night: she says so.
+    let mut app = tidying_as_she_reads();
+    let mut tonight = answers::first_reading(40, "running");
+    tonight["reading"]["now"] = json!(false);
+    tonight["reading"]["counted"] = json!(false);
+    app.nora.sorting.flow.as_mut().unwrap().stage = Stage::Choose;
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&tonight));
+    let h = window(app, (1440.0, 900.0));
+    assert!(contains(&h, "I'm still reading your mailbox: these numbers will grow. I carry on tonight."));
 }

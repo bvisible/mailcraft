@@ -294,11 +294,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   answer to a question of a family's folder (`topic: "Folder"`) moves what Nora had filed of it, a correction (`run`) that
   « Annuler » undoes and that the journal says (`kind: "correction"`). Her sentences keep a guillemet, « ? », « ! », « : » and
   « ; » on the line of their words (a no-break space, `sorting_view::tied`). The first time, on a mailbox Nora has never
-  read (`state.secretary` false), the flow starts her on it (`switch` on, at a quarter of an hour; `needs_plan` is what
-  comes next, the choice of a way to file) before anything is read or proposed, or says that only the person in charge
-  can; while she reads it (`survey.catch_up`), « Je lis votre boîte… » and what she read read again every twelve seconds,
-  never « 0 messages », and after « Ranger maintenant » that she files as she reads; a refusal is the server's sentence,
-  never an HTTP code (`answer::sorting`).
+  read (`state.secretary` false), the flow starts her on it (`begin`: her secretary made, her reading of its last 30 days
+  started; a host whose list is older than `begin`, Neodesk 1.3.6, refuses it with a bare 403, and the switch does the same)
+  before anything is proposed, or says that only the person in charge can; while she reads it (`survey.reading`, until
+  `done`), « Je lis votre boîte… 120 messages sur 1248 » and what she read read again every twelve seconds, never
+  « 0 messages », and « je continue cette nuit » when she reads the rest at night; a plan by activity that waits for her
+  reading (`plan.waiting`) is not given up, one that could not be made says why (`plan.error`); a tidying that waits for
+  her reading (`state.tidy.waiting_for`) says « Nora range au fur et à mesure qu'elle lit », read at her reading's pace;
+  a refusal is the server's sentence, never an HTTP code (`answer::sorting`).
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).
