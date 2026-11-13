@@ -1051,3 +1051,57 @@ fn a_tidying_that_waits_for_her_reading_is_followed_at_its_pace_until_the_days_a
     assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Done);
     assert!(waiting(&calls, JOURNAL));
 }
+
+#[test]
+fn the_plan_shown_while_she_reads_is_read_again_with_what_she_read() {
+    let (mut app, calls) = with_state(false, "proposed", true);
+    act(&mut app, Intent::Open { account: BOX.into(), journal: false });
+    reply(&calls, STATE, 200, ok(state(false, "proposed", true)));
+    take(&mut app);
+    reply(
+        &calls,
+        PLAN,
+        200,
+        ok(json!({"status": "Proposed", "mode": "streams", "may_set": true,
+        "folders": [{"folder": "Notifications", "holds": "Tools", "count": 1, "takes": "notifications"}]})),
+    );
+    reply(&calls, SURVEY, 200, ok(first_reading(544, "running")));
+    take(&mut app);
+    assert_eq!(app.nora.sorting.flow.as_ref().unwrap().stage, Stage::Plan);
+    let plans = made(&calls, PLAN).len();
+    // With what she read, every twelve seconds: its counts brought up to date.
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, PLAN).len(), plans + 1);
+    reply(
+        &calls,
+        PLAN,
+        200,
+        ok(json!({"status": "Proposed", "mode": "streams", "may_set": true,
+        "folders": [{"folder": "Notifications", "holds": "Tools", "count": 316, "takes": "notifications"}]})),
+    );
+    reply(&calls, SURVEY, 200, ok(first_reading(600, "running")));
+    take(&mut app);
+    let flow = app.nora.sorting.flow.as_ref().unwrap();
+    assert_eq!((flow.stage, flow.plan.as_ref().unwrap().folders[0].count), (Stage::Plan, 316));
+    // A passing failure of it waits for the next read.
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    reply(&calls, PLAN, 502, json!({}));
+    reply(&calls, SURVEY, 200, ok(first_reading(600, "running")));
+    take(&mut app);
+    assert!(app.nora.sorting.flow.as_ref().unwrap().error.is_none());
+    // Not while the person changes it: their rows are theirs.
+    act(&mut app, Intent::Edit);
+    let plans = made(&calls, PLAN).len();
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, PLAN).len(), plans);
+    reply(&calls, SURVEY, 200, ok(survey()));
+    take(&mut app);
+    // Her reading done: the plan isn't read again.
+    act(&mut app, Intent::KeepPlan);
+    app.nora.sorting.flow.as_mut().unwrap().survey_next = 0.0;
+    take(&mut app);
+    assert_eq!(made(&calls, PLAN).len(), plans);
+}

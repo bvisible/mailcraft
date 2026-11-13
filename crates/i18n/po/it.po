@@ -10886,6 +10886,11 @@ msgstr "Inizio proposto"
 msgid "Proposed time"
 msgstr "Orario proposto"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Provisional counts: I'm still reading your mailbox."
+msgstr ""
+
 #. command label
 #: crates/engine/src/cmd/keys.rs
 msgid "Public Keys"

@@ -554,3 +554,14 @@ fn a_tidying_that_waits_for_her_reading_says_she_files_as_she_reads_and_how_far_
     let h = window(app, (1440.0, 900.0));
     assert!(contains(&h, "I'm still reading your mailbox: these numbers will grow. I carry on tonight."));
 }
+
+#[test]
+fn the_plans_counts_are_said_to_be_provisional_while_she_reads() {
+    let mut app = in_flow(Stage::Plan, true);
+    app.nora.sorting.flow.as_mut().unwrap().survey = Some(read_survey(&answers::first_reading(544, "running")));
+    let h = window(app, (1440.0, 1150.0));
+    assert!(contains(&h, "Provisional counts: I'm still reading your mailbox."));
+    assert!(has(&h, "File now"), "filing stays possible: she files as she reads");
+    let h = window(in_flow(Stage::Plan, true), (1440.0, 1150.0));
+    assert!(!contains(&h, "Provisional counts"));
+}

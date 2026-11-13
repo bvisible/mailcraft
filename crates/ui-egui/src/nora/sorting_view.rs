@@ -833,6 +833,10 @@ fn plan_bubble(ui: &mut Ui, ds: &Ds, flow: &mut Flow, plan: &Plan, act: bool) ->
                 }
             }
         }
+        // Counts of what she has read so far, while she reads: said so, never shown as final.
+        if flow.reading(crate::now_ms()) {
+            note(ui, ds, tl!("Provisional counts: I'm still reading your mailbox."));
+        }
         let kept = if plan.keep_unread_hours > 0 {
             fmt(tl!("I delete nothing. Unread messages younger than {hours} h stay in the inbox."), &[("hours", &plan.keep_unread_hours.to_string())])
         } else {

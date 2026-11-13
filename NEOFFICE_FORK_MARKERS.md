@@ -311,7 +311,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   « 0 messages », and « je continue cette nuit » when she reads the rest at night; a plan by activity that waits for her
   reading (`plan.waiting`) is not given up, one that could not be made says why (`plan.error`); a tidying that waits for
   her reading (`state.tidy.waiting_for`) says « Nora range au fur et à mesure qu'elle lit », read at her reading's pace;
-  a refusal is the server's sentence, never an HTTP code (`answer::sorting`).
+  a refusal is the server's sentence, never an HTTP code (`answer::sorting`). While she reads, the plan shown is read
+  again with what she read (its counts brought up to date, not while the person changes it) and says its counts are
+  provisional; « Ranger maintenant » stays possible.
   Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
   conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
   (`sorting_view_tests.rs` holds them there).

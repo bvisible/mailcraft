@@ -4150,3 +4150,7 @@ msgstr "Nora no encontró ninguna carpeta que proponer por actividad: explícalo
 
 msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
 msgstr "Nora no pudo hacer el plan por actividad: inténtalo de nuevo en un momento o elige otra forma de clasificar."
+
+# The counts of a plan shown while Nora still reads the mailbox.
+msgid "Provisional counts: I'm still reading your mailbox."
+msgstr "Recuentos provisionales: todavía estoy leyendo tu buzón."

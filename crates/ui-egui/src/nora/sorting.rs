@@ -1075,8 +1075,14 @@ fn follow_flow(app: &mut MailApp, now: f64) -> Option<f64> {
         flow.survey_next = now + SURVEY_EVERY_MS;
     }
     let survey_at = reading.then_some(flow.survey_next);
+    // The plan shown while she reads has counts of what she has read so far: read again with what she read, its counts
+    // brought up to date (not while the person changes it: their rows are theirs).
+    let plan_again = read_again && flow.stage == Stage::Plan && flow.editing.is_none();
     if read_again {
         call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Survey(account.clone()));
+    }
+    if plan_again {
+        call(app, PLAN, json!({"account": account}), Asking::Plan(account.clone()));
     }
     let staged = follow_stage(app, &account, now);
     match (survey_at, staged) {
@@ -1194,9 +1200,9 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
                         }
                     }
                 }
-                // A plan being made, read again: a passing failure waits for the next read; the server's refusal (no
-                // secretary, a plan that is not the person's to see) is said at once.
-                Err(_) if flow.stage == Stage::Proposing && !refusal(status) => {}
+                // A plan being made, or shown and read again while she reads: a passing failure waits for the next read;
+                // the server's refusal (no secretary, a plan that is not the person's to see) is said at once.
+                Err(_) if matches!(flow.stage, Stage::Proposing | Stage::Plan) && !refusal(status) => {}
                 Err(why) => {
                     flow.error = Some(why);
                     if flow.stage == Stage::Proposing {

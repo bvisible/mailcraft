@@ -4132,3 +4132,7 @@ msgstr "Nora hat keinen Ordner gefunden, den sie nach Tätigkeit vorschlagen kö
 
 msgid "Nora could not make the plan by activity: try again in a moment, or choose another way."
 msgstr "Nora konnte den Plan nach Tätigkeit nicht erstellen: Versuchen Sie es in einem Moment erneut oder wählen Sie eine andere Art der Einordnung."
+
+# The counts of a plan shown while Nora still reads the mailbox.
+msgid "Provisional counts: I'm still reading your mailbox."
+msgstr "Vorläufige Zahlen: Ich lese Ihr Postfach noch."
