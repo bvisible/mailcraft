@@ -36,6 +36,8 @@ pub(crate) enum Task {
     Style,
     /// Ready replies, or « My style » ([`super::ready`]).
     Ready,
+    /// « Trier avec Nora » ([`super::sorting`]).
+    Sort,
 }
 
 impl Task {
@@ -47,6 +49,7 @@ impl Task {
             Task::Rewrite => tl!("Nora couldn't rewrite the text: {reason}"),
             Task::Style => tl!("Nora couldn't learn your style: {reason}"),
             Task::Ready => tl!("Nora couldn't prepare replies: {reason}"),
+            Task::Sort => tl!("Nora couldn't do it: {reason}"),
         };
         fmt(template, &[("reason", reason)])
     }
@@ -149,6 +152,15 @@ pub(crate) fn style_started(answer: &NoraAnswer) -> Result<bool, String> {
 /// further by `craft-nora` (`proposal::parse_ready`); or what to tell the person.
 pub(crate) fn ready(answer: &NoraAnswer) -> Result<Value, String> {
     let task = Task::Ready;
+    let body = parse(answer, task)?;
+    body.get("message").filter(|m| m.is_object()).cloned().ok_or_else(|| task.failed(&reason(&body, answer.status)))
+}
+
+/// The `message` object of a good answer of « Trier avec Nora » ([`super::sorting`]), read further there field by field; or
+/// what to tell the person: the server's own sentence for a refusal (« Vous ne lisez pas cette boîte dans NeoMail. », « Les
+/// assistants en arrière-plan de Nora ne font pas partie de votre plan. »), as `frappe.throw` writes it in French.
+pub(crate) fn sorting(answer: &NoraAnswer) -> Result<Value, String> {
+    let task = Task::Sort;
     let body = parse(answer, task)?;
     body.get("message").filter(|m| m.is_object()).cloned().ok_or_else(|| task.failed(&reason(&body, answer.status)))
 }

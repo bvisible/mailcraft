@@ -5614,6 +5614,8 @@ impl MailApp {
         notes_view::close_question(self, &ctx);
         // //// Neoffice — « My style », what Nora keeps of the owner's writing, while it is open (nora/ready.rs).
         nora::ready::style_panel(self, &ctx);
+        // //// Neoffice — the card that turns « Trier avec Nora » on, while it is up (nora/sorting_view.rs).
+        nora::sorting_view::card(self, &ctx);
         reminders::show(self, &ctx);
         // What was chosen in a text's menu, once everything that has one is drawn.
         text_menu::carry_out(self, &ctx);

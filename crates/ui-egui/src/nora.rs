@@ -42,6 +42,8 @@ pub(crate) mod pane;
 pub(crate) mod ready;
 mod recipes;
 pub(crate) mod ribbon;
+pub(crate) mod sorting;
+pub(crate) mod sorting_view;
 #[cfg(test)]
 mod testing;
 #[cfg(test)]
@@ -97,6 +99,28 @@ pub const CHAT_METHODS: [&str; 7] = [
     "nora.api.page_observation.receive_observation",
     "nora.api.cards.answer_in_pane",
     "nora.api.cards.confirm_template",
+];
+
+/// The methods of « Trier avec Nora » ([`sorting`]): what the server says of a mailbox's filing (its state, what Nora read,
+/// her plan, her journal, the mails of a run, her questions), what the person in charge of the box changes (the switch,
+/// a plan proposed then validated, the tidying of the inbox and its stop, a run undone), and the person's answer to one of
+/// her questions or « later ». They go out where her conversation's do, and through a host that makes the calls itself
+/// only when it says it takes them ([`Host::sorting`]: Neodesk's shell lets its own list through, `mail.js`).
+pub const SORTING_METHODS: [&str; 14] = [
+    sorting::STATE,
+    sorting::SURVEY,
+    sorting::PLAN,
+    sorting::JOURNAL,
+    sorting::RUN_MAILS,
+    sorting::ASKS,
+    sorting::SWITCH,
+    sorting::PROPOSE,
+    sorting::VALIDATE,
+    sorting::TIDY,
+    sorting::STOP_TIDY,
+    sorting::UNDO,
+    sorting::ANSWER,
+    sorting::LATER,
 ];
 
 /// The longest wait for an answer, in milliseconds: above the 180 s after which Neodesk's shell
@@ -158,6 +182,10 @@ pub struct Host {
     /// her pane leads to, on the person's click: the page `/neomail` in a new tab (`window.mailcraftNoraOpen`).
     /// Without it, the pane shows a link as its words.
     pub open: Option<Box<dyn Fn(&str)>>,
+    /// Whether the host takes the calls of « Trier avec Nora » ([`SORTING_METHODS`]): the page `/neomail` does (its own
+    /// `fetch`), and a host that makes the calls itself says so (`window.mailcraftNoraSorting`, Neodesk's shell once its
+    /// list has them). Without it nothing of it is shown.
+    pub sorting: bool,
 }
 
 /// A mailbox the hosting page handed over, as the server knows it.
@@ -181,6 +209,7 @@ impl MailApp {
         flow::poll(self);
         assist::poll(self);
         ready::poll(self);
+        sorting::poll(self);
     }
 }
 

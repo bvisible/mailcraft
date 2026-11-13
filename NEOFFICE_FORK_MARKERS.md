@@ -278,6 +278,18 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Notes and Journal there (`nav.rs`): upstream keeps them for a .pst file's items, which have no view yet and which such a
   tab never imports, beside the server's Notes. A server whose session lacks the Inbox tabs' capability
   (`https://neoffice.me/jmap/neomail-stream`) is said once in the console (`apps/mailcraft-web/src/streams.rs`).
+- « Trier avec Nora » (`crates/ui-egui/src/nora/sorting.rs`, `sorting_view.rs`, tests in `sorting_tests.rs` and
+  `sorting_view_tests.rs`): in a hosting page's tab whose host carries its calls (`Host::sorting`: the page's own `fetch`, or
+  `window.mailcraftNoraSorting` of a host that makes the calls itself, Neodesk's shell once its `NORA_SORTING_METHODS` has
+  them) and where the Neoffice server says Nora files mail (`state.available`), the server's filing of a mailbox (nora
+  `nora.api.v2.mail_sorting`, its contract in the vault, NORA/49 note 12; `nora::SORTING_METHODS`): a button « Trier avec
+  Nora » above the Inbox's list and the banner of her last run (the marked hunk in `mail_view.rs`), « Trier ma boîte » and
+  the switch « Nora range mon courrier » in her pane's home, the flow in her pane where the panel draws an empty
+  conversation (what she read, the ways the server knows, her plan to file now or change, the tidying followed, « Annuler
+  ce rangement », her questions and her journal), and the activation card, a modal window (the marked hunk in `lib.rs`).
+  Only the person in charge of the mailbox changes anything (`may_set`); these are the person's clicks, never her
+  conversation's (`REFUSED_FAMILIES` unchanged). Its words are in `crates/i18n/po/neoffice/` in the five languages
+  (`sorting_view_tests.rs` holds them there).
 - `.github/workflows/neoffice-i18n.yml`: `cargo xtask i18n` on a runner, by hand, its catalogues kept as an artifact to
   commit (the maintainer's Mac can't build the extractor).
 - `apps/mailcraft-cli/tests/jmap_list.rs`, `jmap_fetch.rs`, `jmap_up.rs` and `jmap_send.rs`: the engine, `sync_mail`

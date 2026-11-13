@@ -455,6 +455,11 @@ msgid "A copy of your whole mailbox is saved next to it first, as always. Mail i
 msgstr "Primero se guarda junto a él una copia de todo su buzón, como siempre. El correo de la Bandeja de salida no se queda atrás: se envía a través de Microsoft Graph."
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "A draft reply in Drafts, a received invoice read and ready to validate, a task when you are asked something. Nothing is validated or sent without you."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "A field of Nora's is still empty: \"{label}\". Fill it in or delete it before sending."
 msgstr ""
@@ -2236,6 +2241,11 @@ msgstr "Por tamaño"
 msgid "By Subject"
 msgstr "Por asunto"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "By activity, by supplier, the invoices apart…"
+msgstr ""
+
 #. command label, interface, name, ribbon, ribbon location, what a command says
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/share.rs crates/engine/src/cmd/calendar_settings.rs crates/engine/src/cmd/view.rs crates/engine/src/session.rs crates/ui-egui/src/backstage.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/reading/invitation.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -2504,6 +2514,11 @@ msgstr "Cambiar el nombre, el inicio de sesión y el correo para conservar sin c
 #. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Change this mailbox's servers, password and name on the site"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Change this plan"
 msgstr ""
 
 #. interface
@@ -4368,6 +4383,11 @@ msgid "E-mail"
 msgstr "Correo electrónico"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Each filing can be undone from Nora's journal."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/auto_replies.rs
 msgid "Each sender gets one automatic reply, with the message below:"
 msgstr ""
@@ -4584,6 +4604,11 @@ msgid "Every event and task, as .ics"
 msgstr "Todos los eventos y tareas, como .ics"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Every hour"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Every mbox file under a folder, keeping its subfolders, into one new folder"
 msgstr ""
@@ -4611,6 +4636,20 @@ msgstr "Todas las demás horas que se propusieron para esta reunión."
 #, fuzzy
 msgid "Every weekday"
 msgstr "Todos los días laborables"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Every {n} hour"
+msgid_plural "Every {n} hours"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Every {n} minute"
+msgid_plural "Every {n} minutes"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/backstage.rs
@@ -4832,6 +4871,16 @@ msgstr "Archivo"
 #, fuzzy
 msgid "File dialogs aren't available here"
 msgstr "Los cuadros de diálogo de archivos no están disponibles aquí"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "File into folders"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "File now"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/security.rs
@@ -5724,6 +5773,11 @@ msgid "Help"
 msgstr "Ayuda"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Here is what I would do:"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reading/warnings.rs
 msgid "Hide"
 msgstr ""
@@ -5838,6 +5892,11 @@ msgid "How can I help?"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "How do you want me to file?"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/keep_offline.rs
 #, fuzzy
 msgid "How far back mail is kept in full on this computer. Older mail keeps its headers and a preview, and downloads when you open it. It stays on the server."
@@ -5855,8 +5914,33 @@ msgid "How many messages each folder holds and the space they take"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I delete nothing."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I delete nothing. Unread messages younger than {hours} h stay in the inbox."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "I did not hear anything. Try again, a little closer to the microphone."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I have no folder to propose yet: I need to read more of this mailbox first."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I have not read any message of {address} yet: I read the new mail as it comes, then propose a plan."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "I read the last {days} days of {address}: {mails} messages."
 msgstr ""
 
 #. command label
@@ -6489,6 +6573,11 @@ msgstr "Espera en este equipo hasta que se permita To Do para esta cuenta"
 msgid "It wasn't sent: {why}. Change it, or send it again."
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "It's filed."
+msgstr ""
+
 #. command label, ribbon
 #: crates/engine/src/cmd/format.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
@@ -6616,7 +6705,7 @@ msgid "Join {service} Meeting"
 msgstr "Unirse a la reunión de {service}"
 
 #. interface, ribbon location
-#: crates/engine/src/cmd/pst_items.rs crates/ui-egui/src/nav.rs
+#: crates/engine/src/cmd/pst_items.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/nora/sorting_view.rs
 msgid "Journal"
 msgstr ""
 
@@ -6677,6 +6766,11 @@ msgstr "Solo esta"
 msgid "Keep Both"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Keep Nora's plan"
+msgstr ""
+
 #. command label
 #: crates/engine/src/cmd/rules.rs
 #, fuzzy
@@ -6701,6 +6795,11 @@ msgid "Keep Waiting"
 msgstr "Seguir esperando"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Keep my plan"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgid "Keep on the server of {address}"
@@ -6709,6 +6808,11 @@ msgstr "Guardar en el servidor de {address}"
 #. interface
 #: crates/ui-egui/src/import_pst.rs
 msgid "Keep the notes and journal entries"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Keep this folder"
 msgstr ""
 
 #. interface
@@ -6843,7 +6947,7 @@ msgid "Last name"
 msgstr "Apellidos"
 
 #. interface, name
-#: crates/ui-egui/src/graph_switch.rs crates/ui-egui/src/tasks_view.rs
+#: crates/ui-egui/src/graph_switch.rs crates/ui-egui/src/nora/sorting_view.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Later"
 msgstr "Más tarde"
@@ -6914,6 +7018,16 @@ msgstr ""
 #, fuzzy
 msgid "Leave this account out of this Send/Receive"
 msgstr "Excluir esta cuenta de este envío y recepción"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Leave this folder out"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs crates/ui-egui/src/nora/sorting_view.rs
+msgid "Let me explain"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup.rs
@@ -7476,6 +7590,11 @@ msgstr "Buzón"
 #. interface, name
 #: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Main"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Make a new plan"
 msgstr ""
 
 #. interface
@@ -8476,6 +8595,11 @@ msgid "Next week"
 msgstr "La próxima semana"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Next, shall I carry on by myself?"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/merge_contacts.rs
 msgid "Nickname"
 msgstr ""
@@ -8827,6 +8951,11 @@ msgid "No window shows a message file"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "No, when I ask"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 #, fuzzy
 msgid "Nobody has proposed another time."
@@ -8879,6 +9008,11 @@ msgid "Nora"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora asks you"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
 msgstr ""
@@ -8891,6 +9025,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/answer.rs crates/ui-egui/src/nora/assist.rs
 msgid "Nora couldn't be reached: {reason}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/answer.rs
+msgid "Nora couldn't do it: {reason}"
 msgstr ""
 
 #. interface
@@ -8926,6 +9065,36 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora did not answer in time: ask her again."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora does not file the mail on this site."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora filed your mailbox"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora files my mail"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora files the new mail as it comes."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora files your mail"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora files your mail."
 msgstr ""
 
 #. interface
@@ -8969,6 +9138,13 @@ msgid "Nora is already writing a reply."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora is filing your mailbox: {n} message so far"
+msgid_plural "Nora is filing your mailbox: {n} messages so far"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora is finishing up…"
 msgstr ""
@@ -8989,8 +9165,18 @@ msgid "Nora is preparing a reply in your style…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora is preparing the plan…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora is preparing the reply…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora is reading your mailbox…"
 msgstr ""
 
 #. interface
@@ -9004,9 +9190,21 @@ msgid "Nora is rewriting the text…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora is taking too long to make the plan. Try again in a moment."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora is thinking…"
 msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora is tidying your inbox: {n} message filed so far."
+msgid_plural "Nora is tidying your inbox: {n} messages filed so far."
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/pane.rs
@@ -9034,6 +9232,16 @@ msgid "Nora only reads your mail, with your own rights."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora proposes the folders from what she read: you see the plan before anything moves."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora reads the mailbox with your rights, files it by a plan you validate once, and asks you when she hesitates. She deletes nothing and sends nothing."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora wants to write in a message of {mailbox}, a mailbox shared with you: what she writes is kept in its drafts until you send it or discard it. Your yes holds for this mailbox until the conversation is new."
 msgstr ""
@@ -9046,6 +9254,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora works on the mailboxes of your Neoffice account only."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora's background assistants are not part of this site's plan."
 msgstr ""
 
 #. interface
@@ -9202,6 +9415,16 @@ msgstr ""
 msgid "Note Changes to Send"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Noted: I carry on by myself ({every})."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Noted: I file only when you ask."
+msgstr ""
+
 #. command label, interface, name, ribbon location
 #: crates/engine/src/cmd/notes.rs crates/engine/src/cmd/pst_items.rs crates/engine/src/session.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
@@ -9224,6 +9447,11 @@ msgstr "No llegó nada de la página de aprobación de Microsoft: se cerró o pa
 #, fuzzy
 msgid "Nothing else is on your calendar at that time."
 msgstr "No hay nada más en su calendario a esa hora."
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nothing filed yet."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/sync_panel.rs
@@ -9295,6 +9523,11 @@ msgstr ""
 #, fuzzy
 msgid "Nothing more was found on the server"
 msgstr "No se encontró nada más en el servidor"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nothing needed filing: your inbox stays as it was."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/exchanges_pane.rs
@@ -9384,6 +9617,11 @@ msgstr "oct."
 msgid "October"
 msgstr "octubre"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Off: Nora files nothing by herself."
+msgstr ""
+
 #. name
 #: crates/time/src/lib.rs
 #, fuzzy
@@ -9472,6 +9710,11 @@ msgstr ""
 #, fuzzy
 msgid "On this device only: no mail server"
 msgstr "Solo en este dispositivo: sin servidor de correo"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "On {date} at {time}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/updates.rs
@@ -9633,6 +9876,11 @@ msgstr "Aquí solo está el principio de este mensaje. El resto se descarga con 
 #, fuzzy
 msgid "Only the meeting's organizer can change its time."
 msgstr "Solo el organizador de la reunión puede cambiar su hora."
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Only the person in charge of this mailbox can change this."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
@@ -10382,6 +10630,11 @@ msgid "Preferences"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Prepare the work"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/attachment_preview.rs
 msgid "Preparing attachment preview…"
 msgstr ""
@@ -10501,6 +10754,11 @@ msgstr "Proponer nueva hora"
 #, fuzzy
 msgid "Propose New Time…"
 msgstr "Proponer nueva hora…"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Propose a plan"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/invitation.rs
@@ -10637,6 +10895,11 @@ msgstr ""
 #, fuzzy
 msgid "Read the Favorites from Outlook again now"
 msgstr "Volver a leer ahora los Favoritos de Outlook"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Read the mailbox"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -11949,6 +12212,11 @@ msgid "See everything"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "See the journal"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/scheduling.rs
 #, fuzzy
 msgid "Seeing when other people are busy needs your permission: File › Info › Connect calendar and contacts"
@@ -13209,6 +13477,16 @@ msgid "Sort by"
 msgstr "Ordenar por"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Sort my mailbox"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
+msgid "Sort with Nora"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "Source of {subject}"
 msgstr ""
@@ -13333,6 +13611,11 @@ msgstr "Detener"
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Stop and keep what you said"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Stop filing"
 msgstr ""
 
 #. interface
@@ -13650,6 +13933,11 @@ msgstr "Reunión de Teams"
 #. interface
 #: crates/ui-egui/src/chrome.rs
 msgid "Tell MailCraft's makers what went wrong, on GitHub or by email. You check the report and send it yourself."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Tell me how you file your mail: by activity, by kind of document, what goes where."
 msgstr ""
 
 #. interface
@@ -15811,6 +16099,16 @@ msgid "This file has a password. Nothing is imported without it."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "This filing was partly undone."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "This filing was undone."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 #, fuzzy
 msgid "This invitation can't be answered from here, so no other time can be proposed for it."
@@ -16521,6 +16819,11 @@ msgstr "Para: {names}"
 msgid "Today"
 msgstr "Hoy"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Today at {time}"
+msgstr ""
+
 #. interface, name, ribbon
 #: crates/ui-egui/src/forms.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
@@ -16636,7 +16939,7 @@ msgid "Try Signing In Again"
 msgstr "Volver a intentar iniciar sesión"
 
 #. interface
-#: crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/report_problem.rs
+#: crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/nav.rs crates/ui-egui/src/nora/sorting_view.rs crates/ui-egui/src/reading/remote.rs crates/ui-egui/src/report_problem.rs
 #, fuzzy
 msgid "Try again"
 msgstr "Volver a intentarlo"
@@ -16656,6 +16959,11 @@ msgstr "martes"
 #. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Turn on"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Turn on and see the plan"
 msgstr ""
 
 #. interface
@@ -16744,7 +17052,7 @@ msgid "Underline"
 msgstr "Subrayado"
 
 #. command label, interface, name
-#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs
+#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
 #, fuzzy
 msgid "Undo"
 msgstr "Deshacer"
@@ -16758,6 +17066,11 @@ msgstr "Deshacer escritura"
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Undo this change"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Undo this filing"
 msgstr ""
 
 #. interface
@@ -17568,6 +17881,11 @@ msgid "You may read this note, not change it."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "You moved “{folder}”: I remember this folder."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/meeting_dialogs.rs
 #, fuzzy
 msgid "You organize this meeting, so there is nobody to propose another time to."
@@ -17589,6 +17907,11 @@ msgstr ""
 #, fuzzy
 msgid "You organize this meeting: there is nothing to answer."
 msgstr "Usted organiza esta reunión: no hay nada que responder."
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "You read this mailbox: only the person in charge of it changes how Nora files it."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading.rs
@@ -17828,6 +18151,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/reading/warnings.rs
 msgid "Your own name."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Your plan, validated on {date}:"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Your plan:"
 msgstr ""
 
 #. interface
@@ -18547,6 +18880,11 @@ msgid "importing a .pst file isn't supported in the browser yet"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "in progress"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reminders.rs
 #, fuzzy
 msgid "in {time}"
@@ -18747,7 +19085,7 @@ msgid "it takes the window off the message the owner is writing"
 msgstr "quita la ventana del mensaje que el propietario está escribiendo"
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reading/remote.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/nora/sorting.rs crates/ui-egui/src/reading/remote.rs
 #, fuzzy
 msgid "it took too long"
 msgstr "tardó demasiado"
@@ -19281,6 +19619,11 @@ msgstr ""
 msgid "owner"
 msgstr "owner"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "partly undone"
+msgstr ""
+
 #. why a command can't run
 #: crates/engine/src/cmd/calendar/invitation.rs
 #, fuzzy
@@ -19771,7 +20114,7 @@ msgid "the connection couldn't be set up"
 msgstr "no se pudo establecer la conexión"
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ready.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/nora/sorting.rs
 msgid "the connection stopped before Nora answered"
 msgstr ""
 
@@ -21140,6 +21483,11 @@ msgid "type an address, such as someone@example.org, or a domain, such as @examp
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "undone"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "unexpected characters after the host"
 msgstr ""
@@ -21489,6 +21837,11 @@ msgid "{done} of {total}"
 msgstr "{done} de {total}"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{every} · next run at {time}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/import_tree.rs
 msgid "{folders} will be made under a new folder called {name} on this computer, with {messages}."
 msgstr ""
@@ -21594,6 +21947,11 @@ msgstr ""
 msgid "{line} · the server's certificate needs your say"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{list} and {last}"
+msgstr ""
+
 #. date and time
 #: crates/i18n/src/date.rs
 #, fuzzy
@@ -21617,6 +21975,11 @@ msgstr "{first} – {last} {month} {year}"
 #, fuzzy
 msgid "{month} {year}"
 msgstr "{month} de {year}"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{month}/{day}"
+msgstr ""
 
 #. date and time
 #: crates/i18n/src/date.rs
@@ -22112,6 +22475,13 @@ msgid "{n} characters too many"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} client of Neoffice wrote to it."
+msgid_plural "{n} clients of Neoffice wrote to it."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/lib.rs
 #, fuzzy
 msgid "{n} contact"
@@ -22256,6 +22626,13 @@ msgstr[0] "{n} hora"
 msgstr[1] "{n} horas"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} invoice"
+msgid_plural "{n} invoices"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/exchanges.rs
 msgid "{n} invoice this year"
 msgid_plural "{n} invoices this year"
@@ -22329,7 +22706,7 @@ msgid "{n} mailboxes were not read: a run reads {max} at most."
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/nora/sorting_view.rs
 #, fuzzy
 msgid "{n} message"
 msgid_plural "{n} messages"
@@ -22343,6 +22720,13 @@ msgid "{n} message changed"
 msgid_plural "{n} messages changed"
 msgstr[0] "{n} mensaje cambiado"
 msgstr[1] "{n} mensajes cambiados"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message changed folder; nothing is deleted."
+msgid_plural "{n} messages changed folder; nothing is deleted."
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -22367,6 +22751,20 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message filed"
+msgid_plural "{n} messages filed"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message from clients"
+msgid_plural "{n} messages from clients"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/reading.rs
 #, fuzzy
 msgid "{n} message in this conversation:"
@@ -22375,9 +22773,44 @@ msgstr[0] "{n} mensaje en esta conversación:"
 msgstr[1] "{n} mensajes en esta conversación:"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message is a newsletter."
+msgid_plural "{n} messages are newsletters."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message is a notification from a tool."
+msgid_plural "{n} messages are notifications from tools."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/import_tree.rs
 msgid "{n} message is already here and is left out"
 msgid_plural "{n} messages are already here and are left out"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} message is an invoice."
+msgid_plural "{n} messages are invoices."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "{n} message is back where it was."
+msgid_plural "{n} messages are back where they were."
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "{n} message is still to put back: undo again."
+msgid_plural "{n} messages are still to put back: undo again."
 msgstr[0] ""
 msgstr[1] ""
 
@@ -22388,6 +22821,13 @@ msgid "{n} message matched"
 msgid_plural "{n} messages matched"
 msgstr[0] "{n} mensaje coincidió"
 msgstr[1] "{n} mensajes coincidieron"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "{n} message moved by someone since stays where they put it."
+msgid_plural "{n} messages moved by someone since stay where they put them."
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -22412,6 +22852,13 @@ msgid "{n} message removed"
 msgid_plural "{n} messages removed"
 msgstr[0] "{n} mensaje quitado"
 msgstr[1] "{n} mensajes quitados"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "{n} message stays where it is: its folder is gone."
+msgid_plural "{n} messages stay where they are: their folder is gone."
+msgstr[0] ""
+msgstr[1] ""
 
 #. what a command says
 #: crates/engine/src/undo.rs
@@ -22526,6 +22973,13 @@ msgstr[0] "{n} mensaje nuevo, {sent} enviados"
 msgstr[1] "{n} mensajes nuevos, {sent} enviados"
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} newsletter"
+msgid_plural "{n} newsletters"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/meeting_dialogs/share.rs
 msgid "{n} not answered"
 msgid_plural "{n} not answered"
@@ -22543,6 +22997,13 @@ msgstr[1] ""
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "{n} notes couldn't be read: {why}"
 msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} notification"
+msgid_plural "{n} notifications"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -22579,6 +23040,27 @@ msgid "{n} open task"
 msgid_plural "{n} open tasks"
 msgstr[0] "{n} tarea pendiente"
 msgstr[1] "{n} tareas pendientes"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} other client"
+msgid_plural "{n} other clients"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} other folder"
+msgid_plural "{n} other folders"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{n} other message"
+msgid_plural "{n} other messages"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/lib.rs
@@ -22939,6 +23421,16 @@ msgstr "{weekday}, {day} {month}"
 msgid "{weekday}, {month} {day}, {year}"
 msgstr "{weekday}, {day} de {month} de {year}"
 
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{what} filed."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "{when}: {what} filed."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/account.rs
 #, fuzzy
@@ -22995,6 +23487,11 @@ msgstr "«{subject}» era demasiado grande para descargarlo: solo está aquí su
 #, fuzzy
 msgid "“{subject}” wasn't found on its server, so it can't be forwarded as an attachment"
 msgstr "«{subject}» no se encontró en su servidor, así que no se puede reenviar como datos adjuntos"
+
+#. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "‹ Back to the conversation"
+msgstr ""
 
 #, fuzzy
 #~ msgid "The server has {count} folders; only the first {max} were read"

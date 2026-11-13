@@ -16,7 +16,7 @@ use mailcraft_model::sync::{FolderListing, GraphFolder, GraphMessage, JmapMailRe
 use mailcraft_model::{Address, FolderKind, Id, Mailbox};
 use serde_json::{Value, json};
 
-use super::{About, Host, METHODS, NoraAnswer, NoraCall, PageMailbox, READY_METHODS};
+use super::{About, Host, METHODS, NoraAnswer, NoraCall, PageMailbox, READY_METHODS, SORTING_METHODS};
 use crate::{MailApp, Services};
 
 /// Wednesday 2026-10-14 16:00 UTC.
@@ -66,7 +66,8 @@ impl Calls {
     /// Every call so far, each one of the six methods (or of the ready replies' two) with a plain object of arguments,
     /// never a `cmd` (Neodesk's shell refuses it), and small.
     pub(crate) fn all_fit(&self) {
-        for (call, _) in self.0.borrow().iter() {
+        // The calls of « Trier avec Nora » have their own test (sorting_tests.rs): numbers and lists among their arguments.
+        for (call, _) in self.0.borrow().iter().filter(|(call, _)| !SORTING_METHODS.contains(&call.method)) {
             assert!(METHODS.contains(&call.method) || READY_METHODS.contains(&call.method), "{}", call.method);
             let args = call.args.as_object().unwrap();
             assert!(!args.contains_key("cmd"));
@@ -91,9 +92,10 @@ pub(crate) fn host(app: &mut MailApp, mailboxes: &[(&str, &str)]) -> Calls {
             .iter()
             .map(|(address, name)| PageMailbox { address: (*address).to_string(), name: (*name).to_string(), shared: false })
             .collect(),
-        // Her pane's conversation goes out too, as from the page `/neomail`.
+        // Her pane's conversation goes out too, as from the page `/neomail`, and so do the calls of « Trier avec Nora ».
         chat: true,
         open: None,
+        sorting: true,
     });
     calls
 }

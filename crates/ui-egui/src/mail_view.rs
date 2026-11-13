@@ -619,6 +619,9 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     }
     // Gmail's categories, when they are tabs above a Gmail Inbox's list (#911).
     crate::gmail_tabs::row(app, ui);
+    // //// Neoffice — « Trier avec Nora » above the Inbox's list of a mailbox a hosting page handed over, and the banner of what
+    // //// Neoffice — she filed last, where the Neoffice server files it (nora/sorting_view.rs).
+    crate::nora::sorting_view::strip(app, ui);
     let rows = app.session.rows();
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
     // //// Neoffice — the bar that archives what is ticked, or everything in the tab.

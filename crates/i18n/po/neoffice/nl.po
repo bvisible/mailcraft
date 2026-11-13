@@ -70,3 +70,326 @@ msgstr "Er is geen microfoon gevonden op deze computer."
 
 msgid "The dictation did not work. Try again, or type your request."
 msgstr "Het dicteren is niet gelukt. Probeer het opnieuw of typ uw verzoek."
+
+# « Trier avec Nora » (nora/sorting.rs, nora/sorting_view.rs): the button above the Inbox, its banner, the switch and the flow
+# in her pane, the activation card.
+msgid "A draft reply in Drafts, a received invoice read and ready to validate, a task when you are asked something. Nothing is validated or sent without you."
+msgstr "Een conceptantwoord in Concepten, een ontvangen factuur die gelezen is en klaar om goed te keuren, een taak wanneer u iets gevraagd wordt. Niets wordt goedgekeurd of verzonden zonder u."
+
+msgid "By activity, by supplier, the invoices apart…"
+msgstr "Op activiteit, op leverancier, de facturen apart…"
+
+msgid "Change this plan"
+msgstr "Dit plan wijzigen"
+
+msgid "Each filing can be undone from Nora's journal."
+msgstr "Elk ordenen is terug te draaien via het logboek van Nora."
+
+msgid "Every hour"
+msgstr "Elk uur"
+
+msgid "Every {n} hour"
+msgid_plural "Every {n} hours"
+msgstr[0] "Elke {n} uur"
+msgstr[1] "Elke {n} uur"
+
+msgid "Every {n} minute"
+msgid_plural "Every {n} minutes"
+msgstr[0] "Elke {n} minuut"
+msgstr[1] "Elke {n} minuten"
+
+msgid "File into folders"
+msgstr "In mappen ordenen"
+
+msgid "File now"
+msgstr "Nu ordenen"
+
+msgid "Here is what I would do:"
+msgstr "Dit zou ik doen:"
+
+msgid "How do you want me to file?"
+msgstr "Hoe wilt u dat ik orden?"
+
+msgid "I delete nothing."
+msgstr "Ik verwijder niets."
+
+msgid "I delete nothing. Unread messages younger than {hours} h stay in the inbox."
+msgstr "Ik verwijder niets. Ongelezen berichten van minder dan {hours} u blijven in het Postvak IN."
+
+msgid "I have no folder to propose yet: I need to read more of this mailbox first."
+msgstr "Ik heb nog geen map om voor te stellen: ik moet eerst meer post van deze postbus lezen."
+
+msgid "I have not read any message of {address} yet: I read the new mail as it comes, then propose a plan."
+msgstr "Ik heb nog geen bericht van {address} gelezen: ik lees nieuwe post zodra die binnenkomt en stel daarna een plan voor."
+
+msgid "I read the last {days} days of {address}: {mails} messages."
+msgstr "Ik heb de laatste {days} dagen van {address} gelezen: {mails} berichten."
+
+msgid "It's filed."
+msgstr "Geordend."
+
+msgid "Journal"
+msgstr "Logboek"
+
+msgid "Keep Nora's plan"
+msgstr "Het plan van Nora behouden"
+
+msgid "Keep my plan"
+msgstr "Mijn plan behouden"
+
+msgid "Keep this folder"
+msgstr "Deze map behouden"
+
+msgid "Leave this folder out"
+msgstr "Deze map weglaten"
+
+msgid "Let me explain"
+msgstr "Laat me het uitleggen"
+
+msgid "Make a new plan"
+msgstr "Een nieuw plan maken"
+
+msgid "Next, shall I carry on by myself?"
+msgstr "Zal ik daarna zelfstandig doorgaan?"
+
+msgid "No, when I ask"
+msgstr "Nee, wanneer ik het vraag"
+
+msgid "Nora asks you"
+msgstr "Nora vraagt u"
+
+msgid "Nora couldn't do it: {reason}"
+msgstr "Nora kon het niet doen: {reason}"
+
+msgid "Nora does not file the mail on this site."
+msgstr "Nora ordent de post op deze site niet."
+
+msgid "Nora filed your mailbox"
+msgstr "Nora heeft uw postbus geordend"
+
+msgid "Nora files my mail"
+msgstr "Nora ordent mijn post"
+
+msgid "Nora files the new mail as it comes."
+msgstr "Nora ordent nieuwe post zodra die binnenkomt."
+
+msgid "Nora files your mail"
+msgstr "Nora ordent uw post"
+
+msgid "Nora files your mail."
+msgstr "Nora ordent uw post."
+
+msgid "Nora is filing your mailbox: {n} message so far"
+msgid_plural "Nora is filing your mailbox: {n} messages so far"
+msgstr[0] "Nora ordent uw postbus: tot nu toe {n} bericht"
+msgstr[1] "Nora ordent uw postbus: tot nu toe {n} berichten"
+
+msgid "Nora is preparing the plan…"
+msgstr "Nora bereidt het plan voor…"
+
+msgid "Nora is reading your mailbox…"
+msgstr "Nora leest uw postbus…"
+
+msgid "Nora is taking too long to make the plan. Try again in a moment."
+msgstr "Nora doet er te lang over om het plan te maken. Probeer het zo nog eens."
+
+msgid "Nora is tidying your inbox: {n} message filed so far."
+msgid_plural "Nora is tidying your inbox: {n} messages filed so far."
+msgstr[0] "Nora ruimt uw postvak IN op: tot nu toe {n} bericht geordend."
+msgstr[1] "Nora ruimt uw postvak IN op: tot nu toe {n} berichten geordend."
+
+msgid "Nora proposes the folders from what she read: you see the plan before anything moves."
+msgstr "Nora stelt de mappen voor op basis van wat zij heeft gelezen: u ziet het plan voordat er iets verplaatst wordt."
+
+msgid "Nora reads the mailbox with your rights, files it by a plan you validate once, and asks you when she hesitates. She deletes nothing and sends nothing."
+msgstr "Nora leest de postbus met uw rechten, ordent hem volgens een plan dat u één keer goedkeurt, en stelt u vragen wanneer zij aarzelt. Zij verwijdert niets en verstuurt niets."
+
+msgid "Nora's background assistants are not part of this site's plan."
+msgstr "De achtergrondassistenten van Nora maken geen deel uit van het plan van deze site."
+
+msgid "Noted: I carry on by myself ({every})."
+msgstr "Genoteerd: ik ga zelfstandig verder ({every})."
+
+msgid "Noted: I file only when you ask."
+msgstr "Genoteerd: ik orden alleen wanneer u het vraagt."
+
+msgid "Nothing filed yet."
+msgstr "Nog niets geordend."
+
+msgid "Nothing needed filing: your inbox stays as it was."
+msgstr "Niets om te ordenen: uw postvak IN blijft zoals het was."
+
+msgid "Off: Nora files nothing by herself."
+msgstr "Uit: Nora ordent uit zichzelf niets."
+
+msgid "On {date} at {time}"
+msgstr "Op {date} om {time}"
+
+msgid "Only the person in charge of this mailbox can change this."
+msgstr "Alleen de verantwoordelijke van deze postbus kan dit wijzigen."
+
+msgid "Prepare the work"
+msgstr "Het werk voorbereiden"
+
+msgid "Propose a plan"
+msgstr "Een plan voorstellen"
+
+msgid "Read the mailbox"
+msgstr "De postbus lezen"
+
+msgid "See the journal"
+msgstr "Het logboek bekijken"
+
+msgid "Sort my mailbox"
+msgstr "Mijn postbus sorteren"
+
+msgid "Sort with Nora"
+msgstr "Sorteren met Nora"
+
+msgid "Stop filing"
+msgstr "Stop met ordenen"
+
+msgid "Tell me how you file your mail: by activity, by kind of document, what goes where."
+msgstr "Vertel mij hoe u uw post ordent: op activiteit, op soort document, wat waar terechtkomt."
+
+msgid "This filing was partly undone."
+msgstr "Dit ordenen is gedeeltelijk teruggedraaid."
+
+msgid "This filing was undone."
+msgstr "Dit ordenen is teruggedraaid."
+
+msgid "Today at {time}"
+msgstr "Vandaag om {time}"
+
+msgid "Turn on and see the plan"
+msgstr "Inschakelen en het plan bekijken"
+
+msgid "Undo this filing"
+msgstr "Dit ordenen ongedaan maken"
+
+msgid "You moved “{folder}”: I remember this folder."
+msgstr "U hebt “{folder}” verplaatst: ik onthoud deze map."
+
+msgid "You read this mailbox: only the person in charge of it changes how Nora files it."
+msgstr "U leest deze postbus: alleen de verantwoordelijke ervan wijzigt hoe Nora hem ordent."
+
+msgid "Your plan, validated on {date}:"
+msgstr "Uw plan, goedgekeurd op {date}:"
+
+msgid "Your plan:"
+msgstr "Uw plan:"
+
+msgid "in progress"
+msgstr "bezig"
+
+msgid "partly undone"
+msgstr "gedeeltelijk teruggedraaid"
+
+msgid "undone"
+msgstr "teruggedraaid"
+
+msgid "{every} · next run at {time}"
+msgstr "{every} · volgende ronde om {time}"
+
+msgid "{list} and {last}"
+msgstr "{list} en {last}"
+
+msgid "{month}/{day}"
+msgstr "{day}-{month}"
+
+msgid "{n} client of Neoffice wrote to it."
+msgid_plural "{n} clients of Neoffice wrote to it."
+msgstr[0] "{n} klant van Neoffice heeft naar deze mailbox geschreven."
+msgstr[1] "{n} klanten van Neoffice hebben naar deze mailbox geschreven."
+
+msgid "{n} invoice"
+msgid_plural "{n} invoices"
+msgstr[0] "{n} factuur"
+msgstr[1] "{n} facturen"
+
+msgid "{n} message changed folder; nothing is deleted."
+msgid_plural "{n} messages changed folder; nothing is deleted."
+msgstr[0] "{n} bericht is van map veranderd; er wordt niets verwijderd."
+msgstr[1] "{n} berichten zijn van map veranderd; er wordt niets verwijderd."
+
+msgid "{n} message filed"
+msgid_plural "{n} messages filed"
+msgstr[0] "{n} bericht geordend"
+msgstr[1] "{n} berichten geordend"
+
+msgid "{n} message from clients"
+msgid_plural "{n} messages from clients"
+msgstr[0] "{n} bericht van klanten"
+msgstr[1] "{n} berichten van klanten"
+
+msgid "{n} message is a newsletter."
+msgid_plural "{n} messages are newsletters."
+msgstr[0] "{n} bericht is een nieuwsbrief."
+msgstr[1] "{n} berichten zijn nieuwsbrieven."
+
+msgid "{n} message is a notification from a tool."
+msgid_plural "{n} messages are notifications from tools."
+msgstr[0] "{n} bericht is een melding van een tool."
+msgstr[1] "{n} berichten zijn meldingen van tools."
+
+msgid "{n} message is an invoice."
+msgid_plural "{n} messages are invoices."
+msgstr[0] "{n} bericht is een factuur."
+msgstr[1] "{n} berichten zijn facturen."
+
+msgid "{n} message is back where it was."
+msgid_plural "{n} messages are back where they were."
+msgstr[0] "{n} bericht staat weer op zijn plaats."
+msgstr[1] "{n} berichten staan weer op hun plaats."
+
+msgid "{n} message is still to put back: undo again."
+msgid_plural "{n} messages are still to put back: undo again."
+msgstr[0] "{n} bericht moet nog worden teruggezet: draai nogmaals terug."
+msgstr[1] "{n} berichten moeten nog worden teruggezet: draai nogmaals terug."
+
+msgid "{n} message moved by someone since stays where they put it."
+msgid_plural "{n} messages moved by someone since stay where they put them."
+msgstr[0] "{n} bericht dat sindsdien door iemand is verplaatst, blijft staan waar die persoon het heeft neergezet."
+msgstr[1] "{n} berichten die sindsdien door iemand zijn verplaatst, blijven staan waar die persoon ze neerzette."
+
+msgid "{n} message stays where it is: its folder is gone."
+msgid_plural "{n} messages stay where they are: their folder is gone."
+msgstr[0] "{n} bericht blijft waar het is: de map ervan bestaat niet meer."
+msgstr[1] "{n} berichten blijven waar ze zijn: hun map bestaat niet meer."
+
+msgid "{n} newsletter"
+msgid_plural "{n} newsletters"
+msgstr[0] "{n} nieuwsbrief"
+msgstr[1] "{n} nieuwsbrieven"
+
+msgid "{n} notification"
+msgid_plural "{n} notifications"
+msgstr[0] "{n} melding"
+msgstr[1] "{n} meldingen"
+
+msgid "{n} other client"
+msgid_plural "{n} other clients"
+msgstr[0] "{n} andere klant"
+msgstr[1] "{n} andere klanten"
+
+msgid "{n} other folder"
+msgid_plural "{n} other folders"
+msgstr[0] "{n} andere map"
+msgstr[1] "{n} andere mappen"
+
+msgid "{n} other message"
+msgid_plural "{n} other messages"
+msgstr[0] "{n} ander bericht"
+msgstr[1] "{n} andere berichten"
+
+msgid "{what} filed."
+msgstr "{what} geordend."
+
+msgid "{when}: {what} filed."
+msgstr "{when}: {what} geordend."
+
+msgid "‹ Back to the conversation"
+msgstr "‹ Terug naar het gesprek"
+
+msgid "the connection stopped before Nora answered"
+msgstr "de verbinding werd verbroken voordat Nora antwoordde"

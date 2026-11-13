@@ -200,6 +200,9 @@ pub(crate) struct Nora {
     pub(crate) assist: super::assist::Assist,
     /// Her ready replies under the message being read, and « My style » ([`super::ready`]).
     pub(crate) ready: super::ready::ReadyState,
+    /// « Trier avec Nora »: what the server says of each mailbox's filing, the flow in her pane, the activation card
+    /// ([`super::sorting`]).
+    pub(crate) sorting: super::sorting::Sorting,
 }
 
 impl Nora {

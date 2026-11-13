@@ -3725,3 +3725,323 @@ msgstr "Streams festlegen"
 
 msgid "This page reports problems to the people who run it, not to MailCraft's makers"
 msgstr "Diese Seite meldet Probleme an die Betreiber, nicht an die Macher von MailCraft"
+
+# « Trier avec Nora » (nora/sorting.rs, nora/sorting_view.rs): the button above the Inbox, its banner, the switch and the flow
+# in her pane, the activation card.
+msgid "A draft reply in Drafts, a received invoice read and ready to validate, a task when you are asked something. Nothing is validated or sent without you."
+msgstr "Ein Antwortentwurf in Entwürfe, eine erhaltene Rechnung, gelesen und bereit zur Bestätigung, eine Aufgabe, wenn Sie etwas gefragt werden. Nichts wird ohne Sie bestätigt oder gesendet."
+
+msgid "By activity, by supplier, the invoices apart…"
+msgstr "Nach Tätigkeit, nach Lieferant, die Rechnungen separat…"
+
+msgid "Change this plan"
+msgstr "Diesen Plan ändern"
+
+msgid "Each filing can be undone from Nora's journal."
+msgstr "Jedes Einordnen lässt sich im Journal von Nora rückgängig machen."
+
+msgid "Every hour"
+msgstr "Jede Stunde"
+
+msgid "Every {n} hour"
+msgid_plural "Every {n} hours"
+msgstr[0] "Alle {n} Stunden"
+msgstr[1] "Alle {n} Stunden"
+
+msgid "Every {n} minute"
+msgid_plural "Every {n} minutes"
+msgstr[0] "Alle {n} Minute"
+msgstr[1] "Alle {n} Minuten"
+
+msgid "File into folders"
+msgstr "In Ordner einordnen"
+
+msgid "File now"
+msgstr "Jetzt einordnen"
+
+msgid "Here is what I would do:"
+msgstr "Das würde ich tun:"
+
+msgid "How do you want me to file?"
+msgstr "Wie soll ich einordnen?"
+
+msgid "I delete nothing."
+msgstr "Ich lösche nichts."
+
+msgid "I delete nothing. Unread messages younger than {hours} h stay in the inbox."
+msgstr "Ich lösche nichts. Ungelesene Nachrichten, die jünger als {hours} h sind, bleiben im Posteingang."
+
+msgid "I have no folder to propose yet: I need to read more of this mailbox first."
+msgstr "Ich habe noch keinen Ordner vorzuschlagen: Ich muss zuerst mehr Post dieses Postfachs lesen."
+
+msgid "I have not read any message of {address} yet: I read the new mail as it comes, then propose a plan."
+msgstr "Ich habe noch keine Nachricht von {address} gelesen: Ich lese neue Post, sobald sie eintrifft, und schlage dann einen Plan vor."
+
+msgid "I read the last {days} days of {address}: {mails} messages."
+msgstr "Ich habe die letzten {days} Tage von {address} gelesen: {mails} Nachrichten."
+
+msgid "It's filed."
+msgstr "Eingeordnet."
+
+msgid "Journal"
+msgstr "Journal"
+
+msgid "Keep Nora's plan"
+msgstr "Plan von Nora behalten"
+
+msgid "Keep my plan"
+msgstr "Meinen Plan behalten"
+
+msgid "Keep this folder"
+msgstr "Diesen Ordner behalten"
+
+msgid "Leave this folder out"
+msgstr "Diesen Ordner ausschliessen"
+
+msgid "Let me explain"
+msgstr "Ich erkläre es Ihnen"
+
+msgid "Make a new plan"
+msgstr "Plan neu erstellen"
+
+msgid "Next, shall I carry on by myself?"
+msgstr "Soll ich danach selbstständig weitermachen?"
+
+msgid "No, when I ask"
+msgstr "Nein, wenn ich frage"
+
+msgid "Nora asks you"
+msgstr "Nora fragt Sie"
+
+msgid "Nora couldn't do it: {reason}"
+msgstr "Nora konnte es nicht ausführen: {reason}"
+
+msgid "Nora does not file the mail on this site."
+msgstr "Nora ordnet die Post auf dieser Website nicht ein."
+
+msgid "Nora filed your mailbox"
+msgstr "Nora hat Ihr Postfach eingeordnet"
+
+msgid "Nora files my mail"
+msgstr "Nora ordnet meine Post ein"
+
+msgid "Nora files the new mail as it comes."
+msgstr "Nora ordnet neue Post ein, sobald sie eintrifft."
+
+msgid "Nora files your mail"
+msgstr "Nora ordnet Ihre Post ein"
+
+msgid "Nora files your mail."
+msgstr "Nora ordnet Ihre Post ein."
+
+msgid "Nora is filing your mailbox: {n} message so far"
+msgid_plural "Nora is filing your mailbox: {n} messages so far"
+msgstr[0] "Nora ordnet Ihr Postfach ein: bisher {n} Nachricht"
+msgstr[1] "Nora ordnet Ihr Postfach ein: bisher {n} Nachrichten"
+
+msgid "Nora is preparing the plan…"
+msgstr "Nora bereitet den Plan vor…"
+
+msgid "Nora is reading your mailbox…"
+msgstr "Nora liest Ihr Postfach…"
+
+msgid "Nora is taking too long to make the plan. Try again in a moment."
+msgstr "Nora braucht zu lange für den Plan. Versuchen Sie es gleich noch einmal."
+
+msgid "Nora is tidying your inbox: {n} message filed so far."
+msgid_plural "Nora is tidying your inbox: {n} messages filed so far."
+msgstr[0] "Nora räumt Ihren Posteingang auf: bisher {n} Nachricht eingeordnet."
+msgstr[1] "Nora räumt Ihren Posteingang auf: bisher {n} Nachrichten eingeordnet."
+
+msgid "Nora proposes the folders from what she read: you see the plan before anything moves."
+msgstr "Nora schlägt die Ordner anhand dessen vor, was sie gelesen hat: Sie sehen den Plan, bevor sich etwas bewegt."
+
+msgid "Nora reads the mailbox with your rights, files it by a plan you validate once, and asks you when she hesitates. She deletes nothing and sends nothing."
+msgstr "Nora liest das Postfach mit Ihren Rechten, ordnet es nach einem Plan, den Sie einmal bestätigen, und fragt Sie, wenn sie zögert. Sie löscht nichts und sendet nichts."
+
+msgid "Nora's background assistants are not part of this site's plan."
+msgstr "Die Hintergrundassistenten von Nora gehören nicht zum Plan dieser Website."
+
+msgid "Noted: I carry on by myself ({every})."
+msgstr "Notiert: Ich fahre selbstständig fort ({every})."
+
+msgid "Noted: I file only when you ask."
+msgstr "Notiert: Ich ordne nur ein, wenn Sie es verlangen."
+
+msgid "Nothing filed yet."
+msgstr "Noch nichts eingeordnet."
+
+msgid "Nothing needed filing: your inbox stays as it was."
+msgstr "Nichts einzuordnen: Ihr Posteingang bleibt, wie er war."
+
+msgid "Off: Nora files nothing by herself."
+msgstr "Aus: Nora ordnet von sich aus nichts ein."
+
+msgid "On {date} at {time}"
+msgstr "Am {date} um {time}"
+
+msgid "Only the person in charge of this mailbox can change this."
+msgstr "Nur die verantwortliche Person dieses Postfachs kann dies ändern."
+
+msgid "Prepare the work"
+msgstr "Arbeit vorbereiten"
+
+msgid "Propose a plan"
+msgstr "Einen Plan vorschlagen"
+
+msgid "Read the mailbox"
+msgstr "Postfach lesen"
+
+msgid "See the journal"
+msgstr "Journal ansehen"
+
+msgid "Sort my mailbox"
+msgstr "Mein Postfach sortieren"
+
+msgid "Sort with Nora"
+msgstr "Mit Nora sortieren"
+
+msgid "Stop filing"
+msgstr "Einordnen beenden"
+
+msgid "Tell me how you file your mail: by activity, by kind of document, what goes where."
+msgstr "Sagen Sie mir, wie Sie Ihre Post einordnen: nach Tätigkeit, nach Dokumentart, was wohin gehört."
+
+msgid "This filing was partly undone."
+msgstr "Dieses Einordnen wurde teilweise rückgängig gemacht."
+
+msgid "This filing was undone."
+msgstr "Dieses Einordnen wurde rückgängig gemacht."
+
+msgid "Today at {time}"
+msgstr "Heute um {time}"
+
+msgid "Turn on and see the plan"
+msgstr "Einschalten und Plan ansehen"
+
+msgid "Undo this filing"
+msgstr "Dieses Einordnen rückgängig machen"
+
+msgid "You moved “{folder}”: I remember this folder."
+msgstr "Sie haben „{folder}“ verschoben: Ich merke mir diesen Ordner."
+
+msgid "You read this mailbox: only the person in charge of it changes how Nora files it."
+msgstr "Sie lesen dieses Postfach: Nur die verantwortliche Person ändert, wie Nora es einordnet."
+
+msgid "Your plan, validated on {date}:"
+msgstr "Ihr Plan, bestätigt am {date}:"
+
+msgid "Your plan:"
+msgstr "Ihr Plan:"
+
+msgid "in progress"
+msgstr "in Arbeit"
+
+msgid "partly undone"
+msgstr "teilweise rückgängig gemacht"
+
+msgid "undone"
+msgstr "rückgängig gemacht"
+
+msgid "{every} · next run at {time}"
+msgstr "{every} · nächster Durchlauf um {time}"
+
+msgid "{list} and {last}"
+msgstr "{list} und {last}"
+
+msgid "{month}/{day}"
+msgstr "{day}.{month}"
+
+msgid "{n} client of Neoffice wrote to it."
+msgid_plural "{n} clients of Neoffice wrote to it."
+msgstr[0] "{n} Kunde von Neoffice hat an dieses Postfach geschrieben."
+msgstr[1] "{n} Kunden von Neoffice haben an dieses Postfach geschrieben."
+
+msgid "{n} invoice"
+msgid_plural "{n} invoices"
+msgstr[0] "{n} Rechnung"
+msgstr[1] "{n} Rechnungen"
+
+msgid "{n} message changed folder; nothing is deleted."
+msgid_plural "{n} messages changed folder; nothing is deleted."
+msgstr[0] "{n} Nachricht hat den Ordner gewechselt; nichts wird gelöscht."
+msgstr[1] "{n} Nachrichten haben den Ordner gewechselt; nichts wird gelöscht."
+
+msgid "{n} message filed"
+msgid_plural "{n} messages filed"
+msgstr[0] "{n} Nachricht eingeordnet"
+msgstr[1] "{n} Nachrichten eingeordnet"
+
+msgid "{n} message from clients"
+msgid_plural "{n} messages from clients"
+msgstr[0] "{n} Nachricht von Kunden"
+msgstr[1] "{n} Nachrichten von Kunden"
+
+msgid "{n} message is a newsletter."
+msgid_plural "{n} messages are newsletters."
+msgstr[0] "{n} Nachricht ist ein Newsletter."
+msgstr[1] "{n} Nachrichten sind Newsletter."
+
+msgid "{n} message is a notification from a tool."
+msgid_plural "{n} messages are notifications from tools."
+msgstr[0] "{n} Nachricht ist eine Benachrichtigung eines Tools."
+msgstr[1] "{n} Nachrichten sind Benachrichtigungen von Tools."
+
+msgid "{n} message is an invoice."
+msgid_plural "{n} messages are invoices."
+msgstr[0] "{n} Nachricht ist eine Rechnung."
+msgstr[1] "{n} Nachrichten sind Rechnungen."
+
+msgid "{n} message is back where it was."
+msgid_plural "{n} messages are back where they were."
+msgstr[0] "{n} Nachricht ist wieder an ihrem Platz."
+msgstr[1] "{n} Nachrichten sind wieder an ihren Plätzen."
+
+msgid "{n} message is still to put back: undo again."
+msgid_plural "{n} messages are still to put back: undo again."
+msgstr[0] "{n} Nachricht muss noch zurückgesetzt werden: erneut rückgängig machen."
+msgstr[1] "{n} Nachrichten müssen noch zurückgesetzt werden: erneut rückgängig machen."
+
+msgid "{n} message moved by someone since stays where they put it."
+msgid_plural "{n} messages moved by someone since stay where they put them."
+msgstr[0] "{n} Nachricht, seither von jemandem verschoben, bleibt dort, wo die Person sie abgelegt hat."
+msgstr[1] "{n} Nachrichten, seither von jemandem verschoben, bleiben dort, wo die Person sie abgelegt hat."
+
+msgid "{n} message stays where it is: its folder is gone."
+msgid_plural "{n} messages stay where they are: their folder is gone."
+msgstr[0] "{n} Nachricht bleibt, wo sie ist: ihr Ordner existiert nicht mehr."
+msgstr[1] "{n} Nachrichten bleiben, wo sie sind: ihr Ordner existiert nicht mehr."
+
+msgid "{n} newsletter"
+msgid_plural "{n} newsletters"
+msgstr[0] "{n} Newsletter"
+msgstr[1] "{n} Newsletter"
+
+msgid "{n} notification"
+msgid_plural "{n} notifications"
+msgstr[0] "{n} Benachrichtigung"
+msgstr[1] "{n} Benachrichtigungen"
+
+msgid "{n} other client"
+msgid_plural "{n} other clients"
+msgstr[0] "{n} weiterer Kunde"
+msgstr[1] "{n} weitere Kunden"
+
+msgid "{n} other folder"
+msgid_plural "{n} other folders"
+msgstr[0] "{n} weiterer Ordner"
+msgstr[1] "{n} weitere Ordner"
+
+msgid "{n} other message"
+msgid_plural "{n} other messages"
+msgstr[0] "{n} weitere Nachricht"
+msgstr[1] "{n} weitere Nachrichten"
+
+msgid "{what} filed."
+msgstr "{what} eingeordnet."
+
+msgid "{when}: {what} filed."
+msgstr "{when}: {what} eingeordnet."
+
+msgid "‹ Back to the conversation"
+msgstr "‹ Zurück zum Gespräch"

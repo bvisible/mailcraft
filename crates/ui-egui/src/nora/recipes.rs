@@ -85,13 +85,14 @@ pub(crate) fn groups() -> Vec<Group> {
     ]
 }
 
-/// What the pane shows while the conversation is empty, under its greeting: the hint it always had (`hint`), then the
-/// recipes. The request of the one clicked, if any (the panel sends it as if the person had typed it).
+/// What the pane shows while the conversation is empty, under its greeting: the hint it always had (`hint`), what `first`
+/// draws (« Trier ma boîte », [`super::sorting_view::home_chip`]), then the recipes. The request of the one clicked, if any
+/// (the panel sends it as if the person had typed it).
 ///
 /// In the panel's own look, which it sets on the `Ui` it hands over (craft-nora-ui): its ink and its weak words, Karla for the
 /// words (its families, or the window's own until they are installed), ink for the ring of a row reached by the keyboard;
 /// Nora's clay only for a row under the pointer and its chevron.
-pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str) -> Option<String> {
+pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str, first: &mut dyn FnMut(&mut Ui)) -> Option<String> {
     let tone = look::tone(t);
     let ink = ui.visuals().text_color();
     let weak = ui.visuals().weak_text_color();
@@ -102,6 +103,7 @@ pub(crate) fn show(ui: &mut Ui, t: &Tokens, hint: &str) -> Option<String> {
     let mut asked = None;
     ui.vertical_centered(|ui| ui.weak(hint));
     ui.add_space(14.0);
+    first(ui);
     ui.label(egui::RichText::new(tl!("Recipes")).font(heading.clone()).color(weak));
     for group in groups() {
         ui.add_space(6.0);

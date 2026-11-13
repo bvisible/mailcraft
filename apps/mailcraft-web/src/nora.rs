@@ -20,7 +20,8 @@
 //!
 //! Only the six methods the window calls go out ([`METHODS`]), and the seven of Nora's conversation that
 //! her pane calls ([`CHAT_METHODS`], craft-nora's protocol, as the editors' panes do), and the two of her ready replies
-//! ([`READY_METHODS`]), these only where they can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), each with a plain JSON
+//! ([`READY_METHODS`]), these only where they can go ([`chat`]: the page's own `fetch`, or a host that says it takes them), and
+//! the fourteen of « Trier avec Nora » ([`SORTING_METHODS`], where they can go: [`sorting`]), each with a plain JSON
 //! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
 //! [`MAX_ANSWER`] bytes, its text as UTF-8 with what isn't replaced; a call is given up after
 //! [`GIVE_UP_MS`]. A call that got no answer comes back with status 0 and why, which the window says.
@@ -29,7 +30,7 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use mailcraft_ui_egui::NoraCall;
-use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox, READY_METHODS};
+use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox, READY_METHODS, SORTING_METHODS};
 
 use crate::hosted::HostAccount;
 
@@ -103,7 +104,8 @@ pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
 /// conversation (her pane's, [`CHAT_METHODS`]) or of the two of her ready replies ([`READY_METHODS`]), a plain object of
 /// arguments without a `cmd` key, within 8 MB.
 pub fn allowed(call: &NoraCall) -> Result<String, String> {
-    if !METHODS.contains(&call.method) && !CHAT_METHODS.contains(&call.method) && !READY_METHODS.contains(&call.method) {
+    let listed = |list: &[&str]| list.contains(&call.method);
+    if !listed(&METHODS) && !listed(&CHAT_METHODS) && !listed(&READY_METHODS) && !listed(&SORTING_METHODS) {
         return Err("that is not one of Nora's methods".into());
     }
     let Some(args) = call.args.as_object() else { return Err("the arguments are not a plain object".into()) };
@@ -143,7 +145,7 @@ fn too_late() -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::{chat, opener, service};
+pub use browser::{chat, opener, service, sorting};
 
 #[cfg(target_arch = "wasm32")]
 mod browser {
@@ -201,6 +203,8 @@ mod browser {
             Ok(_) if super::CHAT_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's conversation".to_string()),
             // //// Neoffice — her ready replies go out where her conversation does (the page's own `fetch`).
             Ok(_) if super::READY_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's ready replies".to_string()),
+            // //// Neoffice — « Trier avec Nora » where its calls may go (the page's own `fetch`, or a host that says it takes them).
+            Ok(_) if super::SORTING_METHODS.contains(&call.method) && !sorting() => Err("this host doesn't take Nora's filing".to_string()),
             Ok(body) => match host_call() {
                 Some((owner, function)) => call_host(&owner, &function, call.method, &body).await,
                 None => fetch(origin, call.method, body).await,
@@ -220,6 +224,16 @@ mod browser {
         match host_call() {
             None => true,
             Some((owner, _)) => crate::host::get(&owner, "mailcraftNoraChat").and_then(|v| v.as_bool()) == Some(true),
+        }
+    }
+
+    /// Whether the calls of « Trier avec Nora » ([`super::SORTING_METHODS`]) go out: always as the page's own `fetch`
+    /// (`/neomail`); through a host that makes the calls itself only when it says it takes them, with
+    /// `window.mailcraftNoraSorting === true` beside its `mailcraftNoraCall` (Neodesk's shell, once its list has them).
+    pub fn sorting() -> bool {
+        match host_call() {
+            None => true,
+            Some((owner, _)) => chat() && crate::host::get(&owner, "mailcraftNoraSorting").and_then(|v| v.as_bool()) == Some(true),
         }
     }
 
@@ -465,7 +479,20 @@ mod tests {
             assert_eq!(allowed(&call(method, json!({"action": "get"}))), Ok(r#"{"action":"get"}"#.to_string()));
             assert!(allowed(&call(method, json!({"cmd": "frappe.client.delete"}))).is_err(), "{method}");
         }
+        // « Trier avec Nora »: the twelve methods of the mailbox's filing and the two answers to her questions, numbers and
+        // lists among their arguments, and no other of the server's filing or questions.
+        for method in SORTING_METHODS {
+            let args = json!({"account": "ada@example.org", "on": 1, "folders": [{"folder": "Clients", "takes": "clients"}]});
+            assert!(allowed(&call(method, args.clone())).is_ok(), "{method}");
+            assert!(allowed(&call(method, json!({"account": "ada@example.org", "cmd": "frappe.client.delete"}))).is_err(), "{method}");
+        }
+        assert_eq!(SORTING_METHODS.len(), 14);
+        assert!(SORTING_METHODS.iter().all(|m| m.starts_with("nora.api.v2.mail_sorting.") || m.starts_with("nora.api.asks.")));
         for (method, args) in [
+            ("nora.api.v2.mail_sorting.reset", json!({})),
+            ("nora.api.asks.confirm", json!({})),
+            ("nora.api.asks.reopen", json!({})),
+            ("nora.api.v2.secretary_plan.validate", json!({})),
             ("nora.api.nora_webmail.get_style_profile", json!({})),
             ("nora.api.mail_ready.refresh_if_sent_more", json!({})),
             ("nora.api.chat.clear_thread", json!({})),

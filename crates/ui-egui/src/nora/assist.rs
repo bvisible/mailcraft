@@ -52,7 +52,7 @@ use mailcraft_model::Id;
 use mailcraft_model::RichText as MailText;
 use serde_json::{Value, json};
 
-use super::{CHAT_METHODS, DEADLINE_MS, MAX_REPLY, NoraAnswer, NoraCall, look, observe, own_text, recipes};
+use super::{CHAT_METHODS, DEADLINE_MS, MAX_REPLY, NoraAnswer, NoraCall, look, observe, own_text, recipes, sorting, sorting_view};
 use crate::i18n::fmt;
 use crate::theme::{Tokens, semibold};
 use crate::{MailApp, now_ms};
@@ -107,6 +107,8 @@ pub(crate) struct Assist {
     /// left alone ([`has_keys`]).
     typing: bool,
     session: NoraSession,
+    /// The conversation the panel is drawn with while « Trier avec Nora » is in the pane: always empty, never sent anything.
+    blank: NoraSession,
     panel: NoraPanel,
     calls: Vec<Call>,
     /// Nora's writes that the pane's Undo can take back, the newest last.
@@ -164,6 +166,7 @@ impl Default for Assist {
             open: false,
             typing: false,
             session: NoraSession::new(config, PageContext::editor(AppKind::Mail, DocumentInfo::named(""))),
+            blank: NoraSession::new(SessionConfig::default(), PageContext::editor(AppKind::Mail, DocumentInfo::named(""))),
             panel: panel(),
             calls: Vec::new(),
             changes: Vec::new(),
@@ -180,6 +183,13 @@ impl Assist {
     pub(crate) fn busy(&self) -> bool {
         self.session.is_busy()
     }
+}
+
+/// What « Trier avec Nora » needs of the window while the pane is drawn.
+struct Home {
+    today: mailcraft_time::Date,
+    changing: bool,
+    shown: Option<sorting_view::Home>,
 }
 
 /// The panel that draws her conversation: its own head (her sphere and her name, New conversation, and the close button the
@@ -238,6 +248,8 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
 /// no longer watches her write into).
 fn close(app: &mut MailApp) {
     app.nora.assist.open = false;
+    // « Trier avec Nora » in the pane goes with it.
+    sorting::closed(app);
     app.nora.assist.typing = false;
     // A write waiting for the person's click goes with what she was doing: she is told nothing was written.
     let mut outputs = drop_held(app, tl!("You stopped Nora: nothing was written.").to_string());
@@ -262,6 +274,10 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut answered = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
+    // « Trier avec Nora »: what its flow and the pane's home need of the window, and what the person asked of it.
+    let home = Home { today: app.session.today(), changing: app.nora.sorting.changing(), shown: sorting_view::home_of(app) };
+    let mut sorted = None;
+    let in_flow = app.nora.sorting.flow.is_some();
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep
     // (`mail_view::message_room`): in a narrow window the pane narrows to 240 first, then the folder pane and the list make way.
     let widest = (ui.available_width() - crate::mail_view::LIST_MIN - crate::mail_view::READING_MIN).max(240.0);
@@ -283,7 +299,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         ui.scope_builder(egui::UiBuilder::new().id_salt("nora_pane").max_rect(room), |ui| {
             // The panel's text box, as craft-nora-ui names it in the `Ui` it is drawn in.
             let input = ui.make_persistent_id("nora").with("input");
-            let assist = &mut app.nora.assist;
+            let (assist, sorting) = (&mut app.nora.assist, &mut app.nora.sorting);
             assist.panel.labels = labels();
             assist.panel.pane_words = pane_words();
             assist.panel.activity_words = activity_words();
@@ -296,10 +312,46 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
             // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
             // come from a message rather than from her.
             assist.panel.links_on_cards_only = true;
-            // The recipes, while there is nothing yet to read in the conversation: under the panel's greeting and in place of
-            // its hint (which they carry), a click asks what the person would have typed.
-            let mut empty = |ui: &mut Ui, hint: &str| recipes::show(ui, &t, hint);
-            actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
+            match sorting.flow.as_mut() {
+                // « Trier avec Nora »: drawn where the panel draws an empty conversation, under its head and its greeting, with
+                // a conversation of its own that stays empty; what the person types goes to hers ([`side`]).
+                Some(flow) => {
+                    assist.panel.pane_words.greeting = tl!("Sort with Nora").into();
+                    let state = sorting.boxes.get(&flow.account).and_then(|known| known.state.as_ref());
+                    let cx = sorting_view::FlowCx {
+                        today: home.today,
+                        now: ui.input(|i| i.time),
+                        address: state.map(|s| s.address.clone()).filter(|a| !a.is_empty()).unwrap_or_else(|| flow.account.clone()),
+                        changing: home.changing,
+                    };
+                    let mut drawn = |ui: &mut Ui, _hint: &str| {
+                        if let Some(asked) = sorting_view::flow(ui, flow, state, &cx) {
+                            sorted = Some(asked);
+                        }
+                        None
+                    };
+                    actions = assist.panel.show_with(ui, &assist.blank, Some(&mut drawn));
+                }
+                // The recipes, while there is nothing yet to read in the conversation: under the panel's header and in place
+                // of its hint (which they carry), a click asks what the person would have typed; « Trier ma boîte » first, and
+                // the switch « Nora range mon courrier » after them, where Nora files the mailbox in view.
+                None => {
+                    let shown = home.shown.clone();
+                    let mut empty = |ui: &mut Ui, hint: &str| {
+                        let mut first = |ui: &mut Ui| {
+                            if let Some(asked) = shown.as_ref().and_then(|home| sorting_view::home_chip(ui, home)) {
+                                sorted = Some(asked);
+                            }
+                        };
+                        let asked = recipes::show(ui, &t, hint, &mut first);
+                        if let Some(asked) = shown.as_ref().and_then(|home| sorting_view::home_switch(ui, home)) {
+                            sorted = Some(asked);
+                        }
+                        asked
+                    };
+                    actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
+                }
+            }
             closing = assist.panel.take_close_request();
             typing = ui.ctx().memory(|m| m.has_focus(input));
         });
@@ -312,6 +364,20 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         close(app);
         return;
     }
+    if let Some(asked) = sorted {
+        sorting::act(app, asked);
+    }
+    // In « Trier avec Nora », what the person types goes to Nora's conversation, which the pane shows again; nothing else of
+    // the panel's acts on the flow's empty one.
+    let actions = if in_flow {
+        let typed: Vec<PanelAction> = actions.into_iter().filter(|a| matches!(a, PanelAction::Send(_))).collect();
+        if !typed.is_empty() {
+            sorting::act(app, sorting::Intent::Back);
+        }
+        typed
+    } else {
+        actions
+    };
     let outputs = on_actions(app, actions);
     perform(app, outputs);
     if let Some(yes) = answered {
