@@ -6,8 +6,9 @@
 //! A hosting page's mailboxes (Neoffice's `/neomail`, Neodesk's window) as the last visit left them: their folders, the
 //! messages' headers and previews, the counts, and the bodies of the newest up to [`BODIES`], kept in the browser's
 //! IndexedDB (never its `localStorage`, a few megabytes) so that the next visit shows them at once and its runners only
-//! bring what changed since (the server has no `Email/changes`: they read their window again, the list shown
-//! meanwhile).
+//! bring what changed since: with the state of each mailbox's mail that its last whole run left
+//! ([`Mailbox::jmap_states`]), the first run asks the server what changed since (`Email/changes`), in one request when
+//! nothing changed.
 //!
 //! - **Whose**: the copy is the signed-in person's and these mailboxes' ([`key`]: the person the page names,
 //!   `person`, and each mailbox's address and session), and it is read only when it holds exactly the mailboxes the page
@@ -16,11 +17,14 @@
 //! - **How much**: never more than [`MAX_BYTES`] once written; of each folder the newest messages a run reads again
 //!   (its window: what is in the copy is put right by the next run), the bodies of the newest until [`BODIES`] of them,
 //!   the others headers and preview (fetched again when opened).
-//! - **Nothing that would be done twice**: no Outbox (a message sent since would go again), no Drafts (the server's are
-//!   read), no change still to tell the server (moves, deletions, folder changes): a copy shows, it never acts.
-//! - **Then**: the window's first Send/Receive reads every mailbox (not the Inbox alone): what moved elsewhere since
-//!   the last visit leaves the folders it was in. A message destroyed elsewhere in a folder larger than the window stays
-//!   until the server can say what changed (`Email/changes`).
+//! - **Nothing that would be done twice**: no Outbox (a message sent since would go again), no draft that waits to go
+//!   up or never went (it may have gone since: it would be filed twice), no change still to tell the server (moves,
+//!   deletions, folder changes): a copy shows, it never acts. The drafts the server has stay: what changed since does not
+//!   bring them again; and a mailbox whose copy leaves out something the server has keeps no state.
+//! - **Then**: a copy with the state of every mailbox ([`resumes`]) starts the window's runs as they always start, which
+//!   ask what changed since; one without (a copy from before, a server that has no `Email/changes`) has the window's first
+//!   Send/Receive read every mailbox (not the Inbox alone): what moved elsewhere since the last visit leaves the folders it
+//!   was in.
 //! - **When**: read once as the window starts, [`READ_WAIT_MS`] at most (else the window starts without it); written
 //!   every [`EVERY_MS`] while the mailbox changes, deleted when it can't be written, and none where the page says so
 //!   (`cache: false`, which deletes any kept). A copy that can't be read is ignored (and written over).
@@ -31,6 +35,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
+use mailcraft_model::sync::JmapMailState;
 use mailcraft_model::{FolderKind, Id, Mailbox, Message};
 
 use crate::hosted::HostAccount;
@@ -71,6 +76,16 @@ pub fn stale(kept: &[String], current: &str) -> Vec<String> {
     kept.iter().filter(|k| k.as_str() != current).cloned().collect()
 }
 
+/// Whether every mailbox of a server in `mailbox` has the state of its mail that its last whole run left: its next runs ask
+/// what changed since, and nothing has to be read again.
+pub fn resumes(mailbox: &Mailbox) -> bool {
+    let has_state = |account: Id, session: &str| {
+        mailbox.jmap_states.iter().any(|kept| kept.account == account && kept.session == session && JmapMailState::usable(&kept.state))
+    };
+    let mut served = mailbox.accounts.iter().filter_map(|a| a.jmap.as_ref().map(|server| (a.id, server.session.as_str()))).peekable();
+    served.peek().is_some() && served.all(|(account, session)| has_state(account, session))
+}
+
 /// Whether `mailbox` holds exactly the mailboxes the page hands over: one JMAP account for each, at its session, no
 /// other JMAP account, and no account of another kind but the empty local one every hosted session has.
 pub fn holds(mailbox: &Mailbox, accounts: &[HostAccount]) -> bool {
@@ -97,7 +112,9 @@ pub fn snapshot(mailbox: &Mailbox, bodies: u64, window: usize) -> Mailbox {
     kept.queued.clear();
     let served: HashSet<Id> = kept.accounts.iter().filter(|a| a.jmap.is_some()).map(|a| a.id).collect();
     let kinds: HashMap<Id, FolderKind> = kept.folders.iter().map(|f| (f.id, f.kind)).collect();
-    let gone = |m: &Message| m.draft || m.sending || matches!(kinds.get(&m.folder), Some(FolderKind::Drafts | FolderKind::Outbox));
+    // (A draft written here that waits to go up, or never went: it may have gone since the copy was written.)
+    let unsure = |m: &Message| m.draft && (m.server.is_none() || m.server_draft.as_ref().is_some_and(|d| d.pending));
+    let gone = |m: &Message| m.sending || unsure(m) || matches!(kinds.get(&m.folder), Some(FolderKind::Outbox));
     // Of each folder of a server, the newest `window`.
     let mut by_folder: HashMap<Id, Vec<(i64, Id)>> = HashMap::new();
     for m in kept.messages.values().filter(|m| served.contains(&m.account)) {
@@ -108,6 +125,16 @@ pub fn snapshot(mailbox: &Mailbox, bodies: u64, window: usize) -> Mailbox {
         list.sort_by(|a, b| b.cmp(a));
         out.extend(list.iter().skip(window).map(|(_, id)| *id));
     }
+    // A mailbox whose copy leaves out something the server has (a draft edited here since, a message being sent from its
+    // draft) keeps no state: what changed since would not bring it back, a run that reads every window does.
+    let unstated: HashSet<Id> = kept
+        .messages
+        .values()
+        .filter(|m| served.contains(&m.account) && gone(m.as_ref()))
+        .filter(|m| m.server.as_ref().is_some_and(|s| !s.id.is_empty()) || m.server_draft.as_ref().is_some_and(|d| !d.sent_from.is_empty()))
+        .map(|m| m.account)
+        .collect();
+    kept.jmap_states.retain(|kept| !unstated.contains(&kept.account));
     kept.messages.retain(|id, m| !out.contains(id) && !(served.contains(&m.account) && gone(m.as_ref())));
     let mut newest: Vec<_> =
         kept.messages.values().filter(|m| served.contains(&m.account) && !m.unfetched).map(|m| (m.received, m.id, m.size())).collect();
@@ -345,11 +372,11 @@ mod idb {
         });
     }
 
-    /// The copy of this tab is written under `key` from now on; the mailbox is at `rev` as the window starts, from a copy
-    /// when `kept`.
-    pub fn start(key: String, rev: u64, kept: bool) {
+    /// The copy of this tab is written under `key` from now on; the mailbox is at `rev` as the window starts, and its
+    /// first Send/Receive reads every mailbox when `read_all` (a copy that can't say what changed since, [`super::resumes`]).
+    pub fn start(key: String, rev: u64, read_all: bool) {
         WRITER.with(|w| *w.borrow_mut() = Some(Writer::new(key, mailcraft_ui_egui::now_ms(), rev)));
-        FULL_RUN.with(|full| full.set(kept));
+        FULL_RUN.with(|full| full.set(read_all));
     }
 
     /// Once a frame: the copy written when it is due (in the background, one write at a time), and deleted when it can't

@@ -49,7 +49,10 @@
 //!   no more is `notFound`, one that is both updated and destroyed is `willDestroy`, and `ifInState` is
 //!   held against the state. No more objects than `maxObjectsInSet` are in one call (`requestTooLarge`).
 //!   Each object has its own answer, `updated` or `notUpdated` with a SetError, `destroyed` or `notDestroyed`.
-//! - **Not there.** `Mailbox/set` (but where [`Profile`] refuses it), `*/changes`, threads, push. The session
+//! - **What changed.** `Email/changes` says what became of the emails since a state it handed out, from a journal
+//!   of every change it made to them (`standin/changes.rs`); a test makes a journal lose what came before
+//!   ([`Data::forget_changes`]), or makes the method one the server doesn't have ([`Data::changes_unknown`]).
+//! - **Not there.** `Mailbox/set` (but where [`Profile`] refuses it), the other `*/changes`, threads, push. The session
 //!   names no `eventSourceUrl`.
 //! - **Kinds of server.** [`Data::profile`] makes it a store of the standard kind, which parses the header
 //!   fields of an email for a client (`subject`, `from`…), or a server that names a message by where it
@@ -80,6 +83,7 @@ use serde_json::{Map, Value, json};
 
 use crate::{CALENDARS, CONTACTS, CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
 
+mod changes;
 mod demo;
 mod facade;
 #[cfg(test)]
@@ -298,6 +302,12 @@ pub struct Data {
     pub pim: Pim,
     /// A person's notes, when a test turns them on ([`Notes`], `standin/notes.rs`). Nothing at first.
     pub notes: Notes,
+    /// The oldest state `Email/changes` calculates from ([`Data::forget_changes`]): 0, every one it handed out.
+    pub changes_from: u32,
+    /// `Email/changes` is a method this server doesn't have.
+    pub changes_unknown: bool,
+    /// Every change made to the emails, for `Email/changes`.
+    journal: changes::Journal,
     next: u32,
     version: u32,
     /// For the answer being made: the `Retry-After` it carries, and what its calls were asked.
@@ -339,6 +349,9 @@ impl Data {
             lost_answers: 0,
             pim: Pim::default(),
             notes: Notes::default(),
+            changes_from: 0,
+            changes_unknown: false,
+            journal: changes::Journal::default(),
             next: 0,
             version: 0,
             retry_after: None,
@@ -381,6 +394,7 @@ impl Data {
             raw: raw.to_vec(),
         });
         self.changed();
+        self.made(&id);
         id
     }
 
@@ -394,11 +408,12 @@ impl Data {
         if self.profile.one_mailbox || !self.mailboxes.iter().any(|m| m.id == mailbox) {
             return false;
         }
-        let Some(email) = self.emails.iter_mut().find(|e| e.id == email) else {
+        let Some(found) = self.emails.iter_mut().find(|e| e.id == email) else {
             return false;
         };
-        email.mailboxes.insert(mailbox.to_string());
+        found.mailboxes.insert(mailbox.to_string());
         self.changed();
+        self.touched(email);
         true
     }
 
@@ -420,6 +435,12 @@ impl Data {
         }
         let now = moved.id.clone();
         self.changed();
+        if now == email {
+            self.touched(email);
+        } else {
+            self.went(email);
+            self.made(&now);
+        }
         Some(now)
     }
 
@@ -433,6 +454,7 @@ impl Data {
             // (An email that is no more can't be sent: a by-place server sends only what it has filed.)
             self.filed.remove(email);
             self.changed();
+            self.went(email);
         }
         removed
     }
@@ -444,15 +466,16 @@ impl Data {
 
     /// Set or clear a keyword, as another client would: whether there was such an email.
     pub fn set_keyword(&mut self, email: &str, keyword: &str, on: bool) -> bool {
-        let Some(email) = self.emails.iter_mut().find(|e| e.id == email) else {
+        let Some(found) = self.emails.iter_mut().find(|e| e.id == email) else {
             return false;
         };
         if on {
-            email.keywords.insert(keyword.to_string());
+            found.keywords.insert(keyword.to_string());
         } else {
-            email.keywords.remove(keyword);
+            found.keywords.remove(keyword);
         }
         self.changed();
+        self.touched(email);
         true
     }
 
@@ -679,6 +702,7 @@ impl Data {
         // for calendars and the address books' for cards, when the session offers them (`standin/pim.rs`).
         let needs = match name {
             "Mailbox/get" | "Email/query" | "Email/get" | "Email/import" | "Email/set" => Some(MAIL),
+            "Email/changes" if !self.changes_unknown => Some(MAIL),
             "Mailbox/set" if self.profile.fixed_mailboxes => Some(MAIL),
             "Identity/get" | "EmailSubmission/set" if self.submission && using.contains(&SUBMISSION) => Some(MAIL),
             "Calendar/get" | "CalendarEvent/query" | "CalendarEvent/get" | "CalendarEvent/set" if self.pim.calendars => Some(CALENDARS),
@@ -700,6 +724,7 @@ impl Data {
             "Email/query" => self.email_query(&args),
             "Email/import" => self.email_import(&args),
             "Email/set" => self.email_set(&args),
+            "Email/changes" => self.email_changes(&args),
             "Identity/get" => self.identity_get(&args),
             "EmailSubmission/set" => self.submission_set(&args),
             "Calendar/get" => self.pim.calendar_get(&args),

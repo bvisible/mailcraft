@@ -216,9 +216,10 @@ fn a_first_run_lists_the_mailboxes_and_reads_each_window_whole() {
     let end = last(&pieces);
     assert!(end.whole && !end.stopped && !end.auth_refused && end.busy_for.is_none() && end.errors.is_empty(), "{end:?}");
 
-    // The work: the list; for each mailbox one request of two calls, and one for the emails it had to read whole.
+    // The work: the state of the mail and the list, in one request (the next run asks what changed since that state); for
+    // each mailbox one request of two calls, and one for the emails it had to read whole.
     let window = ["Email/query", "Email/get"];
-    let mut calls = vec!["Mailbox/get"];
+    let mut calls = vec!["Email/get", "Mailbox/get"];
     for whole in [true, true, true, false, false, true] {
         calls.extend(window);
         if whole {
@@ -579,7 +580,7 @@ fn a_run_stopped_between_two_requests_of_a_window_leaves_that_window_out() {
     assert_eq!(pieces.len(), 2);
     assert!(pieces[0].listing.is_some());
     assert!(last(&pieces).stopped && !last(&pieces).whole);
-    assert_eq!(stand_in.calls(), ["Mailbox/get", "Email/query", "Email/get"]);
+    assert_eq!(stand_in.calls(), ["Email/get", "Mailbox/get", "Email/query", "Email/get"]);
 }
 
 #[test]
@@ -916,7 +917,7 @@ fn a_stop_between_the_calls_for_emails_of_a_window_leaves_that_window_out() {
     };
     let pieces = run_over(hook, SESSION, &everything(500), &cancel);
     assert!(folders_read(&pieces).is_empty() && last(&pieces).stopped && !last(&pieces).whole);
-    assert_eq!(stand_in.calls(), ["Mailbox/get", "Email/query", "Email/get", "Email/get"]);
+    assert_eq!(stand_in.calls(), ["Email/get", "Mailbox/get", "Email/query", "Email/get", "Email/get"]);
 }
 
 /// A session address as a person's own server might hand one out, with their address in its query.

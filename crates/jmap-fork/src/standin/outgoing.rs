@@ -350,6 +350,7 @@ impl Data {
             self.filed.insert(id.clone());
         }
         self.changed();
+        self.made(&id);
         Ok(json!({"id": id, "blobId": blob, "threadId": id, "size": size}))
     }
 
@@ -487,10 +488,11 @@ pub(super) fn answer_after(effect: Option<Effect>, status: u16, body: Vec<u8>) -
         Some(Effect::LoseAnswer) => Err(Error::Io("the connection was lost".into())),
         Some(Effect::Status(status)) => Ok((status, serde_json::to_vec(&problem(status, "about:blank", "the gateway gave up")).unwrap_or_default())),
         Some(Effect::Garbage) => Ok((200, b"<html><body>Bad gateway</body></html>".to_vec())),
-        // (JSON with blanks after it: larger than a client takes of the answer to a write or a read of items.)
+        // (JSON with blanks after it: larger than a client takes of the answer to a write or a read of items, or to a
+        // round of changes with the mailboxes.)
         Some(Effect::Oversize) => {
             let mut body = body;
-            body.resize(body.len().saturating_add(9 << 20), b' ');
+            body.resize(body.len().saturating_add(24 << 20), b' ');
             Ok((status, body))
         }
         _ => Ok((status, body)),

@@ -48,6 +48,8 @@ fn request() -> JmapMailRequest {
         // //// Neoffice — an email to read by its id alone (`emails`), the address in it too.
         emails: vec![format!("E-{ME}")],
         threads: vec!["E5".into()],
+        // //// Neoffice — the state of the mail a run asks what changed since (`Email/changes`).
+        email_state: "7-12".into(),
     }
 }
 
@@ -106,6 +108,9 @@ fn result() -> JmapMailResult {
         stopped: true,
         progress: Some(GraphProgress { folder: "M1".into(), read: 2, total: 4, number: 1, folders: 3 }),
         auth_refused: true,
+        // //// Neoffice — the emails gone since that state, and the state the run got to.
+        destroyed: vec!["E12".into()],
+        email_state: "7-13".into(),
     }
 }
 
@@ -120,6 +125,8 @@ fn a_request_and_a_result_read_and_write_as_json() {
         r#""drafts":[{"message":8,"saves":2,"replaces":"E9","mime":"#,
         r#""folders":[{"create":{"folder":6,"name":"#,
         r#""bearer":true"#,
+        // //// Neoffice — (the state of the mail)
+        r#""emailState":"7-12""#,
     ] {
         assert!(json.contains(part), "{part} in {json}");
     }
@@ -134,6 +141,9 @@ fn a_request_and_a_result_read_and_write_as_json() {
         r#""session":""#,
         r#""drafts":[{"message":8,"saves":2,"id":"E10","folder":"M3","refused":"#,
         r#""unwanted":["E11"]"#,
+        // //// Neoffice — (the emails gone, and the state)
+        r#""destroyed":["E12"]"#,
+        r#""emailState":"7-13""#,
     ] {
         assert!(json.contains(part), "{part} in {json}");
     }

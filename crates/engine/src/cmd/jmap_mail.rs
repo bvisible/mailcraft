@@ -38,12 +38,20 @@
 //! **Sending and drafts** go up with the run ([`super::jmap_send`]): after the changes, what waits in the Outbox
 //! is sent and the drafts saved here are filed in the server's Drafts before any window is read, and the
 //! mailboxes those copies go to (Sent, Drafts) are read besides, so that what was sent shows in Sent at once.
+//!
+//! **What changed since.** A run that read every mailbox, or took in all that changed, and was whole, leaves the state of the
+//! account's mail ([`mailcraft_model::Mailbox::jmap_states`], at the server the account names): a run that starts by itself
+//! asks the server what changed since (`Email/changes`) in every mailbox, in a request or two, rather than reading the
+//! windows again, and leaves the state it got to. The emails gone are marked gone wherever they lie
+//! ([`jmap_down::take_destroyed`]); the rest are pages that are not the whole of their mailbox. When the server can't say
+//! (it lost what came before), the run reads every window, and leaves a new state; one that has no such thing, or a state
+//! that names none, makes the account's state be forgotten. The owner's own Send/Receive reads every window, as it always did.
 
 use std::collections::HashMap;
 
 use mailcraft_model::sync::{
-    ChangeOutcome, FolderChange, FolderChangeDone, GraphMessage, JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapOutcome, JmapScope,
-    MAX_FOLDER_CHANGES, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, MessagePage, SendOutcome, SyncPhase,
+    ChangeOutcome, FolderChange, FolderChangeDone, GraphMessage, JmapChange, JmapKnown, JmapMailRequest, JmapMailResult, JmapMailState, JmapOutcome,
+    JmapScope, MAX_FOLDER_CHANGES, MAX_JMAP_WINDOW, MAX_MESSAGE_CHANGES, MessagePage, SendOutcome, SyncPhase,
 };
 use mailcraft_model::time::Timestamp;
 use mailcraft_model::{AccountKind, FolderKind, Id, Mailbox};
@@ -155,7 +163,37 @@ pub fn jmap_mail_request(s: &Session, account: Id, full: bool, also: &[String], 
         emails: Vec::new(),
         // //// Neoffice — upstream's #795: the conversation ids of mail listed before they were asked for, in a run of every mailbox.
         threads: if full || !tied { super::thread_ids::to_ask(&s.mailbox, account) } else { Vec::new() },
+        // A run that started by itself asks what changed since the state the last whole run left; the owner's reads every window.
+        email_state: if full || !tied { String::new() } else { state_of(&s.mailbox, account, &server.session) },
     })
+}
+
+/// The state of `account`'s mail that a run asks what changed since: the one kept for the server at `session`, when it can be
+/// asked about. Empty: none.
+pub fn state_of(mb: &Mailbox, account: Id, session: &str) -> String {
+    mb.jmap_states
+        .iter()
+        .find(|kept| kept.account == account && kept.session == session && JmapMailState::usable(&kept.state))
+        .map(|kept| kept.state.clone())
+        .unwrap_or_default()
+}
+
+/// Keep, or forget, the state of `account`'s mail that a run's last piece says ([`JmapMailResult::email_state`]): kept when
+/// the run was whole and the state can be asked about, forgotten otherwise; and only the states of the accounts kept in step
+/// with a JMAP server are kept. Whether anything changed.
+fn keep_state(mb: &mut Mailbox, account: Id, result: &JmapMailResult) -> bool {
+    let said = result.email_state.as_str();
+    if said.is_empty() {
+        return false;
+    }
+    let Some(session) = mb.account(account).and_then(|a| a.jmap.as_ref()).map(|server| server.session.clone()) else { return false };
+    let served: Vec<Id> = mb.accounts.iter().filter(|a| a.kind == AccountKind::Jmap).map(|a| a.id).collect();
+    let before = mb.jmap_states.clone();
+    mb.jmap_states.retain(|kept| kept.account != account && served.contains(&kept.account));
+    if result.whole && !result.partial && JmapMailState::usable(said) {
+        mb.jmap_states.push(JmapMailState { account, session, state: said.to_string() });
+    }
+    mb.jmap_states != before
 }
 
 /// The server ids this mailbox has of `account`'s messages, by mailbox, newest first: at most
@@ -391,6 +429,9 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     }
     let mut down = Down::default();
     let mut index = std::mem::take(&mut s.graph_index);
+    // What the server says is gone since the state the run asked from, wherever it lies: before the pages, which may bring it
+    // again under another id.
+    jmap_down::take_destroyed(&mut s.mailbox, &mut index, account, &result.destroyed, &mut down);
     for page in result.pages.iter().take(MAX_PAGES) {
         jmap_down::take_window(&mut s.mailbox, &mut index, account, page, &mut down);
     }
@@ -399,10 +440,12 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     if result.whole {
         graph_down::sweep(&mut s.mailbox, account, &mut down);
     }
+    // Where the mail stood when the run ended, for the next to ask what changed since.
+    let state_kept = keep_state(&mut s.mailbox, account, &result);
     // //// Neoffice — the conversations of mail listed before they were asked for (upstream's #795, `thread_ids`).
     super::thread_ids::bounded(&mut result.threads, plausible_id);
     let threaded = super::thread_ids::take(&mut s.mailbox, account, &result.threads);
-    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || threaded {
+    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || threaded || state_kept {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there.

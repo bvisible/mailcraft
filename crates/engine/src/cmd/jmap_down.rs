@@ -173,6 +173,24 @@ pub fn take_window(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, page:
     }
 }
 
+/// The most emails gone that one piece of a run marks so.
+const MAX_DESTROYED: usize = 5_000;
+
+/// The emails the server says are gone since the state a run asked what changed from (`Email/changes`), by server id: each one
+/// this account has is marked gone wherever it lies (a message moved here since included: the server can no longer make
+/// that move), and the sweep of a run that is whole removes it.
+pub fn take_destroyed(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, ids: &[String], down: &mut Down) {
+    for id in ids.iter().take(MAX_DESTROYED).filter(|id| plausible_id(id)) {
+        let Some(m) = index.find(mb, account, id) else { continue };
+        if let Ok(m) = mb.message_mut(m)
+            && let Some(s) = m.server.as_mut().filter(|s| !s.gone)
+        {
+            s.gone = true;
+            down.gone += 1;
+        }
+    }
+}
+
 /// The message that waits for an id which `there` is: the only one of the candidates (`lost`, by `Message-ID`) it can be
 /// ([`alike`]), when no other message that is new here (`new_here`) can be that one. One that is taken is taken once.
 fn adopt(lost: &mut HashMap<String, Vec<Id>>, mb: &Mailbox, there: &GraphMessage, new_here: &HashMap<&str, Vec<&GraphMessage>>) -> Option<Id> {

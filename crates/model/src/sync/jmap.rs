@@ -57,6 +57,35 @@ pub const MAX_JMAP_WINDOW: u32 = 500;
 pub const MAX_JMAP_SENDS: usize = 10;
 pub const MAX_JMAP_DRAFTS: usize = 10;
 
+// //// Neoffice — a run that asks the server what changed since a state (`Email/changes`, RFC 8620 §5.2) rather than reading every
+// //// Neoffice — window again: the state is kept per account ([`crate::Mailbox::jmap_states`]), and the run's request and answer carry it.
+/// The state a server gives when it can't say what changed since it (the journal it keeps can't be read): never asked
+/// about, and the one kept is forgotten when a run brings it.
+pub const JMAP_STATE_UNKNOWN: &str = "-";
+/// The longest state kept: a server's state is short, and one longer is none to ask about.
+pub const MAX_JMAP_STATE: usize = 256;
+
+/// Where a JMAP account's mail stood on its server when a run last read all of it, or took in all that changed
+/// since: the state of its emails (RFC 8620 §5.1, the `state` of `Email/get`), at the server the account then named
+/// (`session`). The next run that starts by itself asks the server what changed since (`Email/changes`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct JmapMailState {
+    pub account: Id,
+    /// The address of the server's session resource the state is of. It may carry the account's address, so it is
+    /// never logged.
+    pub session: String,
+    pub state: String,
+}
+
+impl JmapMailState {
+    /// Whether `state` can be asked about: a server's, short, of no control character, and not the one that says it
+    /// can't be.
+    pub fn usable(state: &str) -> bool {
+        !state.is_empty() && state != JMAP_STATE_UNKNOWN && state.len() <= MAX_JMAP_STATE && !state.chars().any(char::is_control)
+    }
+}
+
 /// What a run for a [`crate::AccountKind::Jmap`] account is asked to do: the changes made here go
 /// up, what waits in the Outbox is sent, the server's mailboxes are listed if they should be, and
 /// the newest messages of the mailboxes in `scope` are read.
@@ -119,6 +148,12 @@ pub struct JmapMailRequest {
     /// asked for those ids after the rest of the run, at most [`super::MAX_THREAD_ASKS`] (#795).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub threads: Vec<String>,
+    // //// Neoffice — see `JmapMailState`.
+    /// The state of the account's mail when a run last read all of it ([`JmapMailState`]): the run asks the server what
+    /// changed since (`Email/changes`), in every mailbox, instead of reading the windows of `scope`, and reads them all when
+    /// the server can't say. Empty: the windows of `scope` are read.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub email_state: String,
 }
 
 // //// Neoffice — see `JmapMailRequest::emails`.
@@ -363,6 +398,11 @@ pub struct JmapMailResult {
     /// The windows read, in the order they came: each is taken in by itself.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pages: Vec<MessagePage>,
+    // //// Neoffice — see `JmapMailState`.
+    /// The emails the server says are gone since the request's state (`Email/changes`), by server id: wherever each lies here,
+    /// it is marked gone before the pages are taken in, and removed when the run is [`JmapMailResult::whole`].
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub destroyed: Vec<String>,
     /// Problems worth telling the owner; empty when all went well.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
@@ -392,6 +432,13 @@ pub struct JmapMailResult {
     /// owner is told to sign in again, and the run is not repeated by itself.
     #[serde(skip_serializing_if = "is_false")]
     pub auth_refused: bool,
+    // //// Neoffice — see `JmapMailState`.
+    /// In the last piece of a run that read all of the account's mail, or took in all that changed since the request's
+    /// state, and was [`JmapMailResult::whole`]: the state of the mail it brought, which the next run asks what changed
+    /// since. [`JMAP_STATE_UNKNOWN`] in any piece: the state the engine keeps can't be asked about (the server has no
+    /// `Email/changes`, or can't say), and is forgotten. Empty: no word of it.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub email_state: String,
 }
 
 impl JmapMailResult {
@@ -415,7 +462,16 @@ impl JmapMailResult {
         if piece.listing.is_some() {
             self.listing = piece.listing;
         }
+        // //// Neoffice — (the emails gone, likewise; one a later piece says is gone is none of the pages before it, as the gone are
+        // //// Neoffice — taken in before the pages)
+        if !piece.destroyed.is_empty() {
+            for page in &mut self.pages {
+                page.messages.retain(|m| !piece.destroyed.contains(&m.server.id));
+            }
+        }
         self.pages.extend(piece.pages);
+        // //// Neoffice — (see `JmapMailResult::destroyed`)
+        self.destroyed.extend(piece.destroyed);
         self.threads.extend(piece.threads);
         self.errors.extend(piece.errors);
         self.busy_for = piece.busy_for.or(self.busy_for);
@@ -424,6 +480,10 @@ impl JmapMailResult {
             self.progress = piece.progress;
         }
         self.auth_refused |= piece.auth_refused;
+        // //// Neoffice — (the state of the mail, as the last piece that says it)
+        if !piece.email_state.is_empty() {
+            self.email_state = piece.email_state;
+        }
     }
 }
 

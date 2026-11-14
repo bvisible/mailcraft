@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use mailcraft_engine::Session;
-use mailcraft_engine::cmd::jmap_mail::{apply_jmap_mail, jmap_mail_request};
+use mailcraft_engine::cmd::jmap_mail::{apply_jmap_mail, jmap_mail_request, state_of};
 use mailcraft_jmap::standin::{Effect, Fault, SESSION, StandIn, TOKEN};
 use mailcraft_jmap::{Error, Http, Request, Response, Result, block_on};
 use mailcraft_model::{FolderKind, Id, Mailbox};
@@ -1198,4 +1198,35 @@ fn a_message_held_says_why_in_french_and_the_mailbox_keeps_the_english() {
     let why = "le serveur ne permet pas à ce compte d’envoyer du courrier pour l’instant";
     let held = mailcraft_ui_egui::i18n::fmt(frame, &[("subject", "Plans"), ("why", why)]);
     assert!(french.contains(&held), "{french:#?}");
+}
+
+/// Reopened on what the last run left (a copy kept in the browser): a run that starts by itself asks the server what changed
+/// since the state the owner's run left, in one request, and takes in what was made, changed and deleted elsewhere, through
+/// the browser's runner and the engine as the window has them.
+#[test]
+fn a_run_that_starts_by_itself_brings_what_changed_since_in_one_request() {
+    let mut rig = Rig::listed();
+    assert!(!state_of(&rig.s.mailbox, rig.account, SESSION).is_empty(), "the owner's run of every mailbox left a state");
+    let requests = |rig: &Rig| rig.server.api_requests();
+    // Nothing changed: one request, nothing taken in.
+    let (before, messages) = (requests(&rig), rig.mine().len());
+    let shown = rig.run(false);
+    assert!(shown.lines.is_empty(), "{shown:?}");
+    assert_eq!((requests(&rig) - before, rig.mine().len()), (1, messages));
+    // Two messages came, the first was read and deleted elsewhere: one request, all of it here.
+    let first = rig.server.with(|d| d.emails[0].id.clone());
+    rig.deliver(2);
+    rig.server.with(|d| assert!(d.remove(&first)));
+    let before = requests(&rig);
+    let shown = rig.run(false);
+    assert!(shown.lines.is_empty(), "{shown:?}");
+    assert_eq!(requests(&rig) - before, 1);
+    let subjects: BTreeSet<String> = rig.mine().iter().filter_map(|id| rig.s.mailbox.message(*id)).map(|m| m.subject.clone()).collect();
+    assert_eq!(subjects, BTreeSet::from(["Note 1".to_string(), "Note 2".to_string()]));
+    // A message read elsewhere comes as its mark.
+    let note = rig.server.with(|d| d.emails.iter().find(|e| e.id != first).map(|e| e.id.clone()).unwrap());
+    rig.server.with(|d| assert!(d.set_keyword(&note, "$seen", true)));
+    rig.run(false);
+    let read = rig.s.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == note)).map(|m| m.read);
+    assert_eq!(read, Some(true));
 }

@@ -3,7 +3,8 @@
 // //// Neoffice — added file (no upstream equivalent): tests of hosted/cache.rs.
 //! The copy of a hosting page's mailboxes kept in the browser: whose it is (a key for each person and set of mailboxes,
 //! every other copy deleted), what it holds (the newest bodies, the rest headers and preview, drafts whole, within its
-//! bound), that a copy which can't be read, or holds other mailboxes, is ignored, and that the window opens on it.
+//! bound), that a copy which can't be read, or holds other mailboxes, is ignored, that the window opens on it, and asks
+//! what changed since when the copy has the state of every mailbox.
 //! And (`--ignored`) what reading it costs for a mailbox of a few hundred messages.
 
 use mailcraft_model::{Body, FolderKind, Mailbox, Message};
@@ -11,7 +12,9 @@ use mailcraft_model::{Body, FolderKind, Mailbox, Message};
 /// The window of a run: each folder's newest messages it reads again.
 const WINDOW: usize = 500;
 
-use super::{EVERY_MS, Writer, decode, encode, encode_within, holds, key, snapshot, stale};
+use mailcraft_model::sync::{JmapMailState, ServerDraft, ServerMessage};
+
+use super::{EVERY_MS, Writer, decode, encode, encode_within, holds, key, resumes, snapshot, stale};
 use crate::hosted::{HostAccount, account_of, hosted_session};
 
 fn jane() -> HostAccount {
@@ -91,17 +94,45 @@ fn the_newest_bodies_are_kept_the_rest_fetched_again_and_nothing_that_would_be_d
     let (drafts, outbox) = (mb.folder_of_kind(account, FolderKind::Drafts).expect("Drafts"), mb.folder_of_kind(account, FolderKind::Outbox));
     let draft = mb.add_message(Message { folder: drafts, draft: true, received: 1, ..Message::default() }).expect("draft");
     let waiting = outbox.map(|outbox| mb.add_message(Message { folder: outbox, received: 2, ..Message::default() }).expect("to send"));
+    // A draft the server has stays (what changed since does not bring it again); one saved here since, that waits to go up, doesn't.
+    let on_server = |id: &str| Some(ServerMessage { id: id.into(), ..ServerMessage::default() });
+    let theirs = mb.add_message(Message { folder: drafts, draft: true, received: 3, server: on_server("Ed1"), ..Message::default() }).expect("draft");
+    let saved = Some(ServerDraft { pending: true, ..ServerDraft::default() });
+    let edited = mb
+        .add_message(Message { folder: drafts, draft: true, received: 4, server: on_server("Ed2"), server_draft: saved, ..Message::default() })
+        .expect("draft");
     let kept = snapshot(&mb, 3_500, WINDOW);
-    let whole: Vec<String> = kept.messages.values().filter(|m| !m.unfetched).map(|m| m.subject.clone()).collect();
+    let whole: Vec<String> = kept.messages.values().filter(|m| !m.unfetched && m.folder != drafts).map(|m| m.subject.clone()).collect();
     assert_eq!(whole.len(), 3, "the newest three: {whole:?}");
     assert!(whole.iter().all(|s| ["Message 7", "Message 8", "Message 9"].contains(&s.as_str())));
     assert!(kept.messages.values().filter(|m| m.unfetched).all(|m| m.body.text.len() < 1_000), "a preview, not the body");
-    // No draft, nothing of the Outbox: a message sent since would go again.
-    assert!(!kept.messages.contains_key(&draft));
+    // No draft that never went or waits to go up, nothing of the Outbox: they would go again.
+    assert!(!kept.messages.contains_key(&draft) && !kept.messages.contains_key(&edited));
     assert!(waiting.is_none_or(|id| !kept.messages.contains_key(&id)));
-    assert_eq!(kept.messages.len(), 10);
+    assert!(kept.messages.contains_key(&theirs));
+    assert_eq!(kept.messages.len(), 11);
     // The mailbox in use is left as it is.
     assert!(mb.messages.values().all(|m| !m.unfetched) && mb.messages.contains_key(&draft));
+}
+
+#[test]
+fn a_copy_with_the_state_of_every_mailbox_asks_what_changed_and_one_without_reads_them_all() {
+    let mut mb = mailbox(&[jane(), team()], 1, 10);
+    assert!(!resumes(&mb), "no state");
+    let served: Vec<(u64, String)> = mb.accounts.iter().filter_map(|a| a.jmap.as_ref().map(|server| (a.id, server.session.clone()))).collect();
+    let (first, second) = (served[0].clone(), served[1].clone());
+    mb.jmap_states.push(JmapMailState { account: first.0, session: first.1.clone(), state: "7-12".into() });
+    assert!(!resumes(&mb), "one mailbox without");
+    mb.jmap_states.push(JmapMailState { account: second.0, session: "https://other.example.org/session".into(), state: "7-3".into() });
+    assert!(!resumes(&mb), "a state of another server");
+    mb.jmap_states.push(JmapMailState { account: second.0, session: second.1.clone(), state: "-".into() });
+    assert!(!resumes(&mb), "a state that names none");
+    mb.jmap_states.push(JmapMailState { account: second.0, session: second.1, state: "7-3".into() });
+    assert!(resumes(&mb));
+    // The state goes with the copy, and comes back with it.
+    let kept = decode(&encode(&mb, WINDOW).expect("written"), &[jane(), team()]).expect("read");
+    assert!(resumes(&kept) && kept.jmap_states == mb.jmap_states);
+    assert!(!resumes(&Mailbox::default()), "no mailbox of a server");
 }
 
 #[test]

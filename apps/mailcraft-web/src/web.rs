@@ -76,12 +76,14 @@ pub fn start() {
                             let kept = arrival.mailbox.accounts.iter().any(|a| a.jmap.is_some()).then_some(arrival.mailbox);
                             let from_copy = kept.is_some();
                             let mut app = hosted_app(&accounts, kept, build_inbox, ctx);
+                            // //// Neoffice — a copy whose mailboxes have the state of their mail asks what changed since; one without reads them all.
+                            let read_all = from_copy && !crate::hosted::cache::resumes(&app.session.mailbox);
                             match prefs {
                                 Some(ui) => app.apply_prefs(ui),
                                 None => app.fresh_prefs(),
                             }
                             if let Some(key) = writes {
-                                crate::hosted::cache::start(key, app.session.rev(), from_copy);
+                                crate::hosted::cache::start(key, app.session.rev(), read_all);
                             }
                             // //// Neoffice — (its mailboxes were added by hosted_app, not by upstream's page hook)
                             app

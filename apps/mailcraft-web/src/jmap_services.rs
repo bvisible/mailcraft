@@ -34,11 +34,13 @@
 // Outside the browser only the tests run it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
+use std::cell::Cell;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_jmap::fetch::{failed_fetch, fetch_messages};
-use mailcraft_jmap::{Auth, Client, Error, Http, failed_pim, failed_run, sync_mail, sync_pim};
+use mailcraft_jmap::{Auth, Client, Error, Http, Request, Response, failed_pim, failed_run, sync_mail, sync_pim};
 use mailcraft_model::book::{ContactOp, ContactOutcome, ContactsUploaded};
 use mailcraft_model::remote::{EventOp, EventOutcome, EventsUploaded};
 use mailcraft_model::sync::{GraphFetchResult, JmapMailRequest, JmapMailResult, JmapPimRequest, JmapPimResult};
@@ -207,6 +209,9 @@ where
     S: Fn(i32) -> W,
     W: Future<Output = ()>,
 {
+    // What the run cost is said in the console when it ends, however it ends.
+    let cost = Cost::new(!job.request.email_state.is_empty());
+    let http = Counted { http, sent: cost.sent.clone() };
     // The host's credential when the job carries none: the host may renew it, the owner's it can't.
     // (Only for the server the host handed the mailbox over on: `Credentials::opens`.)
     let host = if job.secret.is_some() { None } else { credentials.filter(|c| c.opens(&job.request.email, &job.request.session)) };
@@ -268,6 +273,42 @@ where
                 return;
             }
         }
+    }
+}
+
+/// The transport of one Send/Receive, which counts the requests it carries.
+#[derive(Clone)]
+struct Counted<H> {
+    http: H,
+    sent: Rc<Cell<usize>>,
+}
+
+impl<H: Http> Http for Counted<H> {
+    async fn send(&self, req: Request) -> mailcraft_jmap::Result<Response> {
+        self.sent.set(self.sent.get().saturating_add(1));
+        self.http.send(req).await
+    }
+}
+
+/// What a Send/Receive cost, said in the console as it ends (when this is dropped): how long it took and how many requests it
+/// made (the session's included), and whether it started from a state kept (it then asks what changed since). No address,
+/// no id.
+struct Cost {
+    began: f64,
+    sent: Rc<Cell<usize>>,
+    since: bool,
+}
+
+impl Cost {
+    fn new(since: bool) -> Cost {
+        Cost { began: mailcraft_ui_egui::now_ms(), sent: Rc::new(Cell::new(0)), since }
+    }
+}
+
+impl Drop for Cost {
+    fn drop(&mut self) {
+        let how = if self.since { "from the state kept" } else { "without a state" };
+        log::info!("jmap mail: a Send/Receive {how}: {} requests, {:.0} ms", self.sent.get(), mailcraft_ui_egui::now_ms() - self.began);
     }
 }
 

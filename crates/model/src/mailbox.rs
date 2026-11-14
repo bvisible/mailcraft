@@ -1164,6 +1164,12 @@ pub struct Mailbox {
     /// ([`crate::note::Notes`]). Nothing is written of them while there are none.
     #[serde(skip_serializing_if = "crate::note::Notes::is_empty", deserialize_with = "crate::note::lenient")]
     pub notes: crate::note::Notes,
+    // //// Neoffice — where each JMAP account's mail stood on its server when a run last read all of it (`Email/changes`, `cmd/jmap_mail.rs`).
+    /// For the accounts kept in step with a JMAP server, the state of their mail when a run last read all of it
+    /// ([`crate::sync::JmapMailState`]), one an account at most: a run that starts by itself asks the server what changed
+    /// since. Nothing is written of it while there is none.
+    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "crate::sync::lenient_list")]
+    pub jmap_states: Vec<crate::sync::JmapMailState>,
     /// The Favorites of the accounts whose server has a list of them ([`ServerFavorites`]), one
     /// entry an account at most ([`Mailbox::server_favorites`]). Nothing is written of it until
     /// a server's list has been taken in.
@@ -1249,6 +1255,8 @@ impl Default for Mailbox {
             contact_changes: Vec::new(),
             // //// Neoffice — see `notes`.
             notes: crate::note::Notes::default(),
+            // //// Neoffice — see `jmap_states`.
+            jmap_states: Vec::new(),
             favorites_from_server: Vec::new(),
             queued: Vec::new(),
             account_categories: BTreeMap::new(),

@@ -507,3 +507,89 @@ fn an_email_read_by_its_id_before_the_folders_are_known_waits_for_them_or_comes_
     assert!(apply_jmap_opened(&mut s, &listed).unwrap().is_empty());
     assert_eq!(in_folder(&s, account, "Map").iter().map(|m| m.subject.as_str()).collect::<Vec<_>>(), ["Old plans"]);
 }
+
+/// The last piece of a run, whole or not, that says the state of the mail `state`.
+fn ended(s: &mut Session, account: Id, whole: bool, state: &str) {
+    apply_jmap_mail(s, JmapMailResult { account, email: ME.into(), whole, email_state: state.into(), ..Default::default() }).unwrap();
+}
+
+#[test]
+fn a_run_that_starts_by_itself_asks_what_changed_since_the_state_a_whole_run_left() {
+    let (mut s, account) = session();
+    // Nothing tied yet: the first run reads it all, from no state.
+    assert!(jmap_mail_request(&s, account, false, &[], true).unwrap().email_state.is_empty());
+    take(&mut s, account, Some(server()), Vec::new(), true);
+    ended(&mut s, account, true, "7-120");
+    assert_eq!(s.mailbox.jmap_states, [JmapMailState { account, session: SESSION.into(), state: "7-120".into() }]);
+    // A run that starts by itself asks from it; the owner's own Send/Receive reads every window, as it always did.
+    assert_eq!(jmap_mail_request(&s, account, false, &[], true).unwrap().email_state, "7-120");
+    assert!(jmap_mail_request(&s, account, true, &[], false).unwrap().email_state.is_empty());
+    let answer = s.run("sync.jmapRequest", &json!({"account": account})).unwrap();
+    assert_eq!(answer["emailState"].as_str(), Some("7-120"));
+    // The state is kept with the mailbox file.
+    let written = serde_json::to_value(&s.mailbox).unwrap();
+    let read: mailcraft_model::Mailbox = serde_json::from_value(written).unwrap();
+    assert_eq!(read.jmap_states, s.mailbox.jmap_states);
+    // Another server for the account: the state is of the one before, and is not asked about.
+    s.mailbox.account_mut(account).unwrap().jmap.as_mut().unwrap().session = "https://other.example.org/jmap/session".into();
+    assert!(jmap_mail_request(&s, account, false, &[], true).unwrap().email_state.is_empty());
+}
+
+#[test]
+fn a_state_is_kept_from_a_whole_run_alone_and_forgotten_when_the_server_cant_say() {
+    let (mut s, account) = session();
+    take(&mut s, account, Some(server()), Vec::new(), true);
+    // A run that was not whole, or a piece before the last, leaves none.
+    ended(&mut s, account, false, "7-1");
+    assert!(s.mailbox.jmap_states.is_empty());
+    let partial = JmapMailResult { account, email: ME.into(), whole: true, partial: true, email_state: "7-1".into(), ..Default::default() };
+    apply_jmap_mail(&mut s, partial).unwrap();
+    assert!(s.mailbox.jmap_states.is_empty());
+    // A whole run's, and the next whole run's in its place.
+    ended(&mut s, account, true, "7-1");
+    ended(&mut s, account, true, "7-2");
+    assert_eq!(state_of(&s.mailbox, account, SESSION), "7-2");
+    assert_eq!(s.mailbox.jmap_states.len(), 1);
+    // A run with no word of it leaves it as it is.
+    ended(&mut s, account, true, "");
+    assert_eq!(state_of(&s.mailbox, account, SESSION), "7-2");
+    // The server can't say (it has no `Email/changes`, or its journal can't be read): forgotten, whole or not.
+    ended(&mut s, account, false, "-");
+    assert!(s.mailbox.jmap_states.is_empty());
+    // A state that can't be asked about is none to keep.
+    ended(&mut s, account, true, "7-\n3");
+    assert!(s.mailbox.jmap_states.is_empty());
+    ended(&mut s, account, true, &"7".repeat(300));
+    assert!(s.mailbox.jmap_states.is_empty());
+}
+
+#[test]
+fn an_email_destroyed_since_is_marked_gone_wherever_it_lies_and_removed_when_the_run_is_whole() {
+    let (mut s, account) = session();
+    let inbox = vec![mail("E1", "<1@example.org>", "One", 10), mail("E2", "<2@example.org>", "Two", 20)];
+    take(
+        &mut s,
+        account,
+        Some(server()),
+        vec![window("Min", inbox, false), window("Map", vec![mail("E3", "<3@example.org>", "Three", 30)], false)],
+        true,
+    );
+    // What changed since: E1 and E3 gone, E4 new in the Inbox, an id nobody has gone too.
+    let piece = JmapMailResult {
+        account,
+        email: ME.into(),
+        destroyed: vec!["E1".into(), "E3".into(), "E99".into()],
+        pages: vec![window("Min", vec![mail("E4", "<4@example.org>", "Four", 40)], false)],
+        partial: true,
+        ..Default::default()
+    };
+    let answer = apply_jmap_mail(&mut s, piece).unwrap();
+    assert_eq!(answer["gone"].as_u64(), Some(2));
+    assert_eq!(in_folder(&s, account, "Min").iter().map(|m| server_id(m)).collect::<Vec<_>>(), ["E4", "E2", "E1"]);
+    assert!(in_folder(&s, account, "Map")[0].server.as_ref().unwrap().gone);
+    // The run ends whole: what is gone is removed, the rest stays.
+    ended(&mut s, account, true, "7-3");
+    assert_eq!(in_folder(&s, account, "Min").iter().map(|m| server_id(m)).collect::<Vec<_>>(), ["E4", "E2"]);
+    assert!(in_folder(&s, account, "Map").is_empty());
+    assert_eq!(state_of(&s.mailbox, account, SESSION), "7-3");
+}

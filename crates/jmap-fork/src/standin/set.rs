@@ -187,6 +187,7 @@ impl Data {
         };
         email.keywords = patched.keywords;
         email.mailboxes = patched.mailboxes;
+        let renamed = fresh.as_ref().map(|(_, new)| new.clone());
         let said = match fresh {
             Some((blob, new)) => {
                 (email.blob, email.id) = (blob, new.clone());
@@ -196,6 +197,14 @@ impl Data {
         };
         if changed {
             self.changed();
+            // (What became of it, for `Email/changes`: another id is another email.)
+            match renamed {
+                Some(new) => {
+                    self.went(id);
+                    self.made(&new);
+                }
+                None => self.touched(id),
+            }
         }
         Ok(said)
     }

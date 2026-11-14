@@ -159,12 +159,22 @@ fn what_waits_in_the_outbox_goes_before_a_window_is_read_so_that_sent_shows_the_
         // The list, what became of each message as it was done, then the windows, then the end.
         assert_eq!(shape(&pieces, &ids), ["list", "sent 7", "sent 8", "window Inbox", "window Drafts", "window Sent", "end"], "{kind}");
         assert_eq!(outcomes(&pieces), [(7, SendOutcome::Sent), (8, SendOutcome::Sent)], "{kind}");
-        // The requests: the list of mailboxes, who the account is (once), each message's filing and submission, and
-        // only then the first window.
+        // The requests: the state of the mail and the list of mailboxes, who the account is (once), each message's filing and
+        // submission, and only then the first window.
         let calls = server.calls();
         assert_eq!(
-            calls[..8],
-            ["Mailbox/get", "Identity/get", "Email/import", "EmailSubmission/set", "Email/import", "EmailSubmission/set", "Email/query", "Email/get"],
+            calls[..9],
+            [
+                "Email/get",
+                "Mailbox/get",
+                "Identity/get",
+                "Email/import",
+                "EmailSubmission/set",
+                "Email/import",
+                "EmailSubmission/set",
+                "Email/query",
+                "Email/get"
+            ],
             "{kind}: {calls:?}"
         );
         // Both went to the recipients named, once, with no Bcc; and the window of Sent has both copies, read.

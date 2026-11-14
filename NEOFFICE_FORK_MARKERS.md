@@ -290,11 +290,21 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`theme_contrast_tests.rs`, `theme_choice_tests.rs`). Upstream's looks stay the desktop's.
 - A hosting page's mailboxes as the last visit left them, kept in the browser's IndexedDB (`apps/mailcraft-web/src/hosted/
   cache.rs`, tests in `cache_tests.rs`): read first as the window starts, through upstream's opening screen (the marked
-  hunks of `web.rs`), so that the list shows at once and the runners bring what changed (the Neoffice server has no
-  `Email/changes`: they read their window again); written every 15 seconds while the mailbox changes. The person's
-  alone (the page's `person`, host.rs; every other copy of the browser deleted at start), only when it holds exactly
-  the mailboxes handed over (`hosted::hosted_session`), within 48 MB, the newest bodies up to 8 MB and the rest headers
-  and preview, drafts whole; none where the page says `cache: false`. `web-sys`'s IndexedDB features in `Cargo.toml`.
+  hunks of `web.rs`), so that the list shows at once and the runners bring what changed since the state the copy holds
+  (below; a copy without one has its first Send/Receive read every mailbox, `cache::resumes`); written every 15 seconds
+  while the mailbox changes. The person's alone (the page's `person`, host.rs; every other copy of the browser deleted at
+  start), only when it holds exactly the mailboxes handed over (`hosted::hosted_session`), within 48 MB, the newest bodies
+  up to 8 MB and the rest headers and preview, the drafts the server has (not one that waits to go up, nor the Outbox);
+  none where the page says `cache: false`. `web-sys`'s IndexedDB features in `Cargo.toml`.
+- A run of a JMAP account that starts by itself asks what changed since the state the last whole run left (`Email/changes`,
+  RFC 8620 §5.2): `Mailbox/get`, `Email/changes`, and `Email/get` of the created and of the updated by back-references in
+  one request when nothing changed, rather than a request or two for each mailbox (`crates/jmap-fork/src/mail/changes.rs`,
+  tests in `changes_tests.rs`; the stand-in's journal in `standin/changes.rs`; the request and the intake in
+  `crates/engine/src/cmd/jmap_mail.rs`, the emails gone in `jmap_down::take_destroyed`). Marked hunks of
+  `crates/model/src/sync/jmap.rs` (`JmapMailState`, `JMAP_STATE_UNKNOWN`, `MAX_JMAP_STATE`, `JmapMailRequest::email_state`,
+  `JmapMailResult::email_state` and `destroyed`, and `absorb`) and of `crates/model/src/mailbox.rs` (`Mailbox::jmap_states`).
+  The server can't say: every window is read, and a new state left; it has no such method: the windows of the run's scope,
+  and the state forgotten. The owner's own Send/Receive reads every window, as before. Upstream's JMAP run reads its windows.
 - « Traité » as Spark has it, in the Inbox of a hosting page's tab (`crates/ui-egui/src/mail_view/done.rs`, tests in
   `done_tests.rs`; `MailApp::done` in `lib.rs`): done is archived (`mail.archive`; upstream has no other notion of done
   nor of a group dealt with at once). A row under the pointer shows its round at its left (a click marks it done) and

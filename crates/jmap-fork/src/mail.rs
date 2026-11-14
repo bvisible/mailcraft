@@ -80,6 +80,7 @@
 //! sizes; an answer is held to the size its request can need; an entry that cannot be read is passed over;
 //! nothing is indexed, unwrapped or recursed into.
 
+mod changes;
 mod folder_changes;
 mod folders;
 mod message;
@@ -88,19 +89,23 @@ mod outgoing;
 mod tests;
 // //// Neoffice — upstream's #795 test, over this client.
 #[cfg(test)]
+mod changes_tests;
+#[cfg(test)]
 mod threads_tests;
 mod up;
 
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mailcraft_model::FolderKind;
 use mailcraft_model::sync::{
-    FolderListing, GraphMessage, GraphProgress, JmapMailRequest, JmapMailResult, JmapScope, MAX_JMAP_EMAILS, MAX_JMAP_WINDOW, MAX_THREAD_ASKS,
-    MessagePage, ThreadOf, thread_id,
+    FolderListing, GraphMessage, GraphProgress, JMAP_STATE_UNKNOWN, JmapMailRequest, JmapMailResult, JmapMailState, JmapScope, MAX_JMAP_EMAILS,
+    MAX_JMAP_STATE, MAX_JMAP_WINDOW, MAX_THREAD_ASKS, MessagePage, ThreadOf, thread_id,
 };
 use serde_json::{Value, json};
 
+use self::changes::Followed;
 use self::message::{Marks, claims, home};
 use crate::{Client, Error, Http, Secrets, result_of, valid_id};
 
@@ -178,14 +183,25 @@ pub async fn sync_mail<H: Http>(client: &Client<H>, request: &JmapMailRequest, c
         threads
     };
     log::debug!("jmap mail: the run is over (clean: {}, stopped: {}, busy: {})", out.clean(), out.stopped, out.busy_for.is_some());
+    // (A run for emails by their ids reads no window to its end: nothing it did not see is gone.)
+    let whole = out.clean() && request.emails.is_empty();
+    // The state of the mail the run read all of, or took in all the changes of, for the next run to ask what changed since; or
+    // word that the one it asked from is no good.
+    let email_state = if out.forget_state {
+        JMAP_STATE_UNKNOWN.to_string()
+    } else if whole {
+        run.state.take().unwrap_or_default()
+    } else {
+        String::new()
+    };
     emit(run.piece(JmapMailResult {
         threads,
         errors: out.lines(),
         busy_for: out.busy_for,
-        // (A run for emails by their ids reads no window to its end: nothing it did not see is gone.)
-        whole: out.clean() && request.emails.is_empty(),
+        whole,
         stopped: out.stopped,
         auth_refused: out.auth_refused,
+        email_state,
         ..Default::default()
     }));
 }
@@ -234,6 +250,9 @@ struct Outcome {
     windows: (usize, Option<String>),
     /// How many emails could not be read whole, and why the first could not.
     details: (usize, Option<String>),
+    /// How many emails the server could not give whole even alone, in a run that asked what changed (`changes.rs`): said,
+    /// and passed over.
+    unreadable: (usize, Option<String>),
     /// How many changes of messages the server did not take (they wait for the next run), and why the first
     /// was not.
     up: (usize, Option<String>),
@@ -251,6 +270,9 @@ struct Outcome {
     busy_for: Option<u32>,
     auth_refused: bool,
     stopped: bool,
+    /// The state the run was to ask what changed since can't be asked about (the server has no `Email/changes`): the
+    /// engine forgets it.
+    forget_state: bool,
 }
 
 impl Outcome {
@@ -281,6 +303,9 @@ impl Outcome {
             lines.push(format!("Couldn't read the mail in {}: {why}", plural(n, "mailbox", "mailboxes")));
         }
         if let (n @ 1.., Some(why)) = (self.details.0, &self.details.1) {
+            lines.push(format!("Couldn't read {} in full: {why}", plural(n, "message", "messages")));
+        }
+        if let (n @ 1.., Some(why)) = (self.unreadable.0, &self.unreadable.1) {
             lines.push(format!("Couldn't read {} in full: {why}", plural(n, "message", "messages")));
         }
         if let (n @ 1.., Some(why)) = (self.up.0, &self.up.1) {
@@ -348,6 +373,16 @@ struct Run<'a, H> {
     chunk: usize,
     /// The ids the engine has, by mailbox.
     known: HashMap<&'a str, HashSet<&'a str>>,
+    /// The state of the mail that the run asks what changed since (`Email/changes`, `changes.rs`), when it may: a
+    /// usable one, and a server that takes the calls of a round in one request.
+    since: Option<&'a str>,
+    /// The most changes one `Email/changes` is asked for.
+    max_changes: usize,
+    /// The answer of the first round of changes was too large: the rounds ask for the created emails apart.
+    lean: Cell<bool>,
+    /// The state of the mail as the run brought it (read before the mailboxes of a run that reads every one, or where the
+    /// changes it took in end): said in the last piece of a run that is whole.
+    state: RefCell<Option<String>>,
 }
 
 impl<'a, H: Http> Run<'a, H> {
@@ -364,6 +399,8 @@ impl<'a, H: Http> Run<'a, H> {
         for mailbox in &request.known {
             known.entry(mailbox.mailbox.as_str()).or_default().extend(mailbox.ids.iter().map(String::as_str));
         }
+        let since = Some(request.email_state.as_str())
+            .filter(|state| JmapMailState::usable(state) && request.emails.is_empty() && client.max_calls_in_request() >= changes::CALLS);
         Run {
             client,
             request,
@@ -372,6 +409,10 @@ impl<'a, H: Http> Run<'a, H> {
             window: asked.min(take),
             chunk: MAX_CHUNK.min(take),
             known,
+            since,
+            max_changes: changes::MAX_CHANGES.min(take).max(1),
+            lean: Cell::new(false),
+            state: RefCell::new(None),
         }
     }
 
@@ -426,13 +467,22 @@ impl<'a, H: Http> Run<'a, H> {
         // What was changed here goes up first, the folders before the messages: what is read then is the server after it.
         self.make_folder_changes(out, emit).await?;
         self.make_changes(out, emit).await?;
-        let places = self.list(out).await?;
+        // A run that asks what changed since a state, with nothing to send or file first, asks for the mailboxes in the
+        // same request (`changes.rs`).
+        let sending = !self.request.sends.is_empty() || !self.request.drafts.is_empty();
+        // (A run that reads every mailbox reads the state of the mail first: the next run asks what changed since.)
+        let reads_all = self.since.is_none() && matches!(self.request.scope, JmapScope::All);
+        let (mut places, mut first) = match self.since {
+            Some(since) if !sending => self.list_and_changes(since, out).await?,
+            _ => (self.listed(reads_all, out).await?, None),
+        };
         // A move into a mailbox that the server does not have can not have been made.
         if let Some(places) = places.as_ref().filter(|places| places.listing.complete) {
             let known: HashSet<&str> = places.listing.folders.iter().map(|folder| folder.id.as_str()).collect();
             out.unsure_to.retain(|to| known.contains(to.as_str()));
         }
-        if self.request.list_folders
+        // (And always in a run that asks what changed: mail may have come to a mailbox that is new here.)
+        if (self.request.list_folders || self.since.is_some())
             && let Some(places) = &places
         {
             emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
@@ -440,7 +490,46 @@ impl<'a, H: Http> Run<'a, H> {
         // What waits to be sent, and the drafts that wait to go up, go before a window is read: the copy of a
         // message that went is in the window of Sent, and a draft filed is in the window of Drafts (`outgoing.rs`).
         self.outgoing(places.as_ref(), emit).await?;
-        let targets = self.targets(places.as_ref().map(|places| &places.listing), out);
+        // What changed since the state, in every mailbox: then no window is read, but those of the folders a change gave
+        // another id. When the server can't say, every window is read; when it has no such thing, those of the scope.
+        let mut all = matches!(self.request.scope, JmapScope::All);
+        if let Some(since) = self.since {
+            match self.follow(since, first.take(), places.as_ref(), out, emit).await? {
+                Followed::Taken => {
+                    let listed = |id: &String| places.as_ref().is_none_or(|places| places.listing.folders.iter().any(|f| f.id == *id));
+                    let refolded: Vec<String> = out.refolded.iter().filter(|id| listed(id)).cloned().collect();
+                    return self.windows(&refolded, places.as_ref(), out, emit).await;
+                }
+                // Every mailbox is read, from a state read before the mailboxes are listed again.
+                Followed::ReadAll => {
+                    all = true;
+                    out.listing = None;
+                    places = self.listed(true, out).await?;
+                    if let Some(places) = &places {
+                        emit(self.piece(JmapMailResult { listing: Some(places.listing.clone()), partial: true, ..Default::default() }));
+                    }
+                }
+                Followed::Unknown => out.forget_state = true,
+                // The changes can't be had just now: the windows of the scope bring the newest mail meanwhile, and the next run
+                // asks from the same state (this one is not whole).
+                Followed::Failed(error) => {
+                    out.halted.get_or_insert_with(|| self.said(&error));
+                }
+            }
+        }
+        let targets = self.targets(places.as_ref().map(|places| &places.listing), all, out);
+        self.windows(&targets, places.as_ref(), out, emit).await
+    }
+
+    /// The windows of `targets`, one after the other: a mailbox that fails is told, and the run goes on with the next,
+    /// but not after [`MAX_FAILURES`] in a row that the server could not be had for.
+    async fn windows(
+        &self,
+        targets: &[String],
+        places: Option<&Places>,
+        out: &mut Outcome,
+        emit: &mut dyn FnMut(JmapMailResult),
+    ) -> Result<(), Stop> {
         let of = u32::try_from(targets.len()).unwrap_or(u32::MAX);
         log::debug!("jmap mail: {} mailboxes to read, a window of {}", targets.len(), self.window);
         let mut down = 0usize;
@@ -450,7 +539,7 @@ impl<'a, H: Http> Run<'a, H> {
                 break;
             }
             let number = u32::try_from(n.saturating_add(1)).unwrap_or(u32::MAX);
-            match self.read(mailbox, number, of, places.as_ref(), out, emit).await {
+            match self.read(mailbox, number, of, places, out, emit).await {
                 Ok(true) => down = 0,
                 // (Its trouble is told already.)
                 Ok(false) => down = down.saturating_add(1),
@@ -523,10 +612,32 @@ impl<'a, H: Http> Run<'a, H> {
     /// `Mailbox/get`, for every mailbox. A failure that is for this step alone is told, and the run goes on
     /// without a listing; one that says the server can not be had ends the run.
     async fn list(&self, out: &mut Outcome) -> Result<Option<Places>, Stop> {
+        self.listed(false, out).await
+    }
+
+    /// `Mailbox/get`, and before it, when `with_state`, the state of the emails (`Email/get` of none, in the same request
+    /// where the server takes two calls to one): the state of a run that reads every mailbox, read before anything of them,
+    /// so that nothing that changes while they are read is missed by the next run, which asks what changed since.
+    async fn listed(&self, with_state: bool, out: &mut Outcome) -> Result<Option<Places>, Stop> {
         self.check()?;
-        let args = json!({"accountId": self.client.account_id(), "properties": MAILBOX_PROPERTIES});
+        let account = self.client.account_id();
+        let state = ("Email/get", json!({"accountId": account, "ids": [], "properties": ["id"]}));
+        let list = ("Mailbox/get", json!({"accountId": account, "properties": MAILBOX_PROPERTIES}));
         let told = |out: &mut Outcome, error: &Error| out.listing = Some(self.said(error));
-        let mut answers = match self.client.mail_within(vec![("Mailbox/get", args)], LIST_BYTES).await {
+        let together = with_state && self.client.max_calls_in_request() >= 2;
+        if with_state && !together {
+            let asked = match self.client.mail_within(vec![state.clone()], WINDOW_BYTES).await {
+                Ok(mut answers) => answers.take(0).ok(),
+                Err(error) => match self.call_stop(error) {
+                    Stop::Failed(_) => None,
+                    stop => return Err(stop),
+                },
+            };
+            self.keep_state_of(asked.as_ref());
+            self.check()?;
+        }
+        let calls = if together { vec![state, list] } else { vec![list] };
+        let mut answers = match self.client.mail_within(calls, LIST_BYTES).await {
             Ok(answers) => answers,
             Err(error) => {
                 return match self.call_stop(error) {
@@ -539,7 +650,26 @@ impl<'a, H: Http> Run<'a, H> {
                 };
             }
         };
-        match answers.take(0) {
+        if together {
+            self.keep_state_of(answers.take(0).ok().as_ref());
+        }
+        self.places_of(answers.take(usize::from(together)), out)
+    }
+
+    /// The state an `Email/get` answered with, as the run's: one that can't be had or is no state says the server can't say.
+    fn keep_state_of(&self, answer: Option<&Value>) {
+        let state = answer.and_then(|answer| answer.get("state")).and_then(Value::as_str).filter(|state| state.len() <= MAX_JMAP_STATE);
+        if state.is_none_or(|state| !JmapMailState::usable(state)) {
+            log::info!("jmap mail: the server gave no state of the mail to ask what changed since; the next runs read their windows");
+        }
+        *self.state.borrow_mut() = Some(state.map_or_else(|| JMAP_STATE_UNKNOWN.to_string(), str::to_string));
+    }
+
+    /// What the answer to `Mailbox/get` says of the mailboxes: a failure that is for this step alone is told, and the run
+    /// goes on without them; one that says the server can not be had ends the run.
+    fn places_of(&self, answer: Result<Value, Error>, out: &mut Outcome) -> Result<Option<Places>, Stop> {
+        let told = |out: &mut Outcome, error: &Error| out.listing = Some(self.said(error));
+        match answer {
             Ok(answer) => {
                 let places = folders::listing_with_counts(&answer).map(|(listing, counts)| Places::of(listing, counts));
                 match &places {
@@ -562,14 +692,14 @@ impl<'a, H: Http> Run<'a, H> {
     }
 
     /// The mailboxes to read, in order: the Inbox, then the ones the request names (a light run) or the
-    /// special ones and the rest (a run that reads all). Without a listing, those the request names, as
-    /// they are.
-    fn targets(&self, listing: Option<&FolderListing>, out: &mut Outcome) -> Vec<String> {
+    /// special ones and the rest (a run that reads all, or one that must: `all`). Without a listing, those the request
+    /// names, as they are.
+    fn targets(&self, listing: Option<&FolderListing>, all: bool, out: &mut Outcome) -> Vec<String> {
         let also: Vec<&str> = match &self.request.scope {
-            JmapScope::Light { also } => also.iter().map(String::as_str).filter(|id| valid_id(id)).take(MAX_ALSO).collect(),
-            JmapScope::All => Vec::new(),
+            JmapScope::Light { also } if !all => also.iter().map(String::as_str).filter(|id| valid_id(id)).take(MAX_ALSO).collect(),
+            _ => Vec::new(),
         };
-        let light = matches!(self.request.scope, JmapScope::Light { .. });
+        let light = !all;
         let refolded = out.refolded.clone();
         let mut order: Vec<String> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
