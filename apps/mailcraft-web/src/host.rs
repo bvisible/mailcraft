@@ -170,7 +170,10 @@
 //!
 //! It is read on this page, or on the page that frames it when that one is of the same origin (reading another
 //! origin's window throws, which reads as nothing). Nothing secret travels in the address. With host accounts,
-//! MailCraft keeps no mail, account or secret between visits: only the interface settings.
+//! MailCraft keeps no secret between visits: the interface settings, and a copy of the mailboxes as the last visit left
+//! them for the person the page names (`person: "jane@example.com"`, optional), in the browser's IndexedDB, unless the
+//! page says `cache: false` (hosted/cache.rs). A page that signs the person out deletes it:
+//! `indexedDB.deleteDatabase("neomail")`.
 // Read by the start of the browser shell (web.rs), the pictures through the page too (`fetch_url`); the name of the
 // person signed in (`author`) waits for the step that uses it.
 #![allow(dead_code)]
@@ -418,6 +421,18 @@ fn complete(a: &HostAccount) -> bool {
 /// The product's name the person reads (Neoffice's "NeoMail"), if the page gives one.
 pub fn product() -> Option<String> {
     Some(text(&handed()?, "product")).filter(|name| !name.is_empty() && name.chars().count() <= 40)
+}
+
+// //// Neoffice — whose the window is, and whether its mailboxes may be kept in this browser between visits (hosted/cache.rs).
+/// The person signed in to the page, as it names them (`person`: their address or their id on the site), if it does: the
+/// copy of the mailboxes kept in this browser is theirs alone.
+pub fn person() -> Option<String> {
+    Some(text(&handed()?, "person")).filter(|who| !who.trim().is_empty() && who.chars().count() <= 320)
+}
+
+/// Whether the page lets the window keep its mailboxes in this browser between visits: unless it says `cache: false`.
+pub fn keeps_copy() -> bool {
+    handed().and_then(|host| get(&host, "cache")).and_then(|v| v.as_bool()) != Some(false)
 }
 
 /// The language of the person the page is for (a tag such as `fr` or `de-CH`), if it says one.

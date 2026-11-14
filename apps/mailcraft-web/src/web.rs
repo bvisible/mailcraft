@@ -61,13 +61,51 @@ pub fn start() {
                     let app = if !hosted.is_empty() {
                         // //// Neoffice — and the page asks before it is left while a note's change waits (hosted/leave.rs).
                         crate::hosted::leave::install();
-                        let mut app = hosted_app(&hosted, inbox.clone(), cc.egui_ctx.clone());
-                        match stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok()) {
-                            Some(ui) => app.apply_prefs(ui),
-                            None => app.fresh_prefs(),
+                        // //// Neoffice — the copy of these mailboxes the last visit left in this browser is read first (hosted/cache.rs):
+                        // //// Neoffice — the window shows it at once, and its runners bring what changed since. None where the page
+                        // //// Neoffice — says `cache: false`; the person's alone (`person`), every other copy deleted.
+                        let prefs = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok());
+                        let key = crate::host::keeps_copy().then(|| crate::hosted::cache::key(crate::host::person().as_deref(), &hosted));
+                        if key.is_none() {
+                            crate::hosted::cache::forget_all();
                         }
-                        // //// Neoffice — (its mailboxes were added by hosted_app, not by upstream's page hook)
-                        app
+                        let (tx, rx) = std::sync::mpsc::channel();
+                        let (ctx, wake, first_prefs, build_inbox) = (cc.egui_ctx.clone(), cc.egui_ctx.clone(), prefs.clone(), inbox.clone());
+                        let (accounts, writes) = (hosted.clone(), key.clone());
+                        let build: mailcraft_ui_egui::opening::Build = Box::new(move |arrival| {
+                            let kept = arrival.mailbox.accounts.iter().any(|a| a.jmap.is_some()).then_some(arrival.mailbox);
+                            let from_copy = kept.is_some();
+                            let mut app = hosted_app(&accounts, kept, build_inbox, ctx);
+                            match prefs {
+                                Some(ui) => app.apply_prefs(ui),
+                                None => app.fresh_prefs(),
+                            }
+                            if let Some(key) = writes {
+                                crate::hosted::cache::start(key, app.session.rev(), from_copy);
+                            }
+                            // //// Neoffice — (its mailboxes were added by hosted_app, not by upstream's page hook)
+                            app
+                        });
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let began = mailcraft_ui_egui::now_ms();
+                            let bytes = match &key {
+                                Some(key) => crate::hosted::cache::read(key).await,
+                                None => None,
+                            };
+                            let size = bytes.as_ref().map_or(0, Vec::len);
+                            let kept = bytes.and_then(|bytes| crate::hosted::cache::decode(&bytes, &hosted));
+                            if kept.is_some() {
+                                log::info!(
+                                    "mailcraft-web: the copy kept in this browser ({size} bytes) read in {:.0} ms",
+                                    mailcraft_ui_egui::now_ms() - began
+                                );
+                            }
+                            let _ = tx.send(Arrival::opened(kept.unwrap_or_else(|| Mailbox::with_local_account("", "")), None));
+                            wake.request_repaint();
+                        });
+                        let opening = mailcraft_ui_egui::opening::Opening::new(rx, Default::default(), build);
+                        let locale = web_sys::window().and_then(|w| w.navigator().language());
+                        MailApp::opening(opening, first_prefs, locale)
                     } else {
                         let prefs = stored(UI_KEY).and_then(|text| serde_json::from_str::<UiState>(&text).ok());
                         // The window is there at once, and the mailbox is read from the browser's
@@ -205,6 +243,8 @@ impl eframe::App for WebShell {
             crate::kept::frame(&mut self.app);
             // //// Neoffice — and the kind of sender of the Inbox's messages, for the tabs, is asked of the server and put (streams.rs).
             crate::streams::frame(&mut self.app);
+            // //// Neoffice — and the mailboxes are kept in this browser for the next visit, when they changed (hosted/cache.rs).
+            crate::hosted::cache::tick(&mut self.app);
             // //// Neoffice — and what the Échanges pane asks of the server is asked, and what came is put (exchanges.rs).
             crate::exchanges::frame(&mut self.app);
             crate::host_dirty::tell(self.app.unsent_work() || crate::kept::pending());
@@ -394,24 +434,11 @@ fn pictures(ctx: egui::Context) -> Box<dyn Fn(String) -> std::sync::mpsc::Receiv
 /// The mail program of a hosting page (host.rs): the mailboxes it handed over and nothing else, no sample. Their
 /// mail is their servers', read again at each visit; their credentials are the page's, in this tab's memory
 /// only, and renewed by it. Nothing of them is kept in this browser: only the interface settings are.
-fn hosted_app(accounts: &[crate::host::HostAccount], inbox: Inbox, ctx: egui::Context) -> MailApp {
-    let mut session = Session::new(Mailbox::with_local_account("", ""));
+// //// Neoffice — the mailboxes as the last visit left them in this browser (`kept`, hosted/cache.rs) when they are these, else set up anew.
+fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbox: Inbox, ctx: egui::Context) -> MailApp {
+    let mut session = crate::hosted::hosted_session(accounts, kept);
     for a in accounts {
-        let added = session.run(
-            "account.add",
-            &serde_json::json!({
-                "kind": "jmap",
-                "email": a.email,
-                "displayName": a.name,
-                "username": a.username,
-                "jmap": {"session": a.session, "bearer": a.bearer},
-            }),
-        );
-        // Neither the address nor the server's goes into the console.
-        let Some(id) = added.ok().and_then(|v| v["id"].as_u64()) else {
-            log::error!("a mailbox the page handed over couldn't be set up");
-            continue;
-        };
+        let Some(id) = crate::hosted::account_of(&session, &a.email) else { continue };
         // Its signature, as the page gives it, with a company's logo by its bytes: new messages, replies and forwards
         // start with it (page_signature.rs).
         crate::page_signature::set_up(&mut session, id, &a.email, &a.signature);

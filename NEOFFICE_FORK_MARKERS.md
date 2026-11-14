@@ -288,6 +288,13 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   in the dark theme (`reading/layout.rs`); no accent swatches in File › Options there (`backstage.rs`). Nora's pills and
   cards take the signal's tint (`nora/look.rs`). The contrast pairs of upstream's looks hold for it
   (`theme_contrast_tests.rs`, `theme_choice_tests.rs`). Upstream's looks stay the desktop's.
+- A hosting page's mailboxes as the last visit left them, kept in the browser's IndexedDB (`apps/mailcraft-web/src/hosted/
+  cache.rs`, tests in `cache_tests.rs`): read first as the window starts, through upstream's opening screen (the marked
+  hunks of `web.rs`), so that the list shows at once and the runners bring what changed (the Neoffice server has no
+  `Email/changes`: they read their window again); written every 15 seconds while the mailbox changes. The person's
+  alone (the page's `person`, host.rs; every other copy of the browser deleted at start), only when it holds exactly
+  the mailboxes handed over (`hosted::hosted_session`), within 48 MB, the newest bodies up to 8 MB and the rest headers
+  and preview, drafts whole; none where the page says `cache: false`. `web-sys`'s IndexedDB features in `Cargo.toml`.
 - « Traité » as Spark has it, in the Inbox of a hosting page's tab (`crates/ui-egui/src/mail_view/done.rs`, tests in
   `done_tests.rs`; `MailApp::done` in `lib.rs`): done is archived (`mail.archive`; upstream has no other notion of done
   nor of a group dealt with at once). A row under the pointer shows its round at its left (a click marks it done) and

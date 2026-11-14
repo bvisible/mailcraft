@@ -212,3 +212,21 @@ fn done_screens_in_french() {
         }
     }
 }
+
+#[test]
+fn the_inbox_opened_from_favorites_has_it_too() {
+    let mut w = inbox(true);
+    let inbox_id = w.state().session.view.folder;
+    // The Inbox under Favorites (it is the same folder): opened from there, a row's round and a group's.
+    if !mailcraft_engine::cmd::folder::favorites(&w.state().session).contains(&inbox_id) {
+        w.state_mut().execute("folder.favorite", json!({"id": inbox_id})).unwrap();
+    }
+    w.state_mut().execute("folder.select", json!({"kind": "sent"})).unwrap();
+    w.run_steps(3);
+    click(&mut w, "folder", inbox_id);
+    assert_eq!(w.state().session.view.folder, inbox_id);
+    let first = drawn(&mut w)[0];
+    hover(&mut w, "message", first);
+    assert!(has(&w, "doneRound", first));
+    assert!(any_group_round(&mut w));
+}

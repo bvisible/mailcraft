@@ -5,13 +5,16 @@
 
 //! What makes a browser tab a hosting page's (host.rs, web.rs): its mailboxes are read by runners that take the page's
 //! credentials, their calendars and address books by a job beside their mail ([`mailcraft_ui_egui::Services::jmap_pim`]), and
-//! nothing of them is kept between visits: no mailbox in the browser's storage, no autosave, and a session that keeps
-//! nothing of its own ([`mailcraft_engine::Session::keeps_local`]).
+//! nothing of them is kept as the window's own: no mailbox file nor `localStorage`, no autosave, and a session that keeps
+//! nothing of its own ([`mailcraft_engine::Session::keeps_local`]). What the last visit left is kept apart, in the browser's
+//! IndexedDB, as the signed-in person's copy to show at once at the next visit ([`cache`]), never a secret.
 // Outside the browser only the tests use it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
 use std::sync::mpsc::Receiver;
 
+/// The mailboxes as the last visit left them, kept in the browser to be shown at once at the next one.
+pub mod cache;
 /// A hosting page's tab asks before it is left while a change of a note waits (in the browser alone).
 #[cfg(target_arch = "wasm32")]
 pub mod leave;
@@ -58,8 +61,51 @@ pub struct Runners {
     pub jmap_pim: Box<dyn Fn(JmapPimJob) -> Receiver<JmapPimResult>>,
 }
 
+/// The session of a hosting page's mailboxes: the copy the last visit left in this browser ([`cache`]) when it holds
+/// exactly them, else a new one with each of them set up (a JMAP account at its session). Its accounts' ids, by address.
+pub fn hosted_session(accounts: &[HostAccount], kept: Option<mailcraft_model::Mailbox>) -> Session {
+    if let Some(mut mailbox) = kept.filter(|m| cache::holds(m, accounts)) {
+        // Who each mailbox is, as the page says it now: its name on mail, its login, how its secret goes.
+        for a in accounts {
+            let email = a.email.trim().to_lowercase();
+            if let Some(kept) = mailbox.accounts.iter_mut().find(|k| k.jmap.is_some() && k.email.trim().to_lowercase() == email) {
+                kept.display_name.clone_from(&a.name);
+                kept.username.clone_from(&a.username);
+                if let Some(server) = kept.jmap.as_mut() {
+                    server.bearer = a.bearer;
+                }
+            }
+        }
+        return Session::new(mailbox);
+    }
+    let mut session = Session::new(mailcraft_model::Mailbox::with_local_account("", ""));
+    for a in accounts {
+        let added = session.run(
+            "account.add",
+            &serde_json::json!({
+                "kind": "jmap",
+                "email": a.email,
+                "displayName": a.name,
+                "username": a.username,
+                "jmap": {"session": a.session, "bearer": a.bearer},
+            }),
+        );
+        // Neither the address nor the server's goes into the console.
+        if added.is_err() {
+            log::error!("a mailbox the page handed over couldn't be set up");
+        }
+    }
+    session
+}
+
+/// The id of the account of the mailbox at `email` in `session`, as [`hosted_session`] set it up or found it.
+pub fn account_of(session: &Session, email: &str) -> Option<u64> {
+    let email = email.trim().to_lowercase();
+    session.mailbox.accounts.iter().find(|a| a.jmap.is_some() && a.email.trim().to_lowercase() == email).map(|a| a.id)
+}
+
 /// The window of a hosting page over `session` (its mailboxes set up): `services` with the page's runners in place of
-/// the tab's own and nothing kept between visits.
+/// the tab's own and nothing kept between visits but the copy of [`cache`], which the browser shell writes.
 pub fn hosted_window(mut session: Session, mut services: Services, runners: Runners) -> MailApp {
     services.persist = None;
     services.jmap = Some(runners.jmap);
