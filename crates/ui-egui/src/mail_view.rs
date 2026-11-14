@@ -19,6 +19,8 @@ use crate::{MailApp, icons};
 mod server_rows;
 // //// Neoffice — the inbox's tabs by kind of sender, the boxes to tick messages and the bar to archive them.
 mod stream_tabs;
+// //// Neoffice — « Traité » as Spark has it: a round to mark a row or a group done, a row's quick actions, what was done (done.rs).
+pub(crate) mod done;
 
 /// What a drag out of the message list carries: the messages to file in the folder they are
 /// let go over (`nav::folder_row` takes them).
@@ -628,6 +630,10 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     if streams.is_some() && stream_tabs::bar_shown(app, &rows) {
         stream_tabs::bar(app, ui, &rows);
     }
+    // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs).
+    done::section(app, ui);
+    // //// Neoffice — the room a row and a group's heading give their round to mark them done.
+    let lead = if done::offered(app) { done::LEAD } else { 0.0 };
     // A search covers what is here: of a message not fetched yet, its headers and preview (R3.2).
     if !app.session.view.search.trim().is_empty() {
         // (Counted as the list was built, not at every frame.)
@@ -768,14 +774,19 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
             if let Some(group) = &row.group {
                 // Text on the list itself: no bar, no box.
                 let gr = Rect::from_min_max(pos2(origin.x + ROW_INSET, origin.y + top - GROUP_H), pos2(origin.x + width, origin.y + top));
+                // //// Neoffice — after the round that marks the whole group done (done.rs), where it is offered (`lead`).
                 paint_clipped(
                     ui.painter(),
-                    pos2(gr.min.x + 16.0, gr.center().y + 3.0),
-                    gr.width() - 22.0,
+                    pos2(gr.min.x + 16.0 + lead, gr.center().y + 3.0),
+                    gr.width() - 22.0 - lead,
                     group_name(group, row.category),
                     semibold(GROUP_TEXT),
                     t.group_label,
                 );
+                // //// Neoffice — the round that marks the whole group done (done.rs).
+                if lead > 0.0 {
+                    done::group_round(app, ui, gr, &rows, i);
+                }
             }
             let rect = Rect::from_min_size(pos2(origin.x, origin.y + top), vec2(width, row_h));
             message_row(app, ui, row, rect, &drawn, focus);
@@ -946,9 +957,13 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let resp = ui.interact(rect, ui.scope_id().with(("msg", key)), Sense::click_and_drag());
     app.hit.add("message", row.id, rect);
     let unread = row.unread > 0;
+    // //// Neoffice — « Traité » (done.rs): its round left of the read switch, which moves right by the room it takes.
+    let done = done::offered(app);
+    let lead = if done { done::LEAD } else { 0.0 };
     // The strip down the left edge is a switch between read and unread. It sits on top of the
     // row, so a click there changes the mark and leaves the selection alone.
-    let strip = Rect::from_min_max(rect.min, pos2(rect.min.x + READ_STRIP, rect.max.y));
+    // //// Neoffice — after the round of « Traité » (`lead`).
+    let strip = Rect::from_min_max(pos2(rect.min.x + lead, rect.min.y), pos2(rect.min.x + lead + READ_STRIP, rect.max.y));
     let read_resp = ui
         .interact(strip, ui.scope_id().with(("msg_read", key)), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -960,12 +975,14 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // With tighter spacing a row's lines move up by half of what it gave up (`view.density`).
     let lift = tightening(app.session.prefs.tight_spacing, one) / 2.0;
     let (line1, line2) = if one { (line1, line2) } else { (line1 - lift, line2 - lift) };
-    // //// Neoffice — in the inbox's tabs by kind of sender a box ticks the row (what a Ctrl+click does), on top of the row.
-    let tick = stream_tabs::shown(ui).then(|| stream_tabs::row_box(ui, key, rect, line1));
+    // //// Neoffice — in the inbox's tabs by kind of sender a box ticks the row (what a Ctrl+click does), on top of the row; after
+    // //// Neoffice — the round of « Traité » where it is offered (`lead`, done.rs).
+    let tick = stream_tabs::shown(ui).then(|| stream_tabs::row_box(ui, key, rect.translate(vec2(lead, 0.0)), line1));
     // A conversation's row has an arrow between the read switch and the text (#503): a click opens
     // or closes it, as Right and Left do.
     let conversation = row.conversation();
-    let arrow_rect = Rect::from_min_max(pos2(strip.max.x, line1 - 11.0), pos2(rect.min.x + TEXT_LEFT, line1 + 11.0));
+    // //// Neoffice — after the round of « Traité » where it is offered (`lead`).
+    let arrow_rect = Rect::from_min_max(pos2(strip.max.x, line1 - 11.0), pos2(rect.min.x + lead + TEXT_LEFT, line1 + 11.0));
     let arrow = conversation.then(|| {
         let tip = if row.open { tl!("Hide the messages of this conversation") } else { tl!("Show the messages of this conversation") };
         app.hit.add("conversationArrow", row.id, arrow_rect);
@@ -982,7 +999,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let flag_rect = Rect::from_center_size(pos2(rect.max.x - QUICK_TARGET.x / 2.0, line1), QUICK_TARGET);
     let delete_rect = flag_rect.translate(vec2(-(QUICK_TARGET.x + QUICK_GAP), 0.0));
     let flagged = m.flag == FlagStatus::Flagged;
-    let quick = over.then(|| {
+    // //// Neoffice — where « Traité » is offered, the row's quick actions are Spark's (done.rs), kept while its move menu is open.
+    let spark = (done && (over || done::menu_open(ui, key))).then(|| done::bar(app, ui, key, row, &m, rect, line1));
+    let quick = (over && !done).then(|| {
         let delete = ui.interact(delete_rect, ui.scope_id().with(("msg_delete", key)), Sense::click()).on_hover_text(tl!("Delete"));
         let flag = ui.interact(flag_rect, ui.scope_id().with(("msg_flag", key)), Sense::click()).on_hover_text(if flagged {
             tl!("Clear flag")
@@ -1021,7 +1040,10 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         let edge = if focus { t.selection_edge } else { t.selection_edge_unfocused };
         p.rect_stroke(card, 6.0, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
-    if !selected && (resp.hovered() || read_resp.hovered() || arrow.as_ref().is_some_and(egui::Response::hovered) || quick.is_some()) {
+    // //// Neoffice — or Spark's quick actions are up (done.rs).
+    if !selected
+        && (resp.hovered() || read_resp.hovered() || arrow.as_ref().is_some_and(egui::Response::hovered) || quick.is_some() || spark.is_some())
+    {
         // The pointer's shade goes over a flagged row's tint.
         p.rect_filled(card, 6.0, t.hover_subtle);
     }
@@ -1032,9 +1054,12 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     }
     // Unread wears a dot in the accent; under the pointer a read message shows a ring, so the
     // switch can be found.
-    let dot = pos2(body.min.x + 13.0, line1);
+    // //// Neoffice — clear of the box that ticks the row (its left edge, 7 further right): left of it where the box is drawn; and
+    // //// Neoffice — after the round of « Traité » (`lead`). In the Neoffice look the dot is the signal (a field, not text).
+    let dot = pos2(body.min.x + lead + if tick.is_some() { 5.0 } else { 13.0 }, line1);
     if unread {
-        p.circle_filled(dot, 4.0, t.accent);
+        p.circle_filled(dot, 4.0, if t.neoffice { t.selection_edge } else { t.accent });
+        app.hit.add("messageDot", row.id, Rect::from_center_size(dot, vec2(8.0, 8.0)));
     } else if read_resp.hovered() {
         p.circle_stroke(dot, 3.5, Stroke::new(1.2, t.selection_edge_unfocused));
     }
@@ -1079,7 +1104,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // The picture (or the initials) of who wrote it, or of who it went to.
     let pictured = app.ui.sender_images && !one;
     // A message under its open conversation starts a step further in (#503).
-    let text_left = TEXT_LEFT + if row.under.is_some() { UNDER_INDENT } else { 0.0 };
+    // //// Neoffice — after the round of « Traité » where it is offered (`lead`).
+    let text_left = TEXT_LEFT + lead + if row.under.is_some() { UNDER_INDENT } else { 0.0 };
     if pictured {
         let who = if outgoing { m.to.first().unwrap_or(&m.from) } else { &m.from };
         let center = pos2(rect.min.x + text_left + AVATAR_RADIUS, rect.min.y + AVATAR_Y);
@@ -1111,6 +1137,10 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         }
         // The marks keep clear of delete, so a click meant for the row doesn't land on it.
         x = delete_rect.min.x - QUICK_GAP;
+    } else if let Some(bar) = &spark {
+        // //// Neoffice — Spark's quick actions (done.rs), and the marks keep clear of them.
+        done::paint_bar(ui, &t, bar, row, &m);
+        x = bar.left - QUICK_GAP;
     } else {
         let flag = Rect::from_center_size(flag_rect.center(), vec2(12.0, 12.0));
         match m.flag {
@@ -1122,7 +1152,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // In a single line the time comes before the marks, and the quick actions take its place
     // while the pointer is over the row.
     let mut one_date_w = 0.0;
-    if one && quick.is_none() {
+    // //// Neoffice — or Spark's (done.rs).
+    if one && quick.is_none() && spark.is_none() {
         one_date_w = p.text(pos2(time_end, line1), Align2::RIGHT_CENTER, &date, date_font.clone(), date_color).width();
         x = time_end - one_date_w - 10.0;
     }
@@ -1266,6 +1297,15 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     if resp.drag_started() {
         let ids: Vec<Id> = if selected { app.session.acting_on() } else { row.members.clone() };
         resp.dnd_set_drag_payload(MessageDrag(ids));
+    }
+    // //// Neoffice — the round of « Traité », drawn over the row, and Spark's quick actions (done.rs).
+    if done::row_round(app, ui, key, row, rect, line1, done && over) {
+        return;
+    }
+    if let Some(bar) = &spark
+        && done::bar_clicks(app, bar, row)
+    {
+        return;
     }
     if let Some((delete, flag)) = &quick {
         if delete.clicked() {

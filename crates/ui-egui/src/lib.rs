@@ -1950,6 +1950,8 @@ pub struct MailApp {
     pub(crate) nora: nora::Nora,
     // //// Neoffice — the Échanges pane's state, and what it asks of the host (exchanges.rs).
     pub exchanges: exchanges::Exchanges,
+    // //// Neoffice — what was marked done in this session, as Spark's « Traité » (mail_view/done.rs).
+    pub(crate) done: mail_view::done::Done,
     control_rx: Option<Receiver<ControlRequest>>,
     shot_token: u64,
     queued_shots: Vec<(u64, f64, u32)>,
@@ -2232,6 +2234,8 @@ impl MailApp {
             nora: Default::default(),
             // //// Neoffice — the Échanges pane is shut.
             exchanges: Default::default(),
+            // //// Neoffice — nothing marked done yet.
+            done: Default::default(),
             control_rx: None,
             shot_token: 0,
             queued_shots: Vec::new(),

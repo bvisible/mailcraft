@@ -288,6 +288,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   in the dark theme (`reading/layout.rs`); no accent swatches in File › Options there (`backstage.rs`). Nora's pills and
   cards take the signal's tint (`nora/look.rs`). The contrast pairs of upstream's looks hold for it
   (`theme_contrast_tests.rs`, `theme_choice_tests.rs`). Upstream's looks stay the desktop's.
+- « Traité » as Spark has it, in the Inbox of a hosting page's tab (`crates/ui-egui/src/mail_view/done.rs`, tests in
+  `done_tests.rs`; `MailApp::done` in `lib.rs`): done is archived (`mail.archive`; upstream has no other notion of done
+  nor of a group dealt with at once). A row under the pointer shows its round at its left (a click marks it done) and
+  Spark's quick actions on its right (read or unread, pin, flag, move, delete: those the window has) in place of
+  upstream's two; each group's heading has its round (the whole group done); « Marqués comme traités (N) » above the
+  list keeps what was done in this session, with « Annuler » for each and « Tout annuler ». The rows and headings give
+  the round its room (`done::LEAD`, the marked hunks of `mail_view.rs`). The unread dot keeps clear of the box that
+  ticks a row in the inbox's tabs (it moves left of it), and in the Neoffice look it is the signal.
 - « Trier avec Nora » (`crates/ui-egui/src/nora/sorting.rs`, `sorting_view.rs`, tests in `sorting_tests.rs` and
   `sorting_view_tests.rs`): in a hosting page's tab whose host carries its calls (`Host::sorting`: the page's own `fetch`, or
   `window.mailcraftNoraSorting` of a host that makes the calls itself, Neodesk's shell once its `NORA_SORTING_METHODS` has

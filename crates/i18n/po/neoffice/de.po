@@ -4181,3 +4181,27 @@ msgid "{n} message from employees"
 msgid_plural "{n} messages from employees"
 msgstr[0] "{n} Nachricht von Mitarbeitenden"
 msgstr[1] "{n} Nachrichten von Mitarbeitenden"
+
+# « Traité » as Spark has it: a round marks a message, or a group, done (archived); the section that keeps what was done.
+msgid "Mark as done"
+msgstr "Als erledigt markieren"
+
+msgid "Mark this message as done"
+msgid_plural "Mark these {n} messages as done"
+msgstr[0] "Diese Nachricht als erledigt markieren"
+msgstr[1] "Diese {n} Nachrichten als erledigt markieren"
+
+msgid "Undo all"
+msgstr "Alle rückgängig machen"
+
+msgid "Hide what was marked as done"
+msgstr "Erledigte ausblenden"
+
+msgid "Show what was marked as done"
+msgstr "Erledigte anzeigen"
+
+msgid "Marked as done ({count})"
+msgstr "Als erledigt markiert ({count})"
+
+msgid "Put it back where it was"
+msgstr "Zurück an den ursprünglichen Ort verschieben"

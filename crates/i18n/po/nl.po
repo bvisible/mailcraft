@@ -192,7 +192,7 @@ msgid "(no recipients)"
 msgstr "(geen ontvangers)"
 
 #. interface, what a command says, why a mail server couldn't be used
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "(no subject)"
 msgstr "(geen onderwerp)"
@@ -3003,7 +3003,7 @@ msgid "Clear filters"
 msgstr "Filters wissen"
 
 #. interface
-#: crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs
 #, fuzzy
 msgid "Clear flag"
 msgstr "Markering wissen"
@@ -3914,7 +3914,7 @@ msgid "Default"
 msgstr "Standaard"
 
 #. command label, interface, name, ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/junk.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/notes.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/tasks.rs crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/signatures.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Delete"
 msgstr "Verwijderen"
@@ -5267,7 +5267,7 @@ msgid "Flag Message"
 msgstr "Bericht markeren"
 
 #. interface
-#: crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs
 #, fuzzy
 msgid "Flag for follow-up"
 msgstr "Markeren voor opvolgen"
@@ -6146,6 +6146,11 @@ msgstr "Deze agenda verbergen"
 #, fuzzy
 msgid "Hide this message's warning again"
 msgstr "De waarschuwing van dit bericht weer verbergen"
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Hide what was marked as done"
+msgstr ""
 
 #. interface, what a command says
 #: crates/engine/src/cmd/tasks/status.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/forms.rs
@@ -8152,14 +8157,19 @@ msgstr "Als gelezen markeren"
 msgid "Mark as Unread"
 msgstr "Als ongelezen markeren"
 
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Mark as done"
+msgstr ""
+
 #. interface, name
-#: crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/forms.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs
 #, fuzzy
 msgid "Mark as read"
 msgstr "Als gelezen markeren"
 
 #. interface
-#: crates/ui-egui/src/mail_view.rs
+#: crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs
 #, fuzzy
 msgid "Mark as unread"
 msgstr "Als ongelezen markeren"
@@ -8167,6 +8177,18 @@ msgstr "Als ongelezen markeren"
 #. interface
 #: crates/ui-egui/src/security.rs
 msgid "Mark as verified"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Mark this message as done"
+msgid_plural "Mark these {n} messages as done"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Marked as done ({count})"
 msgstr ""
 
 #. interface
@@ -8521,7 +8543,7 @@ msgid "Most of the sender's name is characters that aren't shown, and the messag
 msgstr "Het grootste deel van de naam van de afzender bestaat uit tekens die niet worden getoond, en het bericht kwam van {real}."
 
 #. interface, ribbon, ribbon location
-#: crates/engine/src/cmd/gmail_move.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/gmail_move.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Move"
 msgstr "Verplaatsen"
@@ -11108,8 +11130,8 @@ msgstr "Afbeeldingen op het web worden gedownload in elk bericht dat u opent. De
 msgid "Pictures: {n} KB of {max} KB"
 msgstr "Afbeeldingen: {n} KB van {max} KB"
 
-#. command label, ribbon
-#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/ribbon.rs
+#. command label, interface, ribbon
+#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Pin"
 msgstr "Vastmaken"
@@ -11404,6 +11426,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Purple category"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Put it back where it was"
 msgstr ""
 
 #. interface
@@ -13770,6 +13797,11 @@ msgstr "Gebruikersnamen, weergavenamen of echte namen weergeven"
 #, fuzzy
 msgid "Show week numbers in the Month view and the date navigator"
 msgstr "Weeknummers weergeven in de maandweergave en de datumnavigator"
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Show what was marked as done"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -17990,7 +18022,7 @@ msgid "Underline"
 msgstr "Onderstrepen"
 
 #. command label, interface, name
-#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
+#: crates/engine/src/cmd/edit.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
 #, fuzzy
 msgid "Undo"
 msgstr "Ongedaan maken"
@@ -18000,6 +18032,11 @@ msgstr "Ongedaan maken"
 #, fuzzy
 msgid "Undo Typing"
 msgstr "Typen ongedaan maken"
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Undo all"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/assist.rs
@@ -18016,6 +18053,11 @@ msgstr ""
 #, fuzzy
 msgid "Undo {what}"
 msgstr "{what} ongedaan maken"
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Unpin"
+msgstr ""
 
 #. interface, name
 #: crates/engine/src/session.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/folder_properties.rs
