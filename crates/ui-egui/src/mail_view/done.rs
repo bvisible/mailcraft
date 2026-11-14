@@ -180,7 +180,7 @@ pub(super) fn group_round(app: &mut MailApp, ui: &Ui, heading: Rect, rows: &[Row
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(at, ui.scope_id().with(("group_done", first)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let n = group_ids(rows, first).len();
-    let resp = round_tip(app, resp, &tln!(n, "Mark this message as done", "Mark these {n} messages as done"));
+    let resp = round_tip(app, resp, &tln!(n, "Mark {n} message as done", "Mark these {n} messages as done"));
     app.hit.add("doneGroup", first as u64, at);
     let over = ui.rect_contains_pointer(heading.union(at));
     if over || resp.hovered() {

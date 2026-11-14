@@ -534,9 +534,9 @@ msgstr[1] "{n} berichten van medewerkers"
 msgid "Mark as done"
 msgstr "Markeren als afgehandeld"
 
-msgid "Mark this message as done"
+msgid "Mark {n} message as done"
 msgid_plural "Mark these {n} messages as done"
-msgstr[0] "Dit bericht markeren als afgehandeld"
+msgstr[0] "{n} bericht markeren als afgehandeld"
 msgstr[1] "Deze {n} berichten markeren als afgehandeld"
 
 msgid "Undo all"

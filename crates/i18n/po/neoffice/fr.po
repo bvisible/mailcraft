@@ -5171,9 +5171,9 @@ msgstr[1] "{n} messages d’employés"
 msgid "Mark as done"
 msgstr "Marquer comme traité"
 
-msgid "Mark this message as done"
+msgid "Mark {n} message as done"
 msgid_plural "Mark these {n} messages as done"
-msgstr[0] "Marquer ce message comme traité"
+msgstr[0] "Marquer {n} message comme traité"
 msgstr[1] "Marquer ces {n} messages comme traités"
 
 msgid "Undo all"

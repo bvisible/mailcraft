@@ -7004,7 +7004,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view/done.rs
-msgid "Mark this message as done"
+msgid "Mark {n} message as done"
 msgid_plural "Mark these {n} messages as done"
 msgstr[0] ""
 msgstr[1] ""
