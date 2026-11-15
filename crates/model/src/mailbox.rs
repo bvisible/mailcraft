@@ -2301,7 +2301,9 @@ impl Mailbox {
         // //// Neoffice — changes go up first, `cmd/jmap_mail.rs`), and the move goes up with the run after it has an id. And
         // //// Neoffice — another account's folder is the fork's own refusal to say (`ACROSS_JMAP`, in `move_anyway`).
         let Some(f) = self.folder(folder) else { return false };
-        let made_here = f.account == m.account && f.kind == FolderKind::Custom && f.server.is_none();
+        // //// Neoffice — and so is its Archive, which the engine makes on the server once mail is put in it (`graph_up::made_on_server`):
+        // //// Neoffice — the webmail's facade has none until then, and « Traité » archives (`mail_view/done.rs`).
+        let made_here = f.account == m.account && matches!(f.kind, FolderKind::Custom | FolderKind::Archive) && f.server.is_none();
         f.account == m.account && self.jmap_mailbox(m.account, folder).is_none() && !made_here
     }
 

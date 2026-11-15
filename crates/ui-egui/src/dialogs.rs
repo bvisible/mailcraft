@@ -2022,7 +2022,8 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             close |= !open;
         }
         Dialog::Refused { text } => {
-            let open = window(ctx, "MailCraft", 420.0, |ui| {
+            // //// Neoffice — titled with the host's name for the program (NeoMail), as the rest of its text.
+            let open = window(ctx, crate::i18n::t(crate::i18n::PRODUCT), 420.0, |ui| {
                 ui.horizontal_top(|ui| {
                     // A warning mark drawn here: a round red dot with a white bar.
                     let (mark, _) = ui.allocate_exact_size(vec2(28.0, 28.0), egui::Sense::hover());
@@ -2174,7 +2175,8 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
                     });
                     return;
                 }
-                ui.label(egui::RichText::new("MailCraft").font(semibold(20.0)).color(t.accent_text));
+                // //// Neoffice — the host's name for the program (NeoMail) where it gives one.
+                ui.label(egui::RichText::new(crate::i18n::t(crate::i18n::PRODUCT)).font(semibold(20.0)).color(t.accent_text));
                 ui.label(
                     egui::RichText::new(crate::i18n::fmt(tl!("Version {version}"), &[("version", env!("CARGO_PKG_VERSION"))])).color(t.text_dim),
                 );

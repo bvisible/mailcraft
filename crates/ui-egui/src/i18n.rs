@@ -211,6 +211,17 @@ fn renamed(s: &str) -> &str {
     product::renamed(s).unwrap_or(s)
 }
 
+// //// Neoffice — `renamed` for a sentence translated elsewhere: since v0.13.0 the engine's own catalogues translate its
+// //// Neoffice — refusals (`CmdError::in_lang`), which never pass through `t`, and the host's name must show there too.
+/// `s` under the program's name a host gave, when it gave one.
+pub(crate) fn with_product_name(s: String) -> String {
+    let named = renamed(&s);
+    if named == s {
+        return s;
+    }
+    named.to_string()
+}
+
 // //// Neoffice — the product's name and the strings written with it, one per process (one per thread in tests, as `state`).
 mod product {
     use std::collections::HashMap;
@@ -282,8 +293,12 @@ mod tests {
         assert_eq!(t("About MailCraft"), "About NeoMail");
         assert_eq!(t_in(Lang::English, "About MailCraft"), "About NeoMail");
         assert_eq!(tn(2, "MailCraft has {n} window", "MailCraft has {n} windows"), "NeoMail has 2 windows");
+        // A sentence the engine translated itself (a refusal) and the message box's title.
+        assert_eq!(with_product_name("MailCraft ne déplace que…".into()), "NeoMail ne déplace que…");
+        assert_eq!(t(PRODUCT), "NeoMail");
         set_product_name("   ");
         assert_eq!(t("About MailCraft"), "About MailCraft", "an empty name puts its own back");
+        assert_eq!(with_product_name("MailCraft ne déplace que…".into()), "MailCraft ne déplace que…");
         set_product_name(&"x".repeat(41));
         assert_eq!(t("About MailCraft"), "About MailCraft", "and so does one too long");
     }

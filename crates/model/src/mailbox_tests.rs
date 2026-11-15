@@ -1077,6 +1077,11 @@ fn a_jmap_servers_mail_moves_between_its_folders_and_its_deletion_is_queued() {
     // //// Neoffice — (`Mailbox::stays_out_of`); and another account's is refused with the fork's own reason (`ACROSS_JMAP`).
     assert!(!mb.stays_out_of(theirs, ours) && !mb.stays_out_of(theirs, local));
     assert_eq!(mb.move_message(theirs, local).unwrap_err().to_string(), crate::ACROSS_JMAP);
+    // //// Neoffice — nor into its Archive, which the engine makes on the server once mail is in it (« Traité »); its other
+    // //// Neoffice — standard folders the server hasn't got stay out.
+    let [archive, junk] = [FolderKind::Archive, FolderKind::Junk].map(|kind| mb.folder_of_kind(account, kind).unwrap());
+    assert!(!mb.stays_out_of(theirs, archive) && mb.stays_out_of(theirs, junk));
+    assert_eq!(mb.move_message(theirs, junk).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
     assert!(mb.stays_out_of(theirs, outbox) && !mb.stays_out_of(mine, outbox));
     assert_eq!(mb.move_message(theirs, outbox).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
     assert_eq!(mb.move_messages(&[theirs], outbox).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);

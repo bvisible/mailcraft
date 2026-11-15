@@ -2506,7 +2506,8 @@ impl MailApp {
                 said if matches!(&err, mailcraft_engine::CmdError::Failed(s) | mailcraft_engine::CmdError::Disabled(s) | mailcraft_engine::CmdError::Params(s) if said == *s) => {
                     i18n::run_words::refusal(&said, &self.session.mailbox).into_owned()
                 }
-                said => said,
+                // //// Neoffice — under the host's name for the program: the engine's catalogues don't know it (i18n.rs).
+                said => i18n::with_product_name(said),
             },
             // //// Neoffice — any other text first as the engine's and a JMAP run's sentences the window reads back (a JMAP
             // account's refusals among them: run_words), and whole only when no row reads it.

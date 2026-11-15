@@ -671,6 +671,30 @@ fn mail_does_not_move_between_a_jmap_account_and_another_account_and_is_never_co
     s.run("mail.copy", &json!({"ids": [local], "folder": kept})).unwrap();
 }
 
+// //// Neoffice — « Traité » on a JMAP account whose server has no Archive yet (the webmail's facade, until one is made).
+/// A JMAP account whose server has no Archive: archiving puts the message in the Archive here, the next run makes the
+/// folder on the server (the webmail's facade takes a folder named "Archive" for its archive), and the move goes up once
+/// the folder has its id. An empty Archive is never made.
+#[test]
+fn an_archive_the_server_has_not_got_is_made_there_once_mail_is_archived_and_the_move_follows() {
+    use mailcraft_model::sync::{ChangeOutcome, FolderChange, FolderChangeDone, GraphFolder};
+    let (mut s, account, m, _) = setup();
+    let archive = folder_of(&s, account, "Mar");
+    s.mailbox.folder_mut(archive).unwrap().server = None;
+    assert!(jmap_mail_request(&s, account, false, &[], false).unwrap().folders.is_empty());
+    s.run("mail.archive", &json!({"ids": [m]})).unwrap();
+    assert_eq!(s.mailbox.message(m).map(|m| m.folder), Some(archive));
+    // No move yet: there is no mailbox to name. The folder is made first.
+    assert_eq!(changes(&s, account), []);
+    let request = jmap_mail_request(&s, account, false, &[], false).unwrap();
+    assert_eq!(request.folders, [FolderChange::Create { folder: archive, name: "Archive".into(), parent: String::new(), parent_folder: None }]);
+    let made = GraphFolder { id: "MArchive".into(), name: "Archive".into(), ..Default::default() };
+    let outcomes = vec![FolderChangeDone { change: request.folders[0].clone(), outcome: ChangeOutcome::Done { folder: made } }];
+    apply_jmap_mail(&mut s, JmapMailResult { folders: outcomes, partial: true, ..result(account, Vec::new()) }).unwrap();
+    assert_eq!(changes(&s, account), [JmapChange::Move { message: m, id: "E1".into(), from: "Min".into(), to: "MArchive".into() }]);
+    assert!(jmap_mail_request(&s, account, false, &[], false).unwrap().folders.is_empty());
+}
+
 #[test]
 fn a_jmap_accounts_folders_are_made_renamed_moved_and_deleted_here_and_go_up_with_the_next_run() {
     use mailcraft_model::Queued;

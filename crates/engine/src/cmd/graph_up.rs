@@ -119,7 +119,9 @@ pub(super) fn destination(mb: &Mailbox, account: Id, folder: Id) -> Option<(Stri
 pub(super) fn made_on_server(mb: &Mailbox, f: &Folder) -> bool {
     f.kind == FolderKind::Archive
         && !f.awaiting_listing
-        && mb.account(f.account).is_some_and(|a| a.kind == mailcraft_model::AccountKind::Exchange)
+        // //// Neoffice — and a JMAP account's: the webmail's facade has no Archive until one is made, and takes a folder named
+        // //// Neoffice — "Archive" for the archive role; « Traité » archives (`mail_view/done.rs`, `Mailbox::stays_out_of`).
+        && mb.account(f.account).is_some_and(|a| matches!(a.kind, mailcraft_model::AccountKind::Exchange | mailcraft_model::AccountKind::Jmap))
         && mb.folder_of_kind(f.account, FolderKind::Inbox).and_then(|i| mb.folder(i)).is_some_and(|i| i.server.is_some())
         && mb.messages_in(f.id).next().is_some()
 }
