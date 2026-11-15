@@ -586,15 +586,16 @@ A `Cargo.lock` change or a binary asset that differs from upstream gets a line h
 the marker check does not know as one that takes comments:
 
 - `Cargo.lock`: the `mailcraft-jmap-fork` package (the workspace's version, with its dependencies on
-  `mailcraft-mime`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
+  `mailcraft-mime-model`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
   `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision, `32473870` as the editors'; `serde`,
   `serde_json` and `egui` under them, the workspace's egui 0.37, and the browser's `js-sys`, `wasm-bindgen`,
   `wasm-bindgen-futures` and `web-sys` of the panel's microphone, already in the tree) and the dependencies of
-  `mailcraft-ui-egui` on them (Nora's pane); nothing
-  else (upstream's `mailcraft-jmap` has upstream's lines; upstream's lock has the `ctutils` past RUSTSEC-2026-0385 now).
+  `mailcraft-ui-egui` on them (Nora's pane); and no `mailcraft-jmap` package of upstream's (`crates/jmap` is left out of
+  the workspace since 0.13.0, the apps' `mailcraft-jmap` being the fork's client); nothing else.
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po`,
-  `crates/i18n/po/it.po` and `crates/i18n/po/nl.po` (upstream's Dutch, 0.8.1 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
+  `crates/i18n/po/it.po`, `crates/i18n/po/nl.po` (upstream's Dutch, 0.8.1 on), `crates/i18n/po/ro.po` and
+  `crates/i18n/po/zh_CN.po` (upstream's Romanian and Simplified Chinese, 0.13.0 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's
   catalogues below) and by the files named in the references of
   shared texts. At the next upstream merge: take upstream's, then run `cargo xtask i18n` again.

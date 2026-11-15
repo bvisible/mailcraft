@@ -232,9 +232,9 @@ mod search_tests;
 mod sender_warnings_tests;
 #[cfg(test)]
 mod shown_tests;
-// //// Neoffice — tests of stream.rs.
 #[cfg(test)]
 mod snooze_tests;
+// //// Neoffice — tests of stream.rs.
 #[cfg(test)]
 mod stream_tests;
 #[cfg(test)]

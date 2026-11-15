@@ -1,5 +1,7 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
+// //// Neoffice — added file (no upstream equivalent): kept whole in place of upstream's, whose tests (#1074) are of its own JMAP
+// //// Neoffice — run, which this fork doesn't build (`cmd/jmap_mail.rs`, `cmd/jmap_send.rs` are the fork's).
 //! A JMAP account (M6) is kept in step with its server, and sends nothing yet: a message written
 //! from it is neither queued, where it would wait in its Outbox for ever, nor filed as sent, and
 //! no Send/Receive is made of it until the engine has its commands, while the accounts beside it

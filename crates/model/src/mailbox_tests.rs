@@ -1077,11 +1077,9 @@ fn a_jmap_servers_mail_moves_between_its_folders_and_its_deletion_is_queued() {
     // //// Neoffice — (`Mailbox::stays_out_of`); and another account's is refused with the fork's own reason (`ACROSS_JMAP`).
     assert!(!mb.stays_out_of(theirs, ours) && !mb.stays_out_of(theirs, local));
     assert_eq!(mb.move_message(theirs, local).unwrap_err().to_string(), crate::ACROSS_JMAP);
-    for folder in [outbox] {
-        assert!(mb.stays_out_of(theirs, folder) && !mb.stays_out_of(mine, folder));
-        assert_eq!(mb.move_message(theirs, folder).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
-        assert_eq!(mb.move_messages(&[theirs], folder).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
-    }
+    assert!(mb.stays_out_of(theirs, outbox) && !mb.stays_out_of(mine, outbox));
+    assert_eq!(mb.move_message(theirs, outbox).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
+    assert_eq!(mb.move_messages(&[theirs], outbox).unwrap_err().to_string(), ONLY_SERVER_FOLDERS);
     assert_eq!(mb.message(theirs).map(|m| m.folder), Some(inbox));
     // Nor into a folder whose server id is none a server hands out (a mailbox file can say
     // anything): it is no mailbox a move could name, so the move is refused, not left unsent.
