@@ -51,7 +51,8 @@ impl MailApp {
             auto_replies: self.auto_replies.busy(),
             free_busy: self.free_busy.busy(),
             graph: self.graph_rx.is_some(),
-            mail_run: self.sync_rx.is_some(),
+            // //// Neoffice — and the fork's JMAP run (`jmap_rx`, jmap_job.rs), beside the others'.
+            mail_run: self.sync_rx.is_some() || self.jmap_rx.is_some(),
             signing_in: self.signing_in.is_some(),
             queued: !self.session.driver.round.queue.is_empty(),
             inbox_queued: !self.session.driver.round.inbox_queue.is_empty(),

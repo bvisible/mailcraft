@@ -937,6 +937,29 @@ fn a_change_made_while_a_run_is_under_way_is_sent_as_soon_as_it_ends() {
     assert_eq!(jobs(&asked), 3);
 }
 
+/// A message sent while a run is under way, which the run was not told of, goes as soon as it ends, as a change does:
+/// not after the wait a change the server did not take is given.
+#[test]
+fn a_message_sent_while_a_run_is_under_way_goes_as_soon_as_it_ends() {
+    let (mut app, id, asked) = settled();
+    let one = local(&app, id, "E1");
+    app.execute("mail.markRead", json!({"ids": [one]})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2);
+    // While it is under way the owner sends a message.
+    app.execute("mail.new", json!({"to": "bob@example.org", "subject": "Hello", "body": "Hi", "account": id})).unwrap();
+    app.run("compose.send", json!({})).unwrap();
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 2, "one run at a time");
+    // The run took its change; the message is new to the next one, which starts at once and carries it.
+    answer(&asked, 1, piece(false));
+    app.poll_jmap();
+    assert!(!app.syncing());
+    notice(&mut app);
+    assert_eq!(jobs(&asked), 3, "not five minutes later");
+    assert_eq!(asked.lock().unwrap()[2].request.sends.len(), 1);
+}
+
 #[test]
 fn a_server_that_asked_to_be_left_alone_is_not_asked_for_what_is_made_meanwhile_until_it_said() {
     let (mut app, id, asked) = settled();

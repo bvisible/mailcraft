@@ -2026,6 +2026,7 @@ pub struct MailApp {
 /// A Send/Receive of one account in flight, its pieces to come. A JMAP account's run takes the place
 /// of an IMAP one, so that whatever waits for a Send/Receive (another run, Cancel, Skip, a round by
 /// itself, the calendar's job) waits for it too.
+// //// Neoffice — (in this fork, a JMAP account's run is `jmap_rx`, beside this one: see the variant's line)
 pub(crate) enum MailRun {
     /// An IMAP account's run: the account, and the mailbox opening it was started under.
     Imap { account: Id, opening: u64, rx: Receiver<SyncResult> },

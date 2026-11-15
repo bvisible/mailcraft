@@ -146,8 +146,12 @@ fn offered_modules(s: &mailcraft_engine::Session) -> Vec<(Module, &'static str, 
 /// and Tasks always have theirs. Without a pane the bar down the window's edge stays, so the
 /// switch is never out of reach.
 pub fn foot_in_use(s: &mailcraft_engine::Session) -> bool {
-    // //// Neoffice — never in a hosting page's tab (`keeps_local` false): its rail down the window's edge stays as it is shown there.
-    s.keeps_local && s.view.nav_foot && (s.view.folder_pane || matches!(s.view.module, Module::People | Module::Tasks))
+    // //// Neoffice — never in a hosting page's tab (`keeps_local` false): its rail down the window's edge stays as it is shown there;
+    // //// Neoffice — nor in the fork's Notes, whose view has no foot of its own (the rail is there the switch).
+    s.keeps_local
+        && s.view.module != Module::Notes
+        && s.view.nav_foot
+        && (s.view.folder_pane || matches!(s.view.module, Module::People | Module::Tasks))
 }
 
 /// Whether a module's name is written beside its icon in the row (#1174): all four or none, so

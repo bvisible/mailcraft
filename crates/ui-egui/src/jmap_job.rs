@@ -189,6 +189,9 @@ impl MailApp {
         let also: Vec<String> = on_screen.into_iter().collect();
         let request = jmap_mail_request(&self.session, account, !quiet, &also, quiet).map_err(|e| e.to_string())?;
         self.jmap_sent = request.changes.iter().filter_map(|change| serde_json::to_string(change).ok()).collect();
+        // (And the messages it sends and the drafts it files, as they stand: one sent or saved meanwhile is new to the next run.)
+        self.jmap_sent.extend(request.sends.iter().map(|send| format!("send {}", send.message)));
+        self.jmap_sent.extend(request.drafts.iter().map(|draft| format!("draft {} {}", draft.message, draft.saves)));
         // The owner's own Send/Receive brings the account's calendars too, once its mail is read (jmap_pim.rs).
         if !quiet {
             self.jmap_pim_asked_for(account);
@@ -406,8 +409,15 @@ impl MailApp {
         let sent = std::mem::take(&mut self.jmap_sent);
         self.note_pushed(account);
         let waiting = mailcraft_engine::cmd::jmap_up::message_changes(&self.session, account, MAX_CHANGES_COMPARED).0;
-        if waiting.iter().filter_map(|change| serde_json::to_string(change).ok()).any(|change| !sent.contains(&change)) {
-            self.session.driver.round.push_seen.insert(account, (0, crate::now_ms()));
+        let changed = waiting.iter().filter_map(|change| serde_json::to_string(change).ok()).any(|change| !sent.contains(&change));
+        // A message sent, or a draft saved, while the run was under way goes as soon as it ends too, not after the wait a
+        // refusal is given.
+        use mailcraft_engine::cmd::jmap_send;
+        let sends = jmap_send::sends(&self.session, account).iter().any(|send| !sent.contains(&format!("send {}", send.message)));
+        let drafts =
+            jmap_send::drafts(&self.session, account).iter().any(|draft| !sent.contains(&format!("draft {} {}", draft.message, draft.saves)));
+        if changed || sends || drafts {
+            self.session.driver.round.push_again_soon(account, 1, crate::now_ms());
         }
     }
 }
