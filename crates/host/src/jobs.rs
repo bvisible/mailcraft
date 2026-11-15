@@ -14,6 +14,9 @@ impl Host {
     /// through the channel, and `done` is called after it is sent (the window wakes itself in it).
     /// A thread that couldn't start is logged and leaves the sender dropped: the receiver then
     /// reads as disconnected, which callers take for "stopped unexpectedly".
+    // //// Neoffice — the fork's browser pass (`.github/clippy-wasm`) refuses a thread in what the browser build links: this one is
+    // //// Neoffice — the desktop's and the phones' alone (`apps/mailcraft`, `sync.rs`), never reached in the browser, which has no threads.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::disallowed_methods))]
     pub fn run_job<T: Send + 'static>(
         &self,
         name: &str,

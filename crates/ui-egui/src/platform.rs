@@ -97,6 +97,9 @@ impl DesktopPlatform {
     /// The same; for a call that must not happen once it has been reported as failed, `state` is
     /// shared with the call: on a timeout the call is cancelled if the window has not begun it,
     /// and if it has, its real outcome is waited for (at most one more `patience`).
+    // //// Neoffice — the fork's browser pass (`.github/clippy-wasm`) refuses a blocking wait and a thread in what the browser build links:
+    // //// Neoffice — the desktop's alone (upstream's `wasm-clock` notes say the same), never reached in the browser.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::disallowed_methods))]
     fn ask_guarded(&self, state: Option<&AtomicU8>, call: impl FnOnce(Answer) -> Call) -> Result<(), PlatformError> {
         if std::thread::current().id() == self.window {
             return Err(PlatformError::Failed("the window cannot ask itself"));
@@ -153,6 +156,9 @@ impl Services {
     /// Open a page a worker asked for. A page that may wait for its activation token is opened on
     /// a thread of its own, as the sign-in worker did before: waiting here would stop the frame,
     /// and with it the code that gets the token (#144).
+    // //// Neoffice — the fork's browser pass (`.github/clippy-wasm`) refuses a blocking wait and a thread in what the browser build links:
+    // //// Neoffice — the desktop's alone (upstream's `wasm-clock` notes say the same), never reached in the browser.
+    #[cfg_attr(target_arch = "wasm32", allow(clippy::disallowed_methods))]
     fn open_page_for(&self, url: String, answer: Answer, state: &AtomicU8) {
         // A worker that gave up has been told nothing was opened: keep it so.
         if state.compare_exchange(PENDING, STARTED, Ordering::SeqCst, Ordering::SeqCst).is_err() {
