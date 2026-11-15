@@ -24,6 +24,8 @@ mod stream_tabs;
 pub(crate) mod done;
 // //// Neoffice — the list's short header as Spark has it (variant D): the view's name and its menu, Show done, search, new message.
 pub(crate) mod header;
+// //// Neoffice — the groups of Principal (variant D): its notifications and its newsletters, each a row that opens them.
+mod bundle;
 
 // //// Neoffice — the list as Spark has it (variant D) where the mail is a hosting page's (a session that keeps nothing of its own):
 // the short header (header.rs), one mark at a row's left (the unread dot, the round of « Traité » under the pointer), no box to tick
@@ -38,6 +40,26 @@ const D_GROUP_H: f32 = 36.0;
 const D_GROUP_TEXT: f32 = 13.0;
 // //// Neoffice — and the room a conversation's arrow takes after the lead column.
 const D_ARROW: f32 = 18.0;
+// //// Neoffice — a row of variant D is one line, this high, where the list is at least this wide.
+const D_ONE_LINE_H: f32 = 48.0;
+const D_ONE_LINE_MIN: f32 = 720.0;
+// //// Neoffice — the subject and the preview of that line.
+const D_ONE_LINE_TEXT: f32 = 14.0;
+
+// //// Neoffice — the rows are one line (variant D: where the list is wide enough): said by the list, read by its rows.
+fn say_one_line(ui: &Ui, one: bool) {
+    ui.data_mut(|d| d.insert_temp(egui::Id::unique("d_one_line"), one));
+}
+
+// //// Neoffice — (see `say_one_line`.)
+fn one_line(ui: &Ui) -> bool {
+    ui.data(|d| d.get_temp::<bool>(egui::Id::unique("d_one_line"))).unwrap_or(false)
+}
+
+// //// Neoffice — the sender's column of variant D's single line: 30 % of the row's text, from 70 to 230 (the design's).
+fn d_sender_width(room: f32) -> f32 {
+    (room * 0.3).clamp(ONE_LINE_SENDER_MIN, 230.0).min(room.max(0.0))
+}
 
 /// What a drag out of the message list carries: the messages to file in the folder they are
 /// let go over (`nav::folder_row` takes them).
@@ -590,7 +612,7 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     let room = ui.max_rect();
     list_rows(app, ui);
     if spark_list(app) {
-        crate::nora::ask_bar::show(app, ui, room);
+        crate::nora::ask_bar::show(app, ui, room, room.max.x - lane_width(app));
     }
 }
 
@@ -608,9 +630,11 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     } else {
         list_header(app, ui, streams.as_ref());
     }
-    // //// Neoffice — and where the header has no room for the tabs, they have a row of their own.
+    // //// Neoffice — and where the header has no room for the tabs, they have a row of their own; in variant D there are none: Principal
+    // //// Neoffice — has its groups, which open as the tabs did (bundle.rs).
     if let Some(counts) = &streams
-        && (d || stream_tabs::row_wanted(ui))
+        && !d
+        && stream_tabs::row_wanted(ui)
     {
         stream_tabs::tabs_row(app, ui, counts);
     }
@@ -618,12 +642,17 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     crate::gmail_tabs::row(app, ui);
     let rows = app.session.rows();
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
-    // //// Neoffice — the bar that archives what is ticked, or everything in the tab.
-    if streams.is_some() && stream_tabs::bar_shown(app, &rows) {
+    // //// Neoffice — the bar that archives what is ticked, or everything in the tab; in variant D what is selected only (an open
+    // //// Neoffice — group's header has « Tout traiter »).
+    if streams.is_some() && (if d { app.session.sel.messages.len() >= 2 } else { stream_tabs::bar_shown(app, &rows) }) {
         stream_tabs::bar(app, ui, &rows);
     }
-    // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs).
-    done::section(app, ui);
+    // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs); in variant D its rows joined by a rail.
+    if d {
+        done::section_d(app, ui);
+    } else {
+        done::section(app, ui);
+    }
     // //// Neoffice — the room a row and a group's heading give their round to mark them done; in variant D, the lead column has it.
     let lead = if done::offered(app) && !d { done::LEAD } else { 0.0 };
     // //// Neoffice — and a day's title is taller there.
@@ -664,10 +693,14 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         );
         paint_clipped(ui.painter(), pos2(r.min.x + 10.0, r.min.y + 4.0), r.width() - 20.0, &text, regular(11.5), t.text_dim);
     }
-    let one_line = app.session.prefs.one_line;
+    // //// Neoffice — in variant D a row is one line of 48 where the list is wide enough (`D_ONE_LINE_MIN`), told to the rows
+    // //// Neoffice — (`one_line`).
+    let one_line = app.session.prefs.one_line || (d && ui.available_width() >= D_ONE_LINE_MIN);
+    say_one_line(ui, one_line);
     // The rows of a search on the server keep the height the preview lines ask for.
     let server_h = row_height(app.session.prefs.preview_lines);
-    let row_h = if one_line { ONE_LINE_H } else { server_h };
+    // //// Neoffice — (`D_ONE_LINE_H`.)
+    let row_h = if one_line { if d { D_ONE_LINE_H } else { ONE_LINE_H } } else { server_h };
     let row_h = row_h - tightening(app.session.prefs.tight_spacing, one_line);
     // Below the local results of a search: More results on the server, and what came (R6.2).
     let searching = !app.session.view.search.trim().is_empty();
@@ -715,7 +748,9 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         y += row_h;
     }
     let rows_end = y;
-    let total = y + below;
+    // //// Neoffice — and room at its foot for Nora's bar (variant D), so that its last row scrolls above it.
+    let bottom = if d { crate::nora::ask_bar::room_below(app, ui.max_rect()) } else { 0.0 };
+    let total = y + below + bottom;
     let reveal = std::mem::take(&mut app.reveal_selection);
     // The row the focus is on: the one clicked or stepped to, else the message's first (#503: a
     // newer message of its open conversation came, and its own row there is another), and for one
@@ -762,7 +797,8 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         {
             // //// Neoffice — (`group_h`.)
             let above = if row.group.is_some() { group_h } else { 0.0 };
-            let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h));
+            // //// Neoffice — (`bottom`: clear of Nora's bar.)
+            let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h + bottom));
             ui.scroll_to_rect(rect, None);
         }
         // Only the rows in view are laid out.
@@ -780,7 +816,7 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
                 let y = gr.max.y - 6.0 - D_GROUP_TEXT / 2.0;
                 let x = gr.min.x + done::D_LEAD;
                 paint_clipped(ui.painter(), pos2(x, y), gr.max.x - x - 10.0, group_name(group, row.category), semibold(D_GROUP_TEXT), t.group_label);
-                if done::offered(app) {
+                if done::offered(app) && !done::group_ids(&rows, i).is_empty() {
                     done::group_round(app, ui, gr, done::round_at(gr.min.x, y, true), false, &rows, i);
                 }
             } else if let Some(group) = &row.group {
@@ -802,6 +838,11 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
                 }
             }
             let rect = Rect::from_min_size(pos2(origin.x, origin.y + top), vec2(width, row_h));
+            // //// Neoffice — a group of Principal is a row of its own (bundle.rs).
+            if row.bundle.is_some() {
+                bundle::row(app, ui, row, rect, one_line);
+                continue;
+            }
             message_row(app, ui, row, rect, &drawn, focus);
         }
         if below > 0.0 {
@@ -1041,7 +1082,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
             .on_hover_text(if unread { tl!("Mark as read") } else { tl!("Mark as unread") })
     });
     let read_hovered = read_resp.as_ref().is_some_and(egui::Response::hovered);
-    let one = app.session.prefs.one_line;
+    // //// Neoffice — (variant D: one line where the list is wide enough, as the list said it: `one_line`.)
+    let one = if d { one_line(ui) } else { app.session.prefs.one_line };
     let line1 = if one { rect.center().y } else { rect.min.y + SENDER_Y };
     let line2 = if one { rect.center().y } else { rect.min.y + SUBJECT_Y };
     // With tighter spacing a row's lines move up by half of what it gave up (`view.density`).
@@ -1147,7 +1189,7 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // Where mail of several accounts is listed together, a stripe of its account's colour down
     // the row's left edge (#893), left of the selection's card so that it shows on a selected row too.
     // //// Neoffice — in variant D a ring round the sender's picture says it, where pictures are shown (`pictured`, below).
-    let ringed = d && app.ui.sender_images && !app.session.prefs.one_line;
+    let ringed = d && app.ui.sender_images;
     if let Some(color) = account_stripe(&app.session, &m).filter(|_| !ringed) {
         let stripe = Rect::from_min_max(pos2(rect.min.x + 1.0, rect.min.y + 3.0), pos2(rect.min.x + 1.0 + ACCOUNT_STRIPE, rect.max.y - 3.0));
         p.rect_filled(stripe, 1.5, crate::theme::c32(color));
@@ -1182,7 +1224,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         m.from.display().to_string()
     };
     // The picture (or the initials) of who wrote it, or of who it went to.
-    let pictured = app.ui.sender_images && !one;
+    // //// Neoffice — in variant D in a single line too, at its middle (`d`).
+    let pictured = app.ui.sender_images && (!one || d);
     // A message under its open conversation starts a step further in (#503).
     // //// Neoffice — after the round of « Traité » where it is offered (`lead`); in variant D after the lead column, and the arrow of a
     // //// Neoffice — conversation where conversations are shown.
@@ -1190,7 +1233,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         + if row.under.is_some() { UNDER_INDENT } else { 0.0 };
     if pictured {
         let who = if outgoing { m.to.first().unwrap_or(&m.from) } else { &m.from };
-        let center = pos2(rect.min.x + text_left + AVATAR_RADIUS, rect.min.y + AVATAR_Y);
+        // //// Neoffice — (`one`: variant D's single line, its picture at its middle.)
+        let center = pos2(rect.min.x + text_left + AVATAR_RADIUS, if one { rect.center().y } else { rect.min.y + AVATAR_Y });
         crate::sender_images::avatar(app, ui, center, AVATAR_RADIUS, &m, who);
         // //// Neoffice — the ring of its account's colour, where mail of several accounts is listed together (variant D).
         if let Some(color) = account_stripe(&app.session, &m).filter(|_| ringed) {
@@ -1210,10 +1254,12 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let mut x = sender_line_end;
     let date =
         crate::dates::list_label(mailcraft_engine::list::when(&m), app.session.now(), app.session.offset_at(m.date), app.session.prefs.twelve_hour);
+    // //// Neoffice — in variant D's single line, the time, the subject and the preview are larger (`d_text`).
+    let d_text = if d && one { D_ONE_LINE_TEXT } else { LIST_TEXT };
     let (date_font, date_color) = match (unread, overdue) {
-        (true, false) => (semibold(LIST_TEXT), t.text),
-        (true, true) => (semibold(LIST_TEXT), t.overdue),
-        (false, _) => (regular(LIST_TEXT), if overdue { t.overdue } else { t.text }),
+        (true, false) => (semibold(d_text.min(13.0)), t.text),
+        (true, true) => (semibold(d_text.min(13.0)), t.overdue),
+        (false, _) => (regular(d_text.min(13.0)), if overdue { t.overdue } else { t.text }),
     };
     if let Some((delete, flag)) = &quick {
         for (resp, at, icon, color) in
@@ -1307,7 +1353,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let one_tags =
         if one { plan_tags(p, &labels, labels_more, x - 4.0 - size_room - tail_after - (left + ONE_LINE_SENDER_MIN)) } else { TagPlan::default() };
     let who_font = if unread { semibold(SENDER_TEXT) } else { regular(SENDER_TEXT) };
-    let who_end = if one { (left + one_line_sender_width(time_end - left)).min(x - 4.0 - size_room - one_tags.width) } else { text_end.min(x - 4.0) };
+    // //// Neoffice — in variant D's single line the sender's column is wider (`d_sender_width`).
+    let sender_w = if d { d_sender_width(time_end - left) } else { one_line_sender_width(time_end - left) };
+    let who_end = if one { (left + sender_w).min(x - 4.0 - size_room - one_tags.width) } else { text_end.min(x - 4.0) };
     let mut who_x = left;
     if m.draft {
         let w = paint_clipped(p, pos2(left, line1), (who_end - left).max(0.0), tl!("[Draft]"), regular(SENDER_TEXT), t.red);
@@ -1378,13 +1426,22 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         subject_end = subject_end.min(sx - 6.0);
     }
     let subject = if m.subject.trim().is_empty() { tl!("(no subject)") } else { m.subject.as_str() };
+    // //// Neoffice — (`d_text`.)
     let (sfont, scolor) = match (unread, overdue) {
-        (true, false) => (semibold(LIST_TEXT), t.text),
-        (true, true) => (semibold(LIST_TEXT), t.overdue),
-        (false, _) => (regular(LIST_TEXT), if overdue { t.overdue } else { t.text }),
+        (true, false) => (semibold(d_text), t.text),
+        (true, true) => (semibold(d_text), t.overdue),
+        (false, _) => (regular(d_text), if overdue { t.overdue } else { t.text }),
     };
     let subject_x = if one { who_end + 10.0 } else { left };
-    paint_clipped(p, pos2(subject_x, line2), (subject_end - subject_x).max(0.0), subject, sfont, scolor);
+    let subject_w = paint_clipped(p, pos2(subject_x, line2), (subject_end - subject_x).max(0.0), subject, sfont, scolor);
+    // //// Neoffice — in variant D's single line, the preview after the subject, as far as the line goes.
+    if one && d {
+        let from = subject_x + subject_w + 10.0;
+        if subject_end - from > 24.0 {
+            let said = preview(ui, &m, 200);
+            paint_clipped(p, pos2(from, line2), subject_end - from, &said, regular(d_text), t.text_dim);
+        }
+    }
 
     // Then the preview: whole words, as many lines as asked for, and no mark where it stops.
     let preview_end = text_end.min(sx - 6.0);

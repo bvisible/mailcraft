@@ -4631,3 +4631,9 @@ msgstr "Questa vista è disponibile solo in NeoMail"
 
 msgid "none of your mailboxes has an Inbox"
 msgstr "nessuna delle sue caselle ha una posta in arrivo"
+
+msgid "Back to the Inbox"
+msgstr "Torna alla posta in arrivo"
+
+msgid "Mark all of {group} as done"
+msgstr "Segna tutto in {group} come fatto"

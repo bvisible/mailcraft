@@ -38,6 +38,9 @@ const HINT_H: f32 = 32.0;
 const HINT_GAP: f32 = 10.0;
 /// Its ✕.
 const CLOSE: f32 = 22.0;
+/// Above the line (or the bar), the list fades into its paper over this, then the paper hides it down to its foot.
+const FADE: f32 = 20.0;
+const ABOVE: f32 = 10.0;
 /// The narrowest list the bar is drawn over.
 const LIST_MIN: f32 = 220.0;
 
@@ -92,12 +95,30 @@ pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
     Some(Hint { account: account.clone(), words, button: tl!("See the plan"), intent: Intent::Open { account, journal: false } })
 }
 
-/// The bar and the line above it, over the list whose room is `room`, in a layer of their own above it.
-pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect) {
+/// How much room the list keeps at its foot for the bar, the line above it and their backdrop, so that its last row can be
+/// scrolled above them: none where the bar isn't drawn.
+pub(crate) fn room_below(app: &MailApp, room: Rect) -> f32 {
+    if !shown(app) || room.width() < LIST_MIN {
+        return 0.0;
+    }
+    FOOT + BAR_H + if hint(app).is_some() { HINT_GAP + HINT_H } else { 0.0 } + ABOVE
+}
+
+/// The colour `over` laid on `under`, opaque: the design system's soft signal is a veil, which the rows would show through.
+fn opaque(under: egui::Color32, over: egui::Color32) -> egui::Color32 {
+    let [r, g, b, a] = over.to_srgba_unmultiplied();
+    under.lerp_to_gamma(egui::Color32::from_rgb(r, g, b), f32::from(a) / 255.0)
+}
+
+/// The bar and the line above it, over the list whose room is `room` (its rows ending at `rows_end`, where the scroll bar's lane
+/// starts), in a layer of their own above it, on a backdrop of the list's paper that hides the rows under them (a short fade
+/// above it).
+pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
     if !shown(app) || room.width() < LIST_MIN {
         return;
     }
     let ds = Ds::of(ui.visuals().dark_mode);
+    let paper = crate::theme::Tokens::get(ui.ctx()).surface;
     let width = BAR_W.min(room.width() - RIGHT - 16.0);
     let bar = Rect::from_min_size(pos2(room.max.x - RIGHT - width, room.max.y - FOOT - BAR_H), vec2(width, BAR_H));
     // What she read of the Inbox's mailbox is asked for the proposal (sorting.rs), as long as the bar is drawn.
@@ -105,21 +126,37 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect) {
         app.nora.sorting.want_proposal(&account);
     }
     let hint = hint(app);
+    let line_at = hint.as_ref().map(|hint| measure(ui, hint, pos2(bar.max.x, bar.min.y - HINT_GAP), room.width() - RIGHT - 16.0));
+    let top = line_at.map_or(bar.min.y, |(rect, _)| rect.min.y) - ABOVE;
+    let block = Rect::from_min_max(pos2(room.min.x, top - FADE), pos2(rows_end.max(room.min.x), room.max.y));
     let mut intent = None;
     let mut hide = None;
-    if let Some(hint) = &hint {
-        let (rect, button_w) = measure(ui, hint, pos2(bar.max.x, bar.min.y - HINT_GAP), room.width() - RIGHT - 16.0);
-        egui::Area::new(EguiId::unique("nora_hint")).order(egui::Order::Middle).fixed_pos(rect.min).show(ui.ctx(), |ui| {
-            let (clicked, closed) = line(app, ui, &ds, hint, rect, button_w);
+    egui::Area::new(EguiId::unique("nora_ask_bar")).order(egui::Order::Middle).fixed_pos(block.min).show(ui.ctx(), |ui| {
+        let _ = ui.allocate_exact_size(block.size(), Sense::hover());
+        app.hit.add("noraBackdrop", 0, block);
+        // The fade, then the paper.
+        let p = ui.painter();
+        let fade = Rect::from_min_max(block.min, pos2(block.max.x, top));
+        let mut mesh = egui::Mesh::default();
+        let clear = paper.gamma_multiply(0.0);
+        for (at, color) in [(fade.left_top(), clear), (fade.right_top(), clear), (fade.right_bottom(), paper), (fade.left_bottom(), paper)] {
+            mesh.colored_vertex(at, color);
+        }
+        mesh.add_triangle(0, 1, 2);
+        mesh.add_triangle(0, 2, 3);
+        p.add(egui::Shape::mesh(mesh));
+        p.rect_filled(Rect::from_min_max(pos2(block.min.x, top), block.max), 0.0, paper);
+        if let (Some(hint), Some((rect, button_w))) = (&hint, line_at) {
+            let (clicked, closed) = line(app, ui, &ds, hint, rect, button_w, paper);
             if clicked {
                 intent = Some(hint.intent.clone());
             }
             if closed {
                 hide = Some(hint.account.clone());
             }
-        });
-    }
-    egui::Area::new(EguiId::unique("nora_ask_bar")).order(egui::Order::Middle).fixed_pos(bar.min).show(ui.ctx(), |ui| ask(app, ui, &ds, bar));
+        }
+        ask(app, ui, &ds, bar);
+    });
     if let Some(account) = hide {
         let today = app.session.today().to_days();
         app.ui.nora_hint_hidden.retain(|_, day| *day >= today);
@@ -132,7 +169,7 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect) {
 
 /// The bar: the orb, and the box where the question is typed; Enter asks.
 fn ask(app: &mut MailApp, ui: &mut Ui, ds: &Ds, bar: Rect) {
-    let (rect, _) = ui.allocate_exact_size(bar.size(), Sense::hover());
+    let rect = bar;
     app.hit.add("noraAsk", 0, rect);
     let p = ui.painter();
     let shade = egui::Color32::from_black_alpha(if ui.visuals().dark_mode { 115 } else { 40 });
@@ -171,14 +208,14 @@ fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> (Rect, f32) {
 }
 
 /// The line above the bar in `rect`: its words, its button, its ✕. Whether the button and the ✕ were clicked.
-fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button_w: f32) -> (bool, bool) {
-    let (_, said) = ui.allocate_exact_size(rect.size(), Sense::hover());
+fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button_w: f32, paper: egui::Color32) -> (bool, bool) {
+    let said = ui.interact(rect, ui.scope_id().with("nora_hint_line"), Sense::hover());
     said.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &hint.words));
     // (Cut short in a narrow list: the whole of it under the pointer.)
     let _ = said.on_hover_text(&hint.words);
     app.hit.add("noraHint", 0, rect);
     let p = ui.painter();
-    p.rect(rect, CornerRadius::same(16), ds.signal_soft, Stroke::new(1.0, ds.signal_border), egui::StrokeKind::Inside);
+    p.rect(rect, CornerRadius::same(16), opaque(paper, ds.signal_soft), Stroke::new(1.0, opaque(paper, ds.signal_border)), egui::StrokeKind::Inside);
     let close = Rect::from_center_size(pos2(rect.max.x - 6.0 - CLOSE / 2.0, rect.center().y), vec2(CLOSE, CLOSE));
     let button = Rect::from_center_size(pos2(close.min.x - 4.0 - button_w / 2.0, rect.center().y), vec2(button_w, 22.0));
     paint_clipped(

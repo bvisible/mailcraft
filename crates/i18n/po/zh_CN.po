@@ -2306,6 +2306,11 @@ msgid "Back to account settings"
 msgstr "返回账户设置"
 
 #. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Back to the Inbox"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/ribbon.rs
 msgid "Bar on the Left"
 msgstr ""
@@ -8318,7 +8323,7 @@ msgid "Mailbox"
 msgstr "邮箱"
 
 #. interface, name
-#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Main"
 msgstr ""
 
@@ -8441,6 +8446,11 @@ msgstr "标记密钥已验证"
 #, fuzzy
 msgid "Mark a message as read when it is opened in the reading pane"
 msgstr "在阅读窗格中打开邮件时将其标记为已读"
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Mark all of {group} as done"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/mail.rs
@@ -9358,7 +9368,7 @@ msgid "Newest on top"
 msgstr "最新邮件置顶"
 
 #. interface, name
-#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Newsletters"
 msgstr ""
 
@@ -10457,7 +10467,7 @@ msgid "Nothing was sent: the mailbox couldn't be saved first ({error})"
 msgstr "没有发送任何内容：无法先保存邮箱（{error}）"
 
 #. android, interface, name
-#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Navigation.kt crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Navigation.kt crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Notifications"
 msgstr ""
 

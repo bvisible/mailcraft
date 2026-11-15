@@ -351,7 +351,8 @@ pub(crate) fn select_after_removal(s: &mut Session, before: &[Row], removed: &[I
     // Where each message is listed now: its own row under its open conversation, and the row it
     // is one of.
     let mut now: HashMap<(Id, bool), usize> = HashMap::new();
-    for (i, r) in rows.iter().enumerate() {
+    // //// Neoffice — (not a group of Principal's row, `Row::bundle`: no message is selected there.)
+    for (i, r) in rows.iter().enumerate().filter(|(_, r)| r.bundle.is_none()) {
         if r.under.is_some() {
             now.entry((r.id, true)).or_insert(i);
         } else {
@@ -372,7 +373,8 @@ pub(crate) fn select_after_removal(s: &mut Session, before: &[Row], removed: &[I
                 None => r.members.iter().filter(|m| !gone.contains(m)).find_map(|m| now.get(&(*m, false)).copied()),
             })
             .and_then(|j| rows.get(j))
-            .or_else(|| rows.last())
+            // //// Neoffice — (`Row::bundle`.)
+            .or_else(|| rows.iter().rev().find(|r| r.bundle.is_none()))
     });
     if let Some(row) = next.flatten() {
         s.sel.messages = vec![row.id];

@@ -110,13 +110,9 @@ fn undo_puts_one_back_undo_all_the_rest_and_the_section_empties() {
     let ids: Vec<Id> = drawn(&mut w).into_iter().take(3).collect();
     assert!(mark(w.state_mut(), &ids));
     assert_eq!(w.state().done.items.len(), 3);
-    // Folded at first: its heading opens it.
+    // In the list of variant D, open: each of them with its round, joined by the rail.
     w.run_steps(3);
-    assert!(!has(&w, "doneUndo", ids[0]));
-    let fold = w.state().hit.rect("doneSection", 0).unwrap().min + egui::vec2(60.0, 15.0);
-    testing::click(&mut w, fold, PointerButton::Primary, 1);
-    w.run_steps(3);
-    assert!(w.state().done.open && ids.iter().all(|id| has(&w, "doneUndo", *id)));
+    assert!(ids.iter().all(|id| has(&w, "doneUndo", *id)));
     click(&mut w, "doneUndo", ids[1]);
     assert_eq!(folder_kind(&w, ids[1]), Some(FolderKind::Inbox));
     assert_eq!(w.state().done.items.len(), 2);

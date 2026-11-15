@@ -249,7 +249,9 @@ fn select_all(s: &mut Session, _: &Value) -> CmdResult {
     let rows = s.rows();
     let focus = s.sel.focus();
     // Every row once: a message under its open conversation is its conversation's (#503).
-    let mut ids: Vec<Id> = rows.iter().filter(|r| r.copy == 0 && r.under.is_none()).map(|r| r.id).filter(|id| Some(*id) != focus).collect();
+    // //// Neoffice — (not a group of Principal's row, `Row::bundle`, which stands for its group, not for its newest.)
+    let mut ids: Vec<Id> =
+        rows.iter().filter(|r| r.copy == 0 && r.under.is_none() && r.bundle.is_none()).map(|r| r.id).filter(|id| Some(*id) != focus).collect();
     // The message in the reading pane stays the focus.
     ids.extend(focus.filter(|f| position(&rows, *f).is_some()));
     let picked: HashSet<Id> = ids.iter().copied().collect();
@@ -271,8 +273,15 @@ fn range_anchor(s: &Session) -> Option<(Id, u16)> {
 fn span(rows: &[Row], anchor: Id, a: usize, focus: Id, b: usize) -> Vec<Id> {
     let (lo, hi) = (a.min(b), a.max(b));
     let mut seen = std::collections::HashSet::new();
-    let mut picked: Vec<Id> =
-        rows.iter().skip(lo).take((hi - lo).saturating_add(1)).map(|r| r.id).filter(|id| *id != anchor && *id != focus && seen.insert(*id)).collect();
+    // //// Neoffice — not a group of Principal's row (`Row::bundle`), which no range takes.
+    let mut picked: Vec<Id> = rows
+        .iter()
+        .skip(lo)
+        .take((hi - lo).saturating_add(1))
+        .filter(|r| r.bundle.is_none())
+        .map(|r| r.id)
+        .filter(|id| *id != anchor && *id != focus && seen.insert(*id))
+        .collect();
     if focus != anchor {
         picked.insert(0, anchor);
     }
@@ -382,6 +391,8 @@ fn heads_in(rows: &[Row], a: usize, b: usize) -> Vec<Id> {
 /// anchor, which stays where it is (so going back makes the range smaller), to it; otherwise it
 /// is that one message, which the next range runs from.
 fn land(s: &mut Session, rows: &[Row], i: usize, extend: bool) -> CmdResult {
+    // //// Neoffice — never on a group of Principal (`Row::bundle`): the next message's row, else the one before it.
+    let Some(i) = message_row(rows, i, true) else { return done() };
     let Some(row) = rows.get(i) else { return done() };
     let anchor = if extend { range_anchor(s) } else { None };
     match anchor.and_then(|(id, copy)| Some((id, copy, s.sel.row_in(rows, id, copy)?))) {
@@ -402,6 +413,14 @@ fn land(s: &mut Session, rows: &[Row], i: usize, extend: bool) -> CmdResult {
     Ok(json!({"selected": s.sel.messages}))
 }
 
+// //// Neoffice — the row of a message from `i` on (`down`) or back, past the groups of Principal (`Row::bundle`), which stand for a
+// //// Neoffice — group and open it rather than being selected; the other way when there is none that way.
+fn message_row(rows: &[Row], i: usize, down: bool) -> Option<usize> {
+    let message = |j: &usize| rows.get(*j).is_some_and(|r| r.bundle.is_none());
+    let ahead = |down: bool| if down { (i..rows.len()).find(message) } else { (0..=i).rev().find(message) };
+    ahead(down).or_else(|| ahead(!down))
+}
+
 fn extend(v: &Value) -> bool {
     p::bool(v, "extend") == Some(true)
 }
@@ -419,6 +438,12 @@ fn step(s: &mut Session, by: i64, v: &Value) -> CmdResult {
         }
         None if by >= 0 => 0,
         None => end,
+    };
+    // //// Neoffice — past a group of Principal the way it goes (`message_row`); where there is no message that way, it stays.
+    let i = match (message_row(&rows, i, by >= 0), at) {
+        (Some(j), Some(from)) if (by >= 0) != (j >= from) && j != from => from,
+        (Some(j), _) => j,
+        (None, _) => return done(),
     };
     land(s, &rows, i, extend(v))
 }
@@ -703,6 +728,11 @@ fn list_in_view(s: &mut Session, limit: usize) -> CmdResult {
                 }
                 if r.copy > 0 {
                     o.insert("copy".into(), json!(r.copy));
+                }
+                // //// Neoffice — a group of Principal: which, and every message it stands for (the row shows its newest).
+                if let Some(stream) = r.bundle {
+                    o.insert("bundle".into(), json!(stream.code()));
+                    o.insert("members".into(), json!(r.members));
                 }
             }
             Some(m)

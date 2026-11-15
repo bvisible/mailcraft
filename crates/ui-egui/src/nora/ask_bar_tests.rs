@@ -142,6 +142,98 @@ fn what_she_read_is_asked_for_the_proposal_while_the_bar_is_drawn_and_not_again_
     assert_eq!(surveys(&calls), 1, "not again within half an hour");
 }
 
+/// [`hosted`], with `more` messages more in the Inbox: a list longer than the window.
+fn long(state: Value, survey: bool, more: usize) -> (MailApp, Calls) {
+    let (mut app, calls) = hosted(state, survey);
+    let inbox = app.session.view.folder;
+    for i in 0..more {
+        let when = super::super::testing::NOW - 3_600 * (i as i64 + 1);
+        let m = mailcraft_model::Message {
+            folder: inbox,
+            from: mailcraft_model::Address::new("Commandes Exemple", "commandes@example.org"),
+            subject: format!("Commande L{i} : 6 tables"),
+            date: when,
+            received: when,
+            ..Default::default()
+        };
+        app.session.mailbox.add_message(m).unwrap();
+    }
+    (app, calls)
+}
+
+#[test]
+fn the_line_is_opaque_and_the_list_scrolls_its_last_row_above_the_bar_and_the_line() {
+    // The design system's soft signal is a veil; laid on the paper it is opaque.
+    let veil = egui::Color32::from_rgba_unmultiplied(0xF5, 0x5D, 0x1A, 41);
+    assert_eq!(super::opaque(egui::Color32::from_rgb(0x14, 0x14, 0x14), veil).a(), 255);
+    let (app, _) = long(answers::state(false, "", true), true, 40);
+    let mut h = window(app);
+    assert!(shown(&h, "noraHint") && shown(&h, "noraBackdrop"));
+    // To the end of the list.
+    let first = h.state_mut().session.rows().first().unwrap().id;
+    let over = h.state().hit.rect("message", first).expect("the first row").center();
+    h.hover_at(over);
+    for _ in 0..30 {
+        h.event(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -800.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+            source: egui::MouseWheelSource::Unknown,
+        });
+        h.step();
+    }
+    h.run_steps(4);
+    let rows = h.state_mut().session.rows();
+    let last = rows.last().unwrap().id;
+    let row = h.state().hit.rect("message", last).expect("the last row, scrolled to");
+    let backdrop = h.state().hit.rect("noraBackdrop", 0).unwrap();
+    let line = h.state().hit.rect("noraHint", 0).unwrap();
+    assert!(row.max.y <= line.min.y, "the last row {row:?} above the line {line:?}");
+    assert!(backdrop.max.y >= h.state().hit.rect("noraAsk", 0).unwrap().max.y && backdrop.min.y < line.min.y, "a backdrop under the whole block");
+}
+
+/// The window `size` wide on [`long`], Nora's pane opened by a question asked in her bar.
+fn with_her_pane(width: f32) -> Window {
+    let (app, _) = long(answers::state(false, "", true), true, 12);
+    let mut h = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(vec2(width, 768.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+    h.run_steps(4);
+    assert!(super::super::assist::ask(h.state_mut(), "Qu'est-ce qui attend ma réponse ?"));
+    h.run_steps(6);
+    h
+}
+
+#[test]
+fn beside_her_pane_in_a_small_window_the_list_keeps_its_title_and_folds_its_controls_into_its_menu() {
+    let mut h = with_her_pane(1024.0);
+    assert!(h.state().nora.assist.open);
+    let name = h.state().hit.rect("listViewName", 0).expect("the view's name");
+    assert!(name.width() >= 60.0, "the title keeps its room: {name:?}");
+    for control in ["listShowDone", "listSearch", "listNew"] {
+        assert!(!shown(&h, control), "{control} is in the name's menu");
+    }
+    click(&mut h, "listViewName");
+    for item in ["New Email", "Search", "Show done", "Arrange By"] {
+        assert!(contains(&h, item), "{item} in the menu");
+    }
+    // The desk's frame of a small window: the name keeps a cut of itself and its ▾.
+    let h = with_her_pane(728.0);
+    let name = h.state().hit.rect("listViewName", 0).expect("the view's name");
+    assert!(name.width() >= 50.0, "the title keeps its room: {name:?}");
+}
+
 /// Nora's bar and the line above it in French, light and dark, to PNG files in `VARIANT_D_SHOTS`: the bar alone, what she
 /// proposes, what her last run filed, and a question typed in the bar.
 #[test]
@@ -150,8 +242,29 @@ fn ask_bar_screens_in_french() {
     let Some(dir) = std::env::var_os("VARIANT_D_SHOTS").map(std::path::PathBuf::from) else { return };
     let _language = crate::i18n::RestoreLanguage::hold();
     for dark in [false, true] {
-        for screen in ["7-barre-de-nora", "8-proposition", "9-journal-du-jour", "10-question-tapee"] {
-            let (mut app, _) = hosted(answers::state(screen == "9-journal-du-jour", "", true), screen != "7-barre-de-nora");
+        for screen in [
+            "7-barre-de-nora",
+            "8-proposition",
+            "9-journal-du-jour",
+            "10-question-tapee",
+            "14-liste-longue-sous-la-barre",
+            "15-volet-ouvert-1024",
+            "16-volet-ouvert-728",
+        ] {
+            if screen.starts_with("15") || screen.starts_with("16") {
+                let mut h = with_her_pane(if screen.starts_with("15") { 1024.0 } else { 728.0 });
+                h.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+                let _ = h.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+                h.run_steps(6);
+                let image = h.render().expect("drawn");
+                image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+                continue;
+            }
+            let (mut app, _) = if screen.starts_with("14") {
+                long(answers::state(false, "", true), true, 40)
+            } else {
+                hosted(answers::state(screen == "9-journal-du-jour", "", true), screen != "7-barre-de-nora")
+            };
             if screen == "9-journal-du-jour" {
                 let run = read_journal(&answers::journal("NFR-3")).runs.remove(0);
                 let said = app.nora.sorting.boxes.get(ME).and_then(|k| k.state.clone()).unwrap();

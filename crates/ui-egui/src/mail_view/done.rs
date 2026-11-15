@@ -137,29 +137,39 @@ pub(crate) fn undo(app: &mut MailApp, id: Id) {
 
 /// Put them all back, each where it was: one move for each folder they came from.
 pub(crate) fn undo_all(app: &mut MailApp) {
+    let all: Vec<Id> = app.done.items.iter().map(|i| i.id).collect();
+    undo_these(app, &all);
+}
+
+/// Put back those of `ids` that were marked done here (an open group's « Tout annuler »: its own), each where it was.
+pub(crate) fn undo_these(app: &mut MailApp, ids: &[Id]) {
+    let asked: std::collections::HashSet<Id> = ids.iter().copied().collect();
     let mut by_folder: BTreeMap<Id, Vec<Id>> = BTreeMap::new();
-    for item in &app.done.items {
+    for item in app.done.items.iter().filter(|i| asked.contains(&i.id)) {
         if app.session.mailbox.message(item.id).is_some_and(|m| m.folder != item.from) {
             by_folder.entry(item.from).or_default().push(item.id);
         }
     }
-    let mut kept = Vec::new();
-    for (folder, ids) in by_folder {
-        if app.run("mail.move", json!({"ids": ids, "folder": folder})).is_err() {
-            kept.extend(ids);
+    let mut kept = std::collections::HashSet::new();
+    for (folder, moved) in by_folder {
+        if app.run("mail.move", json!({"ids": moved, "folder": folder})).is_err() {
+            kept.extend(moved);
         }
     }
-    app.done.items.retain(|i| kept.contains(&i.id));
+    app.done.items.retain(|i| !asked.contains(&i.id) || kept.contains(&i.id));
 }
 
-/// The messages of the group whose heading is on row `first`: its rows until the next heading.
+/// The messages of the group whose heading is on row `first`: its rows until the next heading. Not a group of Principal's (its
+/// notifications or newsletters, of every day: `Row::bundle`), which has its own round.
 pub(super) fn group_ids(rows: &[Row], first: usize) -> Vec<Id> {
     let mut ids = Vec::new();
     for (i, row) in rows.iter().enumerate().skip(first) {
         if i > first && row.group.is_some() {
             break;
         }
-        ids.extend(row.members.iter().copied());
+        if row.bundle.is_none() {
+            ids.extend(row.members.iter().copied());
+        }
     }
     ids
 }
@@ -455,6 +465,104 @@ pub(super) fn section(app: &mut MailApp, ui: &mut Ui) {
     }
     if all.clicked() {
         undo_all(app);
+    } else if let Some(id) = undo_one {
+        undo(app, id);
+    }
+}
+
+/// The section in the list of variant D: its heading as a day's title (a small full round, « Marqués comme traités (N) », « Tout
+/// annuler »), then the newest of what was done as rows of the list, each with its full round (a click puts it back), the rounds
+/// joined by a rail down the lead column. In an open group of Principal, that group's alone.
+const D_HEAD_H: f32 = 40.0;
+const D_ROW_H: f32 = 50.0;
+const D_ROWS: usize = 5;
+
+pub(super) fn section_d(app: &mut MailApp, ui: &mut Ui) {
+    if app.done.items.is_empty() || !offered(app) {
+        return;
+    }
+    let group = super::bundle::open_group(app.session.view.filter);
+    let items: Vec<Item> = app
+        .done
+        .items
+        .iter()
+        .filter(|i| group.is_none_or(|g| app.session.mailbox.message(i.id).is_some_and(|m| m.stream == Some(g))))
+        .cloned()
+        .collect();
+    if items.is_empty() {
+        return;
+    }
+    let t = Tokens::get(ui.ctx());
+    let n = items.len();
+    let shown = items.len().min(D_ROWS);
+    let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), D_HEAD_H + D_ROW_H * shown as f32 + 6.0), Sense::hover());
+    let head = Rect::from_min_size(area.min, vec2(area.width(), D_HEAD_H));
+    app.hit.add("doneSection", 0, head);
+    let p = ui.painter().clone();
+    let lead_x = area.min.x + D_LEAD / 2.0;
+    // The rail, under the rounds: from the heading's to the last row's.
+    let last_y = head.max.y + D_ROW_H * (shown as f32 - 0.5);
+    p.line_segment([pos2(lead_x, head.center().y), pos2(lead_x, last_y)], Stroke::new(2.0, t.selection_edge.gamma_multiply(0.35)));
+    let tick = |center: Pos2, radius: f32| {
+        p.circle_filled(center, radius, t.selection_edge);
+        let k = radius / ROUND;
+        p.add(egui::Shape::line(
+            vec![center + vec2(-3.6 * k, 0.2 * k), center + vec2(-k, 2.8 * k), center + vec2(3.8 * k, -2.8 * k)],
+            Stroke::new(1.8, t.surface),
+        ));
+    };
+    tick(pos2(lead_x, head.center().y), 10.0);
+    let title = crate::i18n::fmt(tl!("Marked as done ({count})"), &[("count", &n.to_string())]);
+    let x = area.min.x + D_LEAD;
+    let w = paint_clipped(&p, pos2(x, head.center().y), (area.width() - D_LEAD - 120.0).max(0.0), &title, semibold(14.0), t.group_label);
+    let words = tl!("Undo all");
+    let words_w = p.layout_no_wrap(words.to_string(), semibold(12.0), t.text).size().x;
+    let all_at = Rect::from_min_size(pos2(x + w + 12.0, head.center().y - 13.0), vec2(words_w + 20.0, 26.0));
+    let all = ui.interact(all_at, EguiId::unique("done_section_undo_all"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    all.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, words));
+    app.hit.add("doneUndoAll", 0, all_at);
+    p.rect(all_at, 13.0, if all.hovered() { t.hover } else { Color32::TRANSPARENT }, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
+    p.text(all_at.center(), Align2::CENTER_CENTER, words, semibold(12.0), t.text);
+    let mut undo_one = None;
+    for (i, item) in items.iter().take(shown).enumerate() {
+        let r = Rect::from_min_size(pos2(area.min.x, head.max.y + D_ROW_H * i as f32), vec2(area.width(), D_ROW_H));
+        let center = pos2(lead_x, r.center().y);
+        let at = Rect::from_center_size(center, vec2(28.0, 28.0));
+        let resp = ui
+            .interact(at, ui.scope_id().with(("done_undo", item.id)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(tl!("Put it back where it was"));
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Undo")));
+        app.hit.add("doneUndo", item.id, at);
+        if resp.hovered() {
+            p.circle_filled(center, D_ROUND + 3.0, t.hover);
+        }
+        tick(center, D_ROUND);
+        let m = app.session.mailbox.message(item.id).cloned();
+        let picture = pos2(r.min.x + D_LEAD + 16.0, r.center().y);
+        if app.ui.sender_images
+            && let Some(m) = &m
+        {
+            crate::sender_images::avatar(app, ui, picture, 15.0, m, &m.from);
+        }
+        let left = if app.ui.sender_images { picture.x + 15.0 + 14.0 } else { r.min.x + D_LEAD };
+        let date = m.as_ref().map(|m| {
+            crate::dates::list_label(mailcraft_engine::list::when(m), app.session.now(), app.session.offset_at(m.date), app.session.prefs.twelve_hour)
+        });
+        let end = r.max.x - 14.0;
+        let date_w = date.map_or(0.0, |date| p.text(pos2(end, r.center().y), Align2::RIGHT_CENTER, date, semibold(13.0), t.text_dim).size().x);
+        let room = (end - date_w - 12.0 - left).max(0.0);
+        let who_w = paint_clipped(&p, pos2(left, r.center().y), super::d_sender_width(room), &item.who, semibold(15.0), t.text_dim);
+        let subject = if item.subject.is_empty() { tl!("(no subject)") } else { item.subject.as_str() };
+        let sx = left + who_w.max(super::d_sender_width(room)) + 16.0;
+        paint_clipped(&p, pos2(sx, r.center().y), (left + room - sx).max(0.0), subject, regular(15.0), t.text_dim);
+        if resp.clicked() {
+            undo_one = Some(item.id);
+        }
+    }
+    if all.clicked() {
+        let these: Vec<Id> = items.iter().map(|i| i.id).collect();
+        undo_these(app, &these);
     } else if let Some(id) = undo_one {
         undo(app, id);
     }

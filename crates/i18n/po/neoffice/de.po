@@ -4615,3 +4615,9 @@ msgstr "Diese Ansicht wird nur in NeoMail angeboten"
 
 msgid "none of your mailboxes has an Inbox"
 msgstr "keines Ihrer Postfächer hat einen Posteingang"
+
+msgid "Back to the Inbox"
+msgstr "Zurück zum Posteingang"
+
+msgid "Mark all of {group} as done"
+msgstr "Alles in {group} erledigen"

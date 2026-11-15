@@ -2201,6 +2201,11 @@ msgid "Back to account settings"
 msgstr "Retour aux paramètres du compte"
 
 #. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Back to the Inbox"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Bar on the Left"
@@ -7908,7 +7913,7 @@ msgid "Mailbox"
 msgstr "Boîte aux lettres"
 
 #. interface, name
-#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Main"
 msgstr ""
 
@@ -8030,6 +8035,11 @@ msgstr ""
 #, fuzzy
 msgid "Mark a message as read when it is opened in the reading pane"
 msgstr "Marquer un message comme lu quand il est ouvert dans le volet de lecture"
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Mark all of {group} as done"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/mail.rs
@@ -8931,7 +8941,7 @@ msgid "Newest on top"
 msgstr "Plus récents en haut"
 
 #. interface, name
-#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Newsletters"
 msgstr ""
 
@@ -10002,7 +10012,7 @@ msgid "Nothing was sent: the mailbox couldn't be saved first ({error})"
 msgstr ""
 
 #. android, interface, name
-#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Navigation.kt crates/engine/src/session.rs crates/ui-egui/src/mail_view/stream_tabs.rs
+#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Navigation.kt crates/engine/src/session.rs crates/ui-egui/src/mail_view/bundle.rs crates/ui-egui/src/mail_view/stream_tabs.rs
 msgid "Notifications"
 msgstr ""
 

@@ -5600,3 +5600,9 @@ msgstr "Cette vue n’est proposée que dans NeoMail"
 
 msgid "none of your mailboxes has an Inbox"
 msgstr "aucune de vos boîtes n’a de boîte de réception"
+
+msgid "Back to the Inbox"
+msgstr "Retour à la boîte de réception"
+
+msgid "Mark all of {group} as done"
+msgstr "Tout traiter dans {group}"

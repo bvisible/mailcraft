@@ -243,7 +243,7 @@ pub(super) fn bar_shown(app: &MailApp, rows: &[Row]) -> bool {
 
 /// The messages of the folder in view that the list shows, once each: what "archive all" takes (of every Inbox in « Toutes les
 /// boîtes »).
-fn listed_ids(app: &MailApp, rows: &[Row]) -> Vec<Id> {
+pub(super) fn listed_ids(app: &MailApp, rows: &[Row]) -> Vec<Id> {
     let folders = app.session.all_inboxes().unwrap_or_else(|| vec![app.session.view.folder]);
     let mut ids: Vec<Id> = rows
         .iter()

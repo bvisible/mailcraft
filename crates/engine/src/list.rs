@@ -44,6 +44,10 @@ pub struct Row {
     /// For a conversation's row: it is open, and its messages are listed under it.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub open: bool,
+    // //// Neoffice — a group of Principal (`bundles`): the row of every notification, or every newsletter, of the Inbox, where its
+    // //// Neoffice — newest is; `members` are all of them, `id` the newest.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle: Option<mailcraft_model::Stream>,
 }
 
 impl Row {
@@ -59,6 +63,8 @@ impl Row {
             copy,
             under: None,
             open: false,
+            // //// Neoffice — (see the field.)
+            bundle: None,
         }
     }
 
@@ -69,8 +75,9 @@ impl Row {
     }
 
     /// Whether it is the row of a conversation of more than one message, which opens.
+    // //// Neoffice — a group of Principal is none: it opens as its tab does (`bundle`).
     pub fn conversation(&self) -> bool {
-        self.under.is_none() && self.size() > 1
+        self.under.is_none() && self.size() > 1 && self.bundle.is_none()
     }
 }
 
@@ -303,9 +310,20 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
     let looked = looked_at(s, everywhere, &folders);
     // A Gmail category of the Inbox shows the Inbox's mail Gmail put in it (#911).
     let gmail = crate::gmail::Shown::of(s, looked.iter().copied());
+    // //// Neoffice — the groups of Principal (`bundles`): its notifications and its newsletters, each a row of its own.
+    let bundling = bundles(s, &query);
+    let mut bundled: [Vec<&Message>; 2] = [Vec::new(), Vec::new()];
     let mut shown: Vec<&Message> = looked
         .into_iter()
         .filter(|m| {
+            // //// Neoffice — (`bundling`.)
+            if bundling && !m.draft {
+                match m.stream {
+                    Some(mailcraft_model::Stream::Notification) => bundled[0].push(m),
+                    Some(mailcraft_model::Stream::Newsletter) => bundled[1].push(m),
+                    _ => {}
+                }
+            }
             unfetched = unfetched.saturating_add(usize::from(m.unfetched));
             let hit = gmail.as_ref().is_none_or(|g| g.keeps(m))
                 && filtered(s, m, &me)
@@ -383,6 +401,10 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
     } else {
         out.extend(shown.iter().map(|m| Row::of(m, 0)));
     }
+    // //// Neoffice — each group of Principal where its newest is (`bundles`), before the headings are given.
+    for (stream, members) in [mailcraft_model::Stream::Notification, mailcraft_model::Stream::Newsletter].into_iter().zip(bundled) {
+        bundle_row(&mut out, s, stream, members, desc);
+    }
 
     // Show in Groups off: the sorted rows, no headings. (A message under its open conversation is
     // under its conversation's heading.) A row of each message `shown` has, in its order, is
@@ -401,6 +423,38 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
         }
     }
     (out, kept_only, unfetched)
+}
+
+// //// Neoffice — whether Principal has its groups (variant D of a hosting page's tab): the Inbox's notifications and newsletters each
+// //// Neoffice — in a row of its own, which opens as their tab (`Filter::Notifications`, `Filter::Newsletters`), in place of the
+// //// Neoffice — tabs. Only in Principal (`Filter::Main`) arranged by date, without a search, where the mail is a hosting page's.
+fn bundles(s: &Session, query: &mailcraft_model::search::Query) -> bool {
+    !s.keeps_local && s.view.filter == Filter::Main && s.view.sort == SortBy::Date && query.is_empty()
+}
+
+// //// Neoffice — the row of a group of Principal (`bundles`): its newest message's, with all of them (`members`, newest first),
+// //// Neoffice — put where its newest sorts among the rows of the list (after what is pinned); none for a group without mail.
+fn bundle_row(out: &mut Vec<Row>, s: &Session, stream: mailcraft_model::Stream, mut members: Vec<&Message>, desc: bool) {
+    if members.is_empty() {
+        return;
+    }
+    members.sort_by_key(|m| std::cmp::Reverse((when(m), m.id)));
+    // (Its newest that isn't pinned, for its place and its heading, where there is one.)
+    let Some(newest) = members.iter().find(|m| !m.pinned).or(members.first()).copied() else { return };
+    let mut row = Row::of(newest, 0);
+    row.members = members.iter().map(|m| m.id).collect();
+    row.unread = members.iter().filter(|m| !m.read).count();
+    row.bundle = Some(stream);
+    let at = when(newest);
+    let mb = &s.mailbox;
+    let place = out
+        .iter()
+        .position(|r| {
+            let Some(m) = mb.message(r.id).filter(|_| r.under.is_none()) else { return false };
+            !m.pinned && if desc { when(m) < at } else { when(m) > at }
+        })
+        .unwrap_or(out.len());
+    out.insert(place, row);
 }
 
 /// `shown` in the order of a sort by name or size (From, Subject, Size): pinned first, ids

@@ -500,7 +500,8 @@ impl Stays {
     /// The messages `selection` has that `rows` lists, in the list `view` shows.
     fn take(selection: &[Id], rows: &[Row], list: &ListOf) -> Self {
         let selected: HashSet<Id> = selection.iter().copied().collect();
-        let ids = rows.iter().flat_map(|r| r.members.iter()).copied().filter(|id| selected.contains(id)).collect();
+        // //// Neoffice — (not a group of Principal's members, `Row::bundle`: listed in their group, not as messages.)
+        let ids = rows.iter().filter(|r| r.bundle.is_none()).flat_map(|r| r.members.iter()).copied().filter(|id| selected.contains(id)).collect();
         Stays::of(ids, selection, list)
     }
 

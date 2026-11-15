@@ -353,12 +353,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   Select All in the arrangement's menu and Ctrl+A). A short header of one row: the view's name with ▾ (« Toutes les
   boîtes » or an Inbox), under it the arrangement and whose mail it is (« Par date · ada@ et team@ », a click opens the
   arrangement's menu that upstream's header had on its right), on the right « Afficher les traités » (an Inbox's), the
-  search (`ui.focusSearch`) and a new message; the inbox's tabs by kind of sender in a row of 34 under it; no row of
-  « Trier avec Nora ». Days' titles 36 high. Nora's bar floats at the list's bottom right (« Demander à Nora… », Enter
+  search (`ui.focusSearch`) and a new message; no row of « Trier avec Nora ». Days' titles 36 high. A row is one line
+  of 48 where the list is 720 wide or more (`D_ONE_LINE_MIN`: the picture, the sender in a column of 30 %, the subject and
+  the preview, the time), two lines and a preview below. No tabs by kind of sender: in Principal (`Filter::Main`, by date,
+  no search) the Inbox's notifications and its newsletters are each a row where their newest is (`list::Row::bundle`,
+  `list::bundles`, `bundle_row` in `crates/engine/src/list.rs`; `mail_view/bundle.rs`): the group's mark, its name and
+  count, its senders with theirs, a chevron; a click opens it as its tab did (`view.filter`), its round marks it all done,
+  and a day's round leaves it out (`done::group_ids`). An open group's header is « ← | ✓ » (back to Principal, the whole
+  group done), its name and « 24 · Toutes les boîtes ». « Marqués comme traités (N) » there is a day's title with « Tout
+  annuler » and the newest five done as rows, their full rounds (a click puts one back) joined by a rail
+  (`done::section_d`), an open group's own alone. Nora's bar floats at the list's bottom right (« Demander à Nora… », Enter
   opens her pane with the question: `assist::ask`), with one line above it only when the sorting has something to say of
   the Inbox in view: what she can file where she files nothing yet (`mail_sorting.survey`, asked while the bar is drawn,
   once in half an hour), her tidying, what her last run filed today; its button opens the flow or the journal, its ✕ hides
-  it for the mailbox until the next day (`UiState::nora_hint_hidden`). « Toutes les boîtes » (`view.allInboxes`,
+  it for the mailbox until the next day (`UiState::nora_hint_hidden`). Both float on a backdrop of the list's paper (a fade
+  above it) and the line is opaque, so no row shows through; the list keeps room at its foot for them (`room_below`), its
+  last row scrolling above them. A list narrower than 300 (beside Nora's pane in a small window) keeps its title: the
+  controls on the right go into the name's menu, and below 220 the line under it too (`COMPACT_BELOW`). « Toutes les boîtes » (`view.allInboxes`,
   `ViewState::all_inboxes`, `Session::all_inboxes`/`own_inboxes`; a marked hunk of `list.rs`, `folder.rs`, `mail.rs`,
   `session.rs`): the Inboxes of the person's own server mailboxes together, first of the Favourites with their unread mail
   (`nav::all_inboxes_row`, and the page's menu through `allInboxes`), each row with its mailbox's colour (a ring round the
