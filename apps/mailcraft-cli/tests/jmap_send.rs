@@ -190,7 +190,9 @@ fn a_message_the_server_refuses_is_held_with_why_leaves_nothing_in_sent_and_goes
         let answers = rig.run(false);
         let held = rig.s.mailbox.message(message).unwrap().held.clone();
         assert_eq!(held, "It wasn't sent: the server doesn't let this account send mail just now. Change it, or send it again.", "{kind}");
-        assert!(answers[0]["errors"][0].as_str().unwrap().starts_with("Couldn't send 'Plans'"), "{kind}: {answers:?}");
+        // //// Neoffice — (the piece that says it: a run that asks what changed lists the mailboxes first)
+        let said = answers.iter().find_map(|a| a["errors"][0].as_str()).unwrap_or_default();
+        assert!(said.starts_with("Couldn't send 'Plans'"), "{kind}: {answers:?}");
         // Nothing looks sent: not in Sent here, not on the server, not delivered.
         assert!(rig.mail(FolderKind::Sent).is_empty() && rig.held_in("sent").is_empty() && rig.delivered().is_empty(), "{kind}");
         assert_eq!(rig.mail(FolderKind::Outbox).len(), 1, "{kind}");

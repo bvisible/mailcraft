@@ -26,13 +26,15 @@ struct Rig {
     server: StandIn,
     s: Session,
     account: Id,
+    // //// Neoffice — the runs read their windows, as against a server that keeps no state of its mail (`Email/changes`).
+    stateless: bool,
 }
 
 impl Rig {
     fn new() -> Rig {
         let mut s = Session::at(Mailbox::with_local_account("", ""), 1_800_000_000, 0);
         let added = s.run("account.add", &json!({"email": ADDRESS, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();
-        Rig { server: StandIn::new(), account: added["id"].as_u64().unwrap(), s }
+        Rig { server: StandIn::new(), account: added["id"].as_u64().unwrap(), s, stateless: false }
     }
 
     /// The server's mailboxes: the Inbox and the others by role, and a folder of the owner's with one in it.
@@ -60,6 +62,9 @@ impl Rig {
     /// One run, as a host does it: what the engine asks for (`full`: every mailbox; else the Inbox and `also`),
     /// done against the server, each piece taken in as it arrives. What taking each in answered.
     fn run(&mut self, full: bool, also: &[String]) -> Vec<Value> {
+        if self.stateless {
+            self.s.mailbox.jmap_states.clear();
+        }
         let request = jmap_mail_request(&self.s, self.account, full, also, false).unwrap();
         let client = block_on(Client::connect(self.server.clone(), &request.session, &Auth::bearer(TOKEN))).unwrap();
         let mut answers = Vec::new();
@@ -168,6 +173,8 @@ fn a_server_that_names_messages_by_where_they_are_gives_the_same_mailbox() {
 #[test]
 fn a_second_run_changes_a_keyword_and_removes_a_message_the_server_no_longer_lists() {
     let mut rig = Rig::new();
+    // (A server that keeps no state of its mail, so that the runs that start by themselves read their windows.)
+    rig.stateless = true;
     first_run(&mut rig);
     let before = rig.mail("Inbox").iter().map(|m| (m.subject.clone(), m.id)).collect::<Vec<_>>();
     let id_of = |subject: &str| before.iter().find(|(s, _)| s == subject).unwrap().1;
@@ -211,6 +218,8 @@ fn a_second_run_changes_a_keyword_and_removes_a_message_the_server_no_longer_lis
 #[test]
 fn a_window_cut_short_adds_and_updates_but_removes_nothing() {
     let mut rig = Rig::new();
+    // (A server that keeps no state of its mail, so that the runs that start by themselves read their windows.)
+    rig.stateless = true;
     let [inbox, ..] = <[String; 5]>::try_from(rig.mailboxes()).unwrap();
     for n in 0..6 {
         rig.deliver(&inbox, &format!("m{n}"), &[], &format!("2026-10-15T0{n}:00:00Z"));
@@ -242,6 +251,8 @@ fn a_window_cut_short_adds_and_updates_but_removes_nothing() {
 #[test]
 fn the_folder_on_screen_is_read_with_the_inbox_and_the_others_wait() {
     let mut rig = Rig::new();
+    // (A server that keeps no state of its mail, so that the runs that start by themselves read their windows.)
+    rig.stateless = true;
     let [inbox, sent, _, apollo, _] = <[String; 5]>::try_from(rig.mailboxes()).unwrap();
     rig.deliver(&inbox, "in", &[], "2026-10-15T06:00:00Z");
     rig.deliver(&sent, "out", &[], "2026-10-15T07:00:00Z");
@@ -377,6 +388,8 @@ fn a_mailbox_the_server_no_longer_has_goes_with_its_mail_and_one_it_emptied_is_e
 #[test]
 fn a_message_the_server_files_in_a_second_mailbox_is_kept_by_a_run_that_does_not_read_that_one() {
     let mut rig = Rig::new();
+    // (A server that keeps no state of its mail, so that the runs that start by themselves read their windows.)
+    rig.stateless = true;
     let [inbox, _, _, apollo, projects] = <[String; 5]>::try_from(rig.mailboxes()).unwrap();
     rig.deliver(&inbox, "in", &[], "2026-10-15T06:00:00Z");
     let launch = rig.deliver(&apollo, "launch", &[], "2026-10-15T09:00:00Z");
@@ -401,6 +414,8 @@ fn a_message_moved_on_the_server_is_kept_where_a_run_reads_both_ends_and_comes_b
     // A server whose ids survive a move, and one that names a message by where it lies (a move is a new id).
     for by_place in [false, true] {
         let mut rig = Rig::new();
+        // (A server that keeps no state of its mail, so that the runs that start by themselves read their windows.)
+        rig.stateless = true;
         if by_place {
             rig.server.with(|d| d.profile = Profile::by_place());
         }
@@ -436,4 +451,36 @@ fn a_message_moved_on_the_server_is_kept_where_a_run_reads_both_ends_and_comes_b
         assert_eq!(answers.iter().map(|a| a["new"].as_u64().unwrap_or(0)).sum::<u64>(), 1, "by place: {by_place}");
         assert_eq!(subjects(&rig.mail("Apollo")), ["stays", "moved"]);
     }
+}
+
+// //// Neoffice — the same second run against a server that keeps a state of its mail: it asks what changed since (`Email/changes`).
+#[test]
+fn a_second_run_asks_what_changed_and_comes_to_the_same_in_one_request() {
+    let mut rig = Rig::new();
+    first_run(&mut rig);
+    let before = rig.mail("Inbox").iter().map(|m| (m.subject.clone(), m.id)).collect::<Vec<_>>();
+    let id_of = |subject: &str| before.iter().find(|(s, _)| s == subject).unwrap().1;
+    let (first, second, third) = (id_of("first"), id_of("second"), id_of("third"));
+    let inbox = rig.s.mailbox.folder(rig.folder("Inbox")).unwrap().server.as_ref().map(|s| s.id.clone()).unwrap();
+    let (first_on_server, second_on_server) = {
+        let ids = server_ids(&rig.mail("Inbox"));
+        (ids[2].to_string(), ids[1].to_string())
+    };
+    rig.server.with(|d| {
+        assert!(d.set_keyword(&second_on_server, "$seen", true));
+        assert!(d.remove(&first_on_server));
+    });
+    rig.deliver(&inbox, "fourth", &[], "2026-10-16T07:00:00Z");
+    // Another mailbox changes too: what changed comes from every one.
+    let sent = rig.s.mailbox.folder(rig.folder("Sent")).unwrap().server.as_ref().map(|s| s.id.clone()).unwrap();
+    rig.deliver(&sent, "reply", &["$seen"], "2026-10-16T08:00:00Z");
+    rig.server.with(|d| d.seen.clear());
+    let answers = rig.run(false, &[]);
+    assert!(answers.iter().all(|a| a["errors"] == json!([])), "{answers:?}");
+    assert_eq!(rig.server.api_requests(), 1, "the mailboxes and what changed, in one request");
+    assert_eq!(subjects(&rig.mail("Inbox")), ["fourth", "third", "second"]);
+    assert!(rig.s.mailbox.message(first).is_none(), "the one the server no longer has");
+    assert!(rig.s.mailbox.message(second).unwrap().read, "read elsewhere, read here");
+    assert!(rig.s.mailbox.message(third).is_some_and(|m| m.flag == FlagStatus::Flagged));
+    assert_eq!(subjects(&rig.mail("Sent")), ["reply", "outgoing"]);
 }

@@ -39,6 +39,8 @@ struct Rig {
     account: Id,
     inbox: String,
     archive: String,
+    // //// Neoffice — the runs read their windows, as against a server that keeps no state of its mail (`Email/changes`).
+    stateless: bool,
 }
 
 impl Rig {
@@ -55,7 +57,7 @@ impl Rig {
             d.mailbox("Junk", None, Some("junk"));
             (inbox, d.mailbox("Archive", None, Some("archive")))
         });
-        Rig { server, account: added["id"].as_u64().unwrap(), s, inbox, archive }
+        Rig { server, account: added["id"].as_u64().unwrap(), s, inbox, archive, stateless: false }
     }
 
     /// A message in the Inbox, as a person's mail program wrote it: its id on the server.
@@ -74,6 +76,9 @@ impl Rig {
     /// A run as a host does it (`full`: every mailbox; else the Inbox and `also`), each piece taken in as it arrives: what
     /// taking each in answered.
     fn run_as(&mut self, full: bool, also: &[String], background: bool) -> Vec<Value> {
+        if self.stateless {
+            self.s.mailbox.jmap_states.clear();
+        }
         let request = jmap_mail_request(&self.s, self.account, full, also, background).unwrap();
         let client = block_on(Client::connect(self.server.clone(), &request.session, &Auth::bearer(TOKEN))).unwrap();
         let mut answers = Vec::new();
@@ -322,6 +327,8 @@ fn a_moved_message_is_found_again_even_when_the_window_of_the_mailbox_it_went_to
 fn a_move_whose_answer_was_lost_does_not_make_the_message_vanish_when_no_window_reaches_it_for_a_while() {
     for (kind, profile) in kinds() {
         let mut rig = Rig::new(profile);
+        // (A server that keeps no state of its mail: what changed since would find it at once.)
+        rig.stateless = true;
         let archive = rig.archive.clone();
         for n in 1..=6 {
             rig.deliver_in(&archive, &format!("old{n}"), &[], &format!("2026-10-0{n}T00:00:00Z"));
@@ -362,6 +369,8 @@ fn a_move_whose_answer_was_lost_does_not_make_the_message_vanish_when_no_window_
 fn a_message_deleted_for_good_before_a_window_has_found_it_again_is_destroyed_when_one_does() {
     // Only a server that names mail by place and does not say the new id leaves a moved message without one.
     let mut rig = Rig::new(Profile::by_place());
+    // (And one that keeps no state of its mail: what changed since would say the new id at once.)
+    rig.stateless = true;
     let archive = rig.archive.clone();
     for n in 1..=6 {
         rig.deliver_in(&archive, &format!("old{n}"), &[], &format!("2026-10-0{n}T00:00:00Z"));
@@ -521,22 +530,31 @@ fn another_client_changing_the_server_meanwhile_is_taken_in_and_what_cannot_be_d
 #[test]
 fn another_client_moving_a_message_the_owner_marked_does_not_lose_it() {
     // A server that keeps ids takes the mark, and the message comes back where the other client put it.
-    let mut rig = Rig::new(Profile::standard());
-    rig.deliver("m1", &[], 1);
-    rig.deliver("m2", &[], 2);
-    rig.full();
-    rig.s.run("mail.markRead", &json!({"ids": [rig.id("m1")]})).unwrap();
-    let id = rig.server_id("m1").unwrap();
-    let archive = rig.archive.clone();
-    rig.server.with(|d| assert!(d.move_to(&id, &archive).is_some()));
-    rig.quick();
-    assert_eq!(rig.there("m1").unwrap(), (vec!["$seen".to_string()], "Archive".to_string()));
-    // (The Inbox is the whole of the mailbox, and no longer lists it: it left here at the end of the run.)
-    assert!(!rig.has("m1"));
-    rig.full();
-    assert_eq!(rig.mail("Archive"), ["m1"]);
-    assert!(rig.message("m1").read);
-    rig.agrees();
+    // //// Neoffice — against a server that keeps no state of its mail (the windows), and one that does (what changed since).
+    for stateless in [true, false] {
+        let mut rig = Rig::new(Profile::standard());
+        rig.stateless = stateless;
+        rig.deliver("m1", &[], 1);
+        rig.deliver("m2", &[], 2);
+        rig.full();
+        rig.s.run("mail.markRead", &json!({"ids": [rig.id("m1")]})).unwrap();
+        let id = rig.server_id("m1").unwrap();
+        let archive = rig.archive.clone();
+        rig.server.with(|d| assert!(d.move_to(&id, &archive).is_some()));
+        rig.quick();
+        assert_eq!(rig.there("m1").unwrap(), (vec!["$seen".to_string()], "Archive".to_string()));
+        if stateless {
+            // (The Inbox is the whole of the mailbox, and no longer lists it: it left here at the end of the run.)
+            assert!(!rig.has("m1"));
+            rig.full();
+        } else {
+            // (What changed says where it went: it is there at once.)
+            assert!(rig.has("m1"));
+        }
+        assert_eq!(rig.mail("Archive"), ["m1"]);
+        assert!(rig.message("m1").read);
+        rig.agrees();
+    }
 }
 
 #[test]
