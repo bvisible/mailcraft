@@ -59,7 +59,8 @@ fn a_jmap_account_is_added_with_its_server() {
     // It is among those with a server (the window synchronises it) whose folders and messages are
     // known by server ids; its Send/Receive sends its Outbox where the host runs one, and nowhere else.
     let a = a.clone();
-    assert!(a.kind.has_server() && a.kind.server_ids() && !a.kind.sends_mail() && !s.sends_mail_of(&a));
+    // (Its kind sends, as upstream's has it since #1074; here, only where the host runs the fork's run.)
+    assert!(a.kind.has_server() && a.kind.server_ids() && a.kind.sends_mail() && !s.sends_mail_of(&a));
     s.jmap_runs = true;
     assert!(s.sends_mail_of(&a));
     let listed = s.run("account.list", &json!({})).unwrap();

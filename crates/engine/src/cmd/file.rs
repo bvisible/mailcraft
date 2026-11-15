@@ -24,10 +24,10 @@ pub fn specs() -> Vec<CommandSpec> {
         // //// Neoffice — what a file brings is kept on this computer only: refused where nothing is kept between visits (`kept_here`).
         CommandSpec::new("file.import", "Import", "File › Open & Export", import)
             .when(super::kept_here::import_refusal)
-            .params(r#"{"path": string} | {"name": string, "data": base64}, "folder"?: number — .eml, .mbox, .ics, .vcf; messages meant for a Microsoft account go to the local folder Imported (`local`), or into its Drafts to this computer's Drafts, as drafts (`drafts`); `"opened": true` (a message file the system asked to open) puts one .eml into the local folder Imported as a received message, or finds the one already there (`opened`, `already`), whatever `folder` says"#),
+            .params(r#"{"path": string} | {"name": string, "data": base64}, "folder"?: number — .eml, .mbox, .ics, .vcf; messages meant for an account a server keeps (Microsoft, IMAP, JMAP, Exchange) go to the local folder Imported (`local`, `account` its kind), or into its Drafts to this computer's Drafts, as drafts (`drafts`); a message already whole in the folder it lands in, or the folder it was meant for (same Message-ID, date, sender, subject and To/Cc), is left out and counted (`already`); `"opened": true` (a message file the system asked to open) puts one .eml into the local folder Imported as a received message, or finds the one already there (`opened`, `already`), whatever `folder` says"#),
         // //// Neoffice — refused where nothing is kept between visits, as File › Import is (`kept_here`).
         CommandSpec::new("file.importFolderTree", "Import a Folder of Mailboxes", "File › Open & Export", import_tree).when(super::kept_here::import_refusal).params(
-            r#"{"path": string (a folder) | "entries": [{"path": "Mail/Inbox.sbd/Sent", "data": base64}], "name"?: string (the new top folder; default the folder's name), "dryRun"?: bool (only say what would come in)} — every mbox file under the folder, found by its first bytes, into subfolders of one folder On this computer; a second import adds nothing already there (Message-ID)"#,
+            r#"{"path": string (a folder) | "entries": [{"path": "Mail/Inbox.sbd/Sent", "data": base64}], "name"?: string (the new top folder; default the folder's name), "dryRun"?: bool (only say what would come in)} — every mbox file under the folder, found by its first bytes, into subfolders of one folder On this computer; nothing already in its folder comes in again (same Message-ID, date, sender, subject and To/Cc; `duplicates`)"#,
         ),
         // //// Neoffice — refused where nothing is kept between visits, as File › Import is (`kept_here`): what a .pst file brings would be gone at the next one.
         CommandSpec::new("file.importPst", "Import a .pst File", "File › Open & Export", import_pst).when(super::kept_here::import_refusal).params(
@@ -360,9 +360,12 @@ fn export_message(s: &mut Session, v: &Value) -> CmdResult {
     // Whole: what the mailbox keeps outside memory goes into the file.
     let m = s.loaded_message(id)?;
     // A draft keeps its Bcc line; a sent or received message never had one to show.
-    let opts = mailcraft_mime::WriteOptions { include_bcc: m.draft, offset_minutes: s.offset_at(m.date) };
+    let opts = mailcraft_mime_model::WriteOptions { include_bcc: m.draft, offset_minutes: s.offset_at(m.date) };
     let name = eml_name(&m);
-    deliver(v, &name, mailcraft_mime::write(&m, &opts))
+    let r = deliver(v, &name, mailcraft_mime_model::write(&m, &opts))?;
+    // What went out, for the log: never the file's path or name, the subject or an address (#1401).
+    log::info!("export: eml, 1 message");
+    Ok(r)
 }
 
 /// The name of a message as a file of its own: its subject, fit for a file name, as `.eml`;
@@ -381,9 +384,10 @@ fn export_folder(s: &mut Session, v: &Value) -> CmdResult {
     }
     whole.sort_by_key(|m| (m.date, m.id));
     let messages: Vec<&mailcraft_model::Message> = whole.iter().map(|m| m.as_ref()).collect();
-    let opts = mailcraft_mime::WriteOptions { include_bcc: false, offset_minutes: s.offset_at(s.now()) };
-    let bytes = mailcraft_mime::write_mbox(&messages, &opts);
+    let opts = mailcraft_mime_model::WriteOptions { include_bcc: false, offset_minutes: s.offset_at(s.now()) };
+    let bytes = mailcraft_mime_model::write_mbox(&messages, &opts);
     let r = deliver(v, &export_name(&folder.name, "mbox"), bytes)?;
+    log::info!("export: mbox, {} messages", messages.len());
     Ok(with(r, "messages", json!(messages.len())))
 }
 

@@ -1,10 +1,15 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+# The phone apps are Gradle (and Xcode) projects, not crates: they only hold the generator of the
+# bindings (its own lock file).
+# //// Neoffice — and upstream's JMAP client (crates/jmap): its sending (#1074) is built on upstream's request types (`SendUp`),
+# //// Neoffice — which the fork's run replaces (`JmapSend`, crates/jmap-fork, the apps' `mailcraft-jmap`); back at the convergence.
+exclude = ["apps/mailcraft-android", "crates/jmap"]
 default-members = ["crates/*", "apps/mailcraft", "apps/mailcraft-cli", "xtask"]
 
 [workspace.package]
-version = "0.12.0"
+version = "0.13.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
@@ -14,12 +19,14 @@ repository = "https://github.com/UCS-Care-Group/mailcraft"
 # internal
 mailcraft-time = { path = "crates/time" }
 mailcraft-charset = { path = "crates/charset" }
+mailcraft-ber = { path = "crates/ber" }
 mailcraft-link = { path = "crates/link" }
 mailcraft-names = { path = "crates/names" }
 mailcraft-i18n = { path = "crates/i18n" }
 mailcraft-model = { path = "crates/model" }
 mailcraft-html = { path = "crates/html" }
 mailcraft-mime = { path = "crates/mime" }
+mailcraft-mime-model = { path = "crates/mime-model" }
 mailcraft-ical = { path = "crates/ical" }
 mailcraft-vcard = { path = "crates/vcard" }
 mailcraft-pst = { path = "crates/pst" }
@@ -30,12 +37,14 @@ mailcraft-proto = { path = "crates/proto" }
 # //// Neoffice — built and tested as upstream has it): the mail it sends, calendars, contacts and notes are on it, not yet on upstream's.
 mailcraft-jmap = { path = "crates/jmap-fork", package = "mailcraft-jmap-fork" }
 mailcraft-assuan = { path = "crates/assuan" }
+mailcraft-jmap-types = { path = "crates/jmap-types" }
 mailcraft-dav = { path = "crates/dav" }
 mailcraft-ews = { path = "crates/ews" }
 mailcraft-net = { path = "crates/net" }
 mailcraft-engine = { path = "crates/engine" }
 mailcraft-mcp = { path = "crates/mcp" }
 mailcraft-control-key = { path = "crates/control-key" }
+mailcraft-host = { path = "crates/host" }
 mailcraft-ui-egui = { path = "crates/ui-egui" }
 
 # foundation
@@ -190,5 +199,5 @@ debug = 0
 # winit 0.30.13 with two patches, each dropped when winit itself has it: an activation token that
 # names the latest click, which KWin needs before it brings the browser forward (#144); and
 # Wayland file drops plus the clipboard on winit's one data device (rust-windowing/winit#4729),
-# so that files dropped on a window are attached (#523).
-winit = { git = "https://github.com/UCS-Care-Group/winit", rev = "951b6c131897a80d27a925af7c5da22ea522eb0d" }
+# so that files dropped on a window are attached (#523); and reading HTML and pictures from it (#1217).
+winit = { git = "https://github.com/UCS-Care-Group/winit", rev = "1477b126a8c3d3d2add446c93492454ba833074d" }

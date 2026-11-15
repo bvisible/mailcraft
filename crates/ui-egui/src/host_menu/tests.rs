@@ -56,7 +56,7 @@ fn window(app: MailApp) -> Harness<'static, MailApp> {
 fn sample(menu: bool) -> Harness<'static, MailApp> {
     let mut app = MailApp::new(Session::at(mailcraft_engine::sample::mailbox(NOW, 0), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     if menu {
         app.services.host_menu = Some(Menu::default());
     }
@@ -178,7 +178,7 @@ fn mailbox(app: &mut MailApp, email: &str, folders: Vec<GraphFolder>, mail: Vec<
 fn page() -> (MailApp, Id, Id, Id) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     app.services.jmap_host_credentials = true;
     app.session.keeps_local = false;
     let ada = mailbox(
@@ -795,7 +795,7 @@ fn piece_of(pages: Vec<MessagePage>) -> JmapMailResult {
 fn cold() -> (MailApp, Id) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     app.services.jmap_host_credentials = true;
     app.session.keeps_local = false;
     let added = app.execute("account.add", json!({"email": ADA, "kind": "jmap", "jmap": {"session": SESSION, "bearer": true}})).unwrap();

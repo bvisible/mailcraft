@@ -618,7 +618,7 @@ pub(crate) fn show_dialog(app: &mut MailApp, ctx: &egui::Context, dialog: &mut S
                 }
                 if d.busy {
                     ui.horizontal(|ui| {
-                        ui.spinner();
+                        crate::software::spinner(ui, ui.spacing().interact_size.y, None);
                         ui.label(tl!("Importing…"));
                     });
                 }
@@ -740,7 +740,7 @@ fn own_keys(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             let _ = app.run("ui.refreshOwnKeys", json!({}));
         }
         if looking {
-            ui.spinner();
+            crate::software::spinner(ui, ui.spacing().interact_size.y, None);
         }
     });
     let now = app.session.now();

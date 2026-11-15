@@ -7,11 +7,9 @@
 //! is, never redrawn: `assets/neoffice/neoffice-icon-64.png` is `assets/logo/favicon.png` of `bvisible/neoffice-design-system`
 //! byte for byte, the 64 px render of its `neoffice-icon.svg` (the o of the wordmark in its two weights, on the paper, in the
 //! family's rounded square). The window has no SVG reader and gets none for one picture: it reads PNG already. The program that
-//! keeps its mail on the computer is MailCraft's and keeps MailCraft's tile ([`crate::icons::app_mark`]).
+//! keeps its mail on the computer is MailCraft's and keeps MailCraft's app icon (`chrome.rs`, `title_icon`).
 
 use egui::{Rect, Ui};
-
-use crate::MailApp;
 
 /// Neoffice's icon, 64 px with its rounded corners clear (enough for the 22-point mark at three pixels a point).
 const PNG: &[u8] = include_bytes!("../../../assets/neoffice/neoffice-icon-64.png");
@@ -32,11 +30,10 @@ fn texture(ctx: &egui::Context) -> Option<egui::TextureHandle> {
     Some(texture)
 }
 
-/// The window's mark in `rect` (a square): Neoffice's icon in a hosting page's tab, MailCraft's tile elsewhere.
-pub(crate) fn paint(app: &MailApp, ui: &Ui, rect: Rect) {
-    if app.session.keeps_local {
-        crate::icons::app_mark(ui.painter(), rect);
-    } else if let Some(texture) = texture(ui.ctx()) {
+/// Neoffice's icon in `rect` (a square), the window's mark in a hosting page's tab (the desktop's is upstream's app icon,
+/// `chrome.rs`).
+pub(crate) fn paint(ui: &Ui, rect: Rect) {
+    if let Some(texture) = texture(ui.ctx()) {
         egui::Image::new(&texture).fit_to_exact_size(rect.size()).paint_at(ui, rect);
     }
 }

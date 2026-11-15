@@ -200,7 +200,7 @@ impl MailApp {
         crate::notes_view::flush(self, ctx, false);
         let focused = ctx.input(|i| i.focused);
         self.jmap_pim_tick_at(focused, now_ms());
-        if self.services.jmap_pim.is_none() || !self.auto_sync {
+        if self.services.jmap_pim.is_none() || !self.session.driver.auto_sync() {
             return;
         }
         if self.jmap_pim.rx.is_some() {
@@ -260,7 +260,7 @@ impl MailApp {
             self.jmap_pim.rx = None;
             self.pim_failed(account, now, wide, contacts);
         }
-        if !self.auto_sync || self.services.jmap_pim.is_none() {
+        if !self.session.driver.auto_sync() || self.services.jmap_pim.is_none() {
             return false;
         }
         // One at a time; and none beside a Microsoft Graph calendar job.
@@ -288,7 +288,7 @@ impl MailApp {
             }
             // What is ready to go now (and not the very same as a moment ago, which would go round in circles), of the
             // calendars and of the contacts.
-            let changes = if remote::events_waiting(&self.session, account).due > 0 { self.calendar_changes(account) } else { None };
+            let changes = if remote::events_waiting(&self.session, account).due > 0 { self.session.calendar_changes(account) } else { None };
             let again = |(sent, at): &(EventsUpload, f64)| changes.as_ref() == Some(sent) && now - at < FIRST_RETRY_MS;
             let repeated = self.jmap_pim.sent.get(&account).is_some_and(again);
             let changes = changes.filter(|_| !repeated);
@@ -307,7 +307,7 @@ impl MailApp {
                 BEHIND_MS
             };
             // Other days came into view, or a calendar was ticked that the last job didn't read: asked for without waiting.
-            let elsewhere = in_front && self.jmap_pim.shown.get(&account).is_some_and(|shown| *shown != self.calendar_window());
+            let elsewhere = in_front && self.jmap_pim.shown.get(&account).is_some_and(|shown| *shown != self.session.calendar_window());
             let newly = in_front && self.ticked_unread(account);
             let asked = self.jmap_pim.checked.get(&account).copied();
             let refresh = wide || ((self.jmap_pim.due || elsewhere || newly) && in_front) || asked.is_none_or(|at| now - at >= every);
@@ -357,10 +357,10 @@ impl MailApp {
             }
         };
         let today = self.session.now();
-        let (from, to) = around.unwrap_or_else(|| if wide { (today - WIDE_BEHIND, today + WIDE_AHEAD) } else { self.calendar_window() });
+        let (from, to) = around.unwrap_or_else(|| if wide { (today - WIDE_BEHIND, today + WIDE_AHEAD) } else { self.session.calendar_window() });
         let main = self.jmap_pim.mains.get(&account).cloned().unwrap_or_default();
         let has_main = self.session.mailbox.calendars.iter().any(|c| c.origin.account == account && c.origin.id.is_empty());
-        let mut asks = self.calendar_asks(account, wide && around.is_none(), Some((from, to)));
+        let mut asks = self.session.calendar_asks(account, wide && around.is_none(), Some((from, to)));
         // The main calendar always, even before a list has made it here.
         if !asks.iter().any(|ask| ask.calendar.is_empty()) {
             asks.insert(0, CalendarAsk { calendar: String::new(), series: Vec::new() });
@@ -432,7 +432,7 @@ impl MailApp {
             if wide {
                 self.jmap_pim.wide.insert(account, now);
             }
-            self.jmap_pim.shown.insert(account, self.calendar_window());
+            self.jmap_pim.shown.insert(account, self.session.calendar_window());
             self.jmap_pim.due = false;
         }
         true
@@ -551,9 +551,12 @@ impl MailApp {
         };
         // What the server made of the changes first, then the events: they were read after the changes went.
         let main = result.events.take().filter(|download| here(self, download));
-        self.take_in_calendar(account, result.uploaded.as_ref(), main.as_ref(), &mut errors);
+        // (The engine takes them in, as it does a Microsoft account's calendar, and the window says what came of it.)
+        let mut taken = mailcraft_engine::sync_driver::CalendarTaken::default();
+        self.session.take_in_calendar(account, result.uploaded.as_ref(), main.as_ref(), &mut taken);
         let more: Vec<EventsDownload> = std::mem::take(&mut result.more_events).into_iter().filter(|download| here(self, download)).collect();
-        self.take_in_more_calendars(&more, &mut errors);
+        self.session.more_calendars_in(&more, &mut taken);
+        self.say_calendar_taken(account, taken, &mut errors);
         // What the server made of the changes of contacts, then the contacts: they were read after the changes went.
         if let Some(uploaded) = &result.contacts_uploaded {
             self.take_in_contact_outcomes(account, uploaded, &mut errors);

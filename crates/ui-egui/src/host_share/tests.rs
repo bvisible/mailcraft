@@ -54,7 +54,7 @@ type Handed = Rc<RefCell<Vec<Value>>>;
 fn page(share: bool) -> (MailApp, Id, Id, Handed) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     app.services.jmap_host_credentials = true;
     app.session.keeps_local = false;
     let ada = mailbox(&mut app, ADA, &["A1", "A2"]);

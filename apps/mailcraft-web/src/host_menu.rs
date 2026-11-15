@@ -254,7 +254,7 @@ mod tests {
         let session = mailcraft_engine::Session::at(Mailbox::with_local_account("", ""), 1_791_993_600, 0);
         let mut app = mailcraft_ui_egui::MailApp::new(session, mailcraft_ui_egui::Services::default());
         app.autosave = false;
-        app.auto_sync = false;
+        app.session.driver.set_auto_sync(false);
         app.services.jmap_host_credentials = true;
         let email = "ada@example.org";
         let added =
@@ -341,7 +341,8 @@ mod tests {
         });
         let session = mailcraft_engine::Session::at(Mailbox::with_local_account("", ""), 1_791_993_600, 0);
         let mut app = MailApp::new(session, mailcraft_ui_egui::Services::default());
-        (app.autosave, app.auto_sync, app.services.jmap_host_credentials) = (false, false, true);
+        (app.autosave, app.services.jmap_host_credentials) = (false, true);
+        app.session.driver.set_auto_sync(false);
         // The window's runs go to the in-process server through the browser's runner, with the page's token.
         let to = server.clone();
         app.services.jmap = Some(Box::new(move |job: JmapJob| {

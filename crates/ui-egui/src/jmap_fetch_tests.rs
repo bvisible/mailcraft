@@ -61,7 +61,7 @@ fn mail(id: &str, received: i64) -> GraphMessage {
 fn window(host_holds_credentials: bool, n: i64) -> (MailApp, Id, Asked) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     let asked: Asked = Default::default();
     let log = asked.clone();
     app.services.jmap_fetch = Some(Box::new(move |job: JmapFetchJob| {
@@ -152,7 +152,7 @@ fn a_message_the_owner_opens_is_fetched_at_once_and_shows_whole() {
     let m = app.session.mailbox.message(opened).unwrap();
     assert!(!m.unfetched && m.body.text.contains("The words of E2."), "{:?}", m.body.text);
     assert_eq!((m.subject.as_str(), m.read), ("Whole E2", false));
-    assert!(!app.fetching.fetching(opened) && !app.fetching.busy() && !app.fetching.offline);
+    assert!(!app.fetching.fetching(opened) && !app.fetching.busy() && !app.session.driver.fetch.offline);
     // The others are as they were: the background is held back.
     assert!(whole(&app, "E2") && !whole(&app, "E1") && !whole(&app, "E3"));
     assert_eq!(jobs(&asked), 1);
@@ -193,13 +193,13 @@ fn the_secret_of_the_job_is_the_accounts_unless_the_host_holds_the_credential() 
     app2.session.sel.messages = vec![id_of(&app2, "E1")];
     app2.drive_fetch();
     assert_eq!(jobs(&asked2), 0);
-    assert!(app2.fetching.offline && app2.dialog.is_none());
+    assert!(app2.session.driver.fetch.offline && app2.dialog.is_none());
     // ... until the server turns it down: it is not asked again with it, whoever holds it.
     app.jmap_refused.insert(account);
     app.session.sel.messages = vec![id_of(&app, "E3")];
     app.drive_fetch();
     assert_eq!(jobs(&asked), 2);
-    assert!(app.fetching.offline);
+    assert!(app.session.driver.fetch.offline);
     let (mut host_holds, account3, asked3) = window(true, 2);
     host_holds.jmap_refused.insert(account3);
     host_holds.session.sel.messages = vec![id_of(&host_holds, "E1")];
@@ -238,7 +238,7 @@ fn a_reply_to_a_message_that_cant_be_asked_for_says_so() {
     app.services.jmap_fetch = None;
     let said = app.run("mail.reply", json!({"id": id_of(&app, "E2")})).unwrap_err();
     assert_eq!(said, "This message isn't on this computer yet. It will download when you're online.");
-    assert!(app.fetching.offline && jobs(&asked) == 0);
+    assert!(app.session.driver.fetch.offline && jobs(&asked) == 0);
     // A message the account hasn't an id for (a moved one, waiting to be found again).
     let (mut app, _, asked) = window(true, 2);
     let id = id_of(&app, "E1");
@@ -264,7 +264,7 @@ fn a_message_the_server_no_longer_has_stays_as_it_is_and_is_asked_for_again_when
     answer(&asked, 0, GraphFetchResult { account, email: ME.into(), missing: vec!["E2".into()], ..Default::default() });
     app.drive_fetch();
     // Still its headers and preview, no longer downloading, and nothing says the server could not be reached.
-    assert!(!whole(&app, "E2") && !app.fetching.fetching(opened) && !app.fetching.offline);
+    assert!(!whole(&app, "E2") && !app.fetching.fetching(opened) && !app.session.driver.fetch.offline);
     assert_eq!(jobs(&asked), 1);
     // The background leaves it alone from now on...
     app.session.sync_progress.full_paused = false;
@@ -361,7 +361,7 @@ fn a_host_that_cant_reach_the_server_is_left_alone_for_a_while() {
     let offline = GraphFetchResult { account, email: ME.into(), offline: true, ..Default::default() };
     answer(&asked, 0, offline);
     app.drive_fetch();
-    assert!(app.fetching.offline);
+    assert!(app.session.driver.fetch.offline);
     // It tries again in a while, not at once, and nothing else is asked meanwhile.
     for _ in 0..5 {
         app.drive_fetch();
@@ -375,7 +375,7 @@ fn a_host_that_cant_reach_the_server_is_left_alone_for_a_while() {
     let dropped = asked.lock().unwrap().pop().map(|fetch| fetch.to);
     drop(dropped);
     app.drive_fetch();
-    assert!(app.fetching.offline && !app.fetching.busy());
+    assert!(app.session.driver.fetch.offline && !app.fetching.busy());
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn a_host_with_a_task_for_one_kind_only_is_asked_for_that_kind_only() {
     app.session.sel.messages = vec![id_of(&app, "E1")];
     app.drive_fetch();
     assert_eq!((graph_jobs(&graph), jobs(&asked)), (0, 0));
-    assert!(app.fetching.offline);
+    assert!(app.session.driver.fetch.offline);
     app.session.sel.messages = vec![graph_message];
     app.drive_fetch();
     assert_eq!((graph_jobs(&graph), jobs(&asked)), (1, 0));
@@ -469,7 +469,7 @@ fn a_host_with_a_task_for_one_kind_only_is_asked_for_that_kind_only() {
     app.session.sel.messages = vec![graph_message];
     app.drive_fetch();
     assert_eq!((graph_jobs(&graph), jobs(&asked)), (0, 0));
-    assert!(app.fetching.offline);
+    assert!(app.session.driver.fetch.offline);
     app.session.sel.messages = vec![id_of(&app, "E1")];
     app.drive_fetch();
     assert_eq!((graph_jobs(&graph), jobs(&asked)), (0, 1));

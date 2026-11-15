@@ -724,7 +724,7 @@ const NOW: i64 = 1_791_993_600;
 fn window() -> (crate::MailApp, mailcraft_model::Id) {
     let mut app = crate::MailApp::new(mailcraft_engine::Session::at(Mailbox::with_local_account("", ""), NOW, 0), crate::Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     let added = app.execute(
         "account.add",
         serde_json::json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/jmap/session", "bearer": true}}),

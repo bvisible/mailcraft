@@ -102,7 +102,7 @@ pub(crate) fn host(app: &mut MailApp, mailboxes: &[(&str, &str)]) -> Calls {
 
 pub(crate) fn quiet(mut app: MailApp) -> MailApp {
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     app
 }
 

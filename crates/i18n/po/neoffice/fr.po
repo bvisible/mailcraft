@@ -5190,3 +5190,383 @@ msgstr "Marqués comme traités ({count})"
 
 msgid "Put it back where it was"
 msgstr "Le remettre où il était"
+
+# //// Neoffice — upstream's texts new in its v0.13.0 that its catalogue leaves untranslated (Haiku, 15.11.2026).
+
+msgid "'{subject}' may have been sent, even if its copy in Sent (or Drafts) is still marked as a draft. It is held in the Outbox."
+msgstr "« {subject} » a peut-être été envoyé, même si sa copie dans Éléments envoyés (ou Brouillons) est encore marquée comme brouillon. Il est retenu dans la Boîte d’envoi."
+
+msgid "'{subject}' stays in the Snoozed folder: the server would not move it back, so it is no longer snoozed."
+msgstr "« {subject} » reste dans le dossier Reportés : le serveur n’a pas pu le remettre en arrière, il n’est donc plus reporté."
+
+msgid "(the server didn't confirm the sender)"
+msgstr "(le serveur n’a pas confirmé l’expéditeur)"
+
+msgid "A JMAP account's mail can't be snoozed yet."
+msgstr "Le courrier d’un compte JMAP ne peut pas encore être reporté."
+
+msgid "A shared mailbox, read with the sign-in of the account it is opened through"
+msgstr "Une boîte partagée, lue avec la connexion du compte par lequel elle est ouverte"
+
+msgid "A shared mailbox, read with the sign-in of {account}"
+msgstr "Une boîte partagée, lue avec la connexion de {account}"
+
+msgid "A sign-in is already open."
+msgstr "Une connexion est déjà ouverte."
+
+msgid "An Exchange server or IMAP?"
+msgstr "Un serveur Exchange ou IMAP ?"
+
+msgid "An account couldn't be sent and received."
+msgstr "Impossible d’envoyer et de recevoir pour un compte."
+
+msgid "Asking your domain's DNS…"
+msgstr "Interrogation du DNS de votre domaine…"
+
+msgid "Automatic setup (Autodiscover)"
+msgstr "Configuration automatique (Autodiscover)"
+
+msgid "Blue grey"
+msgstr "Gris bleuté"
+
+msgid "Change the name the folder pane shows for this shared mailbox, and its colour"
+msgstr "Modifier le nom affiché dans le volet des dossiers pour cette boîte partagée, ainsi que sa couleur"
+
+msgid "Check both servers before you connect."
+msgstr "Vérifiez les deux serveurs avant de vous connecter."
+
+msgid "Close to system tray"
+msgstr "Réduire dans la zone de notification"
+
+msgid "Continue in tray"
+msgstr "Continuer dans la zone de notification"
+
+msgid "Dark Theme Style"
+msgstr "Style du thème sombre"
+
+msgid "Dark theme"
+msgstr "Thème sombre"
+
+msgid "Dismiss Software Drawing Notice"
+msgstr "Masquer l’avis de dessin logiciel"
+
+msgid "Found in your domain's DNS. Your sign-in goes to a server outside your domain only after you agree."
+msgstr "Trouvé dans le DNS de votre domaine. Votre connexion n’est envoyée à un serveur hors de votre domaine qu’après votre accord."
+
+msgid "Gmail label: {label}"
+msgstr "Libellé Gmail : {label}"
+
+msgid "Google sign-in is open only to invited testers while Google reviews MailCraft."
+msgstr "La connexion Google n’est ouverte qu’aux testeurs invités pendant que Google examine MailCraft."
+
+msgid "If you don't, nothing is sent, and you can change the servers in Server settings."
+msgstr "Si vous ne le faites pas, rien n’est envoyé, et vous pouvez changer les serveurs dans les paramètres du serveur."
+
+msgid "If you go on, your user name and password are sent to {hosts}. Go on only if you know it is your provider's."
+msgstr "Si vous poursuivez, votre nom d’utilisateur et votre mot de passe seront envoyés à {hosts}. Poursuivez seulement si vous savez que c’est celui de votre fournisseur."
+
+msgid "Import Mail"
+msgstr "Importer le courrier"
+
+msgid "Import the messages in {name} into {folder}?"
+msgstr "Importer les messages de {name} dans {folder} ?"
+
+msgid "Import {n} message from {name} into {folder}?"
+msgid_plural "Import {n} messages from {name} into {folder}?"
+msgstr[0] "Importer {n} message de {name} dans {folder} ?"
+msgstr[1] "Importer {n} messages de {name} dans {folder} ?"
+
+msgid "Imported {what} into the local folder Imported, on this computer"
+msgstr "{what} importé dans le dossier local Importé, sur cet ordinateur"
+
+msgid "Imported {what} into the local folder Imported: move it into the account to put it on its server"
+msgstr "{what} importé dans le dossier local Importé : déplacez-le dans le compte pour le mettre sur son serveur"
+
+msgid "Keep MailCraft running for mail and reminders when you close its window. Click its icon beside the clock to show it again, or choose Quit from the icon's menu. If no system tray is available, closing exits MailCraft."
+msgstr "MailCraft reste actif pour le courrier et les rappels quand vous fermez sa fenêtre. Cliquez sur son icône à côté de l’horloge pour la réafficher, ou choisissez Quitter dans le menu de l’icône. Si aucune zone de notification n’est disponible, la fermeture quitte MailCraft."
+
+msgid "Loading…"
+msgstr "Chargement…"
+
+msgid "Mail and reminders will keep running. To bring the window back, click MailCraft's system tray icon and choose Show MailCraft. On Windows, the icon may be under the arrow for hidden icons beside the clock. On macOS, use the menu-bar icon or click MailCraft in the Dock. Choose Quit MailCraft from the icon's menu to exit."
+msgstr "Le courrier et les rappels continuent de fonctionner. Pour rouvrir la fenêtre, cliquez sur l’icône de MailCraft dans la zone de notification et choisissez Afficher MailCraft. Sous Windows, l’icône peut être sous la flèche des icônes masquées, à côté de l’horloge. Sous macOS, utilisez l’icône de la barre des menus ou cliquez sur MailCraft dans le Dock. Pour quitter, choisissez Quitter MailCraft dans le menu de l’icône."
+
+msgid "MailCraft doesn't delete a JMAP account's folders yet: the next Send/Receive would bring them back"
+msgstr "MailCraft ne supprime pas encore les dossiers d’un compte JMAP : le prochain Envoyer/Recevoir les ramènerait"
+
+msgid "MailCraft is drawing without the graphics card, which uses a lot of processor time. Installing or updating the graphics driver usually fixes this."
+msgstr "MailCraft dessine sans la carte graphique, ce qui consomme beaucoup de temps processeur. Installer ou mettre à jour le pilote graphique règle généralement le problème."
+
+msgid "MailCraft moves a JMAP account's mail only between the folders its server has: the next Send/Receive would bring it back"
+msgstr "MailCraft ne déplace le courrier d’un compte JMAP qu’entre les dossiers que son serveur possède : le prochain Envoyer/Recevoir le ramènerait"
+
+msgid "MailCraft tries the usual places for your address."
+msgstr "MailCraft essaie les emplacements habituels pour votre adresse."
+
+msgid "MailCraft will keep running"
+msgstr "MailCraft continuera de fonctionner"
+
+msgid "Menu"
+msgstr "Menu"
+
+msgid "Messages already in that folder are left out."
+msgstr "Les messages déjà présents dans ce dossier sont exclus."
+
+msgid "Mozilla's ISP database names {hosts} as the mail server of {domain}, which isn't in your address's own domain."
+msgstr "La base de données des FAI de Mozilla indique {hosts} comme serveur de courrier de {domain}, qui n’appartient pas au domaine de votre adresse."
+
+msgid "Neutral grey"
+msgstr "Gris neutre"
+
+msgid "No copies on this computer of mail its server has were found"
+msgstr "Aucune copie, sur cet ordinateur, du courrier que son serveur possède n’a été trouvée"
+
+msgid "Not an Exchange server? Set it up with IMAP"
+msgstr "Pas un serveur Exchange ? Configurez-le avec IMAP"
+
+msgid "Not every server was found: the rest is only a guess made from the domain. Check it with your provider or administrator before you connect."
+msgstr "Tous les serveurs n’ont pas été trouvés : le reste n’est qu’une supposition faite à partir du domaine. Vérifiez-les auprès de votre fournisseur ou de votre administrateur avant de vous connecter."
+
+msgid "Nothing came back from the sign-in page in time."
+msgstr "La page de connexion n’a rien renvoyé à temps."
+
+msgid "Nothing new imported: {already}"
+msgstr "Rien de nouveau importé : {already}"
+
+msgid "On Wayland, restart MailCraft after enabling this option. A reachable X11/XWayland server and a system tray are required."
+msgstr "Sous Wayland, redémarrez MailCraft après avoir activé cette option. Un serveur X11/XWayland accessible et une zone de notification sont nécessaires."
+
+msgid "Only a Microsoft account signs in on the phone for now."
+msgstr "Pour l’instant, seul un compte Microsoft peut se connecter sur le téléphone."
+
+msgid "Remove Imported Duplicates"
+msgstr "Supprimer les doublons importés"
+
+msgid "Return Now"
+msgstr "Ramener maintenant"
+
+msgid "Return Snoozed Mail"
+msgstr "Ramener le courrier reporté"
+
+msgid "Saved the message to {name}"
+msgstr "Message enregistré dans {name}"
+
+msgid "Saved {n} message to {name}"
+msgid_plural "Saved {n} messages to {name}"
+msgstr[0] "{n} message enregistré dans {name}"
+msgstr[1] "{n} messages enregistrés dans {name}"
+
+msgid "Search again"
+msgstr "Rechercher à nouveau"
+
+msgid "Send your password to another server?"
+msgstr "Envoyer votre mot de passe à un autre serveur ?"
+
+msgid "Sender images"
+msgstr "Images de l’expéditeur"
+
+msgid "Show MailCraft"
+msgstr "Afficher MailCraft"
+
+msgid "Shown in the folder pane, such as Team or Support. Leave it empty to show the address. Kept on this computer only."
+msgstr "Affiché dans le volet des dossiers, par exemple Équipe ou Support. Laissez vide pour afficher l’adresse. Conservé sur cet ordinateur uniquement."
+
+msgid "Sign-in isn't set up on this phone."
+msgstr "La connexion n’est pas configurée sur ce téléphone."
+
+msgid "Signing in isn't available on this phone."
+msgstr "La connexion n’est pas disponible sur ce téléphone."
+
+msgid "Snoozed"
+msgstr "Reporté"
+
+msgid "System default"
+msgstr "Valeur par défaut du système"
+
+msgid "That account is gone."
+msgstr "Ce compte n’existe plus."
+
+msgid "That sign-in is for somebody else's mailbox, not this account's. Nothing was kept."
+msgstr "Cette connexion concerne la boîte d’une autre personne, et non celle de ce compte. Rien n’a été conservé."
+
+msgid "The DNS records of {domain} name {hosts} as its mail server, which isn't in your address's own domain."
+msgstr "Les enregistrements DNS de {domain} désignent {hosts} comme serveur de courrier, qui n’appartient pas au domaine de votre adresse."
+
+msgid "The account can't be signed in now."
+msgstr "Le compte ne peut pas se connecter pour l’instant."
+
+msgid "The domain {domain} names a server for Exchange's automatic setup (Autodiscover), so this looks like an Exchange server account. Type your password and press Connect: MailCraft looks for the server and checks the account. Nothing is sent until then."
+msgstr "Le domaine {domain} désigne un serveur de configuration automatique d’Exchange (Autodiscover) : ce compte ressemble donc à un compte Exchange. Saisissez votre mot de passe et cliquez sur Connecter : MailCraft cherche le serveur et vérifie le compte. Rien n’est envoyé avant cela."
+
+msgid "The domain {domain} names a server for automatic setup (Autodiscover). Exchange servers are found that way, and some hosting providers use it for their IMAP mail too. Which is yours? Only the DNS was asked to find it, never the server itself."
+msgstr "Le domaine {domain} désigne un serveur de configuration automatique (Autodiscover). Les serveurs Exchange se trouvent ainsi, et certains hébergeurs l’utilisent aussi pour leur courrier IMAP. Lequel est le vôtre ? Seul le DNS a été interrogé pour le trouver, jamais le serveur lui-même."
+
+msgid "The greys the dark theme is drawn in: neutral, or tinted blue. The light theme stays as it is."
+msgstr "Les gris dans lesquels le thème sombre est dessiné : neutre, ou teinté de bleu. Le thème clair reste inchangé."
+
+msgid "The list of sign-ins kept on this phone was damaged, so some older sign-ins may still be kept on it. Clearing MailCraft's storage in Android's Settings removes them."
+msgstr "La liste des connexions conservées sur ce téléphone était endommagée, si bien que d’anciennes connexions peuvent encore y être gardées. Vider le stockage de MailCraft dans les Réglages d’Android les supprime."
+
+msgid "The mailbox could not be read."
+msgstr "La boîte aux lettres n’a pas pu être lue."
+
+msgid "The sample mailbox has no Inbox."
+msgstr "La boîte d’exemple n’a pas de Boîte de réception."
+
+msgid "The server's copies stay as they are, and nothing is sent to the server. Undo brings them back until the next Send/Receive."
+msgstr "Les copies du serveur restent telles quelles, et rien n’est envoyé au serveur. Annuler les rétablit jusqu’au prochain Envoyer/Recevoir."
+
+msgid "The servers below are what Mozilla's ISP database lists for {domain}. Check them before you connect."
+msgstr "Les serveurs ci-dessous sont ceux que la base de données des FAI de Mozilla indique pour {domain}. Vérifiez-les avant de vous connecter."
+
+msgid "The servers below are what {domain} publishes for mail programs (its autoconfig document). Check them before you connect."
+msgstr "Les serveurs ci-dessous sont ceux que {domain} publie pour les logiciels de messagerie (son document de configuration automatique). Vérifiez-les avant de vous connecter."
+
+msgid "The servers below were found in the DNS records of {domain} (its SRV records). Check them before you connect."
+msgstr "Les serveurs ci-dessous ont été trouvés dans les enregistrements DNS de {domain} (ses enregistrements SRV). Vérifiez-les avant de vous connecter."
+
+msgid "The sign-in couldn't be started."
+msgstr "La connexion n’a pas pu être lancée."
+
+msgid "The sign-in didn't work. Try again."
+msgstr "La connexion a échoué. Réessayez."
+
+msgid "The sign-in page couldn't be opened."
+msgstr "La page de connexion n’a pas pu être ouverte."
+
+msgid "The sign-in was declined."
+msgstr "La connexion a été refusée."
+
+msgid "This build can't look anything up. Type the server's address in Server settings."
+msgstr "Cette version ne peut rien rechercher. Saisissez l’adresse du serveur dans les paramètres du serveur."
+
+msgid "This build has no application id to sign in with."
+msgstr "Cette version n’a pas d’identifiant d’application pour se connecter."
+
+msgid "This kind of account can't be sent and received on the phone yet."
+msgstr "Ce type de compte ne peut pas encore être envoyé et reçu sur le téléphone."
+
+msgid "Version"
+msgstr "Version"
+
+msgid "What {domain} publishes for mail programs names {hosts} as its mail server, which isn't in your address's own domain."
+msgstr "Ce que {domain} publie pour les logiciels de messagerie désigne {hosts} comme serveur de courrier, qui n’appartient pas au domaine de votre adresse."
+
+msgid "Your domain's DNS couldn't be asked. Check the network connection and search again."
+msgstr "Le DNS de votre domaine n’a pas pu être interrogé. Vérifiez la connexion réseau et relancez la recherche."
+
+msgid "Your domain's DNS names no server for automatic setup. MailCraft still tries the usual places for your address."
+msgstr "Le DNS de votre domaine ne désigne aucun serveur de configuration automatique. MailCraft essaie tout de même les emplacements habituels pour votre adresse."
+
+msgid "Your domain's DNS points its autodiscover name at {host}, but doesn't name it in the record for Exchange's automatic setup. It may be a web host rather than your organisation's mail server."
+msgstr "Le DNS de votre domaine fait pointer son nom autodiscover vers {host}, sans le nommer dans l’enregistrement de configuration automatique d’Exchange. Il peut s’agir d’un hébergement web plutôt que du serveur de messagerie de votre organisation."
+
+msgid "Your mail couldn't be saved first, so nothing was sent."
+msgstr "Votre courrier n’a pas pu être enregistré d’abord : rien n’a donc été envoyé."
+
+msgid "Your mail server didn't confirm that this message came from {sender}, so MailCraft won't remember them: a sender's address can be faked."
+msgstr "Votre serveur de courrier n’a pas confirmé que ce message vient de {sender}, donc MailCraft ne le retiendra pas : l’adresse d’un expéditeur peut être falsifiée."
+
+msgid "Your organisation has to approve MailCraft before you can sign in. Ask an administrator."
+msgstr "Votre organisation doit approuver MailCraft avant que vous puissiez vous connecter. Demandez à un administrateur."
+
+msgid "a message being written or waiting to be sent can't be snoozed"
+msgstr "un message en cours de rédaction ou en attente d’envoi ne peut pas être reporté"
+
+msgid "a shared mailbox has no Snoozed folder"
+msgstr "une boîte partagée n’a pas de dossier Reportés"
+
+msgid "it is too long for the platform"
+msgstr "c’est trop long pour la plateforme"
+
+msgid "more flags than one listing keeps"
+msgstr "plus d’indicateurs qu’une liste n’en conserve"
+
+msgid "none of these messages is snoozed"
+msgstr "aucun de ces messages n’est reporté"
+
+msgid "that is not a picture that can be shown"
+msgstr "ce n’est pas une image qui peut être affichée"
+
+msgid "the app's own code failed"
+msgstr "le code propre à l’application a échoué"
+
+msgid "the message could not be read"
+msgstr "le message n’a pas pu être lu"
+
+msgid "the picture could not be read"
+msgstr "l’image n’a pas pu être lue"
+
+msgid "the picture is too large"
+msgstr "l’image est trop grande"
+
+msgid "the platform refused or failed"
+msgstr "la plateforme a refusé ou a échoué"
+
+msgid "the server didn't end IDLE properly"
+msgstr "le serveur n’a pas correctement terminé IDLE"
+
+msgid "the server ended the session"
+msgstr "le serveur a mis fin à la session"
+
+msgid "the server isn't idling"
+msgstr "le serveur n’est pas en attente (IDLE)"
+
+msgid "the server said something that is no news while idle"
+msgstr "le serveur a dit quelque chose de sans nouveauté pendant l’attente"
+
+msgid "the server sent data it has no reason to send while idle"
+msgstr "le serveur a envoyé des données sans raison pendant l’attente"
+
+msgid "this message is in the Snoozed folder already"
+msgstr "ce message est déjà dans le dossier Reportés"
+
+msgid "{host} is what Mozilla's ISP database lists for {domain}."
+msgstr "{host} est ce que la base de données des FAI de Mozilla indique pour {domain}."
+
+msgid "{host} is what {domain} publishes for mail programs (its autoconfig document)."
+msgstr "{host} est ce que {domain} publie pour les logiciels de messagerie (son document de configuration automatique)."
+
+msgid "{host} was found in the DNS records of {domain} (its SRV records)."
+msgstr "{host} a été trouvé dans les enregistrements DNS de {domain} (ses enregistrements SRV)."
+
+msgid "{n} copy on this computer of mail its server has removed"
+msgid_plural "{n} copies on this computer of mail its server has removed"
+msgstr[0] "{n} copie, sur cet ordinateur, du courrier que son serveur a supprimé"
+msgstr[1] "{n} copies, sur cet ordinateur, du courrier que son serveur a supprimé"
+
+msgid "{n} copy on this computer of mail its server has would be removed"
+msgid_plural "{n} copies on this computer of mail its server has would be removed"
+msgstr[0] "{n} copie, sur cet ordinateur, du courrier que son serveur possède serait supprimée"
+msgstr[1] "{n} copies, sur cet ordinateur, du courrier que son serveur possède seraient supprimées"
+
+msgid "{n} copy you changed (its flag, categories, read mark or a to-do) is kept."
+msgid_plural "{n} copies you changed (their flag, categories, read mark or a to-do) are kept."
+msgstr[0] "{n} copie que vous avez modifiée (son indicateur, ses catégories, son marquage de lecture ou une tâche) est conservée."
+msgstr[1] "{n} copies que vous avez modifiées (leurs indicateurs, catégories, marques de lecture ou tâches) sont conservées."
+
+msgid "{n} kept because it differs"
+msgid_plural "{n} kept because they differ"
+msgstr[0] "{n} conservé car il diffère"
+msgstr[1] "{n} conservés car ils diffèrent"
+
+msgid "{n} message on this computer is a copy of mail its server has in the same folder, and will be removed."
+msgid_plural "{n} messages on this computer are copies of mail their server has in the same folder, and will be removed."
+msgstr[0] "{n} message sur cet ordinateur est une copie du courrier que son serveur a dans le même dossier, et sera supprimé."
+msgstr[1] "{n} messages sur cet ordinateur sont des copies du courrier que leur serveur a dans le même dossier, et seront supprimés."
+
+msgid "{n} message was already here"
+msgid_plural "{n} messages were already here"
+msgstr[0] "{n} message était déjà là"
+msgstr[1] "{n} messages étaient déjà là"
+
+msgid "{n} unread message"
+msgid_plural "{n} unread messages"
+msgstr[0] "{n} message non lu"
+msgstr[1] "{n} messages non lus"
+
+msgid "{said}; {already}"
+msgstr "{said} ; {already}"
+
+msgid "{what} ({already})"
+msgstr "{what} ({already})"

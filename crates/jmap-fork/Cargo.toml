@@ -17,7 +17,8 @@ workspace = true
 # MIME reader, and an arrival date by the time crate (all of them lower layers, all of them wasm-ready).
 mailcraft-time = { workspace = true }
 mailcraft-model = { workspace = true }
-mailcraft-mime = { workspace = true }
+# //// Neoffice — the MIME reader and writer over the mailbox's messages, as upstream's client has them since #1235.
+mailcraft-mime-model = { workspace = true }
 base64 = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }

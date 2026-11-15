@@ -162,9 +162,9 @@ fn a_message_that_is_sent_has_no_bcc_and_a_draft_keeps_it() {
     // A message that was never dated is dated now, and one that was is not touched.
     let undated = Message { date: 0, ..m.clone() };
     let now = mailcraft_time::now();
-    let parsed = mailcraft_mime::parse(&octets_of(&undated, false));
+    let parsed = mailcraft_mime_model::parse(&octets_of(&undated, false));
     assert!((parsed.date - now).abs() < 120, "{} against {now}", parsed.date);
-    assert_eq!(mailcraft_mime::parse(&octets_of(&m, false)).date, DATE);
+    assert_eq!(mailcraft_mime_model::parse(&octets_of(&m, false)).date, DATE);
     // No line break can come out of a value the owner typed.
     let injected = Message { subject: "Hi\r\nBcc: eve@example.org".into(), ..m };
     let text = String::from_utf8(octets_of(&injected, false)).unwrap();

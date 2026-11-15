@@ -38,7 +38,7 @@ type Asked = Arc<Mutex<Vec<Run>>>;
 fn window() -> (MailApp, Id, Asked) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = true;
+    app.session.driver.set_auto_sync(true);
     app.session.prefs.sync_minutes = 5;
     let asked: Asked = Default::default();
     let log = asked.clone();
@@ -65,7 +65,7 @@ fn window() -> (MailApp, Id, Asked) {
     app.poll_jmap();
     assert!(!app.syncing());
     // The timed round is not due: only what the window finds waiting starts a run, unless a test says otherwise.
-    app.last_auto_sync = crate::now_ms();
+    app.session.driver.round.last_auto = crate::now_ms();
     (app, id, asked)
 }
 
@@ -87,7 +87,7 @@ fn jobs(asked: &Asked) -> usize {
 
 /// The automatic rounds, until the one that sends what waits has begun (the window looks every few seconds).
 fn round(app: &mut MailApp) {
-    app.push_checked = 0.0;
+    app.session.driver.round.push_checked = 0.0;
     app.auto_sync();
     app.auto_sync();
 }
@@ -155,7 +155,7 @@ fn a_message_written_here_goes_with_the_next_run_and_its_copy_shows_in_sent() {
     // Nothing waits, so nothing starts; and a timed round carries nothing to send again.
     round(&mut app);
     assert_eq!(jobs(&asked), 2);
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     round(&mut app);
     assert!(request(&asked, 2).sends.is_empty());
 }
@@ -179,7 +179,7 @@ fn a_message_the_server_refused_stays_held_in_the_outbox_until_the_owner_sends_i
     // Nothing waits for a run, and no round takes it along.
     assert_eq!(app.waiting_to_go(id), 0);
     for _ in 0..3 {
-        app.last_auto_sync = 0.0;
+        app.session.driver.round.last_auto = 0.0;
         round(&mut app);
         if app.syncing() {
             let run = jobs(&asked) - 1;
@@ -191,7 +191,7 @@ fn a_message_the_server_refused_stays_held_in_the_outbox_until_the_owner_sends_i
     // Send Again is the owner's say-so: it goes with the next run.
     app.run("mail.sendAgain", json!({"id": message})).unwrap();
     assert_eq!(app.waiting_to_go(id), 1);
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     round(&mut app);
     let last = jobs(&asked) - 1;
     assert_eq!(request(&asked, last).sends.iter().map(|send| send.message).collect::<Vec<_>>(), [message]);
@@ -212,7 +212,7 @@ fn a_message_whose_answer_was_lost_is_held_as_one_that_may_have_gone_and_no_roun
     assert!(app.session.sync_status.contains("may have been sent"), "{}", app.session.sync_status);
     assert_eq!((count(&app, id, FolderKind::Outbox), count(&app, id, FolderKind::Sent)), (1, 1));
     for _ in 0..4 {
-        app.last_auto_sync = 0.0;
+        app.session.driver.round.last_auto = 0.0;
         round(&mut app);
         if app.syncing() {
             let run = jobs(&asked) - 1;
@@ -235,7 +235,7 @@ fn a_message_that_could_not_be_tried_waits_and_is_not_asked_for_every_few_second
     assert!(app.session.mailbox.message(message).unwrap().held.is_empty());
     assert_eq!(app.waiting_to_go(id), 1);
     // It is not asked for again at once: what didn't go through is left for a few minutes.
-    app.push_checked = 0.0;
+    app.session.driver.round.push_checked = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 2, "no run starts for it again at once");
@@ -270,7 +270,7 @@ fn a_draft_saved_here_is_filed_by_the_next_run_and_replaced_by_the_one_after() {
     app.run("mail.editDraft", json!({"id": draft})).unwrap();
     app.run("compose.set", json!({"subject": "Later, edited"})).unwrap();
     app.run("compose.saveDraft", json!({})).unwrap();
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     round(&mut app);
     let asks = request(&asked, 2);
     assert_eq!(asks.drafts.iter().map(|d| (d.saves, d.replaces.as_str(), d.mime.subject.as_str())).collect::<Vec<_>>(), [(2, "E5", "Later, edited")]);

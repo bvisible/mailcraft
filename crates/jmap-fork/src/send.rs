@@ -49,7 +49,7 @@
 
 use std::borrow::Cow;
 
-use mailcraft_mime::WriteOptions;
+use mailcraft_mime_model::WriteOptions;
 use mailcraft_model::Message;
 use mailcraft_model::sync::{JmapDraftDone, JmapDraftUp, JmapSend, SendDone, SendOutcome};
 use serde_json::{Map, Value, json};
@@ -163,7 +163,7 @@ fn octets_of(message: &Message, bcc: bool) -> Vec<u8> {
     let dated: Cow<'_, Message> =
         if message.date == 0 { Cow::Owned(Message { date: mailcraft_time::now(), ..message.clone() }) } else { Cow::Borrowed(message) };
     let offset_minutes = mailcraft_time::local_offset_minutes(dated.date);
-    mailcraft_mime::write(&dated, &WriteOptions { include_bcc: bcc, offset_minutes })
+    mailcraft_mime_model::write(&dated, &WriteOptions { include_bcc: bcc, offset_minutes })
 }
 
 /// Upload a message (RFC 8620 §6.1): the id of the blob the server made of it. A server that says it kept

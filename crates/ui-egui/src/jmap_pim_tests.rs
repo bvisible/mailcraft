@@ -166,7 +166,7 @@ fn the_days_on_screen_are_asked_every_two_minutes_in_front_and_ten_behind() {
     let request = last(&asked);
     assert!(!request.lists, "the list comes with the wide stretch");
     assert_eq!(request.main, "C-ada");
-    assert_eq!((request.from, request.to), app.calendar_window());
+    assert_eq!((request.from, request.to), app.session.calendar_window());
     answer(&mut app, &asked, JmapPimResult { offers: Some(PimOffers { calendars: true, contacts: false }), ..Default::default() });
     // Behind: every ten minutes, and the wide stretch is due then too.
     app.execute("view.mail", json!({})).unwrap();
@@ -462,7 +462,7 @@ fn a_window_with_no_pim_service_never_asks() {
     assert!(!app.jmap_pim_tick_at(true, 0.0));
     // Nor one whose owner turned automatic Send/Receive off.
     let (mut app, _, _) = window();
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     assert!(!app.jmap_pim_tick_at(true, 0.0));
     assert_eq!(jobs(&asked), 0);
 }

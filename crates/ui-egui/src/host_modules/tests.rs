@@ -25,7 +25,7 @@ type Told = Rc<RefCell<Vec<Value>>>;
 fn window(handed: Value) -> (MailApp, Told) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     let told: Told = Rc::default();
     let kept = told.clone();
     let list = handed.as_array().cloned().unwrap_or_default();
@@ -172,7 +172,8 @@ fn the_page_gives_its_module_a_badge_and_may_bring_it_into_view() {
 fn the_look_is_the_palette_in_use_as_css_writes_it() {
     let dark = look(&crate::theme::Tokens::dark());
     assert_eq!(dark["dark"], true);
-    assert_eq!(dark["colors"]["canvas"], "#12161d");
+    // //// Neoffice — upstream's dark theme in neutral greys since 0.13 (#1242, #1384).
+    assert_eq!(dark["colors"]["canvas"], "#18181a");
     assert_eq!(dark["colors"]["accent"], "#5aa2ff");
     let light = look(&crate::theme::Tokens::light());
     assert_eq!(light["dark"], false);
@@ -189,7 +190,7 @@ fn the_look_is_the_palette_in_use_as_css_writes_it() {
 fn a_window_without_modules_of_a_page_s_draws_its_own_only() {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     assert!(!show(&mut app, "synk"));
     let h = drawn(app);
     assert!(h.state().hit.rect("hostModule", 0).is_none());
@@ -204,7 +205,7 @@ fn a_hosting_page_s_tab_has_no_greyed_notes_or_journal_of_a_pst_file() {
     for keeps_local in [true, false] {
         let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
         app.autosave = false;
-        app.auto_sync = false;
+        app.session.driver.set_auto_sync(false);
         app.session.keeps_local = keeps_local;
         let h = drawn(app);
         let pending = [0, 1].map(|i| h.state().hit.rect("pendingModule", i));

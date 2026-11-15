@@ -54,7 +54,7 @@ impl crate::SecretStore for Store {
     fn get(&self, key: &str) -> Option<String> {
         self.0.lock().unwrap().get(key).cloned()
     }
-    fn set(&self, key: &str, secret: &str) -> Result<(), String> {
+    fn set(&self, key: &str, secret: &str) -> Result<(), crate::SecretError> {
         self.0.lock().unwrap().insert(key.to_string(), secret.to_string());
         Ok(())
     }
@@ -75,7 +75,7 @@ impl Store {
 fn window(host_holds_credentials: bool, bearer: bool) -> (MailApp, Id, Asked) {
     let mut app = MailApp::new(Session::at(Mailbox::with_local_account("", ""), NOW, 0), Services::default());
     app.autosave = false;
-    app.auto_sync = false;
+    app.session.driver.set_auto_sync(false);
     let asked: Asked = Default::default();
     let log = asked.clone();
     app.services.jmap = Some(Box::new(move |job: JmapJob| {
@@ -220,7 +220,7 @@ fn a_send_receive_the_owner_asks_for_fills_the_mailbox_and_says_it_is_up_to_date
     assert!(app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
     let row = app.session.sync_progress.accounts.iter().find(|r| r.account == id).unwrap();
     assert_eq!((row.state, row.new), (RunState::Done, 3));
-    assert!(!app.has_sync_problems() && app.push_seen.contains_key(&id));
+    assert!(!app.has_sync_problems() && app.session.driver.round.push_seen.contains_key(&id));
     // Nothing of a message is whole: they are headers and a preview, until the next steps fetch them.
     assert!(app.session.mailbox.messages.values().all(|m| m.unfetched && m.server.is_some()));
 
@@ -309,7 +309,7 @@ fn a_run_on_a_thread_of_the_hosts_is_taken_in_as_it_goes_and_cancel_stops_it() {
 #[test]
 fn a_run_that_starts_by_itself_goes_ahead_when_the_host_holds_the_credential() {
     let (mut app, id, asked) = window(true, true);
-    app.auto_sync = true;
+    app.session.driver.set_auto_sync(true);
     app.session.prefs.sync_minutes = 5;
     assert!(app.can_sync_quietly(id) && app.server_accounts() == [id]);
     // The app starts: a round of every account, the first of them now.
@@ -327,7 +327,7 @@ fn a_run_that_starts_by_itself_goes_ahead_when_the_host_holds_the_credential() {
         assert_eq!(asked[0].secret, None);
     }
     // Nothing else starts while it is under way.
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 1);
@@ -340,7 +340,7 @@ fn a_run_that_starts_by_itself_goes_ahead_when_the_host_holds_the_credential() {
 
     // A round some minutes later reads the Inbox and the folder on screen, and no more.
     app.session.view.folder = app.session.mailbox.folder_by_server(id, "Min").unwrap();
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 2);
@@ -350,7 +350,7 @@ fn a_run_that_starts_by_itself_goes_ahead_when_the_host_holds_the_credential() {
     app.poll_jmap();
     let projects = app.session.mailbox.folder_by_server(id, "Mpr").unwrap();
     app.session.view.folder = projects;
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 3);
@@ -369,7 +369,7 @@ fn without_the_host_holding_the_credential_a_password_is_asked_for_once_and_noth
     let (mut app, id, asked) = window(false, false);
     let store = Store::default();
     app.services.secrets = Some(Arc::new(store.clone()));
-    app.auto_sync = true;
+    app.session.driver.set_auto_sync(true);
     app.session.prefs.sync_minutes = 5;
     // Nothing is known: a round that starts by itself leaves the account out and asks nobody.
     assert!(!app.can_sync_quietly(id));
@@ -500,7 +500,7 @@ fn a_sender_that_is_dropped_ends_the_run_as_stopped_unexpectedly() {
 #[test]
 fn a_server_that_turns_the_secret_down_ends_the_run_with_a_plain_line_and_no_run_starts_by_itself() {
     let (mut app, id, asked) = window(true, true);
-    app.auto_sync = true;
+    app.session.driver.set_auto_sync(true);
     app.session.prefs.sync_minutes = 5;
     app.execute("ui.sync", json!({"account": id})).unwrap();
     answer(&asked, 0, listing());
@@ -513,7 +513,7 @@ fn a_server_that_turns_the_secret_down_ends_the_run_with_a_plain_line_and_no_run
     // Asking again would only be refused again: rounds that start by themselves leave it alone.
     assert!(!app.can_sync_quietly(id));
     for _ in 0..4 {
-        app.last_auto_sync = 0.0;
+        app.session.driver.round.last_auto = 0.0;
         app.auto_sync();
     }
     assert_eq!(jobs(&asked), 1);
@@ -525,7 +525,7 @@ fn a_server_that_turns_the_secret_down_ends_the_run_with_a_plain_line_and_no_run
     answer(&asked, 1, the_end());
     app.poll_jmap();
     assert!(app.can_sync_quietly(id) && app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 3);
@@ -697,7 +697,7 @@ fn a_jmap_account_with_no_usable_server_address_says_so_and_asks_nobody() {
 /// Projects, and the rounds that start by themselves are off, so that only what waits to go up starts a run.
 fn settled() -> (MailApp, Id, Asked) {
     let (mut app, id, asked) = window(true, true);
-    app.auto_sync = true;
+    app.session.driver.set_auto_sync(true);
     app.session.prefs.sync_minutes = 0;
     app.execute("ui.sync", json!({"account": id})).unwrap();
     answer(&asked, 0, listing());
@@ -717,7 +717,7 @@ fn local(app: &MailApp, account: Id, server: &str) -> Id {
 /// What the window does every moment: look at what waits to go up (at once, not once in a second and a half), and
 /// start a run for it.
 fn notice(app: &mut MailApp) {
-    app.push_checked = 0.0;
+    app.session.driver.round.push_checked = 0.0;
     app.auto_sync();
     app.auto_sync();
 }
@@ -739,7 +739,7 @@ fn a_change_made_here_starts_a_quick_run_that_carries_it_and_says_what_it_is_for
     assert_eq!(app.waiting_to_go(id), 1);
     notice(&mut app);
     assert_eq!(jobs(&asked), 2);
-    assert!(app.syncing() && app.push_only_next.is_empty());
+    assert!(app.syncing() && app.session.driver.round.push_only_next.is_empty());
     assert_eq!(app.session.sync_status, "Sending your changes…");
     {
         let asked = asked.lock().unwrap();
@@ -765,7 +765,7 @@ fn a_change_made_here_starts_a_quick_run_that_carries_it_and_says_what_it_is_for
     answer(&asked, 1, the_end());
     app.poll_jmap();
     assert!(!app.syncing() && app.session.sync_status.starts_with("Up to date — "), "{}", app.session.sync_status);
-    assert_eq!(app.push_seen.get(&id).map(|(waiting, _)| *waiting), Some(0));
+    assert_eq!(app.session.driver.round.push_seen.get(&id).map(|(waiting, _)| *waiting), Some(0));
     assert!(!app.has_sync_problems());
     // Nothing waits any more: nothing starts again.
     notice(&mut app);
@@ -819,7 +819,7 @@ fn a_change_the_server_refused_is_put_back_said_once_and_does_not_start_another_
     assert!(!app.session.mailbox.message(one).unwrap().read);
     assert_eq!(app.waiting_to_go(id), 0);
     notice(&mut app);
-    app.push_seen.insert(id, (0, 0.0));
+    app.session.driver.round.push_seen.insert(id, (0, 0.0));
     notice(&mut app);
     assert_eq!(jobs(&asked), 2);
     // The next run does not say it again.
@@ -855,8 +855,8 @@ fn a_change_the_server_did_not_take_waits_and_is_tried_again_when_there_is_more_
     // A few minutes later it is tried again for the same two.
     notice(&mut app);
     assert_eq!(jobs(&asked), 3);
-    let (waiting, _) = app.push_seen.get(&id).copied().unwrap();
-    app.push_seen.insert(id, (waiting, crate::now_ms() - 301_000.0));
+    let (waiting, _) = app.session.driver.round.push_seen.get(&id).copied().unwrap();
+    app.session.driver.round.push_seen.insert(id, (waiting, crate::now_ms() - 301_000.0));
     notice(&mut app);
     assert_eq!(jobs(&asked), 4);
     assert_eq!(asked.lock().unwrap()[3].request.changes.len(), 2);
@@ -898,7 +898,7 @@ fn the_owners_own_send_receive_carries_the_changes_too_and_says_it_is_sending_an
 fn a_run_by_itself_that_is_not_for_changes_does_not_say_it_is_sending_them() {
     let (mut app, id, asked) = settled();
     app.session.prefs.sync_minutes = 5;
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 2);
@@ -982,12 +982,12 @@ fn a_server_that_asked_to_be_left_alone_is_not_asked_for_what_is_made_meanwhile_
     assert!(waits > 800_000.0 && waits <= 900_000.0, "{waits}");
     // The round every few minutes leaves such a server out too, until it is over.
     app.session.prefs.sync_minutes = 5;
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
-    assert_eq!(jobs(&asked), 5, "{:?}", app.sync_queue);
+    assert_eq!(jobs(&asked), 5, "{:?}", app.session.driver.round.queue);
     app.jmap_calm.insert(id, 0.0);
-    app.last_auto_sync = 0.0;
+    app.session.driver.round.last_auto = 0.0;
     app.auto_sync();
     app.auto_sync();
     assert_eq!(jobs(&asked), 6);
@@ -999,7 +999,9 @@ fn a_server_that_asked_to_be_left_alone_is_not_asked_for_what_is_made_meanwhile_
 fn deleting_a_jmap_message_for_good_says_it_goes_from_the_server_too_where_the_window_runs_it() {
     let (mut app, id, _) = window(true, true);
     let deleted = app.session.mailbox.folder_of_kind(id, FolderKind::Deleted).unwrap();
-    let old = mailcraft_model::Message { folder: deleted, account: id, subject: "Old plans".into(), ..Default::default() };
+    // (One its server has: one only this computer has is said as this computer's, as upstream has it.)
+    let server = mailcraft_model::sync::ServerMessage { id: "E1".into(), folder: "M-deleted".into(), ..Default::default() };
+    let old = mailcraft_model::Message { folder: deleted, account: id, subject: "Old plans".into(), server: Some(server), ..Default::default() };
     let message = app.session.mailbox.add_message(old).unwrap();
     let asked = |app: &MailApp| crate::dialogs::confirmation(app, "mail.deletePermanently", &json!({"id": message})).map(|ask| ask.text);
     assert_eq!(

@@ -90,7 +90,9 @@ pub fn object(id: &str) -> Option<Object> {
         | "ui.retryPictures"
         | "ui.alwaysDownloadPictures" => Messages,
         "folder.empty" | "folder.delete" => FolderContent,
-        "rules.run" | "file.import" | "calendar.deleteAnsweredRequests" => Folder,
+        // (The clean-up of #1401 reaches every folder when it names none: its question counts
+        // what goes, and is described again on the yes.)
+        "rules.run" | "file.import" | "calendar.deleteAnsweredRequests" | "mail.removeImportedDuplicates" => Folder,
         // //// Neoffice — a contact made, changed or taken from a message in a server's address book is the owner's to allow (`remote_contacts::writes_to_a_book`).
         "people.delete" | "people.merge" | "people.new" | "people.edit" | "people.fromMessage" => Contact,
         // //// Neoffice — and a note written on a server, deleted, or opened on the web (`cmd/notes/agent.rs`).
@@ -141,11 +143,13 @@ pub fn object(id: &str) -> Option<Object> {
         | "ui.downloadPicturesAutomatically"
         | "ui.senderImages"
         | "ui.desktopAlerts"
+        | "ui.closeToTray"
         | "ui.repliesInWindow"
         | "ui.updateCheck"
         | "ui.updateInstall"
         | "ui.dismissUpdateNotice"
         | "ui.dismissSettingsNotice"
+        | "ui.dismissSoftwareNotice"
         | "ui.reportProblem"
         // The Public keys kept (File › Options › Security, #30): the question names the key.
         | "keys.import"

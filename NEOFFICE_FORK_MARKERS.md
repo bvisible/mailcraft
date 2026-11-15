@@ -9,6 +9,38 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `240d1d4` (upstream's tag v0.13.0, 2026-11-15, 513 commits after v0.12.0: new mail at once on IMAP accounts through IDLE and
+  a Send/Receive that passes over IMAP folders whose STATUS is unchanged (#276); a JMAP account's changes and mail sent by
+  upstream's own engine and client (#1074) and the JMAP types in a crate of their own (`crates/jmap-types`, #1236); Snooze in
+  the engine (#949, `mail.snooze`, the Snoozed folder; not on the ribbon yet, and refused for a JMAP account's server mail);
+  the dark theme in neutral greys, the blue greys kept as a choice (#1242, #1384, `DarkStyle`); the switch between the modules
+  at the foot of the pane on the left (#1174); the MIME reader on its own types with `crates/mime-model` between it and the
+  mailbox (#1235); the Send/Receive round, the calendar, fetch, To Do, rules, automatic replies and sending decisions moved
+  from the window into the engine (`sync_driver`, `Session::driver`, MB1.3 to MB1.10) and the host crate (`crates/host`);
+  Gmail labels (#1153); imports that skip what is there (#1401); memory (#1340); a mailbox file whose long headers go beside
+  it (format 4); Romanian and Simplified Chinese; the Android app's shell), merged into `version-15` on 2026-11-15 with
+  conflicts in 48 files. The fork's JMAP run stays the one built: the engine's JMAP files are the fork's whole
+  (`cmd/jmap_mail.rs`, `cmd/jmap_down.rs`, `cmd/jmap_up.rs` and their tests, upstream's #1074 versions left out), upstream's
+  client `crates/jmap` is left out of the workspace (`exclude` in `Cargo.toml`: its sending is built on upstream's `SendUp`,
+  the fork's request carries `JmapSend`), and upstream's window run with it (no `ask_for_jmap_send`, `jmap_send_pressed`,
+  `push_again_soon`, `jmap_send_asks`, `jmap_made`, marked where they were); a JMAP account sends where the host runs the
+  fork's run (`Session::sends_mail_of`, the words `NOT_SENDING_YET` kept as the fork's), and a message held after a lost
+  answer is said as any account's (`graph_send::hold_unanswered`: the fork files its copy in Sent unmarked). Upstream's
+  `Mailbox::on_jmap_server` and `stays_out_of` are taken, but a folder of the account made here takes the move (the fork
+  makes it on the server first) and another account's folder gets the fork's `ACROSS_JMAP`; the folder guards stay off.
+  `crates/jmap-fork` reads and writes messages through `crates/mime-model`, as upstream's client does. The fork's pieces of
+  the window's scheduling follow it into the engine: a busy JMAP server is left out of the push look and of the round
+  (`jmap_calm`, `driver.round`), its run (`jmap_rx`) keeps the window looking, a JMAP calendar is taken in by
+  `Session::take_in_calendar` (`jmap_pim.rs`), the calendars ticked in a hosting page's tab are put back in
+  `take_in_calendar_list` (no longer for tests alone), and a JMAP fetch is taken in by the fork's `cmd::jmap_fetch` from the
+  engine's `sync_driver::fetch::apply_fetch`. In a hosting page's tab the mark is Neoffice's (upstream's app icon on the
+  desktop, `chrome.rs`; `host_mark.rs` paints Neoffice's alone), the look the design system's whatever dark style
+  (`theme.rs`), and the modules stay in the rail down the window's edge (`nav::foot_in_use`, `offered_modules`). Upstream's
+  compose bar that lays itself out by its room replaces the fork's narrow-bar fix; `mailcraft_time::Stopwatch` (#1337, the
+  same panic) replaces the fork's `stopwatch.rs`; the desktop's calendar runs moved into the host crate, and the fork's test
+  clock in `apps/mailcraft/src/main.rs` with them. The catalogues were taken as upstream's, then `cargo xtask i18n`; the 120
+  texts new in it with no French were translated into the fork's French, German, Italian and Spanish (`po/neoffice/`, Haiku);
+  Romanian and Simplified Chinese have no catalogue of the fork's yet. What came before it:
 - `92eb10c` (upstream's tag v0.12.0, 2026-11-12, 816 commits after v0.10.0: Digital signatures of S/MIME and OpenPGP mail checked in the
   reading pane, and File › Options › Security for the certificates and keys (#30: `crates/smime`, `crates/openpgp`, `crates/assuan`,
   `security.rs`, `own_keys.rs`, `keys.*`); the .pst import with its calendar items, tasks, notes and journal (#815: `crates/pst`,

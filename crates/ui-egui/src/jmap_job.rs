@@ -161,7 +161,7 @@ impl MailApp {
             .ok_or_else(|| tl!("This account isn't kept in step with a JMAP server").to_string())?;
         // A run started for what was changed here alone (`auto_sync` noticed it waiting): the same quiet run, which carries
         // the changes first, and says what it is for.
-        let pushing = self.push_only_next.remove(&account) && quiet;
+        let pushing = self.session.driver.round.push_only_next.remove(&account) && quiet;
         if self.services.jmap.is_none() {
             return Err(tl!("This build can't connect to JMAP servers").to_string());
         }
@@ -293,7 +293,7 @@ impl MailApp {
         }
         // New mail may be waiting to be fetched whole: the background looks again at once.
         if !piece.pages.is_empty() {
-            self.fetching.wake();
+            self.session.driver.fetch.wake();
         }
         // A folder a message read by its id went into since the run began is not emptied of it (host_menu.rs).
         crate::host_menu::spare(self, account, &mut piece);
@@ -322,7 +322,7 @@ impl MailApp {
                     self.jmap_problems.push(e.to_string());
                 }
                 // //// Neoffice — a piece that was refused may have said what became of a send: it stays in doubt (`run_answered`).
-                self.send_doubt = true;
+                self.session.driver.sending.doubted();
             }
         }
         if last {
@@ -336,7 +336,7 @@ impl MailApp {
     fn finish_jmap_run(&mut self, account: Id, stopped: bool) {
         self.jmap_rx = None;
         // //// Neoffice — what it sent is filed, and what it didn't is known not to have gone (upstream's AU3-26, `sending.rs`).
-        self.run_answered(account);
+        self.session.send_run_answered(account);
         crate::host_menu::run_over(self, account);
         // Its part of the run is over, however its last piece went in.
         self.session.sync_progress.end(account, stopped);
@@ -407,7 +407,7 @@ impl MailApp {
         self.note_pushed(account);
         let waiting = mailcraft_engine::cmd::jmap_up::message_changes(&self.session, account, MAX_CHANGES_COMPARED).0;
         if waiting.iter().filter_map(|change| serde_json::to_string(change).ok()).any(|change| !sent.contains(&change)) {
-            self.push_seen.insert(account, (0, crate::now_ms()));
+            self.session.driver.round.push_seen.insert(account, (0, crate::now_ms()));
         }
     }
 }

@@ -440,7 +440,7 @@ impl Data {
                 (mail_from, recipients)
             }
             None => {
-                let parsed = mailcraft_mime::parse(&email.raw);
+                let parsed = mailcraft_mime_model::parse(&email.raw);
                 let mut recipients: Vec<String> = Vec::new();
                 for address in parsed.to.iter().chain(&parsed.cc).chain(&parsed.bcc) {
                     if !recipients.iter().any(|known| known.eq_ignore_ascii_case(&address.email)) {
@@ -453,7 +453,7 @@ impl Data {
         if !mail_from.eq_ignore_ascii_case(&identity.email) {
             return Err(SetError::new("forbiddenMailFrom", "The envelope's sender is not this identity's."));
         }
-        let from = mailcraft_mime::parse(&email.raw).from.email;
+        let from = mailcraft_mime_model::parse(&email.raw).from.email;
         if !from.eq_ignore_ascii_case(&identity.email) {
             return Err(SetError::new("forbiddenFrom", "The message is not from this identity."));
         }
