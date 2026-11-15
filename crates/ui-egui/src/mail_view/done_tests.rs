@@ -3,7 +3,9 @@
 // //// Neoffice — added file (no upstream equivalent): tests of done.rs.
 //! In the window, the Inbox of a hosting page's tab: a row's round marks it done (archived), a group's round the whole group,
 //! « Marqués comme traités » keeps them with « Annuler » and « Tout annuler », a row's quick actions are Spark's, and nothing
-//! of it shows where the window keeps its mail or outside the Inbox. The unread dot keeps clear of the box that ticks the row.
+//! of it shows where the window keeps its mail or outside the Inbox. In the list of variant D a row wears one mark, the unread dot,
+//! which the round takes the place of under the pointer; a click selects, ⌘/Ctrl and Shift add; « Afficher les traités » lists the
+//! Archive beside the Inbox, each with its round full, which puts it back.
 //! And (`--ignored`, with `DONE_SHOTS=<folder>`) the list drawn in French, light and dark, to PNG files.
 
 use egui::PointerButton;
@@ -21,6 +23,20 @@ fn click(w: &mut testing::Window, kind: &str, id: u64) {
     let pos = w.state().hit.rect(kind, id).unwrap_or_else(|| panic!("no {kind} {id} in the window")).center();
     testing::click(w, pos, PointerButton::Primary, 1);
     w.run_steps(3);
+}
+
+/// A click at `pos` with `modifiers` held (⌘/Ctrl, Shift).
+fn click_with(w: &mut testing::Window, pos: egui::Pos2, modifiers: egui::Modifiers) {
+    w.run_steps(45);
+    w.input_mut().events.push(egui::Event::PointerMoved(pos));
+    w.step();
+    w.input_mut().events.push(egui::Event::ModifiersChanged(modifiers));
+    for pressed in [true, false] {
+        w.input_mut().events.push(egui::Event::PointerButton { pos, button: PointerButton::Primary, pressed, modifiers });
+        w.step();
+    }
+    w.input_mut().events.push(egui::Event::ModifiersChanged(egui::Modifiers::NONE));
+    w.step();
 }
 
 fn hover(w: &mut testing::Window, kind: &str, id: u64) {
@@ -159,9 +175,10 @@ fn nothing_of_it_where_the_window_keeps_its_mail_nor_outside_the_inbox() {
 }
 
 #[test]
-fn the_unread_dot_keeps_clear_of_the_box_that_ticks_the_row_at_every_density() {
+fn a_row_wears_one_mark_the_unread_dot_which_the_round_takes_the_place_of_under_the_pointer_at_every_density() {
     for (one_line, tight) in [(false, false), (false, true), (true, false), (true, true)] {
         let mut w = inbox(true);
+        // (With the tabs by kind of sender, where the rows had a box to tick.)
         let ids: Vec<Id> = w.state_mut().session.rows().iter().map(|r| r.id).collect();
         let streams: Vec<serde_json::Value> = ids.iter().map(|id| json!({"id": id, "stream": "person"})).collect();
         w.state_mut().execute("mail.setStreams", json!({"streams": streams})).unwrap();
@@ -171,11 +188,67 @@ fn the_unread_dot_keeps_clear_of_the_box_that_ticks_the_row_at_every_density() {
         let listed = drawn(&mut w);
         let unread: Vec<Id> = listed.iter().copied().filter(|id| has(&w, "messageDot", *id)).collect();
         assert!(!unread.is_empty(), "an unread message in the sample");
-        for id in unread {
-            let (dot, tick) = (w.state().hit.rect("messageDot", id).unwrap(), w.state().hit.rect("messageTick", id).unwrap());
-            assert!(dot.max.x <= tick.min.x - 2.0, "{one_line} {tight}: the dot {dot:?} on the box {tick:?}");
+        for id in &unread {
+            let (dot, row) = (w.state().hit.rect("messageDot", *id).unwrap(), w.state().hit.rect("message", *id).unwrap());
+            assert!(!has(&w, "messageTick", *id), "{one_line} {tight}: no box to tick");
+            assert!(!has(&w, "messageRead", *id), "{one_line} {tight}: the lead column is the round's, not a read switch");
+            assert!((dot.center().x - (row.min.x + super::D_LEAD / 2.0)).abs() < 0.5, "{one_line} {tight}: the dot {dot:?} in the lead column");
         }
+        // Under the pointer the round takes the dot's place.
+        let id = unread[0];
+        let dot = w.state().hit.rect("messageDot", id).unwrap();
+        hover(&mut w, "message", id);
+        assert!(!has(&w, "messageDot", id), "{one_line} {tight}: the dot gives way");
+        let round = w.state().hit.rect("doneRound", id).expect("the round");
+        assert!((round.center() - dot.center()).length() < 0.5, "{one_line} {tight}: the round {round:?} where the dot {dot:?} was");
     }
+}
+
+#[test]
+fn a_click_on_a_row_selects_it_and_command_and_shift_add_to_the_selection() {
+    let mut w = inbox(true);
+    let listed = drawn(&mut w);
+    assert!(listed.len() >= 4);
+    click(&mut w, "messageSender", listed[0]);
+    assert_eq!(w.state().session.sel.messages, [listed[0]]);
+    let at = w.state().hit.rect("messageSender", listed[2]).unwrap().center();
+    click_with(&mut w, at, egui::Modifiers::COMMAND);
+    w.run_steps(3);
+    let mut picked = w.state().session.sel.messages.clone();
+    picked.sort_unstable();
+    let mut wanted = vec![listed[0], listed[2]];
+    wanted.sort_unstable();
+    assert_eq!(picked, wanted, "⌘/Ctrl adds one");
+    let at = w.state().hit.rect("messageSender", listed[3]).unwrap().center();
+    click_with(&mut w, at, egui::Modifiers::SHIFT);
+    w.run_steps(3);
+    assert!(w.state().session.sel.messages.len() >= 3, "Shift adds the range");
+    // And everything, from the arrangement's menu or its key.
+    w.state_mut().run("mail.selectAll", json!({})).unwrap();
+    assert_eq!(w.state().session.sel.messages.len(), w.state_mut().session.rows().iter().filter(|r| r.copy == 0 && r.under.is_none()).count());
+}
+
+#[test]
+fn show_done_lists_the_archive_beside_the_inbox_and_its_full_round_puts_one_back() {
+    let mut w = inbox(true);
+    let first = drawn(&mut w)[0];
+    hover(&mut w, "message", first);
+    click(&mut w, "doneRound", first);
+    assert_eq!(folder_kind(&w, first), Some(FolderKind::Archive));
+    assert!(!drawn(&mut w).contains(&first));
+    // « Afficher les traités »: the header's switch.
+    assert!(has(&w, "listShowDone", 0));
+    click(&mut w, "listShowDone", 0);
+    assert!(w.state().session.view.show_done);
+    assert!(drawn(&mut w).contains(&first), "listed again, as done");
+    assert!(has(&w, "doneListed", first), "its round, full");
+    assert!(!has(&w, "messageDot", first));
+    click(&mut w, "doneListed", first);
+    assert_eq!(folder_kind(&w, first), Some(FolderKind::Inbox), "back in the Inbox");
+    assert!(!has(&w, "doneListed", first));
+    // Off again.
+    click(&mut w, "listShowDone", 1);
+    assert!(!w.state().session.view.show_done);
 }
 
 /// The list in French, light and dark, to PNG files in `DONE_SHOTS`: at rest, a row under the pointer, a group's heading

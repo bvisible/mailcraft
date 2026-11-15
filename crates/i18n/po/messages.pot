@@ -1036,6 +1036,11 @@ msgstr ""
 msgid "All Categories…"
 msgstr ""
 
+#. command label, interface
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/host_menu.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/nav.rs
+msgid "All Inboxes"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/chrome.rs crates/ui-egui/src/mail_view.rs
 msgid "All Mailboxes"
@@ -1560,8 +1565,8 @@ msgid ""
 "By"
 msgstr ""
 
-#. command label, ribbon
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/ribbon.rs
+#. command label, interface, ribbon
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/ribbon.rs
 msgid "Arrange By"
 msgstr ""
 
@@ -1616,7 +1621,7 @@ msgid "Ask Nora about the message you are reading, or to write your reply. Nothi
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs
+#: crates/ui-egui/src/nora/ask_bar.rs crates/ui-egui/src/nora/assist.rs
 msgid "Ask Nora…"
 msgstr ""
 
@@ -2593,6 +2598,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/account_setup.rs
 msgid "Choose the kind of account"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Choose the mailbox"
 msgstr ""
 
 #. interface
@@ -5378,7 +5388,12 @@ msgid "Hide this message's warning again"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/mail_view/done.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Hide until tomorrow"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Hide what was marked as done"
 msgstr ""
 
@@ -5450,6 +5465,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/folder_properties.rs
 msgid "How many messages each folder holds and the space they take"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "I can file {what}."
 msgstr ""
 
 #. interface
@@ -7880,8 +7900,8 @@ msgstr ""
 msgid "New Contact"
 msgstr ""
 
-#. command label
-#: crates/engine/src/cmd/compose.rs
+#. command label, interface
+#: crates/engine/src/cmd/compose.rs crates/ui-egui/src/mail_view/header.rs
 msgid "New Email"
 msgstr ""
 
@@ -8479,17 +8499,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
-msgid "Nora files the new mail as it comes."
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Nora files your mail"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
-msgid "Nora files your mail."
 msgstr ""
 
 #. interface
@@ -8600,7 +8610,7 @@ msgid "Nora is thinking…"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "Nora is tidying your inbox: {n} message filed so far."
 msgid_plural "Nora is tidying your inbox: {n} messages filed so far."
 msgstr[0] ""
@@ -10119,6 +10129,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view/done.rs
+msgid "Put it back in the Inbox"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
 msgid "Put it back where it was"
 msgstr ""
 
@@ -10776,7 +10791,7 @@ msgid ""
 msgstr ""
 
 #. command label, interface
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Reverse Sort"
 msgstr ""
 
@@ -11263,7 +11278,7 @@ msgid "Scripts and agents"
 msgstr ""
 
 #. command label, interface, ribbon, ribbon location
-#: crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/view.rs crates/engine/src/cmd/view/display.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/view.rs crates/engine/src/cmd/view/display.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/ribbon.rs
 msgid "Search"
 msgstr ""
 
@@ -11382,8 +11397,13 @@ msgid "See everything"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "See the journal"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "See the plan"
 msgstr ""
 
 #. what a command says
@@ -11391,8 +11411,8 @@ msgstr ""
 msgid "Seeing when other people are busy needs your permission: File › Info › Connect calendar and contacts"
 msgstr ""
 
-#. command label, name
-#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/menubar.rs
+#. command label, interface, name
+#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/menubar.rs
 msgid "Select All"
 msgstr ""
 
@@ -11980,6 +12000,11 @@ msgstr ""
 msgid "Show Contributors"
 msgstr ""
 
+#. command label
+#: crates/engine/src/cmd/view.rs
+msgid "Show Done"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/account_setup.rs
 msgid "Show Gmail's categories under the Inbox"
@@ -12058,8 +12083,13 @@ msgid ""
 msgstr ""
 
 #. command label, interface
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Show as Conversations"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Show done"
 msgstr ""
 
 #. command label
@@ -12168,7 +12198,7 @@ msgid "Show week numbers in the Month view and the date navigator"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/mail_view/done.rs
+#: crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Show what was marked as done"
 msgstr ""
 
@@ -12560,7 +12590,7 @@ msgid "Sort my mailbox"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/assist.rs
 msgid "Sort with Nora"
 msgstr ""
 
@@ -15535,6 +15565,11 @@ msgid "This tab was in the background: Nora could not act in your message."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This view is offered in NeoMail only"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/host_menu.rs
 msgid "This window can't ask the server for the message."
 msgstr ""
@@ -18243,6 +18278,11 @@ msgstr ""
 msgid "none of these messages is snoozed"
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/cmd/view.rs
+msgid "none of your mailboxes has an Inbox"
+msgstr ""
+
 #. why a mail server couldn't be used
 #: crates/proto/src/imap/mod.rs
 msgid "not a set of messages"
@@ -20578,7 +20618,7 @@ msgid "{line} · the server's certificate needs your say"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/nora/sorting_view.rs
 msgid "{list} and {last}"
 msgstr ""
 

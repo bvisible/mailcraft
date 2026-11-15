@@ -22,6 +22,22 @@ mod server_rows;
 mod stream_tabs;
 // //// Neoffice — « Traité » as Spark has it: a round to mark a row or a group done, a row's quick actions, what was done (done.rs).
 pub(crate) mod done;
+// //// Neoffice — the list's short header as Spark has it (variant D): the view's name and its menu, Show done, search, new message.
+pub(crate) mod header;
+
+// //// Neoffice — the list as Spark has it (variant D) where the mail is a hosting page's (a session that keeps nothing of its own):
+// the short header (header.rs), one mark at a row's left (the unread dot, the round of « Traité » under the pointer), no box to tick
+// (a click selects, ⌘/Ctrl and Shift add), the day's titles with their round, Nora's bar over the list (nora/ask_bar.rs). The
+// desktop keeps upstream's list.
+pub(crate) fn spark_list(app: &MailApp) -> bool {
+    !app.session.keeps_local
+}
+
+// //// Neoffice — a day's title in variant D: its height, and its text.
+const D_GROUP_H: f32 = 36.0;
+const D_GROUP_TEXT: f32 = 13.0;
+// //// Neoffice — and the room a conversation's arrow takes after the lead column.
+const D_ARROW: f32 = 18.0;
 
 /// What a drag out of the message list carries: the messages to file in the folder they are
 /// let go over (`nav::folder_row` takes them).
@@ -569,24 +585,37 @@ fn search_bar(app: &mut MailApp, ui: &mut Ui, found: usize) {
     }
 }
 
+// //// Neoffice — the list, then Nora's bar over it in variant D (nora/ask_bar.rs): over the whole of the list's room.
 fn list(app: &mut MailApp, ui: &mut Ui) {
+    let room = ui.max_rect();
+    list_rows(app, ui);
+    if spark_list(app) {
+        crate::nora::ask_bar::show(app, ui, room);
+    }
+}
+
+// //// Neoffice — (upstream's `list`, under another name: see `list`.)
+fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
     // //// Neoffice — the inbox's tabs by kind of sender: counted once for the header and the rows.
     let streams = stream_tabs::counts(app);
-    stream_tabs::say_shown(ui, streams.is_some());
-    list_header(app, ui, streams.as_ref());
+    // //// Neoffice — variant D (`spark_list`): no box to tick in a row, the short header, and the tabs in a row of their own under it.
+    let d = spark_list(app);
+    stream_tabs::say_shown(ui, streams.is_some() && !d);
+    if d {
+        header::show(app, ui);
+    } else {
+        list_header(app, ui, streams.as_ref());
+    }
     // //// Neoffice — and where the header has no room for the tabs, they have a row of their own.
     if let Some(counts) = &streams
-        && stream_tabs::row_wanted(ui)
+        && (d || stream_tabs::row_wanted(ui))
     {
         stream_tabs::tabs_row(app, ui, counts);
     }
     // Gmail's categories, when they are tabs above a Gmail Inbox's list (#911).
     crate::gmail_tabs::row(app, ui);
-    // //// Neoffice — « Trier avec Nora » above the Inbox's list of a mailbox a hosting page handed over, and the banner of what
-    // //// Neoffice — she filed last, where the Neoffice server files it (nora/sorting_view.rs).
-    crate::nora::sorting_view::strip(app, ui);
     let rows = app.session.rows();
     search_bar(app, ui, mailcraft_engine::list::listed(&rows));
     // //// Neoffice — the bar that archives what is ticked, or everything in the tab.
@@ -595,8 +624,10 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     }
     // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs).
     done::section(app, ui);
-    // //// Neoffice — the room a row and a group's heading give their round to mark them done.
-    let lead = if done::offered(app) { done::LEAD } else { 0.0 };
+    // //// Neoffice — the room a row and a group's heading give their round to mark them done; in variant D, the lead column has it.
+    let lead = if done::offered(app) && !d { done::LEAD } else { 0.0 };
+    // //// Neoffice — and a day's title is taller there.
+    let group_h = if d { D_GROUP_H } else { GROUP_H };
     // A search covers what is here: of a message not fetched yet, its headers and preview (R3.2).
     if !app.session.view.search.trim().is_empty() {
         // (Counted as the list was built, not at every frame.)
@@ -676,8 +707,9 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
     let mut tops = Vec::with_capacity(rows.len());
     let mut y = 0.0f32;
     for row in rows.iter() {
+        // //// Neoffice — (`group_h`: a day's title in variant D.)
         if row.group.is_some() {
-            y += GROUP_H;
+            y += group_h;
         }
         tops.push(y);
         y += row_h;
@@ -728,7 +760,8 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
             && let Some(i) = rows.iter().position(|r| Some((r.id, r.copy)) == focus)
             && let (Some(top), Some(row)) = (tops.get(i).copied(), rows.get(i))
         {
-            let above = if row.group.is_some() { GROUP_H } else { 0.0 };
+            // //// Neoffice — (`group_h`.)
+            let above = if row.group.is_some() { group_h } else { 0.0 };
             let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h));
             ui.scroll_to_rect(rect, None);
         }
@@ -736,10 +769,21 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
         let first = tops.partition_point(|top| top + row_h < viewport.min.y).saturating_sub(1);
         for (i, row) in rows.iter().enumerate().skip(first) {
             let Some(top) = tops.get(i).copied() else { break };
-            if top - GROUP_H > viewport.max.y {
+            // //// Neoffice — (`group_h`.)
+            if top - group_h > viewport.max.y {
                 break;
             }
-            if let Some(group) = &row.group {
+            // //// Neoffice — a day's title in variant D: in the room after the lead column, near its foot, its round in the lead column
+            // //// Neoffice — under the pointer (done.rs).
+            if let (true, Some(group)) = (d, &row.group) {
+                let gr = Rect::from_min_max(pos2(origin.x, origin.y + top - group_h), pos2(origin.x + width, origin.y + top));
+                let y = gr.max.y - 6.0 - D_GROUP_TEXT / 2.0;
+                let x = gr.min.x + done::D_LEAD;
+                paint_clipped(ui.painter(), pos2(x, y), gr.max.x - x - 10.0, group_name(group, row.category), semibold(D_GROUP_TEXT), t.group_label);
+                if done::offered(app) {
+                    done::group_round(app, ui, gr, done::round_at(gr.min.x, y, true), false, &rows, i);
+                }
+            } else if let Some(group) = &row.group {
                 // Text on the list itself: no bar, no box.
                 let gr = Rect::from_min_max(pos2(origin.x + ROW_INSET, origin.y + top - GROUP_H), pos2(origin.x + width, origin.y + top));
                 // //// Neoffice — after the round that marks the whole group done (done.rs), where it is offered (`lead`).
@@ -753,7 +797,8 @@ fn list(app: &mut MailApp, ui: &mut Ui) {
                 );
                 // //// Neoffice — the round that marks the whole group done (done.rs).
                 if lead > 0.0 {
-                    done::group_round(app, ui, gr, &rows, i);
+                    let at = done::round_at(gr.min.x - ROW_INSET, gr.center().y + 3.0, false);
+                    done::group_round(app, ui, gr, at, true, &rows, i);
                 }
             }
             let rect = Rect::from_min_size(pos2(origin.x, origin.y + top), vec2(width, row_h));
@@ -859,10 +904,13 @@ fn shows_folder(s: &mailcraft_engine::Session) -> bool {
 /// Whether the list may hold mail of more than one account: a search of every mailbox, with more
 /// than one account to search. Its rows then wear their accounts' colours (#893); elsewhere the
 /// owner knows whose mail it is, and the rows stay as they were.
+// //// Neoffice — and « Toutes les boîtes » (`Session::all_inboxes`), with more than one Inbox.
 fn mixes_accounts(s: &mailcraft_engine::Session) -> bool {
-    s.view.scope == mailcraft_engine::Scope::Everywhere
+    (s.view.scope == mailcraft_engine::Scope::Everywhere
         && s.mailbox.accounts.len() > 1
-        && !mailcraft_model::search::Query::parse(&s.view.search).is_empty()
+        && !mailcraft_model::search::Query::parse(&s.view.search).is_empty())
+        // //// Neoffice — (see above.)
+        || s.all_inboxes().is_some_and(|all| all.len() > 1)
 }
 
 /// The colour of the stripe on `m`'s row (#893): its account's, in a list of more than one
@@ -972,16 +1020,27 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let unread = row.unread > 0;
     // //// Neoffice — « Traité » (done.rs): its round left of the read switch, which moves right by the room it takes.
     let done = done::offered(app);
-    let lead = if done { done::LEAD } else { 0.0 };
+    // //// Neoffice — variant D (`spark_list`): the lead column holds the one mark of the row, the unread dot, which is the round of
+    // //// Neoffice — « Traité » under the pointer where it is offered (the quick actions have the read switch), else the read switch; a
+    // //// Neoffice — message « Afficher les traités » lists as done wears its round, full.
+    let d = spark_list(app);
+    let listed_done = d && done::listed_done(app, &m);
+    let lead = if done && !d { done::LEAD } else { 0.0 };
     // The strip down the left edge is a switch between read and unread. It sits on top of the
     // row, so a click there changes the mark and leaves the selection alone.
-    // //// Neoffice — after the round of « Traité » (`lead`).
-    let strip = Rect::from_min_max(pos2(rect.min.x + lead, rect.min.y), pos2(rect.min.x + lead + READ_STRIP, rect.max.y));
-    let read_resp = ui
-        .interact(strip, ui.scope_id().with(("msg_read", key)), Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(if unread { tl!("Mark as read") } else { tl!("Mark as unread") });
-    app.hit.add("messageRead", row.id, strip);
+    // //// Neoffice — after the round of « Traité » (`lead`); the lead column in variant D.
+    let strip = if d {
+        Rect::from_min_max(rect.min, pos2(rect.min.x + done::D_LEAD, rect.max.y))
+    } else {
+        Rect::from_min_max(pos2(rect.min.x + lead, rect.min.y), pos2(rect.min.x + lead + READ_STRIP, rect.max.y))
+    };
+    let read_resp = (!d || !(done || listed_done)).then(|| {
+        app.hit.add("messageRead", row.id, strip);
+        ui.interact(strip, ui.scope_id().with(("msg_read", key)), Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(if unread { tl!("Mark as read") } else { tl!("Mark as unread") })
+    });
+    let read_hovered = read_resp.as_ref().is_some_and(egui::Response::hovered);
     let one = app.session.prefs.one_line;
     let line1 = if one { rect.center().y } else { rect.min.y + SENDER_Y };
     let line2 = if one { rect.center().y } else { rect.min.y + SUBJECT_Y };
@@ -990,12 +1049,16 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let (line1, line2) = if one { (line1, line2) } else { (line1 - lift, line2 - lift) };
     // //// Neoffice — in the inbox's tabs by kind of sender a box ticks the row (what a Ctrl+click does), on top of the row; after
     // //// Neoffice — the round of « Traité » where it is offered (`lead`, done.rs).
-    let tick = stream_tabs::shown(ui).then(|| stream_tabs::row_box(ui, key, rect.translate(vec2(lead, 0.0)), line1));
+    let tick = (stream_tabs::shown(ui) && !d).then(|| stream_tabs::row_box(ui, key, rect.translate(vec2(lead, 0.0)), line1));
     // A conversation's row has an arrow between the read switch and the text (#503): a click opens
     // or closes it, as Right and Left do.
     let conversation = row.conversation();
-    // //// Neoffice — after the round of « Traité » where it is offered (`lead`).
-    let arrow_rect = Rect::from_min_max(pos2(strip.max.x, line1 - 11.0), pos2(rect.min.x + lead + TEXT_LEFT, line1 + 11.0));
+    // //// Neoffice — after the round of « Traité » where it is offered (`lead`); in variant D, after the lead column.
+    let arrow_rect = if d {
+        Rect::from_min_max(pos2(strip.max.x - 2.0, line1 - 11.0), pos2(strip.max.x + D_ARROW, line1 + 11.0))
+    } else {
+        Rect::from_min_max(pos2(strip.max.x, line1 - 11.0), pos2(rect.min.x + lead + TEXT_LEFT, line1 + 11.0))
+    };
     let arrow = conversation.then(|| {
         let tip = if row.open { tl!("Hide the messages of this conversation") } else { tl!("Show the messages of this conversation") };
         app.hit.add("conversationArrow", row.id, arrow_rect);
@@ -1054,10 +1117,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         let edge = if focus { t.selection_edge } else { t.selection_edge_unfocused };
         p.rect_stroke(card, 6.0, Stroke::new(1.0, edge), egui::StrokeKind::Inside);
     }
-    // //// Neoffice — or Spark's quick actions are up (done.rs).
-    if !selected
-        && (resp.hovered() || read_resp.hovered() || arrow.as_ref().is_some_and(egui::Response::hovered) || quick.is_some() || spark.is_some())
-    {
+    // //// Neoffice — or Spark's quick actions are up (done.rs). (`read_hovered`: no read switch in variant D's lead column where the
+    // //// Neoffice — round is.)
+    if !selected && (resp.hovered() || read_hovered || arrow.as_ref().is_some_and(egui::Response::hovered) || quick.is_some() || spark.is_some()) {
         // The pointer's shade goes over a flagged row's tint.
         p.rect_filled(card, 6.0, t.hover_subtle);
     }
@@ -1070,11 +1132,13 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // switch can be found.
     // //// Neoffice — clear of the box that ticks the row (its left edge, 7 further right): left of it where the box is drawn; and
     // //// Neoffice — after the round of « Traité » (`lead`). In the Neoffice look the dot is the signal (a field, not text).
-    let dot = pos2(body.min.x + lead + if tick.is_some() { 5.0 } else { 13.0 }, line1);
-    if unread {
+    // //// Neoffice — in variant D, in the middle of the lead column, and not while the round of « Traité » takes its place (`rounded`).
+    let dot = if d { pos2(rect.min.x + done::D_LEAD / 2.0, line1) } else { pos2(body.min.x + lead + if tick.is_some() { 5.0 } else { 13.0 }, line1) };
+    let rounded = d && ((done && over) || listed_done);
+    if unread && !rounded {
         p.circle_filled(dot, 4.0, if t.neoffice { t.selection_edge } else { t.accent });
         app.hit.add("messageDot", row.id, Rect::from_center_size(dot, vec2(8.0, 8.0)));
-    } else if read_resp.hovered() {
+    } else if read_hovered {
         p.circle_stroke(dot, 3.5, Stroke::new(1.2, t.selection_edge_unfocused));
     }
     if !selected {
@@ -1082,7 +1146,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     }
     // Where mail of several accounts is listed together, a stripe of its account's colour down
     // the row's left edge (#893), left of the selection's card so that it shows on a selected row too.
-    if let Some(color) = account_stripe(&app.session, &m) {
+    // //// Neoffice — in variant D a ring round the sender's picture says it, where pictures are shown (`pictured`, below).
+    let ringed = d && app.ui.sender_images && !app.session.prefs.one_line;
+    if let Some(color) = account_stripe(&app.session, &m).filter(|_| !ringed) {
         let stripe = Rect::from_min_max(pos2(rect.min.x + 1.0, rect.min.y + 3.0), pos2(rect.min.x + 1.0 + ACCOUNT_STRIPE, rect.max.y - 3.0));
         p.rect_filled(stripe, 1.5, crate::theme::c32(color));
         // (In High Contrast an edge in the text's colour, so that a mid-tone stays in sight.)
@@ -1118,12 +1184,19 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // The picture (or the initials) of who wrote it, or of who it went to.
     let pictured = app.ui.sender_images && !one;
     // A message under its open conversation starts a step further in (#503).
-    // //// Neoffice — after the round of « Traité » where it is offered (`lead`).
-    let text_left = TEXT_LEFT + lead + if row.under.is_some() { UNDER_INDENT } else { 0.0 };
+    // //// Neoffice — after the round of « Traité » where it is offered (`lead`); in variant D after the lead column, and the arrow of a
+    // //// Neoffice — conversation where conversations are shown.
+    let text_left = if d { done::D_LEAD + if app.session.view.conversations { D_ARROW } else { 0.0 } } else { TEXT_LEFT + lead }
+        + if row.under.is_some() { UNDER_INDENT } else { 0.0 };
     if pictured {
         let who = if outgoing { m.to.first().unwrap_or(&m.from) } else { &m.from };
         let center = pos2(rect.min.x + text_left + AVATAR_RADIUS, rect.min.y + AVATAR_Y);
         crate::sender_images::avatar(app, ui, center, AVATAR_RADIUS, &m, who);
+        // //// Neoffice — the ring of its account's colour, where mail of several accounts is listed together (variant D).
+        if let Some(color) = account_stripe(&app.session, &m).filter(|_| ringed) {
+            ui.painter().circle_stroke(center, AVATAR_RADIUS + 1.0, Stroke::new(2.0, crate::theme::c32(color)));
+            app.hit.add("messageAccountColor", row.id, Rect::from_center_size(center, vec2(2.0 * AVATAR_RADIUS + 4.0, 2.0 * AVATAR_RADIUS + 4.0)));
+        }
     }
     let left = rect.min.x + text_left + if pictured { 2.0 * AVATAR_RADIUS + AVATAR_GAP } else { 0.0 };
     // Where the time ends, and where the text of every line does.
@@ -1339,8 +1412,14 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         let ids: Vec<Id> = if selected { app.session.acting_on() } else { row.members.clone() };
         resp.dnd_set_drag_payload(MessageDrag(ids));
     }
-    // //// Neoffice — the round of « Traité », drawn over the row, and Spark's quick actions (done.rs).
-    if done::row_round(app, ui, key, row, rect, line1, done && over) {
+    // //// Neoffice — the round of « Traité », drawn over the row, and Spark's quick actions (done.rs); in variant D in the lead column,
+    // //// Neoffice — and full on a message listed as done, which it puts back in the Inbox.
+    let round = done::round_at(rect.min.x, line1, d);
+    if listed_done {
+        if done::listed_done_round(app, ui, key, row, round) {
+            return;
+        }
+    } else if done::row_round(app, ui, key, row, round, done && over) {
         return;
     }
     if let Some(bar) = &spark
@@ -1370,7 +1449,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         let _ = app.run(command, json!({"id": row.id}));
         return;
     }
-    if read_resp.clicked() {
+    // //// Neoffice — (`read_resp`: none in variant D's lead column where the round is.)
+    if read_resp.as_ref().is_some_and(egui::Response::clicked) {
         // A conversation is read once all of it is; its newest message makes it unread again.
         let (command, ids) = if unread { ("mail.markRead", row.members.clone()) } else { ("mail.markUnread", vec![row.id]) };
         let _ = app.run(command, json!({"ids": ids}));
@@ -1483,6 +1563,9 @@ mod overlay_scroll_tests;
 // //// Neoffice — tests of the inbox's tabs by kind of sender.
 #[cfg(test)]
 mod stream_tabs_tests;
+// //// Neoffice — tests of the list of variant D in a hosting page's tab.
+#[cfg(test)]
+mod variant_d_tests;
 
 #[cfg(test)]
 mod tests {

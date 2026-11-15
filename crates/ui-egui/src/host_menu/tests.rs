@@ -393,11 +393,37 @@ fn nothing_of_a_message_nor_another_address_nor_a_secret_is_told() {
     // Only these fields, at every level.
     let state = state(&app).unwrap();
     let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<BTreeSet<String>>();
-    assert_eq!(keys(&state), names(&["type", "module", "account", "folder", "favorites", "accounts", "views"]));
+    assert_eq!(keys(&state), names(&["type", "module", "account", "folder", "favorites", "accounts", "views", "allInboxes"]));
+    assert_eq!(keys(&state["allInboxes"]), names(&["name", "on", "unread"]));
     assert_eq!(keys(&state["accounts"][0]), names(&["email", "name", "unread", "folders"]));
     assert_eq!(keys(&state["accounts"][0]["folders"][0]), names(&["id", "name", "role", "parent", "unread", "selectable", "count"]));
     assert_eq!(keys(&state["favorites"][0]), names(&["account", "folder", "name", "unread"]));
     assert!(state["favorites"].as_array().unwrap().iter().all(|f| f["account"] != BOB));
+}
+
+#[test]
+fn all_inboxes_is_told_and_the_page_may_ask_for_it_and_a_folder_picked_leaves_it() {
+    let (mut app, ada, team, bob) = page();
+    let told = state(&app).unwrap();
+    // Of the page's mailboxes alone: Ada's two unread and Team's one, not Bob's.
+    assert_eq!(told["allInboxes"], json!({"name": "All Inboxes", "on": false, "unread": 3}));
+    assert_eq!(ask(&mut app, "view.allInboxes", json!({})), ok());
+    let inboxes = app.session.all_inboxes().expect("in view");
+    for account in [ada, team, bob] {
+        assert!(inboxes.contains(&app.session.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap()));
+    }
+    let told = state(&app).unwrap();
+    assert_eq!(told["allInboxes"]["on"], json!(true));
+    // No one mailbox, no one folder is shown.
+    assert!(told["account"].is_null() && told["folder"].is_null(), "{told}");
+    assert!(refused(&mut app, "view.allInboxes", json!({"account": ADA})).contains("parameters"));
+    // A folder the page's menu picks leaves it, the Inbox it was opened on too.
+    assert_eq!(ask(&mut app, "folder.select", json!({"account": ADA, "folder": "Min"})), ok());
+    assert!(app.session.all_inboxes().is_none());
+    assert_eq!(state(&app).unwrap()["folder"], json!("Min"));
+    // With one mailbox of the page's, nothing is told of it.
+    app.services.host_menu = Some(Menu::new(vec![Handed { email: ADA.into(), name: String::new() }]));
+    assert!(state(&app).unwrap()["allInboxes"].is_null());
 }
 
 fn command(id: Value, name: &str, params: Value) -> String {

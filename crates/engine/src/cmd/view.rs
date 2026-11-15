@@ -35,6 +35,15 @@ pub fn specs() -> Vec<CommandSpec> {
             .reads()
             .params(r#"{"value": "bar"|"foot"} — the switch between Mail, Calendar, People and Tasks as the bar of icons down the window's left edge, or as a row of names at the foot of the pane on the left, where older mail programs had it (#1174)"#),
         CommandSpec::new("view.conversations", "Show as Conversations", "View › Messages", conversations).reads().params(TOGGLE),
+        // //// Neoffice — « Toutes les boîtes » and « Afficher les traités », which the window offers where the mail is a hosting page's.
+        CommandSpec::new("view.allInboxes", "All Inboxes", "Navigation", all_inboxes)
+            .reads()
+            .when(super::kept_here::hosted_refusal)
+            .params("{} — the Inboxes of your own mailboxes listed together; picking a folder leaves it"),
+        CommandSpec::new("view.showDone", "Show Done", "View › Messages", show_done)
+            .reads()
+            .when(super::kept_here::hosted_refusal)
+            .params(r#"{"value"?: bool} (default: toggle) — an Inbox's list shows what was marked done too: its account's Archive"#),
         CommandSpec::new("view.sort", "Arrange By", "View › Arrangement", sort)
             .reads()
             .params(r#"{"by": "date"|"from"|"subject"|"size"|"importance"|"categories", "descending"?: bool}"#),
@@ -98,6 +107,44 @@ fn people(s: &mut Session, _: &Value) -> CmdResult {
 
 fn tasks(s: &mut Session, _: &Value) -> CmdResult {
     module(s, Module::Tasks)
+}
+
+// //// Neoffice — `view.allInboxes`: « Toutes les boîtes », the Inboxes of the person's own mailboxes listed together
+// //// Neoffice — (`Session::own_inboxes`). The folder in view stays one of them (the one in view, else the first), for what reads it.
+fn all_inboxes(s: &mut Session, _: &Value) -> CmdResult {
+    let inboxes = s.own_inboxes();
+    let anchor = inboxes
+        .iter()
+        .copied()
+        .find(|f| *f == s.view.folder)
+        .or_else(|| inboxes.first().copied())
+        .ok_or_else(|| super::fail("none of your mailboxes has an Inbox"))?;
+    let was = s.all_inboxes().is_some();
+    if !was {
+        s.sel.messages.clear();
+    }
+    s.view.module = Module::Mail;
+    s.view.folder = anchor;
+    s.view.gmail = None;
+    s.view.all_inboxes = Some(anchor);
+    s.view.search.clear();
+    // The tabs by kind of sender, where an Inbox has them: the main one, as when an Inbox is picked.
+    let streams = inboxes.iter().any(|f| s.mailbox.has_streams(*f));
+    if s.view.filter.by_stream() && !streams {
+        s.view.filter = Filter::All;
+    } else if s.view.filter == Filter::All && streams {
+        s.view.filter = Filter::Main;
+    }
+    let counts = s.folder_counts();
+    let unread: usize = inboxes.iter().map(|f| counts.unread(*f)).sum();
+    let messages: usize = inboxes.iter().map(|f| counts.total(*f)).sum();
+    Ok(json!({"folder": anchor, "inboxes": inboxes, "messages": messages, "unread": unread}))
+}
+
+// //// Neoffice — `view.showDone`: « Afficher les traités », an Inbox's list with what was marked done (its account's Archive).
+fn show_done(s: &mut Session, v: &Value) -> CmdResult {
+    s.view.show_done = p::bool(v, "value").unwrap_or(!s.view.show_done);
+    Ok(json!({"value": s.view.show_done}))
 }
 
 fn reading_pane(s: &mut Session, v: &Value) -> CmdResult {

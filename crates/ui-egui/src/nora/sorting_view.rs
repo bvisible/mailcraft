@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
-// //// Neoffice — added file (no upstream equivalent): « Trier avec Nora » on screen: the button and the banner above the
-// Inbox's list, the switch and the flow in her pane, the activation card.
+// //// Neoffice — added file (no upstream equivalent): « Trier avec Nora » on screen: the switch and the flow in her pane, the
+// activation card (what she proposes over the list is the bar's: ask_bar.rs).
 
 //! « Trier avec Nora » on screen, after the planche « NeoMail avec Nora » (13.11) and what the server can do ([`super::sorting`]):
-//! - above the Inbox's list of a mailbox the hosting page handed over, « Trier avec Nora » (her pane opens on the flow) and,
-//!   while she files it, a banner with what her last run filed and « Voir le journal » ([`strip`]);
+//! - over the Inbox's list of a mailbox the hosting page handed over, what she proposes, her tidying under way, or what her last
+//!   run filed today, on one line above Nora's bar (`super::ask_bar`), whose button opens the flow or the journal in her pane;
 //! - in her pane, under its greeting: « Trier ma boîte » above the recipes and the switch « Nora range mon courrier » with
 //!   its rhythm and next reading ([`home_chip`], [`home_switch`]);
 //! - the flow in her pane, drawn where the panel draws an empty conversation ([`flow`]): what she read, « Comment voulez-vous
@@ -32,7 +32,7 @@ use mailcraft_time::Date;
 use super::sorting::{self, BoxState, Flow, Intent, Plan, Questions, Run, Stage, every};
 use crate::MailApp;
 use crate::i18n::fmt;
-use crate::theme::{Tokens, regular, semibold};
+use crate::theme::{Tokens, semibold};
 
 /// The Neoffice design system's colours, as her pane has them (craft-nora-ui `look.rs`, each value the token named).
 #[derive(Clone, Copy, Debug)]
@@ -341,6 +341,11 @@ fn at(said: &str) -> Option<(Date, String)> {
     ok.then_some((date, hm))
 }
 
+/// Whether a run started (`started`, as the server says it) on `today`.
+pub(crate) fn ran_on(started: &str, today: Date) -> bool {
+    at(started).is_some_and(|(date, _)| date == today)
+}
+
 /// A day and month, as the interface writes them (« 13.11 »).
 fn day_month(date: Date) -> String {
     fmt(tl!("{month}/{day}"), &[("month", &format!("{:02}", date.month)), ("day", &format!("{:02}", date.day))])
@@ -418,70 +423,9 @@ fn rhythm(state: &BoxState) -> String {
 }
 
 // ---- above the Inbox's list ----
-
-/// « Trier avec Nora » above the Inbox's list of a mailbox the hosting page handed over, where Nora files mail, and the
-/// banner of what she filed last while she files it. Nothing anywhere else.
-pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui) {
-    let Some(account) = sorting::box_in_view(app, true) else { return };
-    let Some(state) = app.nora.sorting.available(&account) else { return };
-    let today = app.session.today();
-    let banner = if let Some(tidy) = state.tidy.as_ref().filter(|t| t.running()) {
-        Some(tln!(tidy.filed, "Nora is tidying your inbox: {n} message filed so far.", "Nora is tidying your inbox: {n} messages filed so far."))
-    } else if state.on {
-        let latest = app.nora.sorting.boxes.get(&account).and_then(|k| k.latest.as_ref()).filter(|r| r.filed > 0);
-        Some(latest.map_or_else(|| tl!("Nora files the new mail as it comes.").to_string(), |run| run_summary(run, today)))
-    } else {
-        None
-    };
-    let t = Tokens::get(ui.ctx());
-    let ds = Ds::of(t.dark);
-    let mut intent = None;
-    // The button, at the right of a row of its own.
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    let label = tl!("Sort with Nora");
-    let words = ui.painter().layout_no_wrap(label.to_string(), semibold(13.0), t.text);
-    let width = 8.0 + 22.0 + 8.0 + words.size().x + 14.0;
-    let pill = egui::Rect::from_min_size(pos2(row.max.x - 16.0 - width, row.center().y - 16.0), vec2(width, 32.0));
-    let response = ui.interact(pill, ui.scope_id().with("nora_sort"), Sense::click()).on_hover_cursor(CursorIcon::PointingHand);
-    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, label));
-    app.hit.add("noraSort", 0, pill);
-    if ui.is_rect_visible(pill) {
-        let painter = ui.painter();
-        let fill = if response.hovered() { t.hover } else { t.surface };
-        painter.rect(pill, CornerRadius::same(255), fill, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
-        let mark = egui::Rect::from_min_size(pos2(pill.min.x + 6.0, pill.center().y - 11.0), vec2(22.0, 22.0));
-        craft_nora_ui::orb::paint(painter, mark, ds.orb, None);
-        painter.galley(pos2(mark.max.x + 8.0, pill.center().y - words.size().y / 2.0), words, t.text);
-        if response.has_focus() {
-            painter.rect_stroke(pill.expand(2.0), CornerRadius::same(255), Stroke::new(1.5, t.accent), egui::StrokeKind::Outside);
-        }
-    }
-    if response.clicked() {
-        intent = Some(Intent::Open { account: account.clone(), journal: false });
-    }
-    if let Some(said) = banner {
-        Frame::new().inner_margin(Margin { left: 12, right: 12, top: 0, bottom: 8 }).show(ui, |ui| {
-            let shown =
-                Frame::new().fill(ds.signal_soft).corner_radius(CornerRadius::same(14)).inner_margin(Margin::symmetric(12, 10)).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(6.0, 2.0);
-                        let (mark, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
-                        craft_nora_ui::orb::paint(ui.painter(), mark, ds.orb, None);
-                        ui.add(Label::new(RichText::new(tl!("Nora files your mail.")).font(semibold(13.0)).color(ds.text)).selectable(false));
-                        ui.add(Label::new(RichText::new(tied(&said)).font(regular(13.0)).color(ds.text)).wrap().selectable(false));
-                        if link(ui, &ds, tl!("See the journal"), semibold(13.0)).clicked() {
-                            intent = Some(Intent::Open { account: account.clone(), journal: true });
-                        }
-                    });
-                });
-            app.hit.add("noraBanner", 0, shown.response.rect);
-        });
-    }
-    if let Some(intent) = intent {
-        sorting::act(app, intent);
-    }
-}
+//
+// In the list of variant D, the bar over the list says what « Trier avec Nora » has to say of the Inbox in view (ask_bar.rs),
+// in place of the button and the banner that were above it.
 
 // ---- in her pane, while the conversation is empty ----
 

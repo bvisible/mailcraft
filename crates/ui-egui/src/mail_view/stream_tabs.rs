@@ -53,10 +53,19 @@ fn name_of(stream: Stream) -> &'static str {
     }
 }
 
-/// What the tabs show, or `None` where the folder in view has none.
+/// What the tabs show, or `None` where the folder in view has none; in « Toutes les boîtes », its Inboxes' together, where one has
+/// them.
 pub(super) fn counts(app: &MailApp) -> Option<StreamCounts> {
-    let folder = app.session.view.folder;
-    app.session.mailbox.has_streams(folder).then(|| app.session.mailbox.stream_counts(folder))
+    let mb = &app.session.mailbox;
+    let folders = app.session.all_inboxes().unwrap_or_else(|| vec![app.session.view.folder]);
+    if !folders.iter().any(|f| mb.has_streams(*f)) {
+        return None;
+    }
+    let mut counts = StreamCounts::default();
+    for folder in folders {
+        counts.add(&mb.stream_counts(folder));
+    }
+    Some(counts)
 }
 
 /// Whether the rows of this frame wear their boxes: the list says it once, so a row need not ask the mailbox.
@@ -232,14 +241,15 @@ pub(super) fn bar_shown(app: &MailApp, rows: &[Row]) -> bool {
     (matches!(filter, Filter::Notifications | Filter::Newsletters) && !rows.is_empty()) || app.session.sel.messages.len() >= 2
 }
 
-/// The messages of the folder in view that the list shows, once each: what "archive all" takes.
+/// The messages of the folder in view that the list shows, once each: what "archive all" takes (of every Inbox in « Toutes les
+/// boîtes »).
 fn listed_ids(app: &MailApp, rows: &[Row]) -> Vec<Id> {
-    let folder = app.session.view.folder;
+    let folders = app.session.all_inboxes().unwrap_or_else(|| vec![app.session.view.folder]);
     let mut ids: Vec<Id> = rows
         .iter()
         .filter(|r| r.copy == 0)
         .flat_map(|r| r.members.iter().copied())
-        .filter(|id| app.session.mailbox.message(*id).is_some_and(|m| m.folder == folder))
+        .filter(|id| app.session.mailbox.message(*id).is_some_and(|m| folders.contains(&m.folder)))
         .collect();
     ids.sort_unstable();
     ids.dedup();

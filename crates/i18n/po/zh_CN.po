@@ -1202,6 +1202,11 @@ msgstr "所有类别"
 msgid "All Categories…"
 msgstr "所有类别…"
 
+#. command label, interface
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/host_menu.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/nav.rs
+msgid "All Inboxes"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/chrome.rs crates/ui-egui/src/mail_view.rs
 #, fuzzy
@@ -1811,8 +1816,8 @@ msgstr ""
 "排列\n"
 "方式"
 
-#. command label, ribbon
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/ribbon.rs
+#. command label, interface, ribbon
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Arrange By"
 msgstr "排列方式"
@@ -1875,7 +1880,7 @@ msgid "Ask Nora about the message you are reading, or to write your reply. Nothi
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs
+#: crates/ui-egui/src/nora/ask_bar.rs crates/ui-egui/src/nora/assist.rs
 msgid "Ask Nora…"
 msgstr ""
 
@@ -3034,6 +3039,11 @@ msgstr "选择默认签名"
 #, fuzzy
 msgid "Choose the kind of account"
 msgstr "选择账户类型"
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Choose the mailbox"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/report_problem.rs
@@ -6326,7 +6336,12 @@ msgid "Hide this message's warning again"
 msgstr "再次隐藏此邮件的警告"
 
 #. interface
-#: crates/ui-egui/src/mail_view/done.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Hide until tomorrow"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Hide what was marked as done"
 msgstr ""
 
@@ -6411,6 +6426,11 @@ msgstr "重复方式由组织者决定。"
 #, fuzzy
 msgid "How many messages each folder holds and the space they take"
 msgstr "每个文件夹包含的邮件数量及其占用空间"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "I can file {what}."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
@@ -9243,8 +9263,8 @@ msgstr "新建类别"
 msgid "New Contact"
 msgstr "新建联系人"
 
-#. command label
-#: crates/engine/src/cmd/compose.rs
+#. command label, interface
+#: crates/engine/src/cmd/compose.rs crates/ui-egui/src/mail_view/header.rs
 #, fuzzy
 msgid "New Email"
 msgstr "新建邮件"
@@ -9926,17 +9946,7 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
-msgid "Nora files the new mail as it comes."
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Nora files your mail"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
-msgid "Nora files your mail."
 msgstr ""
 
 #. interface
@@ -10046,7 +10056,7 @@ msgid "Nora is thinking…"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "Nora is tidying your inbox: {n} message filed so far."
 msgid_plural "Nora is tidying your inbox: {n} messages filed so far."
 msgstr[0] ""
@@ -11801,6 +11811,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/mail_view/done.rs
+msgid "Put it back in the Inbox"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
 msgid "Put it back where it was"
 msgstr ""
 
@@ -12588,7 +12603,7 @@ msgstr ""
 "排序"
 
 #. command label, interface
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/header.rs
 #, fuzzy
 msgid "Reverse Sort"
 msgstr "反向排序"
@@ -13165,7 +13180,7 @@ msgid "Scripts and agents"
 msgstr "脚本与智能体"
 
 #. command label, interface, ribbon, ribbon location
-#: crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/view.rs crates/engine/src/cmd/view/display.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/search_server.rs crates/engine/src/cmd/view.rs crates/engine/src/cmd/view/display.rs crates/ui-egui/src/advanced_search.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Search"
 msgstr "搜索"
@@ -13307,8 +13322,13 @@ msgid "See everything"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "See the journal"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "See the plan"
 msgstr ""
 
 #. what a command says
@@ -13317,8 +13337,8 @@ msgstr ""
 msgid "Seeing when other people are busy needs your permission: File › Info › Connect calendar and contacts"
 msgstr "查看他人的忙闲状态需要您的许可：文件 › 信息 › 连接日历和联系人"
 
-#. command label, name
-#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/menubar.rs
+#. command label, interface, name
+#: crates/engine/src/cmd/mail.rs crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/menubar.rs
 #, fuzzy
 msgid "Select All"
 msgstr "全选"
@@ -14006,6 +14026,11 @@ msgstr "显示以下账户的联系人"
 msgid "Show Contributors"
 msgstr "显示贡献者"
 
+#. command label
+#: crates/engine/src/cmd/view.rs
+msgid "Show Done"
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/account_setup.rs
 #, fuzzy
@@ -14100,10 +14125,15 @@ msgstr ""
 "对话"
 
 #. command label, interface
-#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs
+#: crates/engine/src/cmd/view.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/header.rs
 #, fuzzy
 msgid "Show as Conversations"
 msgstr "显示为对话"
+
+#. interface
+#: crates/ui-egui/src/mail_view/header.rs
+msgid "Show done"
+msgstr ""
 
 #. command label
 #: crates/engine/src/cmd/calendar/invitation.rs
@@ -14229,7 +14259,7 @@ msgid "Show week numbers in the Month view and the date navigator"
 msgstr "在月视图和日期导航器中显示周数"
 
 #. interface
-#: crates/ui-egui/src/mail_view/done.rs
+#: crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/header.rs
 msgid "Show what was marked as done"
 msgstr ""
 
@@ -14691,7 +14721,7 @@ msgid "Sort my mailbox"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/nora/assist.rs
 msgid "Sort with Nora"
 msgstr ""
 
@@ -18112,6 +18142,11 @@ msgid "This tab was in the background: Nora could not act in your message."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This view is offered in NeoMail only"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/host_menu.rs
 msgid "This window can't ask the server for the message."
 msgstr ""
@@ -21276,6 +21311,11 @@ msgstr "没有邀请其他人参加此约会"
 msgid "none of these messages is snoozed"
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/cmd/view.rs
+msgid "none of your mailboxes has an Inbox"
+msgstr ""
+
 #. why a mail server couldn't be used
 #: crates/proto/src/imap/mod.rs
 #, fuzzy
@@ -23912,7 +23952,7 @@ msgid "{line} · the server's certificate needs your say"
 msgstr "{line} · 服务器证书需要您确认"
 
 #. interface
-#: crates/ui-egui/src/nora/sorting_view.rs
+#: crates/ui-egui/src/mail_view/header.rs crates/ui-egui/src/nora/sorting_view.rs
 msgid "{list} and {last}"
 msgstr ""
 

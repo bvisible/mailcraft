@@ -4603,3 +4603,33 @@ msgstr "{said}; {already}"
 
 msgid "{what} ({already})"
 msgstr "{what} ({already})"
+
+msgid "All Inboxes"
+msgstr "Todas las bandejas de entrada"
+
+msgid "Choose the mailbox"
+msgstr "Elegir el buzón"
+
+msgid "Hide until tomorrow"
+msgstr "Ocultar hasta mañana"
+
+msgid "I can file {what}."
+msgstr "Puedo clasificar {what}."
+
+msgid "Put it back in the Inbox"
+msgstr "Devolver a la bandeja de entrada"
+
+msgid "See the plan"
+msgstr "Ver el plan"
+
+msgid "Show done"
+msgstr "Mostrar terminados"
+
+msgid "Show Done"
+msgstr "Mostrar terminados"
+
+msgid "This view is offered in NeoMail only"
+msgstr "Esta vista solo se ofrece en NeoMail"
+
+msgid "none of your mailboxes has an Inbox"
+msgstr "ninguno de sus buzones tiene una bandeja de entrada"

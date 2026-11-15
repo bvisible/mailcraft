@@ -342,15 +342,38 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   nor of a group dealt with at once). A row under the pointer shows its round at its left (a click marks it done) and
   Spark's quick actions on its right (read or unread, pin, flag, move, delete: those the window has) in place of
   upstream's two; each group's heading has its round (the whole group done); « Marqués comme traités (N) » above the
-  list keeps what was done in this session, with « Annuler » for each and « Tout annuler ». The rows and headings give
-  the round its room (`done::LEAD`, the marked hunks of `mail_view.rs`). The unread dot keeps clear of the box that
-  ticks a row in the inbox's tabs (it moves left of it), and in the Neoffice look it is the signal.
+  list keeps what was done in this session, with « Annuler » for each and « Tout annuler ». In the list of variant D
+  (below) the round is in the lead column, in the unread dot's place under the pointer, and a day's title has its round
+  there too; a message « Afficher les traités » lists as done wears it full, and a click puts it back in its account's
+  Inbox (`done::listed_done_round`). In the Neoffice look the unread dot is the signal.
+- The message list of a hosting page's tab as Spark has it, variant D of the NeoMail design (15.11; `mail_view::spark_list`,
+  `mail_view/header.rs`, `nora/ask_bar.rs`, tests in `mail_view/variant_d_tests.rs`, `nora/ask_bar_tests.rs`,
+  `crates/engine/src/all_inboxes_tests.rs`); the desktop keeps upstream's list. One mark at a row's left, in a lead column of
+  40: the unread dot, the round of « Traité » under the pointer; no box to tick (a click selects, ⌘/Ctrl and Shift add,
+  Select All in the arrangement's menu and Ctrl+A). A short header of one row: the view's name with ▾ (« Toutes les
+  boîtes » or an Inbox), under it the arrangement and whose mail it is (« Par date · ada@ et team@ », a click opens the
+  arrangement's menu that upstream's header had on its right), on the right « Afficher les traités » (an Inbox's), the
+  search (`ui.focusSearch`) and a new message; the inbox's tabs by kind of sender in a row of 34 under it; no row of
+  « Trier avec Nora ». Days' titles 36 high. Nora's bar floats at the list's bottom right (« Demander à Nora… », Enter
+  opens her pane with the question: `assist::ask`), with one line above it only when the sorting has something to say of
+  the Inbox in view: what she can file where she files nothing yet (`mail_sorting.survey`, asked while the bar is drawn,
+  once in half an hour), her tidying, what her last run filed today; its button opens the flow or the journal, its ✕ hides
+  it for the mailbox until the next day (`UiState::nora_hint_hidden`). « Toutes les boîtes » (`view.allInboxes`,
+  `ViewState::all_inboxes`, `Session::all_inboxes`/`own_inboxes`; a marked hunk of `list.rs`, `folder.rs`, `mail.rs`,
+  `session.rs`): the Inboxes of the person's own server mailboxes together, first of the Favourites with their unread mail
+  (`nav::all_inboxes_row`, and the page's menu through `allInboxes`), each row with its mailbox's colour (a ring round the
+  picture, else the stripe of #893), every gesture on each message's own mailbox, the move menu of a row its own mailbox's
+  folders (`ribbon::folder_menu_of`), Mark All as Read every Inbox, the rest of each mailbox's conversations its own
+  (`list::elsewhere`); a folder picked leaves it. « Afficher les traités » (`view.showDone`, `ViewState::show_done`): an
+  Inbox's list with its account's Archive, which a JMAP run then reads too (`done::archive_shown` in `jmap_job.rs`). Both
+  are other lists of the same folder (`ListOf`, `list_state`), not kept between visits, refused where the mail is kept
+  (`kept_here::hosted_refusal`); `mail.list` of a named folder is that folder's alone.
 - « Trier avec Nora » (`crates/ui-egui/src/nora/sorting.rs`, `sorting_view.rs`, tests in `sorting_tests.rs` and
   `sorting_view_tests.rs`): in a hosting page's tab whose host carries its calls (`Host::sorting`: the page's own `fetch`, or
   `window.mailcraftNoraSorting` of a host that makes the calls itself, Neodesk's shell once its `NORA_SORTING_METHODS` has
   them) and where the Neoffice server says Nora files mail (`state.available`), the server's filing of a mailbox (nora
-  `nora.api.v2.mail_sorting`, its contract in the vault, NORA/49 note 12; `nora::SORTING_METHODS`): a button « Trier avec
-  Nora » above the Inbox's list and the banner of her last run (the marked hunk in `mail_view.rs`), « Trier ma boîte » and
+  `nora.api.v2.mail_sorting`, its contract in the vault, NORA/49 note 12; `nora::SORTING_METHODS`): over the Inbox's list,
+  the line above Nora's bar (what she proposes, her tidying, her last run: `nora/ask_bar.rs`), « Trier ma boîte » and
   the switch « Nora range mon courrier » in her pane's home, the flow in her pane where the panel draws an empty
   conversation (what she read, the ways the server knows, her plan to file now or change, the tidying followed, « Annuler
   ce rangement », her questions and her journal), and the activation card, a modal window (a marked hunk in `lib.rs`).
@@ -472,15 +495,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   folder order and unread counts the page is told). What the page is told and what it may ask are
   `crates/ui-egui/src/host_menu.rs`, natively tested with their window in `host_menu/tests.rs`: posted to
   `window.parent` on the page's own origin, `{type: "mailcraft:ready", version}` once, then
-  `{type: "mailcraft:state", module, account, folder, favorites, accounts}` at each change, at most every 250 ms and
+  `{type: "mailcraft:state", module, account, folder, favorites, accounts, views, allInboxes}` at each change, at most every 250 ms and
   never twice the same, of the mailboxes the page handed over alone (their folders in the pane's order with the name
   shown, the role, the parent, the unread mail known here, the number the pane shows beside each (`count`: unread,
   or the total it puts in brackets for Drafts, Outbox and Junk Email, or null), by the pane's own rule, which
   `nav.rs` keeps in one place for both (`shown_count`), and the server's id, `local:<n>` for one only MailCraft has;
   their Favourites as the pane lists them; the mailbox and folder in view; the views offered, `notes` only where
-  Notes are; no message, no other address, no token);
-  and eight commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
-  `view.mail`, `view.calendar`, `view.people`, `view.notes`, `folder.select {account, folder}`, `mail.new`,
+  Notes are; « Toutes les boîtes » where two of the page's mailboxes have an Inbox (`allInboxes: {name, on, unread}`, else
+  null; while it is shown, `account` and `folder` are null); no message, no other address, no token);
+  and nine commands from `window.parent` on that origin (`event.source`, `event.origin`), any other ignored:
+  `view.mail`, `view.calendar`, `view.people`, `view.notes`, `view.allInboxes`, `folder.select {account, folder}`, `mail.new`,
   `search {query}` (the search box's) and `message.open {account, id}` (a message by its email id on the server,
   shown as a click in the list shows it), each run as the window's own button or box runs it and answered
   `{type: "mailcraft:command-done", id, ok, error?}`, the reason in the interface's language; any other name, a

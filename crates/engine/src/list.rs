@@ -204,9 +204,11 @@ fn view_folders(s: &Session) -> (bool, HashSet<Id>) {
             .collect()
     };
     // The folders looked in, or (for every mailbox) the folders left out.
-    let (everywhere, folders): (bool, HashSet<Id>) = match scope {
-        Scope::Folder => (false, HashSet::from([folder])),
-        Scope::Subfolders => (false, mb.subtree(folder).into_iter().collect()),
+    // //// Neoffice — « Toutes les boîtes » looks in every own Inbox (`Session::all_inboxes`), and under each for a search of subfolders.
+    let all = s.all_inboxes();
+    let (everywhere, mut folders): (bool, HashSet<Id>) = match scope {
+        Scope::Folder => (false, all.map_or_else(|| HashSet::from([folder]), |all| all.into_iter().collect())),
+        Scope::Subfolders => (false, all.unwrap_or_else(|| vec![folder]).into_iter().flat_map(|f| mb.subtree(f)).collect()),
         Scope::Mailbox => {
             let account = mb.folder(folder).map(|f| f.account);
             let hidden = hidden(account);
@@ -215,6 +217,17 @@ fn view_folders(s: &Session) -> (bool, HashSet<Id>) {
         }
         Scope::Everywhere => (true, hidden(None)),
     };
+    // //// Neoffice — « Afficher les traités » (`view.showDone`): an Inbox's list looks in its account's Archive too, where what was
+    // //// Neoffice — marked done is.
+    if s.view.show_done && !everywhere {
+        let done: Vec<Id> = folders
+            .iter()
+            .filter_map(|f| mb.folder(*f))
+            .filter(|f| f.kind == FolderKind::Inbox)
+            .filter_map(|f| mb.folder_of_kind(f.account, FolderKind::Archive))
+            .collect();
+        folders.extend(done);
+    }
     (everywhere, folders)
 }
 
@@ -345,8 +358,9 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
         }
         // Without a search, the rest of each conversation, in the account's other folders: a
         // reply in Sent Items is part of it (#503). (A search lists what it finds where it looks.)
+        // //// Neoffice — (`folders`: the folders listed, for « Toutes les boîtes » and « Afficher les traités ».)
         if query.is_empty() {
-            elsewhere(s, &me, kept.as_deref(), (&threads, &index), &mut out, &mut kept_only);
+            elsewhere(s, &me, kept.as_deref(), (&threads, &index), &mut out, &mut kept_only, &folders);
         }
         let newest = |id: &Id| std::cmp::Reverse(mb.message(*id).map(|m| (when(m), m.id)));
         for row in &mut out {
@@ -448,6 +462,9 @@ fn sort_by_dates(shown: &mut Vec<&Message>, sort: SortBy, desc: bool) {
 /// each conversation's row is, by its account and its key.
 ///
 /// [`Mailbox::conversation_skips`]: mailcraft_model::Mailbox::conversation_skips
+// //// Neoffice — `listed`: the folders the list looks in (`view_folders`): in « Toutes les boîtes » every own Inbox, and with
+// //// Neoffice — « Afficher les traités » their accounts' Archives too. Each of their accounts has the rest of its conversations
+// //// Neoffice — added, and none of those folders' mail is added again (it is the rows' already). Upstream's: the folder in view.
 fn elsewhere(
     s: &Session,
     me: &[&str],
@@ -455,10 +472,34 @@ fn elsewhere(
     (threads, index): (&ThreadIndex, &HashMap<(Id, ThreadKey), usize>),
     rows: &mut [Row],
     kept_only: &mut Vec<Id>,
+    // //// Neoffice — (see above.)
+    listed: &HashSet<Id>,
 ) {
     let mb = &s.mailbox;
-    let folder = s.view.folder;
-    let Some(account) = mb.folder(folder).map(|f| f.account) else { return };
+    // //// Neoffice — each account of the folders listed, with the folder it is listed by (the one in view for its account).
+    let mut accounts: Vec<(Id, Id)> = Vec::new();
+    for f in std::iter::once(s.view.folder).chain(listed.iter().copied()).filter_map(|f| mb.folder(f)) {
+        if listed.contains(&f.id) && !accounts.iter().any(|(a, _)| *a == f.account) {
+            accounts.push((f.account, f.id));
+        }
+    }
+    for (account, folder) in accounts {
+        elsewhere_of(s, me, kept, (threads, index), rows, kept_only, (listed, account, folder));
+    }
+}
+
+// //// Neoffice — upstream's `elsewhere`, for one `account` of the folders `listed`, `folder` the one it is listed by.
+fn elsewhere_of(
+    s: &Session,
+    me: &[&str],
+    kept: Option<&HashSet<Id>>,
+    (threads, index): (&ThreadIndex, &HashMap<(Id, ThreadKey), usize>),
+    rows: &mut [Row],
+    kept_only: &mut Vec<Id>,
+    (listed, account, folder): (&HashSet<Id>, Id, Id),
+) {
+    // //// Neoffice — (`account` and `folder` are the parameters now: upstream read them from the folder in view.)
+    let mb = &s.mailbox;
     let skips = mb.conversation_skips(account, folder);
     // The account's other folders, from their own lists when the session has them counted
     // ([`Session::fresh_counts`]), else from a walk over every message.
@@ -466,14 +507,16 @@ fn elsewhere(
         Some(counts) => mb
             .folders
             .iter()
-            .filter(|f| f.account == account && f.id != folder && !skips.contains(&f.id))
+            // //// Neoffice — (`listed`: none of the folders listed, which upstream's single folder in view was.)
+            .filter(|f| f.account == account && !listed.contains(&f.id) && !skips.contains(&f.id))
             .flat_map(|f| counts.ids(f.id))
             .filter_map(|id| mb.message(*id))
             .collect(),
         None => mb.messages.values().map(|m| m.as_ref()).collect(),
     };
     for m in others {
-        if m.account != account || m.folder == folder || skips.contains(&m.folder) {
+        // //// Neoffice — (`listed`.)
+        if m.account != account || listed.contains(&m.folder) || skips.contains(&m.folder) {
             continue;
         }
         let hit = filtered(s, m, me);

@@ -92,6 +92,9 @@ const MAX_RETAINED: usize = 500;
 const MAX_UNDO_ROUNDS: u32 = 20;
 /// The days of the inbox « Ranger maintenant » tidies (the planche's « les 30 derniers jours »).
 pub(crate) const TIDY_DAYS: u64 = 30;
+/// How often what Nora read of the mailbox in view is read again for the proposal over the list (`super::ask_bar`), while she
+/// files none of it: every half hour.
+pub(crate) const PROPOSAL_EVERY_MS: f64 = 30.0 * 60_000.0;
 /// The most runs of the journal read, and the most items of any list taken from an answer.
 const JOURNAL_RUNS: u64 = 20;
 const MAX_ITEMS: usize = 50;
@@ -729,6 +732,8 @@ enum Asking {
     /// The last run, for the banner: the mailbox, the run.
     Latest(String, String),
     Survey(String),
+    /// What Nora read of a mailbox, for the proposal over the list.
+    Proposal(String),
     /// The mailbox Nora has never read, started on: her secretary made, her reading of its last days started.
     Begin(String),
     Plan(String),
@@ -777,6 +782,9 @@ pub(crate) struct Known {
     asked_at: f64,
     /// The run the banner's summary was read for.
     latest_of: String,
+    /// What she read of it, for the proposal over the list (`super::ask_bar`), and when it was asked (milliseconds).
+    pub(crate) survey: Option<Survey>,
+    survey_at: f64,
 }
 
 impl Known {
@@ -784,7 +792,13 @@ impl Known {
     #[cfg(test)]
     pub(crate) fn said(state: BoxState, latest: Option<Run>) -> Known {
         let latest_of = latest.as_ref().map(|r| r.run.clone()).unwrap_or_default();
-        Known { state: Some(state), latest, asked_at: crate::now_ms(), latest_of }
+        Known { state: Some(state), latest, asked_at: crate::now_ms(), latest_of, survey: None, survey_at: 0.0 }
+    }
+
+    /// The same, with what she read of it.
+    #[cfg(test)]
+    pub(crate) fn surveyed(state: BoxState, survey: Survey) -> Known {
+        Known { survey: Some(survey), survey_at: crate::now_ms(), ..Known::said(state, None) }
     }
 }
 
@@ -975,9 +989,17 @@ pub(crate) struct Sorting {
     pub(crate) flow: Option<Flow>,
     pub(crate) card: Option<Card>,
     pub(crate) questions: Questions,
+    /// The mailbox whose proposal the bar over the list wants, said by the bar as it is drawn (`want_proposal`) and taken at the next
+    /// look.
+    proposal_wanted: Option<String>,
 }
 
 impl Sorting {
+    /// The bar over the list is drawn for `account`'s Inbox: what she read of it is asked for its proposal, when it is old.
+    pub(crate) fn want_proposal(&mut self, account: &str) {
+        self.proposal_wanted = Some(account.to_string());
+    }
+
     /// The state of a mailbox where Nora files mail: `None` where she doesn't or isn't known to.
     pub(crate) fn available(&self, account: &str) -> Option<&BoxState> {
         self.boxes.get(account).and_then(|k| k.state.as_ref()).filter(|s| s.available)
@@ -1145,6 +1167,17 @@ fn look_at(app: &mut MailApp, account: &str, now: f64) -> Option<f64> {
         known.latest_of = run.clone();
         call(app, JOURNAL, json!({"account": account, "limit": 1}), Asking::Latest(account.to_string(), run));
     }
+    // What she read of it, for the proposal over the list, while she files none of it (not while its flow is in her pane, which
+    // reads it, and whose reading is taken for the proposal: `read_now`).
+    // Asked only for the list that wants it: its bar was drawn since the last look (`want_proposal`).
+    let wanted = app.nora.sorting.proposal_wanted.take().is_some_and(|wanted| wanted == account);
+    let flowing = app.nora.sorting.flow.as_ref().is_some_and(|f| f.account == account);
+    let known = app.nora.sorting.boxes.entry(account.to_string()).or_default();
+    let proposes = wanted && !flowing && known.state.as_ref().is_some_and(|s| s.available && !s.on && !s.tidying());
+    if proposes && (known.survey_at <= 0.0 || now - known.survey_at >= PROPOSAL_EVERY_MS) {
+        known.survey_at = now;
+        call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Proposal(account.to_string()));
+    }
     Some(due)
 }
 
@@ -1268,6 +1301,11 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
             }
         }
         Asking::Survey(account) => read_now(app, &account, result, status, now),
+        Asking::Proposal(account) => {
+            if let (Ok(v), Some(known)) = (result, app.nora.sorting.boxes.get_mut(&account)) {
+                known.survey = Some(read_survey(&v));
+            }
+        }
         Asking::Begin(account) => begun(app, &account, result, status, now),
         Asking::Plan(account) => {
             let state = app.nora.sorting.boxes.get(&account).and_then(|k| k.state.clone());
@@ -1437,9 +1475,11 @@ fn read_now(app: &mut MailApp, account: &str, result: Result<Value, String>, sta
     let Some(flow) = flow_of(app, account) else { return };
     flow.survey_next = now + SURVEY_EVERY_MS;
     let mut then = None;
+    let mut proposal_read = None;
     match result {
         Ok(v) => {
             let survey = read_survey(&v);
+            proposal_read = Some(survey.clone());
             let was = flow.survey.as_ref().map(|s| (s.mails, s.still_reading(flow.read_from, now)));
             let moved =
                 was.is_some_and(|(mails, reading)| reading && ((mails == 0 && survey.mails > 0) || !survey.still_reading(flow.read_from, now)));
@@ -1458,6 +1498,11 @@ fn read_now(app: &mut MailApp, account: &str, result: Result<Value, String>, sta
     }
     settle(flow, state.as_ref(), now);
     let account = account.to_string();
+    // What she read is the proposal's over the list too.
+    if let (Some(survey), Some(known)) = (proposal_read, app.nora.sorting.boxes.get_mut(&account)) {
+        known.survey = Some(survey);
+        known.survey_at = now;
+    }
     match then {
         Some((PROPOSE, _)) => {
             // The same way as it was asked (a plan by party: its kinds and its depth).

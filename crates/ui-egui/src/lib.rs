@@ -1056,6 +1056,9 @@ pub struct UiState {
     /// The public facts of the private keys imported in File › Options › Security (#30): never
     /// a key or a passphrase, which the system's credential store holds ([`own_keys`]).
     pub imported_keys: Vec<own_keys::ImportedKey>,
+    // //// Neoffice — what « Trier avec Nora » proposes over the list, hidden by its ✕ for a mailbox (by the name of the server's account
+    // for it) until the day after the one kept here (`Date::to_days`): nora/ask_bar.rs.
+    pub nora_hint_hidden: std::collections::BTreeMap<String, i64>,
 }
 
 impl Default for UiState {
@@ -1115,6 +1118,8 @@ impl Default for UiState {
             alert_reminders: true,
             // //// Neoffice — see `calendar_ticks`.
             calendar_ticks: std::collections::BTreeMap::new(),
+            // //// Neoffice — see `nora_hint_hidden`.
+            nora_hint_hidden: std::collections::BTreeMap::new(),
             imported_keys: Vec::new(),
         }
     }

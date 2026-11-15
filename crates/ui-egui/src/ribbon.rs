@@ -1148,8 +1148,19 @@ fn folder_matches(list: &[FolderRow], query: &str) -> Vec<usize> {
 /// with the chosen one. Typing narrows the list to the folders whose name matches, each shown
 /// with its place in the tree; the arrow keys and Enter choose, and Escape clears the search
 /// before it closes the menu (#74).
-pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, mut pick: impl FnMut(&mut MailApp, Id)) {
-    let account = app.session.mailbox.folder(app.session.view.folder).map(|f| f.account).or(app.session.mailbox.default_account().map(|a| a.id));
+pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, pick: impl FnMut(&mut MailApp, Id)) {
+    // //// Neoffice — (`folder_menu_of`, the message acted on: the selection's.)
+    let acting = app.session.sel.focus();
+    folder_menu_of(ui, app, acting, pick);
+}
+
+// //// Neoffice — `folder_menu` for the message `acting` (a row's quick action, the selection's focus): in « Toutes les boîtes »,
+// //// Neoffice — whose rows are of several mailboxes, its own mailbox's folders, without the folder it is in; elsewhere, as upstream
+// //// Neoffice — has it, the folders of the account in view without the folder in view.
+pub(crate) fn folder_menu_of(ui: &mut Ui, app: &mut MailApp, acting: Option<Id>, mut pick: impl FnMut(&mut MailApp, Id)) {
+    let mixed = app.session.all_inboxes().and(acting).and_then(|id| app.session.mailbox.message(id)).map(|m| (m.account, m.folder));
+    let account = mixed.map(|(account, _)| account).or_else(|| app.session.mailbox.folder(app.session.view.folder).map(|f| f.account));
+    let account = account.or(app.session.mailbox.default_account().map(|a| a.id));
     let Some(account) = account else { return };
     fn walk(app: &MailApp, account: Id, parent: Option<Id>, depth: usize, out: &mut Vec<FolderRow>) {
         if depth > 32 {
@@ -1180,7 +1191,8 @@ pub fn folder_menu(ui: &mut Ui, app: &mut MailApp, mut pick: impl FnMut(&mut Mai
     let searching = !mailcraft_model::words::fold(&st.text).is_empty();
     let shown = folder_matches(&list, &st.text);
     // The rows the keys can choose: not the folder in view, which can't be moved to.
-    let current = app.session.view.folder;
+    // //// Neoffice — (in « Toutes les boîtes », the folder the message acted on is in: `mixed`.)
+    let current = mixed.map_or(app.session.view.folder, |(_, folder)| folder);
     let choosable: Vec<usize> = shown.iter().copied().filter(|i| list.get(*i).is_some_and(|row| row.0 != current)).collect();
     st.at = st.at.min(choosable.len().saturating_sub(1));
     let (down, up, enter, escape) = ui.input_mut(|i| {

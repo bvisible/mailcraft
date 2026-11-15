@@ -309,6 +309,10 @@ fn select(s: &mut Session, v: &Value) -> CmdResult {
         }
         Some(_) => return Err(bad("`gmail` is primary, social, promotions, updates or forums")),
     };
+    // //// Neoffice — a folder picked leaves « Toutes les boîtes » (`view.allInboxes`), its own Inbox included: its list changes.
+    if s.view.all_inboxes.take().is_some_and(|anchor| anchor == id) {
+        s.sel.messages.clear();
+    }
     if s.view.folder != id || s.view.module != Module::Mail || s.view.gmail != gmail {
         s.view.folder = id;
         s.view.module = Module::Mail;

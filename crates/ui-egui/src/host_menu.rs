@@ -15,7 +15,7 @@
 //! the module in front and the modules offered. No message, no address but the mailboxes' own,
 //! no token; a mailbox the person added by hand in the window, or a shared one, is not named.
 //!
-//! **What the page may ask** is eight commands and no other, each run as the window's own button or box runs it, and
+//! **What the page may ask** is nine commands and no other, each run as the window's own button or box runs it, and
 //! answered: done, or refused with the reason in the interface's language. A message that is no command (another
 //! kind of message, or not one the window can read) is not answered. `message.open` names a message by its server's
 //! id: one that no window has brought yet (a link from a notification) is read from its server first, by its id alone
@@ -173,8 +173,10 @@ pub fn state(app: &MailApp) -> Option<Value> {
     let shown = mb.folder(s.view.folder).filter(|f| of(f.account).is_some());
     let searching = !s.view.search.is_empty();
     let everywhere = searching && s.view.scope == Scope::Everywhere;
-    let account = shown.filter(|_| !everywhere).and_then(|f| of(f.account)).map(|h| h.email.clone());
-    let folder = shown.filter(|_| !searching).map(folder_id);
+    // «Toutes les boîtes» shows no one mailbox, no one folder: its own entry says it is on (`allInboxes`).
+    let unified = s.all_inboxes().is_some();
+    let account = shown.filter(|_| !everywhere && !unified).and_then(|f| of(f.account)).map(|h| h.email.clone());
+    let folder = shown.filter(|_| !searching && !unified).map(folder_id);
     let favorites: Vec<Value> = mailcraft_engine::cmd::folder::favorites(s)
         .into_iter()
         .filter_map(|id| mb.folder(id))
@@ -210,6 +212,11 @@ pub fn state(app: &MailApp) -> Option<Value> {
         .collect();
     // The views offered here, in the module bar's order: Notes only where `view.notes` runs.
     let views: Vec<&str> = VIEWS.iter().filter(|view| s.enabled(view)).filter_map(|view| view.strip_prefix("view.")).collect();
+    // «Toutes les boîtes», first of the Favorites where more than one of the page's mailboxes has an Inbox here: its name, whether it
+    // is in view, and the unread mail of those Inboxes; `null` otherwise.
+    let inboxes: Vec<Id> = handed.iter().filter_map(|(_, account)| mb.folder_of_kind(*account, FolderKind::Inbox)).collect();
+    let all_inboxes =
+        (inboxes.len() > 1).then(|| json!({"name": tl!("All Inboxes"), "on": unified, "unread": inboxes.iter().map(|f| unread(*f)).sum::<usize>()}));
     Some(json!({
         "type": STATE,
         "module": s.view.module,
@@ -218,6 +225,7 @@ pub fn state(app: &MailApp) -> Option<Value> {
         "favorites": favorites,
         "accounts": accounts,
         "views": views,
+        "allInboxes": all_inboxes,
     }))
 }
 
@@ -241,6 +249,8 @@ pub enum Command {
     Folder { account: String, folder: String },
     /// A new message, from the mailbox shown.
     NewMail,
+    /// «Toutes les boîtes»: the Inboxes of the person's mailboxes listed together (`view.allInboxes`).
+    AllInboxes,
     /// What the search box does with `query` as it is typed (empty: nothing is searched for any more).
     Search(String),
     /// A message of a mailbox the page handed over, by the email's id on its server: Mail in front, its folder shown
@@ -259,7 +269,7 @@ pub enum Incoming {
     Refused { id: Value, reason: String },
 }
 
-/// The page's message `text` (its JSON): a command of the eight, with what it names, or why it is refused.
+/// The page's message `text` (its JSON): a command of the nine, with what it names, or why it is refused.
 pub fn read(text: &str) -> Incoming {
     if text.len() > MAX_MESSAGE {
         return Incoming::Ignored;
@@ -294,7 +304,7 @@ fn unknown() -> String {
     tl!("MailCraft doesn't take this command from the page.").to_string()
 }
 
-/// The command `name` with `params`, when it is one of the eight and they are what it takes (nothing more).
+/// The command `name` with `params`, when it is one of the nine and they are what it takes (nothing more).
 fn command(name: &str, params: &Map<String, Value>) -> Result<Command, String> {
     let only = |keys: &[&str]| params.keys().all(|k| keys.contains(&k.as_str()));
     let text = |key: &str, max: usize| params.get(key).and_then(Value::as_str).filter(|v| v.chars().count() <= max);
@@ -303,6 +313,7 @@ fn command(name: &str, params: &Map<String, Value>) -> Result<Command, String> {
     }
     match name {
         "mail.new" if params.is_empty() => Ok(Command::NewMail),
+        "view.allInboxes" if params.is_empty() => Ok(Command::AllInboxes),
         "folder.select" if only(&["account", "folder"]) => match (text("account", MAX_NAME), text("folder", MAX_NAME)) {
             (Some(account), Some(folder)) if account.contains('@') && !folder.is_empty() => {
                 Ok(Command::Folder { account: account.to_string(), folder: folder.to_string() })
@@ -316,7 +327,7 @@ fn command(name: &str, params: &Map<String, Value>) -> Result<Command, String> {
             }
             _ => Err(bad_params()),
         },
-        "mail.new" | "folder.select" | "search" | "message.open" => Err(bad_params()),
+        "mail.new" | "view.allInboxes" | "folder.select" | "search" | "message.open" => Err(bad_params()),
         _ => Err(unknown()),
     }
 }
@@ -350,6 +361,7 @@ pub fn run(app: &mut MailApp, command: &Command) -> Result<(), String> {
     let ran = match command {
         Command::View(view) => app.run(view, json!({})),
         Command::NewMail => app.run("mail.new", json!({})),
+        Command::AllInboxes => app.run("view.allInboxes", json!({})),
         Command::Folder { account, folder } => {
             let id = named_folder(app, account, folder)?;
             app.run("folder.select", json!({"id": id}))

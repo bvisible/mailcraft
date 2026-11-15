@@ -349,6 +349,14 @@ pub struct ViewState {
     pub task_account: AccountChoice,
     /// Whose contacts People shows.
     pub people_account: AccountChoice,
+    // //// Neoffice — « Toutes les boîtes » (`view.allInboxes`): the Inboxes of the person's own mailboxes listed together, while the
+    // //// Neoffice — folder in view is the Inbox it was opened on (`Session::all_inboxes`). Not kept between sessions.
+    #[serde(skip)]
+    pub all_inboxes: Option<Id>,
+    // //// Neoffice — « Afficher les traités » (`view.showDone`): an Inbox's list shows what was marked done too, its account's
+    // //// Neoffice — Archive. Not kept between sessions.
+    #[serde(skip)]
+    pub show_done: bool,
 }
 
 impl Default for ViewState {
@@ -380,6 +388,9 @@ impl Default for ViewState {
             task_sort: TaskSort::DueDate,
             task_account: AccountChoice::All,
             people_account: AccountChoice::All,
+            // //// Neoffice — (see the fields.)
+            all_inboxes: None,
+            show_done: false,
         }
     }
 }
@@ -464,6 +475,9 @@ pub(crate) struct ListOf {
     /// The Gmail category it shows, if any (#911).
     gmail: Option<(Id, mailcraft_model::GmailCategory)>,
     search: Option<(mailcraft_model::search::Query, Scope)>,
+    // //// Neoffice — « Toutes les boîtes » and « Afficher les traités » are other lists of the same folder.
+    all_inboxes: bool,
+    show_done: bool,
     /// The day, the first day of the week and the zone, for a search with dates in it:
     /// `received:today` is other messages tomorrow (#329).
     when: Option<String>,
@@ -476,7 +490,9 @@ impl ListOf {
         let query = mailcraft_model::search::Query::parse(&view.search);
         let when = query.has_dates().then(when);
         let search = (!query.is_empty()).then_some((query, view.scope));
-        ListOf { folder: view.folder, filter: view.filter, gmail: view.gmail, search, when }
+        // //// Neoffice — (`all_inboxes`, `show_done`: see the fields.)
+        let all_inboxes = view.all_inboxes == Some(view.folder);
+        ListOf { folder: view.folder, filter: view.filter, gmail: view.gmail, search, all_inboxes, show_done: view.show_done, when }
     }
 }
 
@@ -1588,6 +1604,27 @@ impl Session {
         self.local_now().date
     }
 
+    // //// Neoffice — the Inboxes of the person's own mailboxes on a server (not those shared with them, nor the one kept on this
+    // //// Neoffice — computer alone), in the folder pane's order: what « Toutes les boîtes » lists.
+    pub fn own_inboxes(&self) -> Vec<Id> {
+        self.mailbox
+            .accounts_in_order()
+            .into_iter()
+            .filter(|a| !a.is_shared() && a.kind != mailcraft_model::AccountKind::Local)
+            .filter_map(|a| self.mailbox.folder_of_kind(a.id, mailcraft_model::FolderKind::Inbox))
+            .collect()
+    }
+
+    // //// Neoffice — the Inboxes « Toutes les boîtes » lists ([`Session::own_inboxes`]) while it is in view: the folder in view is
+    // //// Neoffice — the Inbox it was opened on (`view.allInboxes`); `None` otherwise.
+    pub fn all_inboxes(&self) -> Option<Vec<Id>> {
+        if self.view.module != Module::Mail || self.view.all_inboxes != Some(self.view.folder) {
+            return None;
+        }
+        let inboxes = self.own_inboxes();
+        inboxes.contains(&self.view.folder).then_some(inboxes)
+    }
+
     /// The list in view ([`ListOf`]), as made on today's date in this zone.
     pub(crate) fn list_of(&self) -> ListOf {
         ListOf::of(&self.view, || format!("{}|{}|{}", self.today().to_days(), self.prefs.week_start.index(), self.zone_key()))
@@ -2045,7 +2082,8 @@ impl Session {
     /// What the message list is built from, but for the content brought into memory or let go of.
     fn list_state(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{:?}|{}",
+            // //// Neoffice — and « Toutes les boîtes » and « Afficher les traités », not saved with the view either.
+            "{}|{}|{}|{}|{}|{}|{:?}|{:?}|{}|{}",
             self.rev,
             self.today().to_days(),
             // `received:"last week"` is other days for another first day of the week, and
@@ -2056,6 +2094,9 @@ impl Session {
             self.prefs.show_groups,
             // (Not saved with the rest of the view, so not in its text.)
             self.view.gmail,
+            // //// Neoffice — (see the format.)
+            self.view.all_inboxes,
+            self.view.show_done,
             serde_json::to_string(&self.view).unwrap_or_default()
         )
     }

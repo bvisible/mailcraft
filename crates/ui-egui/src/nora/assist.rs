@@ -248,6 +248,21 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     Ok(json!({"open": open}))
 }
 
+/// Ask Nora `text` from the bar over the list (`super::ask_bar`): her pane opens, and the question goes as if it was typed there.
+/// `false` where there is no pane, or nothing to ask.
+pub(crate) fn ask(app: &mut MailApp, text: &str) -> bool {
+    let text = text.trim();
+    if text.is_empty() || !available(app) {
+        return false;
+    }
+    if !app.nora.assist.open && toggle(app, &json!({"open": true})).is_err() {
+        return false;
+    }
+    let outputs = on_actions(app, vec![PanelAction::Send(text.to_string())]);
+    perform(app, outputs);
+    true
+}
+
 /// The pane closes: what Nora was doing stops with it (she would go on writing into a message the person
 /// no longer watches her write into).
 fn close(app: &mut MailApp) {

@@ -186,7 +186,9 @@ impl MailApp {
             .filter(|f| f.account == account && f.kind != FolderKind::Inbox)
             .and_then(|f| f.server.as_ref())
             .map(|server| server.id.clone());
-        let also: Vec<String> = on_screen.into_iter().collect();
+        let mut also: Vec<String> = on_screen.into_iter().collect();
+        // //// Neoffice — with « Afficher les traités », the account's Archive, which its Inbox's list shows (`view.showDone`).
+        also.extend(crate::mail_view::done::archive_shown(&self.session, account));
         let request = jmap_mail_request(&self.session, account, !quiet, &also, quiet).map_err(|e| e.to_string())?;
         self.jmap_sent = request.changes.iter().filter_map(|change| serde_json::to_string(change).ok()).collect();
         // (And the messages it sends and the drafts it files, as they stand: one sent or saved meanwhile is new to the next run.)

@@ -421,6 +421,9 @@ mod agent_tests;
 mod catalog_tests;
 #[cfg(test)]
 mod category_rows_tests;
+// //// Neoffice — « Toutes les boîtes » and « Afficher les traités ».
+#[cfg(test)]
+mod all_inboxes_tests;
 #[cfg(test)]
 mod composing_tests;
 #[cfg(test)]

@@ -4585,3 +4585,33 @@ msgstr "{said}; {already}"
 
 msgid "{what} ({already})"
 msgstr "{what} ({already})"
+
+msgid "All Inboxes"
+msgstr "Alle Posteingänge"
+
+msgid "Choose the mailbox"
+msgstr "Postfach wählen"
+
+msgid "Hide until tomorrow"
+msgstr "Bis morgen ausblenden"
+
+msgid "I can file {what}."
+msgstr "Ich kann {what} einsortieren."
+
+msgid "Put it back in the Inbox"
+msgstr "Zurück in den Posteingang"
+
+msgid "See the plan"
+msgstr "Plan ansehen"
+
+msgid "Show done"
+msgstr "Erledigte anzeigen"
+
+msgid "Show Done"
+msgstr "Erledigte anzeigen"
+
+msgid "This view is offered in NeoMail only"
+msgstr "Diese Ansicht wird nur in NeoMail angeboten"
+
+msgid "none of your mailboxes has an Inbox"
+msgstr "keines Ihrer Postfächer hat einen Posteingang"

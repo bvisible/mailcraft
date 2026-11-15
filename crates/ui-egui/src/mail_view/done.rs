@@ -30,6 +30,10 @@ pub(super) const LEAD: f32 = 26.0;
 /// The round: its radius, and its centre from the row's left edge.
 const ROUND: f32 = 8.0;
 const ROUND_X: f32 = 15.0;
+/// The list as Spark has it (variant D, `super::spark_list`): a lead column this wide holds the unread dot, which becomes a round
+/// of this radius under the pointer, in its middle.
+pub(super) const D_LEAD: f32 = 40.0;
+const D_ROUND: f32 = 11.0;
 /// The quick actions: each button, and the gap between two.
 const QUICK: egui::Vec2 = egui::vec2(26.0, 22.0);
 const QUICK_GAP: f32 = 2.0;
@@ -52,6 +56,35 @@ pub(crate) struct Item {
     pub(crate) from: Id,
     pub(crate) who: String,
     pub(crate) subject: String,
+}
+
+/// Where a row's or a heading's round is, from the left edge `x` of the list and the middle `y` of its line: in the lead column
+/// of variant D (`d`), else left of the read switch. Its centre and radius.
+pub(super) fn round_at(x: f32, y: f32, d: bool) -> (Pos2, f32) {
+    if d { (pos2(x + D_LEAD / 2.0, y), D_ROUND) } else { (pos2(x + ROUND_X, y), ROUND) }
+}
+
+/// Whether `m` is listed as done: in its account's Archive, which « Afficher les traités » lists beside the Inbox.
+pub(crate) fn listed_done(app: &MailApp, m: &Message) -> bool {
+    app.session.view.show_done
+        && !app.session.keeps_local
+        && app.session.mailbox.folder(m.folder).is_some_and(|f| f.kind == FolderKind::Archive)
+        && app.session.mailbox.folder(app.session.view.folder).is_some_and(|f| f.kind == FolderKind::Inbox)
+}
+
+/// The server id of `account`'s Archive while « Afficher les traités » lists it beside the account's Inbox: a run of the account
+/// reads it too, so that what is shown done is what its server has.
+pub(crate) fn archive_shown(s: &mailcraft_engine::Session, account: Id) -> Option<String> {
+    if s.keeps_local || !s.view.show_done || s.view.module != Module::Mail {
+        return None;
+    }
+    let inbox = s.mailbox.folder_of_kind(account, FolderKind::Inbox)?;
+    let listed = s.all_inboxes().map_or(s.view.folder == inbox, |all| all.contains(&inbox));
+    if !listed {
+        return None;
+    }
+    let archive = s.mailbox.folder_of_kind(account, FolderKind::Archive)?;
+    s.mailbox.folder(archive)?.server.as_ref().map(|server| server.id.clone()).filter(|id| !id.is_empty())
 }
 
 /// Whether « Traité » is offered: a hosting page's tab, its Inbox in view.
@@ -131,23 +164,34 @@ pub(super) fn group_ids(rows: &[Row], first: usize) -> Vec<Id> {
     ids
 }
 
-/// The round in `rect`: a ring at rest, full with its tick under the pointer; `done` wears the signal's tint.
+/// The round: a ring at rest, full with its tick under the pointer; `done` wears the signal's tint.
 fn paint_round(ui: &Ui, t: &Tokens, center: Pos2, hovered: bool, done: bool) {
+    paint_round_of(ui, t, center, ROUND, hovered, done);
+}
+
+/// [`paint_round`] of `radius` (variant D's is larger, its ring a little heavier).
+fn paint_round_of(ui: &Ui, t: &Tokens, center: Pos2, radius: f32, hovered: bool, done: bool) {
     let p = ui.painter();
+    let k = radius / ROUND;
     let tick = |color: Color32| {
         p.add(egui::Shape::line(
-            vec![pos2(center.x - 3.6, center.y + 0.2), pos2(center.x - 1.0, center.y + 2.8), pos2(center.x + 3.8, center.y - 2.8)],
+            vec![
+                pos2(center.x - 3.6 * k, center.y + 0.2 * k),
+                pos2(center.x - 1.0 * k, center.y + 2.8 * k),
+                pos2(center.x + 3.8 * k, center.y - 2.8 * k),
+            ],
             Stroke::new(1.6, color),
         ));
     };
     if done {
-        p.circle_filled(center, ROUND, t.accent_soft);
-        tick(t.accent_soft_text);
+        p.circle_filled(center, radius, if hovered { t.accent } else { t.accent_soft });
+        tick(if hovered { t.on_accent } else { t.accent_soft_text });
     } else if hovered {
-        p.circle_filled(center, ROUND, t.accent);
+        p.circle_filled(center, radius, t.accent);
         tick(t.on_accent);
     } else {
-        p.circle_stroke(center, ROUND - 0.6, Stroke::new(1.2, t.text_dim));
+        let width = if radius > ROUND { 1.5 } else { 1.2 };
+        p.circle_stroke(center, radius - width / 2.0, Stroke::new(width, t.text_dim));
     }
 }
 
@@ -158,10 +202,10 @@ fn round_tip(app: &MailApp, resp: Response, words: &str) -> Response {
     resp.on_hover_text(said)
 }
 
-/// A row's round, left of the read switch, while the row is under the pointer: `true` when it was clicked (marked done).
-pub(super) fn row_round(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, rect: Rect, line1: f32, shown: bool) -> bool {
-    let center = pos2(rect.min.x + ROUND_X, line1);
-    let at = Rect::from_center_size(center, vec2(2.0 * ROUND + 6.0, 2.0 * ROUND + 6.0));
+/// A row's round at `center` (of `radius`, [`round_at`]), while the row is under the pointer: `true` when it was clicked (marked
+/// done).
+pub(super) fn row_round(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, (center, radius): (Pos2, f32), shown: bool) -> bool {
+    let at = Rect::from_center_size(center, vec2(2.0 * radius + 6.0, 2.0 * radius + 6.0));
     if !shown {
         return false;
     }
@@ -169,14 +213,47 @@ pub(super) fn row_round(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, r
     let resp = ui.interact(at, ui.scope_id().with(("msg_done", key)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let resp = round_tip(app, resp, tl!("Mark as done"));
     app.hit.add("doneRound", row.id, at);
-    paint_round(ui, &t, center, resp.hovered(), false);
+    paint_round_of(ui, &t, center, radius, resp.hovered(), false);
     resp.clicked() && mark(app, &row.members)
 }
 
-/// A group's round, left of its heading `heading`: a click marks the whole group done.
-pub(super) fn group_round(app: &mut MailApp, ui: &Ui, heading: Rect, rows: &[Row], first: usize) {
-    let center = pos2(heading.min.x - super::ROW_INSET + ROUND_X, heading.center().y + 3.0);
-    let at = Rect::from_center_size(center, vec2(2.0 * ROUND + 6.0, 2.0 * ROUND + 6.0));
+/// The round of a row « Afficher les traités » lists as done (its message is in its account's Archive), always shown, full: a
+/// click puts it back in its account's Inbox. `true` when it was clicked and it went back.
+pub(super) fn listed_done_round(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, (center, radius): (Pos2, f32)) -> bool {
+    let at = Rect::from_center_size(center, vec2(2.0 * radius + 6.0, 2.0 * radius + 6.0));
+    let t = Tokens::get(ui.ctx());
+    let resp = ui
+        .interact(at, ui.scope_id().with(("msg_undone", key)), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(tl!("Put it back in the Inbox"));
+    app.hit.add("doneListed", row.id, at);
+    paint_round_of(ui, &t, center, radius, resp.hovered(), true);
+    resp.clicked() && back_to_inbox(app, &row.members)
+}
+
+/// Put `ids` back in their accounts' Inboxes (a message listed as done), and out of the section of what was done here.
+fn back_to_inbox(app: &mut MailApp, ids: &[Id]) -> bool {
+    let mut by_inbox: BTreeMap<Id, Vec<Id>> = BTreeMap::new();
+    for id in ids {
+        let Some(m) = app.session.mailbox.message(*id) else { continue };
+        if let Some(inbox) = app.session.mailbox.folder_of_kind(m.account, FolderKind::Inbox).filter(|inbox| *inbox != m.folder) {
+            by_inbox.entry(inbox).or_default().push(*id);
+        }
+    }
+    let mut back = false;
+    for (inbox, ids) in by_inbox {
+        if app.run("mail.move", json!({"ids": ids, "folder": inbox})).is_ok() {
+            app.done.items.retain(|i| !ids.contains(&i.id));
+            back = true;
+        }
+    }
+    back
+}
+
+/// A group's round at `center` (of `radius`, [`round_at`]), before its heading `heading`: a click marks the whole group done. At
+/// rest a faint ring (`ring`), or nothing (variant D: it shows under the pointer, as a row's does).
+pub(super) fn group_round(app: &mut MailApp, ui: &Ui, heading: Rect, (center, radius): (Pos2, f32), ring: bool, rows: &[Row], first: usize) {
+    let at = Rect::from_center_size(center, vec2(2.0 * radius + 6.0, 2.0 * radius + 6.0));
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(at, ui.scope_id().with(("group_done", first)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
     let n = group_ids(rows, first).len();
@@ -184,10 +261,10 @@ pub(super) fn group_round(app: &mut MailApp, ui: &Ui, heading: Rect, rows: &[Row
     app.hit.add("doneGroup", first as u64, at);
     let over = ui.rect_contains_pointer(heading.union(at));
     if over || resp.hovered() {
-        paint_round(ui, &t, center, resp.hovered(), false);
-    } else {
+        paint_round_of(ui, &t, center, radius, resp.hovered(), false);
+    } else if ring {
         // At rest a faint ring: the group can be done in a click.
-        ui.painter().circle_stroke(center, ROUND - 0.6, Stroke::new(1.0, t.border_strong));
+        ui.painter().circle_stroke(center, radius - 0.6, Stroke::new(1.0, t.border_strong));
     }
     if resp.clicked() {
         let ids = group_ids(rows, first);
@@ -279,7 +356,7 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
             let mut moved = false;
             egui::Popup::menu(resp).show(|ui| {
                 ui.set_min_width(180.0);
-                crate::ribbon::folder_menu(ui, app, |app, folder| {
+                crate::ribbon::folder_menu_of(ui, app, Some(row.id), |app, folder| {
                     moved = app.run("mail.move", json!({"folder": folder, "ids": row.members})).is_ok();
                 });
             });

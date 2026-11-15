@@ -659,6 +659,12 @@ fn list(s: &mut Session, v: &Value) -> CmdResult {
     s.view.module = crate::Module::Mail;
     s.view.search = query;
     s.view.scope = crate::Scope::Folder;
+    // //// Neoffice — a folder named is that folder's mail alone: not « Toutes les boîtes » (whose Inbox it may be), nor what was marked
+    // //// Neoffice — done beside it (« Afficher les traités »).
+    if v.get("folder").is_some_and(|f| !f.is_null()) {
+        s.view.all_inboxes = None;
+        s.view.show_done = false;
+    }
     // Another folder or search lists every conversation closed, as the window does (#503).
     if s.view.folder != view.folder || s.view.search != view.search {
         s.view.open.clear();
@@ -838,7 +844,12 @@ fn mark_all_read(s: &mut Session, v: &Value) -> CmdResult {
     if s.mailbox.folder(folder).is_none() {
         return Err(failed!("no folder with id {id}", id = folder));
     }
-    let ids: Vec<Id> = s.mailbox.messages_in(folder).filter(|m| !m.read).map(|m| m.id).collect();
+    // //// Neoffice — in « Toutes les boîtes », with no folder named, every Inbox it lists (`Session::all_inboxes`).
+    let folders = match s.all_inboxes() {
+        Some(all) if p::id(v, "folder").is_none() => all,
+        _ => vec![folder],
+    };
+    let ids: Vec<Id> = folders.iter().flat_map(|f| s.mailbox.messages_in(*f)).filter(|m| !m.read).map(|m| m.id).collect();
     for id in &ids {
         s.mailbox.message_mut(*id)?.read = true;
     }

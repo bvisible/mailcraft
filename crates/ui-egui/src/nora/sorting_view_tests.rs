@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! « Trier avec Nora » through real frames: the button and the banner above the Inbox's list only where Nora files the
+//! « Trier avec Nora » through real frames: what she says over the Inbox's list (above her bar) only where she files the
 //! mailbox, the switch of her pane's home, the flow with the ways the server knows and nothing it doesn't, the person who
 //! only reads, the activation card, its words in every language of the fork; and (`--ignored`, with
 //! `NORA_SORTING_SHOTS=<folder>`) each screen drawn in French, light and dark, to PNG files.
@@ -64,39 +64,53 @@ fn hosted(state: serde_json::Value, latest: bool) -> MailApp {
 }
 
 #[test]
-fn the_button_and_the_banner_are_above_the_inbox_only_where_nora_files_the_mailbox() {
+fn what_nora_says_over_the_inbox_is_there_only_where_she_files_the_mailbox() {
+    // On, her last run filed mail today: what it filed, and the journal, above her bar.
     let h = window(hosted(answers::state(true, "validated", true), true), (1440.0, 900.0));
-    assert!(h.state().hit.rect("noraSort", 0).is_some(), "the button");
-    assert!(h.state().hit.rect("noraBanner", 0).is_some(), "the banner while she files it");
-    assert!(has(&h, "Sort with Nora"));
+    assert!(h.state().hit.rect("noraAsk", 0).is_some(), "the bar");
+    assert!(h.state().hit.rect("noraHint", 0).is_some(), "what her last run filed");
     assert!(has(&h, "See the journal"));
-    // Off: the button, no banner.
+    assert!(h.state().hit.rect("noraSort", 0).is_none() && h.state().hit.rect("noraBanner", 0).is_none(), "no button nor banner");
+    // Off, what she read of it has notifications and newsletters: what she can file, and the plan.
+    let mut app = hosted(answers::state(false, "", true), false);
+    let said = read_state(&answers::state(false, "", true));
+    app.nora.sorting.boxes.insert(BOX.to_string(), Known::surveyed(said, read_survey(&answers::survey())));
+    let h = window(app, (1440.0, 900.0));
+    assert!(contains(&h, "I can file 8 notifications and 6 newsletters"));
+    assert!(has(&h, "See the plan"));
+    // Off, nothing read yet: no line, the bar alone.
     let h = window(hosted(answers::state(false, "validated", true), false), (1440.0, 900.0));
-    assert!(h.state().hit.rect("noraSort", 0).is_some() && h.state().hit.rect("noraBanner", 0).is_none());
-    // Unavailable (a plan without background assistants): nothing.
+    assert!(h.state().hit.rect("noraAsk", 0).is_some() && h.state().hit.rect("noraHint", 0).is_none());
+    // Unavailable (a plan without background assistants): no line.
     let mut off = answers::state(false, "", true);
     off["available"] = json!(false);
     off["unavailable"] = json!("plan");
     let h = window(hosted(off, false), (1440.0, 900.0));
-    assert!(h.state().hit.rect("noraSort", 0).is_none() && h.state().hit.rect("noraBanner", 0).is_none());
-    // The program that keeps its mail on the computer: nothing.
+    assert!(h.state().hit.rect("noraHint", 0).is_none());
+    // The program that keeps its mail on the computer: no bar at all.
     let mut app = hosted(answers::state(true, "validated", true), true);
     app.session.keeps_local = true;
     let h = window(app, (1440.0, 900.0));
-    assert!(h.state().hit.rect("noraSort", 0).is_none());
+    assert!(h.state().hit.rect("noraAsk", 0).is_none() && h.state().hit.rect("noraHint", 0).is_none());
 }
 
 #[test]
-fn the_button_opens_her_pane_on_the_flow_and_its_home_has_the_switch() {
-    let mut h = window(hosted(answers::state(false, "", true), false), (1440.0, 900.0));
-    // Her pane's home: « Trier ma boîte » first, the switch after the recipes.
+fn see_the_plan_opens_her_pane_on_the_flow_and_its_home_has_sort_my_mailbox_and_the_switch() {
+    let mut app = hosted(answers::state(false, "", true), false);
+    let said = read_state(&answers::state(false, "", true));
+    app.nora.sorting.boxes.insert(BOX.to_string(), Known::surveyed(said, read_survey(&answers::survey())));
+    let mut h = window(app, (1440.0, 900.0));
+    // Her pane's home: « Trier ma boîte » first, the switch after the recipes; the bar and its line give way to the pane.
     h.state_mut().run("ui.noraAssistant", json!({"open": true})).unwrap();
     h.run_steps(4);
     assert!(has(&h, "Sort my mailbox"));
     assert!(has(&h, "Nora files my mail"), "the switch");
     assert!(has(&h, "Morning summary"), "the recipes stay");
-    // The button above the list opens the flow in it.
-    h.get_by_label("Sort with Nora").click();
+    assert!(h.state().hit.rect("noraAsk", 0).is_none() && h.state().hit.rect("noraHint", 0).is_none());
+    h.state_mut().run("ui.noraAssistant", json!({"open": false})).unwrap();
+    h.run_steps(4);
+    // « Voir le plan » over the list opens the flow in it.
+    h.get_by_label("See the plan").click();
     h.run_steps(3);
     let flow = h.state().nora.sorting.flow.as_ref().unwrap();
     assert_eq!((flow.account.as_str(), flow.journal_first), (BOX, false));

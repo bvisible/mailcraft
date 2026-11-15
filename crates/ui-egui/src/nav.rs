@@ -879,6 +879,50 @@ pub fn folder_pane_strip(app: &mut MailApp, ui: &mut Ui) {
     });
 }
 
+// //// Neoffice — added: « Toutes les boîtes » under Favorites (variant D): the Inboxes of the person's own mailboxes listed together
+// //// Neoffice — (`view.allInboxes`), with their unread mail, a row as a folder's is, with a mark of stacked layers.
+fn all_inboxes_row(app: &mut MailApp, ui: &mut Ui, selected: bool) {
+    let t = Tokens::get(ui.ctx());
+    let name = tl!("All Inboxes");
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::hover());
+    let resp = ui.interact(r, ui.scope_id().with("fav_all_inboxes"), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, name));
+    app.hit.add("allInboxes", 0, r);
+    let row = highlight(r).shrink2(vec2(0.0, ROW_HIGHLIGHT_INSET));
+    if selected {
+        ui.painter().rect_filled(row, 6.0, t.accent_soft);
+        ui.painter().rect_filled(Rect::from_center_size(pos2(row.min.x + 1.5, row.center().y), vec2(3.0, 14.0)), 1.5, t.selection_edge);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(row, 6.0, t.hover_nav);
+    }
+    let ink = if selected { t.accent_soft_text } else { t.text };
+    // The mark: three layers, one over the other, where a folder's chevron would be.
+    let c = pos2(r.min.x + CHEVRON_X, r.center().y);
+    let layer = |dy: f32| vec![pos2(c.x - 5.5, c.y + dy), pos2(c.x, c.y + dy + 2.75), pos2(c.x + 5.5, c.y + dy)];
+    ui.painter().add(Shape::closed_line(
+        vec![pos2(c.x, c.y - 6.0), pos2(c.x + 5.5, c.y - 3.25), pos2(c.x, c.y - 0.5), pos2(c.x - 5.5, c.y - 3.25)],
+        Stroke::new(1.3, ink),
+    ));
+    ui.painter().add(Shape::line(layer(0.5), Stroke::new(1.3, ink)));
+    ui.painter().add(Shape::line(layer(3.5), Stroke::new(1.3, ink)));
+    let unread = crate::mail_view::header::all_unread(app);
+    let mut name_end = r.max.x - COUNT_RIGHT;
+    if unread > 0 {
+        let (fill, text) = (if selected { t.surface } else { t.accent_soft }, t.accent_soft_text);
+        let galley = ui.painter().layout_no_wrap(unread.to_string(), bold(NAME_SIZE - 1.0), text);
+        let w = (galley.size().x + 12.0).max(20.0);
+        let pill = Rect::from_center_size(pos2(r.max.x - COUNT_RIGHT + 4.0 - w / 2.0, r.center().y), vec2(w, 18.0));
+        ui.painter().rect_filled(pill, 9.0, fill);
+        ui.painter().galley(pill.center() - galley.size() / 2.0, galley, text);
+        name_end = pill.min.x - 6.0;
+    }
+    let font = if selected { bold(NAME_SIZE) } else { regular(NAME_SIZE) };
+    paint_clipped(ui.painter(), pos2(r.min.x + NAME_LEFT, r.center().y), (name_end - r.min.x - NAME_LEFT).max(0.0), name, font, ink);
+    if resp.clicked() {
+        let _ = app.run("view.allInboxes", json!({}));
+    }
+}
+
 /// The folder pane: favourites, then every account's folders.
 pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
@@ -928,7 +972,9 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
             // they are tabs above the list instead (`view.gmailCategories`), the Inbox's is.
             let gmail_tabs = app.session.view.gmail_tabs;
             let gmail_now = mailcraft_engine::gmail::in_view(&app.session);
-            let current = if gmail_now.is_some() && !gmail_tabs { 0 } else { app.session.view.folder };
+            // //// Neoffice — nor in « Toutes les boîtes », whose own row is (`all_inboxes_row`).
+            let unified = app.session.all_inboxes().is_some();
+            let current = if (gmail_now.is_some() && !gmail_tabs) || unified { 0 } else { app.session.view.folder };
             let gmail_current = app.session.view.folder;
             let among_favorites = !folded.contains(&FAVORITES) && favorites.iter().any(|f| f.id == current);
             let in_a_list = lists.iter().any(|(_, _, rows)| rows.iter().any(|(f, _, _)| f.id == current));
@@ -948,7 +994,13 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
                     heading(app, ui, id, name, 2.0 * ROW_H, 34.5, true, movable.contains(&id))
                 }
             };
-            if (!favorites.is_empty() || note.is_some()) && head(app, ui, FAVORITES, tl!("Favorites")) {
+            // //// Neoffice — « Toutes les boîtes » first of the Favorites, where the mail is a hosting page's and more than one Inbox is the
+            // //// Neoffice — person's own (`all_inboxes_row`).
+            let all = crate::mail_view::spark_list(app) && crate::mail_view::header::all_offered(app);
+            if (!favorites.is_empty() || note.is_some() || all) && head(app, ui, FAVORITES, tl!("Favorites")) {
+                if all {
+                    all_inboxes_row(app, ui, unified);
+                }
                 if let Some((account, note)) = &note {
                     favorites_note(app, ui, *account, note);
                 }

@@ -32,6 +32,8 @@
 //! person's own text, above the signature and the quoted original ([`own_text`]).
 
 mod answer;
+// //// Neoffice — her bar over the message list, and what « Trier avec Nora » proposes above it (variant D).
+pub(crate) mod ask_bar;
 pub(crate) mod assist;
 mod band;
 mod flow;

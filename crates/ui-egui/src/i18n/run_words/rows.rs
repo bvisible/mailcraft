@@ -456,6 +456,8 @@ pub(super) static ROWS: &[Row] = &[
     row(KEPT_HERE, Line, run_word!("This page reports problems to the people who run it, not to MailCraft's makers"), &[]),
     // //// Neoffice — (Public keys and certificates: kept in the mailbox, which such a page doesn't keep)
     row(KEPT_HERE, Line, run_word!("This page keeps no certificates or keys: they would be gone at the next visit"), &[]),
+    // //// Neoffice — (« Toutes les boîtes » and « Afficher les traités »: the list of a hosting page's tab alone)
+    row(KEPT_HERE, Line, run_word!("This view is offered in NeoMail only"), &[]),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
     // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
     row(CONTACTS, Line, run_word!("{name}: its address book can't be changed any more, so the change made here was undone."), &[]),

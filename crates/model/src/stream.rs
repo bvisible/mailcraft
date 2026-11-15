@@ -65,6 +65,16 @@ impl StreamCounts {
     pub fn unread(&self, stream: Stream) -> usize {
         self.unread.get(stream.index()).copied().unwrap_or(0)
     }
+
+    /// These and `other`'s together: the Inboxes « Toutes les boîtes » lists.
+    pub fn add(&mut self, other: &StreamCounts) {
+        for (n, more) in self.total.iter_mut().zip(other.total) {
+            *n += more;
+        }
+        for (n, more) in self.unread.iter_mut().zip(other.unread) {
+            *n += more;
+        }
+    }
 }
 
 /// How many streams one say hands over at most (a window of a list holds 200 messages, the server's answer at most as many).

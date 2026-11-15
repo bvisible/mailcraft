@@ -60,6 +60,15 @@ pub fn marks_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_MARKS_HERE)
 }
 
+/// Why « Toutes les boîtes » and « Afficher les traités » are not offered: the list of a hosting page's tab has them (variant D),
+/// the program that keeps its mail keeps upstream's list.
+pub const HOSTED_ONLY: &str = "This view is offered in NeoMail only";
+
+/// Why a view of the hosted list is not offered, when it isn't: the session keeps its mail.
+pub fn hosted_refusal(s: &Session) -> Option<&'static str> {
+    s.keeps_local.then_some(HOSTED_ONLY)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;

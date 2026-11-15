@@ -258,6 +258,9 @@ const SAFE: &[&str] = &[
     "view.folderPane",
     "view.navigationBar",
     "view.conversations",
+    // //// Neoffice — « Toutes les boîtes » and « Afficher les traités »: what the list shows.
+    "view.allInboxes",
+    "view.showDone",
     "view.sort",
     "view.reverseSort",
     "view.filter",
