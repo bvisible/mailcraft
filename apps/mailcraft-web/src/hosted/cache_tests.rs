@@ -169,6 +169,14 @@ fn a_copy_stays_within_its_bound() {
     let light = encode_within(&mb, u64::MAX, WINDOW, bound).expect("written without bodies");
     assert!(light.len() <= bound);
     assert!(decode(&light, &[jane()]).is_some_and(|m| m.messages.values().all(|m| m.unfetched)));
+    // Too heavy with all its bodies but not with a third of them: written with that third, the newest.
+    let all = mb.messages.values().map(|m| m.size()).sum::<u64>();
+    let third = encode_within(&mb, all / 3, WINDOW, usize::MAX).expect("written");
+    let fewer = encode_within(&mb, all, WINDOW, third.len()).expect("written with a third of its bodies");
+    assert!(fewer.len() <= third.len());
+    let kept = decode(&fewer, &[jane()]).expect("read back");
+    let whole_ones = kept.messages.values().filter(|m| !m.unfetched).count();
+    assert!(whole_ones > 0 && whole_ones < kept.messages.len(), "{whole_ones} of {}", kept.messages.len());
     // Still too heavy: not written at all.
     assert!(encode_within(&mb, u64::MAX, WINDOW, 100).is_none());
     // The default bound holds a few hundred messages with their bodies.

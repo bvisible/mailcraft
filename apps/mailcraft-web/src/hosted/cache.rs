@@ -15,8 +15,9 @@
 //!   hands over ([`holds`]). At each start every other copy kept in this browser is deleted ([`stale`]): another person
 //!   signed in on the same browser never finds the last one's.
 //! - **How much**: never more than [`MAX_BYTES`] once written; of each folder the newest messages a run reads again
-//!   (its window: what is in the copy is put right by the next run), the bodies of the newest until [`BODIES`] of them,
-//!   the others headers and preview (fetched again when opened).
+//!   (its window: what is in the copy is put right by the next run), the bodies of the newest until [`BODIES`] of them
+//!   (a third of that, then none, when the copy would weigh more), the others headers and preview (fetched again when
+//!   opened).
 //! - **Nothing that would be done twice**: no Outbox (a message sent since would go again), no draft that waits to go
 //!   up or never went (it may have gone since: it would be filed twice), no change still to tell the server (moves,
 //!   deletions, folder changes): a copy shows, it never acts. The drafts the server has stay: what changed since does not
@@ -45,9 +46,11 @@ pub const DATABASE: &str = "neomail";
 pub const STORE: &str = "mailboxes";
 /// What a key starts with: a copy of another shape is never read.
 const FORMAT: &str = "v1";
-/// The bodies kept, newest message first, up to this many bytes.
-pub const BODIES: u64 = 8 << 20;
-/// The most a copy weighs once written: a heavier one is written with no body, and not at all when still too heavy.
+/// The bodies kept, newest message first, up to this many bytes. (24 MB since 15.11, 8 MB before: the heavy messages past
+/// 8 MB were fetched again at every visit.)
+pub const BODIES: u64 = 24 << 20;
+/// The most a copy weighs once written: a heavier one is written with a third of the bodies (the 8 MB of before), then
+/// with none, and not at all when still too heavy.
 pub const MAX_BYTES: usize = 48 << 20;
 /// How often a changing mailbox is written, in milliseconds.
 pub const EVERY_MS: f64 = 15_000.0;
@@ -155,10 +158,10 @@ pub fn snapshot(mailbox: &Mailbox, bodies: u64, window: usize) -> Mailbox {
     kept
 }
 
-/// The copy of `mailbox` as written: with the newest bodies up to `bodies` bytes, else with none, as long as it weighs
-/// `max` bytes at most; `None` when even that is heavier.
+/// The copy of `mailbox` as written: with the newest bodies up to `bodies` bytes, else up to a third of that, else with
+/// none, as long as it weighs `max` bytes at most; `None` when even that is heavier.
 pub fn encode_within(mailbox: &Mailbox, bodies: u64, window: usize, max: usize) -> Option<Vec<u8>> {
-    for budget in [bodies, 0] {
+    for budget in [bodies, bodies / 3, 0] {
         let bytes = mailcraft_engine::io::write_mailbox(&snapshot(mailbox, budget, window)).ok()?;
         if bytes.len() <= max {
             return Some(bytes);
