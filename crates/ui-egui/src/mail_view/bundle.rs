@@ -122,11 +122,15 @@ pub(super) fn row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, one: bo
     );
     let left = mark.x + MARK + 14.0;
     let chevron_x = rect.max.x - 22.0;
-    // The name, and how many it holds.
+    // The name, and how many it holds: the count and the chevron keep their room, the name is cut short before them.
     let font = if row.unread > 0 { semibold(15.0) } else { regular(15.0) };
-    let name_w = paint_clipped(&p, pos2(left, line1), (chevron_x - 12.0 - left).max(0.0), name, font, t.text);
     let count = row.members.len().to_string();
-    let count_w = p.text(pos2(left + name_w + 7.0, line1), Align2::LEFT_CENTER, &count, regular(12.0), t.text_dim).size().x;
+    let count_w = p.layout_no_wrap(count.clone(), regular(12.0), t.text_dim).size().x;
+    let name_room = (chevron_x - 12.0 - count_w - 7.0 - left).max(0.0);
+    let name_w = paint_clipped(&p, pos2(left, line1), name_room, name, font, t.text);
+    p.text(pos2(left + name_w + 7.0, line1), Align2::LEFT_CENTER, &count, regular(12.0), t.text_dim);
+    app.hit.add("bundleCount", hit_of(stream), Rect::from_min_size(pos2(left + name_w + 7.0, line1 - 7.0), vec2(count_w, 14.0)));
+    app.hit.add("bundleChevron", hit_of(stream), Rect::from_center_size(pos2(chevron_x, line1), vec2(6.0, 12.0)));
     // Its senders: on the same line after the name's column in a single line, on the line under it otherwise.
     let senders = senders(app, &row.members);
     let (mut x, y) =

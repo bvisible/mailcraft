@@ -118,6 +118,13 @@ pub(crate) fn mark(app: &mut MailApp, ids: &[Id]) -> bool {
     if moved.is_empty() {
         return false;
     }
+    // « Prioritaire » of their mailboxes is read again (priority.rs), a minute after the last time at the earliest.
+    let accounts: std::collections::BTreeSet<Id> = moved.iter().filter_map(|i| app.session.mailbox.message(i.id).map(|m| m.account)).collect();
+    for account in accounts {
+        if let Some(name) = crate::nora::page_mailbox(app, account) {
+            app.nora.sorting.priority_stale(&name);
+        }
+    }
     app.done.items.retain(|d| !moved.iter().any(|m| m.id == d.id));
     for item in moved.into_iter().rev() {
         app.done.items.insert(0, item);
@@ -290,11 +297,15 @@ pub(super) enum Quick {
     Flag,
     Move,
     Delete,
+    /// « Prioritaire » (⚡): in or out of it (priority.rs).
+    Priority,
 }
 
-/// A row's quick actions, right to left from its end: delete, move, flag, pin, read.
+/// A row's quick actions, right to left from its end: delete, move, flag, pin, read, and ⚡ where « Prioritaire » is offered.
 pub(super) struct Bar {
     buttons: Vec<(Quick, Response, Rect)>,
+    /// The mailbox of the row's message on the server and its JMAP id, and whether it is in « Prioritaire », where it is offered.
+    priority: Option<(String, String, bool)>,
     /// Where the leftmost starts: the marks before it keep clear of it.
     pub(super) left: f32,
 }
@@ -304,8 +315,25 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
     let unread = row.unread > 0;
     let mut at = Rect::from_center_size(pos2(rect.max.x - QUICK.x / 2.0 - 4.0, line1), QUICK);
     let mut buttons = Vec::new();
-    for quick in [Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read] {
+    // ⚡: where « Prioritaire » is offered, for a message its server has.
+    let in_inbox = app.session.mailbox.folder(m.folder).is_some_and(|f| f.kind == FolderKind::Inbox);
+    let priority = (super::priority::offered(app) && in_inbox && !m.draft)
+        .then(|| {
+            let account = crate::nora::page_mailbox(app, m.account)?;
+            let email = m.server.as_ref().map(|s| s.id.clone()).filter(|id| mailcraft_engine::cmd::jmap_down::plausible_id(id))?;
+            let on = crate::nora::sorting::in_priority(app, &account, &email);
+            Some((account, email, on))
+        })
+        .flatten();
+    let quicks: &[Quick] = if priority.is_some() {
+        &[Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read, Quick::Priority]
+    } else {
+        &[Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read]
+    };
+    for quick in quicks.iter().copied() {
         let tip = match quick {
+            Quick::Priority if priority.as_ref().is_some_and(|(_, _, on)| *on) => tl!("Take out of Priority"),
+            Quick::Priority => tl!("Put in Priority"),
             Quick::Delete => tl!("Delete"),
             Quick::Move => tl!("Move"),
             Quick::Flag if m.flag == FlagStatus::Flagged => tl!("Clear flag"),
@@ -322,13 +350,14 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
             Quick::Flag => "doneQuickFlag",
             Quick::Pin => "doneQuickPin",
             Quick::Read => "doneQuickRead",
+            Quick::Priority => "doneQuickPriority",
         };
         app.hit.add(name, row.id, at);
         buttons.push((quick, resp, at));
         at = at.translate(vec2(-(QUICK.x + QUICK_GAP), 0.0));
     }
     let left = buttons.last().map_or(rect.max.x, |(_, _, r)| r.min.x);
-    Bar { buttons, left }
+    Bar { buttons, priority, left }
 }
 
 /// Whether the row's move menu is open: its quick actions stay while the pointer is in it.
@@ -344,6 +373,21 @@ pub(super) fn paint_bar(ui: &Ui, t: &Tokens, bar: &Bar, row: &Row, m: &Message) 
         if resp.hovered() {
             p.rect_filled(*at, 4.0, t.pressed);
         }
+        if *quick == Quick::Priority {
+            let on = bar.priority.as_ref().is_some_and(|(_, _, on)| *on);
+            let color = if on {
+                t.selection_edge
+            } else if resp.hovered() {
+                t.text
+            } else {
+                t.text_dim
+            };
+            super::priority::paint_bolt(p, at.center(), color);
+            if on {
+                super::priority::fill_bolt(p, at.center(), color);
+            }
+            continue;
+        }
         let (icon, on) = match quick {
             Quick::Delete => ("delete", false),
             Quick::Move => ("move", false),
@@ -351,6 +395,8 @@ pub(super) fn paint_bar(ui: &Ui, t: &Tokens, bar: &Bar, row: &Row, m: &Message) 
             Quick::Pin => ("pin", m.pinned),
             Quick::Read if row.unread > 0 => ("markRead", false),
             Quick::Read => ("markUnread", false),
+            // (Drawn above.)
+            Quick::Priority => continue,
         };
         let color = if on || resp.hovered() { t.text } else { t.text_dim };
         crate::icons::paint(p, Rect::from_center_size(at.center(), vec2(16.0, 16.0)), icon, color, t.accent);
@@ -385,6 +431,12 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
             Quick::Read if unread => ("mail.markRead", json!({"ids": row.members})),
             Quick::Read => ("mail.markUnread", json!({"ids": [row.id]})),
             Quick::Move => continue,
+            Quick::Priority => {
+                if let Some((account, email, on)) = bar.priority.clone() {
+                    crate::nora::sorting::act(app, crate::nora::sorting::Intent::Priority { account, email, on: !on });
+                }
+                return false;
+            }
         };
         let _ = app.run(command, args);
         return *quick == Quick::Delete;

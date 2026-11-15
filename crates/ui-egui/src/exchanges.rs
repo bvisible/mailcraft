@@ -381,6 +381,90 @@ pub(crate) fn button(app: &mut MailApp, ui: &mut Ui, m: &Message) {
     }
 }
 
+/// The strip's line in the room `ui` has: the mark « Neoffice » and who the sender is there (`party`: the words, the mark's
+/// colours), how many exchanges (`said`), and « Afficher l'historique » at the right. That link keeps its room; the words before
+/// it share what is left, each cut short in its own; where they don't fit beside it (a narrow pane), the count and the link go to a
+/// second line, and in a narrower one each to a line of its own. Nothing is drawn over anything else.
+pub(crate) fn strip_line(ui: &mut Ui, t: &Tokens, party: Option<(&str, egui::Color32, egui::Color32)>, said: Option<&str>) {
+    let history = tl!("Show the history");
+    let history_w = ui.painter().layout_no_wrap(history.to_string(), semibold(12.0), t.accent_text).size().x;
+    let pill_w = party.map_or(0.0, |_| ui.painter().layout_no_wrap("Neoffice".to_string(), semibold(11.0), t.text).size().x + 16.0);
+    let gap = 8.0;
+    let room = ui.available_width();
+    let h = 18.0;
+    // A part cut short in a room of its own, left to right.
+    let part = |ui: &mut Ui, width: f32, text: &str, font: egui::FontId, color: egui::Color32| {
+        if width < 16.0 {
+            return;
+        }
+        ui.allocate_ui_with_layout(vec2(width, h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_max_width(width);
+            ui.add(egui::Label::new(RichText::new(text).font(font).color(color)).truncate());
+        });
+    };
+    let pill = |ui: &mut Ui, fill: egui::Color32, ink: egui::Color32| {
+        egui::Frame::NONE.fill(fill).corner_radius(10.0).inner_margin(Margin::symmetric(8, 1)).show(ui, |ui| {
+            ui.label(RichText::new("Neoffice").font(semibold(11.0)).color(ink));
+        });
+    };
+    let link = |ui: &mut Ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(RichText::new(history).font(semibold(12.0)).color(t.accent_text));
+        });
+    };
+    // On one line: the party's words and the count share what the link and the mark leave.
+    let left = room - history_w - gap - if party.is_some() { pill_w + gap } else { 0.0 };
+    let words: f32 = party.map_or(0.0, |_| 60.0) + said.map_or(0.0, |_| 60.0);
+    if left >= words.max(40.0) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing = vec2(gap, 2.0);
+            let (party_w, said_w) = match (party.is_some(), said.is_some()) {
+                (true, true) => ((left - gap) * 0.55, (left - gap) * 0.45),
+                (true, false) => (left, 0.0),
+                (false, true) => (0.0, left),
+                (false, false) => (0.0, 0.0),
+            };
+            if let Some((line, fill, ink)) = party {
+                pill(ui, fill, ink);
+                part(ui, party_w, line, regular(12.0), t.text);
+            }
+            if let Some(said) = said {
+                part(ui, said_w, said, regular(12.0), t.text_dim);
+            }
+            link(ui);
+        });
+        return;
+    }
+    // On two: the mark and the party's words; then the count and the link.
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing = vec2(gap, 4.0);
+        if let Some((line, fill, ink)) = party {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = vec2(gap, 2.0);
+                pill(ui, fill, ink);
+                part(ui, (room - pill_w - gap).max(0.0), line, regular(12.0), t.text);
+            });
+        }
+        // (The count and the link on one line where both fit, else each on its own.)
+        let beside = room - history_w - gap;
+        match said {
+            Some(said) if beside < 60.0 => {
+                part(ui, room, said, regular(12.0), t.text_dim);
+                ui.horizontal(|ui| link(ui));
+            }
+            _ => {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(gap, 2.0);
+                    if let Some(said) = said {
+                        part(ui, beside.max(0.0), said, regular(12.0), t.text_dim);
+                    }
+                    link(ui);
+                });
+            }
+        }
+    });
+}
+
 /// The strip between a message's header and its body: who the sender is in Neoffice, how many exchanges the window has with them,
 /// and the way to open the pane.
 pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Place) {
@@ -414,31 +498,17 @@ pub(crate) fn strip(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Place) {
         (None, None) => String::new(),
     };
     let on = !line.is_empty();
+    // //// Neoffice — (the strip's line in `strip_line`: nothing of it drawn over another part in a narrow pane.)
+    let said = (count > 0).then(|| match &latest {
+        Some(when) => {
+            crate::i18n::fmt(&tln!(count, "{n} exchange, the latest {when}", "{n} exchanges, the latest {when}"), &[("when", when.as_str())])
+        }
+        None => tln!(count, "{n} exchange", "{n} exchanges"),
+    });
     let shown = egui::Frame::NONE.inner_margin(Margin { left: 20, right: 12, top: 6, bottom: 6 }).show(ui, |ui| {
         egui::Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.border)).corner_radius(4.0).inner_margin(Margin::symmetric(8, 5)).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = vec2(8.0, 2.0);
-                if on {
-                    egui::Frame::NONE.fill(fill).corner_radius(10.0).inner_margin(Margin::symmetric(8, 1)).show(ui, |ui| {
-                        ui.label(RichText::new("Neoffice").font(semibold(11.0)).color(ink));
-                    });
-                    ui.add(egui::Label::new(RichText::new(&line).font(regular(12.0)).color(t.text)).truncate());
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(tl!("Show the history")).font(semibold(12.0)).color(t.accent_text));
-                    if count > 0 {
-                        let said = match &latest {
-                            Some(when) => crate::i18n::fmt(
-                                &tln!(count, "{n} exchange, the latest {when}", "{n} exchanges, the latest {when}"),
-                                &[("when", when.as_str())],
-                            ),
-                            None => tln!(count, "{n} exchange", "{n} exchanges"),
-                        };
-                        ui.add(egui::Label::new(RichText::new(said).font(regular(12.0)).color(t.text_dim)).truncate());
-                    }
-                });
-            });
+            strip_line(ui, &t, on.then_some((line.as_str(), fill, ink)), said.as_deref());
         });
     });
     let resp = ui.interact(shown.response.rect, ui.scope_id().with("exchanges_strip").with(m.id), Sense::click());

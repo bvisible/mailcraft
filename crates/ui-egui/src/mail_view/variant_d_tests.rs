@@ -402,6 +402,116 @@ fn a_wide_list_has_a_row_of_one_line_a_narrow_one_of_two() {
     assert!((sender.center().y - row.center().y).abs() < 1.0);
 }
 
+#[test]
+fn new_senders_are_those_nothing_says_the_person_knows_and_accept_and_block_write_their_lists() {
+    let (mut w, ada, team) = window(true);
+    click(&mut w, "allInboxes", 0);
+    let senders = super::new_senders::of(&w.state().session);
+    let emails: Vec<String> = senders.iter().map(|s| s.who.email.clone()).collect();
+    // The three who wrote to team@ today are new; a contact or someone written to isn't.
+    for email in ["support@service.example", "atelier@nord.example", "marc@dupont.example"] {
+        assert!(emails.iter().any(|e| e == email), "{email} in {emails:?}");
+    }
+    let known: Vec<String> = w.state().session.mailbox.contacts.values().flat_map(|c| c.emails.iter().map(|e| e.value.to_lowercase())).collect();
+    assert!(emails.iter().all(|e| !known.contains(&e.to_lowercase())), "no contact");
+    assert!(senders.iter().all(|s| s.account == ada || s.account == team));
+    // The band, its cards.
+    assert!(has(&w, "newSenders", 0));
+    click(&mut w, "newSenders", 0);
+    let at = |w: &testing::Window, email: &str| super::new_senders::of(&w.state().session).iter().position(|s| s.who.email == email).unwrap() as u64;
+    let accept = at(&w, "support@service.example");
+    click(&mut w, "newSenderAccept", accept);
+    let lists = w.state_mut().execute("junk.list", json!({"account": team})).unwrap();
+    assert!(lists["safe"].as_array().unwrap().iter().any(|e| e == "support@service.example"), "{lists}");
+    let block = at(&w, "atelier@nord.example");
+    let blocked: Vec<Id> = super::new_senders::of(&w.state().session)[block as usize].ids.clone();
+    click(&mut w, "newSenderBlock", block);
+    let lists = w.state_mut().execute("junk.list", json!({"account": team})).unwrap();
+    assert!(lists["blocked"].as_array().unwrap().iter().any(|e| e == "atelier@nord.example"), "{lists}");
+    for id in blocked {
+        assert_eq!(folder_of(&w, id), (team, FolderKind::Junk));
+    }
+    let left: Vec<String> = super::new_senders::of(&w.state().session).iter().map(|s| s.who.email.clone()).collect();
+    assert!(!left.iter().any(|e| e == "support@service.example" || e == "atelier@nord.example"), "{left:?}");
+    // The last one handled, the cards close with the band, and a new sender later doesn't open them by itself.
+    let marc = at(&w, "marc@dupont.example");
+    click(&mut w, "newSenderAccept", marc);
+    let rest: Vec<u64> = (0..super::new_senders::of(&w.state().session).len() as u64).collect();
+    for _ in rest {
+        click(&mut w, "newSenderAccept", 0);
+    }
+    assert!(!has(&w, "newSenders", 0) && !has(&w, "newSendersClose", 0));
+    let inbox = w.state().session.mailbox.folder_of_kind(team, FolderKind::Inbox).unwrap();
+    let when = testing::now() - 60;
+    let m = Message {
+        folder: inbox,
+        from: Address::new("Nouvelle Cliente", "cliente@neuve.example"),
+        subject: "Bonjour".into(),
+        date: when,
+        received: when,
+        ..Default::default()
+    };
+    let new = w.state_mut().session.mailbox.add_message(m).unwrap();
+    // (A change through a command, as mail coming in is: the list's caches follow `Session::rev`.)
+    w.state_mut().run("mail.markRead", json!({"ids": [new]})).unwrap();
+    w.run_steps(3);
+    assert!(has(&w, "newSenders", 0) && !has(&w, "newSendersClose", 0), "the band, its cards closed");
+    // Someone written to is no new sender.
+    let sent = w.state().session.mailbox.folder_of_kind(team, FolderKind::Sent).unwrap();
+    let to_marc =
+        Message { folder: sent, to: vec![Address::new("Marc Dupont", "marc@dupont.example")], subject: "Re: jeudi".into(), ..Default::default() };
+    w.state_mut().session.mailbox.add_message(to_marc).unwrap();
+    assert!(!super::new_senders::of(&w.state().session).iter().any(|s| s.who.email == "marc@dupont.example"));
+}
+
+/// A group of Principal's row drawn alone, `width` wide (a narrow list beside Nora's pane), French: its count's and its chevron's
+/// rectangles, and its name's.
+fn narrow_group(width: f32, dark: bool, shot: Option<&std::path::Path>) -> (egui::Rect, egui::Rect, egui::Rect) {
+    // (The caller holds the language's lock.)
+    let (mut w, _, _) = by_kind();
+    w.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+    let _ = w.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+    w.run_steps(3);
+    let rows = w.state_mut().session.rows();
+    let row = rows.iter().find(|r| r.bundle == Some(mailcraft_model::Stream::Notification)).unwrap().clone();
+    let mut app = std::mem::replace(w.state_mut(), crate::MailApp::new(mailcraft_engine::Session::empty(), crate::Services::default()));
+    app.hit = Default::default();
+    // (Styled again in the new window: its fonts and its theme.)
+    app.styled = false;
+    app.applied_theme = None;
+    let mut h =
+        egui_kittest::Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(width, 60.0)).build_ui_state(
+            move |ui, app: &mut crate::MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                let t = crate::theme::Tokens::get(&ctx);
+                ui.painter().rect_filled(ui.max_rect(), 0.0, t.surface);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 72.0), egui::Sense::hover());
+                super::bundle::row(app, ui, &row, rect, false);
+            },
+            app,
+        );
+    h.run_steps(3);
+    if let Some(path) = shot {
+        h.render().expect("drawn").save(path).expect("saved");
+    }
+    let hit = |kind: &str| h.state().hit.rect(kind, 1).unwrap_or_else(|| panic!("no {kind}"));
+    let row_rect = h.state().hit.rect("bundle", 1).unwrap();
+    let count = hit("bundleCount");
+    let chevron = hit("bundleChevron");
+    (count, chevron, row_rect)
+}
+
+#[test]
+fn a_groups_count_and_chevron_keep_their_room_in_a_narrow_list() {
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for width in [200.0, 230.0, 300.0, 600.0] {
+        let (count, chevron, row) = narrow_group(width, false, None);
+        assert!(count.max.x + 2.0 <= chevron.min.x, "{width}: the count {count:?} before the chevron {chevron:?}");
+        assert!(chevron.max.x <= row.max.x, "{width}");
+    }
+}
+
 /// Every state of the list of variant D in French, light and dark, to PNG files in `VARIANT_D_SHOTS`: the Inbox at rest, a row
 /// under the pointer, a day's title under the pointer, the view's menu, « Toutes les boîtes », « Afficher les traités » (Nora's bar
 /// and what she proposes: nora/ask_bar_tests.rs).
@@ -421,7 +531,14 @@ fn variant_d_screens_in_french() {
             "11-groupes-de-principal",
             "12-groupe-ouvert-traites",
             "13-une-ligne",
+            "18-nouveaux-expediteurs",
+            "19-groupe-etroit-230",
         ] {
+            if screen.starts_with("19") {
+                let name = format!("{screen}-{}.png", if dark { "sombre" } else { "clair" });
+                narrow_group(230.0, dark, Some(&dir.join(name)));
+                continue;
+            }
             let (mut w, _, _) = if screen.starts_with("11") || screen.starts_with("12") {
                 let (w, _, _) = by_kind();
                 (w, 0, 0)
@@ -456,6 +573,10 @@ fn variant_d_screens_in_french() {
                     let id = drawn(&mut w)[0];
                     hover(&mut w, "message", id);
                     click(&mut w, "doneRound", id);
+                }
+                "18-nouveaux-expediteurs" => {
+                    click(&mut w, "allInboxes", 0);
+                    click(&mut w, "newSenders", 0);
                 }
                 "13-une-ligne" => {
                     w.state_mut().execute("view.readingPane", json!({"value": "off"})).unwrap();

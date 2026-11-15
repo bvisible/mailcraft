@@ -553,3 +553,6 @@ msgstr "Als afgehandeld gemarkeerd ({count})"
 
 msgid "Put it back where it was"
 msgstr "Terugzetten waar het stond"
+
+msgid "Nora has not read this mail yet."
+msgstr "Nora heeft dit bericht nog niet gelezen."

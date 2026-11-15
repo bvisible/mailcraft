@@ -362,7 +362,20 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   and a day's round leaves it out (`done::group_ids`). An open group's header is « ← | ✓ » (back to Principal, the whole
   group done), its name and « 24 · Toutes les boîtes ». « Marqués comme traités (N) » there is a day's title with « Tout
   annuler » and the newest five done as rows, their full rounds (a click puts one back) joined by a rail
-  (`done::section_d`), an open group's own alone. Nora's bar floats at the list's bottom right (« Demander à Nora… », Enter
+  (`done::section_d`), an open group's own alone. « Prioritaire » at the head of Principal (`mail_view/priority.rs`, tests
+  in `nora/priority_tests.rs`): what waits for the person's answer according to Nora (`nora.api.v2.mail_sorting.priority`,
+  read for each mailbox in view when the list shows it, again at once after a ⚡ and a minute at the earliest after a
+  « Traité » or new mail in its Inbox: `sorting::priority_looks`), of which the list shows what is in the Inbox here and not
+  answered (`$answered`), the newest three, « Afficher tout (N) », each with its reason under the pointer; each keeps its row
+  in the list too. A row's ⚡ (its quick actions) puts it in or out (`priority_set`); the server's 417 for mail Nora hasn't
+  read is said in the status bar. Both methods are in `nora::SORTING_METHODS`, the web transport's closed list.
+  « Nouveaux expéditeurs (N) › » over the list (`mail_view/new_senders.rs`): who wrote to the Inbox(es) in view in the last
+  14 days, in neither Junk E-mail list of the account, not a contact, never written to (Sent Items here: the newest of it,
+  a JMAP account's window); their cards say who, how many and the last subject, « Accepter » (`junk.neverBlockSender`) and
+  « Bloquer » (`junk.blockSender`, their mail to Junk E-mail), lists a hosting page's window keeps on its server (kept.rs).
+  In a narrow list a group's row keeps the room of its count and chevron, its name cut short before them; the strip of
+  exchanges under a sender in the reading pane (`exchanges::strip_line`) keeps « Afficher l'historique » its room, the words
+  before it each cut short in their own, on two or three lines in a narrow pane: nothing is drawn over anything else. Nora's bar floats at the list's bottom right (« Demander à Nora… », Enter
   opens her pane with the question: `assist::ask`), with one line above it only when the sorting has something to say of
   the Inbox in view: what she can file where she files nothing yet (`mail_sorting.survey`, asked while the bar is drawn,
   once in half an hour), her tidying, what her last run filed today; its button opens the flow or the journal, its ✕ hides

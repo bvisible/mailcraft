@@ -4639,3 +4639,75 @@ msgstr "Volver a la bandeja de entrada"
 
 msgid "Mark all of {group} as done"
 msgstr "Marcar todo en {group} como hecho"
+
+msgid "Priority"
+msgstr "Prioritarios"
+
+msgid "· what waits for your answer, according to Nora"
+msgstr "· lo que espera su respuesta, según Nora"
+
+msgid "Show all ({count})"
+msgstr "Mostrar todos ({count})"
+
+msgid "Show less"
+msgstr "Mostrar menos"
+
+msgid "Put in Priority"
+msgstr "Poner en prioritarios"
+
+msgid "Take out of Priority"
+msgstr "Quitar de prioritarios"
+
+msgid "Nora has not read this mail yet."
+msgstr "Nora aún no ha leído este correo."
+
+msgid "A question"
+msgstr "Una pregunta"
+
+msgid "A request for a quote"
+msgstr "Una solicitud de presupuesto"
+
+msgid "An order"
+msgstr "Un pedido"
+
+msgid "A supplier's offer"
+msgstr "Una oferta de proveedor"
+
+msgid "A conversation under way"
+msgstr "Una conversación en curso"
+
+msgid "Personal"
+msgstr "Personal"
+
+msgid "Waits for a reply"
+msgstr "Espera una respuesta"
+
+msgid "A sales order"
+msgstr "Un pedido de venta"
+
+msgid "An opportunity"
+msgstr "Una oportunidad"
+
+msgid "A task"
+msgstr "Una tarea"
+
+msgid "Marked as priority"
+msgstr "Marcado como prioritario"
+
+msgid "Waits for your answer"
+msgstr "Espera su respuesta"
+
+msgid "New senders ({count})"
+msgstr "Nuevos remitentes ({count})"
+
+msgid "New senders"
+msgstr "Nuevos remitentes"
+
+msgid "Accept or block them before they come in here"
+msgstr "Acéptelos o bloquéelos antes de que lleguen aquí"
+
+msgid "They wrote to you in the last two weeks: neither a contact, nor someone you wrote to."
+msgstr "Le han escrito en las últimas dos semanas: ni contactos ni personas a las que ha escrito."
+
+msgid "Block"
+msgstr "Bloquear"

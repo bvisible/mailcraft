@@ -197,3 +197,72 @@ fn the_pane_follows_who_wrote_the_message_or_who_it_went_to() {
     assert_eq!((t.address.as_str(), t.name.as_str()), (CLIENT, "Claire"), "what the owner wrote is about who it went to");
     assert!(target(alone).is_none(), "a message to oneself is about nobody");
 }
+
+/// The strip's line drawn alone in a pane `width` wide, French; each of its parts' rectangles, by a word of it.
+fn strip_parts(width: f32, dark: bool, shot: Option<&std::path::Path>) -> Vec<(String, egui::Rect)> {
+    use egui_kittest::kittest::Queryable as _;
+    let _language = crate::i18n::RestoreLanguage::hold();
+    crate::i18n::set_current(crate::i18n::Lang::French);
+    let mut h = egui_kittest::Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(egui::vec2(width, 90.0)).build_ui(
+        move |ui| {
+            // The look of a hosting page's tab.
+            let choice = crate::theme::ThemeChoice {
+                appearance: if dark { crate::theme::Appearance::Dark } else { crate::theme::Appearance::Light },
+                accent: Default::default(),
+                high_contrast: false,
+                neoffice: true,
+                dark_style: Default::default(),
+            };
+            crate::theme::apply(ui.ctx(), if dark { egui::ThemePreference::Dark } else { egui::ThemePreference::Light }, &choice);
+            if ui.ctx().cumulative_pass_nr() == 0 {
+                crate::theme::install_fonts(ui.ctx());
+            }
+            let t = Tokens::get(ui.ctx());
+            egui::Frame::NONE.fill(t.surface).inner_margin(egui::Margin::same(8)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                let (fill, ink) = mark(&t);
+                strip_line(
+                    ui,
+                    &t,
+                    Some(("Fournisseur · Atelier Exemple SA · 3 factures cette année", fill, ink)),
+                    Some("12 échanges, le plus récent 21 sept."),
+                );
+            });
+        },
+    );
+    h.run_steps(3);
+    if let Some(path) = shot {
+        h.render().expect("drawn").save(path).expect("saved");
+    }
+    ["Neoffice", "Fournisseur", "12 échanges", tl!("Show the history")]
+        .into_iter()
+        .map(|word| (word.to_string(), h.query_by_label_contains(word).map(|n| n.rect()).unwrap_or_else(|| panic!("{width}: no {word}"))))
+        .collect()
+}
+
+#[test]
+fn the_strips_parts_never_lie_over_one_another_however_narrow_the_pane() {
+    for width in [180.0, 230.0, 320.0, 460.0, 900.0] {
+        let parts = strip_parts(width, false, None);
+        for (i, (a, ra)) in parts.iter().enumerate() {
+            assert!(ra.width() > 0.0, "{width}: {a} is drawn");
+            for (b, rb) in parts.iter().skip(i + 1) {
+                assert!(!ra.shrink(0.5).intersects(rb.shrink(0.5)), "{width}: {a} {ra:?} over {b} {rb:?}");
+            }
+            assert!(ra.max.x <= width + 0.5, "{width}: {a} {ra:?} past the pane");
+        }
+    }
+}
+
+/// The strip in a narrow pane and a wide one, French, light and dark, to PNG files in `VARIANT_D_SHOTS`.
+#[test]
+#[ignore = "draws to PNG files: VARIANT_D_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored strip_screens"]
+fn strip_screens_in_french() {
+    let Some(dir) = std::env::var_os("VARIANT_D_SHOTS").map(std::path::PathBuf::from) else { return };
+    for dark in [false, true] {
+        for width in [230.0, 600.0] {
+            let path = dir.join(format!("20-bandeau-des-echanges-{width}-{}.png", if dark { "sombre" } else { "clair" }));
+            strip_parts(width, dark, Some(&path));
+        }
+    }
+}

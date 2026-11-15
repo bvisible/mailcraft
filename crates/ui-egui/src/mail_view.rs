@@ -26,6 +26,9 @@ pub(crate) mod done;
 pub(crate) mod header;
 // //// Neoffice — the groups of Principal (variant D): its notifications and its newsletters, each a row that opens them.
 mod bundle;
+// //// Neoffice — « Prioritaire » at the head of Principal, and « Nouveaux expéditeurs » over it (variant D).
+pub(crate) mod new_senders;
+pub(crate) mod priority;
 
 // //// Neoffice — the list as Spark has it (variant D) where the mail is a hosting page's (a session that keeps nothing of its own):
 // the short header (header.rs), one mark at a row's left (the unread dot, the round of « Traité » under the pointer), no box to tick
@@ -650,6 +653,8 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs); in variant D its rows joined by a rail.
     if d {
         done::section_d(app, ui);
+        // //// Neoffice — « Nouveaux expéditeurs (N) › » (new_senders.rs).
+        new_senders::band(app, ui);
     } else {
         done::section(app, ui);
     }
@@ -736,9 +741,21 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         }
         return;
     }
+    // //// Neoffice — « Prioritaire » at the head of Principal (priority.rs): read for each mailbox in view, its height before the rows.
+    let waiting = if d && priority::offered(app) {
+        for (inbox, account) in priority::boxes(app) {
+            let newest = app.session.mailbox.messages_in(inbox).map(|m| m.id).max();
+            app.nora.sorting.want_priority(&account, newest);
+        }
+        priority::waiting(app)
+    } else {
+        Vec::new()
+    };
+    let head = priority::height(ui, &waiting, row_h);
     // Where each row starts: rows are the same height, group headings add theirs.
     let mut tops = Vec::with_capacity(rows.len());
-    let mut y = 0.0f32;
+    // //// Neoffice — (after « Prioritaire », `head`.)
+    let mut y = head;
     for row in rows.iter() {
         // //// Neoffice — (`group_h`: a day's title in variant D.)
         if row.group.is_some() {
@@ -800,6 +817,10 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
             // //// Neoffice — (`bottom`: clear of Nora's bar.)
             let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h + bottom));
             ui.scroll_to_rect(rect, None);
+        }
+        // //// Neoffice — « Prioritaire », where it is in view.
+        if head > 0.0 && viewport.min.y < head {
+            priority::show(app, ui, Rect::from_min_size(origin, vec2(width, head)), &waiting, row_h, &drawn, focus);
         }
         // Only the rows in view are laid out.
         let first = tops.partition_point(|top| top + row_h < viewport.min.y).saturating_sub(1);

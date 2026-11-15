@@ -48,6 +48,9 @@ pub(crate) mod sorting;
 pub(crate) mod sorting_view;
 #[cfg(test)]
 mod testing;
+// //// Neoffice — « Prioritaire ».
+#[cfg(test)]
+mod priority_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -58,7 +61,7 @@ use std::sync::mpsc::Receiver;
 use serde_json::Value;
 
 pub(crate) use band::band;
-pub(crate) use flow::{About, Kind, Nora, Rewrite, enabled, ui_command};
+pub(crate) use flow::{About, Kind, Nora, Rewrite, enabled, page_mailbox, ui_command};
 
 use crate::MailApp;
 
@@ -109,7 +112,7 @@ pub const CHAT_METHODS: [&str; 7] = [
 /// questions of all their mailboxes, an answer by a button or in their words, the words Nora keeps confirmed, « later »).
 /// They go out where her conversation's do, and through a host that makes the calls itself
 /// only when it says it takes them ([`Host::sorting`]: Neodesk's shell lets its own list through, `mail.js`).
-pub const SORTING_METHODS: [&str; 17] = [
+pub const SORTING_METHODS: [&str; 19] = [
     sorting::STATE,
     sorting::SURVEY,
     sorting::BEGIN,
@@ -127,6 +130,9 @@ pub const SORTING_METHODS: [&str; 17] = [
     sorting::ANSWER,
     sorting::CONFIRM,
     sorting::LATER,
+    // «Prioritaire» (variant D of the list: mail_view/priority.rs).
+    sorting::PRIORITY,
+    sorting::PRIORITY_SET,
 ];
 
 /// The longest wait for an answer, in milliseconds: above the 180 s after which Neodesk's shell

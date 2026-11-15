@@ -32,7 +32,8 @@ use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use mailcraft_engine::Module;
-use mailcraft_model::FolderKind;
+use mailcraft_engine::cmd::jmap_down::plausible_id;
+use mailcraft_model::{FolderKind, Id};
 use serde_json::{Value, json};
 
 use super::answer;
@@ -56,6 +57,9 @@ pub const TIDY: &str = "nora.api.v2.mail_sorting.tidy";
 pub const STOP_TIDY: &str = "nora.api.v2.mail_sorting.stop_tidy";
 pub const UNDO: &str = "nora.api.v2.mail_sorting.undo";
 pub const MINE: &str = "nora.api.asks.mine";
+/// « Prioritaire »: what waits for the person's answer in a mailbox, according to Nora; and a message put in it or taken out.
+pub const PRIORITY: &str = "nora.api.v2.mail_sorting.priority";
+pub const PRIORITY_SET: &str = "nora.api.v2.mail_sorting.priority_set";
 pub const ANSWER: &str = "nora.api.asks.answer";
 pub const CONFIRM: &str = "nora.api.asks.confirm";
 pub const LATER: &str = "nora.api.asks.later";
@@ -95,6 +99,12 @@ pub(crate) const TIDY_DAYS: u64 = 30;
 /// How often what Nora read of the mailbox in view is read again for the proposal over the list (`super::ask_bar`), while she
 /// files none of it: every half hour.
 pub(crate) const PROPOSAL_EVERY_MS: f64 = 30.0 * 60_000.0;
+/// « Prioritaire » is read when the list first shows a mailbox, after a ⚡ (at once), and after « Traité » or new mail, never more
+/// often than this.
+pub(crate) const PRIORITY_EVERY_MS: f64 = 60_000.0;
+/// How many it asks for at most (the server's `limit`), and of how many days.
+pub(crate) const PRIORITY_LIMIT: u64 = 200;
+pub(crate) const PRIORITY_DAYS: u64 = 30;
 /// The most runs of the journal read, and the most items of any list taken from an answer.
 const JOURNAL_RUNS: u64 = 20;
 const MAX_ITEMS: usize = 50;
@@ -734,6 +744,9 @@ enum Asking {
     Survey(String),
     /// What Nora read of a mailbox, for the proposal over the list.
     Proposal(String),
+    /// « Prioritaire » of a mailbox; a message of it (its JMAP id) put in it or taken out.
+    Priority(String),
+    PrioritySet(String, String, bool),
     /// The mailbox Nora has never read, started on: her secretary made, her reading of its last days started.
     Begin(String),
     Plan(String),
@@ -785,14 +798,48 @@ pub(crate) struct Known {
     /// What she read of it, for the proposal over the list (`super::ask_bar`), and when it was asked (milliseconds).
     pub(crate) survey: Option<Survey>,
     survey_at: f64,
+    /// « Prioritaire » as last read, when it was asked, whether it is to be read again (a « Traité », new mail), and the newest
+    /// message of the Inbox when it was (new mail is told by it).
+    pub(crate) priority: Option<Priority>,
+    priority_at: f64,
+    priority_stale: bool,
+    priority_newest: Option<Id>,
 }
+
+/// « Prioritaire » of a mailbox, as the server says it (`priority`): the JMAP ids of what waits for the person's answer, newest
+/// first, how many there are in all, why each is there (a code: `question`, `quote_request`, … `marked`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Priority {
+    pub(crate) ids: Vec<String>,
+    pub(crate) count: u64,
+    pub(crate) why: BTreeMap<String, String>,
+}
+
+/// [`Priority`] from the server's answer; an id that isn't one is left out.
+pub(crate) fn read_priority(v: &Value) -> Priority {
+    let mut ids: Vec<String> = Vec::new();
+    for id in v.get("ids").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str) {
+        if plausible_id(id) && !ids.iter().any(|kept| kept == id) && ids.len() < MAX_PRIORITY {
+            ids.push(id.to_string());
+        }
+    }
+    let why = v
+        .get("why")
+        .and_then(Value::as_object)
+        .map(|why| why.iter().filter_map(|(id, code)| Some((id.clone(), code.as_str()?.chars().take(40).collect()))).take(MAX_PRIORITY).collect())
+        .unwrap_or_default();
+    Priority { count: v.get("count").and_then(Value::as_u64).unwrap_or(ids.len() as u64), ids, why }
+}
+
+/// The most of « Prioritaire » kept of an answer.
+const MAX_PRIORITY: usize = 1_000;
 
 impl Known {
     /// What the window knows of a mailbox, as if the server had just said it (for the tests that draw it).
     #[cfg(test)]
     pub(crate) fn said(state: BoxState, latest: Option<Run>) -> Known {
         let latest_of = latest.as_ref().map(|r| r.run.clone()).unwrap_or_default();
-        Known { state: Some(state), latest, asked_at: crate::now_ms(), latest_of, survey: None, survey_at: 0.0 }
+        Known { state: Some(state), latest, asked_at: crate::now_ms(), latest_of, ..Known::default() }
     }
 
     /// The same, with what she read of it.
@@ -992,12 +1039,29 @@ pub(crate) struct Sorting {
     /// The mailbox whose proposal the bar over the list wants, said by the bar as it is drawn (`want_proposal`) and taken at the next
     /// look.
     proposal_wanted: Option<String>,
+    /// The mailboxes whose « Prioritaire » the list shows, each with the newest message of its Inbox (`want_priority`), taken at
+    /// the next look.
+    priority_wanted: BTreeMap<String, Option<Id>>,
 }
 
 impl Sorting {
     /// The bar over the list is drawn for `account`'s Inbox: what she read of it is asked for its proposal, when it is old.
     pub(crate) fn want_proposal(&mut self, account: &str) {
         self.proposal_wanted = Some(account.to_string());
+    }
+
+    /// The list shows `account`'s « Prioritaire », its Inbox's newest message `newest`: read at the next look when it never was,
+    /// or when it is stale (a « Traité », new mail) and a minute has gone by.
+    pub(crate) fn want_priority(&mut self, account: &str, newest: Option<Id>) {
+        self.priority_wanted.insert(account.to_string(), newest);
+    }
+
+    /// Something was done that may change `account`'s « Prioritaire » (« Traité »): read again, a minute after the last time at
+    /// the earliest.
+    pub(crate) fn priority_stale(&mut self, account: &str) {
+        if let Some(known) = self.boxes.get_mut(account) {
+            known.priority_stale = true;
+        }
     }
 
     /// The state of a mailbox where Nora files mail: `None` where she doesn't or isn't known to.
@@ -1076,6 +1140,12 @@ pub(crate) enum Intent {
         account: String,
         on: bool,
     },
+    /// A message (its JMAP id) of a mailbox put in « Prioritaire » or taken out (⚡).
+    Priority {
+        account: String,
+        email: String,
+        on: bool,
+    },
     /// The card's « Activer et voir le plan », and « Plus tard ».
     Activate,
     CloseCard,
@@ -1083,6 +1153,16 @@ pub(crate) enum Intent {
 }
 
 // ---- the calls ----
+
+/// « Prioritaire » of `account` as last read, where it was.
+pub(crate) fn priority_of<'a>(app: &'a MailApp, account: &str) -> Option<&'a Priority> {
+    app.nora.sorting.boxes.get(account).and_then(|k| k.priority.as_ref())
+}
+
+/// Whether the message of JMAP id `email` of `account` is in its « Prioritaire ».
+pub(crate) fn in_priority(app: &MailApp, account: &str, email: &str) -> bool {
+    priority_of(app, account).is_some_and(|p| p.ids.iter().any(|id| id == email))
+}
 
 /// Whether « Trier avec Nora » may be offered in this window: a hosting page's tab (nothing kept here) whose host carries
 /// these calls.
@@ -1125,13 +1205,18 @@ pub(crate) fn poll(app: &mut MailApp) {
     let now = crate::now_ms();
     take_answers(app, now);
     let mut wake: Option<f64> = None;
+    // « Prioritaire » of the mailboxes the list shows.
+    if let Some(at) = priority_looks(app, now) {
+        wake = Some(at);
+    }
     if offered(app) {
         let questions = &mut app.nora.sorting.questions;
         if questions.asked_at <= 0.0 || now - questions.asked_at >= QUESTIONS_EVERY_MS {
             questions.asked_at = now;
             call(app, MINE, json!({}), Asking::Mine);
         }
-        wake = Some(app.nora.sorting.questions.asked_at + QUESTIONS_EVERY_MS);
+        let at = app.nora.sorting.questions.asked_at + QUESTIONS_EVERY_MS;
+        wake = Some(wake.map_or(at, |w| w.min(at)));
     }
     if let Some(account) = box_in_view(app, false)
         && let Some(at) = look_at(app, &account, now)
@@ -1179,6 +1264,34 @@ fn look_at(app: &mut MailApp, account: &str, now: f64) -> Option<f64> {
         call(app, SURVEY, json!({"account": account, "days": TIDY_DAYS}), Asking::Proposal(account.to_string()));
     }
     Some(due)
+}
+
+/// « Prioritaire » of each mailbox the list shows (`want_priority`): asked when it never was; when it is stale (« Traité », new mail
+/// in its Inbox) a minute after the last time; at once after a ⚡ (`priority_at` put back). When to look again.
+fn priority_looks(app: &mut MailApp, now: f64) -> Option<f64> {
+    let wanted = std::mem::take(&mut app.nora.sorting.priority_wanted);
+    let mut wake: Option<f64> = None;
+    for (account, newest) in wanted {
+        let known = app.nora.sorting.boxes.entry(account.clone()).or_default();
+        if known.priority.is_some() && known.priority_newest != newest {
+            known.priority_stale = true;
+        }
+        let never = known.priority_at <= 0.0;
+        let due = known.priority_at + PRIORITY_EVERY_MS;
+        if never || (known.priority_stale && now >= due) {
+            let args = json!({"account": account, "days": PRIORITY_DAYS, "limit": PRIORITY_LIMIT});
+            // (Marked asked only when it went: one already in flight leaves it to be asked again at its answer.)
+            if call(app, PRIORITY, args, Asking::Priority(account.clone())) {
+                let known = app.nora.sorting.boxes.entry(account.clone()).or_default();
+                known.priority_at = now;
+                known.priority_stale = false;
+                known.priority_newest = newest;
+            }
+        } else if known.priority_stale {
+            wake = Some(wake.map_or(due, |w| w.min(due)));
+        }
+    }
+    wake
 }
 
 /// What the flow waits for: what Nora read while she is still reading the mailbox, a plan made in the background, the
@@ -1306,6 +1419,41 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
                 known.survey = Some(read_survey(&v));
             }
         }
+        Asking::Priority(account) => {
+            if let Some(known) = app.nora.sorting.boxes.get_mut(&account) {
+                match result {
+                    Ok(v) => known.priority = Some(read_priority(&v)),
+                    // Asked again a minute later.
+                    Err(_) => known.priority_stale = true,
+                }
+            }
+        }
+        Asking::PrioritySet(account, email, on) => match result {
+            Ok(v) => {
+                let on = v.get("priority").and_then(Value::as_str).map_or(on, |said| said == "yes");
+                if let Some(known) = app.nora.sorting.boxes.get_mut(&account) {
+                    let priority = known.priority.get_or_insert_with(Priority::default);
+                    priority.ids.retain(|id| *id != email);
+                    priority.why.remove(&email);
+                    if on {
+                        priority.ids.insert(0, email.clone());
+                        priority.why.insert(email, "marked".to_string());
+                    }
+                    // Read again at once: the server's own order and reasons.
+                    known.priority_stale = true;
+                    known.priority_at = 0.0;
+                }
+            }
+            Err(why) => {
+                // The server's own words; its « not read yet » in the interface's language.
+                let said = if status == 417 && why.to_lowercase().contains("has not read") {
+                    tl!("Nora has not read this mail yet.").to_string()
+                } else {
+                    why
+                };
+                app.status_msg = Some((said, now));
+            }
+        },
         Asking::Begin(account) => begun(app, &account, result, status, now),
         Asking::Plan(account) => {
             let state = app.nora.sorting.boxes.get(&account).and_then(|k| k.state.clone());
@@ -1897,6 +2045,10 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
     match intent {
         Intent::Open { account, journal } => open(app, &account, journal),
         Intent::Back => app.nora.sorting.flow = None,
+        Intent::Priority { account, email, on } => {
+            let args = json!({"account": account, "email_id": email, "on": on});
+            call(app, PRIORITY_SET, args, Asking::PrioritySet(account.clone(), email.clone(), on));
+        }
         Intent::Choose(mode) if mode.code == "parties" => {
             // Nora asks first: which kinds of party (the server's ticked), and how deep.
             let Some(account) = flow_account else { return };

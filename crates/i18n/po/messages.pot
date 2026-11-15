@@ -413,6 +413,11 @@ msgstr ""
 msgid "A contact's card keeps at most 32 certificates and keys"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A conversation under way"
+msgstr ""
+
 #. what a command says
 #: crates/model/src/mailbox.rs
 msgid "A copy can't go into this Outbox: the next Send/Receive would send it"
@@ -604,13 +609,28 @@ msgid "A port is a number from 1 to 65535"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A question"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/import_pst.rs
 msgid "A report is written beside your mailbox."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A request for a quote"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 msgid "A rule needs a name, and something to look for."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A sales order"
 msgstr ""
 
 #. interface
@@ -674,6 +694,16 @@ msgid "A supplier's invoice goes to the invoices received; a notification a clie
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A supplier's offer"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "A task"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/dialogs.rs
 msgid "A web address, an email address, a phone number (tel:) or another address such as ms-settings:network-vpn. With nothing selected, the address is put in as it is."
 msgstr ""
@@ -720,14 +750,19 @@ msgstr ""
 msgid "Accent Colour"
 msgstr ""
 
-#. ribbon
-#: crates/ui-egui/src/ribbon.rs
+#. interface, ribbon
+#: crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/ribbon.rs
 msgid "Accept"
 msgstr ""
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/reading/invitation.rs
 msgid "Accept Proposal"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/new_senders.rs
+msgid "Accept or block them before they come in here"
 msgstr ""
 
 #. interface, name
@@ -1279,6 +1314,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/calendar_view.rs
 msgid "An item that repeats can't be taken to another calendar this way. Hold Ctrl to copy this occurrence there, or use Move to Calendar in its menu for the whole series."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "An opportunity"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "An order"
 msgstr ""
 
 #. interface
@@ -2024,6 +2069,11 @@ msgstr ""
 msgid "Birthday"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/mail_view/new_senders.rs
+msgid "Block"
+msgstr ""
+
 #. command label, interface
 #: crates/engine/src/cmd/junk.rs crates/ui-egui/src/ribbon.rs
 msgid "Block Sender"
@@ -2706,7 +2756,7 @@ msgid "Clipboard"
 msgstr ""
 
 #. interface, ribbon
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
 msgid "Close"
 msgstr ""
 
@@ -7262,6 +7312,11 @@ msgid "Marked as done ({count})"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Marked as priority"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/find_replace.rs
 msgid "Match case"
 msgstr ""
@@ -7986,6 +8041,16 @@ msgid "New rule"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/new_senders.rs
+msgid "New senders"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/new_senders.rs
+msgid "New senders ({count})"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 msgid "Newest on top"
 msgstr ""
@@ -8520,6 +8585,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/nora/flow.rs
 msgid "Nora found nothing to change."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/sorting.rs
+msgid "Nora has not read this mail yet."
 msgstr ""
 
 #. interface
@@ -9784,6 +9854,11 @@ msgid "Permissions"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Personal"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs crates/ui-egui/src/merge_contacts.rs
 msgid "Phone"
 msgstr ""
@@ -10032,6 +10107,11 @@ msgstr ""
 msgid "Primary, Social, Promotions, Updates and Forums, as Gmail sorts your Inbox. Your mail stays in the Inbox."
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Priority"
+msgstr ""
+
 #. command label, interface, ribbon
 #: crates/engine/src/cmd/calendar.rs crates/ui-egui/src/calendar_view.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/ribbon.rs
 msgid "Private"
@@ -10135,6 +10215,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Purple category"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Put in Priority"
 msgstr ""
 
 #. interface
@@ -12081,6 +12166,11 @@ msgid "Show a desktop alert when new mail arrives"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Show all ({count})"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Show as"
 msgstr ""
@@ -12115,6 +12205,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/backstage.rs
 msgid "Show in the time bar"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Show less"
 msgstr ""
 
 #. interface
@@ -12917,6 +13012,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/data_removal.rs
 msgid "Take everything MailCraft keeps here with you when you are done: for a shared or work computer, or before deleting a portable copy."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs
+msgid "Take out of Priority"
 msgstr ""
 
 #. interface
@@ -14778,6 +14878,11 @@ msgid "They share {what}."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/mail_view/new_senders.rs
+msgid "They wrote to you in the last two weeks: neither a contact, nor someone you wrote to."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/exchanges_pane.rs
 msgid "This Neoffice cannot say what is linked to this person."
 msgstr ""
@@ -16309,6 +16414,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/approval.rs
 msgid "Waiting for the approval stopped unexpectedly"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Waits for a reply"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Waits for your answer"
 msgstr ""
 
 #. interface
@@ -21361,7 +21476,7 @@ msgid "{n} mailboxes were not read: a run reads {max} at most."
 msgstr ""
 
 #. android, interface
-#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Inbox.kt crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/nora/sorting_view.rs
+#: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/Inbox.kt crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/nora/sorting_view.rs
 msgid "{n} message"
 msgid_plural "{n} messages"
 msgstr[0] ""
@@ -22141,6 +22256,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "{why}: answer without another time"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "· what waits for your answer, according to Nora"
 msgstr ""
 
 #. what a command says
