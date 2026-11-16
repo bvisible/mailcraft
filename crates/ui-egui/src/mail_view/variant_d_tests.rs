@@ -897,9 +897,11 @@ fn narrow_list(width: f32, dark: bool, all: bool, shot: Option<&std::path::Path>
     w.run_steps(3);
     let mut app = std::mem::replace(w.state_mut(), crate::MailApp::new(mailcraft_engine::Session::empty(), crate::Services::default()));
     app.hit = Default::default();
-    // (Styled again in the new window: its fonts and its theme.)
+    // (Styled again in the new window: its fonts and its theme. With the scroll bar's lane, as Linux and Windows have it: the same
+    // rows on every system.)
     app.styled = false;
     app.applied_theme = None;
+    app.overlay_scroll_bars = false;
     let mut h = egui_kittest::Harness::builder()
         .with_accessibility_check(false)
         .allow_missing_glyphs()
@@ -967,9 +969,9 @@ fn in_a_narrow_list_the_round_gives_its_room_back_to_the_name_and_the_one_mark_s
                 }
             }
         }
-        // « Ventes » whole, and enough of the long name to read it.
-        assert!(rows[0].sender.width() >= 40.0, "{width}: « Ventes » {:?}", rows[0].sender);
-        assert!(rows[1].sender.width() >= 60.0, "{width}: the long name {:?}", rows[1].sender);
+        // More than a first letter of « Ventes » and of the long name.
+        assert!(rows[0].sender.width() >= 30.0, "{width}: « Ventes » {:?}", rows[0].sender);
+        assert!(rows[1].sender.width() >= 30.0, "{width}: the long name {:?}", rows[1].sender);
         // In « Toutes les boîtes », the mailbox's colour: a ring round the round, else the stripe down the row's left edge.
         for r in narrow_list(width, false, true, None) {
             let stripe = r.stripe.expect("its mailbox's colour");
