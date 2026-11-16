@@ -52,6 +52,10 @@ pub(crate) struct Hint {
     pub(crate) account: String,
     pub(crate) words: String,
     pub(crate) button: String,
+    /// Shorter ways to say its words and its button where the list is narrow, longest first (`measure`); the whole of them under
+    /// the pointer.
+    pub(crate) words_shorter: Vec<String>,
+    pub(crate) button_shorter: Vec<String>,
     pub(crate) intent: Intent,
     /// What its ✕ does: hides it for the mailbox until the next day, or lets the offer go; none for her questions, which go once
     /// answered.
@@ -84,10 +88,19 @@ pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
     if let Some(offer) = sorting::sender_offer(app).filter(|o| sorting::box_in_view(app, false).is_none_or(|a| a == o.account)) {
         let button = if offer.on { tl!("Always priority for {sender}") } else { tl!("No longer priority for {sender}") };
         let words = if offer.on { tl!("Marked as priority.") } else { tl!("Taken out of Priority.") };
+        // Narrower: the sender's name cut short (three letters at the least), then without it.
+        let name: Vec<char> = offer.name.trim().chars().collect();
+        let mut button_shorter: Vec<String> = (3..name.len())
+            .rev()
+            .map(|keep| fmt(button, &[("sender", &format!("{}…", name[..keep].iter().collect::<String>().trim_end()))]))
+            .collect();
+        button_shorter.push(if offer.on { tl!("Always priority") } else { tl!("No longer priority") }.to_string());
         return Some(Hint {
             account: offer.account.clone(),
             words: words.to_string(),
             button: fmt(button, &[("sender", &offer.name)]),
+            words_shorter: Vec::new(),
+            button_shorter,
             intent: Intent::PrioritySender { account: offer.account.clone(), email: offer.email.clone(), on: offer.on },
             close: Close::Offer,
         });
@@ -98,6 +111,8 @@ pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
             account: String::new(),
             words: tln!(asked, "Nora has {n} question", "Nora has {n} questions"),
             button: tl!("See").to_string(),
+            words_shorter: vec![tln!(asked, "{n} question", "{n} questions")],
+            button_shorter: Vec::new(),
             intent: Intent::Questions,
             close: Close::None,
         });
@@ -121,6 +136,8 @@ fn proposal(app: &MailApp) -> Option<Hint> {
             account: account.clone(),
             words,
             button: tl!("See the journal").to_string(),
+            words_shorter: Vec::new(),
+            button_shorter: Vec::new(),
             intent: journal(),
             close: Close::UntilTomorrow,
         });
@@ -133,6 +150,8 @@ fn proposal(app: &MailApp) -> Option<Hint> {
             account: account.clone(),
             words,
             button: tl!("See the journal").to_string(),
+            words_shorter: Vec::new(),
+            button_shorter: Vec::new(),
             intent: journal(),
             close: Close::UntilTomorrow,
         });
@@ -149,6 +168,8 @@ fn proposal(app: &MailApp) -> Option<Hint> {
         account: account.clone(),
         words,
         button: tl!("See the plan").to_string(),
+        words_shorter: Vec::new(),
+        button_shorter: Vec::new(),
         intent: Intent::Open { account, journal: false },
         close: Close::UntilTomorrow,
     })
@@ -185,8 +206,9 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
         app.nora.sorting.want_proposal(&account);
     }
     let hint = hint(app);
+    // (As wide as the bar at the most: inside the list at any width.)
     let line_at = hint.as_ref().map(|hint| measure(ui, hint, pos2(bar.max.x, bar.min.y - HINT_GAP), room.width() - RIGHT - 16.0));
-    let top = line_at.map_or(bar.min.y, |(rect, _)| rect.min.y) - ABOVE;
+    let top = line_at.as_ref().map_or(bar.min.y, |fitted| fitted.rect.min.y) - ABOVE;
     let block = Rect::from_min_max(pos2(room.min.x, top - FADE), pos2(rows_end.max(room.min.x), room.max.y));
     let mut intent = None;
     let mut hide = None;
@@ -205,8 +227,8 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
         mesh.add_triangle(0, 2, 3);
         p.add(egui::Shape::mesh(mesh));
         p.rect_filled(Rect::from_min_max(pos2(block.min.x, top), block.max), 0.0, paper);
-        if let (Some(hint), Some((rect, button_w))) = (&hint, line_at) {
-            let (clicked, closed) = line(app, ui, &ds, hint, rect, button_w, paper);
+        if let (Some(hint), Some(fitted)) = (&hint, &line_at) {
+            let (clicked, closed) = line(app, ui, &ds, hint, fitted, paper);
             if clicked {
                 intent = Some(hint.intent.clone());
             }
@@ -267,19 +289,56 @@ fn ask(app: &mut MailApp, ui: &mut Ui, ds: &Ds, bar: Rect) {
     ui.data_mut(|d| d.insert_temp(id, text));
 }
 
-/// Where the line above the bar is, its right end at `end` (its foot's middle), at most `widest` wide; and its button's width.
-fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> (Rect, f32) {
-    let button_w = ui.painter().layout_no_wrap(hint.button.to_string(), semibold(12.0), egui::Color32::WHITE).size().x + 18.0;
-    let words_w = ui.painter().layout_no_wrap(hint.words.clone(), regular(13.0), egui::Color32::WHITE).size().x;
+/// The line above the bar as it fits: where it is, and what its words and its button say there.
+pub(crate) struct Fitted {
+    pub(crate) rect: Rect,
+    /// Its words, `None` where there is no room for them.
+    pub(crate) words: Option<String>,
+    pub(crate) button: String,
+    pub(crate) button_w: f32,
+}
+
+/// The first of `ways` (longest first) at most `room` wide in `font`, and its width; where none is, the last (cut short when
+/// drawn, at `room`).
+fn fit(ui: &Ui, ways: &[&String], font: &egui::FontId, room: f32) -> (String, f32) {
+    let wide = |way: &String| ui.painter().layout_no_wrap(way.clone(), font.clone(), egui::Color32::WHITE).size().x;
+    for way in ways {
+        let w = wide(way);
+        if w <= room {
+            return ((*way).clone(), w);
+        }
+    }
+    let last = ways.last().map(|w| (*w).clone()).unwrap_or_default();
+    (last, room.max(0.0))
+}
+
+/// Where the line above the bar is, its right end at `end` (its foot's middle), at most `widest` wide, and what it says there:
+/// its button first (the shorter ways of it, then cut short), then its words in what is left (the shorter ways, then cut short,
+/// or none); an offer whose words do not fit whole says only its button (they but repeat what the bolt just did).
+fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> Fitted {
+    let widest = widest.max(0.0);
     let close = if hint.close == Close::None { 0.0 } else { CLOSE };
-    let full = 12.0 + words_w + 8.0 + button_w + 4.0 + close + 6.0;
-    // An offer whose words do not fit says only its button (its words but repeat what the bolt just did).
-    let width = if hint.close == Close::Offer && full > widest { full - words_w - 8.0 } else { full }.min(widest.max(0.0));
-    (Rect::from_min_max(pos2(end.x - width, end.y - HINT_H), end), button_w)
+    // Its padding: 12 before what it says, 4 between the button and the ✕, 6 after; 8 between the words and the button.
+    let pad = 12.0 + 4.0 + close + 6.0;
+    let buttons: Vec<&String> = std::iter::once(&hint.button).chain(&hint.button_shorter).collect();
+    let (button, text_w) = fit(ui, &buttons, &semibold(12.0), widest - pad - 18.0);
+    let button_w = text_w + 18.0;
+    let room = widest - pad - button_w - 8.0;
+    let words = if hint.close == Close::Offer {
+        let w = ui.painter().layout_no_wrap(hint.words.clone(), regular(13.0), egui::Color32::WHITE).size().x;
+        (w <= room).then(|| (hint.words.clone(), w))
+    } else {
+        let ways: Vec<&String> = std::iter::once(&hint.words).chain(&hint.words_shorter).collect();
+        let (said, w) = fit(ui, &ways, &regular(13.0), room);
+        (w >= 40.0).then_some((said, w))
+    };
+    let width = (pad + button_w + words.as_ref().map_or(0.0, |(_, w)| 8.0 + w)).min(widest);
+    Fitted { rect: Rect::from_min_max(pos2(end.x - width, end.y - HINT_H), end), words: words.map(|(w, _)| w), button, button_w }
 }
 
 /// The line above the bar in `rect`: its words, its button, its ✕. Whether the button and the ✕ were clicked.
-fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button_w: f32, paper: egui::Color32) -> (bool, bool) {
+fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, fitted: &Fitted, paper: egui::Color32) -> (bool, bool) {
+    let (rect, button_w) = (fitted.rect, fitted.button_w);
     let said = ui.interact(rect, ui.scope_id().with("nora_hint_line"), Sense::hover());
     said.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, &hint.words));
     // (Cut short in a narrow list: the whole of it under the pointer.)
@@ -292,12 +351,15 @@ fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button
     let close = Rect::from_center_size(pos2(rect.max.x - 6.0 - CLOSE / 2.0, rect.center().y), vec2(CLOSE, CLOSE));
     let button_end = if closable { close.min.x - 4.0 } else { rect.max.x - 6.0 };
     let button = Rect::from_center_size(pos2(button_end - button_w / 2.0, rect.center().y), vec2(button_w, 22.0));
-    // (No words at all rather than a lone « M… ».)
-    let room = button.min.x - 8.0 - rect.min.x - 12.0;
-    if room >= 40.0 {
-        paint_clipped(p, pos2(rect.min.x + 12.0, rect.center().y), room, &hint.words, regular(13.0), ds.text);
+    if let Some(words) = &fitted.words {
+        let room = button.min.x - 8.0 - rect.min.x - 12.0;
+        paint_clipped(p, pos2(rect.min.x + 12.0, rect.center().y), room, words, regular(13.0), ds.text);
     }
-    let b = ui.interact(button, ui.scope_id().with("nora_hint_button"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    let mut b = ui.interact(button, ui.scope_id().with("nora_hint_button"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    // (Said shorter in a narrow list: the whole of it under the pointer, as its words are over the line.)
+    if fitted.button != hint.button {
+        b = b.on_hover_text(&hint.button);
+    }
     b.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &hint.button));
     app.hit.add("noraHintButton", 0, button);
     let p = ui.painter();
@@ -306,7 +368,7 @@ fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button
         p,
         pos2(button.min.x + 9.0, button.center().y),
         (button.width() - 18.0).max(0.0),
-        &hint.button,
+        &fitted.button,
         semibold(12.0),
         ds.primary_fg,
     );

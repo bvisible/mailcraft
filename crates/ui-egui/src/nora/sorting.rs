@@ -832,6 +832,12 @@ pub(crate) struct SenderOffer {
     at: f64,
 }
 
+/// An offer for `name` made now, as after a bolt on `email` of `account`.
+#[cfg(test)]
+pub(crate) fn offer_sender(app: &mut MailApp, account: &str, email: &str, name: &str, on: bool) {
+    app.nora.sorting.sender_offer = Some(SenderOffer { account: account.into(), email: email.into(), name: name.into(), on, at: crate::now_ms() });
+}
+
 /// How long the offer that follows a ⚡ stays, in milliseconds.
 pub(crate) const OFFER_MS: f64 = 15_000.0;
 

@@ -1416,6 +1416,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Always priority"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "Always priority for {sender}"
 msgstr ""
 
@@ -9741,6 +9746,11 @@ msgstr "暂无信息"
 #, fuzzy
 msgid "No key imported here has that fingerprint"
 msgstr "此处导入的密钥中没有与该指纹匹配的密钥"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "No longer priority"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/ask_bar.rs
@@ -25309,6 +25319,12 @@ msgstr "{n} 张图片无法下载。"
 msgid "{n} problem"
 msgid_plural "{n} problems"
 msgstr[0] "{n} 个问题"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs

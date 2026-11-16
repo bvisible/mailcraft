@@ -4744,3 +4744,14 @@ msgstr "Mittente prioritario"
 
 msgid "See"
 msgstr "Vedi"
+
+msgid "Always priority"
+msgstr "Sempre prioritario"
+
+msgid "No longer priority"
+msgstr "Non più prioritario"
+
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] "{n} domanda"
+msgstr[1] "{n} domande"

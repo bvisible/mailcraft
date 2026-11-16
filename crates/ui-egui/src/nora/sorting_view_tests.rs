@@ -835,8 +835,17 @@ fn questions_screens_in_french() {
             "3-depuis-une-conversation",
             "4-ligne-au-dessus-de-la-barre",
             "5-menu-sans-message",
+            "6-ligne-etroite-220",
         ] {
-            let mut h = with_questions(3, screen != "5-menu-sans-message");
+            let mut h = if screen == "6-ligne-etroite-220" {
+                // (A tab of 1000 × 625, its list the narrowest there is.)
+                let mut app = hosted(answers::state(false, "validated", true), false);
+                app.nora.sorting.questions = Questions::said(read_asks(&questions(3)).0);
+                app.ui.list_width = 220.0;
+                window(app, (1000.0, 625.0))
+            } else {
+                with_questions(3, screen != "5-menu-sans-message")
+            };
             h.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
             in_french(h.state_mut());
             let _ = h.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));

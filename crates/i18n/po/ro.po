@@ -1418,6 +1418,11 @@ msgstr "Redați întotdeauna"
 
 #. interface
 #: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Always priority"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "Always priority for {sender}"
 msgstr ""
 
@@ -9787,6 +9792,11 @@ msgstr "Nicio informație"
 #, fuzzy
 msgid "No key imported here has that fingerprint"
 msgstr "Nicio cheie importată aici nu are această amprentă"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "No longer priority"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/ask_bar.rs
@@ -25600,6 +25610,14 @@ msgid_plural "{n} problems"
 msgstr[0] "{n} problemă"
 msgstr[1] "{n} probleme"
 msgstr[2] "{n} de probleme"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs

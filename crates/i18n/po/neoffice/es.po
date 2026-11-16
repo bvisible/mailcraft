@@ -4746,3 +4746,14 @@ msgstr "Remitente prioritario"
 
 msgid "See"
 msgstr "Ver"
+
+msgid "Always priority"
+msgstr "Siempre prioritario"
+
+msgid "No longer priority"
+msgstr "Ya no prioritario"
+
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] "{n} pregunta"
+msgstr[1] "{n} preguntas"

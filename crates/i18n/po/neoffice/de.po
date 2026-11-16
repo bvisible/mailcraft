@@ -4728,3 +4728,14 @@ msgstr "Vorrangiger Absender"
 
 msgid "See"
 msgstr "Ansehen"
+
+msgid "Always priority"
+msgstr "Immer vorrangig"
+
+msgid "No longer priority"
+msgstr "Nicht mehr vorrangig"
+
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] "{n} Frage"
+msgstr[1] "{n} Fragen"

@@ -1371,6 +1371,11 @@ msgstr "Toujours lire"
 
 #. interface
 #: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Always priority"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
 msgid "Always priority for {sender}"
 msgstr ""
 
@@ -9302,6 +9307,11 @@ msgstr "Aucune information"
 #. interface
 #: crates/ui-egui/src/security.rs
 msgid "No key imported here has that fingerprint"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "No longer priority"
 msgstr ""
 
 #. interface
@@ -24236,6 +24246,13 @@ msgid "{n} problem"
 msgid_plural "{n} problems"
 msgstr[0] "{n} problème"
 msgstr[1] "{n} problèmes"
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs

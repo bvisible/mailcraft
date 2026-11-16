@@ -591,3 +591,14 @@ msgstr "Prioritaire afzender"
 
 msgid "See"
 msgstr "Bekijken"
+
+msgid "Always priority"
+msgstr "Altijd prioritair"
+
+msgid "No longer priority"
+msgstr "Niet meer prioritair"
+
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] "{n} vraag"
+msgstr[1] "{n} vragen"

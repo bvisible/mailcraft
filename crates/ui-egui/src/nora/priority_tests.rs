@@ -200,5 +200,123 @@ fn priority_screens_in_french() {
         h.run_steps(6);
         let image = h.render().expect("drawn");
         image.save(dir.join(format!("21-toujours-prioritaire-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        // In a list 220 wide: « Ventes », then a long name (cut short, its whole under the pointer).
+        let long = "Ventes et administration des ventes internationales";
+        for (screen, list, name) in
+            [("22-etroit-ventes", 220.0, "Ventes"), ("23-etroit-nom-long", 220.0, long), ("24-liste-de-320-nom-long", 320.0, long)]
+        {
+            let mut h = narrow(list, name, true);
+            h.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+            let _ = h.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+            h.run_steps(4);
+            if !screen.starts_with("22") {
+                let button = h.state().hit.rect("noraHintButton", 0).unwrap();
+                h.hover_at(button.center());
+                h.run_steps(60);
+            }
+            let image = h.render().expect("drawn");
+            image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        }
     }
+}
+
+/// A hosting page's tab of 1000 × 625 whose list is `list` wide beside the reading pane, an offer for `name` above Nora's bar.
+fn narrow(list: f32, name: &str, on: bool) -> Window {
+    let (mut app, _calls, _) = page(true);
+    app.session.keeps_local = false;
+    app.execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    let state = super::sorting::tests::state(false, "", true);
+    app.nora.sorting.boxes.insert(ME.to_string(), Known::said(read_state(&state), None));
+    app.ui.list_width = list;
+    super::sorting::offer_sender(&mut app, ME, "E1", name, on);
+    let mut h = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(vec2(1000.0, 625.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+    h.run_steps(4);
+    h
+}
+
+/// The bar and the line above it drawn alone over a list `width` wide: the list's room, the line's, its button's.
+fn alone(width: f32, name: &str, on: bool) -> (egui::Rect, egui::Rect, egui::Rect) {
+    let mut w = narrow(300.0, name, on);
+    let mut app = std::mem::replace(w.state_mut(), MailApp::new(mailcraft_engine::Session::empty(), crate::Services::default()));
+    app.hit = Default::default();
+    // (Styled again in the new window: its fonts and its theme.)
+    app.styled = false;
+    app.applied_theme = None;
+    let mut h =
+        egui_kittest::Harness::builder().with_accessibility_check(false).allow_missing_glyphs().with_size(vec2(width + 40.0, 220.0)).build_ui_state(
+            move |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                let room = egui::Rect::from_min_size(ui.max_rect().min, vec2(width, 200.0));
+                super::ask_bar::show(app, ui, room, room.max.x);
+            },
+            app,
+        );
+    h.run_steps(4);
+    let hit = |kind: &str| h.state().hit.rect(kind, 0).unwrap_or_else(|| panic!("{width} {name}: no {kind}"));
+    (hit("noraBackdrop"), hit("noraHint"), hit("noraHintButton"))
+}
+
+#[test]
+fn in_a_list_220_wide_the_line_above_her_bar_never_leaves_it_whatever_the_sender_s_name() {
+    // Over a list as narrow as the bar is drawn over (220), and a little wider.
+    let long = "Ventes et administration des ventes internationales";
+    for width in [220.0, 230.0, 260.0] {
+        for (name, on) in [("Ventes", true), ("Ventes", false), (long, true), (long, false)] {
+            let (list, line, button) = alone(width, name, on);
+            assert!(line.min.x >= list.min.x && line.max.x <= list.max.x, "{width} {name} {on}: the line {line:?} inside {list:?}");
+            assert!(button.min.x >= line.min.x && button.max.x <= line.max.x, "{width} {name} {on}: the button {button:?} inside {line:?}");
+        }
+    }
+}
+
+#[test]
+fn in_the_narrowest_list_the_line_above_her_bar_never_leaves_it_whatever_the_sender_s_name() {
+    use egui_kittest::kittest::Queryable as _;
+    let long = "Ventes et administration des ventes internationales";
+    for (name, on) in [("Ventes", true), ("Ventes", false), (long, true), (long, false), ("Grace Hopper", true)] {
+        // (The narrowest list there is: `mail_view::LIST_MIN`.)
+        let mut h = narrow(220.0, name, on);
+        let list = h.state().hit.rect("noraBackdrop", 0).expect("the bar over the list");
+        assert!(list.width() <= crate::mail_view::LIST_MIN, "the list is narrow: {list:?}");
+        let line = h.state().hit.rect("noraHint", 0).expect("the offer");
+        let button = h.state().hit.rect("noraHintButton", 0).expect("its button");
+        let close = h.state().hit.rect("noraHintClose", 0).expect("its ✕");
+        for (what, rect) in [("line", line), ("button", button), ("✕", close)] {
+            assert!(rect.min.x >= list.min.x && rect.max.x <= list.max.x, "{name} {on}: the {what} {rect:?} inside the list {list:?}");
+        }
+        assert!(button.min.x >= line.min.x && button.max.x <= close.min.x, "{name} {on}: the button inside its line");
+        // Its whole wording, under the pointer where it is said shorter; and as its name to a screen reader.
+        let whole = format!("{} for {name}", if on { "Always priority" } else { "No longer priority" });
+        assert!(h.query_all_by_label_contains(&whole).next().is_some(), "{whole}");
+        if name == long {
+            h.hover_at(button.center());
+            h.run_steps(60);
+            assert!(h.query_all_by_label_contains(&whole).count() >= 2, "{whole} under the pointer");
+        }
+    }
+    // Her questions' line, the same.
+    let mut h = narrow(220.0, "Ventes", true);
+    super::sorting::drop_sender_offer(h.state_mut());
+    let asks = (1..=3)
+        .map(|n| json!({"name": format!("ASK-{n}"), "box": ME, "title": format!("Question {n}?"), "context": "", "choices": [{"code": "yes", "label": "Yes"}]}))
+        .collect::<Vec<_>>();
+    h.state_mut().nora.sorting.questions = super::sorting::Questions::said(super::sorting::read_asks(&json!({"asks": asks, "retained": 0})).0);
+    h.run_steps(4);
+    let list = h.state().hit.rect("noraBackdrop", 0).unwrap();
+    let line = h.state().hit.rect("noraHint", 0).expect("her questions' line");
+    let button = h.state().hit.rect("noraHintButton", 0).unwrap();
+    assert!(line.min.x >= list.min.x && line.max.x <= list.max.x && button.min.x >= line.min.x, "{line:?} {list:?}");
 }

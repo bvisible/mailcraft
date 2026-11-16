@@ -5713,3 +5713,14 @@ msgstr "Expéditeur prioritaire"
 
 msgid "See"
 msgstr "Voir"
+
+msgid "Always priority"
+msgstr "Toujours prioritaire"
+
+msgid "No longer priority"
+msgstr "Plus prioritaire"
+
+msgid "{n} question"
+msgid_plural "{n} questions"
+msgstr[0] "{n} question"
+msgstr[1] "{n} questions"
