@@ -401,7 +401,7 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
     } else {
         out.extend(shown.iter().map(|m| Row::of(m, 0)));
     }
-    // //// Neoffice — each group of Principal where its newest is (`bundles`), before the headings are given.
+    // //// Neoffice — each group of Principal at the foot of its newest's day (`bundles`), before the headings are given.
     for (stream, members) in [mailcraft_model::Stream::Notification, mailcraft_model::Stream::Newsletter].into_iter().zip(bundled) {
         bundle_row(&mut out, s, stream, members, desc);
     }
@@ -433,7 +433,8 @@ fn bundles(s: &Session, query: &mailcraft_model::search::Query) -> bool {
 }
 
 // //// Neoffice — the row of a group of Principal (`bundles`): its newest message's, with all of them (`members`, newest first),
-// //// Neoffice — put where its newest sorts among the rows of the list (after what is pinned); none for a group without mail.
+// //// Neoffice — at the foot of the day its newest is in (its heading: Today, Yesterday…), below that day's mail, as Spark has
+// //// Neoffice — them; the newsletters' after the notifications' (they are put in that order). None for a group without mail.
 fn bundle_row(out: &mut Vec<Row>, s: &Session, stream: mailcraft_model::Stream, mut members: Vec<&Message>, desc: bool) {
     if members.is_empty() {
         return;
@@ -447,11 +448,15 @@ fn bundle_row(out: &mut Vec<Row>, s: &Session, stream: mailcraft_model::Stream, 
     row.bundle = Some(stream);
     let at = when(newest);
     let mb = &s.mailbox;
+    let today = s.today();
+    let day = heading(s, newest, today);
+    // Before the first row past its newest that is of another day: a group's row of the same day already there stays before it,
+    // one of another day after it (each a row of its newest's day).
     let place = out
         .iter()
         .position(|r| {
             let Some(m) = mb.message(r.id).filter(|_| r.under.is_none()) else { return false };
-            !m.pinned && if desc { when(m) < at } else { when(m) > at }
+            !m.pinned && (if desc { when(m) < at } else { when(m) > at }) && heading(s, m, today) != day
         })
         .unwrap_or(out.len());
     out.insert(place, row);

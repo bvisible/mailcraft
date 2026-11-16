@@ -320,3 +320,33 @@ fn in_the_narrowest_list_the_line_above_her_bar_never_leaves_it_whatever_the_sen
     let button = h.state().hit.rect("noraHintButton", 0).unwrap();
     assert!(line.min.x >= list.min.x && line.max.x <= list.max.x && button.min.x >= line.min.x, "{line:?} {list:?}");
 }
+
+#[test]
+fn in_a_wide_tab_her_pane_comes_before_the_exchanges_which_come_back_when_it_closes() {
+    let (mut app, _calls, _) = page(true);
+    app.session.keeps_local = false;
+    app.execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    let mut h = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(vec2(1920.0, 1000.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+    h.run_steps(4);
+    assert!(h.state().session.sel.focus().is_some(), "a message is read");
+    assert!(h.state().exchanges.open, "the exchanges by themselves");
+    h.state_mut().run("ui.noraAssistant", json!({"open": true})).unwrap();
+    h.run_steps(4);
+    assert!(super::assist::shown(h.state()) && !h.state().exchanges.open, "hers first");
+    assert!(!h.state().ui.exchanges_declined, "not the person's choice");
+    h.state_mut().run("ui.noraAssistant", json!({"open": false})).unwrap();
+    h.run_steps(4);
+    assert!(h.state().exchanges.open, "back by themselves");
+}

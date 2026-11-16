@@ -69,6 +69,8 @@ mod streams;
 // //// Neoffice — what the Échanges pane asks of the Neoffice server: who the sender is, their messages in every folder, what Neoffice
 // links them to (built everywhere, so that its calls are tested natively).
 mod exchanges;
+// //// Neoffice — the icons of senders' domains, asked of the Neoffice server (sender_icons.rs).
+mod sender_icons;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

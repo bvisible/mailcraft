@@ -27,6 +27,13 @@
 //!
 //! [`Services::sender_images`]: crate::Services::sender_images
 
+// //// Neoffice — in a hosting page's tab (variant D's rows), every row has its round, with the sender's initials; and the icon of the
+// //// Neoffice — sender's domain where the Neoffice server finds one ([`hosted`]): the host is handed the domain, not the address,
+// //// Neoffice — and asks the instance, which asks the domain's own site (frappe_webmail `neomail_icons`): the browser asks no
+// //// Neoffice — third party. On unless the person turns it off (`UiState::sender_logos`); never for a free mail service's domain
+// //// Neoffice — ([`free_mail`]), where a person keeps their initials; never for Junk E-mail; only for a sender the person knows or
+// //// Neoffice — whose server vouches for them.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -162,10 +169,106 @@ fn trim(looks: &mut HashMap<String, (Look, u64)>, frame: u64) {
     }
 }
 
+// //// Neoffice — a hosting page's tab: what its rows show (`hosted`), and the domains of free mail services, whose icon is never asked.
+/// Whether the window is a hosting page's tab, where the Neoffice server looks for the icon of a sender's domain.
+pub(crate) fn hosted(app: &MailApp) -> bool {
+    !app.session.keeps_local
+}
+
+/// Whether senders' pictures are shown: in a hosting page's tab the icons the Neoffice server finds (`UiState::sender_logos`, on
+/// unless turned off), elsewhere upstream's switch (`UiState::sender_images`, off unless turned on).
+pub(crate) fn on(app: &MailApp) -> bool {
+    if hosted(app) { app.ui.sender_logos } else { app.ui.sender_images }
+}
+
+/// The domains of free mail services: what follows their `@` stands for a service, not for whoever writes; their senders keep
+/// their initials. A domain of these names under another country's ending is one too (`yahoo.fr`, `gmx.at`).
+const FREE_MAIL_NAMES: &[&str] = &[
+    "gmail",
+    "googlemail",
+    "yahoo",
+    "ymail",
+    "outlook",
+    "hotmail",
+    "live",
+    "msn",
+    "icloud",
+    "me",
+    "mac",
+    "aol",
+    "gmx",
+    "web",
+    "bluewin",
+    "sunrise",
+    "hispeed",
+    "swissonline",
+    "bluemail",
+    "proton",
+    "protonmail",
+    "pm",
+    "tutanota",
+    "tuta",
+    "infomaniak",
+    "ik",
+    "yopmail",
+    "orange",
+    "free",
+    "wanadoo",
+    "laposte",
+    "sfr",
+    "libero",
+    "virgilio",
+    "t-online",
+    "freenet",
+    "yandex",
+    "mail",
+    "zoho",
+    "seznam",
+    "posteo",
+    "mailbox",
+    "fastmail",
+    "hey",
+    "duck",
+];
+
+/// Whether `domain` (lower case) is a free mail service's: one of [`FREE_MAIL_NAMES`] and an ending of one part, or of two
+/// that are a country's (`gmail.com`, `yahoo.co.uk`).
+pub(crate) fn free_mail(domain: &str) -> bool {
+    let parts: Vec<&str> = domain.trim_end_matches('.').split('.').collect();
+    match parts.as_slice() {
+        [name, _] => FREE_MAIL_NAMES.contains(name),
+        // (A country's ending of two parts, `co.uk`; not a company's site under its own domain, `mail.company.ch`.)
+        [name, second, country] => ["co", "com", "net", "org", "ne", "or"].contains(second) && country.len() == 2 && FREE_MAIL_NAMES.contains(name),
+        _ => false,
+    }
+}
+
+/// The site `domain` is under, whose icon stands for it: its last two names (`example.com` for `news.example.com`), or its last
+/// three under a country's ending of two (`example.co.uk`).
+pub(crate) fn site_of(domain: &str) -> String {
+    let parts: Vec<&str> = domain.split('.').collect();
+    let country = parts.len() >= 3 && ["co", "com", "net", "org", "ne", "or"].contains(&parts[parts.len() - 2]) && parts[parts.len() - 1].len() == 2;
+    let keep = if country { 3 } else { 2 };
+    parts[parts.len().saturating_sub(keep)..].join(".")
+}
+
+/// The domain of `address` (lower case, what follows its last `@`), `None` where it has none that could be a site's.
+pub(crate) fn domain_of(address: &str) -> Option<String> {
+    let domain = address.trim().rsplit_once('@')?.1.trim().trim_end_matches('.').to_ascii_lowercase();
+    let plain = domain.contains('.')
+        && domain.len() <= 253
+        && domain.split('.').all(|label| !label.is_empty() && label.len() <= 63)
+        && domain.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
+        // (A name, not an address written as numbers.)
+        && domain.rsplit('.').next().is_some_and(|ending| ending.len() >= 2 && ending.chars().all(|c| c.is_ascii_alphabetic()));
+    plain.then_some(domain)
+}
+
 /// The picture to show for `who`, on the mail `m`, in place of their initials. `None` while
 /// there is none; one that is still to be looked up is noted, and asked for at the next frame.
 pub fn picture(app: &mut MailApp, ctx: &egui::Context, m: &Message, who: &Address) -> Option<egui::TextureHandle> {
-    if !app.ui.sender_images || app.services.sender_images.is_none() {
+    // //// Neoffice — (`on`: in a hosting page's tab, its own switch.)
+    if !on(app) || app.services.sender_images.is_none() {
         return None;
     }
     if app.session.mailbox.in_junk(m.folder) {
@@ -175,13 +278,28 @@ pub fn picture(app: &mut MailApp, ctx: &egui::Context, m: &Message, who: &Addres
     let address = who.email.trim().to_lowercase();
     // The say-so for a message's pictures is its sender's: whoever it goes to must be known.
     let sender = address == m.from.email.trim().to_lowercase();
-    // Who it went to is the owner's word (it is theirs); who sent it, only the server's.
-    if sender && !crate::reading::remote::vouched(app.session.mailbox.account(m.account), m) {
-        return None;
-    }
-    if !is_known(app, &address) && !(sender && crate::reading::remote::access(app, m) == crate::reading::Access::Allowed) {
-        return None;
-    }
+    // //// Neoffice — in a hosting page's tab, the icon of its site, which its server fetches from that site: for a sender the person
+    // //// Neoffice — knows, or whose pictures they chose to download (as upstream's), never for a free mail service's domain; asked by
+    // //// Neoffice — the site (`site_of`: a name made for one recipient alone tells nothing), its key here. (Who vouches for a sender
+    // //// Neoffice — can't be read where the window's mail server isn't the one that wrote the mail's verdict: a forged sender the
+    // //// Neoffice — person knows shows that sender's logo, as it shows their initials.)
+    let key = if hosted(app) {
+        let site = domain_of(&address).map(|d| site_of(&d)).filter(|s| !free_mail(s))?;
+        if !is_known(app, &address) && !(sender && crate::reading::remote::access(app, m) == crate::reading::Access::Allowed) {
+            return None;
+        }
+        site
+    } else {
+        // Who it went to is the owner's word (it is theirs); who sent it, only the server's.
+        if sender && !crate::reading::remote::vouched(app.session.mailbox.account(m.account), m) {
+            return None;
+        }
+        if !is_known(app, &address) && !(sender && crate::reading::remote::access(app, m) == crate::reading::Access::Allowed) {
+            return None;
+        }
+        address
+    };
+    let address = key;
     let frame = images::frame(ctx);
     let state = &mut app.sender_images;
     let Some((look, used)) = state.looks.get_mut(&address) else {
@@ -227,6 +345,18 @@ pub fn avatar(app: &mut MailApp, ui: &Ui, center: egui::Pos2, radius: f32, m: &M
 
 /// The row of File › Options, saying who is asked and what each is told.
 pub fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
+    // //// Neoffice — a hosting page's tab: the icons its Neoffice server fetches, and what a sender's site learns of it.
+    if hosted(app) {
+        let mut on = app.ui.sender_logos;
+        if ui.checkbox(&mut on, tl!("Show the logos of senders' companies")).changed() {
+            let _ = app.run("ui.senderImages", json!({"value": on}));
+        }
+        let said = tl!(
+            "Your Neoffice server asks the website of the sender's domain for its icon and keeps it a week, for everyone of your company. That site learns that your company's server asked for its icon, not who you are nor which message. Never for free mail services (Gmail, Outlook.com, Bluewin…), whose senders keep their initials, never for Junk E-mail, and only for the people you know or whose pictures you chose to download."
+        );
+        ui.label(egui::RichText::new(said).color(t.text_dim));
+        return;
+    }
     let mut on = app.ui.sender_images;
     if ui.checkbox(&mut on, tl!("Show sender images from Gravatar, favicon.im and Google")).changed() {
         let _ = app.run("ui.senderImages", json!({"value": on}));
@@ -240,8 +370,13 @@ pub fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
 /// `ui.senderImages`; forgetting what is in memory when it is turned off.
 pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     (id == "ui.senderImages").then(|| {
-        let on = p.get("value").and_then(Value::as_bool).unwrap_or(!app.ui.sender_images);
-        app.ui.sender_images = on;
+        let on = p.get("value").and_then(Value::as_bool).unwrap_or(!self::on(app));
+        // //// Neoffice — in a hosting page's tab, its own switch (`on`).
+        if hosted(app) {
+            app.ui.sender_logos = on;
+        } else {
+            app.ui.sender_images = on;
+        }
         if !on {
             app.sender_images = SenderImages::default();
         }

@@ -4757,3 +4757,9 @@ msgid "{n} question"
 msgid_plural "{n} questions"
 msgstr[0] "{n} pregunta"
 msgstr[1] "{n} preguntas"
+
+msgid "Show the logos of senders' companies"
+msgstr "Mostrar los logotipos de las empresas de los remitentes"
+
+msgid "Your Neoffice server asks the website of the sender's domain for its icon and keeps it a week, for everyone of your company. That site learns that your company's server asked for its icon, not who you are nor which message. Never for free mail services (Gmail, Outlook.com, Bluewin…), whose senders keep their initials, never for Junk E-mail, and only for the people you know or whose pictures you chose to download."
+msgstr "Tu servidor de Neoffice pide al sitio web del dominio del remitente su icono y lo conserva una semana, para toda tu empresa. Ese sitio sabe que el servidor de tu empresa pidió su icono, pero no quién eres ni qué mensaje. Nunca para servicios de correo gratuitos (Gmail, Outlook.com, Bluewin…), cuyos remitentes conservan sus iniciales, nunca para Correo no deseado, y solo para las personas que conoces o cuyas imágenes elegiste descargar."

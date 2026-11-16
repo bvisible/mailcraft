@@ -391,3 +391,68 @@ fn known_senders_of_200000_messages_during_a_send_receive() {
     is_known(&mut app, "nobody@spam.example");
     eprintln!("a sent message deleted for good: gathered again in {:?}", start.elapsed());
 }
+
+// //// Neoffice — a hosting page's tab: the icon of a sender's domain, asked by the domain, for the people known or vouched for,
+// //// Neoffice — never for a free mail service's domain, on unless turned off with its own switch.
+#[test]
+fn a_hosting_pages_tab_asks_for_the_icon_of_a_known_or_vouched_senders_domain_never_a_free_mail_services() {
+    let (mut app, asked, mut shown) = window(|_| Ok(png()));
+    app.session.keeps_local = false;
+    app.ui.sender_images = false;
+    assert!(app.ui.sender_logos && on(&app), "on unless turned off, whatever upstream's switch says");
+    // A friend at a free mail service, known; a stranger whose server says nothing.
+    app.session.mailbox.add_contact(Contact {
+        display_name: "Friend".into(),
+        emails: vec![Labeled::new("home", "friend@gmail.com")],
+        ..Default::default()
+    });
+    let mut friend = shown[0].clone();
+    friend.from = Address::new("Friend", "friend@gmail.com");
+    friend.headers = vec![("Authentication-Results".into(), "mx.example.org; dmarc=pass header.from=gmail.com".into())];
+    let mut unvouched = shown[2].clone();
+    unvouched.from = Address::new("", "someone@unvouched.example");
+    unvouched.headers.clear();
+    shown.extend([friend, unvouched]);
+    let ctx = egui::Context::default();
+    for _ in 0..4 {
+        frame(&mut app, &ctx, &shown);
+    }
+    // The contact's site, the one written to's; not a stranger's (whoever vouches for them: a site made for one recipient would learn
+    // when its mail was listed), not Junk, not Gmail.
+    assert_eq!(*asked.lock().unwrap(), ["example.org", "shop.example"]);
+    assert_eq!(frame(&mut app, &ctx, &shown), [true, true, false, false, false, false]);
+    // A stranger whose pictures the person chose to download: their site's.
+    app.ui.picture_domains.push("spam.example".into());
+    for _ in 0..4 {
+        frame(&mut app, &ctx, &shown);
+    }
+    assert_eq!(asked.lock().unwrap().last().map(String::as_str), Some("spam.example"));
+    // Its own switch, in File › Options: off, nothing more is asked, and upstream's is left as it was.
+    app.run("ui.senderImages", json!({"value": false})).unwrap();
+    assert!(!app.ui.sender_logos && !app.ui.sender_images && !on(&app));
+    assert_eq!(frame(&mut app, &ctx, &shown), [false; 6]);
+}
+
+#[test]
+fn a_name_under_a_site_is_asked_as_the_site() {
+    assert_eq!(site_of("news.shop.example"), "shop.example");
+    assert_eq!(site_of("x7f3.mail.shop.example"), "shop.example");
+    assert_eq!(site_of("shop.example"), "shop.example");
+    assert_eq!(site_of("mail.atelier.co.uk"), "atelier.co.uk");
+    assert!(free_mail(&site_of("mail.gmail.com")));
+}
+
+#[test]
+fn a_free_mail_services_domain_is_told_from_a_companys() {
+    for free in ["gmail.com", "yahoo.fr", "yahoo.co.uk", "bluewin.ch", "gmx.ch", "outlook.com", "hotmail.ch", "icloud.com", "proton.me"] {
+        assert!(free_mail(free), "{free}");
+    }
+    for company in ["atelier-exemple.example", "mail.company.ch", "gmail.company.ch", "news.example.com", "example.org"] {
+        assert!(!free_mail(company), "{company}");
+    }
+    assert_eq!(domain_of(" Ada@Example.ORG ").as_deref(), Some("example.org"));
+    assert_eq!(domain_of("a@b@shop.example").as_deref(), Some("shop.example"));
+    for none in ["nobody", "x@localhost", "x@", "x@[127.0.0.1]", "x@127.0.0.1", "x@exa mple.org", "x@a..b"] {
+        assert_eq!(domain_of(none), None, "{none}");
+    }
+}

@@ -574,6 +574,8 @@ pub struct Services {
     /// Once the token can't be upgraded (sender images turned off, the pictures cleared) the
     /// window no longer wants it, and the host asks nothing more for it.
     /// Absent in the browser and the tests: senders keep their initials.
+    // //// Neoffice — a hosting page's tab (the browser, Neodesk) is handed the sender's domain instead, whose icon it asks of the
+    // //// Neoffice — Neoffice server (sender_images.rs `hosted`, the web app's sender_icons.rs).
     pub sender_images: Option<Box<dyn Fn(String, std::sync::Weak<()>) -> Receiver<Result<Vec<u8>, String>>>>,
     /// Desktop: remove everything MailCraft keeps on this computer, in the folders the host
     /// itself works in ([`data_removal::DataWipe`], File › Info › Remove MailCraft's data from
@@ -1059,6 +1061,12 @@ pub struct UiState {
     // //// Neoffice — what « Trier avec Nora » proposes over the list, hidden by its ✕ for a mailbox (by the name of the server's account
     // for it) until the day after the one kept here (`Date::to_days`): nora/ask_bar.rs.
     pub nora_hint_hidden: std::collections::BTreeMap<String, i64>,
+    // //// Neoffice — the person closed the Échanges pane: it no longer opens by itself in a wide window until they open it again
+    // (exchanges.rs `follow`).
+    pub exchanges_declined: bool,
+    // //// Neoffice — in a hosting page's tab, the icon of a sender's domain in the round of their rows, which the Neoffice server
+    // fetches (sender_images.rs): on unless the person turns it off in File › Options.
+    pub sender_logos: bool,
 }
 
 impl Default for UiState {
@@ -1120,6 +1128,10 @@ impl Default for UiState {
             calendar_ticks: std::collections::BTreeMap::new(),
             // //// Neoffice — see `nora_hint_hidden`.
             nora_hint_hidden: std::collections::BTreeMap::new(),
+            // //// Neoffice — see `exchanges_declined`.
+            exchanges_declined: false,
+            // //// Neoffice — see `sender_logos`.
+            sender_logos: true,
             imported_keys: Vec::new(),
         }
     }

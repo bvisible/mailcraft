@@ -472,6 +472,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbo
     crate::streams::start(accounts, credentials.clone(), ctx.clone());
     // //// Neoffice — the Échanges pane asks the server of these mailboxes who their senders are and what was said with them (exchanges.rs).
     crate::exchanges::start(accounts, credentials.clone(), ctx.clone());
+    // //// Neoffice — the round of a row shows its sender's domain's icon where the server finds one (sender_icons.rs).
+    services.sender_images = crate::sender_icons::service(accounts, credentials.clone(), ctx.clone());
     let gate = crate::jmap_services::Gate::default();
     // //// Neoffice — a message of these mailboxes goes to Nora by its id on the server, never its text, and their style can be learnt there (nora.rs); each mailbox by the name of the server's account for it, which is not its address once that changed.
     if let Some(nora) = &mut services.nora {

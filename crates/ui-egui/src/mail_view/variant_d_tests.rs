@@ -275,6 +275,120 @@ fn by_kind() -> (testing::Window, Vec<Id>, Vec<Id>) {
     (w, notes, letters)
 }
 
+/// Principal of `by_kind` with its mail dated: today a person's mail newer than both groups' newest (`late`) and one
+/// older (`early`), the notifications' newest and the newsletters' newest in between; the rest two days before.
+fn by_kind_dated() -> (testing::Window, Id, Id) {
+    let (mut w, notes, letters) = by_kind();
+    let rows = w.state_mut().session.rows();
+    let mb = &w.state().session.mailbox;
+    let people: Vec<Id> = rows.iter().filter(|r| r.bundle.is_none() && !mb.message(r.id).unwrap().pinned).map(|r| r.id).collect();
+    let now = testing::now();
+    let (late, early) = (people[0], people[1]);
+    let mut dates = vec![(late, now - 60), (early, now - 7_200), (notes[0], now - 600), (letters[0], now - 900)];
+    dates.extend([notes[1], letters[1]].into_iter().chain(people[2..].iter().copied()).map(|id| (id, now - 2 * 86_400)));
+    for (id, at) in dates {
+        let m = w.state_mut().session.mailbox.message_mut(id).unwrap();
+        m.date = at;
+        m.received = at;
+    }
+    // (The list built again from them.)
+    w.state_mut().session.mailbox_changed();
+    w.run_steps(3);
+    (w, late, early)
+}
+
+/// Where the rows of Principal are drawn, top to bottom: `message` rows by id, groups as 1 and 2 (`bundle`).
+fn drawn_in_order(w: &mut testing::Window, late: Id, early: Id) -> Vec<&'static str> {
+    let mut at: Vec<(f32, &'static str)> =
+        [("message", late, "late"), ("message", early, "early"), ("bundle", 1, "notifications"), ("bundle", 2, "newsletters")]
+            .into_iter()
+            .filter_map(|(kind, id, name)| w.state().hit.rect(kind, id).map(|r| (r.min.y, name)))
+            .collect();
+    at.sort_by(|a, b| a.0.total_cmp(&b.0));
+    at.into_iter().map(|(_, name)| name).collect()
+}
+
+#[test]
+fn principals_groups_are_at_the_foot_of_their_day_below_its_mail_notifications_first() {
+    let (mut w, late, early) = by_kind_dated();
+    // The rows: today's mail (the newer and the older), then the notifications, then the newsletters, then the days before.
+    let rows = w.state_mut().session.rows();
+    let mb = &w.state().session.mailbox;
+    let rows: Vec<_> = rows.iter().filter(|r| r.bundle.is_some() || !mb.message(r.id).unwrap().pinned).cloned().collect();
+    let order: Vec<String> = rows
+        .iter()
+        .take(4)
+        .map(|r| match r.bundle {
+            Some(stream) => format!("{stream:?}"),
+            None if r.id == late => "late".into(),
+            None if r.id == early => "early".into(),
+            None => format!("{}", r.id),
+        })
+        .collect();
+    assert_eq!(order, ["late", "early", "Notification", "Newsletter"]);
+    assert!(rows[0].group.is_some() && rows[1..4].iter().all(|r| r.group.is_none()), "one heading for the day, the groups under it");
+    assert!(rows[4].group.is_some(), "the day before starts after them");
+    // On screen, in two lines (the list beside the reading pane)…
+    assert_eq!(drawn_in_order(&mut w, late, early), ["late", "early", "notifications", "newsletters"]);
+    // …in one line (the list in the whole width)…
+    w.state_mut().execute("view.readingPane", json!({"value": "off"})).unwrap();
+    w.run_steps(4);
+    assert!(w.state().hit.rect("message", late).unwrap().height() < 60.0, "one line");
+    assert_eq!(drawn_in_order(&mut w, late, early), ["late", "early", "notifications", "newsletters"]);
+    // …with « Afficher les traités »…
+    click(&mut w, "listShowDone", 0);
+    assert_eq!(drawn_in_order(&mut w, late, early), ["late", "early", "notifications", "newsletters"]);
+    click(&mut w, "listShowDone", 1);
+    // …and in « Toutes les boîtes ».
+    click(&mut w, "allInboxes", 0);
+    assert!(w.state().session.all_inboxes().is_some());
+    let order = drawn_in_order(&mut w, late, early);
+    assert_eq!(&order[order.len() - 2..], ["notifications", "newsletters"], "{order:?}");
+    assert!(order.contains(&"late") && order.contains(&"early"));
+}
+
+#[test]
+fn groups_of_different_days_are_each_at_the_foot_of_their_own_day() {
+    let (mut w, notes, letters) = by_kind();
+    let rows = w.state_mut().session.rows();
+    let mb = &w.state().session.mailbox;
+    let people: Vec<Id> = rows.iter().filter(|r| r.bundle.is_none() && !mb.message(r.id).unwrap().pinned).map(|r| r.id).collect();
+    let now = testing::now();
+    // Today a person's mail and the newsletters' newest; yesterday the notifications' newest, alone; the rest three days before.
+    let mut dates = vec![(people[0], now - 60), (letters[0], now - 600), (notes[0], now - 86_400)];
+    dates.extend([notes[1], letters[1]].into_iter().chain(people[1..].iter().copied()).map(|id| (id, now - 3 * 86_400)));
+    for (id, at) in dates {
+        let m = w.state_mut().session.mailbox.message_mut(id).unwrap();
+        m.date = at;
+        m.received = at;
+    }
+    w.state_mut().session.mailbox_changed();
+    w.run_steps(3);
+    let rows = w.state_mut().session.rows();
+    let mb = &w.state().session.mailbox;
+    let rows: Vec<_> = rows.iter().filter(|r| r.bundle.is_some() || !mb.message(r.id).unwrap().pinned).cloned().collect();
+    let said: Vec<(String, Option<String>)> = rows
+        .iter()
+        .take(4)
+        .map(|r| {
+            (
+                r.bundle.map_or_else(|| if r.id == people[0] { "person".to_string() } else { "older".to_string() }, |b| format!("{b:?}")),
+                r.group.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("person".to_string(), Some("Today".to_string())),
+            ("Newsletter".to_string(), None),
+            ("Notification".to_string(), Some("Yesterday".to_string())),
+            ("older".to_string(), said[3].1.clone()),
+        ]
+    );
+    assert!(said[3].1.is_some() && said[3].1.as_deref() != Some("Yesterday"), "the day before that starts after them");
+}
+
 #[test]
 fn principal_has_its_groups_where_their_newest_is_and_a_group_opens_as_its_tab_did() {
     let (mut w, notes, letters) = by_kind();
@@ -585,6 +699,155 @@ fn variant_d_screens_in_french() {
                 _ => {}
             }
             w.run_steps(4);
+            let image = w.render().expect("drawn");
+            image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        }
+    }
+}
+
+/// The window `width` × 900 on the two mailboxes, as a hosting page's tab (`hosted`) or the desktop shows it, Ada's Inbox in view and
+/// its first message read.
+fn reading_at(width: f32, hosted: bool) -> testing::Window {
+    let (mut w, _, _) = window(hosted);
+    w.set_size(egui::vec2(width, 900.0));
+    w.run_steps(3);
+    let first = drawn(&mut w)[0];
+    click(&mut w, "message", first);
+    w.run_steps(3);
+    w
+}
+
+/// Whether the Échanges pane stands, and then whether the list, the message and it each keep their room: the list's rows end before
+/// the message's room, which keeps what a web message is laid out in, and the pane is inside the window.
+fn pane_beside(w: &mut testing::Window, width: f32) -> bool {
+    let Some(pane) = w.state().hit.rect("exchangesPane", 0) else { return false };
+    let first = drawn(w)[0];
+    let row = w.state().hit.rect("message", first).unwrap();
+    assert!(pane.max.x <= width + 0.5, "{width}: the pane {pane:?} inside the window");
+    assert!(pane.min.x - row.max.x >= crate::exchanges::READING_COMFORT - 1.0, "{width}: the message keeps its room between {row:?} and {pane:?}");
+    true
+}
+
+#[test]
+fn in_a_wide_tab_the_exchanges_open_by_themselves_and_go_when_it_narrows_or_the_person_closes_them() {
+    // Only where the list, the message at a comfortable width and the pane all have room: not at 1280 nor 1440 (with the folder
+    // pane), at 1920.
+    for width in [1280.0, 1440.0] {
+        let mut w = reading_at(width, true);
+        assert!(!w.state().exchanges.open && !pane_beside(&mut w, width), "{width}: no room for it");
+        let read = w.state().session.sel.focus().unwrap();
+        assert!(has(&w, "exchangesStrip", read) || has(&w, "exchangesButton", read), "{width}: « Afficher l'historique » is there");
+    }
+    let mut w = reading_at(1920.0, true);
+    assert!(w.state().exchanges.open && pane_beside(&mut w, 1920.0), "open by itself, beside the message");
+    // It follows the message read.
+    let second = drawn(&mut w)[1];
+    click(&mut w, "message", second);
+    assert!(w.state().exchanges.open && pane_beside(&mut w, 1920.0));
+    // Narrower: it goes, and comes back when the room does.
+    w.set_size(egui::vec2(1280.0, 900.0));
+    w.run_steps(4);
+    assert!(!w.state().exchanges.open);
+    w.set_size(egui::vec2(1920.0, 900.0));
+    w.run_steps(4);
+    assert!(w.state().exchanges.open);
+    // Closed by the person: closed it stays, at any width and after any message, until they open it again.
+    w.state_mut().run("ui.exchanges", json!({"open": false})).unwrap();
+    w.run_steps(3);
+    assert!(!w.state().exchanges.open && w.state().ui.exchanges_declined, "the choice is kept with the settings");
+    let first = drawn(&mut w)[0];
+    click(&mut w, "message", first);
+    assert!(!w.state().exchanges.open);
+    let prefs = w.state().prefs();
+    assert!(prefs.exchanges_declined, "kept between visits");
+    w.state_mut().run("ui.exchanges", json!({"open": true})).unwrap();
+    w.run_steps(3);
+    assert!(w.state().exchanges.open && !w.state().ui.exchanges_declined);
+    // Nothing read: an open pane of its own goes.
+    w.state_mut().run("ui.exchanges", json!({"open": false})).unwrap();
+    w.state_mut().ui.exchanges_declined = false;
+    w.run_steps(3);
+    assert!(w.state().exchanges.open, "open by itself again");
+    w.state_mut().execute("mail.select", json!({"ids": []})).unwrap();
+    w.run_steps(3);
+    assert!(!w.state().exchanges.open, "nothing read");
+    // The desktop keeps it closed until it is asked for.
+    let w = reading_at(1920.0, false);
+    assert!(!w.state().exchanges.open);
+}
+
+#[test]
+fn in_a_hosting_pages_tab_every_row_has_its_round_clear_of_its_one_mark() {
+    for hosted in [true, false] {
+        let (mut w, _, _) = window(hosted);
+        let rows = drawn(&mut w);
+        assert!(!rows.is_empty());
+        for id in &rows {
+            let round = w.state().hit.rect("messageRound", *id);
+            assert_eq!(round.is_some(), hosted, "{id}: a round in a hosting page's tab only (the desktop keeps upstream's switch)");
+        }
+        if !hosted {
+            continue;
+        }
+        // The unread dot, and the round of « Traité » under the pointer, stand in the lead column, clear of it.
+        let unread = rows.iter().copied().find(|id| has(&w, "messageDot", *id)).expect("an unread row");
+        let round = w.state().hit.rect("messageRound", unread).unwrap();
+        assert!(w.state().hit.rect("messageDot", unread).unwrap().max.x < round.min.x);
+        hover(&mut w, "message", unread);
+        let done = w.state().hit.rect("doneRound", unread).expect("« Traité » under the pointer");
+        assert!(done.max.x <= round.min.x, "{done:?} clear of {round:?}");
+        assert!(w.state().hit.rect("messageSender", unread).unwrap().min.x >= round.max.x, "the sender after it");
+    }
+}
+
+/// A logo for the captures: a red square with a white bar, as a PNG.
+fn logo() -> Vec<u8> {
+    let mut image = image::RgbaImage::from_pixel(64, 64, image::Rgba([0xD0, 0x47, 0x3A, 255]));
+    for x in 14..50 {
+        for y in 28..36 {
+            image.put_pixel(x, y, image::Rgba([255, 255, 255, 255]));
+        }
+    }
+    let mut out = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut out, image::ImageFormat::Png).unwrap();
+    out.into_inner()
+}
+
+/// The four changes of the batch in French, light and dark, to PNG files in `NEOMAIL_BATCH_SHOTS`: the groups at the foot of their
+/// day, the rounds of a hosting page's tab (initials, a known sender's logo), the Échanges pane by itself at 1920 and not at 1440.
+#[test]
+#[ignore = "draws to PNG files: NEOMAIL_BATCH_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored batch_screens"]
+fn batch_screens_in_french() {
+    let Some(dir) = std::env::var_os("NEOMAIL_BATCH_SHOTS").map(std::path::PathBuf::from) else { return };
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for dark in [false, true] {
+        for screen in ["a-groupes-en-bas-du-jour", "b-ronds-et-logo", "c-echanges-1920", "d-echanges-1440", "e-echanges-1280"] {
+            let mut w = match screen {
+                "a-groupes-en-bas-du-jour" => by_kind_dated().0,
+                "c-echanges-1920" => reading_at(1920.0, true),
+                "d-echanges-1440" => reading_at(1440.0, true),
+                "e-echanges-1280" => reading_at(1280.0, true),
+                _ => window(true).0,
+            };
+            w.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+            let _ = w.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+            if screen == "b-ronds-et-logo" {
+                // A sender the person knows, whose domain's site has an icon: the server's answer, here at once.
+                let contact = mailcraft_model::Contact {
+                    display_name: "Service Exemple".into(),
+                    emails: vec![mailcraft_model::Labeled::new("work", "support@service.example")],
+                    ..Default::default()
+                };
+                w.state_mut().session.mailbox.add_contact(contact);
+                w.state_mut().session.mailbox_changed();
+                w.state_mut().services.sender_images = Some(Box::new(|domain: String, _| {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let _ = tx.send(if domain == "service.example" { Ok(logo()) } else { Err("none".into()) });
+                    rx
+                }));
+                click(&mut w, "allInboxes", 0);
+            }
+            w.run_steps(8);
             let image = w.render().expect("drawn");
             image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
         }

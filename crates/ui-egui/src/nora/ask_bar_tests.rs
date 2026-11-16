@@ -193,6 +193,40 @@ fn the_line_is_opaque_and_the_list_scrolls_its_last_row_above_the_bar_and_the_li
     assert!(backdrop.max.y >= h.state().hit.rect("noraAsk", 0).unwrap().max.y && backdrop.min.y < line.min.y, "a backdrop under the whole block");
 }
 
+#[test]
+fn the_rows_read_through_a_light_veil_and_one_beside_the_bar_takes_a_click() {
+    // A veil, not the paper: at most a little more than half of it, under the line and the bar.
+    const { assert!(super::VEIL_TOP < super::VEIL && super::VEIL <= 0.6) };
+    let (app, _) = long(answers::state(false, "", true), true, 40);
+    let mut h = window(app);
+    let backdrop = h.state().hit.rect("noraBackdrop", 0).unwrap();
+    let line = h.state().hit.rect("noraHint", 0).unwrap();
+    // A row under the veil, above the line: a click there is the row's.
+    let at = egui::pos2(backdrop.center().x, backdrop.min.y + 6.0);
+    assert!(at.y < line.min.y);
+    let rows = h.state_mut().session.rows();
+    let under = rows.iter().find(|r| h.state().hit.rect("message", r.id).is_some_and(|rect| rect.contains(at))).expect("a row under the veil").id;
+    crate::people_view::testing::click(&mut h, at, egui::PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(h.state().session.sel.messages.first().copied(), Some(under), "the row under the veil is selected");
+    // And beside the line, above the bar, where the line is narrower than the bar (her questions').
+    let asks: Vec<Value> = (1..=3)
+        .map(|n| json!({"name": format!("ASK-{n}"), "box": ME, "title": format!("Question {n}?"), "context": "", "choices": [{"code": "yes", "label": "Yes"}]}))
+        .collect();
+    h.state_mut().nora.sorting.questions =
+        super::super::sorting::Questions::said(super::super::sorting::read_asks(&json!({"asks": asks, "retained": 0})).0);
+    h.run_steps(4);
+    let bar = h.state().hit.rect("noraAsk", 0).unwrap();
+    let line = h.state().hit.rect("noraHint", 0).unwrap();
+    assert!(line.min.x > bar.min.x + 12.0, "the line is narrower than the bar: {line:?} {bar:?}");
+    let at = egui::pos2((bar.min.x + line.min.x) / 2.0, line.center().y);
+    let rows = h.state_mut().session.rows();
+    let beside = rows.iter().find(|r| h.state().hit.rect("message", r.id).is_some_and(|rect| rect.contains(at))).expect("a row beside the line").id;
+    crate::people_view::testing::click(&mut h, at, egui::PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(h.state().session.sel.messages.first().copied(), Some(beside), "the row beside the line is selected");
+}
+
 /// The window `size` wide on [`long`], Nora's pane opened by a question asked in her bar.
 fn with_her_pane(width: f32) -> Window {
     let (app, _) = long(answers::state(false, "", true), true, 12);

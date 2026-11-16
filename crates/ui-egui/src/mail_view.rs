@@ -1210,7 +1210,9 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // Where mail of several accounts is listed together, a stripe of its account's colour down
     // the row's left edge (#893), left of the selection's card so that it shows on a selected row too.
     // //// Neoffice — in variant D a ring round the sender's picture says it, where pictures are shown (`pictured`, below).
-    let ringed = d && app.ui.sender_images;
+    // //// Neoffice — In a hosting page's tab every row of variant D has its round (the sender's initials, or their domain's icon).
+    let rounds = (d && crate::sender_images::hosted(app)) || app.ui.sender_images;
+    let ringed = d && rounds;
     if let Some(color) = account_stripe(&app.session, &m).filter(|_| !ringed) {
         let stripe = Rect::from_min_max(pos2(rect.min.x + 1.0, rect.min.y + 3.0), pos2(rect.min.x + 1.0 + ACCOUNT_STRIPE, rect.max.y - 3.0));
         p.rect_filled(stripe, 1.5, crate::theme::c32(color));
@@ -1246,7 +1248,7 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     };
     // The picture (or the initials) of who wrote it, or of who it went to.
     // //// Neoffice — in variant D in a single line too, at its middle (`d`).
-    let pictured = app.ui.sender_images && (!one || d);
+    let pictured = rounds && (!one || d);
     // A message under its open conversation starts a step further in (#503).
     // //// Neoffice — after the round of « Traité » where it is offered (`lead`); in variant D after the lead column, and the arrow of a
     // //// Neoffice — conversation where conversations are shown.
@@ -1257,6 +1259,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
         // //// Neoffice — (`one`: variant D's single line, its picture at its middle.)
         let center = pos2(rect.min.x + text_left + AVATAR_RADIUS, if one { rect.center().y } else { rect.min.y + AVATAR_Y });
         crate::sender_images::avatar(app, ui, center, AVATAR_RADIUS, &m, who);
+        // //// Neoffice — where the round is (variant D: clear of the lead column's one mark, `done::D_LEAD`).
+        app.hit.add("messageRound", row.id, Rect::from_center_size(center, vec2(2.0 * AVATAR_RADIUS, 2.0 * AVATAR_RADIUS)));
         // //// Neoffice — the ring of its account's colour, where mail of several accounts is listed together (variant D).
         if let Some(color) = account_stripe(&app.session, &m).filter(|_| ringed) {
             ui.painter().circle_stroke(center, AVATAR_RADIUS + 1.0, Stroke::new(2.0, crate::theme::c32(color)));

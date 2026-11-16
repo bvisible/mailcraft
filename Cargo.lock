@@ -3564,6 +3564,7 @@ dependencies = [
 name = "mailcraft-web"
 version = "0.13.0"
 dependencies = [
+ "base64 0.23.1",
  "eframe",
  "egui",
  "js-sys",

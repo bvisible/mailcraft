@@ -13743,6 +13743,11 @@ msgid "Show the history"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/sender_images.rs
+msgid "Show the logos of senders' companies"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/mail_view.rs
 #, fuzzy
 msgid "Show the messages of this conversation"
@@ -18862,6 +18867,11 @@ msgstr "Vous avez accepté provisoirement cette réunion."
 #. interface, what a command says
 #: crates/engine/src/sync_driver/free_busy.rs crates/ui-egui/src/send_receive.rs
 msgid "You're working offline. Turn off Work Offline (Send / Receive) to connect."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/sender_images.rs
+msgid "Your Neoffice server asks the website of the sender's domain for its icon and keeps it a week, for everyone of your company. That site learns that your company's server asked for its icon, not who you are nor which message. Never for free mail services (Gmail, Outlook.com, Bluewin…), whose senders keep their initials, never for Junk E-mail, and only for the people you know or whose pictures you chose to download."
 msgstr ""
 
 #. interface

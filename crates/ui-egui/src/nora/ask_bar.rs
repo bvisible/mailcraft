@@ -39,9 +39,13 @@ const HINT_H: f32 = 32.0;
 const HINT_GAP: f32 = 10.0;
 /// Its ✕.
 const CLOSE: f32 = 22.0;
-/// Above the line (or the bar), the list fades into its paper over this, then the paper hides it down to its foot.
-const FADE: f32 = 20.0;
+/// Above the line (or the bar), the list starts to fade into its paper over this; under them it stays veiled, never hidden: the
+/// paper is laid at most at [`VEIL`] (the line and the bar have their own opaque grounds).
+const FADE: f32 = 28.0;
 const ABOVE: f32 = 10.0;
+/// How much of the paper is laid over the rows: where the line starts, and at the foot.
+const VEIL_TOP: f32 = 0.35;
+const VEIL: f32 = 0.55;
 /// The narrowest list the bar is drawn over.
 const LIST_MIN: f32 = 220.0;
 
@@ -191,8 +195,8 @@ fn opaque(under: egui::Color32, over: egui::Color32) -> egui::Color32 {
 }
 
 /// The bar and the line above it, over the list whose room is `room` (its rows ending at `rows_end`, where the scroll bar's lane
-/// starts), in a layer of their own above it, on a backdrop of the list's paper that hides the rows under them (a short fade
-/// above it).
+/// starts), in a layer of their own above it, on a veil of the list's paper through which the rows under them still read (a fade
+/// above it). Only the line and the bar take the pointer: a row seen through the veil beside them is clicked as anywhere else.
 pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
     if !shown(app) || room.width() < LIST_MIN {
         return;
@@ -212,21 +216,27 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
     let block = Rect::from_min_max(pos2(room.min.x, top - FADE), pos2(rows_end.max(room.min.x), room.max.y));
     let mut intent = None;
     let mut hide = None;
-    egui::Area::new(EguiId::unique("nora_ask_bar")).order(egui::Order::Middle).fixed_pos(block.min).show(ui.ctx(), |ui| {
-        let _ = ui.allocate_exact_size(block.size(), Sense::hover());
+    // What takes the pointer: the bar (the area is its own, from its corner), and the line (its own `nora_hint_line`), nothing
+    // beside them.
+    egui::Area::new(EguiId::unique("nora_ask_bar")).order(egui::Order::Middle).fixed_pos(bar.min).show(ui.ctx(), |ui| {
+        let _ = ui.allocate_rect(bar, Sense::hover());
         app.hit.add("noraBackdrop", 0, block);
-        // The fade, then the paper.
-        let p = ui.painter();
-        let fade = Rect::from_min_max(block.min, pos2(block.max.x, top));
+        // The veil: clear above, then a little of the paper, a little more down to the foot. (Drawn by the area's painter, it
+        // stands where the area is not: the pointer goes through it to the rows.)
+        let p = ui.painter().with_clip_rect(block);
+        let veil = |alpha: f32| paper.gamma_multiply(alpha);
         let mut mesh = egui::Mesh::default();
-        let clear = paper.gamma_multiply(0.0);
-        for (at, color) in [(fade.left_top(), clear), (fade.right_top(), clear), (fade.right_bottom(), paper), (fade.left_bottom(), paper)] {
-            mesh.colored_vertex(at, color);
+        let bands = [(block.min.y, veil(0.0)), (top, veil(VEIL_TOP)), (block.max.y, veil(VEIL))];
+        for (i, pair) in bands.windows(2).enumerate() {
+            let [(y0, c0), (y1, c1)] = [pair[0], pair[1]];
+            let base = (i * 4) as u32;
+            for (at, color) in [(pos2(block.min.x, y0), c0), (pos2(block.max.x, y0), c0), (pos2(block.max.x, y1), c1), (pos2(block.min.x, y1), c1)] {
+                mesh.colored_vertex(at, color);
+            }
+            mesh.add_triangle(base, base + 1, base + 2);
+            mesh.add_triangle(base, base + 2, base + 3);
         }
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
         p.add(egui::Shape::mesh(mesh));
-        p.rect_filled(Rect::from_min_max(pos2(block.min.x, top), block.max), 0.0, paper);
         if let (Some(hint), Some(fitted)) = (&hint, &line_at) {
             let (clicked, closed) = line(app, ui, &ds, hint, fitted, paper);
             if clicked {

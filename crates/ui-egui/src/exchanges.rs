@@ -32,6 +32,9 @@ use crate::theme::{Tokens, regular, semibold};
 const RETRY_MS: f64 = 30_000.0;
 /// The pane's width when the person has not set one.
 pub(crate) const WIDTH: f32 = 380.0;
+/// The width the message being read keeps, at the least, beside the list and the pane, for the pane to open by itself
+/// ([`follow`]): what a message written for the web is laid out in.
+pub(crate) const READING_COMFORT: f32 = 600.0;
 
 /// What the pane shows.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -123,6 +126,8 @@ pub(crate) struct Remote {
 #[derive(Default)]
 pub struct Exchanges {
     pub(crate) open: bool,
+    /// It opened by itself ([`follow`]): it goes by itself when the window narrows or nothing is read.
+    pub(crate) auto: bool,
     pub(crate) tab: Tab,
     pub(crate) width: f32,
     /// The words typed in the pane's search box.
@@ -294,6 +299,7 @@ pub(crate) fn shown(app: &MailApp) -> bool {
 }
 
 /// `ui.exchanges {"open"?: bool}`: open or close the Échanges pane (without `open`, the other way round). Opening it closes Nora's.
+/// The person's choice: closed, it no longer opens by itself until they open it again (`UiState::exchanges_declined`, [`follow`]).
 pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     let open = match p.get("open") {
         None | Some(Value::Null) => !app.exchanges.open,
@@ -304,7 +310,36 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
         let _ = crate::nora::assist::toggle(app, &json!({"open": false}));
     }
     app.exchanges.open = open;
+    app.exchanges.auto = false;
+    app.ui.exchanges_declined = !open;
     Ok(json!({"open": open}))
+}
+
+/// Whether a window `room` wide (what the panes at its right and the mail share) holds the folder pane where it is shown, the
+/// list at its width, the pane at its own and the message being read at [`READING_COMFORT`].
+pub(crate) fn room_for_it(app: &MailApp, room: f32) -> bool {
+    let folders = if app.services.host_menu.is_none() && app.session.view.folder_pane { app.ui.folder_pane_width } else { 0.0 };
+    let list = app.ui.list_width.max(crate::mail_view::LIST_MIN);
+    let pane = if app.exchanges.width >= 240.0 { app.exchanges.width } else { WIDTH };
+    room - folders - list - pane >= READING_COMFORT
+}
+
+/// In a hosting page's tab, the pane opens by itself beside the message being read where the window has room for it
+/// ([`room_for_it`]), and goes by itself when it no longer has, or nothing is read; never where the person closed it
+/// (`UiState::exchanges_declined`), and never over Nora's pane, which comes first. One the person opened stays theirs.
+pub(crate) fn follow(app: &mut MailApp, room: f32) {
+    let reading = app.session.view.module == mailcraft_engine::Module::Mail
+        && app.session.view.reading_pane == mailcraft_engine::Pane::Right
+        && app.session.compose.is_none()
+        && app.session.sel.focus().and_then(|id| app.session.mailbox.message(id)).is_some_and(|m| target_of(app, m).is_some());
+    let wanted = !app.session.keeps_local && !app.ui.exchanges_declined && !crate::nora::assist::shown(app) && reading && room_for_it(app, room);
+    if wanted && !app.exchanges.open {
+        app.exchanges.open = true;
+        app.exchanges.auto = true;
+    } else if !wanted && app.exchanges.open && app.exchanges.auto {
+        app.exchanges.open = false;
+        app.exchanges.auto = false;
+    }
 }
 
 /// The window commands for the pane (`UI_COMMANDS` lists them).

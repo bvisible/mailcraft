@@ -183,6 +183,8 @@ fn text_width(ui: &Ui, text: &str, font: FontId) -> f32 {
 
 /// The pane at the right of the window, while it is open.
 pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
+    // (By itself where the window is wide: `exchanges::follow`.)
+    crate::exchanges::follow(app, ui.available_width());
     if !app.exchanges.open {
         return;
     }
@@ -209,7 +211,12 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let drawn = panel.frame(Frame::NONE.fill(t.panel).stroke(Stroke::new(1.0, t.border))).show(ui, |ui| {
         draw(ui, &t, &view, &mut words, (tab, show, cc, domain), &mut acts);
     });
+    app.hit.add("exchangesPane", 0, drawn.response.rect);
     if !narrowed {
+        // (One that opened by itself and that the person widens or narrows is theirs from then on: `exchanges::follow` leaves it.)
+        if app.exchanges.auto && (drawn.response.rect.width() - app.exchanges.width).abs() > 1.0 {
+            app.exchanges.auto = false;
+        }
         app.exchanges.width = drawn.response.rect.width();
     }
     app.exchanges.text = words;

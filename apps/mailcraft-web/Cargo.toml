@@ -25,6 +25,8 @@ mailcraft-jmap = { workspace = true }
 egui = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
+# //// Neoffice — the icons of senders' domains come from the Neoffice server in base64 (sender_icons.rs).
+base64 = { workspace = true }
 
 # //// Neoffice — the in-process JMAP server, for the tests of the JMAP runner (jmap_services_tests.rs).
 [dev-dependencies]
