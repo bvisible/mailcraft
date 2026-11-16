@@ -747,6 +747,8 @@ enum Asking {
     /// « Prioritaire » of a mailbox; a message of it (its JMAP id) put in it or taken out.
     Priority(String),
     PrioritySet(String, String, bool),
+    /// The sender of a mail (its JMAP id) made always priority, or no longer.
+    PrioritySender(String, String, bool),
     /// The mailbox Nora has never read, started on: her secretary made, her reading of its last days started.
     Begin(String),
     Plan(String),
@@ -807,13 +809,31 @@ pub(crate) struct Known {
 }
 
 /// « Prioritaire » of a mailbox, as the server says it (`priority`): the JMAP ids of what waits for the person's answer, newest
-/// first, how many there are in all, why each is there (a code: `question`, `quote_request`, … `marked`).
+/// first, how many there are in all, why each is there (a code: `question`, `quote_request`, … `marked`, `sender`), and the senders
+/// whose mail is always in it (their addresses in lower case; none from a server older than them).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Priority {
     pub(crate) ids: Vec<String>,
     pub(crate) count: u64,
     pub(crate) why: BTreeMap<String, String>,
+    pub(crate) senders: Vec<String>,
 }
+
+/// What the line above Nora's bar offers right after a ⚡ (ask_bar.rs): the message's sender made always priority (`on`), or no
+/// longer; for a few seconds ([`OFFER_MS`]).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SenderOffer {
+    pub(crate) account: String,
+    /// The message's JMAP id, which the server knows its sender by.
+    pub(crate) email: String,
+    /// Its sender, as the window writes them.
+    pub(crate) name: String,
+    pub(crate) on: bool,
+    at: f64,
+}
+
+/// How long the offer that follows a ⚡ stays, in milliseconds.
+pub(crate) const OFFER_MS: f64 = 15_000.0;
 
 /// [`Priority`] from the server's answer; an id that isn't one is left out.
 pub(crate) fn read_priority(v: &Value) -> Priority {
@@ -828,7 +848,19 @@ pub(crate) fn read_priority(v: &Value) -> Priority {
         .and_then(Value::as_object)
         .map(|why| why.iter().filter_map(|(id, code)| Some((id.clone(), code.as_str()?.chars().take(40).collect()))).take(MAX_PRIORITY).collect())
         .unwrap_or_default();
-    Priority { count: v.get("count").and_then(Value::as_u64).unwrap_or(ids.len() as u64), ids, why }
+    let senders = v
+        .get("senders")
+        .and_then(Value::as_array)
+        .map(|s| {
+            s.iter()
+                .filter_map(Value::as_str)
+                .map(|a| a.trim().to_lowercase())
+                .filter(|a| a.contains('@') && a.len() <= 320)
+                .take(MAX_PRIORITY)
+                .collect()
+        })
+        .unwrap_or_default();
+    Priority { count: v.get("count").and_then(Value::as_u64).unwrap_or(ids.len() as u64), ids, why, senders }
 }
 
 /// The most of « Prioritaire » kept of an answer.
@@ -1042,6 +1074,8 @@ pub(crate) struct Sorting {
     /// The mailboxes whose « Prioritaire » the list shows, each with the newest message of its Inbox (`want_priority`), taken at
     /// the next look.
     priority_wanted: BTreeMap<String, Option<Id>>,
+    /// What the line above her bar offers after a ⚡.
+    sender_offer: Option<SenderOffer>,
 }
 
 impl Sorting {
@@ -1146,6 +1180,14 @@ pub(crate) enum Intent {
         email: String,
         on: bool,
     },
+    /// Its sender made always priority, or no longer (the offer after a ⚡).
+    PrioritySender {
+        account: String,
+        email: String,
+        on: bool,
+    },
+    /// Her questions, in her pane (the line above her bar).
+    Questions,
     /// The card's « Activer et voir le plan », and « Plus tard ».
     Activate,
     CloseCard,
@@ -1153,6 +1195,16 @@ pub(crate) enum Intent {
 }
 
 // ---- the calls ----
+
+/// The offer that follows a ⚡, while it stands ([`OFFER_MS`]).
+pub(crate) fn sender_offer(app: &MailApp) -> Option<&SenderOffer> {
+    app.nora.sorting.sender_offer.as_ref().filter(|o| crate::now_ms() - o.at < OFFER_MS)
+}
+
+/// The offer's ✕.
+pub(crate) fn drop_sender_offer(app: &mut MailApp) {
+    app.nora.sorting.sender_offer = None;
+}
 
 /// « Prioritaire » of `account` as last read, where it was.
 pub(crate) fn priority_of<'a>(app: &'a MailApp, account: &str) -> Option<&'a Priority> {
@@ -1162,6 +1214,16 @@ pub(crate) fn priority_of<'a>(app: &'a MailApp, account: &str) -> Option<&'a Pri
 /// Whether the message of JMAP id `email` of `account` is in its « Prioritaire ».
 pub(crate) fn in_priority(app: &MailApp, account: &str, email: &str) -> bool {
     priority_of(app, account).is_some_and(|p| p.ids.iter().any(|id| id == email))
+}
+
+/// The sender of the message of JMAP id `email` of `account`'s mailbox, as the window writes them (its name, else its address).
+fn sender_name(app: &MailApp, account: &str, email: &str) -> Option<String> {
+    let mb = &app.session.mailbox;
+    mb.messages
+        .values()
+        .find(|m| m.server.as_ref().is_some_and(|s| s.id == email) && page_mailbox(app, m.account).is_some_and(|name| name == account))
+        .map(|m| m.from.display().to_string())
+        .filter(|name| !name.trim().is_empty())
 }
 
 /// Whether « Trier avec Nora » may be offered in this window: a hosting page's tab (nothing kept here) whose host carries
@@ -1428,8 +1490,43 @@ fn land(app: &mut MailApp, what: Asking, result: Result<Value, String>, status: 
                 }
             }
         }
+        Asking::PrioritySender(account, email, _) => match result {
+            Ok(v) => {
+                let address = v.get("sender").and_then(Value::as_str).unwrap_or_default().trim().to_lowercase();
+                let on = v.get("sender_priority").and_then(Value::as_str) == Some("yes");
+                if let Some(known) = app.nora.sorting.boxes.get_mut(&account) {
+                    let priority = known.priority.get_or_insert_with(Priority::default);
+                    priority.senders.retain(|s| *s != address);
+                    if on && !address.is_empty() {
+                        priority.senders.push(address);
+                    }
+                    // Read again at once: the sender's mail comes in, or goes.
+                    known.priority_stale = true;
+                    known.priority_at = 0.0;
+                }
+                // The offer taken goes (not one a later bolt made meanwhile).
+                if app.nora.sorting.sender_offer.as_ref().is_some_and(|o| o.account == account && o.email == email) {
+                    app.nora.sorting.sender_offer = None;
+                }
+            }
+            Err(why) => app.status_msg = Some((why, now)),
+        },
         Asking::PrioritySet(account, email, on) => match result {
             Ok(v) => {
+                // The offer that follows: its sender always priority, or no longer (a server older than it says nothing of it).
+                let sender_on = match v.get("sender_priority").and_then(Value::as_str) {
+                    Some("yes") => Some(true),
+                    Some("no") => Some(false),
+                    _ => None,
+                };
+                let address = v.get("sender").and_then(Value::as_str).unwrap_or_default().trim().to_string();
+                app.nora.sorting.sender_offer = match sender_on {
+                    Some(already) if already != on && address.contains('@') => {
+                        let name = sender_name(app, &account, &email).unwrap_or(address);
+                        Some(SenderOffer { account: account.clone(), email: email.clone(), name, on, at: now })
+                    }
+                    _ => None,
+                };
                 let on = v.get("priority").and_then(Value::as_str).map_or(on, |said| said == "yes");
                 if let Some(known) = app.nora.sorting.boxes.get_mut(&account) {
                     let priority = known.priority.get_or_insert_with(Priority::default);
@@ -2048,6 +2145,13 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
         Intent::Priority { account, email, on } => {
             let args = json!({"account": account, "email_id": email, "on": on});
             call(app, PRIORITY_SET, args, Asking::PrioritySet(account.clone(), email.clone(), on));
+        }
+        Intent::PrioritySender { account, email, on } => {
+            let args = json!({"account": account, "email_id": email, "on": on, "sender": true});
+            call(app, PRIORITY_SET, args, Asking::PrioritySender(account.clone(), email.clone(), on));
+        }
+        Intent::Questions => {
+            let _ = app.run("ui.noraQuestions", json!({}));
         }
         Intent::Choose(mode) if mode.code == "parties" => {
             // Nora asks first: which kinds of party (the server's ticked), and how deep.

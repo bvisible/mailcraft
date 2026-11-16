@@ -556,3 +556,38 @@ msgstr "Terugzetten waar het stond"
 
 msgid "Nora has not read this mail yet."
 msgstr "Nora heeft dit bericht nog niet gelezen."
+
+msgid "Always priority for {sender}"
+msgstr "Altijd prioritair voor {sender}"
+
+msgid "No longer priority for {sender}"
+msgstr "Niet meer prioritair voor {sender}"
+
+msgid "Marked as priority."
+msgstr "Als prioritair gemarkeerd."
+
+msgid "Taken out of Priority."
+msgstr "Uit Prioriteit gehaald."
+
+msgid "Back to the conversation"
+msgstr "Terug naar het gesprek"
+
+msgid "Nora asks you ({count})"
+msgstr "Nora vraagt u ({count})"
+
+msgid "Nora has no more questions for you."
+msgstr "Nora heeft geen vragen meer voor u."
+
+msgid "Nora has {n} question"
+msgid_plural "Nora has {n} questions"
+msgstr[0] "Nora heeft {n} vraag"
+msgstr[1] "Nora heeft {n} vragen"
+
+msgid "Nora's Questions"
+msgstr "Vragen van Nora"
+
+msgid "Priority sender"
+msgstr "Prioritaire afzender"
+
+msgid "See"
+msgstr "Bekijken"

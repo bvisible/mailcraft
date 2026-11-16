@@ -1230,6 +1230,13 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Home › Respond",
         r#"{"open"?: bool (default: the other way round)} — opens or closes Nora's pane at the right of the window, a conversation with her: she reads the message or conversation being read and the message being written, and writes into that message only (at its top, after or over the owner's text, into the reply she opens or a new message); nothing she writes is sent. Only where the hosting page reaches her conversation. Answers {"open": bool}"#,
     ),
+    // //// Neoffice — Nora's questions in her pane (nora/assist.rs): her badge's click and the first entry of her menus.
+    (
+        "ui.noraQuestions",
+        "Nora's Questions",
+        "Home › Respond",
+        r#"{} — opens Nora's pane on her questions to the owner (« Nora vous demande »), in place of her conversation, which stays as it was: the « ← » of her questions' head (Back to the conversation) brings it back. Only where the hosting page reaches her sorting. Answers {"open": true, "questions": number}"#,
+    ),
     // //// Neoffice — the Échanges pane: what was said with the sender of the message being read (exchanges.rs).
     (
         "ui.exchanges",

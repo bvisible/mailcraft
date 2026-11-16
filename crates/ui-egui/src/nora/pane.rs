@@ -49,10 +49,25 @@ pub(crate) fn button(app: &mut MailApp, ui: &mut Ui, m: &Message) {
     app.hit.add("nora", m.id, pill.rect);
     let id = m.id;
     egui::Popup::menu(&pill).show(|ui| menu(ui, app, id));
+    // The number of her questions on its corner, as on her button of the ribbon.
+    super::sorting_view::badge(app, ui, pill.rect.translate(egui::vec2(6.0, -6.0)), ("nora_questions_pill", ""), "noraQuestionsPill", id);
+}
+
+/// The first entry of her menus where questions of hers wait for the person: how many, and her pane on them (`ui.noraQuestions`).
+pub(crate) fn questions_entry(ui: &mut Ui, app: &mut MailApp) {
+    let count = super::sorting_view::questions_count(app);
+    if count == 0 {
+        return;
+    }
+    let label = super::sorting_view::questions_label(count);
+    crate::widgets::mi(ui, app, &label, "ui.noraQuestions", json!({}));
+    ui.separator();
 }
 
 /// What Nora does on `message`, as a menu: her button's here, and the ribbon's.
 pub(crate) fn menu(ui: &mut Ui, app: &mut MailApp, message: mailcraft_model::Id) {
+    // Her questions first, where some wait for the person.
+    questions_entry(ui, app);
     // Her pane first, where the hosting page reaches her conversation: a conversation about this message, and more.
     if super::assist::available(app) {
         crate::widgets::mi(ui, app, "Ask Nora", "ui.noraAssistant", json!({"open": true}));

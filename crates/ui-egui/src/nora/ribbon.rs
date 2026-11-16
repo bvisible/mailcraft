@@ -90,12 +90,21 @@ pub(crate) fn menu(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
     match menu {
         Menu::Nora => {
             let Some(message) = app.session.sel.focus() else {
-                // Her pane needs no message to be opened.
+                // Her questions, then her pane: neither needs a message.
+                super::pane::questions_entry(ui, app);
                 if super::assist::available(app) {
                     crate::widgets::mi(ui, app, "Ask Nora", "ui.noraAssistant", json!({"open": true}));
                     ui.separator();
                 }
-                ui.label(tl!("Select a message first"));
+                // What she does on a message, greyed, and why.
+                let why = tl!("Select a message first");
+                for label in ["Reply with Nora", "Reply all with Nora"] {
+                    let entry = ui.add_enabled(false, egui::Button::new(tl!(label)).min_size(egui::vec2(190.0, 0.0)));
+                    entry.on_disabled_hover_text(why);
+                }
+                ui.separator();
+                let entry = ui.add_enabled(false, egui::Button::new(tl!("Translate")).min_size(egui::vec2(190.0, 0.0)));
+                entry.on_disabled_hover_text(why);
                 return;
             };
             super::pane::menu(ui, app, message);

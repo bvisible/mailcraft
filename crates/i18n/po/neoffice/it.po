@@ -4709,3 +4709,38 @@ msgstr "Le hanno scritto nelle ultime due settimane: né contatti, né persone a
 
 msgid "Block"
 msgstr "Blocca"
+
+msgid "Always priority for {sender}"
+msgstr "Sempre prioritario per {sender}"
+
+msgid "No longer priority for {sender}"
+msgstr "Non più prioritario per {sender}"
+
+msgid "Marked as priority."
+msgstr "Contrassegnato come prioritario."
+
+msgid "Taken out of Priority."
+msgstr "Tolto dai prioritari."
+
+msgid "Back to the conversation"
+msgstr "Torna alla conversazione"
+
+msgid "Nora asks you ({count})"
+msgstr "Nora ti chiede ({count})"
+
+msgid "Nora has no more questions for you."
+msgstr "Nora non ha altre domande per te."
+
+msgid "Nora has {n} question"
+msgid_plural "Nora has {n} questions"
+msgstr[0] "Nora ha {n} domanda"
+msgstr[1] "Nora ha {n} domande"
+
+msgid "Nora's Questions"
+msgstr "Domande di Nora"
+
+msgid "Priority sender"
+msgstr "Mittente prioritario"
+
+msgid "See"
+msgstr "Vedi"

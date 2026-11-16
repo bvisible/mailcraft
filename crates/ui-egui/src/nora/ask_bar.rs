@@ -17,8 +17,9 @@
 
 use std::collections::BTreeMap;
 
-use egui::{Align2, CornerRadius, Id as EguiId, Rect, Sense, Stroke, Ui, pos2, vec2};
+use egui::{CornerRadius, Id as EguiId, Rect, Sense, Stroke, Ui, pos2, vec2};
 use mailcraft_engine::Module;
+use serde_json::json;
 
 use super::sorting::{self, Intent};
 use super::sorting_view::{Ds, kinds_said, ran_on, run_summary};
@@ -50,8 +51,19 @@ pub(crate) struct Hint {
     /// The mailbox, by the name of the server's account for it.
     pub(crate) account: String,
     pub(crate) words: String,
-    pub(crate) button: &'static str,
+    pub(crate) button: String,
     pub(crate) intent: Intent,
+    /// What its ✕ does: hides it for the mailbox until the next day, or lets the offer go; none for her questions, which go once
+    /// answered.
+    pub(crate) close: Close,
+}
+
+/// What a line's ✕ does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Close {
+    UntilTomorrow,
+    Offer,
+    None,
 }
 
 /// Whether the bar is drawn: a host reaches Nora's conversation, Mail is in front, and her pane is closed.
@@ -64,9 +76,37 @@ fn hidden(app: &MailApp, account: &str) -> bool {
     app.ui.nora_hint_hidden.get(account).is_some_and(|day| *day == app.session.today().to_days())
 }
 
-/// What the line above the bar says, for the Inbox in view: `None` where « Trier avec Nora » has nothing to say of it, or its ✕
-/// hid it today.
+/// What the line above the bar says: first the offer that follows a ⚡ (« Toujours prioritaire pour … », a few seconds), then her
+/// questions (« Nora a 3 questions · Voir », as long as some wait, in any folder), then what « Trier avec Nora » has to say of the
+/// Inbox in view, unless its ✕ hid it today. `None` where there is nothing.
 pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
+    // (Not over another mailbox than the one of the bolt.)
+    if let Some(offer) = sorting::sender_offer(app).filter(|o| sorting::box_in_view(app, false).is_none_or(|a| a == o.account)) {
+        let button = if offer.on { tl!("Always priority for {sender}") } else { tl!("No longer priority for {sender}") };
+        let words = if offer.on { tl!("Marked as priority.") } else { tl!("Taken out of Priority.") };
+        return Some(Hint {
+            account: offer.account.clone(),
+            words: words.to_string(),
+            button: fmt(button, &[("sender", &offer.name)]),
+            intent: Intent::PrioritySender { account: offer.account.clone(), email: offer.email.clone(), on: offer.on },
+            close: Close::Offer,
+        });
+    }
+    let asked = super::sorting_view::questions_count(app);
+    if asked > 0 {
+        return Some(Hint {
+            account: String::new(),
+            words: tln!(asked, "Nora has {n} question", "Nora has {n} questions"),
+            button: tl!("See").to_string(),
+            intent: Intent::Questions,
+            close: Close::None,
+        });
+    }
+    proposal(app)
+}
+
+/// What « Trier avec Nora » has to say of the Inbox in view: `None` where it has nothing, or its ✕ hid it today.
+fn proposal(app: &MailApp) -> Option<Hint> {
     let account = sorting::box_in_view(app, true)?;
     if hidden(app, &account) {
         return None;
@@ -77,12 +117,25 @@ pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
     if let Some(tidy) = state.tidy.as_ref().filter(|t| t.running()) {
         let words =
             tln!(tidy.filed, "Nora is tidying your inbox: {n} message filed so far.", "Nora is tidying your inbox: {n} messages filed so far.");
-        return Some(Hint { account: account.clone(), words, button: tl!("See the journal"), intent: journal() });
+        return Some(Hint {
+            account: account.clone(),
+            words,
+            button: tl!("See the journal").to_string(),
+            intent: journal(),
+            close: Close::UntilTomorrow,
+        });
     }
     let known = app.nora.sorting.boxes.get(&account);
     if state.on {
         let run = known.and_then(|k| k.latest.as_ref()).filter(|r| r.filed > 0 && ran_on(&r.started_at, today))?;
-        return Some(Hint { account: account.clone(), words: run_summary(run, today), button: tl!("See the journal"), intent: journal() });
+        let words = run_summary(run, today);
+        return Some(Hint {
+            account: account.clone(),
+            words,
+            button: tl!("See the journal").to_string(),
+            intent: journal(),
+            close: Close::UntilTomorrow,
+        });
     }
     let survey = known.and_then(|k| k.survey.as_ref())?;
     let kinds: BTreeMap<String, u64> =
@@ -92,7 +145,13 @@ pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
         return None;
     }
     let words = fmt(tl!("I can file {what}."), &[("what", &what)]);
-    Some(Hint { account: account.clone(), words, button: tl!("See the plan"), intent: Intent::Open { account, journal: false } })
+    Some(Hint {
+        account: account.clone(),
+        words,
+        button: tl!("See the plan").to_string(),
+        intent: Intent::Open { account, journal: false },
+        close: Close::UntilTomorrow,
+    })
 }
 
 /// How much room the list keeps at its foot for the bar, the line above it and their backdrop, so that its last row can be
@@ -152,18 +211,27 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
                 intent = Some(hint.intent.clone());
             }
             if closed {
-                hide = Some(hint.account.clone());
+                hide = Some((hint.close, hint.account.clone()));
             }
         }
         ask(app, ui, &ds, bar);
     });
-    if let Some(account) = hide {
-        let today = app.session.today().to_days();
-        app.ui.nora_hint_hidden.retain(|_, day| *day >= today);
-        app.ui.nora_hint_hidden.insert(account, today);
+    match hide {
+        Some((Close::UntilTomorrow, account)) => {
+            let today = app.session.today().to_days();
+            app.ui.nora_hint_hidden.retain(|_, day| *day >= today);
+            app.ui.nora_hint_hidden.insert(account, today);
+        }
+        Some((Close::Offer, _)) => sorting::drop_sender_offer(app),
+        _ => {}
     }
-    if let Some(intent) = intent {
-        sorting::act(app, intent);
+    // Her questions: her pane on them; the rest is « Trier avec Nora »'s.
+    match intent {
+        Some(Intent::Questions) => {
+            let _ = app.run("ui.noraQuestions", json!({}));
+        }
+        Some(intent) => sorting::act(app, intent),
+        None => {}
     }
 }
 
@@ -203,7 +271,10 @@ fn ask(app: &mut MailApp, ui: &mut Ui, ds: &Ds, bar: Rect) {
 fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> (Rect, f32) {
     let button_w = ui.painter().layout_no_wrap(hint.button.to_string(), semibold(12.0), egui::Color32::WHITE).size().x + 18.0;
     let words_w = ui.painter().layout_no_wrap(hint.words.clone(), regular(13.0), egui::Color32::WHITE).size().x;
-    let width = (12.0 + words_w + 8.0 + button_w + 4.0 + CLOSE + 6.0).min(widest.max(0.0));
+    let close = if hint.close == Close::None { 0.0 } else { CLOSE };
+    let full = 12.0 + words_w + 8.0 + button_w + 4.0 + close + 6.0;
+    // An offer whose words do not fit says only its button (its words but repeat what the bolt just did).
+    let width = if hint.close == Close::Offer && full > widest { full - words_w - 8.0 } else { full }.min(widest.max(0.0));
     (Rect::from_min_max(pos2(end.x - width, end.y - HINT_H), end), button_w)
 }
 
@@ -216,28 +287,40 @@ fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, rect: Rect, button
     app.hit.add("noraHint", 0, rect);
     let p = ui.painter();
     p.rect(rect, CornerRadius::same(16), opaque(paper, ds.signal_soft), Stroke::new(1.0, opaque(paper, ds.signal_border)), egui::StrokeKind::Inside);
+    // (No ✕ for her questions: the line goes once they are answered.)
+    let closable = hint.close != Close::None;
     let close = Rect::from_center_size(pos2(rect.max.x - 6.0 - CLOSE / 2.0, rect.center().y), vec2(CLOSE, CLOSE));
-    let button = Rect::from_center_size(pos2(close.min.x - 4.0 - button_w / 2.0, rect.center().y), vec2(button_w, 22.0));
-    paint_clipped(
-        p,
-        pos2(rect.min.x + 12.0, rect.center().y),
-        (button.min.x - 8.0 - rect.min.x - 12.0).max(0.0),
-        &hint.words,
-        regular(13.0),
-        ds.text,
-    );
+    let button_end = if closable { close.min.x - 4.0 } else { rect.max.x - 6.0 };
+    let button = Rect::from_center_size(pos2(button_end - button_w / 2.0, rect.center().y), vec2(button_w, 22.0));
+    // (No words at all rather than a lone « M… ».)
+    let room = button.min.x - 8.0 - rect.min.x - 12.0;
+    if room >= 40.0 {
+        paint_clipped(p, pos2(rect.min.x + 12.0, rect.center().y), room, &hint.words, regular(13.0), ds.text);
+    }
     let b = ui.interact(button, ui.scope_id().with("nora_hint_button"), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-    b.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, hint.button));
+    b.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, &hint.button));
     app.hit.add("noraHintButton", 0, button);
+    let p = ui.painter();
+    p.rect_filled(button, CornerRadius::same(11), if b.hovered() { ds.primary.gamma_multiply(0.88) } else { ds.primary });
+    crate::theme::paint_clipped(
+        p,
+        pos2(button.min.x + 9.0, button.center().y),
+        (button.width() - 18.0).max(0.0),
+        &hint.button,
+        semibold(12.0),
+        ds.primary_fg,
+    );
+    if !closable {
+        return (b.clicked(), false);
+    }
+    let words = if hint.close == Close::Offer { tl!("Close") } else { tl!("Hide until tomorrow") };
     let x = ui
         .interact(close, ui.scope_id().with("nora_hint_close"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(tl!("Hide until tomorrow"));
-    x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, tl!("Hide until tomorrow")));
+        .on_hover_text(words);
+    x.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, words));
     app.hit.add("noraHintClose", 0, close);
     let p = ui.painter();
-    p.rect_filled(button, CornerRadius::same(11), if b.hovered() { ds.primary.gamma_multiply(0.88) } else { ds.primary });
-    p.text(button.center(), Align2::CENTER_CENTER, hint.button, semibold(12.0), ds.primary_fg);
     if x.hovered() {
         p.circle_filled(close.center(), CLOSE / 2.0, ds.signal_border);
     }

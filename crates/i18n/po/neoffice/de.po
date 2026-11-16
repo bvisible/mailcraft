@@ -4693,3 +4693,38 @@ msgstr "Sie haben Ihnen in den letzten zwei Wochen geschrieben: weder Kontakte n
 
 msgid "Block"
 msgstr "Blockieren"
+
+msgid "Always priority for {sender}"
+msgstr "Immer vorrangig für {sender}"
+
+msgid "No longer priority for {sender}"
+msgstr "Nicht mehr vorrangig für {sender}"
+
+msgid "Marked as priority."
+msgstr "Als vorrangig markiert."
+
+msgid "Taken out of Priority."
+msgstr "Aus Vorrangig entfernt."
+
+msgid "Back to the conversation"
+msgstr "Zurück zur Unterhaltung"
+
+msgid "Nora asks you ({count})"
+msgstr "Nora fragt Sie ({count})"
+
+msgid "Nora has no more questions for you."
+msgstr "Nora hat keine weiteren Fragen an Sie."
+
+msgid "Nora has {n} question"
+msgid_plural "Nora has {n} questions"
+msgstr[0] "Nora hat {n} Frage"
+msgstr[1] "Nora hat {n} Fragen"
+
+msgid "Nora's Questions"
+msgstr "Noras Fragen"
+
+msgid "Priority sender"
+msgstr "Vorrangiger Absender"
+
+msgid "See"
+msgstr "Ansehen"

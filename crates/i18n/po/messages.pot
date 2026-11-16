@@ -1222,6 +1222,11 @@ msgid "Always play"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Always priority for {sender}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Among your correspondents I found: {list}."
 msgstr ""
@@ -2030,6 +2035,11 @@ msgid "Back to the Inbox"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Back to the conversation"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/ribbon.rs
 msgid "Bar on the Left"
 msgstr ""
@@ -2756,7 +2766,7 @@ msgid "Clipboard"
 msgstr ""
 
 #. interface, ribbon
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ask_bar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/nora/sorting_view.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
 msgid "Close"
 msgstr ""
 
@@ -7317,6 +7327,11 @@ msgid "Marked as priority"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Marked as priority."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/find_replace.rs
 msgid "Match case"
 msgstr ""
@@ -8308,6 +8323,11 @@ msgid "No key imported here has that fingerprint"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "No longer priority for {sender}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/lib.rs
 msgid "No mailbox is being opened"
 msgstr ""
@@ -8483,6 +8503,11 @@ msgid "Nora asks you"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora asks you ({count})"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Nora can propose replies in your own style. To do so she reads the message you open and learns from the emails you sent. Everything stays on your Neoffice server, for you alone; nothing is sent without your click."
 msgstr ""
@@ -8588,6 +8613,11 @@ msgid "Nora found nothing to change."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/nora/sorting_view.rs
+msgid "Nora has no more questions for you."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/nora/sorting.rs
 msgid "Nora has not read this mail yet."
 msgstr ""
@@ -8596,6 +8626,13 @@ msgstr ""
 #: crates/ui-egui/src/nora/assist.rs
 msgid "Nora has written nothing here to take back."
 msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Nora has {n} question"
+msgid_plural "Nora has {n} questions"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/nora/ready.rs
@@ -8742,13 +8779,18 @@ msgid "Nora wants to:"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/nora/flow.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/flow.rs
 msgid "Nora works on the mailboxes of your Neoffice account only."
 msgstr ""
 
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Nora would keep:"
+msgstr ""
+
+#. command label
+#: crates/ui-egui/src/lib.rs
+msgid "Nora's Questions"
 msgstr ""
 
 #. interface
@@ -10110,6 +10152,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/mail_view/priority.rs
 msgid "Priority"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/priority.rs
+msgid "Priority sender"
 msgstr ""
 
 #. command label, interface, ribbon
@@ -11484,6 +11531,11 @@ msgstr ""
 #. interface, ribbon location
 #: crates/engine/src/cmd/keys.rs crates/ui-egui/src/backstage.rs crates/ui-egui/src/lib.rs
 msgid "Security"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "See"
 msgstr ""
 
 #. interface
@@ -13027,6 +13079,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Take this key off the card"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/nora/ask_bar.rs
+msgid "Taken out of Priority."
 msgstr ""
 
 #. interface, ribbon location
@@ -15960,7 +16017,7 @@ msgid "Tracking"
 msgstr ""
 
 #. interface, ribbon
-#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/ribbon.rs
+#: crates/ui-egui/src/nora/band.rs crates/ui-egui/src/nora/pane.rs crates/ui-egui/src/nora/ribbon.rs crates/ui-egui/src/ribbon.rs
 msgid "Translate"
 msgstr ""
 

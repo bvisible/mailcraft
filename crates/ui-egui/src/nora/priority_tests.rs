@@ -135,6 +135,48 @@ fn a_bolt_answered_while_a_read_is_in_flight_is_read_again_after_it() {
 }
 
 #[test]
+fn after_a_bolt_the_line_offers_its_sender_always_priority_and_after_an_unmark_no_longer() {
+    use egui_kittest::kittest::Queryable as _;
+    let (mut h, calls) = hosted();
+    reply(&calls, PRIORITY, 200, json!({"ids": [], "count": 0, "why": {}, "senders": [], "reading": null}));
+    h.run_steps(4);
+    super::sorting::act(h.state_mut(), super::sorting::Intent::Priority { account: ME.into(), email: "E1".into(), on: true });
+    reply(&calls, PRIORITY_SET, 200, json!({"email_id": "E1", "priority": "yes", "sender": "grace@example.org", "sender_priority": "no"}));
+    h.run_steps(4);
+    // The offer, on the line above her bar: its sender as the window writes them.
+    assert!(h.query_all_by_label_contains("Always priority for Grace Hopper").next().is_some());
+    let button = h.state().hit.rect("noraHintButton", 0).expect("its button").center();
+    crate::people_view::testing::click(&mut h, button, egui::PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(made(&calls, PRIORITY_SET).last().unwrap(), &json!({"account": ME, "email_id": "E1", "on": true, "sender": true}));
+    reply(&calls, PRIORITY_SET, 200, json!({"email_id": "E1", "priority": "yes", "sender": "grace@example.org", "sender_priority": "yes"}));
+    h.run_steps(4);
+    assert_eq!(super::sorting::priority_of(h.state(), ME).unwrap().senders, ["grace@example.org"]);
+    assert!(super::sorting::sender_offer(h.state()).is_none(), "the offer goes once taken");
+    assert_eq!(made(&calls, PRIORITY).len(), 2, "read again at once");
+    reply(
+        &calls,
+        PRIORITY,
+        200,
+        json!({"ids": ["E3", "E2", "E1"], "count": 3, "why": {"E3": "sender", "E2": "sender", "E1": "marked"}, "senders": ["grace@example.org"], "reading": null}),
+    );
+    h.run_steps(4);
+    // Its reason under the pointer.
+    assert_eq!(crate::mail_view::priority::why_said("sender"), "Priority sender");
+    // Taking one of theirs out offers « no longer ».
+    super::sorting::act(h.state_mut(), super::sorting::Intent::Priority { account: ME.into(), email: "E2".into(), on: false });
+    reply(&calls, PRIORITY_SET, 200, json!({"email_id": "E2", "priority": "no", "sender": "grace@example.org", "sender_priority": "yes"}));
+    h.run_steps(4);
+    assert!(h.query_all_by_label_contains("No longer priority for Grace Hopper").next().is_some());
+    // A server older than the offer says nothing of the sender: no offer.
+    super::sorting::drop_sender_offer(h.state_mut());
+    super::sorting::act(h.state_mut(), super::sorting::Intent::Priority { account: ME.into(), email: "E3".into(), on: true });
+    reply(&calls, PRIORITY_SET, 200, json!({"email_id": "E3", "priority": "yes"}));
+    h.run_steps(4);
+    assert!(super::sorting::sender_offer(h.state()).is_none());
+}
+
+#[test]
 #[ignore = "draws to PNG files: VARIANT_D_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored priority_screens"]
 fn priority_screens_in_french() {
     let Some(dir) = std::env::var_os("VARIANT_D_SHOTS").map(std::path::PathBuf::from) else { return };
@@ -151,5 +193,12 @@ fn priority_screens_in_french() {
         h.run_steps(4);
         let image = h.render().expect("drawn");
         image.save(dir.join(format!("17-prioritaire-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        // The offer after a bolt.
+        super::sorting::act(h.state_mut(), super::sorting::Intent::Priority { account: ME.into(), email: "E1".into(), on: true });
+        reply(&calls, PRIORITY_SET, 200, json!({"email_id": "E1", "priority": "yes", "sender": "grace@example.org", "sender_priority": "no"}));
+        h.hover_at(egui::pos2(1.0, 1.0));
+        h.run_steps(6);
+        let image = h.render().expect("drawn");
+        image.save(dir.join(format!("21-toujours-prioritaire-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
     }
 }

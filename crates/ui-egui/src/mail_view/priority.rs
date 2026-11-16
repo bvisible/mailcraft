@@ -47,6 +47,7 @@ pub(crate) fn why_said(code: &str) -> &'static str {
         "opportunity" => tl!("An opportunity"),
         "task" => tl!("A task"),
         "marked" => tl!("Marked as priority"),
+        "sender" => tl!("Priority sender"),
         _ => tl!("Waits for your answer"),
     }
 }

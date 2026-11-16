@@ -367,6 +367,8 @@ pub(crate) fn ui_command(app: &mut MailApp, id: &str, p: &Value) -> Option<Resul
         "ui.noraLearnStyle" => learn_style(app),
         "ui.noraStyle" => super::ready::open_style(app),
         "ui.noraAssistant" => super::assist::toggle(app, p),
+        // //// Neoffice — (her questions: her badge, the first entry of her menus.)
+        "ui.noraQuestions" => super::assist::show_questions(app),
         _ => return None,
     })
 }
@@ -393,6 +395,7 @@ pub(crate) fn enabled(app: &MailApp, id: &str) -> bool {
         // Where the ready replies go out (the page `/neomail`): what Nora keeps of the person's writing.
         "ui.noraStyle" => app.services.nora.as_ref().is_some_and(|h| h.chat),
         "ui.noraAssistant" => super::assist::available(app),
+        "ui.noraQuestions" => super::assist::available(app) && super::sorting::offered(app),
         _ => false,
     }
 }

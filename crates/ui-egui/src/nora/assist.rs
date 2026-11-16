@@ -120,7 +120,16 @@ pub(crate) struct Assist {
     /// The pane's width as the person left it (330 at first): a narrow window narrows the pane under another id, and
     /// this width comes back once there is room again.
     width: f32,
+    /// The pane shows Nora's questions (`ui.noraQuestions`: her badge, the first entry of her menus) in place of her
+    /// conversation, which stays as it was: « ← » brings it back.
+    pub(crate) questions: bool,
+    /// When the last of her questions went while the pane showed them (milliseconds): it says so a moment, then her
+    /// conversation comes back ([`QUESTIONS_DONE_MS`]).
+    questions_done_at: Option<f64>,
 }
+
+/// How long her pane says she has no more questions before her conversation comes back, in milliseconds.
+pub(crate) const QUESTIONS_DONE_MS: f64 = 3_000.0;
 
 /// A write of Nora's into a message of a mailbox shared with the person, held until they answer the card that names
 /// the mailbox: the conversation's action, the mailbox's address, where the write was to go when she asked, and since
@@ -173,6 +182,8 @@ impl Default for Assist {
             held: None,
             trusted: Vec::new(),
             width: 330.0,
+            questions: false,
+            questions_done_at: None,
         }
     }
 }
@@ -244,6 +255,10 @@ pub(crate) fn toggle(app: &mut MailApp, p: &Value) -> Result<Value, String> {
     if !open {
         close(app);
     }
+    // « Demander à Nora » shows her conversation, also from her questions (`show_questions` puts them back after).
+    if open {
+        leave_questions(app);
+    }
     app.nora.assist.open = open;
     Ok(json!({"open": open}))
 }
@@ -258,17 +273,47 @@ pub(crate) fn ask(app: &mut MailApp, text: &str) -> bool {
     if !app.nora.assist.open && toggle(app, &json!({"open": true})).is_err() {
         return false;
     }
+    // What is asked shows in her conversation, also where her questions stood in its place.
+    leave_questions(app);
     let outputs = on_actions(app, vec![PanelAction::Send(text.to_string())]);
     perform(app, outputs);
     true
+}
+
+/// `ui.noraQuestions`: her pane opens on her questions, in place of her conversation (which stays, a click away), wherever it was.
+pub(crate) fn show_questions(app: &mut MailApp) -> Result<Value, String> {
+    // (Her questions are read only where her sorting is offered: elsewhere there would be none to show.)
+    if !sorting::offered(app) {
+        return Err(tl!("Nora works on the mailboxes of your Neoffice account only.").to_string());
+    }
+    toggle(app, &json!({"open": true}))?;
+    app.nora.assist.questions = true;
+    app.nora.assist.questions_done_at = None;
+    Ok(json!({"open": true, "questions": app.nora.sorting.questions.list.len()}))
+}
+
+/// Her conversation in her pane again, in place of her questions.
+fn leave_questions(app: &mut MailApp) {
+    app.nora.assist.questions = false;
+    app.nora.assist.questions_done_at = None;
+}
+
+/// Pretend the last of her questions went `ms` milliseconds earlier (the pane's « no more questions » then goes).
+#[cfg(test)]
+pub(crate) fn age_questions_done(app: &mut MailApp, ms: f64) {
+    if let Some(at) = app.nora.assist.questions_done_at.as_mut() {
+        *at -= ms;
+    }
 }
 
 /// The pane closes: what Nora was doing stops with it (she would go on writing into a message the person
 /// no longer watches her write into).
 fn close(app: &mut MailApp) {
     app.nora.assist.open = false;
-    // « Trier avec Nora » in the pane goes with it.
+    // « Trier avec Nora » in the pane goes with it, and her questions in place of her conversation.
     sorting::closed(app);
+    app.nora.assist.questions = false;
+    app.nora.assist.questions_done_at = None;
     app.nora.assist.typing = false;
     // A write waiting for the person's click goes with what she was doing: she is told nothing was written.
     let mut outputs = drop_held(app, tl!("You stopped Nora: nothing was written.").to_string());
@@ -297,6 +342,29 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let show_box = app.services.nora.as_ref().is_some_and(|host| host.mailboxes.len() > 1);
     let home = Home { today: app.session.today(), changing: app.nora.sorting.changing(), shown: sorting_view::home_of(app), show_box };
     let mut sorted = None;
+    // Her questions in place of her conversation (`Assist::questions`), before « Trier avec Nora »'s flow; and the way back. Once
+    // none is left, the pane says so a moment, then her conversation comes back.
+    // What Nora noted of the last answer stays to be read (twice as long), and one with « Annuler » or an error stays until the
+    // person goes back.
+    let now = now_ms();
+    if app.nora.assist.questions {
+        let asked = &app.nora.sorting.questions;
+        let noted = asked.noted.as_ref();
+        let stays = noted.is_some_and(|n| !n.run.is_empty()) || asked.error.is_some();
+        let wait = if noted.is_some_and(|n| !n.words.is_empty()) { 2.0 * QUESTIONS_DONE_MS } else { QUESTIONS_DONE_MS };
+        match (asked.list.is_empty() && !stays, app.nora.assist.questions_done_at) {
+            (false, _) => app.nora.assist.questions_done_at = None,
+            (true, None) => {
+                app.nora.assist.questions_done_at = Some(now);
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(wait as u64));
+            }
+            (true, Some(at)) if now - at >= wait => leave_questions(app),
+            (true, Some(at)) => ui.ctx().request_repaint_after(std::time::Duration::from_millis((wait - (now - at)).max(16.0) as u64)),
+        }
+    }
+    let asking = app.nora.assist.questions;
+    let mut back = false;
+    let mut shut = false;
     let in_flow = app.nora.sorting.flow.is_some();
     // Never so wide that the list at its narrowest and a message beside it would have less than they keep
     // (`mail_view::message_room`): in a narrow window the pane narrows to 240 first, then the folder pane and the list make way.
@@ -333,6 +401,14 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
             // come from a message rather than from her.
             assist.panel.links_on_cards_only = true;
             match sorting.flow.as_mut() {
+                // Her questions: drawn where the panel draws an empty conversation, with a conversation of its own that stays empty;
+                // hers stays as it was, for « ‹ Back to the conversation ».
+                _ if asking => {
+                    let done = sorting_view::questions_pane(ui, &mut sorting.questions, home.show_box, !home.changing);
+                    sorted = done.asked;
+                    back = done.back;
+                    shut = done.close;
+                }
                 // « Trier avec Nora »: drawn where the panel draws an empty conversation, under its head and its greeting, with
                 // a conversation of its own that stays empty; what the person types goes to hers ([`side`]).
                 Some(flow) => {
@@ -372,7 +448,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                         }
                         // « Nora vous demande »: her questions of all the person's mailboxes, answered here. Last, where the pane
                         // opens: the panel keeps its conversation's area at its end, so what is first above is out of sight.
-                        if let Some(asked) = sorting_view::questions(ui, questions, None, home.show_box, !home.changing) {
+                        if let Some(asked) = sorting_view::questions(ui, questions, None, home.show_box, !home.changing, true) {
                             sorted = Some(asked);
                         }
                         asked
@@ -380,7 +456,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                     actions = assist.panel.show_with(ui, &assist.session, Some(&mut empty));
                 }
             }
-            closing = assist.panel.take_close_request();
+            closing = assist.panel.take_close_request() || shut;
             // The keyboard is the pane's while its text box, or a field of its own (an answer to Nora, a plan's folder), has it.
             let pane = ui.max_rect();
             let focused = ui.ctx().memory(|m| m.focused());
@@ -395,11 +471,15 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         close(app);
         return;
     }
+    if back {
+        app.nora.assist.questions = false;
+        app.nora.assist.questions_done_at = None;
+    }
     if let Some(asked) = sorted {
         sorting::act(app, asked);
     }
     // In « Trier avec Nora », what the person types goes to Nora's conversation, which the pane shows again; nothing else of
-    // the panel's acts on the flow's empty one.
+    // the panel's acts on the flow's empty one. (So in her questions too.)
     let actions = if in_flow {
         let typed: Vec<PanelAction> = actions.into_iter().filter(|a| matches!(a, PanelAction::Send(_))).collect();
         if !typed.is_empty() {

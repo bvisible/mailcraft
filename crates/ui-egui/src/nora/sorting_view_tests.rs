@@ -7,7 +7,7 @@
 //! `NORA_SORTING_SHOTS=<folder>`) each screen drawn in French, light and dark, to PNG files.
 
 use egui::vec2;
-use egui_kittest::kittest::Queryable as _;
+use egui_kittest::kittest::{NodeT as _, Queryable as _};
 use serde_json::json;
 
 use super::super::sorting::{Card, Flow, Known, Noted, Questions, Stage, read_asks, read_journal, read_plan, read_state, read_survey};
@@ -663,4 +663,202 @@ fn a_plan_by_party_shows_each_kind_with_its_parties_and_its_messages() {
         kinds_said(&[("suppliers".to_string(), 4), ("leads".to_string(), 1)].into_iter().collect()),
         "4 messages from suppliers and 1 message from leads"
     );
+}
+
+// //// Neoffice — Nora's questions in one click: her badge, the first entry of her menus, the line above her bar.
+
+/// A hosting page's tab with `count` of her questions, `selected` a message or none.
+fn with_questions(count: usize, selected: bool) -> Window {
+    let mut app = hosted(answers::state(false, "validated", true), false);
+    app.nora.sorting.questions = Questions::said(read_asks(&questions(count)).0);
+    if !selected {
+        app.execute("mail.select", json!({"ids": []})).unwrap();
+    }
+    window(app, (1440.0, 900.0))
+}
+
+fn click_at(h: &mut Window, at: egui::Pos2) {
+    crate::people_view::testing::click(h, at, egui::PointerButton::Primary, 1);
+    h.run_steps(4);
+}
+
+/// The entry of an open menu that says `words` (a menu's entry is wide; her badges, which say the same, are not).
+fn entry<'a>(h: &'a Window, words: &'a str) -> Option<egui_kittest::Node<'a>> {
+    h.query_all_by_label_contains(words).find(|n| n.rect().width() > 120.0)
+}
+
+/// Her button of the ribbon's menu, open.
+fn ribbon_menu(h: &mut Window) {
+    let at = h.state().hit.rect("ribbon", crate::ribbon::hit_id("nora")).expect("her button").center();
+    click_at(h, at);
+}
+
+#[test]
+fn the_first_entry_of_her_menus_names_her_questions_and_opens_her_pane_at_their_top() {
+    let mut h = with_questions(3, true);
+    ribbon_menu(&mut h);
+    let first = entry(&h, "3 questions from Nora").expect("first of the ribbon's menu");
+    let ask = entry(&h, "Ask Nora").expect("then her pane");
+    assert!(first.rect().max.y <= ask.rect().min.y, "her questions first");
+    first.click();
+    h.run_steps(4);
+    assert!(h.state().nora.assist.open && h.state().nora.assist.questions);
+    assert!(has(&h, "Nora asks you (3)") && has(&h, "Back to the conversation"), "her questions' head, at the top");
+    assert!(contains(&h, "Payment notices from your bank") && has(&h, "Yes, a task"));
+    // The reading pane's pill: its menu too.
+    h.state_mut().run("ui.noraAssistant", json!({"open": false})).unwrap();
+    h.run_steps(3);
+    let first = h.state().session.sel.focus().unwrap();
+    let pill = h.state().hit.rect("nora", first).expect("her pill").center();
+    click_at(&mut h, pill);
+    assert!(entry(&h, "3 questions from Nora").is_some(), "first of the pill's menu");
+    assert!(h.state().hit.rect("noraQuestionsPill", first).is_some(), "the number on the pill too");
+}
+
+#[test]
+fn a_click_on_her_badge_opens_her_questions_even_from_a_conversation_which_stays_a_click_away() {
+    let mut h = with_questions(2, true);
+    // A conversation with her first.
+    assert!(super::super::assist::ask(h.state_mut(), "What is waiting for my answer?"));
+    h.run_steps(4);
+    assert!(contains(&h, "What is waiting for my answer?"));
+    h.state_mut().run("ui.noraAssistant", json!({"open": false})).unwrap();
+    h.run_steps(3);
+    let badge = h.state().hit.rect("noraQuestions", 1).expect("her badge").center();
+    click_at(&mut h, badge);
+    assert!(h.state().nora.assist.questions, "straight to her questions, no menu");
+    assert!(has(&h, "Nora asks you (2)") && !contains(&h, "What is waiting for my answer?"));
+    // The way back: her conversation as it was.
+    h.get_by_label("Back to the conversation").click();
+    h.run_steps(4);
+    assert!(!h.state().nora.assist.questions && contains(&h, "What is waiting for my answer?"));
+}
+
+#[test]
+fn each_answer_lowers_her_count_everywhere_and_the_last_one_leaves_a_word_then_her_conversation() {
+    let mut h = with_questions(2, true);
+    h.state_mut().run("ui.noraQuestions", json!({})).unwrap();
+    h.run_steps(3);
+    assert!(has(&h, "Nora asks you (2)"));
+    // One answered: one left, on the pane's head and the badge.
+    h.state_mut().nora.sorting.questions.list.remove(0);
+    h.run_steps(3);
+    assert!(has(&h, "Nora asks you (1)") && has(&h, "1 question from Nora"));
+    // The last: the badge goes, the pane says she has none, then her conversation comes back.
+    h.state_mut().nora.sorting.questions.list.clear();
+    h.run_steps(3);
+    assert!(has(&h, "Nora has no more questions for you.") && h.state().hit.rect("noraQuestions", 1).is_none());
+    super::super::assist::age_questions_done(h.state_mut(), super::super::assist::QUESTIONS_DONE_MS + 1.0);
+    h.run_steps(3);
+    assert!(!h.state().nora.assist.questions && h.state().nora.assist.open);
+}
+
+#[test]
+fn what_she_noted_of_the_last_answer_stays_with_its_undo_and_ask_nora_brings_her_conversation_back() {
+    let mut h = with_questions(1, true);
+    h.state_mut().run("ui.noraQuestions", json!({})).unwrap();
+    h.run_steps(3);
+    // The last answered, and Nora moved mail for it: what she says of it and « Annuler » stay until the person goes back.
+    let questions = &mut h.state_mut().nora.sorting.questions;
+    questions.list.clear();
+    questions.noted = Some(Noted { words: "Noted: your family's mail goes to Family.".into(), account: ME.into(), run: "RUN-1".into() });
+    h.run_steps(3);
+    assert!(has(&h, "Nora has no more questions for you.") && contains(&h, "Noted: your family") && has(&h, "Undo"));
+    super::super::assist::age_questions_done(h.state_mut(), 60_000.0);
+    h.run_steps(3);
+    assert!(h.state().nora.assist.questions && has(&h, "Undo"), "it stays for its « Annuler »");
+    // « Demander à Nora » (her ribbon's entry) shows her conversation.
+    h.state_mut().run("ui.noraAssistant", json!({"open": true})).unwrap();
+    h.run_steps(3);
+    assert!(!h.state().nora.assist.questions && h.state().nora.assist.open);
+    // Words only: twice the time, then her conversation.
+    h.state_mut().run("ui.noraQuestions", json!({})).unwrap();
+    h.state_mut().nora.sorting.questions.noted = Some(Noted { words: "Noted.".into(), account: ME.into(), run: String::new() });
+    h.run_steps(3);
+    super::super::assist::age_questions_done(h.state_mut(), super::super::assist::QUESTIONS_DONE_MS + 1.0);
+    h.run_steps(3);
+    assert!(h.state().nora.assist.questions, "still to be read");
+    super::super::assist::age_questions_done(h.state_mut(), super::super::assist::QUESTIONS_DONE_MS + 1.0);
+    h.run_steps(3);
+    assert!(!h.state().nora.assist.questions);
+}
+
+#[test]
+fn her_questions_are_refused_where_her_sorting_is_not_offered() {
+    let mut app = hosted(answers::state(false, "validated", true), false);
+    app.session.keeps_local = true;
+    assert!(app.execute("ui.noraQuestions", json!({})).is_err());
+    assert!(!app.nora.assist.questions);
+}
+
+#[test]
+fn the_line_above_her_bar_says_how_many_questions_and_opens_them() {
+    let mut h = with_questions(3, true);
+    assert!(contains(&h, "Nora has 3 questions") && has(&h, "See"));
+    assert!(h.state().hit.rect("noraHintClose", 0).is_none(), "no ✕: it goes once they are answered");
+    h.get_by_label("See").click();
+    h.run_steps(4);
+    assert!(h.state().nora.assist.questions && has(&h, "Nora asks you (3)"));
+}
+
+#[test]
+fn without_a_message_her_menu_greys_what_needs_one_and_says_why() {
+    let mut h = with_questions(1, false);
+    ribbon_menu(&mut h);
+    assert!(entry(&h, "1 question from Nora").is_some() && entry(&h, "Ask Nora").is_some());
+    for label in ["Reply with Nora", "Reply all with Nora", "Translate"] {
+        let node = entry(&h, label).unwrap_or_else(|| panic!("{label}"));
+        assert!(node.accesskit_node().is_disabled(), "{label} greyed");
+    }
+    assert!(!contains(&h, "Select a message first"), "no dead line in the menu: it is their hint");
+    let at = entry(&h, "Reply with Nora").unwrap().rect().center();
+    // (A click hides tooltips until the pointer moves.)
+    h.hover_at(at + egui::vec2(0.0, 300.0));
+    h.run_steps(5);
+    h.hover_at(at);
+    h.run_steps(60);
+    assert!(entry(&h, "Reply with Nora").is_some(), "the menu stays open");
+    assert!(contains(&h, "Select a message first"), "said under the pointer");
+}
+
+/// Her questions in French, light and dark, to PNG files in `NORA_QUESTIONS_SHOTS`: the ribbon's menu with them, her pane on
+/// them (from an empty pane, and from a conversation), the line above her bar, and the menu without a message.
+#[test]
+#[ignore = "draws to PNG files: NORA_QUESTIONS_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored questions_screens"]
+fn questions_screens_in_french() {
+    let Some(dir) = std::env::var_os("NORA_QUESTIONS_SHOTS").map(std::path::PathBuf::from) else { return };
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for dark in [false, true] {
+        for screen in [
+            "1-menu-avec-questions",
+            "2-volet-sur-les-questions",
+            "3-depuis-une-conversation",
+            "4-ligne-au-dessus-de-la-barre",
+            "5-menu-sans-message",
+        ] {
+            let mut h = with_questions(3, screen != "5-menu-sans-message");
+            h.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+            in_french(h.state_mut());
+            let _ = h.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+            h.run_steps(4);
+            match screen {
+                "1-menu-avec-questions" | "5-menu-sans-message" => ribbon_menu(&mut h),
+                "2-volet-sur-les-questions" => {
+                    h.state_mut().run("ui.noraQuestions", json!({})).unwrap();
+                }
+                "3-depuis-une-conversation" => {
+                    assert!(super::super::assist::ask(h.state_mut(), "Qu'est-ce qui attend ma réponse ?"));
+                    h.run_steps(4);
+                    h.state_mut().run("ui.noraAssistant", json!({"open": false})).unwrap();
+                    h.run_steps(3);
+                    let badge = h.state().hit.rect("noraQuestions", 1).unwrap().center();
+                    click_at(&mut h, badge);
+                }
+                _ => {}
+            }
+            h.run_steps(4);
+            let image = h.render().expect("drawn");
+            image.save(dir.join(format!("{screen}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        }
+    }
 }

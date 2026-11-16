@@ -28,6 +28,7 @@ use egui::{
     Stroke, TextEdit, TextStyle, Ui, WidgetInfo, pos2, vec2,
 };
 use mailcraft_time::Date;
+use serde_json::json;
 
 use super::sorting::{self, BoxState, Flow, Intent, Plan, Questions, Run, Stage, every};
 use crate::MailApp;
@@ -668,7 +669,7 @@ pub(crate) fn flow(ui: &mut Ui, flow: &mut Flow, state: Option<&BoxState>, asked
     }
     if matches!(flow.stage, Stage::Done | Stage::Plan) || flow.journal_first {
         // Her questions about this mailbox: the section of her pane's home, for this mailbox only.
-        if let Some(answered) = questions(ui, asked, Some(&cx.address), cx.show_box, may_set && !cx.changing) {
+        if let Some(answered) = questions(ui, asked, Some(&cx.address), cx.show_box, may_set && !cx.changing, true) {
             intent = Some(answered);
         }
         if let Some(asked) = journal(ui, &ds, flow, cx, enabled) {
@@ -997,7 +998,9 @@ fn folders(ui: &mut Ui, ds: &Ds, run: &Run) {
 /// « Nora vous demande »: her questions, each with the answers she offers, a field to answer in one's own words and « Plus
 /// tard »; what she would keep of those words, to confirm or say otherwise; what she noted of the last answer. The same
 /// section in her pane's home (all the person's questions) and under the flow's result (those of its mailbox, `mailbox`).
-pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str>, show_box: bool, enabled: bool) -> Option<Intent> {
+/// Under the head of her questions' pane, which already says « Nora vous demande », a card names only its mailbox
+/// (`titled` false).
+pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str>, show_box: bool, enabled: bool, titled: bool) -> Option<Intent> {
     let ds = Ds::of(ui.visuals().dark_mode);
     let mut intent = None;
     // Which mailbox each is about, where they are about more than one or the person has several.
@@ -1010,12 +1013,19 @@ pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str
     for ask in shown {
         let name = ask.name.clone();
         hers(ui, &ds, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.add(Label::new(RichText::new(tl!("Nora asks you")).font(face(ui, TextStyle::Button, 14.0)).color(ds.text)).selectable(false));
-                if show_box && !ask.mailbox.is_empty() {
-                    ui.add(Label::new(RichText::new(&ask.mailbox).font(face(ui, TextStyle::Small, 11.5)).color(ds.weak)).selectable(false));
-                }
-            });
+            let boxed = show_box && !ask.mailbox.is_empty();
+            if titled || boxed {
+                ui.horizontal_wrapped(|ui| {
+                    if titled {
+                        ui.add(
+                            Label::new(RichText::new(tl!("Nora asks you")).font(face(ui, TextStyle::Button, 14.0)).color(ds.text)).selectable(false),
+                        );
+                    }
+                    if boxed {
+                        ui.add(Label::new(RichText::new(&ask.mailbox).font(face(ui, TextStyle::Small, 11.5)).color(ds.weak)).selectable(false));
+                    }
+                });
+            }
             said(ui, &ds, &ask.title);
             if !ask.context.is_empty() {
                 note(ui, &ds, &ask.context);
@@ -1092,26 +1102,124 @@ pub(crate) fn badge_words(count: usize) -> String {
 /// message being written), as they were drawn this frame: an ink disc with its number in paper (paper and ink in the dark),
 /// 1 to 9, then « 9+ ». Nothing without a question.
 pub(crate) fn ribbon_badge(app: &mut MailApp, ui: &Ui) {
-    let count = app.nora.sorting.questions.list.len();
-    if count == 0 || !sorting::offered(app) {
+    if questions_count(app) == 0 {
+        return;
+    }
+    for key in ["nora", "ui.noraAssistant"] {
+        let Some(button) = app.hit.rect("ribbon", crate::ribbon::hit_id(key)) else { continue };
+        badge(app, ui, button, ("nora_questions_badge", key), "noraQuestions", u64::from(key == "nora"));
+    }
+}
+
+/// How many of Nora's questions wait for the person, where her sorting is offered (none elsewhere).
+pub(crate) fn questions_count(app: &MailApp) -> usize {
+    if sorting::offered(app) { app.nora.sorting.questions.list.len() } else { 0 }
+}
+
+/// What the first entry of her menus, and her badge, say: « 3 questions de Nora ».
+pub(crate) fn questions_label(count: usize) -> String {
+    tln!(count, "{n} question from Nora", "{n} questions from Nora")
+}
+
+/// The number of her questions on the top right corner of `button` (her button of the ribbon, her pill in the reading pane): a
+/// click opens her pane on them (`ui.noraQuestions`). `hit` and `n` name it in the window's map.
+pub(crate) fn badge(app: &mut MailApp, ui: &Ui, button: egui::Rect, salt: (&str, &str), hit: &'static str, n: u64) {
+    let count = questions_count(app);
+    if count == 0 {
         return;
     }
     let ds = Ds::of(Tokens::get(ui.ctx()).dark);
     let words = badge_words(count);
-    let label = tln!(count, "{n} question from Nora", "{n} questions from Nora");
-    for key in ["nora", "ui.noraAssistant"] {
-        let Some(button) = app.hit.rect("ribbon", crate::ribbon::hit_id(key)) else { continue };
-        let galley = ui.painter().layout_no_wrap(words.clone(), semibold(10.5), ds.primary_fg);
-        let width = (galley.size().x + 8.0).max(16.0);
-        let disc = egui::Rect::from_center_size(pos2(button.max.x - width / 2.0 - 1.0, button.min.y + 8.0), vec2(width, 16.0));
-        let response = ui.interact(disc, ui.scope_id().with(("nora_questions_badge", key)), Sense::hover());
-        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &label));
-        let response = response.on_hover_text(&label);
-        let painter = ui.painter();
-        painter.rect(disc, CornerRadius::same(255), ds.primary, Stroke::new(1.5, ds.paper), egui::StrokeKind::Outside);
-        painter.galley(pos2(disc.center().x - galley.size().x / 2.0, disc.center().y - galley.size().y / 2.0), galley, ds.primary_fg);
-        app.hit.add("noraQuestions", u64::from(key == "nora"), response.rect);
+    let label = questions_label(count);
+    let galley = ui.painter().layout_no_wrap(words, semibold(10.5), ds.primary_fg);
+    let width = (galley.size().x + 8.0).max(16.0);
+    let disc = egui::Rect::from_center_size(pos2(button.max.x - width / 2.0 - 1.0, button.min.y + 8.0), vec2(width, 16.0));
+    let response = ui.interact(disc, ui.scope_id().with(salt), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, &label));
+    let response = response.on_hover_text(&label);
+    let painter = ui.painter();
+    painter.rect(disc, CornerRadius::same(255), ds.primary, Stroke::new(1.5, ds.paper), egui::StrokeKind::Outside);
+    painter.galley(pos2(disc.center().x - galley.size().x / 2.0, disc.center().y - galley.size().y / 2.0), galley, ds.primary_fg);
+    app.hit.add(hit, n, response.rect);
+    if response.clicked() {
+        let _ = app.run("ui.noraQuestions", json!({}));
     }
+}
+
+/// What the person did in her pane while it shows her questions (`questions_pane`).
+#[derive(Default)]
+pub(crate) struct QuestionsDone {
+    pub(crate) asked: Option<Intent>,
+    /// « ← »: her conversation again.
+    pub(crate) back: bool,
+    /// Her pane's ✕.
+    pub(crate) close: bool,
+}
+
+/// Her pane while it shows her questions in place of her conversation (`Assist::questions`): at its top a head « ← », « Nora vous
+/// demande (3) » and ✕; under it the questions from the first, each answered there; once none is left, that she has none (the pane
+/// goes back to her conversation a moment later: assist.rs).
+pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool, enabled: bool) -> QuestionsDone {
+    let ds = Ds::of(ui.visuals().dark_mode);
+    let mut done = QuestionsDone::default();
+    let room = ui.max_rect();
+    ui.painter().rect_filled(room, 0.0, ds.paper);
+    let count = asked.list.len();
+    // The head: back, the title with how many, close.
+    let (head, _) = ui.allocate_exact_size(vec2(room.width(), 48.0), Sense::hover());
+    let back = egui::Rect::from_center_size(pos2(head.min.x + 24.0, head.center().y), vec2(32.0, 32.0));
+    let close = egui::Rect::from_center_size(pos2(head.max.x - 24.0, head.center().y), vec2(32.0, 32.0));
+    let back_words = tl!("Back to the conversation");
+    let back_resp = ui
+        .interact(back, ui.scope_id().with("nora_questions_back"), Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(back_words);
+    back_resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, back_words));
+    let close_words = tl!("Close");
+    let close_resp = ui
+        .interact(close, ui.scope_id().with("nora_questions_close"), Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(close_words);
+    close_resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, close_words));
+    let painter = ui.painter();
+    for (resp, at) in [(&back_resp, back), (&close_resp, close)] {
+        if resp.hovered() {
+            painter.rect_filled(at, CornerRadius::same(8), ds.card);
+        }
+    }
+    let line = Stroke::new(1.7, ds.text);
+    let c = back.center();
+    painter.line_segment([c + vec2(6.0, 0.0), c + vec2(-6.0, 0.0)], line);
+    painter.line(vec![c + vec2(-1.0, -5.0), c + vec2(-6.0, 0.0), c + vec2(-1.0, 5.0)], line);
+    let c = close.center();
+    for (a, b) in [(vec2(-5.0, -5.0), vec2(5.0, 5.0)), (vec2(-5.0, 5.0), vec2(5.0, -5.0))] {
+        painter.line_segment([c + a, c + b], line);
+    }
+    let title = if count > 0 { fmt(tl!("Nora asks you ({count})"), &[("count", &count.to_string())]) } else { tl!("Nora asks you").to_string() };
+    let x = back.max.x + 8.0;
+    crate::theme::paint_clipped(painter, pos2(x, head.center().y), (close.min.x - 8.0 - x).max(0.0), &title, semibold(16.0), ds.text);
+    let said = ui.interact(
+        egui::Rect::from_min_max(pos2(x, head.min.y), pos2(close.min.x, head.max.y)),
+        ui.scope_id().with("nora_questions_title"),
+        Sense::hover(),
+    );
+    said.widget_info(|| WidgetInfo::labeled(Role::Label, true, &title));
+    painter.line_segment([pos2(head.min.x, head.max.y - 0.5), pos2(head.max.x, head.max.y - 0.5)], Stroke::new(1.0, ds.border));
+    done.back = back_resp.clicked();
+    done.close = close_resp.clicked();
+    // The questions, from the first.
+    egui::ScrollArea::vertical().id_salt("nora_questions_list").auto_shrink([false, false]).show(ui, |ui| {
+        Frame::new().inner_margin(Margin::symmetric(14, 12)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 10.0;
+            if asked.list.is_empty() {
+                note(ui, &ds, tl!("Nora has no more questions for you."));
+            }
+            // (Also with none left: what she noted of the last answer, its « Annuler », an error.)
+            done.asked = questions(ui, asked, None, show_box, enabled, false);
+        });
+    });
+    done
 }
 
 /// « Journal »: her runs, each with « Annuler » while it can be undone, and what she learnt from the mail people moved.
