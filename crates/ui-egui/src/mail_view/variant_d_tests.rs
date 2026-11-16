@@ -853,3 +853,144 @@ fn batch_screens_in_french() {
         }
     }
 }
+
+/// What a row of the list shows at its left: its round (none in a narrow list), its sender's name, its one mark (the unread dot) and,
+/// under the pointer, the round of « Traité »; and the row.
+struct Left {
+    row: egui::Rect,
+    round: Option<egui::Rect>,
+    sender: egui::Rect,
+    dot: Option<egui::Rect>,
+    /// The ring of its mailbox's colour round the round, or the stripe down its left edge where there is none.
+    stripe: Option<egui::Rect>,
+    done: Option<egui::Rect>,
+}
+
+/// The list of a hosting page's tab drawn alone, `width` wide (its rows of two lines), French: Ada's Inbox (« Toutes les boîtes »
+/// where `all`), with unread mail from « Ventes » and from a long name at its top; those two rows' left (`Left`), « Traité » with the
+/// pointer over each.
+fn narrow_list(width: f32, dark: bool, all: bool, shot: Option<&std::path::Path>) -> Vec<Left> {
+    let (mut w, _, _) = window(true);
+    if all {
+        click(&mut w, "allInboxes", 0);
+    }
+    let rows = w.state_mut().session.rows();
+    let mb = &w.state().session.mailbox;
+    let mut ids: Vec<Id> = rows.iter().filter(|r| r.bundle.is_none() && !mb.message(r.id).unwrap().pinned).map(|r| r.id).collect();
+    ids.truncate(2);
+    let now = testing::now();
+    for (i, (id, (name, address))) in ids
+        .iter()
+        .zip([("Ventes", "ventes@shop.example"), ("Ventes et administration des ventes internationales", "admin@ventes.example")])
+        .enumerate()
+    {
+        let m = w.state_mut().session.mailbox.message_mut(*id).unwrap();
+        m.from = Address::new(name, address);
+        m.read = false;
+        m.subject = "Question sur la commande".into();
+        m.date = now - 60 - i as i64 * 60;
+        m.received = m.date;
+    }
+    w.state_mut().session.mailbox_changed();
+    w.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+    let _ = w.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+    w.run_steps(3);
+    let mut app = std::mem::replace(w.state_mut(), crate::MailApp::new(mailcraft_engine::Session::empty(), crate::Services::default()));
+    app.hit = Default::default();
+    // (Styled again in the new window: its fonts and its theme.)
+    app.styled = false;
+    app.applied_theme = None;
+    let mut h = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(egui::vec2(width, 420.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut crate::MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.hit.clear();
+                let t = crate::theme::Tokens::get(&ctx);
+                ui.painter().rect_filled(ui.max_rect(), 0.0, t.surface);
+                super::list(app, ui);
+            },
+            app,
+        );
+    h.run_steps(4);
+    if let Some(path) = shot {
+        h.render().expect("drawn").save(path).expect("saved");
+    }
+    // (All but « Traité » before the pointer is over a row: its dot turns into that round, and its quick actions take its right.)
+    let mut left: Vec<Left> = ids
+        .iter()
+        .map(|id| {
+            let hit = |kind: &str| h.state().hit.rect(kind, *id);
+            let row = hit("message").unwrap_or_else(|| panic!("{width}: row {id}"));
+            Left {
+                row,
+                round: hit("messageRound"),
+                sender: hit("messageSender").unwrap(),
+                dot: hit("messageDot"),
+                stripe: hit("messageAccountColor"),
+                done: None,
+            }
+        })
+        .collect();
+    for (id, l) in ids.iter().zip(&mut left) {
+        h.hover_at(l.row.center());
+        h.run_steps(4);
+        l.done = h.state().hit.rect("doneRound", *id);
+    }
+    left
+}
+
+#[test]
+fn in_a_narrow_list_the_round_gives_its_room_back_to_the_name_and_the_one_mark_stays() {
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for width in [220.0, 260.0, 320.0] {
+        let rows = narrow_list(width, false, false, None);
+        for (i, r) in rows.iter().enumerate() {
+            let lead = r.row.min.x + super::done::D_LEAD;
+            // The one mark: the unread dot, and under the pointer the round of « Traité », in the lead column at every width.
+            assert!(r.dot.is_some_and(|d| d.max.x <= lead + 0.5), "{width} {i}: the unread dot in the lead column: {:?}", r.dot);
+            assert!(r.done.is_some_and(|d| d.max.x <= lead + 0.5), "{width} {i}: « Traité » in the lead column: {:?}", r.done);
+            match r.round {
+                // A list about 300 wide and more: the round, after the lead column, the name after it.
+                Some(round) => {
+                    assert!(width >= 300.0, "{width} {i}: no round in a list this narrow");
+                    assert!(round.min.x >= lead - 0.5 && r.sender.min.x >= round.max.x, "{width} {i}: {round:?} {:?}", r.sender);
+                }
+                // Narrower: the name starts where the round would have.
+                None => {
+                    assert!(width < 300.0, "{width} {i}: the round where there is room for it");
+                    assert!((r.sender.min.x - lead).abs() < 1.0, "{width} {i}: the name at once after the lead column: {:?}", r.sender);
+                }
+            }
+        }
+        // « Ventes » whole, and enough of the long name to read it.
+        assert!(rows[0].sender.width() >= 40.0, "{width}: « Ventes » {:?}", rows[0].sender);
+        assert!(rows[1].sender.width() >= 60.0, "{width}: the long name {:?}", rows[1].sender);
+        // In « Toutes les boîtes », the mailbox's colour: a ring round the round, else the stripe down the row's left edge.
+        for r in narrow_list(width, false, true, None) {
+            let stripe = r.stripe.expect("its mailbox's colour");
+            match r.round {
+                Some(round) => assert!(stripe.contains(round.center()), "{width}: the ring {stripe:?} round {round:?}"),
+                None => assert!(stripe.width() <= 4.0 && (stripe.min.x - r.row.min.x).abs() < 2.0, "{width}: the stripe {stripe:?}"),
+            }
+        }
+    }
+}
+
+/// The narrow list at 220 and at 320, French, light and dark, to PNG files in `NEOMAIL_BATCH_SHOTS`.
+#[test]
+#[ignore = "draws to PNG files: NEOMAIL_BATCH_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored narrow_list_screens"]
+fn narrow_list_screens_in_french() {
+    let Some(dir) = std::env::var_os("NEOMAIL_BATCH_SHOTS").map(std::path::PathBuf::from) else { return };
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for dark in [false, true] {
+        for width in [220.0, 260.0, 320.0] {
+            let name = format!("g-liste-{width}-{}.png", if dark { "sombre" } else { "clair" });
+            narrow_list(width, dark, false, Some(&dir.join(name)));
+        }
+    }
+}

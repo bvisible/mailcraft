@@ -130,6 +130,9 @@ const PREVIEW_FIRST: f32 = 15.0;
 /// With sender images on, the picture before a row's text: its radius, its middle from the
 /// row's top (level between the sender's and the subject's lines), and the room after it.
 const AVATAR_RADIUS: f32 = 16.0;
+// //// Neoffice — the room a row of variant D keeps for its sender and its subject beside its round, at the least: in a narrower
+// //// Neoffice — row there is no round (`message_row`).
+const D_ROUND_TEXT_MIN: f32 = 90.0;
 const AVATAR_Y: f32 = 29.0;
 const AVATAR_GAP: f32 = 10.0;
 
@@ -1210,8 +1213,13 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // Where mail of several accounts is listed together, a stripe of its account's colour down
     // the row's left edge (#893), left of the selection's card so that it shows on a selected row too.
     // //// Neoffice — in variant D a ring round the sender's picture says it, where pictures are shown (`pictured`, below).
-    // //// Neoffice — In a hosting page's tab every row of variant D has its round (the sender's initials, or their domain's icon).
-    let rounds = (d && crate::sender_images::hosted(app)) || app.ui.sender_images;
+    // //// Neoffice — In a hosting page's tab every row of variant D has its round (the sender's initials, or their domain's icon),
+    // //// Neoffice — where the row is wide enough for it to cost nobody their name: with it, the sender and the subject keep
+    // //// Neoffice — `D_ROUND_TEXT_MIN` (in a list of about 300 and more); in a narrower one the text has its room, the one mark stays.
+    // //// Neoffice — (Measured without the step of a message under its open conversation: the rows of a conversation all have it or not.)
+    let d_text_left = done::D_LEAD + if app.session.view.conversations { D_ARROW } else { 0.0 };
+    let round_fits = !d || one || rect.max.x - TEXT_RIGHT - (rect.min.x + d_text_left + 2.0 * AVATAR_RADIUS + AVATAR_GAP) >= D_ROUND_TEXT_MIN;
+    let rounds = ((d && crate::sender_images::hosted(app)) || app.ui.sender_images) && round_fits;
     let ringed = d && rounds;
     if let Some(color) = account_stripe(&app.session, &m).filter(|_| !ringed) {
         let stripe = Rect::from_min_max(pos2(rect.min.x + 1.0, rect.min.y + 3.0), pos2(rect.min.x + 1.0 + ACCOUNT_STRIPE, rect.max.y - 3.0));
