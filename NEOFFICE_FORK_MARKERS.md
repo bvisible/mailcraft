@@ -520,7 +520,7 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   one paste takes) and at most the engine's 4 MB; `edit.paste` reduces it to what a message holds as it does on the
   desktop. A copy stays text (`put` says no). Such a clipboard can't be read when asked: `RichClipboard::reads_on_demand`
   (`crates/ui-egui/src/lib.rs`, `true` unless a clipboard says otherwise) keeps a text's menu's Paste greyed and a
-  signature's Paste Picture away for it (`text_menu.rs`, `signatures.rs`). Tests: `paste.rs` (natively) and
+  signature's Paste Picture away for it (`text_menu.rs`, `signatures.rs`). Tests: `paste_tests.rs` (natively) and
   `crates/ui-egui/src/text_menu_tests.rs` (`a_clipboard_read_through_a_paste_alone_…`).
 - A hosting page that draws MailCraft's navigation in its own menu (Neoffice's desk at `/app/neomail`, which hands
   `chrome: "menu"` with its mailboxes; Neodesk never does, and without it nothing changes): the window draws no module
