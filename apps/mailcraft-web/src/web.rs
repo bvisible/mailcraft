@@ -411,6 +411,9 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
                 load_face(&language_ctx, file);
             }
         })),
+        // //// Neoffice — what a paste carries as HTML, for the message being written (paste.rs, neoffice-maintenance#1705):
+        // //// without it a formatted text pasted in the browser kept its text alone.
+        clipboard: crate::paste::board(),
         ..Default::default()
     }
 }

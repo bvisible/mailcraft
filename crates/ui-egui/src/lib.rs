@@ -618,6 +618,9 @@ pub struct Services {
     /// being written copies its selection as HTML and text, and pastes HTML when there is some;
     /// and the text Paste in a text's menu takes (`text_menu`). Absent in the browser and the
     /// tests: copying and pasting are then text, and a text's menu has no Paste to offer.
+    // //// Neoffice — the browser build has one for pasting (apps/mailcraft-web/src/paste.rs): the HTML a paste event
+    // //// carried, once; it can't be read when asked (`RichClipboard::reads_on_demand`), so a text's menu still has no
+    // //// Paste to offer there (neoffice-maintenance#1705).
     pub clipboard: Option<Box<dyn RichClipboard>>,
     /// Desktop, under Wayland: the window layer's clipboard shortcuts are off, so Ctrl+X, Ctrl+C
     /// and Ctrl+V arrive as key presses and are turned into cut, copy and paste here
@@ -726,6 +729,13 @@ pub trait RichClipboard {
     /// does with what the system read.
     fn text(&self) -> Option<String> {
         None
+    }
+    // //// Neoffice — whether the clipboard can be read when asked (a text's menu's Paste, a signature's Paste Picture):
+    // //// the browser build's can't (apps/mailcraft-web/src/paste.rs), it hands over only what a paste event carried,
+    // //// so those stay as they are without a clipboard (neoffice-maintenance#1705).
+    /// Whether the clipboard can be read when the interface asks for it, outside a paste the system hands over.
+    fn reads_on_demand(&self) -> bool {
+        true
     }
 }
 

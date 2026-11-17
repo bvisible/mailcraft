@@ -302,6 +302,78 @@ fn without_the_hosts_clipboard_paste_is_greyed() {
     assert_eq!(offered(&h, &paste()), Some(false));
 }
 
+// //// Neoffice — the browser build's clipboard (apps/mailcraft-web/src/paste.rs, neoffice-maintenance#1705): it hands over
+// //// the HTML a paste event carried, once, and can't be read when asked.
+/// A clipboard read through the paste the system hands over alone, as the browser's: the HTML of that paste, once.
+#[derive(Clone, Default)]
+struct PasteEventBoard(Rc<RefCell<Option<String>>>);
+
+impl RichClipboard for PasteEventBoard {
+    fn put(&self, _html: &str, _text: &str) -> Result<(), String> {
+        Err("text only".into())
+    }
+    fn html(&self) -> Option<String> {
+        self.0.borrow_mut().take()
+    }
+    fn reads_on_demand(&self) -> bool {
+        false
+    }
+}
+
+// //// Neoffice — added test (neoffice-maintenance#1705).
+#[test]
+fn a_clipboard_read_through_a_paste_alone_keeps_ctrl_vs_formatting_and_offers_no_menu_paste() {
+    let board = PasteEventBoard::default();
+    let mut a = app(None);
+    a.services.clipboard = Some(Box::new(board.clone()));
+    a.execute("mail.new", json!({"to": "maya@lumen.example"})).unwrap();
+    a.execute("compose.set", json!({"subject": "Plan for Friday", "body": "Plan for Friday"})).unwrap();
+    a.execute("compose.select", json!({"from": 0, "to": 4})).unwrap();
+    a.want_body_focus();
+    let mut h = window(a);
+    // Ctrl+V: what the paste carried as HTML, reduced to what a message holds (nothing of a script, of a style sheet's
+    // layout, or of a picture written into it).
+    *board.0.borrow_mut() = Some(
+        "<style>body { position: fixed; inset: 0 } * { z-index: 9999 }</style><b>Bold</b><script>x()</script><img src=\"data:image/png;base64,AAAA\">"
+            .into(),
+    );
+    frame(&mut h, vec![Event::Paste("Bold".into())]);
+    settle(&mut h, 2);
+    assert_eq!(plain(&h), "Bold for Friday");
+    let body = h.state().session.compose.as_ref().unwrap().body.clone();
+    assert!(body.text().paragraphs()[0].runs.iter().any(|r| r.style.bold && r.text == "Bold"), "{:?}", body.text().paragraphs()[0].runs);
+    // The next paste, without HTML of its own, is its text.
+    frame(&mut h, vec![Event::Paste("Hi ".into())]);
+    settle(&mut h, 2);
+    assert_eq!(plain(&h), "BoldHi  for Friday");
+    // The menu can't read it: Paste stays greyed, as without a clipboard.
+    let start = body_start(&h);
+    menu_at(&mut h, start);
+    assert_eq!(offered(&h, &paste()), Some(false));
+}
+
+// //// Neoffice — added test (neoffice-maintenance#1705).
+#[test]
+fn a_clipboard_read_through_a_paste_alone_offers_no_paste_picture_in_a_signature() {
+    let mut a = app(None);
+    a.services.clipboard = Some(Box::new(PasteEventBoard::default()));
+    a.execute("mail.new", json!({})).unwrap();
+    a.execute("ui.backstage", json!({"value": true, "page": "signatures"})).unwrap();
+    let mut h = window(a);
+    h.state_mut().execute("ui.dismissReminder", json!({"all": true})).unwrap();
+    settle(&mut h, 2);
+    assert!(h.query_all_by_label("Insert Picture").next().is_some(), "the signature page is open");
+    assert!(h.query_all_by_label("Paste Picture").next().is_none());
+    // A clipboard that can be read offers it.
+    let mut a = app(Some(&Board::default()));
+    a.execute("mail.new", json!({})).unwrap();
+    a.execute("ui.backstage", json!({"value": true, "page": "signatures"})).unwrap();
+    let mut h = window(a);
+    h.state_mut().execute("ui.dismissReminder", json!({"all": true})).unwrap();
+    settle(&mut h, 2);
+    assert!(h.query_all_by_label("Paste Picture").next().is_some());
+}
+
 #[test]
 fn the_subject_line_cuts_copies_and_pastes_through_its_menu() {
     let board = Board::holding("Agenda for Monday");

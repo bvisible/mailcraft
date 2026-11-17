@@ -511,6 +511,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (`saveBeforeClosing` drives an editor's Save): for a window of `kind === 'mail'` it offers leaving and staying only.
   The frame stays loaded as now (no `?host=parent`); the browser's own `beforeunload` question (`hosted/leave.rs`, the
   notes') is left as it is.
+- The browser build pastes the HTML a paste carries (neoffice-maintenance#1705): eframe's web runner reads the `text/plain`
+  of the browser's `paste` event alone, and the browser build gave the window no clipboard (`Services::clipboard` was
+  `None`), so a message, a web page or a Word document pasted into a message kept its text alone. `apps/mailcraft-web/src/paste.rs`
+  listens to the window's `paste` events in the capture phase (before eframe's own) and hands the `text/html` they carry
+  to the paste the window then makes: once, within two seconds, without the pictures written into it (`data:` addresses,
+  which the engine leaves out of a pasted HTML anyway and which would put a document with a large picture over the most
+  one paste takes) and at most the engine's 4 MB; `edit.paste` reduces it to what a message holds as it does on the
+  desktop. A copy stays text (`put` says no). Such a clipboard can't be read when asked: `RichClipboard::reads_on_demand`
+  (`crates/ui-egui/src/lib.rs`, `true` unless a clipboard says otherwise) keeps a text's menu's Paste greyed and a
+  signature's Paste Picture away for it (`text_menu.rs`, `signatures.rs`). Tests: `paste.rs` (natively) and
+  `crates/ui-egui/src/text_menu_tests.rs` (`a_clipboard_read_through_a_paste_alone_…`).
 - A hosting page that draws MailCraft's navigation in its own menu (Neoffice's desk at `/app/neomail`, which hands
   `chrome: "menu"` with its mailboxes; Neodesk never does, and without it nothing changes): the window draws no module
   bar and, in Mail, no folder pane, not even its strip, so that the message list starts at its left edge; the ribbon

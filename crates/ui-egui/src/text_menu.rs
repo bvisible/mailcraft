@@ -369,7 +369,8 @@ pub(crate) fn body(resp: &Response, selected: bool, takes: Takes) {
 /// the same frame with no input of its own, so nothing typed or clicked after the choice comes
 /// before it. Once a pass of the main window, after every window is drawn.
 pub(crate) fn carry_out(app: &mut MailApp, ctx: &Context) {
-    ctx.data_mut(|d| d.insert_temp(pasting(), app.services.clipboard.is_some()));
+    // //// Neoffice — a clipboard that can't be read when asked (the browser's, neoffice-maintenance#1705) offers no Paste.
+    ctx.data_mut(|d| d.insert_temp(pasting(), app.services.clipboard.as_ref().is_some_and(|b| b.reads_on_demand())));
     let pass = ctx.cumulative_pass_nr();
     // Input for a window that has gone since.
     if ctx.data(|d| d.get_temp::<Pending>(pending())).is_some_and(|p| p.pass.saturating_add(PENDING_PASSES) < pass) {
@@ -402,7 +403,8 @@ pub(crate) fn carry_out(app: &mut MailApp, ctx: &Context) {
 /// What Paste gives a text that takes `takes`, the clipboard read once, now: what Ctrl+V gives,
 /// and for a body the HTML beside the text ([`Captured`]).
 fn paste(app: &MailApp, takes: Takes) -> (Vec<Event>, Option<Captured>) {
-    let Some(board) = app.services.clipboard.as_ref() else { return (Vec::new(), None) };
+    // //// Neoffice — nor anything to read from (as above, neoffice-maintenance#1705).
+    let Some(board) = app.services.clipboard.as_ref().filter(|b| b.reads_on_demand()) else { return (Vec::new(), None) };
     // What the system's backend hands egui for Ctrl+V (egui-winit), from the same reads: the text
     // when there is some, line ends as `\n`; nothing for an empty one; the picture only when there
     // is no text at all. The body then reads the HTML beside the text, as for Ctrl+V.

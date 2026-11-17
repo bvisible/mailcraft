@@ -314,7 +314,8 @@ fn rich(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             let _ = app.run("signature.picture.add", json!({}));
         }
         // (Ctrl+V, or Paste in the body's menu, takes a picture alone on the clipboard too.)
-        if app.services.clipboard.is_some() && ui.button(tl!("Paste Picture")).clicked() {
+        // //// Neoffice — only from a clipboard that can be read when asked: the browser's can't (neoffice-maintenance#1705).
+        if app.services.clipboard.as_ref().is_some_and(|b| b.reads_on_demand()) && ui.button(tl!("Paste Picture")).clicked() {
             match app.services.clipboard.as_ref().and_then(|b| b.image()) {
                 Some(png) => {
                     add_picture(app, json!({"data": crate::files::base64_lite::encode(&png), "file": "picture.png"}));
