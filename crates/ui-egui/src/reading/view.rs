@@ -306,7 +306,10 @@ impl Store {
                 let doc =
                     self.entries.iter().find(|e| shows(e) && (!e.doc.responsive || e.look == Look::of(&e.doc.lists, env))).map(|e| e.doc.clone());
                 // What was kept here of this message before it changed is of no use any more.
-                self.entries.retain(|e| e.place != place || e.message.id != message.id || message.id == 0);
+                // //// Neoffice — nor of the owner's signature (remote::OWN_SIGNATURE), shown at once in several windows being
+                // //// Neoffice — written, as messages in no mailbox (0) are.
+                self.entries
+                    .retain(|e| e.place != place || e.message.id != message.id || message.id == 0 || message.id == super::remote::OWN_SIGNATURE);
                 let (kept, room) = match place {
                     Place::Pane => (self.entries.iter().filter(|e| e.place == Place::Pane).count(), KEPT),
                     Place::Window(_) | Place::Quote | Place::Preview => {

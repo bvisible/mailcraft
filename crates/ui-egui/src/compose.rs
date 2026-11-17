@@ -12,6 +12,9 @@ use crate::{MailApp, icons};
 pub(crate) mod editor;
 #[cfg(test)]
 mod font_tests;
+// //// Neoffice — the owner's own signature shows its pictures on the web (reading.rs `show_own_signature`).
+#[cfg(test)]
+mod own_signature_tests;
 #[cfg(test)]
 mod picture_tests;
 #[cfg(test)]
@@ -461,7 +464,8 @@ fn header(app: &mut MailApp, ui: &mut Ui, c: &Shown, focus_to: bool) {
 }
 
 /// An HTML signature as it goes out, under the owner's text in place of its simpler copy
-/// ([`editor::html_signature`]): read-only, its pictures on the web not fetched, with a way to
+/// ([`editor::html_signature`]): read-only, its pictures on the web fetched as it is the owner's own, with a way to
+// //// Neoffice — its pictures on the web are fetched: it is the owner's own signature (reading.rs `show_own_signature`).
 /// edit it as text instead, and back while that copy is unedited.
 fn signature(app: &mut MailApp, ui: &mut Ui) {
     let ctx = ui.ctx().clone();
@@ -503,7 +507,8 @@ fn signature(app: &mut MailApp, ui: &mut Ui) {
     let below = Rect::everything_below(top);
     ui.scope(|ui| {
         ui.set_clip_rect(ui.clip_rect().intersect(below));
-        crate::reading::show_plain_view(app, ui, &message, crate::reading::Place::Preview);
+        // //// Neoffice — its pictures on the web too: the owner's own signature (reading.rs `show_own_signature`).
+        crate::reading::show_own_signature(app, ui, &message, crate::reading::Place::Preview);
     });
     let shown = Rect::from_min_max(pos2(ui.min_rect().min.x, top), pos2(ui.min_rect().max.x, ui.cursor().min.y));
     app.hit.add("composeSignature", 0, shown);

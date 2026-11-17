@@ -70,6 +70,12 @@ const MAX_WAITING: usize = 4 * MAX_PER_MESSAGE;
 /// Most messages waiting to have their failed pictures tried again.
 const MAX_RETRIES: usize = 32;
 
+// //// Neoffice — the number the owner's own signature is shown under (reading.rs `show_own_signature`), no message's in
+// //// Neoffice — a mailbox: those count from 1 (`Mailbox::add_message`), and a message that is in none (a file opened, an
+// //// Neoffice — original that is gone) is 0 and never fetches anything.
+/// The id under which the owner's own signature is shown, whose pictures on the web are fetched with no further say-so.
+pub const OWN_SIGNATURE: Id = Id::MAX;
+
 /// Whether the pictures a message refers to on the web may be shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Access {
@@ -300,7 +306,9 @@ pub fn tick(app: &mut MailApp, ctx: &egui::Context) {
     // What was wanted a frame ago is asked for now, if its message may still show it: a say-so
     // that was taken back in between is taken back for these too.
     let waiting = std::mem::take(&mut state.waiting);
-    let allowed = |message: &Id| app.session.mailbox.messages.get(message).is_some_and(|m| access(app, m) == Access::Allowed);
+    // //// Neoffice — and the owner's own signature, which is in no mailbox (OWN_SIGNATURE): a message that has its number is
+    // //// Neoffice — judged as itself.
+    let allowed = |message: &Id| app.session.mailbox.messages.get(message).map_or(*message == OWN_SIGNATURE, |m| access(app, m) == Access::Allowed);
     let waiting: Vec<(Id, Arc<str>)> = waiting.into_iter().filter(|(message, _)| allowed(message)).collect();
     let state = &mut app.remote_pictures;
     if let Some(download) = &app.services.pictures

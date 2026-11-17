@@ -435,8 +435,32 @@ fn let_go_of_quotes(app: &MailApp, ctx: &egui::Context) {
 
 /// `m` shown read-only through the display blocks, as at `place` ([`Place::Preview`]): its own
 /// pictures only, nothing from the web.
+// //// Neoffice — kept as upstream has it, with no caller here: its two (a message being written, File › Signatures'
+// //// Neoffice — sample) show the owner's own signature, pictures on the web included (show_own_signature below).
+#[expect(dead_code, reason = "its callers show the owner's own signature through show_own_signature")]
 pub(crate) fn show_plain_view(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place) {
     view::show(app, ui, m, place, Access::Blocked);
+}
+
+// //// Neoffice — the owner's own signature, in a message being written (compose.rs) and in File › Signatures' sample
+// //// Neoffice — (signatures.rs): shown as it goes out, its pictures on the web too. A company's signature written by the
+// //// Neoffice — hosting page calls its logo and its icons by their addresses on the owner's own instance, so that every
+// //// Neoffice — recipient's program fetches them; shown as stand-ins, the owner saw a card of names in the place of its
+// //// Neoffice — pictures and took it for broken. The signature is the owner's, not a sender's: fetching its pictures
+// //// Neoffice — tells nobody that a message was opened. Same host, checks, limits and cache as a message's pictures
+// //// Neoffice — (remote.rs); `m` is one of `signatures::message_of`, under `remote::OWN_SIGNATURE`.
+/// `m`, the owner's own signature, shown read-only through the display blocks, as at `place`: its own pictures, and
+/// those it calls on the web, fetched while it is on screen, where this build can fetch anything.
+pub(crate) fn show_own_signature(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place) {
+    let ctx = ui.ctx().clone();
+    remote::tick(app, &ctx);
+    let doc = view::doc_shown(&ctx, m, place, remote::available(app), view::env_of(app, ui, place));
+    let own = m.id == remote::OWN_SIGNATURE && remote::available(app) && !doc.remote.is_empty();
+    let access = if own { Access::Allowed } else { Access::Blocked };
+    if own {
+        remote::want(app, &ctx, m, &doc);
+    }
+    view::show(app, ui, m, place, access);
 }
 
 /// Pictures the host has brought are taken in, whatever is on screen ([`remote::tick`]), and the

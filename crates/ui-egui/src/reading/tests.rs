@@ -1076,7 +1076,9 @@ fn the_owners_own_text_keeps_the_windows_colours() {
     assert!(quote.contains(&Tokens::dark().text) && !quote.contains(&Tokens::light().text), "{quote:?}");
     harness.state_mut().execute("ui.backstage", json!({"value": true, "page": "signatures"})).unwrap();
     harness.run_steps(4);
-    assert_eq!(inks(&harness, Place::Preview, 0), std::collections::HashSet::from([Tokens::dark().text]));
+    // //// Neoffice — the sample is the owner's own signature, laid out under its number (reading.rs `show_own_signature`).
+    let sample = super::remote::OWN_SIGNATURE;
+    assert_eq!(inks(&harness, Place::Preview, sample), std::collections::HashSet::from([Tokens::dark().text]));
 }
 
 /// On a light page in a dark window the body's scroll bar is the light theme's, not the dark

@@ -451,6 +451,8 @@ pub(crate) fn message_of(
     cid: impl Fn(&mailcraft_model::signature::Picture) -> String,
 ) -> mailcraft_model::Message {
     mailcraft_model::Message {
+        // //// Neoffice — the owner's own signature: its pictures on the web are shown (reading.rs `show_own_signature`).
+        id: crate::reading::remote::OWN_SIGNATURE,
         body: mailcraft_model::Body { text: String::new(), html: Some(html) },
         attachments: pictures
             .iter()
@@ -503,7 +505,8 @@ fn preview(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         egui::Frame::NONE.fill(t.surface).stroke(egui::Stroke::new(1.0, t.border)).inner_margin(10.0).show(ui, |ui| {
             // Its own scrolling area, so that what it senses (selecting its text) stays inside it.
             egui::ScrollArea::vertical().id_salt("signature_preview").max_height(320.0).auto_shrink([false, true]).show(ui, |ui| {
-                crate::reading::show_plain_view(app, ui, &message, crate::reading::Place::Preview);
+                // //// Neoffice — with its pictures on the web, as recipients see them (reading.rs `show_own_signature`).
+                crate::reading::show_own_signature(app, ui, &message, crate::reading::Place::Preview);
             });
         });
         ui.label(egui::RichText::new(tl!("In a plain-text message")).font(regular(11.5)).color(t.text_dim));
