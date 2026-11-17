@@ -462,6 +462,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbo
     let mut services = services(inbox, ctx.clone());
     // //// Neoffice — File › Signatures links to where the page's site writes these mailboxes' signatures (hosted_signatures.rs of the window).
     services.signatures_home = crate::host::signatures();
+    // //// Neoffice — and opens the page's own signature builder over the window when the page has one (window.mailcraftSignaturesOpen of the desk's NeoMail page).
+    services.signatures_open = crate::host::signatures_open();
     // //// Neoffice — File › Info's Settings of a mailbox opens where the page's site sets it up, and the page says where they are all listed (hosted_accounts.rs of the window).
     services.account_settings = accounts.iter().filter_map(|a| Some((a.email.to_lowercase(), crate::hosted::settings_page(a)?))).collect();
     services.accounts_home = crate::hosted::accounts_home(crate::host::accounts_home(), accounts);

@@ -6,7 +6,8 @@
 //! handed over came with the signatures of its site, and the tab keeps nothing between visits, so a change made here
 //! is lost when the tab closes. In place of the line that says the signatures are kept on this computer, the page says
 //! so, and links to where its site writes them ([`crate::Services::signatures_home`]), in a new tab: the window's own
-//! tab stays where it is.
+//! tab stays where it is. A page that has its own signature builder ([`crate::Services::signatures_open`]) opens it over
+//! the window instead, on the same link.
 
 use egui::Ui;
 
@@ -19,7 +20,11 @@ pub(crate) fn note(app: &MailApp, ui: &mut Ui, t: &Tokens) {
             .font(regular(11.5))
             .color(t.text_dim),
     );
-    if let Some(home) = &app.services.signatures_home {
+    if let Some(open) = &app.services.signatures_open {
+        if ui.link(tl!("Change them on the site")).clicked() {
+            open();
+        }
+    } else if let Some(home) = &app.services.signatures_home {
         ui.add(egui::Hyperlink::from_label_and_url(tl!("Change them on the site"), home).open_in_new_tab(true));
     }
 }
@@ -78,6 +83,23 @@ mod tests {
             asked.extend(harness.output().platform_output.commands.iter().filter(|c| matches!(c, egui::OutputCommand::OpenUrl(_))).cloned());
         }
         assert!(matches!(asked.as_slice(), [egui::OutputCommand::OpenUrl(open)] if open.url == HOME && open.new_tab), "{asked:?}");
+    }
+
+    #[test]
+    fn a_page_with_its_own_builder_opens_it_in_place_and_no_new_tab() {
+        let opened = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut harness = page(false, Some(HOME));
+        let counted = opened.clone();
+        harness.state_mut().services.signatures_open = Some(Box::new(move || counted.set(counted.get() + 1)));
+        harness.run_steps(2);
+        harness.get_by_label(LINK).click();
+        let mut asked = Vec::new();
+        for _ in 0..3 {
+            harness.step();
+            asked.extend(harness.output().platform_output.commands.iter().filter(|c| matches!(c, egui::OutputCommand::OpenUrl(_))).cloned());
+        }
+        assert_eq!(opened.get(), 1, "the page's builder, once");
+        assert!(asked.is_empty(), "no address opened: {asked:?}");
     }
 
     #[test]

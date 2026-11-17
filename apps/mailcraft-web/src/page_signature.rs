@@ -61,6 +61,10 @@ impl std::fmt::Debug for PagePicture {
 /// [`MAX_PAGE_PICTURES`] at most), which then take the logo's place.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct PageSignature {
+    /// A company's signature as the page writes it, every picture by its address on the web (`written_html`): when
+    /// there is one, MailCraft keeps it as an HTML signature (`signature.html`) and sends it as it is, its words and its
+    /// pictures the page's; else the rest below is reduced to MailCraft's rich text, its pictures by their bytes.
+    pub written: String,
     pub html: String,
     pub text: String,
     pub logo: Option<PagePicture>,
@@ -72,6 +76,7 @@ impl std::fmt::Debug for PageSignature {
     // Sizes, never the words: a signature holds a person's name, numbers and address, and debug output may reach a log.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PageSignature")
+            .field("written", &self.written.len())
             .field("html", &self.html.len())
             .field("text", &self.text.len())
             .field("logo", &self.logo)
@@ -129,6 +134,15 @@ pub fn layout(given: &str) -> String {
 /// A picture the engine does not take (no picture by its own bytes) leaves the signature without it, and a link it
 /// does not take leaves the picture without a link; nothing here stops the mailbox from opening.
 pub fn set_up(session: &mut Session, account: u64, email: &str, signature: &PageSignature) -> bool {
+    // A company's signature as the page writes it: an HTML signature, sent as it is (its words stand in while a message
+    // is written). One the engine refuses falls back on the signature reduced to rich text below.
+    if !signature.written.trim().is_empty() {
+        let made = json!({"name": email, "default": true, "account": account, "text": signature.text});
+        if session.run("signature.set", &made).is_ok() && session.run("signature.html", &json!({"name": email, "html": signature.written})).is_ok() {
+            return true;
+        }
+        log::warn!("the signature of a mailbox the page handed over couldn't be kept as written");
+    }
     let mut made = json!({"name": email, "default": true, "account": account});
     if !signature.html.trim().is_empty() {
         made["html"] = signature.html.clone().into();
@@ -278,6 +292,35 @@ mod tests {
         // New messages, replies and forwards start with it.
         let account = session.mailbox.account(id).unwrap();
         assert_eq!((account.signature.as_str(), account.reply_signature.as_deref()), (ME, Some(ME)));
+    }
+
+    // //// Neoffice — a company's signature as the page writes it (`written`), sent as it is.
+    #[test]
+    fn a_company_signature_written_whole_is_kept_as_it_is_and_its_pictures_stay_on_the_web() {
+        let (mut session, id) = hosted();
+        let written = r#"<table cellpadding="0"><tr><td align="right"><div style="font-weight:bold">Ada Lovelace</div></td><td><img src="https://erp.example.org/files/logo.png" alt="Example Ltd" width="120"></td></tr></table>"#;
+        let logo = picture(PIXEL, "logo.png", "Example Ltd", Some(90.0));
+        let given = PageSignature { written: written.to_string(), ..company(logo, "pictureLeft") };
+        assert!(set_up(&mut session, id, ME, &given));
+        let signature = session.mailbox.signature(ME).unwrap();
+        assert_eq!(signature.html(), Some(written), "sent as the page writes it");
+        assert!(signature.pictures().is_empty(), "its pictures are the page's, on the web");
+        assert!(signature.plain().contains("Ada Lovelace"), "{}", signature.plain());
+        let account = session.mailbox.account(id).unwrap();
+        assert_eq!((account.signature.as_str(), account.reply_signature.as_deref()), (ME, Some(ME)));
+    }
+
+    #[test]
+    fn a_written_signature_the_engine_refuses_falls_back_on_its_words_and_its_logo() {
+        let (mut session, id) = hosted();
+        let too_big = format!("<div>{}</div>", "x".repeat(mailcraft_model::signature::MAX_HTML + 1));
+        let logo = picture(PIXEL, "logo.png", "Example Ltd", Some(90.0));
+        let given = PageSignature { written: too_big, ..company(logo, "pictureLeft") };
+        assert!(set_up(&mut session, id, ME, &given));
+        let signature = session.mailbox.signature(ME).unwrap();
+        assert!(signature.html().is_none(), "not kept as written");
+        assert_eq!(signature.pictures().len(), 1, "its logo by its bytes, as before");
+        assert!(signature.plain().contains("Ada Lovelace"));
     }
 
     #[test]

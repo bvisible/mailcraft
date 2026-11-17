@@ -374,6 +374,21 @@ fn parse(host: &JsValue, signatures: bool) -> Vec<HostAccount> {
     out
 }
 
+// //// Neoffice — the page's own signature builder, opened in place from File › Signatures (hosted_signatures.rs of the window).
+/// How the page opens its signature builder over MailCraft (`mailcraftSignaturesOpen()`, on the page or on the page of
+/// the same origin that frames it: the desk's NeoMail page of Neoffice); `None` when it has none, and File › Signatures
+/// then opens the address where its site writes the signatures ([`signatures`]) in a new tab.
+pub fn signatures_open() -> Option<Box<dyn Fn()>> {
+    let (owner, open) = windows()
+        .into_iter()
+        .find_map(|w| get(&w, "mailcraftSignaturesOpen").filter(JsValue::is_function).map(|f| (w, js_sys::Function::from(f))))?;
+    Some(Box::new(move || {
+        if open.call0(&owner).is_err() {
+            log::warn!("the page's signature builder couldn't be opened");
+        }
+    }))
+}
+
 /// The signature a page gives a mailbox: its HTML (`placed_html` beside the pictures MailCraft takes, else `html`) and
 /// its text within their lengths, and a company's logo by its bytes with its place, as far as MailCraft takes them
 /// (page_signature.rs).
@@ -404,6 +419,8 @@ fn signature(given: &JsValue) -> crate::page_signature::PageSignature {
     // second time by its description (the banner's as linked words).
     let html_of = |key: &str| get(given, key).and_then(|v| v.as_string());
     PageSignature {
+        // //// Neoffice — a company's signature as the page writes it, sent as it is (page_signature.rs, `written`).
+        written: html_of("written_html").filter(|h| h.len() <= mailcraft_model::signature::MAX_HTML).unwrap_or_default(),
         html: taken_html(html_of("html"), html_of("placed_html"), &pictures),
         text: text(given, "text").chars().take(MAX_SIGNATURE_TEXT).collect(),
         layout: if placed { layout(&text(given, "layout")) } else { String::new() },

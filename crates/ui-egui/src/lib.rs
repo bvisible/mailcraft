@@ -415,6 +415,10 @@ pub struct Services {
     /// handed over are written (they come from there, and its tab keeps nothing between visits).
     /// Absent everywhere else.
     pub signatures_home: Option<String>,
+    // //// Neoffice — the hosting page's own signature builder, opened over the window from File › Signatures (hosted_signatures.rs).
+    /// Web, in a hosting page that has one (the desk's page of Neoffice): open its signature builder over the window, in
+    /// place of opening [`Services::signatures_home`] in a new tab. Absent everywhere else.
+    pub signatures_open: Option<Box<dyn Fn()>>,
     // //// Neoffice — where a hosting page's site sets up each mailbox it handed over, and where it lists them: File › Info opens them (hosted_accounts.rs).
     /// Web, in a hosting page: each mailbox it handed over (its address, lower case) → the page on its site where it
     /// is set up (its servers, its password, its name on mail); File › Info's Settings of the mailbox opens it in place
