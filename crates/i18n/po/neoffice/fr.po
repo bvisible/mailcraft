@@ -5730,3 +5730,6 @@ msgstr "Afficher les logos des entreprises des expéditeurs"
 
 msgid "Your Neoffice server asks the website of the sender's domain for its icon and keeps it a week, for everyone of your company. That site learns that your company's server asked for its icon, not who you are nor which message. Never for free mail services (Gmail, Outlook.com, Bluewin…), whose senders keep their initials, never for Junk E-mail, and only for the people you know or whose pictures you chose to download."
 msgstr "Votre serveur Neoffice demande au site web du domaine de l’expéditeur son icône et la conserve une semaine, pour toute votre entreprise. Ce site apprend que le serveur de votre entreprise a demandé son icône, sans savoir qui vous êtes ni quel message. Jamais pour les services de messagerie gratuits (Gmail, Outlook.com, Bluewin…), dont les expéditeurs gardent leurs initiales, jamais pour le courrier indésirable, et seulement pour les personnes que vous connaissez ou dont vous avez choisi de télécharger les images."
+
+msgid "This kind of file doesn't open in an editor here."
+msgstr "Ce type de fichier ne s’ouvre pas dans un éditeur ici."

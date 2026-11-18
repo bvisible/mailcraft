@@ -476,6 +476,24 @@ pub fn attachments() -> Vec<mailcraft_ui_egui::host_attachments::Action> {
     mailcraft_ui_egui::host_attachments::actions(&words)
 }
 
+/// The extensions the page's editors open at once (`editors`: lower-case words such as `"xlsx"`, `"csv"`), for
+/// « Ouvrir dans NeoGrille » (host_attachments.rs `opener`); `None` where it doesn't say, an array of anything else read
+/// as saying none.
+pub fn editors() -> Option<Vec<String>> {
+    let list = handed().and_then(|host| get(&host, "editors"))?;
+    if !js_sys::Array::is_array(&list) {
+        return None;
+    }
+    let list = js_sys::Array::from(&list);
+    let words = list.iter().take(32).filter_map(|word| word.as_string());
+    Some(
+        words
+            .filter(|word| (1..=8).contains(&word.len()) && word.chars().all(|c| c.is_ascii_alphanumeric()))
+            .map(|w| w.to_ascii_lowercase())
+            .collect(),
+    )
+}
+
 // //// Neoffice — the modules a page draws itself, in the window's place (Neodesk's Synk: host_modules.rs of the window).
 /// The modules the page draws itself (`modules`: `[{id, title, icon?}]`), as JSON for the window to sort out
 /// (mailcraft_ui_egui::host_modules::Modules::new); none when it hands none.

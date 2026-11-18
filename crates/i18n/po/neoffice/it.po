@@ -4761,3 +4761,6 @@ msgstr "Mostra i loghi delle aziende dei mittenti"
 
 msgid "Your Neoffice server asks the website of the sender's domain for its icon and keeps it a week, for everyone of your company. That site learns that your company's server asked for its icon, not who you are nor which message. Never for free mail services (Gmail, Outlook.com, Bluewin…), whose senders keep their initials, never for Junk E-mail, and only for the people you know or whose pictures you chose to download."
 msgstr "Il tuo server Neoffice chiede al sito web del dominio del mittente la sua icona e la conserva per una settimana, per tutta la tua azienda. Quel sito apprende che il server della tua azienda ha chiesto la sua icona, non chi sei né quale messaggio. Mai per i servizi di posta gratuiti (Gmail, Outlook.com, Bluewin…), i cui mittenti mantengono le iniziali, mai per la Posta indesiderata, e solo per le persone che conosci o le cui immagini hai scelto di scaricare."
+
+msgid "This kind of file doesn't open in an editor here."
+msgstr "Questo tipo di file non si può aprire in un editor qui."

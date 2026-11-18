@@ -17845,6 +17845,11 @@ msgid "This kind of account can't be sent and received on the phone yet."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/host_attachments.rs
+msgid "This kind of file doesn't open in an editor here."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/view.rs
 #, fuzzy
 msgid "This link goes somewhere other than its text says."

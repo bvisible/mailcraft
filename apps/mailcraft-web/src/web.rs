@@ -512,6 +512,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbo
         services.attachments = Some(mailcraft_ui_egui::host_attachments::Attachments {
             mailboxes: accounts.iter().map(|a| a.email.clone()).collect(),
             actions: offered,
+            // //// Neoffice — the extensions the page's editors open at once (« Ouvrir dans NeoGrille »), when it says.
+            editors: crate::host::editors(),
             post: Box::new(crate::host_menu::tell),
         });
     }

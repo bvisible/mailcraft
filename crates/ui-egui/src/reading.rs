@@ -777,12 +777,22 @@ fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
             // override can make `fdp.exe` read as `exe.pdf`.
             let shown = mailcraft_engine::opening::file_name(&a.name);
             let name_w = ui.ctx().fonts_mut(|f| f.layout_no_wrap(shown.clone(), regular(12.0), t.text).size().x).min(220.0);
+            // //// Neoffice — « Ouvrir dans NeoGrille », the first action on a file the hosting page's editors open
+            // //// Neoffice — (host_attachments.rs `opener`): its editor's name on the chip, between the file and its `▾`.
+            let opener = if m.id != 0 { crate::host_attachments::opener(app, m, a) } else { None };
+            let open_w = opener
+                .map_or(0.0, |editor| ui.ctx().fonts_mut(|f| f.layout_no_wrap(editor.product().to_string(), semibold(11.5), t.text).size().x) + 20.0);
             // The chip, and at its right end a `▾` that opens the menu a right-click opens (#785).
-            let (r, _) = ui.allocate_exact_size(vec2(name_w + 44.0 + crate::ribbon::DROP_W, 38.0), Sense::hover());
+            // //// Neoffice — (and before it its editor's part, `open_w` wide.)
+            let (r, _) = ui.allocate_exact_size(vec2(name_w + 44.0 + open_w + crate::ribbon::DROP_W, 38.0), Sense::hover());
             let drop_rect = Rect::from_min_max(pos2(r.max.x - crate::ribbon::DROP_W, r.min.y), r.max);
-            let main_rect = Rect::from_min_max(r.min, pos2(drop_rect.min.x, r.max.y));
+            // //// Neoffice — (the editor's part, before the `▾`.)
+            let open_rect = Rect::from_min_max(pos2(drop_rect.min.x - open_w, r.min.y), pos2(drop_rect.min.x, r.max.y));
+            let main_rect = Rect::from_min_max(r.min, pos2(open_rect.min.x, r.max.y));
             let filed = m.id != 0;
             let resp = ui.interact(main_rect, ui.make_persistent_id(("attachment", m.id, index)), Sense::click());
+            // //// Neoffice — the editor's part before the `▾`: the keyboard goes from one to the next as the eye does.
+            let open = opener.map(|_| ui.interact(open_rect, ui.make_persistent_id(("attachmentEditor", m.id, index)), Sense::click()));
             let drop_sense = if filed { Sense::click() } else { Sense::hover() };
             let drop = ui.interact(drop_rect, ui.make_persistent_id(("attachmentMenu", m.id, index)), drop_sense);
             app.hit.add("attachment", attachment_key(m.id, index), main_rect);
@@ -799,6 +809,25 @@ fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, t: &Tokens) {
             }
             let divider = ui.painter().round_to_pixel_center(drop_rect.min.x);
             ui.painter().line_segment([pos2(divider, r.min.y + 7.0), pos2(divider, r.max.y - 7.0)], Stroke::new(1.0, t.border));
+            // //// Neoffice — its editor's name, a click opens the file in it (host_attachments.rs `IN_EDITOR`).
+            if let (Some(editor), Some(open)) = (opener, open) {
+                let key = attachment_key(m.id, index);
+                app.hit.add("attachmentEditor", key, open_rect);
+                let label = crate::host_attachments::open_label(editor);
+                open.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label));
+                if open.hovered() || open.is_pointer_button_down_on() {
+                    ui.painter().rect_filled(open_rect.shrink(1.0), 0.0, if open.is_pointer_button_down_on() { t.pressed } else { t.hover });
+                }
+                if open.has_focus() {
+                    ui.painter().rect_stroke(open_rect.shrink(1.0), 0.0, Stroke::new(2.0, t.focus_ring), egui::StrokeKind::Inside);
+                }
+                let line = ui.painter().round_to_pixel_center(open_rect.min.x);
+                ui.painter().line_segment([pos2(line, r.min.y + 7.0), pos2(line, r.max.y - 7.0)], Stroke::new(1.0, t.border));
+                ui.painter().text(open_rect.center(), Align2::CENTER_CENTER, editor.product(), semibold(11.5), t.accent);
+                if open.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(label).clicked() {
+                    let _ = app.run(crate::host_attachments::IN_EDITOR, json!({"id": m.id, "index": index}));
+                }
+            }
             crate::ribbon::drop_mark(ui, drop_rect.center(), if filed { t.icon } else { t.text_disabled });
             if resp.has_focus() {
                 ui.painter().rect_stroke(main_rect.shrink(1.0), left, Stroke::new(2.0, t.focus_ring), egui::StrokeKind::Inside);
@@ -858,6 +887,12 @@ pub(crate) fn attachment_key(id: u64, index: usize) -> u64 {
 /// An attachment's menu, the same from a right-click on its chip and from the chip's `▾` (#785).
 /// Each entry is greyed when its command can't run, and the command keeps its own refusals.
 pub(super) fn attachment_menu(ui: &mut Ui, app: &mut MailApp, id: u64, index: usize) {
+    // //// Neoffice — « Ouvrir dans NeoGrille » first, where the hosting page opens the file at once (host_attachments.rs).
+    if let Some(m) = app.session.mailbox.message(id).cloned()
+        && let Some(a) = m.attachments.get(index)
+    {
+        crate::host_attachments::first(ui, app, &m, index, a);
+    }
     if crate::attachment_preview::available(app, id, index) && ui.button(tl!("Preview Attachment")).clicked() {
         if let Err(error) = crate::attachment_preview::open(app, ui.ctx().viewport_id(), id, index) {
             app.status(error);

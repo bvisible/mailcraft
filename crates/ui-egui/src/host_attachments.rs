@@ -11,6 +11,12 @@
 //! - Open in NeoDoc, NeoGrille, NeoPrés or NeoPDF ([`IN_EDITOR`]), for a `.docx`, `.xlsx`, `.pptx` or `.pdf` only
 //!   ([`editor`]): the page saves it in its Drive and opens it there in that editor.
 //!
+//! A page that says `open` (18.11.2026) has « Ouvrir dans NeoGrille » as the first action on such a file instead: on the
+//! chip itself, and first in its menu, before Preview and Open ([`opener`]). One click, no folder to pick: the page copies
+//! the file into the person's own Drive and opens it in its editor, the formats the editor imports included (a `.xls`, a
+//! `.csv`, a `.odt`…) where the page says its editors open them (`editors`, the extensions; without the word, the four it
+//! writes back).
+//!
 //! A click hands the page the message's mailbox and its id on the server, and what the window knows of the file: its
 //! rank among the message's attachments and how many the window sees, its name, size, type and Content-ID
 //! ([`message`]). Never its bytes: the page's server reads the message itself, under its own rules of who may, and finds
@@ -53,6 +59,8 @@ pub enum Action {
     Scan,
     /// Save it in its Drive and open it in its editor.
     Edit,
+    /// Open it in its editor at once: the page copies it into the person's own Drive (no folder to pick).
+    Open,
 }
 
 impl Action {
@@ -62,12 +70,13 @@ impl Action {
             Action::Drive => "drive",
             Action::Scan => "scan",
             Action::Edit => "edit",
+            Action::Open => "open",
         }
     }
 
     /// The action the handover's word names: `None` for any other word.
     pub fn from_code(code: &str) -> Option<Action> {
-        [Action::Drive, Action::Scan, Action::Edit].into_iter().find(|a| a.code() == code)
+        ALL.into_iter().find(|a| a.code() == code)
     }
 
     /// The action of the window's command `id`.
@@ -81,10 +90,13 @@ impl Action {
     }
 }
 
-/// What a handover's words offer (`attachments: ["drive", "scan", "edit"]`): each once, in the window's order, a word
-/// the window doesn't know left out.
+/// Every action, in the window's order.
+const ALL: [Action; 4] = [Action::Drive, Action::Scan, Action::Edit, Action::Open];
+
+/// What a handover's words offer (`attachments: ["drive", "scan", "edit", "open"]`): each once, in the window's order, a
+/// word the window doesn't know left out.
 pub fn actions(words: &[String]) -> Vec<Action> {
-    [Action::Drive, Action::Scan, Action::Edit].into_iter().filter(|action| words.iter().any(|word| word == action.code())).collect()
+    ALL.into_iter().filter(|action| words.iter().any(|word| word == action.code())).collect()
 }
 
 /// Whether `id` is one of the window's commands for an attachment handed to the page.
@@ -119,6 +131,9 @@ pub struct Attachments {
     pub mailboxes: Vec<String>,
     /// What it offers to do with an attachment.
     pub actions: Vec<Action>,
+    /// The extensions its editors open through [`Action::Open`] (lower case, no dot), the formats they import
+    /// included; `None` where the page doesn't say: the four they write back ([`editor`]).
+    pub editors: Option<Vec<String>>,
     /// Hand the page an attachment ([`message`]).
     pub post: Box<dyn Fn(&Value)>,
 }
@@ -149,6 +164,33 @@ pub fn editor(name: &str) -> Option<Editor> {
         "pdf" => Some(Editor::Pdf),
         _ => None,
     }
+}
+
+/// The editor that opens a file of `extension`, the formats it imports included (the page's Drive saves the work as a
+/// new file of the editor's own type): `None` for any other kind of file.
+fn opens(extension: &str) -> Option<Editor> {
+    match extension {
+        "docx" | "doc" | "odt" | "rtf" => Some(Editor::Document),
+        "xlsx" | "xls" | "xlsb" | "ods" | "csv" | "tsv" => Some(Editor::Spreadsheet),
+        "pptx" => Some(Editor::Presentation),
+        "pdf" => Some(Editor::Pdf),
+        _ => None,
+    }
+}
+
+/// The editor « Ouvrir dans » opens the attachment `a` of `m` in at once ([`Action::Open`]): where the page offers it,
+/// for a message the page may be handed, a file of a type its editors open (its `editors`); `None` otherwise.
+pub(crate) fn opener(app: &MailApp, m: &Message, a: &Attachment) -> Option<Editor> {
+    let host = app.services.attachments.as_ref()?;
+    if !host.actions.contains(&Action::Open) || target(app, m.id).is_err() {
+        return None;
+    }
+    let found = extension(&a.name)?;
+    let listed = match &host.editors {
+        Some(editors) => editors.iter().any(|e| e.eq_ignore_ascii_case(&found)),
+        None => editor(&a.name).is_some(),
+    };
+    listed.then(|| opens(&found)).flatten()
 }
 
 /// The message to the page for the attachment `a`, the `index`-th of the `count` attachments of the message of the
@@ -198,7 +240,7 @@ pub(crate) fn target(app: &MailApp, id: Id) -> Result<(String, String), String> 
 /// command's params ([`run`]).
 pub(crate) fn enabled(app: &MailApp, id: &str) -> bool {
     let offered = app.services.attachments.as_ref().map(|host| host.actions.as_slice()).unwrap_or_default();
-    Action::of_command(id).is_some_and(|action| offered.contains(&action))
+    Action::of_command(id).is_some_and(|action| offered.contains(&action) || (action == Action::Edit && offered.contains(&Action::Open)))
 }
 
 /// Hand the page the attachment `{"id": message, "index": n}` names (the message in the reading pane without `id`), for
@@ -208,6 +250,8 @@ pub(crate) fn run(app: &MailApp, id: &str, params: &Value) -> Result<Value, Stri
     let Some(host) = app.services.attachments.as_ref() else {
         return Err(tl!("Nothing here takes an attachment.").to_string());
     };
+    // (Open in its editor: at once where the page says `open`, else through the page's folder picker.)
+    let action = if action == Action::Edit && host.actions.contains(&Action::Open) { Action::Open } else { action };
     if !host.actions.contains(&action) {
         return Err(tl!("The page doesn't offer this for an attachment.").to_string());
     }
@@ -224,6 +268,9 @@ pub(crate) fn run(app: &MailApp, id: &str, params: &Value) -> Result<Value, Stri
     match action {
         Action::Scan if !scannable(&a.name, &a.mime) => return Err(tl!("Only a PDF or a picture goes to the scanned documents.").to_string()),
         Action::Edit if editor(&a.name).is_none() => return Err(tl!("Only a .docx, .xlsx, .pptx or .pdf file opens in an editor.").to_string()),
+        Action::Open if app.session.mailbox.message(message_id).is_none_or(|m| opener(app, m, a).is_none()) => {
+            return Err(tl!("This kind of file doesn't open in an editor here.").to_string());
+        }
         _ => {}
     }
     (host.post)(&message(action, &account, &email, index, attachments.len(), a));
@@ -256,10 +303,36 @@ pub(crate) fn entries(app: &MailApp, m: &Message, a: &Attachment) -> Vec<Entry> 
     if offers(Action::Scan) && scannable(&a.name, &a.mime) {
         out.push(Entry::Scan);
     }
-    if let Some(editor) = editor(&a.name).filter(|_| offers(Action::Edit)) {
+    // (Where the page opens it at once, that comes first of the menu instead: `first`.)
+    if let Some(editor) = editor(&a.name).filter(|_| offers(Action::Edit) && !offers(Action::Open)) {
         out.push(Entry::Edit(editor));
     }
     out
+}
+
+/// The label of « Ouvrir dans » for `editor`: each whole, for the catalogue; a product's name, which no language
+/// translates.
+pub(crate) fn open_label(editor: Editor) -> &'static str {
+    match editor {
+        Editor::Document => tl!("Open in NeoDoc"),
+        Editor::Spreadsheet => tl!("Open in NeoGrille"),
+        Editor::Presentation => tl!("Open in NeoPrés"),
+        Editor::Pdf => tl!("Open in NeoPDF"),
+    }
+}
+
+/// « Ouvrir dans NeoGrille », the first entry of the menu of the attachment `a`, the `index`-th of `m`, then a
+/// separator, where the page opens it at once ([`opener`]); nothing otherwise.
+pub(crate) fn first(ui: &mut egui::Ui, app: &mut MailApp, m: &Message, index: usize, a: &Attachment) {
+    let Some(editor) = opener(app, m, a) else { return };
+    let params = json!({"id": m.id, "index": index});
+    match editor {
+        Editor::Document => crate::widgets::mi(ui, app, "Open in NeoDoc", IN_EDITOR, params),
+        Editor::Spreadsheet => crate::widgets::mi(ui, app, "Open in NeoGrille", IN_EDITOR, params),
+        Editor::Presentation => crate::widgets::mi(ui, app, "Open in NeoPrés", IN_EDITOR, params),
+        Editor::Pdf => crate::widgets::mi(ui, app, "Open in NeoPDF", IN_EDITOR, params),
+    }
+    ui.separator();
 }
 
 /// The [`entries`] of the menu of the attachment `a`, the `index`-th of `m`, between two separators.
