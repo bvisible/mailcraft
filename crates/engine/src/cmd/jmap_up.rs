@@ -6,7 +6,9 @@
 //!
 //! What goes up is the difference between each message of a JMAP account and what its server last said
 //! of it ([`ServerMessage`]): the marks that differ (read, flagged, replied, forwarded: `$seen`,
-//! `$flagged`, `$answered`, `$forwarded`) as one change of the message, a different folder as a move. What
+//! `$flagged`, `$answered`, `$forwarded`) and the categories (each a keyword of its own:
+//! [`mailcraft_model::sync::category_keyword`]; one too long for a keyword stays here only) as one change of
+//! the message, a different folder as a move. What
 //! can't be worked out by comparing, a delete for good, waits in the mailbox's queue, and nothing else does:
 //! a crash between a change here and its going up loses nothing, as the difference is still there.
 //!
@@ -29,7 +31,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use mailcraft_model::sync::{JmapChange, JmapChangeDone, JmapOutcome, ServerMessage};
+use mailcraft_model::sync::{
+    CategoriesUp, JmapChange, JmapChangeDone, JmapOutcome, ServerMessage, category_keyword, kept_categories, merge_categories, same_category,
+};
 use mailcraft_model::{FlagStatus, Id, Mailbox, Message, Queued};
 
 use super::jmap_down::plausible_id;
@@ -116,10 +120,18 @@ fn marks_of(m: &Message, server: &ServerMessage) -> Option<JmapChange> {
     let flag = (flagged != (server.flag == FlagStatus::Flagged)).then_some(flagged);
     let answered = (m.answered != server.answered).then_some(m.answered);
     let forwarded = (m.forwarded != server.forwarded).then_some(m.forwarded);
-    if read.is_none() && flag.is_none() && answered.is_none() && forwarded.is_none() {
+    // The categories a server can keep (each a keyword), whatever their order and case.
+    let categories = (!same_categories(&kept_categories(&m.categories), &kept_categories(&server.categories)))
+        .then(|| CategoriesUp { synced: server.categories.clone(), here: m.categories.clone() });
+    if read.is_none() && flag.is_none() && answered.is_none() && forwarded.is_none() && categories.is_none() {
         return None;
     }
-    Some(JmapChange::Keywords { message: m.id, id: server.id.clone(), read, flagged: flag, answered, forwarded })
+    Some(JmapChange::Keywords { message: m.id, id: server.id.clone(), read, flagged: flag, answered, forwarded, categories })
+}
+
+/// Whether two lists of categories hold the same names, whatever their order and case.
+fn same_categories(a: &[String], b: &[String]) -> bool {
+    a.iter().all(|x| b.iter().any(|y| same_category(x, y))) && b.iter().all(|y| a.iter().any(|x| same_category(x, y)))
 }
 
 /// A kind of change, for saying refusals once per run and kind.
@@ -128,6 +140,7 @@ enum Kind {
     Read(bool),
     Flag,
     Replied,
+    Categories,
     Several,
     Move,
     Delete,
@@ -200,6 +213,7 @@ impl Refusals {
                     Kind::Read(false) => format!("mark {what} as unread"),
                     Kind::Flag => format!("change the flag of {what}"),
                     Kind::Replied => format!("change the replied or forwarded mark of {what}"),
+                    Kind::Categories => format!("change the categories of {what}"),
                     Kind::Several => format!("change {what}"),
                     Kind::Move => format!("move {what}{to}"),
                     // //// Neoffice — "permanently", as upstream words a delete for good in `graph_up.rs` since v0.10.0.
@@ -237,13 +251,14 @@ fn mine<'m>(mb: &'m mut Mailbox, account: Id, message: Id, id: &str) -> Option<&
 pub fn message_done(mb: &mut Mailbox, account: Id, done: &JmapChangeDone, refusals: &mut Refusals) -> bool {
     let why = Why::of(&done.outcome);
     match &done.change {
-        JmapChange::Keywords { message, id, read, flagged, answered, forwarded } => {
-            let marks = [read.is_some(), flagged.is_some(), answered.is_some() || forwarded.is_some()];
+        JmapChange::Keywords { message, id, read, flagged, answered, forwarded, categories } => {
+            let marks = [read.is_some(), flagged.is_some(), answered.is_some() || forwarded.is_some(), categories.is_some()];
             let kind = match marks {
                 _ if marks.iter().filter(|p| **p).count() > 1 => Kind::Several,
                 [true, ..] => Kind::Read(read.unwrap_or_default()),
-                [_, true, _] => Kind::Flag,
-                _ => Kind::Replied,
+                [_, true, ..] => Kind::Flag,
+                [_, _, true, _] => Kind::Replied,
+                _ => Kind::Categories,
             };
             let Some(m) = mine(mb, account, *message, id) else { return false };
             let Some(mut server) = m.server.clone() else { return false };
@@ -261,6 +276,10 @@ pub fn message_done(mb: &mut Mailbox, account: Id, done: &JmapChangeDone, refusa
                     if let Some(forwarded) = forwarded {
                         server.forwarded = *forwarded;
                     }
+                    // What was added and taken away here, on the server's list as it was then: those it can keep.
+                    if let Some(up) = categories {
+                        server.categories = merge_categories(&up.synced, &kept_categories(&up.here), &server.categories);
+                    }
                 }
                 _ => {
                     // Put back to how the server has it, but for what was changed again here.
@@ -275,6 +294,14 @@ pub fn message_done(mb: &mut Mailbox, account: Id, done: &JmapChangeDone, refusa
                     }
                     if forwarded.is_some_and(|forwarded| m.forwarded == forwarded) {
                         m.forwarded = server.forwarded;
+                    }
+                    // (A name too long for a keyword, which never went, stays: it was this computer's alone.)
+                    if let Some(up) = categories.as_ref().filter(|up| m.categories == up.here) {
+                        let mut back = server.categories.clone();
+                        let alone: Vec<String> =
+                            up.here.iter().filter(|c| category_keyword(c).is_none() && !back.iter().any(|b| same_category(b, c))).cloned().collect();
+                        back.extend(alone);
+                        m.categories = back;
                     }
                     server.gone |= why == Some(Why::Gone);
                     let subject = m.subject.clone();
@@ -383,6 +410,8 @@ fn put_back(mb: &mut Mailbox, account: Id, id: &str, kept: Option<Box<Message>>,
     let Some(folder) = mb.folder_by_server(account, &server.folder) else { return subject };
     (m.folder, m.uid, m.synced) = (folder, 0, None);
     (m.read, m.flag, m.answered, m.forwarded) = (server.read, server.flag, server.answered, server.forwarded);
+    // (Its categories too, as the server has them: those it keeps are keywords.)
+    m.categories = server.categories.clone();
     m.server = Some(ServerMessage { gone: false, ..server });
     if mb.add_message(m).is_ok() {
         present.insert(id.to_string());

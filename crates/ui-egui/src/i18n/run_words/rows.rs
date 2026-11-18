@@ -217,6 +217,8 @@ pub(super) static ROWS: &[Row] = &[
     row(CHANGES, Doing, run_word!("change the flag of {n} messages"), &[]),
     row(CHANGES, Doing, run_word!("change the replied or forwarded mark of '{subject}'"), &[]),
     row(CHANGES, Doing, run_word!("change the replied or forwarded mark of {n} messages"), &[]),
+    row(CHANGES, Doing, run_word!("change the categories of '{subject}'"), &[]),
+    row(CHANGES, Doing, run_word!("change the categories of {n} messages"), &[]),
     row(CHANGES, Doing, run_word!("change '{subject}'"), &[]),
     row(CHANGES, Doing, run_word!("change {n} messages"), &[]),
     row(CHANGES, Doing, run_word!("move '{subject}'"), &[]),

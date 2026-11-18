@@ -32,8 +32,13 @@ fn named(name: &str, email: &str) -> Address {
 #[test]
 fn the_marks_are_five_keywords_in_any_case_and_no_other() {
     let all = json!({"$seen": true, "$FLAGGED": true, "$Answered": true, "$forwarded": true, "$draft": true, "$junk": true, "work": true});
-    assert_eq!(Marks::of(Some(&all)), Marks { read: true, flagged: true, answered: true, forwarded: true, draft: true });
+    assert_eq!(Marks::of(Some(&all)), Marks { read: true, flagged: true, answered: true, forwarded: true, draft: true, categories: Vec::new() });
     assert_eq!(Marks::of(Some(&json!({"$seen": true, "work": true}))), Marks { read: true, ..Default::default() });
+    // A category is a keyword of its own (neoffice-maintenance#2487); one not `true`, or no category's, is none.
+    let kept = json!({"$cat:=52ouge": true, "$CAT:=56ERT": true, "$cat:=42leu": false, "$cat:=zz": true, "$cat:rouge": true});
+    let mut categories = Marks::of(Some(&kept)).categories;
+    categories.sort();
+    assert_eq!(categories, ["Rouge", "Vert"]);
     for none in [
         json!({"$seen": false, "$flagged": null, "$answered": "true", "$draft": 1}),
         json!({}),
@@ -308,7 +313,7 @@ fn the_header_of_a_server_that_names_by_place_is_read_whole() {
 
 #[test]
 fn the_rest_of_an_email_is_read_as_the_server_says_it() {
-    let marks = Marks { read: true, flagged: true, answered: true, forwarded: false, draft: true };
+    let marks = Marks { read: true, flagged: true, answered: true, forwarded: false, draft: true, categories: Vec::new() };
     let entry = json!({
         "preview": "  A preview\nof the\tmessage   with   gaps ", "size": 4321, "hasAttachment": true,
         "receivedAt": "2026-10-15T07:30:00Z", "headers": fields(&[("Subject", " Hi")]),

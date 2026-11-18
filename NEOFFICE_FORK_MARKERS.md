@@ -302,7 +302,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   recipes (`nora/recipes.rs`) stand in place of the panel's hint under its greeting, in its colours and families, and the
   microphone stays off (`dictation = false`: neither `/neomail` nor Neodesk's shell carries a recording to
   `nora.api.stt.transcribe`). Its words are in `crates/i18n/po/neoffice/` in the five languages (`assist_tests.rs` holds
-  them there).
+  them there). Since craft-libs `4876ba6e` the panel offers New conversation over the flow of « Trier avec Nora », which it
+  draws in the empty conversation (`new_leaves_page`): it leaves the flow and her questions for a new conversation, as does
+  the New conversation of her questions' head (`nora/sorting_view.rs`). Where the window is too narrow for the list at its
+  width (240 to 380), the pane at its own and a readable message (380), below 1090 with the widths a window starts with,
+  the pane stands in the place of the message being read, as Spark has it, and the message comes back when it closes or
+  the window widens; a message being written stays beside it (`mail_view.rs`: `pane_in_message_place`, `reading_at_right`,
+  `Beside::Pane`, `MessageRoom::message`, and the hits `folderPane`, `mailList` and `readingPane` of what stands beside
+  what; tests in `nora/pane_tests.rs`).
 - In a hosting page's tab (nothing kept here, `Session::keeps_local` false): the mark at the top left of the title bar is
   Neoffice's icon (`crates/ui-egui/src/host_mark.rs`, the hunk in `chrome.rs`), `assets/neoffice/neoffice-icon-64.png`,
   the design system's `assets/logo/favicon.png` (`bvisible/neoffice-design-system`) copied byte for byte, and the browser
@@ -368,7 +375,9 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   « Traité » or new mail in its Inbox: `sorting::priority_looks`), of which the list shows what is in the Inbox here and not
   answered (`$answered`), the newest three, « Afficher tout (N) », each with its reason under the pointer; each keeps its row
   in the list too. A row's ⚡ (its quick actions) puts it in or out (`priority_set`); the server's 417 for mail Nora hasn't
-  read is said in the status bar. Both methods are in `nora::SORTING_METHODS`, the web transport's closed list.
+  read is said in the status bar; a search's results have the Inbox's quick actions too, the ⚡ of an Inbox's message among
+  them, its mailbox's « Prioritaire » read for them (`priority::searched`, `bolt_of`, `done::quick_offered`). Both methods
+  are in `nora::SORTING_METHODS`, the web transport's closed list.
   « Nouveaux expéditeurs (N) › » over the list (`mail_view/new_senders.rs`): who wrote to the Inbox(es) in view in the last
   14 days, in neither Junk E-mail list of the account, not a contact, never written to (Sent Items here: the newest of it,
   a JMAP account's window); their cards say who, how many and the last subject, « Accepter » (`junk.neverBlockSender`) and
@@ -637,6 +646,16 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   in `lib.rs`, the Settings button's and Add Account's hunks in `backstage.rs`). The browser's part:
   `apps/mailcraft-web/src/host.rs` (`settings`, `accounts_home`, the contract in its comment), `hosted.rs`
   (`settings_page`, `accounts_home`, and their tests) and `web.rs`. A window without a hosting page keeps its own.
+- A message's categories kept on a JMAP account's server, as keywords of their own (`$cat:` and the name, escaped:
+  `crates/model/src/sync/category_keywords.rs` and its tests; `JmapChange::Keywords::categories` in `sync/jmap.rs`, its
+  module in `sync.rs`, and `categories: None` in upstream's tests that build that change: `sync/jmap_tests.rs`,
+  `engine/src/cmd/jmap_flag_tests.rs`, `ui-egui/src/jmap_going_up_tests.rs`): sent with the message's marks by the fork's
+  `cmd/jmap_up.rs` and `crates/jmap-fork` (`mail/up.rs`), read from its keywords (`mail/message.rs`) and taken in by
+  `cmd/jmap_down.rs`, so that a hosting page's tab, which keeps nothing of its own, finds them again at the next visit
+  (neoffice-maintenance#2487). A refusal of it is said as the others are (`run_words` rows).
+- Junk E-mail Options in the interface's language (`crates/ui-egui/src/forms/junk.rs`): its pages' names and what each is
+  for are literals of `tl!` (the scan of the interface's strings took none of upstream's `tl!(title(page))`), its tabs as
+  wide as their names and named to a screen reader (tests in `forms/junk_words_tests.rs`).
 - This file.
 
 ## What cannot carry a comment
@@ -647,7 +666,8 @@ the marker check does not know as one that takes comments:
 - `Cargo.lock`: the `mailcraft-jmap-fork` package (the workspace's version, with its dependencies on
   `mailcraft-mime-model`, `mailcraft-model`, `mailcraft-time`, `base64`, `log`, `serde_json` and `thiserror`, and `proptest`
   for its tests), and the dependencies on it of the web app and, for its tests, the command line; the `craft-nora` and
-  `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision, `32473870` as the editors'; `serde`,
+  `craft-nora-ui` packages from Neoffice's craft-libs fork (git, a pinned revision, `4876ba6e`, the editors' `32473870` and
+  the panel's `new_leaves_page`; `serde`,
   `serde_json` and `egui` under them, the workspace's egui 0.37, and the browser's `js-sys`, `wasm-bindgen`,
   `wasm-bindgen-futures` and `web-sys` of the panel's microphone, already in the tree) and the dependencies of
   `mailcraft-ui-egui` on them (Nora's pane); and no `mailcraft-jmap` package of upstream's (`crates/jmap` is left out of

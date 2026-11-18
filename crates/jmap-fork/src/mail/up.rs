@@ -9,7 +9,9 @@
 //! server after the changes.
 //!
 //! - **What is sent.** A message's marks (`$seen`, `$flagged`, `$answered`, `$forwarded`) as patches of
-//!   `keywords`, only the ones that changed (`keywords/$seen: true`, or `null` to take it away); a move as
+//!   `keywords`, only the ones that changed (`keywords/$seen: true`, or `null` to take it away), and so its
+//!   categories, each a keyword of its own ([`mailcraft_model::sync::category_keyword`]): set for one added here
+//!   since the server last said them, taken away for one taken away (one too long for a keyword is not sent); a move as
 //!   patches of `mailboxIds` (the new mailbox `true`, the old one `null`); a delete for good as `destroy`. No
 //!   other keyword of a message is named, and so none is touched. The marks of all the messages go first, then
 //!   the moves and the deletes: a message's marks and its move are two updates, each made or refused by itself
@@ -43,7 +45,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use mailcraft_model::sync::{JmapChange, JmapChangeDone, JmapMailResult, JmapOutcome, MAX_MESSAGE_CHANGES};
+use mailcraft_model::sync::{
+    CategoriesUp, JmapChange, JmapChangeDone, JmapMailResult, JmapOutcome, MAX_MESSAGE_CHANGES, category_keyword, same_category,
+};
 use serde_json::{Map, Value, json};
 
 use super::{MAX_SPLITS, Outcome, Run, Stop, WINDOW_BYTES};
@@ -62,7 +66,7 @@ pub(super) const NO_CHANGES: [&str; 4] = ["accountReadOnly", "forbidden", "accou
 struct Update {
     id: String,
     /// The keywords to set (`true`) or take away (`false`), in the order the changes named them.
-    keywords: Vec<(&'static str, bool)>,
+    keywords: Vec<(String, bool)>,
     /// The mailbox it is taken out of and the one it is put in.
     moved: Option<(String, String)>,
     /// Where, in the request's list of changes, the changes this makes are.
@@ -139,6 +143,23 @@ fn put(settled: &mut [Option<JmapOutcome>], at: &[usize], outcome: impl Fn(usize
     }
 }
 
+/// The keywords of a change of a message's categories: set for each added here since `synced`, taken away for each taken away
+/// (as [`same_category`] matches names), each once; a name that has no keyword is not sent.
+fn category_keywords(up: &CategoriesUp) -> Vec<(String, bool)> {
+    let has = |list: &[String], name: &str| list.iter().any(|c| same_category(c, name));
+    let added = up.here.iter().filter(|name| !has(&up.synced, name)).map(|name| (name, true));
+    let gone = up.synced.iter().filter(|name| !has(&up.here, name)).map(|name| (name, false));
+    let mut keywords: Vec<(String, bool)> = Vec::new();
+    for (name, on) in added.chain(gone) {
+        if let Some(keyword) = category_keyword(name)
+            && !keywords.iter().any(|(k, _)| k.eq_ignore_ascii_case(&keyword))
+        {
+            keywords.push((keyword, on));
+        }
+    }
+    keywords
+}
+
 /// Settle the changes at `at` as `verdict` says; a change that waits is told in `out`.
 fn settle(verdict: Verdict, at: &[usize], settled: &mut [Option<JmapOutcome>], out: &mut Outcome) {
     match verdict {
@@ -169,9 +190,12 @@ fn plan(changes: &[&JmapChange], settled: &mut [Option<JmapOutcome>]) -> (Vec<It
             continue;
         }
         match change {
-            JmapChange::Keywords { read, flagged, answered, forwarded, .. } => {
+            JmapChange::Keywords { read, flagged, answered, forwarded, categories, .. } => {
                 let keywords = [("$seen", *read), ("$flagged", *flagged), ("$answered", *answered), ("$forwarded", *forwarded)];
-                let keywords: Vec<(&'static str, bool)> = keywords.into_iter().filter_map(|(name, on)| on.map(|on| (name, on))).collect();
+                let mut keywords: Vec<(String, bool)> = keywords.into_iter().filter_map(|(name, on)| on.map(|on| (name.to_string(), on))).collect();
+                if let Some(up) = categories {
+                    keywords.extend(category_keywords(up));
+                }
                 if keywords.is_empty() {
                     mark(at, JmapOutcome::Done { id: String::new() });
                     continue;

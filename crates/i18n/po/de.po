@@ -2322,6 +2322,11 @@ msgstr ""
 msgid "Block Sender"
 msgstr "Absender blockieren"
 
+#. interface
+#: crates/ui-egui/src/forms/junk.rs
+msgid "Blocked Senders"
+msgstr ""
+
 #. interface, name
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/theme/accent.rs
 msgid "Blue"
@@ -4761,6 +4766,16 @@ msgstr "E-Mail-Nachricht"
 #, fuzzy
 msgid "Email address"
 msgstr "E-Mail-Adresse"
+
+#. interface
+#: crates/ui-egui/src/forms/junk.rs
+msgid "Email from addresses or domain names on your Blocked Senders list will go to Junk Email as it arrives. A domain (@example.org) is that domain only, not its subdomains."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/forms/junk.rs
+msgid "Email from addresses or domain names on your Safe Senders list will never be treated as junk email. A domain (@example.org) is that domain only, not its subdomains."
+msgstr ""
 
 #. ribbon
 #: crates/ui-egui/src/ribbon.rs
@@ -8966,7 +8981,7 @@ msgid "New category"
 msgstr "Neue Kategorie"
 
 #. interface
-#: crates/ui-egui/src/nora/assist.rs
+#: crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/sorting_view.rs
 msgid "New conversation"
 msgstr ""
 
@@ -12375,6 +12390,11 @@ msgstr "Diese Regel auf eingehende E-Mails anwenden"
 #. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
 msgid "SHA-256 fingerprint"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/forms/junk.rs
+msgid "Safe Senders"
 msgstr ""
 
 #. interface
@@ -19624,6 +19644,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "change '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the categories of '{subject}'"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "change the categories of {n} messages"
 msgstr ""
 
 #. interface

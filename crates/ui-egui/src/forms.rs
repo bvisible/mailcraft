@@ -4551,6 +4551,9 @@ mod categories_tests;
 mod junk;
 #[cfg(test)]
 mod junk_tests;
+// //// Neoffice — the words of Junk E-mail Options in the interface's language (neoffice-maintenance#2487).
+#[cfg(test)]
+mod junk_words_tests;
 #[cfg(test)]
 mod task_place_tests;
 

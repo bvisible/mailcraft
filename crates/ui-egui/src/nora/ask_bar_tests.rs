@@ -253,6 +253,15 @@ fn with_her_pane(width: f32) -> Window {
 fn beside_her_pane_in_a_small_window_the_list_keeps_its_title_and_folds_its_controls_into_its_menu() {
     let mut h = with_her_pane(1024.0);
     assert!(h.state().nora.assist.open);
+    // Her pane in the place of the message being read (`mail_view::pane_in_message_place`): the list has the room, its controls
+    // at hand.
+    for control in ["listShowDone", "listSearch", "listNew"] {
+        assert!(shown(&h, control), "{control} beside the list's name");
+    }
+    // A message being written stays beside her pane: the list narrows, keeps its title and folds its controls into its menu.
+    h.state_mut().run("mail.reply", json!({})).unwrap();
+    h.run_steps(6);
+    assert!(h.state().session.compose.is_some());
     let name = h.state().hit.rect("listViewName", 0).expect("the view's name");
     assert!(name.width() >= 60.0, "the title keeps its room: {name:?}");
     for control in ["listShowDone", "listSearch", "listNew"] {

@@ -300,6 +300,10 @@ pub enum JmapChange {
         answered: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         forwarded: Option<bool>,
+        // //// Neoffice — and its categories, where they changed here: each a keyword of its own (`category_keyword`), those
+        // //// Neoffice — added here set and those taken away removed; none other is touched (neoffice-maintenance#2487).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        categories: Option<super::CategoriesUp>,
     },
     /// The message lies in another mailbox here: `to` instead of `from`. Some servers give a
     // //// Neoffice — a server that gives a moved message a new id may not say it: this fork finds the message again

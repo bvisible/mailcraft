@@ -44,39 +44,37 @@ const FIELDS: [(&str, &str, usize, bool); 6] = [
     ("date", "Date", 256, false),
 ];
 
-/// The marks an email has among its keywords (RFC 8621 §2.3).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// The marks an email has among its keywords (RFC 8621 §2.3), and its categories (each a keyword of its own:
+/// [`mailcraft_model::sync::keyword_category`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct Marks {
     pub read: bool,
     pub flagged: bool,
     pub answered: bool,
     pub forwarded: bool,
     pub draft: bool,
+    pub categories: Vec<String>,
 }
 
 impl Marks {
     /// `$seen`, `$flagged`, `$answered`, `$forwarded` and `$draft` among an email's keywords, in any letter
-    /// case; any other keyword is none of the program's business and nothing of it is kept. All of the
-    /// keywords may be looked at (how many there are is bounded by the size of the answer, and the look
-    /// ends when all five have been found): the first 64 only would be the first 64 in the order of their
-    /// names, and a server could fill that with names that sort before `$seen`.
+    /// case, and the categories they keep (at most `MAX_CATEGORIES`, each once); any other keyword is none of the
+    /// program's business and nothing of it is kept. All of the keywords are looked at (how many there are is
+    /// bounded by the size of the answer): the first 64 only would be the first 64 in the order of their names,
+    /// and a server could fill that with names that sort before `$seen`.
     pub fn of(keywords: Option<&Value>) -> Marks {
         let mut marks = Marks::default();
         let Some(map) = keywords.and_then(Value::as_object) else { return marks };
-        for (name, on) in map {
-            if *on != Value::Bool(true) {
-                continue;
-            }
+        let on: Vec<&str> = map.iter().filter(|(_, on)| **on == Value::Bool(true)).map(|(name, _)| name.as_str()).collect();
+        for name in &on {
             let is = |keyword: &str| name.eq_ignore_ascii_case(keyword);
             marks.read |= is("$seen");
             marks.flagged |= is("$flagged");
             marks.answered |= is("$answered");
             marks.forwarded |= is("$forwarded");
             marks.draft |= is("$draft");
-            if marks.read && marks.flagged && marks.answered && marks.forwarded && marks.draft {
-                break;
-            }
         }
+        marks.categories = mailcraft_model::sync::categories_of(on);
         marks
     }
 }
@@ -100,7 +98,7 @@ pub(super) fn home<'a>(mailbox_ids: Option<&'a Value>, claimable: Option<&HashSe
     map.iter().filter(|(id, on)| **on == Value::Bool(true) && counts(id)).map(|(id, _)| id.as_str()).min()
 }
 
-/// What the server says of an email: its id, the mailbox it was listed in and its marks.
+/// What the server says of an email: its id, the mailbox it was listed in, its marks and its categories.
 fn server(id: &str, mailbox: &str, marks: Marks, size: u64) -> ServerMessage {
     ServerMessage {
         id: id.to_string(),
@@ -109,6 +107,7 @@ fn server(id: &str, mailbox: &str, marks: Marks, size: u64) -> ServerMessage {
         answered: marks.answered,
         forwarded: marks.forwarded,
         flag: if marks.flagged { FlagStatus::Flagged } else { FlagStatus::None },
+        categories: marks.categories,
         size,
         ..Default::default()
     }
@@ -129,6 +128,7 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
         .and_then(|date| mailcraft_time::iso_to_timestamp(date, 0));
     // //// Neoffice — the thread it is in (RFC 8621 §4.1.1, upstream's #795): an id as opaque as the email's; anything odd is none.
     let thread = mailcraft_model::sync::thread_id(entry.get("threadId").and_then(Value::as_str).unwrap_or_default());
+    let draft = marks.draft;
     GraphMessage {
         server: ServerMessage { thread, ..server(id, mailbox, marks, entry.get("size").and_then(Value::as_u64).unwrap_or(0)) },
         message_id: fields.message_id,
@@ -141,7 +141,7 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
         preview: line(entry.get("preview").and_then(Value::as_str).unwrap_or_default(), MAX_PREVIEW),
         has_attachments: entry.get("hasAttachment").and_then(Value::as_bool).unwrap_or(false),
         // (An `Option` since upstream's #611, `None` being "the server didn't say": a JMAP server always does, with `$draft`.)
-        draft: Some(marks.draft),
+        draft: Some(draft),
     }
 }
 

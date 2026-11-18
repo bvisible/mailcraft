@@ -91,7 +91,7 @@ fn request(changes: Vec<JmapChange>, also: &[&str]) -> JmapMailRequest {
 }
 
 fn marks(id: &str, read: Option<bool>, flagged: Option<bool>, answered: Option<bool>, forwarded: Option<bool>) -> JmapChange {
-    JmapChange::Keywords { message: 1, id: id.into(), read, flagged, answered, forwarded }
+    JmapChange::Keywords { message: 1, id: id.into(), read, flagged, answered, forwarded, categories: None }
 }
 
 fn read(id: &str, on: bool) -> JmapChange {
@@ -250,6 +250,47 @@ fn the_marks_that_changed_go_up_as_patches_of_those_marks_alone_and_the_rest_of_
         let read_back: Vec<(bool, bool)> =
             page.messages.iter().rev().map(|m| (m.server.read, m.server.flag == mailcraft_model::FlagStatus::Flagged)).collect();
         assert_eq!(read_back, [(false, true), (true, false), (false, false), (false, false)]);
+    }
+}
+
+/// A change of the categories of `id`: as the server last said them (`synced`), as they are here.
+fn categorized(id: &str, synced: &[&str], here: &[&str]) -> JmapChange {
+    let names = |list: &[&str]| list.iter().map(|name| name.to_string()).collect();
+    let up = mailcraft_model::sync::CategoriesUp { synced: names(synced), here: names(here) };
+    JmapChange::Keywords { message: 1, id: id.into(), read: None, flagged: None, answered: None, forwarded: None, categories: Some(up) }
+}
+
+/// A message's categories go up as keywords of their own (neoffice-maintenance#2487): one added here set, one taken away
+/// removed, in any case of its name, with the marks of the same message in the same patch; the keywords of the categories that
+/// didn't change, and the other keywords, stay; the windows read them back as its categories.
+#[test]
+fn the_categories_that_changed_go_up_as_keywords_of_their_own_and_come_back_as_categories() {
+    for profile in [Profile::standard(), Profile::by_place()] {
+        let w = world_with(profile, 3, |k| match k {
+            1 => vec!["$seen", "$cat:=56ert", "$cat:=42leu", "$custom"],
+            2 => vec!["$cat:=52ouge"],
+            _ => Vec::new(),
+        });
+        let ids = &w.mails;
+        let mut with_read = categorized(&ids[0], &["Vert", "Bleu"], &["bleu", "Fournisseur à relancer"]);
+        if let JmapChange::Keywords { read, .. } = &mut with_read {
+            *read = Some(false);
+        }
+        let long = "é".repeat(200);
+        let changes = vec![with_read, categorized(&ids[1], &["Rouge"], &[]), categorized(&ids[2], &[], &[long.as_str()])];
+        let pieces = run(&w.stand_in, &request(changes.clone(), &[]));
+        assert_eq!(only_outcomes(&pieces), [done(""), done(""), done("")], "{profile:?}");
+        assert_eq!(
+            w.state_of(1).unwrap().0,
+            ["$cat:=42leu", "$cat:=46ournisseur=20=c3=a0=20relancer", "$custom"],
+            "Vert taken away, Fournisseur à relancer added, Bleu (« bleu » here) stays, unread"
+        );
+        assert!(w.state_of(2).unwrap().0.is_empty(), "Rouge taken away");
+        assert!(w.state_of(3).unwrap().0.is_empty(), "a name too long for a keyword is not sent");
+        assert_eq!(sets(&w.stand_in), [(2, 0)], "one patch for each message that has a keyword to change");
+        let page = pieces.iter().flat_map(|piece| piece.pages.iter()).find(|page| page.folder == w.inbox).unwrap();
+        let read_back: Vec<Vec<String>> = page.messages.iter().rev().map(|m| m.server.categories.clone()).collect();
+        assert_eq!(read_back, [vec!["Bleu".to_string(), "Fournisseur à relancer".into()], vec![], vec![]], "{profile:?}");
     }
 }
 
@@ -816,7 +857,8 @@ fn any_change() -> impl Strategy<Value = JmapChange> {
             read,
             flagged,
             answered,
-            forwarded
+            forwarded,
+            categories: None
         }),
         (small_ids(), small_ids(), small_ids()).prop_map(|(id, from, to)| JmapChange::Move { message: 1, id, from, to }),
         small_ids().prop_map(|id| JmapChange::Destroy { id }),

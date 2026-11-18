@@ -215,6 +215,12 @@ msgstr "modifier la marque « répondu » ou « transféré » de « {subject} �
 msgid "change the replied or forwarded mark of {n} messages"
 msgstr "modifier la marque « répondu » ou « transféré » de {n} messages"
 
+msgid "change the categories of '{subject}'"
+msgstr "modifier les catégories de « {subject} »"
+
+msgid "change the categories of {n} messages"
+msgstr "modifier les catégories de {n} messages"
+
 msgid "Change them on the site"
 msgstr "Modifier les signatures sur le site"
 
@@ -5733,3 +5739,15 @@ msgstr "Votre serveur Neoffice demande au site web du domaine de l’expéditeur
 
 msgid "This kind of file doesn't open in an editor here."
 msgstr "Ce type de fichier ne s’ouvre pas dans un éditeur ici."
+
+msgid "Safe Senders"
+msgstr "Expéditeurs approuvés"
+
+msgid "Blocked Senders"
+msgstr "Expéditeurs bloqués"
+
+msgid "Email from addresses or domain names on your Safe Senders list will never be treated as junk email. A domain (@example.org) is that domain only, not its subdomains."
+msgstr "Le courrier des adresses ou des noms de domaine figurant sur votre liste « Expéditeurs approuvés » ne sera jamais traité comme du courrier indésirable. Un domaine (@example.org) ne désigne que ce domaine, et non ses sous-domaines."
+
+msgid "Email from addresses or domain names on your Blocked Senders list will go to Junk Email as it arrives. A domain (@example.org) is that domain only, not its subdomains."
+msgstr "Le courrier des adresses ou des noms de domaine figurant sur votre liste « Expéditeurs bloqués » ira dans le Courrier indésirable dès son arrivée. Un domaine (@example.org) ne désigne que ce domaine, et non ses sous-domaines."

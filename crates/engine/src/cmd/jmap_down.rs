@@ -12,7 +12,8 @@
 //! - **A new message** comes as its headers and preview, not fetched ([`graph_down::new_message`]).
 //! - **A message this mailbox has** comes as its keywords: read, flagged, answered and forwarded
 //!   take the server's value, but for one changed here since the server last said (that goes up
-//!   with the run's changes). It follows the server into the mailbox the window is of, unless it
+//!   with the run's changes); so do its categories (each a keyword of its own), what was added and
+//!   taken away here since kept on the server's list as it is now. It follows the server into the mailbox the window is of, unless it
 //!   was moved here since: a move that has not reached the server stays, whether the window is
 //!   complete or not, and goes up.
 //! - **A message that is its marks alone and that this mailbox does not have** (the request said it did, and
@@ -301,6 +302,11 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     if m.forwarded == last.forwarded {
         m.forwarded = now.forwarded;
     }
+    if m.categories == last.categories {
+        m.categories = now.categories.clone();
+    } else if now.categories != last.categories {
+        m.categories = mailcraft_model::sync::merge_categories(&last.categories, &m.categories, &now.categories);
+    }
     if follows {
         m.folder = folder;
     }
@@ -311,6 +317,7 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
         flag: now.flag,
         answered: now.answered,
         forwarded: now.forwarded,
+        categories: now.categories.clone(),
         gone: false,
         // Its size and the rest are what was learnt of it before, unless the window says.
         size: if now.size > 0 { now.size } else { last.size },

@@ -723,7 +723,7 @@ fn notice(app: &mut MailApp) {
 }
 
 fn marks_read(id: &str, message: Id) -> JmapChange {
-    JmapChange::Keywords { message, id: id.into(), read: Some(true), flagged: None, answered: None, forwarded: None }
+    JmapChange::Keywords { message, id: id.into(), read: Some(true), flagged: None, answered: None, forwarded: None, categories: None }
 }
 
 #[test]

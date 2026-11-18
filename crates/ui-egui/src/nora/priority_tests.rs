@@ -350,3 +350,85 @@ fn in_a_wide_tab_her_pane_comes_before_the_exchanges_which_come_back_when_it_clo
     h.run_steps(4);
     assert!(h.state().exchanges.open, "back by themselves");
 }
+
+/// A hosting page's tab whose mailbox has an Archive too, on `folder`, searching `query` in `scope`, Nora's « Prioritaire » not
+/// read yet.
+fn searching(folder: &str, query: &str, scope: &str) -> (Window, Calls) {
+    use mailcraft_engine::cmd::jmap_mail::apply_jmap_mail;
+    use mailcraft_model::FolderKind;
+    use mailcraft_model::sync::{FolderListing, GraphFolder, JmapMailResult};
+    let (mut app, calls, account) = page(true);
+    app.session.keeps_local = false;
+    let folders = vec![
+        GraphFolder { id: "Min".into(), name: "INBOX".into(), kind: FolderKind::Inbox, ..Default::default() },
+        GraphFolder { id: "Marc".into(), name: "Archive".into(), kind: FolderKind::Archive, ..Default::default() },
+    ];
+    let listing = JmapMailResult { account, email: ME.into(), listing: Some(FolderListing { folders, complete: true }), ..Default::default() };
+    apply_jmap_mail(&mut app.session, listing).unwrap();
+    let state = super::sorting::tests::state(false, "", true);
+    app.nora.sorting.boxes.insert(ME.to_string(), Known::said(read_state(&state), None));
+    app.execute("folder.select", json!({"kind": folder})).unwrap();
+    app.execute("view.search", json!({"query": query, "scope": scope})).unwrap();
+    (window(app), calls)
+}
+
+/// The bolt of the row under the pointer, `None` without one.
+fn bolt_of(h: &mut Window, id: u64) -> Option<egui::Pos2> {
+    let at = h.state().hit.rect("message", id).unwrap_or_else(|| panic!("row {id} found")).center();
+    h.hover_at(at);
+    h.run_steps(3);
+    h.state().hit.rect("doneQuickPriority", id).map(|r| r.center())
+}
+
+#[test]
+fn a_search_results_row_has_its_bolt_as_in_the_inbox_and_the_search_reads_what_is_priority() {
+    // From the Inbox: the mailbox's « Prioritaire » is read for what was found, and no section heads the results.
+    let (mut h, calls) = searching("inbox", "proof", "folder");
+    assert_eq!(made(&calls, PRIORITY), vec![json!({"account": ME, "days": 30, "limit": 200})], "read for the bolts of the results");
+    reply(&calls, PRIORITY, 200, json!({"ids": ["E2"], "count": 1, "why": {"E2": "question"}, "reading": null}));
+    h.run_steps(4);
+    assert!(!has(&h, "priority", 0), "no « Prioritaire » over search results");
+    let (e1, e2) = (id_of(h.state(), "E1"), id_of(h.state(), "E2"));
+    assert!(bolt_of(&mut h, e2).is_some(), "the bolt of a result that is in it");
+    let bolt = bolt_of(&mut h, e1).expect("the bolt of a result");
+    crate::people_view::testing::click(&mut h, bolt, egui::PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(made(&calls, PRIORITY_SET), vec![json!({"account": ME, "email_id": "E1", "on": true})]);
+    // From another folder, the search all over the mailbox: the Inbox's results have theirs.
+    let (mut h, calls) = searching("archive", "proof", "mailbox");
+    assert_eq!(made(&calls, PRIORITY).len(), 1);
+    let e3 = id_of(h.state(), "E3");
+    let bolt = bolt_of(&mut h, e3).expect("the bolt of an Inbox's result found from the Archive");
+    crate::people_view::testing::click(&mut h, bolt, egui::PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(made(&calls, PRIORITY_SET), vec![json!({"account": ME, "email_id": "E3", "on": true})]);
+    // A message that isn't in an Inbox has none, nor has a draft.
+    h.state_mut().run("mail.archive", json!({"ids": [e3]})).unwrap();
+    h.run_steps(3);
+    if h.state().hit.rect("message", e3).is_some() {
+        assert!(bolt_of(&mut h, e3).is_none(), "archived: no bolt");
+    }
+}
+
+/// Search results with the bolt of the row under the pointer, in French, light and dark, to PNG files in `VARIANT_D_SHOTS`.
+#[test]
+#[ignore = "draws to PNG files: VARIANT_D_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored search_bolt_screens"]
+fn search_bolt_screens_in_french() {
+    let Some(dir) = std::env::var_os("VARIANT_D_SHOTS").map(std::path::PathBuf::from) else { return };
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for dark in [false, true] {
+        let (mut h, calls) = searching("inbox", "proof", "folder");
+        h.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
+        let _ = h.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+        reply(&calls, PRIORITY, 200, json!({"ids": ["E2"], "count": 1, "why": {"E2": "question"}, "reading": null}));
+        h.run_steps(6);
+        for (name, server_id) in [("41-recherche-eclair-hors-prioritaire", "E1"), ("42-recherche-eclair-prioritaire", "E2")] {
+            let id = id_of(h.state(), server_id);
+            let bolt = bolt_of(&mut h, id).expect("the bolt");
+            h.hover_at(bolt);
+            h.run_steps(40);
+            let image = h.render().expect("drawn");
+            image.save(dir.join(format!("{name}-{}.png", if dark { "sombre" } else { "clair" }))).expect("saved");
+        }
+    }
+}

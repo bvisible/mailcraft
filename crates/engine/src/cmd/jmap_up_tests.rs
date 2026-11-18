@@ -56,7 +56,7 @@ fn changes(s: &Session, account: Id) -> Vec<JmapChange> {
 }
 
 fn keywords(message: Id, id: &str, read: Option<bool>, flagged: Option<bool>) -> JmapChange {
-    JmapChange::Keywords { message, id: id.into(), read, flagged, answered: None, forwarded: None }
+    JmapChange::Keywords { message, id: id.into(), read, flagged, answered: None, forwarded: None, categories: None }
 }
 
 fn result(account: Id, changes: Vec<JmapChangeDone>) -> JmapMailResult {
@@ -102,7 +102,15 @@ fn the_marks_that_differ_go_as_one_change_naming_only_those() {
     }
     assert_eq!(
         changes(&s, account),
-        [JmapChange::Keywords { message: m, id: "E1".into(), read: Some(true), flagged: Some(true), answered: Some(true), forwarded: Some(true) }]
+        [JmapChange::Keywords {
+            message: m,
+            id: "E1".into(),
+            read: Some(true),
+            flagged: Some(true),
+            answered: Some(true),
+            forwarded: Some(true),
+            categories: None
+        }]
     );
     // Back to what the server has: nothing to say.
     s.run("mail.markUnread", &json!({"ids": [m]})).unwrap();
@@ -1284,4 +1292,80 @@ fn a_new_id_is_not_taken_for_a_message_that_waits_when_another_new_one_could_be_
         // Two that could be it: neither is; one that can: that one.
         assert_eq!((id.as_str(), answer["new"].as_u64()), if adopted { ("E8", Some(1)) } else { ("", Some(2)) }, "received {second_received}");
     }
+}
+
+// ---- the categories of a message (neoffice-maintenance#2487) ----
+
+/// The window of the Inbox, listing `E1` with what the server says of it now: its categories `categories`.
+fn inbox_window(categories: &[&str]) -> MessagePage {
+    let there = GraphMessage {
+        server: ServerMessage {
+            id: "E1".into(),
+            folder: "Min".into(),
+            categories: categories.iter().map(|c| c.to_string()).collect(),
+            ..Default::default()
+        },
+        message_id: "<invoice-42@example.org>".into(),
+        subject: "Invoice 42".into(),
+        received: NOW,
+        ..Default::default()
+    };
+    MessagePage { folder: "Min".into(), messages: vec![there], ..Default::default() }
+}
+
+#[test]
+fn a_category_set_here_goes_up_and_stays_and_a_new_window_of_the_mailbox_has_it() {
+    let (mut s, account, m, _) = setup();
+    s.run("mail.categorize", &json!({"ids": [m], "category": "Red category"})).unwrap();
+    let sent = changes(&s, account);
+    let up = mailcraft_model::sync::CategoriesUp { synced: vec![], here: vec!["Red category".into()] };
+    assert_eq!(
+        sent,
+        [JmapChange::Keywords { message: m, id: "E1".into(), read: None, flagged: None, answered: None, forwarded: None, categories: Some(up) }]
+    );
+    // Made: the last synced state, nothing more to send.
+    apply_jmap_mail(&mut s, result(account, vec![done(sent[0].clone(), ok(""))])).unwrap();
+    assert_eq!(s.mailbox.message(m).unwrap().server.as_ref().unwrap().categories, ["Red category"]);
+    assert_eq!(changes(&s, account), []);
+    // The server's window has it: it stays. One the server added meanwhile joins it.
+    apply_jmap_mail(&mut s, JmapMailResult { pages: vec![inbox_window(&["Red category", "Blue category"])], ..result(account, Vec::new()) }).unwrap();
+    assert_eq!(s.mailbox.message(m).unwrap().categories, ["Red category", "Blue category"]);
+    assert_eq!(changes(&s, account), []);
+    // A visit later: a session that keeps nothing of its own (a hosting page's tab) has the message from the server, its
+    // categories with it.
+    let (mut fresh, account, _, _) = setup();
+    let e1 = fresh.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == "E1")).map(|m| m.id).unwrap();
+    fresh.mailbox.messages.remove(&e1);
+    apply_jmap_mail(&mut fresh, JmapMailResult { pages: vec![inbox_window(&["Red category"])], ..result(account, Vec::new()) }).unwrap();
+    let back = fresh.mailbox.messages.values().find(|m| m.server.as_ref().is_some_and(|s| s.id == "E1")).unwrap();
+    assert_eq!(back.categories, ["Red category"]);
+}
+
+#[test]
+fn a_category_taken_away_here_goes_up_and_a_refusal_puts_back_what_the_server_has() {
+    let (mut s, account, m, _) = setup();
+    apply_jmap_mail(&mut s, JmapMailResult { pages: vec![inbox_window(&["Red category"])], ..result(account, Vec::new()) }).unwrap();
+    assert_eq!(s.mailbox.message(m).unwrap().categories, ["Red category"]);
+    s.run("mail.clearCategories", &json!({"ids": [m]})).unwrap();
+    let sent = changes(&s, account);
+    assert!(
+        matches!(&sent[..], [JmapChange::Keywords { categories: Some(up), read: None, .. }] if up.here.is_empty() && up.synced == ["Red category"])
+    );
+    apply_jmap_mail(&mut s, result(account, vec![done(sent[0].clone(), refused("invalidPatch"))])).unwrap();
+    assert_eq!(s.mailbox.message(m).unwrap().categories, ["Red category"], "put back to how the server has it");
+    assert_eq!(changes(&s, account), []);
+    // The same order or case of names is no change; one too long for a keyword stays here only, and is no change either.
+    s.mailbox.message_mut(m).unwrap().categories = vec!["red CATEGORY".into(), "é".repeat(60)];
+    assert_eq!(changes(&s, account), []);
+}
+
+#[test]
+fn a_refusal_keeps_a_category_too_long_for_a_keyword_which_never_went() {
+    let (mut s, account, m, _) = setup();
+    let long = "é".repeat(60);
+    s.mailbox.message_mut(m).unwrap().categories = vec!["Red category".into(), long.clone()];
+    let sent = changes(&s, account);
+    apply_jmap_mail(&mut s, result(account, vec![done(sent[0].clone(), refused("invalidPatch"))])).unwrap();
+    assert_eq!(s.mailbox.message(m).unwrap().categories, [long], "the server has none; the long one stays, this computer's alone");
+    assert_eq!(changes(&s, account), []);
 }

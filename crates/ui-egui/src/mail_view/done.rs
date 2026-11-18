@@ -87,6 +87,12 @@ pub(crate) fn archive_shown(s: &mailcraft_engine::Session, account: Id) -> Optio
     s.mailbox.folder(archive)?.server.as_ref().map(|server| server.id.clone()).filter(|id| !id.is_empty())
 }
 
+/// Whether a row has these quick actions (`bar`) in place of upstream's two: where « Traité » is offered, and among search results
+/// where a host carries Nora's sorting, as in the Inbox (the ⚡ of an Inbox's message among them: priority.rs).
+pub(crate) fn quick_offered(app: &MailApp) -> bool {
+    offered(app) || super::priority::searched(app)
+}
+
 /// Whether « Traité » is offered: a hosting page's tab, its Inbox in view.
 pub(crate) fn offered(app: &MailApp) -> bool {
     !app.session.keeps_local
@@ -315,16 +321,8 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
     let unread = row.unread > 0;
     let mut at = Rect::from_center_size(pos2(rect.max.x - QUICK.x / 2.0 - 4.0, line1), QUICK);
     let mut buttons = Vec::new();
-    // ⚡: where « Prioritaire » is offered, for a message its server has.
-    let in_inbox = app.session.mailbox.folder(m.folder).is_some_and(|f| f.kind == FolderKind::Inbox);
-    let priority = (super::priority::offered(app) && in_inbox && !m.draft)
-        .then(|| {
-            let account = crate::nora::page_mailbox(app, m.account)?;
-            let email = m.server.as_ref().map(|s| s.id.clone()).filter(|id| mailcraft_engine::cmd::jmap_down::plausible_id(id))?;
-            let on = crate::nora::sorting::in_priority(app, &account, &email);
-            Some((account, email, on))
-        })
-        .flatten();
+    // ⚡: where « Prioritaire » is offered, and among search results, for a message of an Inbox its server has (priority.rs).
+    let priority = super::priority::bolt_of(app, m);
     let quicks: &[Quick] = if priority.is_some() {
         &[Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read, Quick::Priority]
     } else {

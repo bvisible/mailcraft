@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::{Account, Address, FlagStatus, FolderCounts, FolderKind, Id, Importance, Message};
 use mailcraft_time::Timestamp;
 
+// //// Neoffice — a message's categories kept on a JMAP server, as keywords of their own (neoffice-maintenance#2487).
+mod category_keywords;
 mod drafts;
 mod ews;
 mod jmap;
@@ -21,6 +23,8 @@ mod place;
 mod problems_tests;
 mod progress;
 mod search;
+// //// Neoffice — see `category_keywords`.
+pub use category_keywords::*;
 pub use drafts::*;
 pub use ews::*;
 pub use jmap::*;

@@ -70,7 +70,8 @@ fn a_change_and_a_message_go_with_a_run_that_is_due_by_itself_and_the_answers_ar
     app.auto_sync();
     let [(job, tx)]: [_; 1] = taken(&jobs).try_into().ok().unwrap();
     assert!(job.request.background && job.secret == "typed here" && app.dialog.is_none());
-    let change = JmapChange::Keywords { message: one, id: "E1".into(), read: Some(true), flagged: None, answered: None, forwarded: None };
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    let change = JmapChange::Keywords { message: one, id: "E1".into(), read: Some(true), flagged: None, answered: None, forwarded: None, categories: None };
     assert_eq!(job.request.changes, std::slice::from_ref(&change));
     let [up] = job.request.sends.as_slice() else { panic!("{:?}", job.request) };
     assert_eq!((up.message, up.mime.as_ref().map(|m| m.subject.as_str())), (lunch, Some("Lunch")));
@@ -272,7 +273,8 @@ fn a_mark_made_while_another_mark_of_the_message_goes_up_has_a_run_of_its_own_at
     app.auto_sync();
     app.auto_sync();
     let [(job, tx)]: [_; 1] = taken(&jobs).try_into().ok().unwrap();
-    let change = JmapChange::Keywords { message: one, id: "E1".into(), read: Some(true), flagged: None, answered: None, forwarded: None };
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    let change = JmapChange::Keywords { message: one, id: "E1".into(), read: Some(true), flagged: None, answered: None, forwarded: None, categories: None };
     assert_eq!(job.request.changes, std::slice::from_ref(&change));
     // Flagged while the run is under way: still one change of the message, so nothing calls the
     // run off, and the flag is no part of what the run took up.
@@ -288,7 +290,8 @@ fn a_mark_made_while_another_mark_of_the_message_goes_up_has_a_run_of_its_own_at
     app.auto_sync();
     app.auto_sync();
     let [(job, tx)]: [_; 1] = taken(&jobs).try_into().ok().unwrap();
-    let flag = JmapChange::Keywords { message: one, id: "E1".into(), read: None, flagged: Some(true), answered: None, forwarded: None };
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    let flag = JmapChange::Keywords { message: one, id: "E1".into(), read: None, flagged: Some(true), answered: None, forwarded: None, categories: None };
     assert_eq!(job.request.changes, std::slice::from_ref(&flag));
     // A change that gets no answer makes nothing: no further run is started for it by itself.
     tx.send(last(&job, JmapMailResult { whole: true, ..Default::default() })).unwrap();

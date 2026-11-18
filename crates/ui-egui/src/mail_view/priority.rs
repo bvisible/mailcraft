@@ -7,11 +7,13 @@
 //! Of what the server names, the list shows what is here, in the Inbox, and not answered (the server can't know `$answered`); the
 //! newest three, « Afficher tout (N) » for the rest. Each message keeps its row in the list under it too: nothing is hidden. Its
 //! reason (a question, a request for a quote, an order…) is said under the pointer. A row's « ⚡ » (its quick actions: done.rs)
-//! puts a message in or out of it (`priority_set`).
+//! puts a message in or out of it (`priority_set`), in the Inbox and in search results alike ([`bolt_of`]): a search reads what
+//! is in it for the mailboxes of what it found ([`searched_boxes`]), and no section heads its results.
 
 use std::collections::HashMap;
 
 use egui::{CornerRadius, Rect, Sense, Stroke, Ui, pos2, vec2};
+use mailcraft_engine::Module;
 use mailcraft_engine::list::Row;
 use mailcraft_model::{FolderKind, Id};
 
@@ -60,6 +62,43 @@ pub(crate) fn offered(app: &MailApp) -> bool {
         && app.session.view.search.trim().is_empty()
         && super::bundle::open_group(app.session.view.filter).is_none()
         && app.session.mailbox.folder(app.session.view.folder).is_some_and(|f| f.kind == FolderKind::Inbox)
+}
+
+/// Whether the list shows search results where a host carries Nora's sorting (variant D): their rows have the quick actions of the
+/// Inbox's, the ⚡ of a message of an Inbox among them.
+pub(crate) fn searched(app: &MailApp) -> bool {
+    super::spark_list(app) && sorting::offered(app) && app.session.view.module == Module::Mail && !app.session.view.search.trim().is_empty()
+}
+
+/// The ⚡ of the message `m` in a row of the list: where « Prioritaire » is offered (the Inbox in view) or among search results, for
+/// a message of an Inbox of a mailbox the hosting page handed over that its server has: that mailbox's name on the server, the
+/// message's JMAP id, and whether it is in « Prioritaire ». `None` for any other.
+pub(crate) fn bolt_of(app: &MailApp, m: &mailcraft_model::Message) -> Option<(String, String, bool)> {
+    if !(offered(app) || searched(app)) || m.draft {
+        return None;
+    }
+    app.session.mailbox.folder(m.folder).filter(|f| f.kind == FolderKind::Inbox)?;
+    let account = crate::nora::page_mailbox(app, m.account)?;
+    let email = m.server.as_ref().map(|s| s.id.clone()).filter(|id| mailcraft_engine::cmd::jmap_down::plausible_id(id))?;
+    let on = sorting::in_priority(app, &account, &email);
+    Some((account, email, on))
+}
+
+/// The Inboxes of the messages among `ids` (what a search found), each with the name of its mailbox on the server: those whose
+/// « Prioritaire » the bolts of the results read.
+pub(crate) fn searched_boxes(app: &MailApp, ids: impl IntoIterator<Item = Id>) -> Vec<(Id, String)> {
+    let mb = &app.session.mailbox;
+    let mut out: Vec<(Id, String)> = Vec::new();
+    for id in ids {
+        let Some(m) = mb.message(id) else { continue };
+        if out.iter().any(|(inbox, _)| *inbox == m.folder) || mb.folder(m.folder).is_none_or(|f| f.kind != FolderKind::Inbox) {
+            continue;
+        }
+        if let Some(account) = crate::nora::page_mailbox(app, m.account) {
+            out.push((m.folder, account));
+        }
+    }
+    out
 }
 
 /// The Inboxes in view, each with the name of its mailbox on the server (`flow::page_mailbox`).

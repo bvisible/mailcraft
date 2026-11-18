@@ -807,6 +807,10 @@ fn refused_change(change: &'static str, n: usize, kind: &'static str) -> Scenari
                 }
             }
         }
+        // (A category is a keyword of its own: neoffice-maintenance#2487.)
+        "categories" => {
+            rig.s.run("mail.categorize", &json!({"ids": ids, "category": "Red category"})).unwrap();
+        }
         "several" => {
             rig.s.run("mail.markRead", &json!({"ids": ids})).unwrap();
             rig.s.run("mail.flag", &json!({"ids": ids})).unwrap();
@@ -834,7 +838,7 @@ fn refused_change(change: &'static str, n: usize, kind: &'static str) -> Scenari
 /// Every kind of change, for one message and for two, for each kind of refusal.
 fn refused_changes() -> Vec<Scenario> {
     let mut out = Vec::new();
-    for change in ["read", "unread", "flag", "replied", "several", "move", "move away", "delete"] {
+    for change in ["read", "unread", "flag", "replied", "categories", "several", "move", "move away", "delete"] {
         for n in [1, 2] {
             for kind in ["notFound", "forbidden", "overQuota", "invalidPatch"] {
                 out.push(refused_change(change, n, kind));

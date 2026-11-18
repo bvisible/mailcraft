@@ -126,10 +126,15 @@ pub(crate) struct Assist {
     /// When the last of her questions went while the pane showed them (milliseconds): it says so a moment, then her
     /// conversation comes back ([`QUESTIONS_DONE_MS`]).
     questions_done_at: Option<f64>,
+    /// The pane stands in the place of the message being read, this frame (`mail_view::pane_in_message_place`): worked out where
+    /// the pane is laid out, before the mail ([`side`]), and read by the mail's layout ([`in_message_place`]).
+    in_place: bool,
 }
 
 /// How long her pane says she has no more questions before her conversation comes back, in milliseconds.
 pub(crate) const QUESTIONS_DONE_MS: f64 = 3_000.0;
+/// The pane's width until the person sets one.
+pub(crate) const WIDTH: f32 = 330.0;
 
 /// A write of Nora's into a message of a mailbox shared with the person, held until they answer the card that names
 /// the mailbox: the conversation's action, the mailbox's address, where the write was to go when she asked, and since
@@ -181,9 +186,10 @@ impl Default for Assist {
             changes: Vec::new(),
             held: None,
             trusted: Vec::new(),
-            width: 330.0,
+            width: WIDTH,
             questions: false,
             questions_done_at: None,
+            in_place: false,
         }
     }
 }
@@ -228,6 +234,12 @@ pub(crate) fn available(app: &MailApp) -> bool {
 /// Whether the pane is at the right of the window now (the mail beside it makes room: `mail_view::message_room`).
 pub(crate) fn shown(app: &MailApp) -> bool {
     app.nora.assist.open && available(app)
+}
+
+/// Whether the pane stands in the place of the message being read now (`mail_view::Beside::Pane`): the window is too narrow for
+/// the list at its width, the pane and a readable message side by side, as Spark has it.
+pub(crate) fn in_message_place(app: &MailApp) -> bool {
+    shown(app) && app.nora.assist.in_place
 }
 
 /// Whether what is typed goes into the pane's text box: the window's shortcuts don't run from it (Ctrl+Enter
@@ -329,6 +341,7 @@ fn close(app: &mut MailApp) {
 pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     if !app.nora.assist.open || !available(app) {
         app.nora.assist.typing = false;
+        app.nora.assist.in_place = false;
         return;
     }
     let t = Tokens::get(ui.ctx());
@@ -365,10 +378,19 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let asking = app.nora.assist.questions;
     let mut back = false;
     let mut shut = false;
+    // « Nouvelle conversation » of her questions' head (her conversation's own is the panel's).
+    let mut fresh = false;
     let in_flow = app.nora.sorting.flow.is_some();
-    // Never so wide that the list at its narrowest and a message beside it would have less than they keep
-    // (`mail_view::message_room`): in a narrow window the pane narrows to 240 first, then the folder pane and the list make way.
-    let widest = (ui.available_width() - crate::mail_view::LIST_MIN - crate::mail_view::READING_MIN).max(240.0);
+    // Where the window is too narrow for the list at its width, the pane and a readable message, the pane takes the message's
+    // place (`mail_view::pane_in_message_place`): never so wide then that the list would be narrower than its narrowest. Beside
+    // the message, never so wide that the list at its narrowest and the message would have less than they keep
+    // (`mail_view::message_room`): the pane narrows to 240 first, then the folder pane and the list make way. A message being
+    // written stays beside the pane (Nora writes in it).
+    let room = ui.available_width();
+    let in_place = crate::mail_view::reading_at_right(app) && crate::mail_view::pane_in_message_place(room, app.ui.list_width, app.nora.assist.width);
+    app.nora.assist.in_place = in_place;
+    let keep = crate::mail_view::LIST_MIN + if in_place { 0.0 } else { crate::mail_view::READING_MIN };
+    let widest = (room - keep).max(crate::mail_view::PANE_MIN);
     // Narrower than the person left it: under another id and at that width, so that theirs (and egui's memory of it) stays.
     let narrowed = app.nora.assist.width > widest + 0.5;
     let panel = if narrowed {
@@ -408,11 +430,14 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                     sorted = done.asked;
                     back = done.back;
                     shut = done.close;
+                    fresh = done.new;
                 }
                 // « Trier avec Nora »: drawn where the panel draws an empty conversation, under its head and its greeting, with
                 // a conversation of its own that stays empty; what the person types goes to hers ([`side`]).
                 Some(flow) => {
                     assist.panel.pane_words.greeting = tl!("Sort with Nora").into();
+                    // New conversation leaves the flow, also before her conversation began (the panel draws an empty one).
+                    assist.panel.new_leaves_page = true;
                     let state = sorting.boxes.get(&flow.account).and_then(|known| known.state.as_ref());
                     let cx = sorting_view::FlowCx {
                         today: home.today,
@@ -434,6 +459,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                 // of its hint (which they carry), a click asks what the person would have typed; « Trier ma boîte » first, and
                 // the switch « Nora range mon courrier » after them, where Nora files the mailbox in view.
                 None => {
+                    assist.panel.new_leaves_page = false;
                     let shown = home.shown.clone();
                     let questions = &mut sorting.questions;
                     let mut empty = |ui: &mut Ui, hint: &str| {
@@ -463,6 +489,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
             typing = focused.is_some_and(|id| id == input || ui.ctx().read_response(id).is_some_and(|r| pane.contains_rect(r.rect)));
         });
     });
+    app.hit.add("noraPane", 0, drawn.response.rect);
     if !narrowed {
         app.nora.assist.width = drawn.response.rect.width();
     }
@@ -479,9 +506,10 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
         sorting::act(app, asked);
     }
     // In « Trier avec Nora », what the person types goes to Nora's conversation, which the pane shows again; nothing else of
-    // the panel's acts on the flow's empty one. (So in her questions too.)
-    let actions = if in_flow {
-        let typed: Vec<PanelAction> = actions.into_iter().filter(|a| matches!(a, PanelAction::Send(_))).collect();
+    // the panel's acts on the flow's empty one but New conversation, which leaves it for a new conversation. (So in her
+    // questions too.)
+    let mut actions = if in_flow {
+        let typed: Vec<PanelAction> = actions.into_iter().filter(|a| matches!(a, PanelAction::Send(_) | PanelAction::NewConversation)).collect();
         if !typed.is_empty() {
             sorting::act(app, sorting::Intent::Back);
         }
@@ -489,6 +517,15 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     } else {
         actions
     };
+    // New conversation, from her conversation's head or her questions': her questions, the flow and her conversation are left,
+    // and the pane shows a new one, empty (its recipes, « Trier ma boîte », her questions under them).
+    if fresh {
+        actions.push(PanelAction::NewConversation);
+    }
+    if actions.contains(&PanelAction::NewConversation) {
+        leave_questions(app);
+        sorting::act(app, sorting::Intent::Back);
+    }
     let outputs = on_actions(app, actions);
     perform(app, outputs);
     if let Some(yes) = answered {
@@ -1152,6 +1189,9 @@ fn undo(app: &mut MailApp) -> Result<Value, String> {
     Ok(json!({"undone": true}))
 }
 
+#[cfg(test)]
+#[path = "pane_tests.rs"]
+mod pane_tests;
 #[cfg(test)]
 #[path = "assist_tests.rs"]
 mod tests;

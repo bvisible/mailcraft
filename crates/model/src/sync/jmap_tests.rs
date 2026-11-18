@@ -35,7 +35,16 @@ fn request() -> JmapMailRequest {
             JmapKnown { mailbox: "M2".into(), ids: vec![] },
         ],
         changes: vec![
-            JmapChange::Keywords { message: 4, id: "E2".into(), read: Some(true), flagged: None, answered: Some(false), forwarded: None },
+            // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+            JmapChange::Keywords {
+                message: 4,
+                id: "E2".into(),
+                read: Some(true),
+                flagged: None,
+                answered: Some(false),
+                forwarded: None,
+                categories: None,
+            },
             JmapChange::Move { message: 5, id: "E3".into(), from: "M1".into(), to: "M2".into() },
             JmapChange::Destroy { id: "E9".into() },
         ],
@@ -205,7 +214,16 @@ fn a_scope_is_a_word_or_a_list() {
 
 #[test]
 fn a_change_names_only_what_changed() {
-    let keywords = JmapChange::Keywords { message: 4, id: "E2".into(), read: Some(true), flagged: None, answered: None, forwarded: Some(false) };
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    let keywords = JmapChange::Keywords {
+        message: 4,
+        id: "E2".into(),
+        read: Some(true),
+        flagged: None,
+        answered: None,
+        forwarded: Some(false),
+        categories: None,
+    };
     assert_eq!(round_trip(&keywords), r#"{"keywords":{"message":4,"id":"E2","read":true,"forwarded":false}}"#);
     let moved = JmapChange::Move { message: 5, id: "E3".into(), from: "M1".into(), to: "M2".into() };
     assert_eq!(round_trip(&moved), r#"{"move":{"message":5,"id":"E3","from":"M1","to":"M2"}}"#);
@@ -214,7 +232,11 @@ fn a_change_names_only_what_changed() {
     assert_eq!([&keywords, &moved, &destroy].map(JmapChange::id), ["E2", "E3", "E9"]);
     // A change without the marks it names reads as one that names none.
     let bare: JmapChange = serde_json::from_str(r#"{"keywords":{"message":4,"id":"E2"}}"#).unwrap();
-    assert_eq!(bare, JmapChange::Keywords { message: 4, id: "E2".into(), read: None, flagged: None, answered: None, forwarded: None });
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    assert_eq!(
+        bare,
+        JmapChange::Keywords { message: 4, id: "E2".into(), read: None, flagged: None, answered: None, forwarded: None, categories: None }
+    );
     assert!(serde_json::from_str::<JmapChange>(r#"{"explode":{"id":"E2"}}"#).is_err());
     assert!(serde_json::from_str::<JmapChange>(r#"{"move":{"message":5,"id":"E3"}}"#).is_err());
 }

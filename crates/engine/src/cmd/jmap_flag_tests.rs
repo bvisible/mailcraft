@@ -21,7 +21,8 @@ fn inbox_says(s: &mut Session, account: Id, flagged: bool) {
 
 /// The one change of `One`'s flag that would go up.
 fn flag_goes(message: Id, flagged: bool) -> Vec<JmapChange> {
-    vec![JmapChange::Keywords { message, id: "E1".into(), read: None, flagged: Some(flagged), answered: None, forwarded: None }]
+    // //// Neoffice — (no change of the categories: `JmapChange::Keywords::categories`, neoffice-maintenance#2487.)
+    vec![JmapChange::Keywords { message, id: "E1".into(), read: None, flagged: Some(flagged), answered: None, forwarded: None, categories: None }]
 }
 
 /// Send up what waits, the server making all of it.

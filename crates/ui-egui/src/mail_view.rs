@@ -163,6 +163,33 @@ pub(crate) const WRITING_MIN: f32 = 380.0;
 pub(crate) const READING_MIN: f32 = 380.0;
 // //// Neoffice — the narrowest the list is made while the message beside it keeps its room (`message_room`).
 pub(crate) const LIST_MIN: f32 = 240.0;
+// //// Neoffice — the narrowest a pane at the right of the window is made (Nora's, the Échanges).
+pub(crate) const PANE_MIN: f32 = 240.0;
+// //// Neoffice — the list's width a window starts with (`UiState::list_width`): the most of a wider list that
+// //// Neoffice — `pane_in_message_place` counts.
+pub(crate) const LIST_START: f32 = 380.0;
+
+// //// Neoffice — whether Nora's pane, `pane` wide, takes the place of the message being read in a window `room` wide (what the
+// //// Neoffice — panes at its right and the mail share), as Spark has it: where the list at the person's width (`list_width`,
+// //// Neoffice — `LIST_MIN` to `LIST_START`: a wider list narrows first, as it did), the pane at its width and a readable message
+// //// Neoffice — (`READING_MIN`) don't stand side by side. With the widths a window starts with (the list 380, the pane 330), below
+// //// Neoffice — 1090. The folder pane, where it is shown, gives way before (`message_room`): it isn't counted.
+pub(crate) fn pane_in_message_place(room: f32, list_width: f32, pane: f32) -> bool {
+    let list = if list_width.is_finite() { list_width.clamp(LIST_MIN, LIST_START) } else { LIST_START };
+    let pane = if pane.is_finite() { pane.max(PANE_MIN) } else { PANE_MIN };
+    room < list + pane + READING_MIN
+}
+
+// //// Neoffice — whether the message beside the list is one being read in the reading pane at the right of the mail (none being
+// //// Neoffice — written there): what Nora's pane may take the place of (`pane_in_message_place`).
+pub(crate) fn reading_at_right(app: &MailApp) -> bool {
+    app.session.view.module == mailcraft_engine::Module::Mail && app.session.view.reading_pane == Pane::Right && !composing_in_pane(app)
+}
+
+// //// Neoffice — the reading pane's message being written (#286): one in a window of its own isn't there.
+fn composing_in_pane(app: &MailApp) -> bool {
+    crate::windows::compose_window::pane_compose(app).is_some_and(|c| app.session.compose_id() == Some(c))
+}
 
 // //// Neoffice — what the message beside the list is doing, for the room it keeps (`message_room`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,6 +201,9 @@ pub(crate) enum Beside {
     Reading,
     /// A message being written: the folder pane gives way, the list narrows, then gives way too.
     Writing,
+    /// Nora's pane in the place of the message being read (`pane_in_message_place`): the list takes the room, the folder pane
+    /// stays where the list keeps its narrowest beside it, and the message comes back when the pane closes or the window widens.
+    Pane,
 }
 
 // //// Neoffice — how the folder pane and the list make room for the message beside them in a narrow window (or beside
@@ -189,12 +219,17 @@ pub(crate) struct MessageRoom {
     pub list: bool,
     /// The list's width meanwhile, when it is narrower than the person's own.
     pub list_width: Option<f32>,
+    /// The message is drawn beside the list (not while Nora's pane stands in its place: `Beside::Pane`).
+    pub message: bool,
 }
 
 // //// Neoffice — see `MessageRoom`. `room`: the width the mail module has; `folders`: the folder pane's width when it is shown.
 pub(crate) fn message_room(room: f32, folders: Option<f32>, list_width: f32, beside: Beside) -> MessageRoom {
     let keep = match beside {
-        Beside::Nothing => return MessageRoom { folders: folders.is_some(), list: true, list_width: None },
+        Beside::Nothing => return MessageRoom { folders: folders.is_some(), list: true, list_width: None, message: true },
+        Beside::Pane => {
+            return MessageRoom { folders: folders.is_some_and(|width| room - width >= LIST_MIN), list: true, list_width: None, message: false };
+        }
         Beside::Reading => READING_MIN,
         Beside::Writing => WRITING_MIN,
     };
@@ -202,14 +237,15 @@ pub(crate) fn message_room(room: f32, folders: Option<f32>, list_width: f32, bes
     let left = room - if folders_shown { folders.unwrap_or_default() } else { 0.0 };
     let list = beside == Beside::Reading || left >= LIST_MIN + keep;
     let list_width = (list && list_width > left - keep).then_some((left - keep).max(LIST_MIN));
-    MessageRoom { folders: folders_shown, list, list_width }
+    MessageRoom { folders: folders_shown, list, list_width, message: true }
 }
 
 pub fn show(app: &mut MailApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     drag_ghost(ui);
     // The reading pane's message being written (#286): one in a window of its own isn't here.
-    let composing = crate::windows::compose_window::pane_compose(app).is_some_and(|c| app.session.compose_id() == Some(c));
+    // //// Neoffice — (`composing_in_pane`, which `reading_at_right` reads too.)
+    let composing = composing_in_pane(app);
     let pane = app.session.view.reading_pane;
     // //// Neoffice — the room the message beside the list keeps (`message_room`); the list over it (Bottom) takes nothing
     // of its width.
@@ -217,6 +253,8 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     let beside = match (pane, composing) {
         (Pane::Bottom, _) => Beside::Nothing,
         (_, true) => Beside::Writing,
+        // //// Neoffice — Nora's pane in the message's place where the window is too narrow for both (`pane_in_message_place`).
+        (Pane::Right, false) if crate::nora::assist::in_message_place(app) => Beside::Pane,
         // //// Neoffice — the Échanges pane stands where Nora's does (exchanges.rs).
         (Pane::Right, false) if crate::nora::assist::shown(app) || crate::exchanges::shown(app) => Beside::Reading,
         _ => Beside::Nothing,
@@ -225,15 +263,22 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     // //// Neoffice — neither the pane nor its strip where a hosting page lists the folders in its own menu: the list starts at the window's left edge (host_menu.rs).
     // //// Neoffice — nor, while the message beside the list needs the room (`message_room`), the pane.
     if app.services.host_menu.is_none() && app.session.view.folder_pane && room.folders {
+        // //// Neoffice — where it was drawn, for the tests of what stands beside what (`folderPane`).
+        let before = ui.available_rect_before_wrap();
         crate::nav::folder_pane(app, ui);
+        let after = ui.available_rect_before_wrap();
+        app.hit.add("folderPane", 0, Rect::from_min_max(before.min, pos2(after.min.x, before.max.y)));
     } else if app.services.host_menu.is_none() && !app.session.view.folder_pane {
         // Hidden: a narrow strip stays, with the button that brings the pane back.
         crate::nav::folder_pane_strip(app, ui);
     }
     // //// Neoffice — (`composing` and `pane` are read above, for `message_room`.)
     // The list takes the whole width when the reading pane is off, unless a message is being written.
-    if pane == Pane::Off && !composing {
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.surface)).show(ui, |ui| list(app, ui));
+    // //// Neoffice — and while Nora's pane stands in the message's place (`Beside::Pane`); where each is drawn, for the tests of
+    // //// Neoffice — what stands beside what (`mailList`, `readingPane`).
+    if (pane == Pane::Off && !composing) || !room.message {
+        let drawn = egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.surface)).show(ui, |ui| list(app, ui));
+        app.hit.add("mailList", 0, drawn.response.rect);
         return;
     }
     let frame = egui::Frame::NONE.fill(t.surface).stroke(Stroke::new(1.0, t.border));
@@ -250,7 +295,9 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
         // so that the person's own width (the list's, and egui's memory of it) stays as it was; a message being written,
         // with less room still, has it give way (`message_room`).
         if let Some(width) = room.list_width {
-            egui::Panel::left("message_list_beside_writing").exact_size(width).resizable(false).frame(frame).show(ui, |ui| list(app, ui));
+            let drawn = egui::Panel::left("message_list_beside_writing").exact_size(width).resizable(false).frame(frame).show(ui, |ui| list(app, ui));
+            // //// Neoffice — (`mailList`.)
+            app.hit.add("mailList", 0, drawn.response.rect);
         } else {
             let max = (ui.available_width() - 260.0).max(260.0);
             let shown = egui::Panel::left("message_list")
@@ -260,9 +307,12 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
                 .frame(frame)
                 .show(ui, |ui| list(app, ui));
             app.ui.list_width = shown.response.rect.width();
+            // //// Neoffice — (`mailList`.)
+            app.hit.add("mailList", 0, shown.response.rect);
         }
     }
-    egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.surface)).show(ui, |ui| {
+    // //// Neoffice — (where it is drawn: `readingPane`.)
+    let reading = egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.surface)).show(ui, |ui| {
         if composing {
             // Each message being written has fields of its own (#286): two never share a caret.
             let compose = app.session.compose_id();
@@ -271,6 +321,8 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
             crate::reading::show(app, ui);
         }
     });
+    // //// Neoffice — (`readingPane`: see above.)
+    app.hit.add("readingPane", 0, reading.response.rect);
     // Enter on a selected draft goes on writing it (#651). Only a new press that is the main
     // window's, with nothing focused: not a text field's, nor a dialog's.
     if !composing && app.session.sel.messages.len() == 1 {
@@ -744,6 +796,13 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         }
         return;
     }
+    // //// Neoffice — the ⚡ of search results (priority.rs): « Prioritaire » read for the mailboxes of what was found, no section.
+    if d && priority::searched(app) {
+        for (inbox, account) in priority::searched_boxes(app, rows.iter().map(|r| r.id)) {
+            let newest = app.session.mailbox.messages_in(inbox).map(|m| m.id).max();
+            app.nora.sorting.want_priority(&account, newest);
+        }
+    }
     // //// Neoffice — « Prioritaire » at the head of Principal (priority.rs): read for each mailbox in view, its height before the rows.
     let waiting = if d && priority::offered(app) {
         for (inbox, account) in priority::boxes(app) {
@@ -1142,9 +1201,11 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let flag_target = Rect::from_center_size(pos2(rect.max.x - quick_inset - QUICK_TARGET.x / 2.0, line1), QUICK_TARGET);
     let delete_rect = flag_target.translate(vec2(-(QUICK_TARGET.x + QUICK_GAP), 0.0));
     let flagged = m.flag == FlagStatus::Flagged;
-    // //// Neoffice — where « Traité » is offered, the row's quick actions are Spark's (done.rs), kept while its move menu is open.
-    let spark = (done && (over || done::menu_open(ui, key))).then(|| done::bar(app, ui, key, row, &m, rect, line1));
-    let quick = (over && !done).then(|| {
+    // //// Neoffice — where « Traité » is offered, the row's quick actions are Spark's (done.rs), kept while its move menu is open;
+    // //// Neoffice — so are they among search results where a host carries Nora's sorting, with the ⚡ (`done::quick_offered`).
+    let sparks = done::quick_offered(app);
+    let spark = (sparks && (over || done::menu_open(ui, key))).then(|| done::bar(app, ui, key, row, &m, rect, line1));
+    let quick = (over && !sparks).then(|| {
         let delete = ui.interact(delete_rect, ui.scope_id().with(("msg_delete", key)), Sense::click()).on_hover_text(tl!("Delete"));
         let flag = ui.interact(flag_target, ui.scope_id().with(("msg_flag", key)), Sense::click()).on_hover_text(if flagged {
             tl!("Clear flag")
@@ -2306,18 +2367,27 @@ mod tests {
     fn a_message_being_written_or_read_beside_nora_keeps_room() {
         let w = Beside::Writing;
         // Wide: nothing changes, nor does anything when nothing is kept.
-        assert_eq!(message_room(1170.0, Some(230.0), 380.0, w), MessageRoom { folders: true, list: true, list_width: None });
-        assert_eq!(message_room(400.0, Some(230.0), 380.0, Beside::Nothing), MessageRoom { folders: true, list: true, list_width: None });
+        assert_eq!(message_room(1170.0, Some(230.0), 380.0, w), MessageRoom { folders: true, list: true, list_width: None, message: true });
+        assert_eq!(
+            message_room(400.0, Some(230.0), 380.0, Beside::Nothing),
+            MessageRoom { folders: true, list: true, list_width: None, message: true }
+        );
         // The folder pane gives way first; the list keeps the person's width while there is room for it.
-        assert_eq!(message_room(694.0, Some(230.0), 300.0, w), MessageRoom { folders: false, list: true, list_width: None });
+        assert_eq!(message_room(694.0, Some(230.0), 300.0, w), MessageRoom { folders: false, list: true, list_width: None, message: true });
         // Then the list narrows to what is left beside the message.
-        assert_eq!(message_room(694.0, None, 380.0, w), MessageRoom { folders: false, list: true, list_width: Some(694.0 - WRITING_MIN) });
+        assert_eq!(
+            message_room(694.0, None, 380.0, w),
+            MessageRoom { folders: false, list: true, list_width: Some(694.0 - WRITING_MIN), message: true }
+        );
         // And gives way too, when even its narrowest would leave the message less than it keeps.
-        assert_eq!(message_room(560.0, Some(230.0), 380.0, w), MessageRoom { folders: false, list: false, list_width: None });
+        assert_eq!(message_room(560.0, Some(230.0), 380.0, w), MessageRoom { folders: false, list: false, list_width: None, message: true });
         // A message read beside Nora's pane: the same, but the list stays, at 240 at the least.
         let r = Beside::Reading;
-        assert_eq!(message_room(802.0, Some(230.0), 500.0, r), MessageRoom { folders: false, list: true, list_width: Some(802.0 - READING_MIN) });
-        assert_eq!(message_room(422.0, Some(230.0), 380.0, r), MessageRoom { folders: false, list: true, list_width: Some(240.0) });
-        assert_eq!(message_room(1170.0, Some(230.0), 380.0, r), MessageRoom { folders: true, list: true, list_width: None });
+        assert_eq!(
+            message_room(802.0, Some(230.0), 500.0, r),
+            MessageRoom { folders: false, list: true, list_width: Some(802.0 - READING_MIN), message: true }
+        );
+        assert_eq!(message_room(422.0, Some(230.0), 380.0, r), MessageRoom { folders: false, list: true, list_width: Some(240.0), message: true });
+        assert_eq!(message_room(1170.0, Some(230.0), 380.0, r), MessageRoom { folders: true, list: true, list_width: None, message: true });
     }
 }

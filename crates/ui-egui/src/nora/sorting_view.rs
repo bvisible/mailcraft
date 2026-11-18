@@ -237,6 +237,30 @@ fn secondary(ui: &mut Ui, ds: &Ds, label: &str, enabled: bool) -> Response {
     .on_hover_cursor(CursorIcon::PointingHand)
 }
 
+/// [`secondary`] whose words go on more lines than one where the room is narrower than they are on one, each line clear of its
+/// border (as one line is in a button 36 high): never cut short, never against its edge.
+fn secondary_wrapping(ui: &mut Ui, ds: &Ds, label: &str, enabled: bool) -> Response {
+    let text = RichText::new(label).font(face(ui, TextStyle::Button, 13.0)).color(ds.text);
+    ui.scope(|ui| {
+        ui.spacing_mut().button_padding = vec2(WRAP_PAD.x, WRAP_PAD.y);
+        ui.add_enabled(
+            enabled,
+            Button::new(text).wrap().fill(ds.card).stroke(Stroke::new(1.0, ds.text)).corner_radius(CornerRadius::same(10)).min_size(vec2(0.0, 36.0)),
+        )
+    })
+    .inner
+    .on_hover_cursor(CursorIcon::PointingHand)
+}
+
+/// The room round the words of a button whose words may go on more lines than one ([`secondary_wrapping`]).
+const WRAP_PAD: egui::Vec2 = egui::vec2(12.0, 8.0);
+
+/// How wide a button of [`secondary`]'s saying `label` is on one line (`padding`: the room at each side of its words).
+fn button_width(ui: &Ui, label: &str, padding: f32) -> f32 {
+    let galley = ui.painter().layout_no_wrap(label.to_string(), face(ui, TextStyle::Button, 13.0), Color32::WHITE);
+    galley.size().x + 2.0 * padding + 2.0
+}
+
 /// A link of her pane, in the family the panel set for that kind of text.
 fn pane_link(ui: &mut Ui, ds: &Ds, label: &str, style: TextStyle, size: f32) -> Response {
     let font = face(ui, style, size);
@@ -788,10 +812,14 @@ fn parties_question(ui: &mut Ui, ds: &Ds, flow: &Flow, state: Option<&BoxState>,
         });
     }
     let any = !flow.party_types.is_empty();
-    ui.horizontal_wrapped(|ui| {
+    // Side by side where both fit on one line, else one under the other, each on as many lines as its words need: never cut
+    // (the pane is 240 wide at its narrowest).
+    let both = button_width(ui, depth_words(true), WRAP_PAD.x) + button_width(ui, depth_words(false), WRAP_PAD.x) + 6.0;
+    let layout = if both <= ui.available_width() { Layout::left_to_right(Align::Center) } else { Layout::top_down(Align::Min) };
+    ui.with_layout(layout, |ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         for per_entity in [true, false] {
-            if secondary(ui, ds, depth_words(per_entity), enabled && any).clicked() {
+            if secondary_wrapping(ui, ds, depth_words(per_entity), enabled && any).clicked() {
                 intent = Some(Intent::PerEntity(per_entity));
             }
         }
@@ -1060,15 +1088,9 @@ pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str
                         }
                     });
                     let draft = asked.drafts.entry(name.clone()).or_default();
-                    ui.horizontal(|ui| {
-                        let width = (ui.available_width() - 96.0).max(80.0);
-                        let field = TextEdit::singleline(draft).hint_text(tl!("Answer Nora…")).desired_width(width).char_limit(1000);
-                        ui.add_enabled(enabled, field.font(face(ui, TextStyle::Body, 13.0)));
-                        let typed = !draft.trim().is_empty();
-                        if secondary(ui, &ds, tl!("Send my answer"), enabled && typed).clicked() {
-                            intent = Some(Intent::SayAnswer(name.clone()));
-                        }
-                    });
+                    if answer_field(ui, &ds, draft, enabled) {
+                        intent = Some(Intent::SayAnswer(name.clone()));
+                    }
                     if enabled && pane_link(ui, &ds, tl!("Later"), TextStyle::Button, 13.0).clicked() {
                         intent = Some(Intent::Later(name.clone()));
                     }
@@ -1091,6 +1113,41 @@ pub(crate) fn questions(ui: &mut Ui, asked: &mut Questions, mailbox: Option<&str
         notice(ui, &ds, error, true);
     }
     intent
+}
+
+/// The field of an answer in one's own words and its « Répondre », the button at the right of the field where both fit on a
+/// line beside each other (the field 120 wide at the least), else under it: never wider than the card (the pane would widen
+/// with it, frame after frame). Whether what is typed is sent: the button, or Enter in the field, as the button does (a field
+/// of one line gives up the keyboard on Enter: there is no new line to make).
+fn answer_field(ui: &mut Ui, ds: &Ds, draft: &mut String, enabled: bool) -> bool {
+    let words = tl!("Send my answer");
+    let button = button_width(ui, words, ui.spacing().button_padding.x);
+    let gap = ui.spacing().item_spacing.x;
+    let beside = ui.available_width() - button - gap >= 120.0;
+    let typed = !draft.trim().is_empty();
+    let mut sent = false;
+    let mut field = |ui: &mut Ui, width: f32| {
+        let edit = TextEdit::singleline(draft).hint_text(tl!("Answer Nora…")).desired_width(width.max(0.0)).char_limit(1000);
+        let typing = ui.add_enabled(enabled, edit.font(face(ui, TextStyle::Body, 13.0)));
+        typing.widget_info(|| WidgetInfo::labeled(Role::TextInput, enabled, tl!("Answer Nora…")));
+        typing.lost_focus() && crate::keys::enter(ui.ctx(), ui.layer_id())
+    };
+    let entered = if beside {
+        let mut entered = false;
+        ui.allocate_ui_with_layout(vec2(ui.available_width(), 36.0), Layout::right_to_left(Align::Center), |ui| {
+            sent = secondary(ui, ds, words, enabled && typed).clicked();
+            entered = field(ui, ui.available_width());
+        });
+        entered
+    } else {
+        let entered = field(ui, ui.available_width());
+        ui.allocate_ui_with_layout(vec2(ui.available_width(), 36.0), Layout::right_to_left(Align::Center), |ui| {
+            sent = secondary(ui, ds, words, enabled && typed).clicked();
+        });
+        entered
+    };
+    let typed = !draft.trim().is_empty();
+    enabled && typed && (sent || entered)
 }
 
 /// The number on her button for `count` questions: 1 to 9, then « 9+ ».
@@ -1154,10 +1211,12 @@ pub(crate) struct QuestionsDone {
     pub(crate) back: bool,
     /// Her pane's ✕.
     pub(crate) close: bool,
+    /// « Nouvelle conversation »: her questions, « Trier avec Nora » and her conversation left for a new one, empty.
+    pub(crate) new: bool,
 }
 
 /// Her pane while it shows her questions in place of her conversation (`Assist::questions`): at its top a head « ← », « Nora vous
-/// demande (3) » and ✕; under it the questions from the first, each answered there; once none is left, that she has none (the pane
+/// demande (3) », « Nouvelle conversation » and ✕ (as her conversation's head has them); under it the questions from the first, each answered there; once none is left, that she has none (the pane
 /// goes back to her conversation a moment later: assist.rs).
 pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool, enabled: bool) -> QuestionsDone {
     let ds = Ds::of(ui.visuals().dark_mode);
@@ -1169,6 +1228,7 @@ pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool,
     let (head, _) = ui.allocate_exact_size(vec2(room.width(), 48.0), Sense::hover());
     let back = egui::Rect::from_center_size(pos2(head.min.x + 24.0, head.center().y), vec2(32.0, 32.0));
     let close = egui::Rect::from_center_size(pos2(head.max.x - 24.0, head.center().y), vec2(32.0, 32.0));
+    let fresh = close.translate(vec2(-34.0, 0.0));
     let back_words = tl!("Back to the conversation");
     let back_resp = ui
         .interact(back, ui.scope_id().with("nora_questions_back"), Sense::click())
@@ -1181,8 +1241,14 @@ pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool,
         .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text(close_words);
     close_resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, close_words));
+    let fresh_words = tl!("New conversation");
+    let fresh_resp = ui
+        .interact(fresh, ui.scope_id().with("nora_questions_new"), Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(fresh_words);
+    fresh_resp.widget_info(|| WidgetInfo::labeled(Role::Button, true, fresh_words));
     let painter = ui.painter();
-    for (resp, at) in [(&back_resp, back), (&close_resp, close)] {
+    for (resp, at) in [(&back_resp, back), (&fresh_resp, fresh), (&close_resp, close)] {
         if resp.hovered() {
             painter.rect_filled(at, CornerRadius::same(8), ds.card);
         }
@@ -1195,11 +1261,14 @@ pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool,
     for (a, b) in [(vec2(-5.0, -5.0), vec2(5.0, 5.0)), (vec2(-5.0, 5.0), vec2(5.0, -5.0))] {
         painter.line_segment([c + a, c + b], line);
     }
+    // (The mark of her conversation's own: craft-nora-ui's.)
+    let ink = if fresh_resp.hovered() { ds.text } else { ds.text_2 };
+    craft_nora_ui::paint_icon(painter, craft_nora_ui::Icon::NewChat, egui::Rect::from_center_size(fresh.center(), vec2(18.0, 18.0)), ink, false);
     let title = if count > 0 { fmt(tl!("Nora asks you ({count})"), &[("count", &count.to_string())]) } else { tl!("Nora asks you").to_string() };
     let x = back.max.x + 8.0;
-    crate::theme::paint_clipped(painter, pos2(x, head.center().y), (close.min.x - 8.0 - x).max(0.0), &title, semibold(16.0), ds.text);
+    crate::theme::paint_clipped(painter, pos2(x, head.center().y), (fresh.min.x - 8.0 - x).max(0.0), &title, semibold(16.0), ds.text);
     let said = ui.interact(
-        egui::Rect::from_min_max(pos2(x, head.min.y), pos2(close.min.x, head.max.y)),
+        egui::Rect::from_min_max(pos2(x, head.min.y), pos2(fresh.min.x, head.max.y)),
         ui.scope_id().with("nora_questions_title"),
         Sense::hover(),
     );
@@ -1207,6 +1276,7 @@ pub(crate) fn questions_pane(ui: &mut Ui, asked: &mut Questions, show_box: bool,
     painter.line_segment([pos2(head.min.x, head.max.y - 0.5), pos2(head.max.x, head.max.y - 0.5)], Stroke::new(1.0, ds.border));
     done.back = back_resp.clicked();
     done.close = close_resp.clicked();
+    done.new = fresh_resp.clicked();
     // The questions, from the first.
     egui::ScrollArea::vertical().id_salt("nora_questions_list").auto_shrink([false, false]).show(ui, |ui| {
         Frame::new().inner_margin(Margin::symmetric(14, 12)).show(ui, |ui| {

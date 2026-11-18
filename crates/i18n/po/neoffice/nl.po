@@ -602,3 +602,6 @@ msgid "{n} question"
 msgid_plural "{n} questions"
 msgstr[0] "{n} vraag"
 msgstr[1] "{n} vragen"
+
+msgid "New conversation"
+msgstr "Nieuw gesprek"

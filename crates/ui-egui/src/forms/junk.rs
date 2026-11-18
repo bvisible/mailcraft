@@ -41,21 +41,30 @@ impl Default for JunkForm {
 }
 
 /// What a page says it is for.
+// //// Neoffice — in the interface's language: each a literal of `tl!`, which the scan of the interface's strings takes (it
+// //// Neoffice — took none of `tl!(about(page))`, and no catalogue had them: neoffice-maintenance#2487).
 fn about(page: JunkList) -> &'static str {
     match page {
         JunkList::Safe => {
-            "Email from addresses or domain names on your Safe Senders list will never be treated as junk email. A domain (@example.org) is that domain only, not its subdomains."
+            // //// Neoffice — (a literal of `tl!`: see above.)
+            tl!(
+                "Email from addresses or domain names on your Safe Senders list will never be treated as junk email. A domain (@example.org) is that domain only, not its subdomains."
+            )
         }
         JunkList::Blocked => {
-            "Email from addresses or domain names on your Blocked Senders list will go to Junk Email as it arrives. A domain (@example.org) is that domain only, not its subdomains."
+            // //// Neoffice — (a literal of `tl!`: see above.)
+            tl!(
+                "Email from addresses or domain names on your Blocked Senders list will go to Junk Email as it arrives. A domain (@example.org) is that domain only, not its subdomains."
+            )
         }
     }
 }
 
+// //// Neoffice — (as `about`.)
 fn title(page: JunkList) -> &'static str {
     match page {
-        JunkList::Safe => "Safe Senders",
-        JunkList::Blocked => "Blocked Senders",
+        JunkList::Safe => tl!("Safe Senders"),
+        JunkList::Blocked => tl!("Blocked Senders"),
     }
 }
 
@@ -92,8 +101,14 @@ impl JunkForm {
             ui.spacing_mut().item_spacing.x = 0.0;
             let pages = [JunkList::Safe, JunkList::Blocked];
             for (i, page) in pages.into_iter().enumerate() {
-                let (r, resp) = ui.allocate_exact_size(vec2(140.0, ROW_H + 2.0), Sense::click());
+                // //// Neoffice — as wide as its name in the interface's language needs (140 at the least), and named to a screen
+                // //// Neoffice — reader as the tab it is.
+                let name = title(page);
+                let wide = ui.painter().layout_no_wrap(name.to_string(), regular(12.5), t.text).size().x + 24.0;
+                let (r, resp) = ui.allocate_exact_size(vec2(wide.max(140.0), ROW_H + 2.0), Sense::click());
                 let on = self.page == page;
+                // //// Neoffice — (its name to a screen reader: see above.)
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Tab, true, on, name));
                 let (left, right) = (if i == 0 { 4 } else { 0 }, if i + 1 == pages.len() { 4 } else { 0 });
                 let corners = CornerRadius { nw: left, sw: left, ne: right, se: right };
                 let fill = if on {
@@ -104,7 +119,8 @@ impl JunkForm {
                     t.input
                 };
                 ui.painter().rect(r, corners, fill, Stroke::new(1.0, if on { t.accent } else { t.input_border }), StrokeKind::Inside);
-                ui.painter().text(r.center(), Align2::CENTER_CENTER, tl!(title(page)), regular(12.5), if on { t.text } else { t.text_dim });
+                // //// Neoffice — (`title` says it in the interface's language.)
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, name, regular(12.5), if on { t.text } else { t.text_dim });
                 if resp.clicked() && !on {
                     self.page = page;
                     self.selected = None;
@@ -155,7 +171,8 @@ impl JunkForm {
             }
             self.tabs(ui);
             ui.add_space(8.0);
-            ui.label(egui::RichText::new(tl!(about(self.page))).color(t.text_dim));
+            // //// Neoffice — (`about` says it in the interface's language; a guillemet never alone at a line's end or start.)
+            ui.label(egui::RichText::new(crate::nora::sorting_view::tied(about(self.page))).color(t.text_dim));
             ui.add_space(6.0);
             ui.horizontal_top(|ui| {
                 egui::Frame::NONE.fill(t.input).stroke(Stroke::new(1.0, t.input_border)).inner_margin(4.0).corner_radius(3.0).show(ui, |ui| {
