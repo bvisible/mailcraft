@@ -4532,6 +4532,11 @@ msgid "Downloading pictures…"
 msgstr "Download delle immagini…"
 
 #. interface
+#: crates/ui-egui/src/reading.rs
+msgid "Downloading the attachments…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/graph_fetch.rs
 #, fuzzy
 msgid "Downloading the message first…"
@@ -15130,6 +15135,11 @@ msgstr "Impossibile aprire l’anteprima dell’allegato."
 #: crates/ui-egui/src/attachment_preview.rs
 msgid "The attachment preview timed out."
 msgstr "Tempo scaduto durante la preparazione dell’anteprima."
+
+#. interface
+#: crates/ui-egui/src/reading.rs
+msgid "The attachments of this message are still on the server."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/files.rs

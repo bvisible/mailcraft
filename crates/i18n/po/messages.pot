@@ -4051,6 +4051,11 @@ msgid "Downloading pictures…"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/reading.rs
+msgid "Downloading the attachments…"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/graph_fetch.rs
 msgid "Downloading the message first…"
 msgstr ""
@@ -13529,6 +13534,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/attachment_preview.rs
 msgid "The attachment preview timed out."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/reading.rs
+msgid "The attachments of this message are still on the server."
 msgstr ""
 
 #. interface

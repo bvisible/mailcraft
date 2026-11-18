@@ -542,7 +542,10 @@ pub fn take_fetched_as(mb: &mut Mailbox, index: &mut ServerIndex, account: Id, i
     let m = mb.message_mut(here).ok()?;
     // Check again asked for the bytes it came as alone (#30), or a move asked the copy it came
     // from for them: nothing else of it changes.
-    if std::mem::take(&mut m.original_wanted) {
+    // //// Neoffice — unless its files alone were on the server (a hosting page's copy left them out, `files_on_server`): it is
+    // //// Neoffice — taken whole then, files and all.
+    let files_left_out = std::mem::take(&mut m.files_on_server);
+    if std::mem::take(&mut m.original_wanted) && !files_left_out {
         m.original_asked |= !brought;
         if no_room > 0 {
             m.original_no_room = no_room;

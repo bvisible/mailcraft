@@ -285,6 +285,15 @@ pub struct Message {
     // //// Neoffice — in the mailbox file; `None` is the main tab's. Upstream has no such field; nothing in upstream reads it.
     #[serde(skip)]
     pub stream: Option<crate::stream::Stream>,
+    // //// Neoffice — when it was last opened here (0: never, or before this was kept): the copy of a hosting page's mailboxes that
+    // //// Neoffice — the browser keeps keeps the files of the most recently opened first (the web build's hosted/cache.rs). Upstream
+    // //// Neoffice — has no such field; nothing in upstream reads it.
+    #[serde(skip_serializing_if = "is_zero_i64")]
+    pub opened_at: Timestamp,
+    // //// Neoffice — while it is not fetched: its text and HTML are whole here, only its files are on the server (that copy left them
+    // //// Neoffice — out): the reading pane shows the text at once and says the files are coming. Cleared once it is fetched whole.
+    #[serde(skip_serializing_if = "is_false")]
+    pub files_on_server: bool,
     pub answered: bool,
     pub forwarded: bool,
     pub draft: bool,
@@ -702,6 +711,8 @@ impl Message {
         (self.original, self.original_wanted) = (None, false);
         self.attachments_on_server = had_files;
         self.unfetched = true;
+        // //// Neoffice — its text goes too: it is no longer a message whose files alone are on the server (`files_on_server`).
+        self.files_on_server = false;
     }
 
     /// Whether the message looks as one put back by 0.5.0 up to #793 after a refused delete for

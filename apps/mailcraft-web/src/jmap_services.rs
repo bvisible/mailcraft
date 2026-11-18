@@ -106,6 +106,34 @@ pub fn jmap_fetch_service<C: Credentials + 'static>(
     })
 }
 
+/// `Services::jmap_fetch` of a hosting page: as [`jmap_fetch_service`], what the person opened before being looked for first
+/// among the heavy messages kept in this browser, where the page names them (`hosted/contents.rs`).
+#[cfg(target_arch = "wasm32")]
+pub fn hosted_fetch_service<C: Credentials + 'static>(
+    ctx: egui::Context,
+    credentials: std::rc::Rc<C>,
+    gate: Gate,
+) -> Box<dyn Fn(JmapFetchJob) -> std::sync::mpsc::Receiver<GraphFetchResult>> {
+    use crate::hosted::contents;
+    Box::new(move |job: JmapFetchJob| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (ctx, credentials, gate) = (ctx.clone(), credentials.clone(), gate.clone());
+        wasm_bindgen_futures::spawn_local(async move {
+            let from_server = |job: JmapFetchJob| async move { fetch(gate, &job, Some(credentials.as_ref()), crate::fetch::sleep).await };
+            let answer = match contents::scope() {
+                Some(scope) => {
+                    let now = (mailcraft_ui_egui::now_ms() / 1_000.0) as i64;
+                    contents::answered(&contents::Browser { scope: scope.clone() }, &scope, job, now, from_server).await
+                }
+                None => from_server(job).await,
+            };
+            let _ = tx.send(answer);
+            ctx.request_repaint();
+        });
+        rx
+    })
+}
+
 /// `Services::jmap_pim` for the browser, as [`jmap_service`]: one answer for each job, through the same `gate` as the
 /// page's mail, so that a calendar job queues with the mail and never beside it.
 #[cfg(target_arch = "wasm32")]

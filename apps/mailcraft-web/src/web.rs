@@ -69,6 +69,9 @@ pub fn start() {
                         if key.is_none() {
                             crate::hosted::cache::forget_all();
                         }
+                        // //// Neoffice — the heavy messages the person opened are kept beside the copy, under its key, only where the page
+                        // //// Neoffice — names the person (hosted/contents.rs).
+                        crate::hosted::contents::set_scope(key.clone().filter(|_| crate::host::person().is_some()));
                         let (tx, rx) = std::sync::mpsc::channel();
                         let (ctx, wake, first_prefs, build_inbox) = (cc.egui_ctx.clone(), cc.egui_ctx.clone(), prefs.clone(), inbox.clone());
                         let (accounts, writes) = (hosted.clone(), key.clone());
@@ -520,7 +523,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbo
     // //// Neoffice — their mail, their downloads and their calendars, read with the page's credentials through the page's one gate, and nothing of them kept between visits (hosted.rs).
     let runners = crate::hosted::Runners {
         jmap: crate::jmap_services::jmap_service(ctx.clone(), credentials.clone(), gate.clone()),
-        jmap_fetch: crate::jmap_services::jmap_fetch_service(ctx.clone(), credentials.clone(), gate.clone()),
+        // //// Neoffice — a message fetched is looked for first among the heavy ones kept in this browser (hosted/contents.rs).
+        jmap_fetch: crate::jmap_services::hosted_fetch_service(ctx.clone(), credentials.clone(), gate.clone()),
         jmap_pim: crate::jmap_services::jmap_pim_service(ctx, credentials, gate),
     };
     crate::hosted::hosted_window(session, services, runners)

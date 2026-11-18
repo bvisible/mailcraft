@@ -332,9 +332,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   hunks of `web.rs`), so that the list shows at once and the runners bring what changed since the state the copy holds
   (below; a copy without one has its first Send/Receive read every mailbox, `cache::resumes`); written every 15 seconds
   while the mailbox changes. The person's alone (the page's `person`, host.rs; every other copy of the browser deleted at
-  start), only when it holds exactly the mailboxes handed over (`hosted::hosted_session`), within 48 MB, the newest bodies
-  up to 8 MB and the rest headers and preview, the drafts the server has (not one that waits to go up, nor the Outbox);
+  start), only when it holds exactly the mailboxes handed over (`hosted::hosted_session`), within 48 MB: the texts and HTML
+  of the newest up to 12 MB (`TEXTS`, the rest headers and preview), the files of the most recently opened up to 24 MB
+  (`BODIES`; a heavy message past it keeps its text, its files fetched again when it is opened, `Message::files_on_server`,
+  ranked by `Message::opened_at`, both marked fields of `crates/model/src/message.rs`), a heavier copy leaving out files
+  then the oldest texts, never the lot at once; the drafts the server has (not one that waits to go up, nor the Outbox);
   none where the page says `cache: false`. `web-sys`'s IndexedDB features in `Cargo.toml`.
+- The heavy messages a person opened (1 MB and more), kept whole beside that copy in a store of their own, `contents`, of the
+  same database, now at version 2 (`apps/mailcraft-web/src/hosted/contents.rs`, tests in `contents_tests.rs`): 256 MB at
+  most and half of what the browser still has, the least recently opened going first; read by the runner of a fetch before
+  the server is asked (`jmap_services::hosted_fetch_service`, a marked line of `web.rs`), so that a message past the copy's
+  bounds is not downloaded again at each opening. Under the copy's key, only where the page names the person.
 - A run of a JMAP account that starts by itself asks what changed since the state the last whole run left (`Email/changes`,
   RFC 8620 §5.2): `Mailbox/get`, `Email/changes`, and `Email/get` of the created and of the updated by back-references in
   one request when nothing changed, rather than a request or two for each mailbox (`crates/jmap-fork/src/mail/changes.rs`,
@@ -349,7 +357,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   nor of a group dealt with at once). A row under the pointer shows its round at its left (a click marks it done) and
   Spark's quick actions on its right (read or unread, pin, flag, move, delete: those the window has) in place of
   upstream's two; each group's heading has its round (the whole group done); « Marqués comme traités (N) » above the
-  list keeps what was done in this session, with « Annuler » for each and « Tout annuler ». In the list of variant D
+  list keeps what was marked done today, with « Annuler » for each and « Tout annuler ». A host keeps it between visits
+  (`MailApp::done_items`, `MailApp::set_done_items`): the web build writes each mailbox's to the Neoffice server
+  (`apps/mailcraft-web/src/kept.rs`, the fourth part of `NeomailSettings`, `done`: by Message-ID, the last week's, 200 at
+  most) and puts back at the next visit those whose message is in the account's Archive. In the list of variant D
   (below) the round is in the lead column, in the unread dot's place under the pointer, and a day's title has its round
   there too; a message « Afficher les traités » lists as done wears it full, and a click puts it back in its account's
   Inbox (`done::listed_done_round`). In the Neoffice look the unread dot is the signal.

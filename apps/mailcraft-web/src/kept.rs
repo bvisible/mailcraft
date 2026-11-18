@@ -4,14 +4,14 @@
 // visits (maintenance#1956).
 
 //! What a hosting page's window keeps on its server between two visits: the rules, the categories, and each mailbox's
-//! Safe Senders and Blocked Senders.
+//! Safe Senders and Blocked Senders, and what was marked done in it (« Marqués comme traités »).
 //!
 //! A hosting page's tab keeps nothing of its own (hosted.rs): its mail comes back from the server at every visit, but
 //! what MailCraft keeps in the mailbox itself was gone at the next one. The Neoffice server keeps them instead, under a
 //! capability of its own, [`SETTINGS`] (`NeomailSettings/get` and `NeomailSettings/set`, one object, `singleton`, in each
 //! mailbox): the rules and the categories are the person's (the same in every mailbox), the two lists each mailbox's.
 //!
-//! **Three parts and a base.** The rules, the categories and each mailbox's lists are parts of their own, each with
+//! **Four parts and a base.** The rules, the categories, each mailbox's lists and each mailbox's done are parts of their own, each with
 //! what the server holds as far as the window knows (its base). A part is written only once it was read (a mailbox
 //! that didn't answer, rules still waiting for their folders: nothing of theirs is written), and only when the window's
 //! differs from its base: the window's defaults never overwrite what the server keeps, and two windows open at once
@@ -25,6 +25,14 @@
 //! that action (and goes, with none left). What is put can't be undone (the window's history is forgotten): an Undo
 //! would bring back the window from before, and write it.
 //!
+//! **Done.** What was marked done in a mailbox ([`DoneEntry`]: by its Message-ID, never an id of its server, which names the
+//! place and changes as the message goes to the Archive), [`MAX_DONE`] at most, of the last [`DONE_DAYS`]. At the next visit
+//! each is put back ([`put_done_seen`]) once its message is in its account's Archive here; one whose message isn't (yet: the run
+//! that brings the Archive hasn't come; or for good: it is past the newest messages a run reads of the Archive) waits, not
+//! shown, is looked for again as the mailbox changes ([`refresh_done`]), and is written back unchanged until it is too old.
+//! One whose message is back in a folder goes, here and on the server, once a run begun well after the mark has gone through
+//! ([`Runs`]). A server that doesn't keep them (its answer has no `done`) is never sent them.
+//!
 //! **Writing.** Every couple of seconds a changed part is written, the rules and categories to the first mailbox that
 //! answered, each mailbox's lists to it. One the server refuses is not tried again (said once in the console); one that
 //! didn't go through is tried again half a minute later. While a change waits, the page is told that leaving would lose
@@ -34,7 +42,9 @@
 
 use std::collections::BTreeMap;
 
-use mailcraft_model::{Action, Category, Folder, Id, JunkLists, MAX_JUNK_ENTRIES, MAX_RULES, Mailbox, Rule, junk_entry};
+use mailcraft_engine::cmd::sync_progress::{AccountRun, RunState};
+use mailcraft_model::{Action, Category, Folder, FolderKind, Id, JunkLists, MAX_JUNK_ENTRIES, MAX_RULES, Mailbox, Rule, junk_entry};
+use mailcraft_ui_egui::mail_view::done::Item as DoneItem;
 use serde_json::{Map, Value, json};
 
 /// The capability: a data type of the Neoffice server (frappe_webmail's mailcraft_settings), named by it.
@@ -46,6 +56,12 @@ pub const SINGLETON: &str = "singleton";
 pub const MAX_CATEGORIES: usize = 1_000;
 /// How often what the server holds is read again.
 pub const REFRESH_MS: f64 = 45_000.0;
+/// The most messages marked done kept of a mailbox, and for how many days.
+pub const MAX_DONE: usize = 200;
+pub const DONE_DAYS: i64 = 7;
+/// What is kept of a done row's sender and subject, in characters; a Message-ID longer than this many bytes is not kept.
+const DONE_TEXT: usize = 200;
+const MAX_MESSAGE_ID: usize = 250;
 
 /// What the window holds, in the server's shape: the rules (a folder by its mailbox and its id on the server), the
 /// categories, and the lists of each mailbox handed over (by its address in lower case).
@@ -56,12 +72,25 @@ pub struct Kept {
     pub senders: BTreeMap<String, JunkLists>,
 }
 
-/// What the server keeps, as read: `None` for a part it never kept.
+/// What the server keeps, as read: `None` for a part it never kept; what was marked done in a mailbox only for one whose
+/// server keeps it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Saved {
     pub rules: Option<Vec<Value>>,
     pub categories: Option<Vec<Category>>,
     pub senders: BTreeMap<String, JunkLists>,
+    pub done: BTreeMap<String, Vec<DoneEntry>>,
+}
+
+/// A message marked done, as its mailbox's server keeps it: its Message-ID, the folder it was in (its id on the server), when it
+/// was marked (seconds), and what its row said.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DoneEntry {
+    pub message_id: String,
+    pub from: String,
+    pub at: i64,
+    pub who: String,
+    pub subject: String,
 }
 
 /// A mailbox's address as a key.
@@ -127,7 +156,207 @@ pub fn read_answer(answer: &Value, email: &str) -> Option<Saved> {
             .collect()
     });
     let lists = JunkLists { safe: entries(object.get("safeSenders")), blocked: entries(object.get("blockedSenders")) };
-    Some(Saved { rules, categories, senders: BTreeMap::from([(key(email), lists)]) })
+    let done = object.get("done").and_then(Value::as_array).map(|list| list.iter().take(MAX_DONE * 2).filter_map(done_in).collect());
+    Some(Saved { rules, categories, senders: BTreeMap::from([(key(email), lists)]), done: done.into_iter().map(|done| (key(email), done)).collect() })
+}
+
+/// A Message-ID as it names a message: without its brackets and spaces.
+fn message_key(id: &str) -> String {
+    id.trim().trim_start_matches('<').trim_end_matches('>').trim().to_string()
+}
+
+/// Whether what was marked done of a message of this Message-ID can be kept: it has one, not too long.
+fn keepable(id: &str) -> bool {
+    let key = message_key(id);
+    !key.is_empty() && key.len() <= MAX_MESSAGE_ID
+}
+
+/// A done entry of the server, when it is one.
+fn done_in(v: &Value) -> Option<DoneEntry> {
+    let text = |name: &str| v.get(name).and_then(Value::as_str).unwrap_or_default();
+    let message_id = message_key(text("messageId"));
+    let at = v.get("at").and_then(Value::as_i64)?;
+    keepable(&message_id).then(|| DoneEntry {
+        message_id,
+        from: text("from").trim().to_string(),
+        at,
+        who: text("who").chars().take(DONE_TEXT).collect(),
+        subject: text("subject").chars().take(DONE_TEXT).collect(),
+    })
+}
+
+fn done_out(e: &DoneEntry) -> Value {
+    json!({"messageId": e.message_id, "from": e.from, "at": e.at, "who": e.who, "subject": e.subject})
+}
+
+/// `entries` as a mailbox keeps them: those of the last [`DONE_DAYS`] before `now`, the newest first, one for each message,
+/// [`MAX_DONE`] at most.
+pub fn tidy_done(mut entries: Vec<DoneEntry>, now: i64) -> Vec<DoneEntry> {
+    let since = now.saturating_sub(DONE_DAYS * 86_400);
+    entries.retain(|e| e.at >= since);
+    // (Those of a same second by their Message-ID: the same entries are always in the same order, whichever were found here.)
+    entries.sort_by(|a, b| b.at.cmp(&a.at).then_with(|| a.message_id.cmp(&b.message_id)));
+    let mut seen = std::collections::HashSet::new();
+    entries.retain(|e| seen.insert(e.message_id.clone()));
+    entries.truncate(MAX_DONE);
+    entries
+}
+
+/// The account a done item is of: its message's, else the folder's it came from.
+fn item_account(mb: &Mailbox, item: &DoneItem) -> Option<Id> {
+    mb.message(item.id).map(|m| m.account).or_else(|| mb.folder(item.from).map(|f| f.account))
+}
+
+/// Whether `item`'s message is no longer done: it is here, out of its account's Archive (put back, moved elsewhere).
+fn undone(mb: &Mailbox, item: &DoneItem) -> bool {
+    mb.message(item.id).is_some_and(|m| mb.folder(m.folder).is_none_or(|f| f.kind != FolderKind::Archive))
+}
+
+/// What the window holds as done of the mailbox `email` (as [`key`] gives it), in the server's shape ([`tidy_done`]): what
+/// was marked done here (`items`, whose message is still in its Archive, or no longer here: it may come back under another id),
+/// and the server's entries that wait for their message (`waiting`).
+pub fn take_done(mb: &Mailbox, items: &[DoneItem], waiting: &[DoneEntry], email: &str, now: i64) -> Vec<DoneEntry> {
+    let accounts = accounts_of(mb, email);
+    let mut out: Vec<DoneEntry> = items
+        .iter()
+        .filter(|i| item_account(mb, i).is_some_and(|a| accounts.contains(&a)) && !undone(mb, i) && keepable(&i.message_id))
+        .map(|i| DoneEntry {
+            message_id: message_key(&i.message_id),
+            from: mb.folder(i.from).and_then(folder_key).unwrap_or_default(),
+            at: i.at,
+            who: i.who.chars().take(DONE_TEXT).collect(),
+            subject: i.subject.chars().take(DONE_TEXT).collect(),
+        })
+        .collect();
+    out.extend(waiting.iter().cloned());
+    tidy_done(out, now)
+}
+
+/// When the last run of each account that went through began, as this window saw it (seconds): what it read is at least that
+/// recent.
+pub type RunsOver = BTreeMap<Id, i64>;
+
+/// How long after a mark a run has to begin to say where its message is, in seconds: the window that marked it tells the server
+/// of the move a little after it tells it of the mark, and another window's run may read the server in between.
+const DONE_SETTLES: i64 = 120;
+
+/// What this window saw of its accounts' runs: which are under way (since when), and when the last one that went through began.
+#[derive(Clone, Debug, Default)]
+pub struct Runs {
+    under_way: BTreeMap<Id, i64>,
+    pub over: RunsOver,
+}
+
+impl Runs {
+    /// The rows of the run as they stand at `now`: a run that was seen under way and ended with nothing wrong went through.
+    pub fn see(&mut self, rows: &[AccountRun], now: i64) {
+        for row in rows {
+            match row.state {
+                RunState::Waiting | RunState::Running => {
+                    self.under_way.entry(row.account).or_insert(now);
+                }
+                state => {
+                    // (`kept`: it changed nothing, and shows what the last one came to, problems and all. It went through.)
+                    if let Some(began) = self.under_way.remove(&row.account)
+                        && (row.kept || (state == RunState::Done && row.problems.is_empty()))
+                    {
+                        self.over.insert(row.account, began);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// [`put_done_seen`] before any run was seen.
+#[cfg(test)]
+pub fn put_done(mb: &Mailbox, email: &str, entries: &[DoneEntry], now: i64) -> (Vec<DoneItem>, Vec<DoneEntry>) {
+    put_done_seen(mb, email, entries, now, &RunsOver::new())
+}
+
+/// What the window holds as done of the mailbox `email`, once the mailbox has changed: all its items (those of the other
+/// mailboxes as they are) and the entries that wait. A message put back leaves; one that came back under another id of the
+/// window is followed; one no longer here waits, not shown, until it comes back or is too old.
+pub fn refresh_done(
+    mb: &Mailbox,
+    items: &[DoneItem],
+    waiting: &[DoneEntry],
+    email: &str,
+    now: i64,
+    runs: &RunsOver,
+) -> (Vec<DoneItem>, Vec<DoneEntry>) {
+    let entries = take_done(mb, items, waiting, email, now);
+    let (put, still) = put_done_seen(mb, email, &entries, now, runs);
+    (with_done(mb, items, email, put), still)
+}
+
+/// The server's done entries of the mailbox `email` put into the window: the items of those whose message is in its account's
+/// Archive here (each to be put back in the folder it came from, else its account's Inbox), and the entries that wait for theirs.
+/// One whose message is here out of the Archive (a copy in Sent or Drafts is another matter), when a run of its account that
+/// began well after the mark went through (`runs`, [`DONE_SETTLES`]), is no longer done and is dropped: before such a run, what
+/// is here may be older than the mark (the copy of a last visit, a move still on its way to the server).
+pub fn put_done_seen(mb: &Mailbox, email: &str, entries: &[DoneEntry], now: i64, runs: &RunsOver) -> (Vec<DoneItem>, Vec<DoneEntry>) {
+    let accounts = accounts_of(mb, email);
+    let mut found: std::collections::HashMap<String, (Id, Id)> = std::collections::HashMap::new();
+    for &account in &accounts {
+        let Some(archive) = mb.folder_of_kind(account, FolderKind::Archive) else { continue };
+        for m in mb.messages_in(archive) {
+            let id = message_key(&m.message_id);
+            if !id.is_empty() {
+                found.entry(id).or_insert((m.id, account));
+            }
+        }
+    }
+    // (Only once a run was seen: nothing else reads it.)
+    let elsewhere: std::collections::HashMap<String, Id> = if runs.is_empty() {
+        std::collections::HashMap::new()
+    } else {
+        mb.messages
+            .values()
+            .filter(|m| {
+                let elsewhere = |kind| !matches!(kind, FolderKind::Archive | FolderKind::Sent | FolderKind::Drafts | FolderKind::Outbox);
+                accounts.contains(&m.account) && mb.folder(m.folder).is_none_or(|f| elsewhere(f.kind))
+            })
+            .map(|m| (message_key(&m.message_id), m.account))
+            .filter(|(id, _)| !id.is_empty())
+            .collect()
+    };
+    let (mut items, mut waiting) = (Vec::new(), Vec::new());
+    for e in tidy_done(entries.to_vec(), now) {
+        let Some(&(id, account)) = found.get(&e.message_id) else {
+            let back =
+                elsewhere.get(&e.message_id).and_then(|account| runs.get(account)).is_some_and(|began| *began > e.at.saturating_add(DONE_SETTLES));
+            if !back {
+                waiting.push(e);
+            }
+            continue;
+        };
+        let from = resolve(mb, email, &e.from).or_else(|| mb.folder_of_kind(account, FolderKind::Inbox));
+        let Some(from) = from else {
+            waiting.push(e);
+            continue;
+        };
+        items.push(DoneItem { id, message_id: e.message_id, from, at: e.at, who: e.who, subject: e.subject });
+    }
+    (items, waiting)
+}
+
+/// The window's done items with those of the mailbox `email` that can be kept (a Message-ID) in place of `put`: those of the
+/// other mailboxes, and those this one can't keep, stay.
+pub fn with_done(mb: &Mailbox, items: &[DoneItem], email: &str, put: Vec<DoneItem>) -> Vec<DoneItem> {
+    let accounts = accounts_of(mb, email);
+    let ours = |i: &DoneItem| item_account(mb, i).is_some_and(|a| accounts.contains(&a)) && keepable(&i.message_id);
+    let mut out: Vec<DoneItem> = items.iter().filter(|i| !ours(i)).cloned().collect();
+    out.extend(put);
+    out
+}
+
+/// [`merge3`] of a mailbox's done entries, in its shape ([`tidy_done`]): one for each message, this window's when both changed it.
+pub fn merge_done(base: &[DoneEntry], server: &[DoneEntry], local: &[DoneEntry], now: i64) -> Vec<DoneEntry> {
+    let mut merged = merge3(base, server, local);
+    // (One for each message, this window's first: tidy keeps the newest, and this window's when they are as new.)
+    merged.sort_by_key(|e| !local.contains(e));
+    tidy_done(merged, now)
 }
 
 /// A list of addresses and domains as the window keeps them: each made a list's entry, the ones that can't be
@@ -251,7 +480,7 @@ fn rule_in(mb: &mut Mailbox, rule: &Value) -> Placed {
 }
 
 /// The `update` of a `NeomailSettings/set`, with the parts it writes.
-pub fn update(rules: Option<&[Value]>, categories: Option<&[Category]>, lists: Option<&JunkLists>) -> Value {
+pub fn update(rules: Option<&[Value]>, categories: Option<&[Category]>, lists: Option<&JunkLists>, done: Option<&[DoneEntry]>) -> Value {
     let mut patch = Map::new();
     if let Some(rules) = rules {
         patch.insert("rules".into(), Value::Array(rules.iter().take(MAX_RULES).cloned().collect()));
@@ -263,6 +492,9 @@ pub fn update(rules: Option<&[Value]>, categories: Option<&[Category]>, lists: O
     if let Some(lists) = lists {
         patch.insert("safeSenders".into(), json!(lists.safe));
         patch.insert("blockedSenders".into(), json!(lists.blocked));
+    }
+    if let Some(done) = done {
+        patch.insert("done".into(), Value::Array(done.iter().take(MAX_DONE).map(done_out).collect()));
     }
     json!({ SINGLETON: Value::Object(patch) })
 }
@@ -347,8 +579,8 @@ mod run {
     use serde_json::{Value, json};
 
     use super::{
-        GET, REFRESH_MS, SET, SETTINGS, SINGLETON, Saved, Written, for_good, key, merge_categories, merge_lists, merge3, put_rules, put_senders,
-        read_answer, same, take, update, written,
+        DoneEntry, GET, REFRESH_MS, Runs, SET, SETTINGS, SINGLETON, Saved, Written, for_good, key, merge_categories, merge_done, merge_lists, merge3,
+        put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
     };
     use crate::credentials::{Credentials, Renewal};
     use crate::host::{HostAccount, HostCredentials};
@@ -369,11 +601,12 @@ mod run {
         rules: Option<(Vec<Value>, Vec<Value>)>,
         categories: Option<(Vec<Category>, Vec<Category>)>,
         senders: BTreeMap<String, (JunkLists, JunkLists)>,
+        done: BTreeMap<String, (Vec<DoneEntry>, Vec<DoneEntry>)>,
     }
 
     impl Parts {
         fn is_empty(&self) -> bool {
-            self.rules.is_none() && self.categories.is_none() && self.senders.is_empty()
+            self.rules.is_none() && self.categories.is_none() && self.senders.is_empty() && self.done.is_empty()
         }
     }
 
@@ -404,6 +637,13 @@ mod run {
         rules: Option<Vec<Value>>,
         categories: Option<Vec<Category>>,
         senders: BTreeMap<String, JunkLists>,
+        /// What the server holds as done of each mailbox whose server keeps it; of its entries, those whose message isn't in
+        /// its Archive here (yet); the runs this window saw; and what the mailbox was at when all that was last looked at
+        /// (its revision, the runs that went through), and when.
+        done: BTreeMap<String, Vec<DoneEntry>>,
+        done_waiting: BTreeMap<String, Vec<DoneEntry>>,
+        runs: Runs,
+        done_looked: ((u64, super::RunsOver), f64),
         writing: bool,
         ended: Option<Ended>,
         changed: bool,
@@ -453,6 +693,7 @@ mod run {
                             saved.categories = got.categories;
                         }
                         saved.senders.extend(got.senders);
+                        saved.done.extend(got.done);
                         answered.push(email.clone());
                         break;
                     }
@@ -509,6 +750,13 @@ mod run {
                 s.writing = false;
                 put |= ended_write(s, app, ended, now);
             }
+            // What was marked done follows the mailbox as it changes, and as its runs go through.
+            s.runs.see(&app.session.sync_progress.accounts, app.session.now());
+            let seen = (app.session.rev(), s.runs.over.clone());
+            if !s.done.is_empty() && seen != s.done_looked.0 && now - s.done_looked.1 >= EVERY_MS {
+                s.done_looked = (seen, now);
+                look_for_done(s, app);
+            }
             // What is put can't be undone: an Undo would bring back the window from before, and write it.
             if put {
                 app.session.forget_history();
@@ -524,11 +772,12 @@ mod run {
                 if s.changed {
                     if let Some(credentials) = s.credentials.clone() {
                         s.writing = true;
+                        let at = app.session.now();
                         let handed = s.handed.clone();
                         let first = s.answered.first().cloned().unwrap_or_default();
                         let ctx = ctx.clone();
                         wasm_bindgen_futures::spawn_local(async move {
-                            let ended = write(&credentials, &handed, &first, changes).await;
+                            let ended = write(&credentials, &handed, &first, changes, at).await;
                             STATE.with(|s| s.borrow_mut().ended = Some(ended));
                             if let Some(ctx) = ctx {
                                 ctx.request_repaint();
@@ -550,6 +799,34 @@ mod run {
                 ctx.request_repaint_after(Duration::from_millis(EVERY_MS as u64));
             }
         });
+    }
+
+    /// What the window holds as done of the mailbox `email`, in the server's shape.
+    fn here_done(s: &State, app: &MailApp, email: &str) -> Vec<DoneEntry> {
+        let waiting = s.done_waiting.get(email).map(Vec::as_slice).unwrap_or_default();
+        take_done(&app.session.mailbox, app.done_items(), waiting, email, app.session.now())
+    }
+
+    /// Put `entries` as what was marked done in the mailbox `email`: each whose message is in its Archive here, the others to wait.
+    fn put_done_of(s: &mut State, app: &mut MailApp, email: &str, entries: &[DoneEntry]) {
+        let (items, waiting) = put_done_seen(&app.session.mailbox, email, entries, app.session.now(), &s.runs.over);
+        let all = with_done(&app.session.mailbox, app.done_items(), email, items);
+        app.set_done_items(all);
+        s.done_waiting.insert(email.to_string(), waiting);
+    }
+
+    /// What was marked done in each mailbox, as the mailbox is now ([`refresh_done`]): the section's order stays while nothing
+    /// in it changes.
+    fn look_for_done(s: &mut State, app: &mut MailApp) {
+        let now = app.session.now();
+        for email in s.done.keys().cloned().collect::<Vec<_>>() {
+            let waiting = s.done_waiting.get(&email).cloned().unwrap_or_default();
+            let (all, still) = refresh_done(&app.session.mailbox, app.done_items(), &waiting, &email, now, &s.runs.over);
+            if !same(&all, app.done_items()) {
+                app.set_done_items(all);
+            }
+            s.done_waiting.insert(email, still);
+        }
     }
 
     /// The window's rules in the server's shape, with those kept aside, as many as a mailbox keeps.
@@ -623,6 +900,25 @@ mod run {
                 s.senders.insert(email, kept);
             }
         }
+        // What was marked done: put back at the first reading with what was marked here meanwhile (written then, as it differs
+        // from the base, the server's), and later what another window wrote, unless this one changed it too. Not an undo step:
+        // the mailbox doesn't change.
+        let at = app.session.now();
+        for (email, server) in saved.done {
+            let server = tidy_done(server, at);
+            let local = here_done(s, app, &email);
+            let entries = match s.done.get(&email) {
+                None => Some(merge_done(&[], &server, &local, at)),
+                Some(base) if local == *base && server != *base => Some(server.clone()),
+                Some(_) => None,
+            };
+            if let Some(entries) = &entries {
+                put_done_of(s, app, &email, entries);
+            }
+            if entries.is_some() || !s.done.contains_key(&email) {
+                s.done.insert(email, server);
+            }
+        }
         put
     }
 
@@ -646,7 +942,15 @@ mod run {
                 Some((email, (base, lists)))
             })
             .collect();
-        Parts { rules, categories, senders }
+        let done = s
+            .done
+            .iter()
+            .filter_map(|(email, base)| {
+                let here = here_done(s, app, email);
+                (here != *base).then(|| (email.clone(), (base.clone(), here)))
+            })
+            .collect();
+        Parts { rules, categories, senders, done }
     }
 
     /// Take in how a write ended: what was written is the parts' base; what another window wrote since, and the window
@@ -679,6 +983,16 @@ mod run {
             }
             s.senders.insert(email, merged);
         }
+        for (email, (sent, merged)) in ended.written.done {
+            if merged != sent {
+                let now_here = here_done(s, app, &email);
+                let entries = merge_done(&sent, &merged, &now_here, app.session.now());
+                if entries != now_here {
+                    put_done_of(s, app, &email, &entries);
+                }
+            }
+            s.done.insert(email, merged);
+        }
         let refused = ended.refused;
         if !refused.is_empty() {
             log::warn!("kept settings: the server refused some of them for good; they are not tried again");
@@ -692,6 +1006,9 @@ mod run {
         for (email, (_, sent)) in refused.senders {
             s.senders.insert(email, sent);
         }
+        for (email, (_, sent)) in refused.done {
+            s.done.insert(email, sent);
+        }
         if ended.failed {
             s.next = now + AGAIN_MS;
         }
@@ -701,9 +1018,14 @@ mod run {
     /// Write the rules and categories to the mailbox `first` and each mailbox's lists to it. Each is read again first:
     /// what another window wrote since the base is merged with this window's ([`merge3`]), and written only if the
     /// server still holds what was read (`ifInState`), else read and merged again.
-    async fn write(credentials: &HostCredentials, handed: &[(String, String)], first: &str, parts: Parts) -> Ended {
+    async fn write(credentials: &HostCredentials, handed: &[(String, String)], first: &str, parts: Parts, now: i64) -> Ended {
         let mut ended = Ended::default();
         let mut emails: Vec<String> = parts.senders.keys().cloned().collect();
+        for email in parts.done.keys() {
+            if !emails.contains(email) {
+                emails.push(email.clone());
+            }
+        }
         let person = parts.rules.is_some() || parts.categories.is_some();
         if person && !emails.iter().any(|e| e == first) {
             emails.insert(0, first.to_string());
@@ -714,6 +1036,7 @@ mod run {
             let rules = if mine { parts.rules.clone() } else { None };
             let categories = if mine { parts.categories.clone() } else { None };
             let lists = parts.senders.get(&email).cloned();
+            let done = parts.done.get(&email).cloned();
             let refuse = |ended: &mut Ended| {
                 if let Some(rules) = &rules {
                     ended.refused.rules = Some(rules.clone());
@@ -723,6 +1046,9 @@ mod run {
                 }
                 if let Some(lists) = &lists {
                     ended.refused.senders.insert(email.clone(), lists.clone());
+                }
+                if let Some(done) = &done {
+                    ended.refused.done.insert(email.clone(), done.clone());
                 }
             };
             let client = match connect(credentials, &email, session).await {
@@ -741,7 +1067,7 @@ mod run {
             let mut tries = 0;
             let outcome = loop {
                 tries += 1;
-                let outcome = write_one(&client, &email, rules.as_ref(), categories.as_ref(), lists.as_ref()).await;
+                let outcome = write_one(&client, &email, rules.as_ref(), categories.as_ref(), lists.as_ref(), done.as_ref(), now).await;
                 let again = matches!(&outcome, Err(Error::Refused { kind, .. }) if kind == "stateMismatch");
                 if !again || tries >= WRITES {
                     break outcome;
@@ -758,6 +1084,9 @@ mod run {
                     if let (Some((_, sent)), Some(merged)) = (&lists, merged.senders.get(&email)) {
                         ended.written.senders.insert(email.clone(), (sent.clone(), merged.clone()));
                     }
+                    if let (Some((_, sent)), Some(merged)) = (&done, merged.done.get(&email)) {
+                        ended.written.done.insert(email.clone(), (sent.clone(), merged.clone()));
+                    }
                 }
                 Ok((Written::Refused, _)) => refuse(&mut ended),
                 Err(Error::Refused { kind, .. }) if for_good(&kind) => refuse(&mut ended),
@@ -771,13 +1100,16 @@ mod run {
     }
 
     /// One write to a mailbox: read it, merge, write if it still holds what was read. What was written (as a [`Saved`]
-    /// of the parts sent), and what the server said of it.
+    /// of the parts sent), and what the server said of it. What was marked done goes only to a server that keeps it still (a
+    /// server that no longer does takes it as written: it is not tried again).
     async fn write_one(
         client: &Client<crate::fetch::Fetch>,
         email: &str,
         rules: Option<&(Vec<Value>, Vec<Value>)>,
         categories: Option<&(Vec<Category>, Vec<Category>)>,
         lists: Option<&(JunkLists, JunkLists)>,
+        done: Option<&(Vec<DoneEntry>, Vec<DoneEntry>)>,
+        now: i64,
     ) -> Result<(Written, Saved), Error> {
         let (server, state) = get(client, email).await?;
         let mut merged = Saved::default();
@@ -791,7 +1123,16 @@ mod run {
             let theirs = server.senders.get(&key(email)).cloned().unwrap_or_default();
             merged.senders.insert(key(email), merge_lists(base, &theirs, here));
         }
-        let patch = update(merged.rules.as_deref(), merged.categories.as_deref(), merged.senders.get(&key(email)));
+        let keeps_done = server.done.contains_key(&key(email));
+        if let Some((base, here)) = done {
+            let merged_done = match server.done.get(&key(email)) {
+                Some(theirs) => merge_done(base, theirs, here, now),
+                None => here.clone(),
+            };
+            merged.done.insert(key(email), merged_done);
+        }
+        let done_sent = merged.done.get(&key(email)).filter(|_| keeps_done);
+        let patch = update(merged.rules.as_deref(), merged.categories.as_deref(), merged.senders.get(&key(email)), done_sent.map(Vec::as_slice));
         let mut args = json!({"accountId": client.account_id(), "update": patch});
         if let (Some(state), Some(o)) = (state, args.as_object_mut()) {
             o.insert("ifInState".into(), json!(state));

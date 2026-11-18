@@ -6,13 +6,15 @@
 //! of it shows where the window keeps its mail or outside the Inbox. In the list of variant D a row wears one mark, the unread dot,
 //! which the round takes the place of under the pointer; a click selects, ⌘/Ctrl and Shift add; « Afficher les traités » lists the
 //! Archive beside the Inbox, each with its round full, which puts it back.
+//! The section shows what was marked done today; what a host puts back at the next visit (each message found again in its
+//! account's Archive) shows there as it did, and each « Annuler » and « Tout annuler » puts it back where it was.
 //! And (`--ignored`, with `DONE_SHOTS=<folder>`) the list drawn in French, light and dark, to PNG files.
 
 use egui::PointerButton;
 use mailcraft_model::{FolderKind, Id};
 use serde_json::json;
 
-use super::{group_ids, mark, undo, undo_all};
+use super::{Item, group_ids, mark, undo, undo_all};
 use crate::people_view::testing;
 
 fn has(w: &testing::Window, kind: &str, id: u64) -> bool {
@@ -247,16 +249,121 @@ fn show_done_lists_the_archive_beside_the_inbox_and_its_full_round_puts_one_back
     assert!(!w.state().session.view.show_done);
 }
 
+/// What a host keeps of `ids`, marked done in `w`: each message's Message-ID, the folder it was in, when, and what its row said.
+fn kept_of(w: &testing::Window, ids: &[Id]) -> Vec<(String, Id, i64, String, String)> {
+    let items = w.state().done_items();
+    ids.iter()
+        .map(|id| {
+            let item = items.iter().find(|i| i.id == *id).expect("marked done");
+            let m = w.state().session.mailbox.message(*id).expect("there");
+            (m.message_id.clone(), item.from, item.at, item.who.clone(), item.subject.clone())
+        })
+        .collect()
+}
+
+/// The next visit, as a host puts back what was marked done: the window on the mailbox as the server has it (the messages
+/// of `kept` in their account's Archive), each found again there by its Message-ID.
+fn next_visit(kept: &[(String, Id, i64, String, String)]) -> testing::Window {
+    let mut w = inbox(true);
+    let archive = {
+        let s = &w.state().session;
+        let account = s.mailbox.folder(s.view.folder).expect("the Inbox").account;
+        s.mailbox.folder_of_kind(account, FolderKind::Archive).expect("an Archive")
+    };
+    let mut items = Vec::new();
+    for (message_id, from, at, who, subject) in kept {
+        let id = w.state().session.mailbox.messages.values().find(|m| m.message_id == *message_id).map(|m| m.id).expect("found again");
+        w.state_mut().session.mailbox.message_mut(id).expect("there").folder = archive;
+        items.push(Item { id, message_id: message_id.clone(), from: *from, at: *at, who: who.clone(), subject: subject.clone() });
+    }
+    w.state_mut().session.mailbox_changed();
+    w.run_steps(3);
+    assert!(!has(&w, "doneSection", 0), "nothing marked done here yet");
+    w.state_mut().set_done_items(items);
+    w.run_steps(3);
+    w
+}
+
+#[test]
+fn the_section_shows_what_was_marked_done_today_and_undo_all_puts_back_that_alone() {
+    let mut w = inbox(true);
+    let ids: Vec<Id> = drawn(&mut w).into_iter().take(3).collect();
+    assert!(mark(w.state_mut(), &ids));
+    assert!(w.state().done_items().iter().all(|i| i.at == w.state().session.now()), "marked now");
+    // The first was marked yesterday (a host put it back so, from the last visit).
+    let mut items = w.state().done_items().to_vec();
+    let yesterday = w.state().session.now() - 86_400;
+    items.iter_mut().find(|i| i.id == ids[0]).expect("marked").at = yesterday;
+    w.state_mut().set_done_items(items);
+    w.run_steps(3);
+    assert!(!has(&w, "doneUndo", ids[0]), "yesterday's is not in today's section");
+    assert!(has(&w, "doneUndo", ids[1]) && has(&w, "doneUndo", ids[2]));
+    click(&mut w, "doneUndoAll", 0);
+    assert_eq!(folder_kind(&w, ids[0]), Some(FolderKind::Archive), "yesterday's stays done");
+    assert!(ids[1..].iter().all(|id| folder_kind(&w, *id) == Some(FolderKind::Inbox)));
+    assert!(!has(&w, "doneSection", 0), "nothing of today left: no section");
+    // Nor in the list as upstream draws it.
+    undo_all(w.state_mut());
+    assert_eq!(folder_kind(&w, ids[0]), Some(FolderKind::Archive));
+}
+
+#[test]
+fn what_a_host_puts_back_at_the_next_visit_shows_and_each_undo_puts_it_back_where_it_was() {
+    let mut w = inbox(true);
+    let ids: Vec<Id> = drawn(&mut w).into_iter().take(3).collect();
+    assert!(mark(w.state_mut(), &ids));
+    let kept = kept_of(&w, &ids);
+    let mut next = next_visit(&kept);
+    let back: Vec<Id> = next.state().done_items().iter().map(|i| i.id).collect();
+    assert_eq!(back.len(), 3);
+    assert!(back.iter().all(|id| has(&next, "doneUndo", *id)), "each in the section, as it was");
+    assert!(has(&next, "doneSection", 0) && has(&next, "doneUndoAll", 0));
+    click(&mut next, "doneUndo", back[1]);
+    assert_eq!(folder_kind(&next, back[1]), Some(FolderKind::Inbox), "« Annuler »: back where it was");
+    assert_eq!(next.state().done_items().len(), 2);
+    click(&mut next, "doneUndoAll", 0);
+    assert!(back.iter().all(|id| folder_kind(&next, *id) == Some(FolderKind::Inbox)), "« Tout annuler »: all back");
+    assert!(next.state().done_items().is_empty() && !has(&next, "doneSection", 0));
+}
+
+#[test]
+fn a_message_back_in_a_folder_or_gone_leaves_the_section() {
+    let mut w = inbox(true);
+    let ids: Vec<Id> = drawn(&mut w).into_iter().take(3).collect();
+    assert!(mark(w.state_mut(), &ids));
+    w.run_steps(3);
+    assert!(ids.iter().all(|id| has(&w, "doneUndo", *id)));
+    let inbox_folder = w.state().session.view.folder;
+    // Put back from elsewhere (another window, the phone), as a run brings it; and gone from the mailbox.
+    w.state_mut().session.mailbox.message_mut(ids[0]).unwrap().folder = inbox_folder;
+    w.state_mut().session.mailbox.messages.remove(&ids[1]);
+    w.state_mut().session.mailbox_changed();
+    w.run_steps(3);
+    assert!(!has(&w, "doneUndo", ids[0]) && !has(&w, "doneUndo", ids[1]), "they no longer show");
+    assert!(has(&w, "doneUndo", ids[2]) && has(&w, "doneSection", 0), "the one still done does");
+    click(&mut w, "doneUndoAll", 0);
+    assert_eq!(folder_kind(&w, ids[2]), Some(FolderKind::Inbox));
+    assert!(!has(&w, "doneSection", 0), "nothing left to show");
+}
+
 /// The list in French, light and dark, to PNG files in `DONE_SHOTS`: at rest, a row under the pointer, a group's heading
-/// under the pointer, and « Marqués comme traités » open.
+/// under the pointer, « Marqués comme traités » open, and the same at the next visit, as a host puts it back.
 #[test]
 #[ignore = "draws to PNG files: DONE_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored done_screens"]
 fn done_screens_in_french() {
     let Some(dir) = std::env::var_os("DONE_SHOTS").map(std::path::PathBuf::from) else { return };
     let _language = crate::i18n::RestoreLanguage::hold();
     for dark in [false, true] {
-        for screen in ["1-liste", "2-ligne-survolee", "3-groupe-survole", "4-marques-comme-traites"] {
-            let mut w = inbox(true);
+        for screen in ["1-liste", "2-ligne-survolee", "3-groupe-survole", "4-marques-comme-traites", "5-apres-rechargement"] {
+            let mut w = if screen == "5-apres-rechargement" {
+                // Marked done at the last visit, put back by the host at this one.
+                let mut first = inbox(true);
+                let done: Vec<Id> = drawn(&mut first).into_iter().take(3).collect();
+                mark(first.state_mut(), &done);
+                next_visit(&kept_of(&first, &done))
+            } else {
+                inbox(true)
+            };
             w.state_mut().execute("ui.language", json!({"language": "fr"})).unwrap();
             let _ = w.state_mut().run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
             w.run_steps(4);

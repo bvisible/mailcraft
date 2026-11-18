@@ -144,7 +144,8 @@ fn header(app: &MailApp, m: &Message) -> Value {
         "attachments": files,
         "folder": folder,
         "mailbox": mailbox,
-        "whole": !m.unfetched,
+        // (Its text is whole when only its files are on the server: `Message::files_on_server`.)
+        "whole": !m.unfetched || m.files_on_server,
     })
 }
 
@@ -174,7 +175,9 @@ fn block(app: &MailApp, m: &Message, max: usize, open: bool) -> String {
     if !files.is_empty() {
         out.push_str(&format!("Attachments: {}\n", files.join(", ")));
     }
-    if m.unfetched {
+    if m.unfetched && m.files_on_server {
+        out.push_str("(Its attachments are not downloaded yet.)\n");
+    } else if m.unfetched {
         out.push_str("(Only the start of this message is downloaded yet.)\n");
     }
     out.push('\n');

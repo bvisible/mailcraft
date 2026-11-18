@@ -495,3 +495,121 @@ fn what_a_fetch_brought_for_another_address_is_not_taken_in() {
     assert!(!whole(&app, "E1"));
     assert!(!app.fetching.busy());
 }
+
+/// What a host brings when it has fetched `id`, a message with the words of [`mime`] and a file.
+fn fetched_with_file(account: Id, id: &str) -> GraphFetchResult {
+    let mime = format!(
+        "From: Grace <grace@example.org>\r\nTo: {ME}\r\nSubject: Whole {id}\r\nMessage-ID: <{id}@mail.example.org>\r\nDate: Wed, 14 Oct 2026 09:00:00 +0000\r\n\
+MIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nThe words of {id}, all of them.\r\n\
+--b\r\nContent-Type: application/pdf; name=\"plan.pdf\"\r\nContent-Disposition: attachment; filename=\"plan.pdf\"\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERi0xLjQK\r\n--b--\r\n"
+    );
+    GraphFetchResult { account, email: ME.into(), fetched: vec![GraphFetched { id: id.into(), mime: mime.into_bytes() }], ..Default::default() }
+}
+
+/// `id` as the copy a hosting page's tab keeps in its browser leaves a heavy message (the web build's hosted/cache.rs): its
+/// text and HTML whole, its files on the server.
+fn files_left_out(app: &mut MailApp, id: Id, words: &str) {
+    let m = app.session.mailbox.message_mut(id).unwrap();
+    m.body = mailcraft_model::Body { text: words.into(), html: Some(format!("<p>{words}</p>")) };
+    m.attachments.clear();
+    (m.unfetched, m.files_on_server, m.attachments_on_server) = (true, true, true);
+}
+
+#[test]
+fn a_message_whose_files_alone_are_on_the_server_shows_its_text_at_once_and_says_the_files_are_coming() {
+    let (mut app, account, asked) = window(true, 2);
+    let heavy = id_of(&app, "E2");
+    files_left_out(&mut app, heavy, "The words of E2, all of them.");
+    app.session.sel.messages = vec![heavy];
+    app.drive_fetch();
+    assert_eq!(ids_of(&asked, 0), ["E2"], "fetched at once, for its files");
+    let m = app.session.mailbox.message(heavy).unwrap();
+    assert_eq!(crate::reading::unfetched_said(&app, m), "Downloading the attachments…");
+    assert!(m.body.text.contains("all of them") && m.body.html.is_some() && m.has_attachments(), "its text is here, and its paperclip");
+    // The answer comes: whole, with its file, and nothing left to say of it.
+    answer(&asked, 0, fetched_with_file(account, "E2"));
+    app.drive_fetch();
+    let m = app.session.mailbox.message(heavy).unwrap();
+    assert!(!m.unfetched && !m.files_on_server && m.attachments.len() == 1, "{m:?}");
+    // One whose files are not being fetched (offline, or the window keeps it waiting): they are still on the server.
+    let other = id_of(&app, "E1");
+    files_left_out(&mut app, other, "The words of E1.");
+    app.session.driver.fetch.offline = true;
+    let m = app.session.mailbox.message(other).unwrap();
+    assert_eq!(crate::reading::unfetched_said(&app, m), "The attachments of this message are still on the server.");
+    // Its account's sign-in turned down: that first, as for any message not fetched.
+    app.jmap_refused.insert(account);
+    let m = app.session.mailbox.message(other).unwrap();
+    assert_eq!(crate::reading::unfetched_said(&app, m), "The server turned down the sign-in for this account. Use Send/Receive to sign in again.");
+}
+
+#[test]
+fn a_message_whose_files_alone_are_on_the_server_is_searched_in_full() {
+    let (mut app, _, _) = window(true, 3);
+    let heavy = id_of(&app, "E2");
+    files_left_out(&mut app, heavy, "The words of E2, all of them.");
+    app.session.view.folder = app.session.mailbox.message(heavy).unwrap().folder;
+    app.session.view.search = "words".into();
+    let _ = app.session.rows();
+    assert_eq!(app.session.unfetched_in_view(), 2, "E1 and E3, of which only the beginning is here; not E2");
+}
+
+#[test]
+fn a_message_whose_files_were_left_out_is_taken_whole_even_when_only_its_original_was_asked_for() {
+    let (mut app, account, asked) = window(true, 1);
+    let heavy = id_of(&app, "E1");
+    files_left_out(&mut app, heavy, "The words of E1.");
+    app.session.mailbox.message_mut(heavy).unwrap().original_wanted = true;
+    app.session.sel.messages = vec![heavy];
+    app.drive_fetch();
+    answer(&asked, 0, fetched_with_file(account, "E1"));
+    app.drive_fetch();
+    let m = app.session.mailbox.message(heavy).unwrap();
+    assert!(!m.unfetched && !m.files_on_server && !m.original_wanted, "{m:?}");
+    assert_eq!(m.attachments.len(), 1, "its file came");
+}
+
+/// The reading pane of a heavy message as a hosting page's tab opens it from the copy its browser kept (its text whole, its file
+/// left out), while its file is fetched, and once it has come (from the messages kept in the browser, or from the server: the
+/// window can't tell): in French, light and dark, to PNG files in `DONE_SHOTS`.
+#[test]
+#[ignore = "draws to PNG files: DONE_SHOTS=<folder> cargo test -p mailcraft-ui-egui --lib -- --ignored heavy_message_screens"]
+fn heavy_message_screens_in_french() {
+    let Some(dir) = std::env::var_os("DONE_SHOTS").map(std::path::PathBuf::from) else { return };
+    let _language = crate::i18n::RestoreLanguage::hold();
+    for dark in [false, true] {
+        let (mut app, account, asked) = window(true, 3);
+        app.session.keeps_local = false;
+        let heavy = id_of(&app, "E3");
+        let words = "Bonjour,\n\nVoici les plans du chantier, avec les mesures de la façade et le devis du charpentier. \
+Le fichier joint pèse 38 Mo : il arrive pendant que vous lisez ce message.\n\nBelle journée,\nGrace";
+        files_left_out(&mut app, heavy, words);
+        app.session.mailbox.message_mut(heavy).unwrap().subject = "Plans du chantier".into();
+        app.execute("view.mail", json!({})).unwrap();
+        app.execute("ui.language", json!({"language": "fr"})).unwrap();
+        let _ = app.run("ui.theme", json!({"value": if dark { "dark" } else { "light" }}));
+        app.session.view.folder = app.session.mailbox.message(heavy).unwrap().folder;
+        app.session.sel.messages = vec![heavy];
+        let mut h = egui_kittest::Harness::builder()
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .with_size(egui::vec2(1280.0, 800.0))
+            .with_step_dt(1.0 / 60.0)
+            .build_ui_state(
+                |ui, app: &mut MailApp| {
+                    let ctx = ui.ctx().clone();
+                    app.logic(&ctx);
+                    app.ui(ui);
+                },
+                app,
+            );
+        h.run_steps(8);
+        assert_eq!(jobs(&asked), 1, "its file asked for");
+        let theme = if dark { "sombre" } else { "clair" };
+        h.render().expect("drawn").save(dir.join(format!("6-message-lourd-{theme}.png"))).expect("saved");
+        answer(&asked, 0, fetched_with_file(account, "E3"));
+        h.run_steps(8);
+        assert!(h.state().session.mailbox.message(heavy).is_some_and(|m| !m.unfetched && m.attachments.len() == 1), "whole");
+        h.render().expect("drawn").save(dir.join(format!("7-message-lourd-rouvert-{theme}.png"))).expect("saved");
+    }
+}

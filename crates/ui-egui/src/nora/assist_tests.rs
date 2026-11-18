@@ -163,6 +163,28 @@ fn she_writes_over_after_or_at_the_top_of_the_persons_text() {
 }
 
 #[test]
+fn a_message_whose_files_alone_are_on_the_server_she_reads_whole_and_is_told_its_files_are_to_come() {
+    let (mut app, _calls, _) = page(true);
+    let open = app.session.sel.focus().expect("a message being read");
+    {
+        // As a hosting page's copy leaves a heavy message (the web build's hosted/cache.rs): its text whole, its files out.
+        let m = app.session.mailbox.message_mut(open).unwrap();
+        m.attachments.clear();
+        (m.unfetched, m.files_on_server, m.attachments_on_server) = (true, true, true);
+    }
+    let seen = observe::observation(&app);
+    assert_eq!(seen["message"]["whole"], true, "{seen}");
+    let text = seen["text"].as_str().unwrap();
+    assert!(text.contains("(Its attachments are not downloaded yet.)") && !text.contains("Only the start"), "{text}");
+    assert!(text.contains("Is the proof ready?"), "{text}");
+    // One of which only the beginning is here is said so, as before.
+    app.session.mailbox.message_mut(open).unwrap().files_on_server = false;
+    let seen = observe::observation(&app);
+    assert_eq!(seen["message"]["whole"], false);
+    assert!(seen["text"].as_str().unwrap().contains("(Only the start of this message is downloaded yet.)"));
+}
+
+#[test]
 fn what_she_reads_of_a_message_being_written_is_the_persons_text_and_selection() {
     let (mut app, _calls, _) = page(true);
     app.run("mail.reply", json!({})).unwrap();

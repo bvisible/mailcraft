@@ -7,7 +7,8 @@
 //! credentials, their calendars and address books by a job beside their mail ([`mailcraft_ui_egui::Services::jmap_pim`]), and
 //! nothing of them is kept as the window's own: no mailbox file nor `localStorage`, no autosave, and a session that keeps
 //! nothing of its own ([`mailcraft_engine::Session::keeps_local`]). What the last visit left is kept apart, in the browser's
-//! IndexedDB, as the signed-in person's copy to show at once at the next visit ([`cache`]), never a secret.
+//! IndexedDB, as the signed-in person's copy to show at once at the next visit ([`cache`]), with the heavy messages they
+//! opened beside it ([`contents`]), never a secret.
 // Outside the browser only the tests use it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
@@ -15,6 +16,8 @@ use std::sync::mpsc::Receiver;
 
 /// The mailboxes as the last visit left them, kept in the browser to be shown at once at the next one.
 pub mod cache;
+/// The heavy messages the person opened, kept whole in the browser so that opening one again doesn't download it again.
+pub mod contents;
 /// A hosting page's tab asks before it is left while a change of a note waits (in the browser alone).
 #[cfg(target_arch = "wasm32")]
 pub mod leave;

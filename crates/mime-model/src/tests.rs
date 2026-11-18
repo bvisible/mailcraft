@@ -559,6 +559,9 @@ fn message() -> impl Strategy<Value = Message> {
             kept: None,
             // //// Neoffice — the kind of sender a server said is never in the message's file.
             stream: None,
+            // //// Neoffice — when it was opened and whether its files alone are on the server: never in the message's file.
+            opened_at: 0,
+            files_on_server: false,
             original: None,
             parts_removed: false,
             original_wanted: false,

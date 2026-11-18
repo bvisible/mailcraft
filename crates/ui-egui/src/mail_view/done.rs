@@ -8,8 +8,10 @@
 //! - Each row under the pointer shows its round at its left: a click marks it done; on its right, its quick actions (read or
 //!   unread, pin, flag, move, delete), those the window has, in place of upstream's two (flag, delete).
 //! - Each group's heading (Today, Yesterday, This week…) has its round: a click marks the whole group done.
-//! - Above the list, « Marqués comme traités (N) », folded or open, keeps what was marked done in this session, each with
-//!   « Annuler » (back to the folder it was in) and « Tout annuler ». Nothing of it is kept between sessions.
+//! - Above the list, « Marqués comme traités (N) », folded or open, keeps what was marked done today, each with « Annuler »
+//!   (back to the folder it was in) and « Tout annuler ». A host keeps it between visits ([`MailApp::done_items`],
+//!   [`MailApp::set_done_items`]: the web build keeps it on the Neoffice server, by each message's Message-ID, and puts it back
+//!   for the messages that are in their account's Archive).
 //!
 //! The round is ink on the paper (dark: the bright paper on the espresso), a ring at rest, full under the pointer; what was
 //! done wears the signal's tint (the design system's, as the window's tokens are in a hosting page's tab).
@@ -20,6 +22,7 @@ use egui::{Align2, Color32, Id as EguiId, Pos2, Rect, Response, Sense, Stroke, U
 use mailcraft_engine::Module;
 use mailcraft_engine::list::Row;
 use mailcraft_model::{FlagStatus, FolderKind, Id, Message};
+use mailcraft_time::Timestamp;
 use serde_json::json;
 
 use crate::MailApp;
@@ -42,20 +45,49 @@ const HEAD_H: f32 = 30.0;
 const ROW_H: f32 = 26.0;
 const ROWS_SHOWN: f32 = 6.0;
 
-/// What was marked done in this session, newest first, and whether its section is open.
+/// What was marked done (in this session, and what a host put back from the last ones), newest first, and whether its section
+/// is open.
 #[derive(Default)]
 pub(crate) struct Done {
     pub(crate) items: Vec<Item>,
     pub(crate) open: bool,
 }
 
-/// A message marked done: the folder it was in, and what its row said.
+/// A message marked done: its Message-ID (what names it from one visit to the next), the folder it was in, when it was marked,
+/// and what its row said.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Item {
-    pub(crate) id: Id,
-    pub(crate) from: Id,
-    pub(crate) who: String,
-    pub(crate) subject: String,
+pub struct Item {
+    pub id: Id,
+    pub message_id: String,
+    pub from: Id,
+    pub at: Timestamp,
+    pub who: String,
+    pub subject: String,
+}
+
+impl MailApp {
+    /// What was marked done, newest first: for a host that keeps it between visits.
+    pub fn done_items(&self) -> &[Item] {
+        &self.done.items
+    }
+
+    /// Put `items` as what was marked done (a host's, from the last visits: each message where it is now, and the folder to
+    /// put it back in), newest first. The section shows those of today.
+    pub fn set_done_items(&mut self, mut items: Vec<Item>) {
+        items.sort_by_key(|i| std::cmp::Reverse(i.at));
+        let mut seen = std::collections::HashSet::new();
+        items.retain(|i| seen.insert(i.id));
+        self.done.items = items;
+    }
+}
+
+/// What the section shows: what was marked done today (the person's day) and still is, its message here in its account's
+/// Archive (one put back from elsewhere, or gone from the mailbox, no longer shows), newest first.
+fn today(app: &MailApp) -> Vec<Item> {
+    let day = app.session.today();
+    let mailbox = &app.session.mailbox;
+    let done = |i: &&Item| mailbox.message(i.id).and_then(|m| mailbox.folder(m.folder)).is_some_and(|f| f.kind == FolderKind::Archive);
+    app.done.items.iter().filter(|i| app.session.local(i.at).date == day).filter(done).cloned().collect()
 }
 
 /// Where a row's or a heading's round is, from the left edge `x` of the list and the middle `y` of its line: in the lead column
@@ -107,7 +139,9 @@ pub(crate) fn mark(app: &mut MailApp, ids: &[Id]) -> bool {
         .filter_map(|id| {
             app.session.mailbox.message(*id).map(|m| Item {
                 id: *id,
+                message_id: m.message_id.clone(),
                 from: m.folder,
+                at: app.session.now(),
                 who: m.from.display().to_string(),
                 subject: m.subject.trim().to_string(),
             })
@@ -148,9 +182,9 @@ pub(crate) fn undo(app: &mut MailApp, id: Id) {
     app.done.items.retain(|i| i.id != id);
 }
 
-/// Put them all back, each where it was: one move for each folder they came from.
+/// Put back all of what the section shows (today's), each where it was: one move for each folder they came from.
 pub(crate) fn undo_all(app: &mut MailApp) {
-    let all: Vec<Id> = app.done.items.iter().map(|i| i.id).collect();
+    let all: Vec<Id> = today(app).iter().map(|i| i.id).collect();
     undo_these(app, &all);
 }
 
@@ -445,11 +479,12 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
 /// « Marqués comme traités (N) » above the list, while something was marked done: its heading folds or opens it, « Tout
 /// annuler » puts them all back, and open, each with « Annuler ».
 pub(super) fn section(app: &mut MailApp, ui: &mut Ui) {
-    if app.done.items.is_empty() || !offered(app) {
+    let shown = today(app);
+    if shown.is_empty() || !offered(app) {
         return;
     }
     let t = Tokens::get(ui.ctx());
-    let n = app.done.items.len();
+    let n = shown.len();
     let (head, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEAD_H), Sense::hover());
     app.hit.add("doneSection", 0, head);
     let all_words = tl!("Undo all");
@@ -476,7 +511,7 @@ pub(super) fn section(app: &mut MailApp, ui: &mut Ui) {
     p.text(all_at.center(), Align2::CENTER_CENTER, all_words, regular(12.0), t.accent_text);
     let mut undo_one = None;
     if app.done.open {
-        let items = app.done.items.clone();
+        let items = shown;
         let height = ROW_H * (items.len() as f32).min(ROWS_SHOWN);
         egui::ScrollArea::vertical().id_salt("done_section_rows").max_height(height).auto_shrink([false, true]).show(ui, |ui| {
             for item in &items {
@@ -528,17 +563,12 @@ const D_ROW_H: f32 = 50.0;
 const D_ROWS: usize = 5;
 
 pub(super) fn section_d(app: &mut MailApp, ui: &mut Ui) {
-    if app.done.items.is_empty() || !offered(app) {
+    if !offered(app) {
         return;
     }
     let group = super::bundle::open_group(app.session.view.filter);
-    let items: Vec<Item> = app
-        .done
-        .items
-        .iter()
-        .filter(|i| group.is_none_or(|g| app.session.mailbox.message(i.id).is_some_and(|m| m.stream == Some(g))))
-        .cloned()
-        .collect();
+    let items: Vec<Item> =
+        today(app).into_iter().filter(|i| group.is_none_or(|g| app.session.mailbox.message(i.id).is_some_and(|m| m.stream == Some(g)))).collect();
     if items.is_empty() {
         return;
     }

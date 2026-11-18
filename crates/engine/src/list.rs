@@ -324,7 +324,9 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
                     _ => {}
                 }
             }
-            unfetched = unfetched.saturating_add(usize::from(m.unfetched));
+            // //// Neoffice — not one whose text is whole here and whose files alone are on the server (`Message::files_on_server`):
+            // //// Neoffice — its text is searched in full.
+            unfetched = unfetched.saturating_add(usize::from(m.unfetched && !m.files_on_server));
             let hit = gmail.as_ref().is_none_or(|g| g.keeps(m))
                 && filtered(s, m, &me)
                 && (query.is_empty()

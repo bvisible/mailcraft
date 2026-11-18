@@ -279,6 +279,15 @@ pub fn show_message(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Pla
 
 /// What the reading pane says of a message of which only the headers and a preview are here.
 pub(crate) fn unfetched_said(app: &MailApp, m: &Message) -> &'static str {
+    // //// Neoffice — a message whose text is whole here and whose files alone are on the server (a hosting page's copy of its
+    // //// Neoffice — mailboxes left them out, `Message::files_on_server`): its text is shown, and this says only the files are to come.
+    if m.files_on_server && !app.jmap_refused.contains(&m.account) {
+        return if app.fetching.fetching(m.id) {
+            tl!("Downloading the attachments…")
+        } else {
+            tl!("The attachments of this message are still on the server.")
+        };
+    }
     if app.fetching.fetching(m.id) {
         tl!("Downloading the whole message…")
     } else if app.jmap_refused.contains(&m.account) {

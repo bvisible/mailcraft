@@ -420,5 +420,15 @@ fn open_in_editor_screens_in_french() {
         click(&mut h, drop.center(), egui::PointerButton::Primary, 1);
         h.run_steps(4);
         h.render().expect("drawn").save(dir.join(format!("i-menu-ouvrir-dans-{theme}.png"))).expect("saved");
+        // The keyboard on the editor's part of « Liste.xls »: its ring.
+        crate::people_view::testing::key(&mut h, egui::Key::Escape);
+        {
+            use egui_kittest::kittest::Queryable as _;
+            h.get_by_role_and_label(egui::accesskit::Role::Button, "Liste.xls").focus();
+        }
+        h.run_steps(2);
+        crate::people_view::testing::key(&mut h, egui::Key::Tab);
+        h.run_steps(3);
+        h.render().expect("drawn").save(dir.join(format!("j-clavier-ouvrir-dans-{theme}.png"))).expect("saved");
     }
 }

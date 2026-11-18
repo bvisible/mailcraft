@@ -7,14 +7,14 @@
 //! what changed since when the copy has the state of every mailbox.
 //! And (`--ignored`) what reading it costs for a mailbox of a few hundred messages.
 
-use mailcraft_model::{Body, FolderKind, Mailbox, Message};
+use mailcraft_model::{Attachment, Body, FolderKind, Mailbox, Message};
 
 /// The window of a run: each folder's newest messages it reads again.
 const WINDOW: usize = 500;
 
 use mailcraft_model::sync::{JmapMailState, ServerDraft, ServerMessage};
 
-use super::{EVERY_MS, Writer, decode, encode, encode_within, holds, key, resumes, snapshot, stale};
+use super::{EVERY_MS, Writer, decode, encode, encode_within, holds, key, note_opened, resumes, snapshot, snapshot_within, stale};
 use crate::hosted::{HostAccount, account_of, hosted_session};
 
 fn jane() -> HostAccount {
@@ -101,7 +101,7 @@ fn the_newest_bodies_are_kept_the_rest_fetched_again_and_nothing_that_would_be_d
     let edited = mb
         .add_message(Message { folder: drafts, draft: true, received: 4, server: on_server("Ed2"), server_draft: saved, ..Message::default() })
         .expect("draft");
-    let kept = snapshot(&mb, 3_500, WINDOW);
+    let kept = snapshot_within(&mb, 3_500, super::BODIES, WINDOW);
     let whole: Vec<String> = kept.messages.values().filter(|m| !m.unfetched && m.folder != drafts).map(|m| m.subject.clone()).collect();
     assert_eq!(whole.len(), 3, "the newest three: {whole:?}");
     assert!(whole.iter().all(|s| ["Message 7", "Message 8", "Message 9"].contains(&s.as_str())));
@@ -164,23 +164,67 @@ fn the_page_says_who_each_mailbox_is_over_what_the_copy_says() {
 fn a_copy_stays_within_its_bound() {
     let mb = mailbox(&[jane()], 50, 20_000);
     let whole = encode_within(&mb, u64::MAX, WINDOW, usize::MAX).expect("written");
-    // Too heavy with its bodies: written with none.
+    // Too heavy with every text: the texts of the oldest go (their headers and preview stay), the newest' stay.
     let bound = whole.len() / 4;
-    let light = encode_within(&mb, u64::MAX, WINDOW, bound).expect("written without bodies");
+    let light = encode_within(&mb, u64::MAX, WINDOW, bound).expect("written with fewer texts");
     assert!(light.len() <= bound);
-    assert!(decode(&light, &[jane()]).is_some_and(|m| m.messages.values().all(|m| m.unfetched)));
-    // Too heavy with all its bodies but not with a third of them: written with that third, the newest.
-    let all = mb.messages.values().map(|m| m.size()).sum::<u64>();
-    let third = encode_within(&mb, all / 3, WINDOW, usize::MAX).expect("written");
-    let fewer = encode_within(&mb, all, WINDOW, third.len()).expect("written with a third of its bodies");
-    assert!(fewer.len() <= third.len());
-    let kept = decode(&fewer, &[jane()]).expect("read back");
-    let whole_ones = kept.messages.values().filter(|m| !m.unfetched).count();
-    assert!(whole_ones > 0 && whole_ones < kept.messages.len(), "{whole_ones} of {}", kept.messages.len());
+    let kept = decode(&light, &[jane()]).expect("read back");
+    let whole_ones: Vec<i64> = kept.messages.values().filter(|m| !m.unfetched).map(|m| m.received).collect();
+    let previews: Vec<i64> = kept.messages.values().filter(|m| m.unfetched).map(|m| m.received).collect();
+    assert!(!whole_ones.is_empty() && !previews.is_empty(), "{} whole, {} previews", whole_ones.len(), previews.len());
+    assert!(whole_ones.iter().min() > previews.iter().max(), "the newest keep their text");
+    assert_eq!(kept.messages.len(), 50, "and every message is there");
     // Still too heavy: not written at all.
     assert!(encode_within(&mb, u64::MAX, WINDOW, 100).is_none());
     // The default bound holds a few hundred messages with their bodies.
     assert!(encode(&mailbox(&[jane()], 300, 2_000), WINDOW).is_some());
+}
+
+#[test]
+fn the_files_kept_are_those_of_the_most_recently_opened_then_the_newest() {
+    let mut mb = mailbox(&[jane()], 5, 1_000);
+    let inbox = inbox_of(&mb);
+    let ids: Vec<mailcraft_model::Id> =
+        (0..4).map(|n| mb.add_message(heavy(inbox, n, 1_000, 1 << 20, 1_792_000_000 + n as i64)).expect("added")).collect();
+    // Room for the files of two. By arrival, the two newest (3 and 2); but the oldest was opened last, and the second
+    // oldest before it.
+    mb.message_mut(ids[0]).expect("there").opened_at = 1_792_100_200;
+    mb.message_mut(ids[1]).expect("there").opened_at = 1_792_100_100;
+    let kept = snapshot(&mb, 2 << 20, WINDOW);
+    let files = |n: usize| !kept.messages.get(&ids[n]).expect("kept").attachments.is_empty();
+    assert_eq!((0..4).map(files).collect::<Vec<_>>(), [true, true, false, false]);
+    for (n, id) in ids.iter().enumerate().skip(2) {
+        let m = kept.messages.get(id).expect("kept");
+        assert!(m.unfetched && m.files_on_server && text_whole(m, 1_000), "Heavy {n}: its text, its files to come");
+    }
+    // None opened: the newest.
+    let mut fresh = mailbox(&[jane()], 5, 1_000);
+    let inbox = inbox_of(&fresh);
+    let ids: Vec<mailcraft_model::Id> =
+        (0..4).map(|n| fresh.add_message(heavy(inbox, n, 1_000, 1 << 20, 1_792_000_000 + n as i64)).expect("added")).collect();
+    let kept = snapshot(&fresh, 2 << 20, WINDOW);
+    assert_eq!(ids.iter().map(|id| !kept.messages.get(id).expect("kept").attachments.is_empty()).collect::<Vec<_>>(), [false, false, true, true]);
+}
+
+#[test]
+fn the_message_shown_is_marked_opened_as_it_comes_into_view_and_not_again_while_it_stays() {
+    let mut mb = mailbox(&[jane()], 3, 10);
+    let ids: Vec<mailcraft_model::Id> = mb.messages.values().map(|m| m.id).collect();
+    let mut noted = None;
+    assert!(!note_opened(&mut mb, &[], &mut noted, 1_792_000_000), "nothing shown");
+    assert!(!note_opened(&mut mb, &ids[..2], &mut noted, 1_792_000_000), "two selected: none shown");
+    assert!(note_opened(&mut mb, &ids[..1], &mut noted, 1_792_000_000));
+    assert_eq!(mb.message(ids[0]).expect("there").opened_at, 1_792_000_000);
+    // Left open: never marked again, however long (the copy isn't written again for it).
+    assert!(!note_opened(&mut mb, &ids[..1], &mut noted, 1_792_003_600));
+    // Another, then back to the first: marked again, a minute after the last time at the earliest.
+    assert!(note_opened(&mut mb, &ids[1..2], &mut noted, 1_792_000_010));
+    assert!(!note_opened(&mut mb, &ids[..1], &mut noted, 1_792_000_030), "not again so soon");
+    assert!(!note_opened(&mut mb, &[], &mut noted, 1_792_000_040));
+    assert!(note_opened(&mut mb, &ids[..1], &mut noted, 1_792_000_060));
+    // Kept with the copy, for the next visit.
+    let back = decode(&encode(&mb, WINDOW).expect("written"), &[jane()]).expect("read");
+    assert_eq!(back.message(ids[0]).expect("there").opened_at, 1_792_000_060);
 }
 
 #[test]
@@ -210,12 +254,81 @@ fn a_copy_is_written_when_the_mailbox_changed_and_not_more_often() {
     assert!(w.due(2, EVERY_MS * 2.0));
 }
 
-/// What a copy of a few hundred messages costs: its size, writing it, and reading it back into the window's session.
+/// A message of `text` bytes of text and as much HTML, with one file of `file` bytes, received at `at`, in `folder`.
+fn heavy(folder: mailcraft_model::Id, n: usize, text: usize, file: usize, at: i64) -> Message {
+    Message {
+        folder,
+        subject: format!("Heavy {n}"),
+        message_id: format!("heavy.{n}@example.org"),
+        received: at,
+        date: at,
+        body: Body { text: "t".repeat(text), html: Some(format!("<p>{}</p>", "h".repeat(text))) },
+        attachments: vec![Attachment::new(format!("plan-{n}.pdf"), "application/pdf", vec![7; file])],
+        ..Message::default()
+    }
+}
+
+/// The page's first mailbox's Inbox in `mb`.
+fn inbox_of(mb: &Mailbox) -> mailcraft_model::Id {
+    let account = mb.accounts.iter().find(|a| a.jmap.is_some()).map(|a| a.id).unwrap_or_default();
+    mb.folder_of_kind(account, FolderKind::Inbox).expect("an Inbox")
+}
+
+/// Whether `m` has its whole text and HTML here (`text` bytes of each, as [`heavy`] makes them): opened, it shows at once.
+fn text_whole(m: &Message, text: usize) -> bool {
+    m.body.text.len() == text && m.body.html.as_ref().is_some_and(|h| h.len() == text + "<p></p>".len())
+}
+
+#[test]
+fn a_heavy_message_keeps_its_text_and_only_its_files_are_left_out() {
+    let mut mb = mailbox(&[jane()], 20, 2_000);
+    let inbox = inbox_of(&mb);
+    // The newest of the Inbox, with a file heavier than all the files a copy keeps.
+    let big = mb.add_message(heavy(inbox, 1, 40_000, usize::try_from(super::BODIES).unwrap() + 1, 1_792_000_000)).expect("added");
+    let kept = snapshot(&mb, super::BODIES, WINDOW);
+    let m = kept.messages.get(&big).expect("kept");
+    assert!(text_whole(m, 40_000), "its text and HTML whole: {} bytes of text", m.body.text.len());
+    assert!(m.attachments.is_empty() && m.has_attachments(), "its file left out, its paperclip still");
+    assert!(m.unfetched && m.files_on_server, "fetched again when opened, for its file");
+    assert!(kept.messages.values().filter(|m| m.id != big).all(|m| !m.unfetched && m.body.text.len() == 2_000), "the others whole");
+    // As written and read back at the next visit.
+    let back = decode(&encode(&mb, WINDOW).expect("written"), &[jane()]).expect("read");
+    let m = back.messages.values().find(|m| m.subject == "Heavy 1").expect("there");
+    assert!(text_whole(m, 40_000) && m.attachments.is_empty() && m.unfetched);
+}
+
+#[test]
+fn a_copy_too_heavy_leaves_out_files_the_least_recent_first_and_keeps_every_text() {
+    let mut mb = mailbox(&[jane()], 50, 3_000);
+    let inbox = inbox_of(&mb);
+    for n in 0..10 {
+        mb.add_message(heavy(inbox, n, 3_000, 1 << 20, 1_792_000_000 + n as i64)).expect("added");
+    }
+    let whole = encode_within(&mb, super::BODIES, WINDOW, usize::MAX).expect("written");
+    // Room for all but about two of the files.
+    let bound = whole.len() - (3 << 20);
+    let light = encode_within(&mb, super::BODIES, WINDOW, bound).expect("written within its bound");
+    assert!(light.len() <= bound);
+    let kept = decode(&light, &[jane()]).expect("read back");
+    let lost: Vec<&str> = kept.messages.values().filter(|m| m.body.text.len() != 3_000).map(|m| m.subject.as_str()).collect();
+    assert!(lost.is_empty(), "every text kept, none lost: {lost:?}");
+    let mut with_files: Vec<String> = kept.messages.values().filter(|m| !m.attachments.is_empty()).map(|m| m.subject.clone()).collect();
+    with_files.sort();
+    assert_eq!(with_files, (3..10).map(|n| format!("Heavy {n}")).collect::<Vec<_>>(), "the files of the newest");
+}
+
+/// What a copy of a few hundred messages costs: its size, writing it, and reading it back into the window's session; and
+/// with heavy messages, how many open with their text at once and how many have their files.
 #[test]
 #[ignore = "a measure: cargo test -p mailcraft-web -- --ignored --nocapture what_a_copy_costs"]
 fn what_a_copy_costs() {
-    for (count, bytes) in [(300, 3_000), (600, 6_000)] {
-        let mb = mailbox(&[jane(), team()], count, bytes);
+    // (count, bytes, heavy messages with a text of 30 KB and a file of 4 MB, the newest)
+    for (count, bytes, heavies) in [(300, 3_000, 0), (600, 6_000, 0), (300, 3_000, 12), (600, 6_000, 12)] {
+        let mut mb = mailbox(&[jane(), team()], count, bytes);
+        let inbox = inbox_of(&mb);
+        for n in 0..heavies {
+            mb.add_message(heavy(inbox, n, 30_000, 4 << 20, 1_792_000_000 + n as i64)).expect("added");
+        }
         let at = std::time::Instant::now();
         let written = encode(&mb, WINDOW).expect("written");
         let wrote = at.elapsed();
@@ -223,8 +336,13 @@ fn what_a_copy_costs() {
         let read = decode(&written, &[jane(), team()]).expect("read");
         let session = hosted_session(&[jane(), team()], Some(read));
         let opened = at.elapsed();
+        let all = session.mailbox.messages.values();
+        let texts = all.clone().filter(|m| m.body.text.len() >= bytes.min(30_000)).count();
+        let heavy: Vec<&Message> = all.filter(|m| m.subject.starts_with("Heavy")).map(|m| m.as_ref()).collect();
+        let at_once = heavy.iter().filter(|m| text_whole(m, 30_000)).count();
+        let files = heavy.iter().filter(|m| !m.attachments.is_empty()).count();
         println!(
-            "{count} messages of {bytes} bytes: copy of {} KB, written in {wrote:?}, read and opened in {opened:?} ({} messages)",
+            "{count} messages of {bytes} bytes, {heavies} heavy: copy of {} KB, written in {wrote:?}, read and opened in {opened:?} ({} messages, {texts} with their text; heavy: {at_once} with their text, {files} with their file)",
             written.len() / 1024,
             session.mailbox.messages.len()
         );

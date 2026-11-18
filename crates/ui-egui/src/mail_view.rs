@@ -20,8 +20,9 @@ use crate::{MailApp, icons};
 mod server_rows;
 // //// Neoffice — the inbox's tabs by kind of sender, the boxes to tick messages and the bar to archive them.
 mod stream_tabs;
-// //// Neoffice — « Traité » as Spark has it: a round to mark a row or a group done, a row's quick actions, what was done (done.rs).
-pub(crate) mod done;
+// //// Neoffice — « Traité » as Spark has it: a round to mark a row or a group done, a row's quick actions, what was done (done.rs);
+// //// Neoffice — public for a host that keeps what was done between visits (its `Item`).
+pub mod done;
 // //// Neoffice — the list's short header as Spark has it (variant D): the view's name and its menu, Show done, search, new message.
 pub(crate) mod header;
 // //// Neoffice — the groups of Principal (variant D): its notifications and its newsletters, each a row that opens them.
