@@ -4218,13 +4218,13 @@ msgid "'{subject}' may have been sent, even if its copy in Sent (or Drafts) is s
 msgstr "„{subject}“ wurde möglicherweise gesendet, auch wenn die Kopie in Gesendete Elemente (oder Entwürfe) noch als Entwurf markiert ist. Sie wird im Postausgang zurückgehalten."
 
 msgid "'{subject}' stays in the Snoozed folder: the server would not move it back, so it is no longer snoozed."
-msgstr "„{subject}“ bleibt im Ordner Zurückgestellt: Der Server konnte es nicht zurückverschieben, daher ist es nicht mehr zurückgestellt."
+msgstr "„{subject}“ bleibt im Ordner Später: Der Server konnte es nicht zurückverschieben, daher hat es keine Rückkehrzeit mehr."
 
 msgid "(the server didn't confirm the sender)"
 msgstr "(der Server hat den Absender nicht bestätigt)"
 
 msgid "A JMAP account's mail can't be snoozed yet."
-msgstr "Nachrichten eines JMAP-Kontos können noch nicht zurückgestellt werden."
+msgstr "Nachrichten eines JMAP-Kontos können noch nicht in Später verschoben werden."
 
 msgid "A shared mailbox, read with the sign-in of the account it is opened through"
 msgstr "Ein freigegebenes Postfach, das mit der Anmeldung des Kontos gelesen wird, über das es geöffnet ist"
@@ -4367,7 +4367,7 @@ msgid "Return Now"
 msgstr "Jetzt zurückholen"
 
 msgid "Return Snoozed Mail"
-msgstr "Zurückgestellte Nachrichten zurückholen"
+msgstr "In Später verschobene Nachrichten zurückholen"
 
 msgid "Saved the message to {name}"
 msgstr "Nachricht in {name} gespeichert"
@@ -4492,10 +4492,10 @@ msgid "Your organisation has to approve MailCraft before you can sign in. Ask an
 msgstr "Ihre Organisation muss MailCraft genehmigen, bevor Sie sich anmelden können. Fragen Sie einen Administrator."
 
 msgid "a message being written or waiting to be sent can't be snoozed"
-msgstr "eine Nachricht, die verfasst wird oder auf den Versand wartet, kann nicht zurückgestellt werden"
+msgstr "eine Nachricht, die verfasst wird oder auf den Versand wartet, kann nicht in Später verschoben werden"
 
 msgid "a shared mailbox has no Snoozed folder"
-msgstr "ein freigegebenes Postfach hat keinen Ordner Zurückgestellt"
+msgstr "ein freigegebenes Postfach hat keinen Ordner Später"
 
 msgid "it is too long for the platform"
 msgstr "es ist zu lang für die Plattform"
@@ -4504,7 +4504,7 @@ msgid "more flags than one listing keeps"
 msgstr "mehr Markierungen, als eine Liste behält"
 
 msgid "none of these messages is snoozed"
-msgstr "keine dieser Nachrichten ist zurückgestellt"
+msgstr "keine dieser Nachrichten ist in Später verschoben"
 
 msgid "that is not a picture that can be shown"
 msgstr "das ist kein Bild, das angezeigt werden kann"
@@ -4540,7 +4540,7 @@ msgid "the server sent data it has no reason to send while idle"
 msgstr "der Server hat im Leerlauf Daten gesendet, für die es keinen Grund gab"
 
 msgid "this message is in the Snoozed folder already"
-msgstr "diese Nachricht ist bereits im Ordner Zurückgestellt"
+msgstr "diese Nachricht ist bereits im Ordner Später"
 
 msgid "{host} is what Mozilla's ISP database lists for {domain}."
 msgstr "{host} ist, was die ISP-Datenbank von Mozilla für {domain} auflistet."
@@ -4834,7 +4834,7 @@ msgid "'{subject}' could not be brought back now: it stays in the Snoozed folder
 msgstr "„{subject}“ konnte jetzt nicht zurückgeholt werden: Die Nachricht bleibt im Ordner Später."
 
 msgid "this mailbox's server doesn't keep snoozed mail"
-msgstr "der Server dieses Postfachs speichert keine zurückgestellten Nachrichten"
+msgstr "der Server dieses Postfachs speichert keine in Später verschobenen Nachrichten"
 
 msgid "this message is being put away or brought back: try again in a moment"
 msgstr "diese Nachricht wird gerade zurückgestellt oder zurückgeholt: versuchen Sie es in einem Moment erneut"
@@ -4843,10 +4843,10 @@ msgid "this message isn't on its server yet: try again in a moment"
 msgstr "diese Nachricht liegt noch nicht auf dem Server: versuchen Sie es in einem Moment erneut"
 
 msgid "Set Snoozes"
-msgstr "Zurückstellungen festlegen"
+msgstr "Später festlegen"
 
 msgid "Snooze Answered"
-msgstr "Antwort auf Zurückstellung"
+msgstr "Antwort aus Später"
 
 msgid "this message is being moved: try again in a moment"
 msgstr "diese Nachricht wird gerade verschoben: versuchen Sie es in einem Moment erneut"

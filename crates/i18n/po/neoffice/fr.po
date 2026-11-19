@@ -5203,13 +5203,13 @@ msgid "'{subject}' may have been sent, even if its copy in Sent (or Drafts) is s
 msgstr "« {subject} » a peut-être été envoyé, même si sa copie dans Éléments envoyés (ou Brouillons) est encore marquée comme brouillon. Il est retenu dans la Boîte d’envoi."
 
 msgid "'{subject}' stays in the Snoozed folder: the server would not move it back, so it is no longer snoozed."
-msgstr "« {subject} » reste dans le dossier Reportés : le serveur n’a pas pu le remettre en arrière, il n’est donc plus reporté."
+msgstr "« {subject} » reste dans le dossier Plus tard : le serveur n’a pas pu le remettre en arrière, il n’a donc plus d’heure de retour."
 
 msgid "(the server didn't confirm the sender)"
 msgstr "(le serveur n’a pas confirmé l’expéditeur)"
 
 msgid "A JMAP account's mail can't be snoozed yet."
-msgstr "Le courrier d’un compte JMAP ne peut pas encore être reporté."
+msgstr "Le courrier d’un compte JMAP ne peut pas encore être mis en Plus tard."
 
 msgid "A shared mailbox, read with the sign-in of the account it is opened through"
 msgstr "Une boîte partagée, lue avec la connexion du compte par lequel elle est ouverte"
@@ -5352,7 +5352,7 @@ msgid "Return Now"
 msgstr "Ramener maintenant"
 
 msgid "Return Snoozed Mail"
-msgstr "Ramener le courrier reporté"
+msgstr "Ramener le courrier mis en Plus tard"
 
 msgid "Saved the message to {name}"
 msgstr "Message enregistré dans {name}"
@@ -5477,10 +5477,10 @@ msgid "Your organisation has to approve MailCraft before you can sign in. Ask an
 msgstr "Votre organisation doit approuver MailCraft avant que vous puissiez vous connecter. Demandez à un administrateur."
 
 msgid "a message being written or waiting to be sent can't be snoozed"
-msgstr "un message en cours de rédaction ou en attente d’envoi ne peut pas être reporté"
+msgstr "un message en cours de rédaction ou en attente d’envoi ne peut pas être mis en Plus tard"
 
 msgid "a shared mailbox has no Snoozed folder"
-msgstr "une boîte partagée n’a pas de dossier Reportés"
+msgstr "une boîte partagée n’a pas de dossier Plus tard"
 
 msgid "it is too long for the platform"
 msgstr "c’est trop long pour la plateforme"
@@ -5489,7 +5489,7 @@ msgid "more flags than one listing keeps"
 msgstr "plus d’indicateurs qu’une liste n’en conserve"
 
 msgid "none of these messages is snoozed"
-msgstr "aucun de ces messages n’est reporté"
+msgstr "aucun de ces messages n’est mis en Plus tard"
 
 msgid "that is not a picture that can be shown"
 msgstr "ce n’est pas une image qui peut être affichée"
@@ -5525,7 +5525,7 @@ msgid "the server sent data it has no reason to send while idle"
 msgstr "le serveur a envoyé des données sans raison pendant l’attente"
 
 msgid "this message is in the Snoozed folder already"
-msgstr "ce message est déjà dans le dossier Reportés"
+msgstr "ce message est déjà dans le dossier Plus tard"
 
 msgid "{host} is what Mozilla's ISP database lists for {domain}."
 msgstr "{host} est ce que la base de données des FAI de Mozilla indique pour {domain}."

@@ -4236,13 +4236,13 @@ msgid "'{subject}' may have been sent, even if its copy in Sent (or Drafts) is s
 msgstr "«{subject}» puede que se haya enviado, aunque su copia en Elementos enviados (o Borradores) siga marcada como borrador. Se conserva en la Bandeja de salida."
 
 msgid "'{subject}' stays in the Snoozed folder: the server would not move it back, so it is no longer snoozed."
-msgstr "«{subject}» sigue en la carpeta Pospuestos: el servidor no pudo devolverlo, así que ya no está pospuesto."
+msgstr "«{subject}» sigue en la carpeta Más tarde: el servidor no pudo devolverlo, así que ya no tiene hora de regreso."
 
 msgid "(the server didn't confirm the sender)"
 msgstr "(el servidor no confirmó el remitente)"
 
 msgid "A JMAP account's mail can't be snoozed yet."
-msgstr "El correo de una cuenta JMAP todavía no se puede posponer."
+msgstr "El correo de una cuenta JMAP todavía no se puede poner en Más tarde."
 
 msgid "A shared mailbox, read with the sign-in of the account it is opened through"
 msgstr "Un buzón compartido, leído con el inicio de sesión de la cuenta por la que se abre"
@@ -4385,7 +4385,7 @@ msgid "Return Now"
 msgstr "Devolver ahora"
 
 msgid "Return Snoozed Mail"
-msgstr "Devolver correo pospuesto"
+msgstr "Devolver correo puesto en Más tarde"
 
 msgid "Saved the message to {name}"
 msgstr "Mensaje guardado en {name}"
@@ -4510,10 +4510,10 @@ msgid "Your organisation has to approve MailCraft before you can sign in. Ask an
 msgstr "Su organización debe aprobar MailCraft antes de que pueda iniciar sesión. Pida a un administrador."
 
 msgid "a message being written or waiting to be sent can't be snoozed"
-msgstr "un mensaje que se está redactando o que espera para enviarse no se puede posponer"
+msgstr "un mensaje que se está redactando o que espera para enviarse no se puede poner en Más tarde"
 
 msgid "a shared mailbox has no Snoozed folder"
-msgstr "un buzón compartido no tiene carpeta Pospuestos"
+msgstr "un buzón compartido no tiene carpeta Más tarde"
 
 msgid "it is too long for the platform"
 msgstr "es demasiado largo para la plataforma"
@@ -4522,7 +4522,7 @@ msgid "more flags than one listing keeps"
 msgstr "más marcas de las que una lista guarda"
 
 msgid "none of these messages is snoozed"
-msgstr "ninguno de estos mensajes está pospuesto"
+msgstr "ninguno de estos mensajes está puesto en Más tarde"
 
 msgid "that is not a picture that can be shown"
 msgstr "no es una imagen que se pueda mostrar"
@@ -4558,7 +4558,7 @@ msgid "the server sent data it has no reason to send while idle"
 msgstr "el servidor envió datos que no tenía motivo para enviar mientras esperaba"
 
 msgid "this message is in the Snoozed folder already"
-msgstr "este mensaje ya está en la carpeta Pospuestos"
+msgstr "este mensaje ya está en la carpeta Más tarde"
 
 msgid "{host} is what Mozilla's ISP database lists for {domain}."
 msgstr "{host} es lo que la base de datos de ISP de Mozilla indica para {domain}."
@@ -4861,7 +4861,7 @@ msgid "this message isn't on its server yet: try again in a moment"
 msgstr "este mensaje todavía no está en su servidor: inténtelo de nuevo en un momento"
 
 msgid "Set Snoozes"
-msgstr "Programar aplazamientos"
+msgstr "Poner en Más tarde"
 
 msgid "Snooze Answered"
 msgstr "Respuesta de Más tarde"

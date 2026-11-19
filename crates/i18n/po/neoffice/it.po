@@ -4234,13 +4234,13 @@ msgid "'{subject}' may have been sent, even if its copy in Sent (or Drafts) is s
 msgstr "«{subject}» potrebbe essere stato inviato, anche se la sua copia in Posta inviata (o Bozze) è ancora contrassegnata come bozza. È trattenuto in Posta in uscita."
 
 msgid "'{subject}' stays in the Snoozed folder: the server would not move it back, so it is no longer snoozed."
-msgstr "«{subject}» resta nella cartella Posticipati: il server non è riuscito a riportarlo indietro, quindi non è più posticipato."
+msgstr "«{subject}» resta nella cartella Più tardi: il server non è riuscito a riportarlo indietro, quindi non ha più un orario di ritorno."
 
 msgid "(the server didn't confirm the sender)"
 msgstr "(il server non ha confermato il mittente)"
 
 msgid "A JMAP account's mail can't be snoozed yet."
-msgstr "La posta di un account JMAP non può ancora essere posticipata."
+msgstr "La posta di un account JMAP non può ancora essere messa in Più tardi."
 
 msgid "A shared mailbox, read with the sign-in of the account it is opened through"
 msgstr "Una casella condivisa, letta con l'accesso dell'account da cui viene aperta"
@@ -4383,7 +4383,7 @@ msgid "Return Now"
 msgstr "Riporta ora"
 
 msgid "Return Snoozed Mail"
-msgstr "Riporta posta posticipata"
+msgstr "Riporta posta messa in Più tardi"
 
 msgid "Saved the message to {name}"
 msgstr "Messaggio salvato in {name}"
@@ -4508,10 +4508,10 @@ msgid "Your organisation has to approve MailCraft before you can sign in. Ask an
 msgstr "La sua organizzazione deve approvare MailCraft prima che lei possa accedere. Chieda a un amministratore."
 
 msgid "a message being written or waiting to be sent can't be snoozed"
-msgstr "un messaggio in fase di scrittura o in attesa di invio non può essere posticipato"
+msgstr "un messaggio in fase di scrittura o in attesa di invio non può essere messo in Più tardi"
 
 msgid "a shared mailbox has no Snoozed folder"
-msgstr "una casella condivisa non ha una cartella Posticipati"
+msgstr "una casella condivisa non ha una cartella Più tardi"
 
 msgid "it is too long for the platform"
 msgstr "è troppo lungo per la piattaforma"
@@ -4520,7 +4520,7 @@ msgid "more flags than one listing keeps"
 msgstr "più contrassegni di quanti un elenco ne conservi"
 
 msgid "none of these messages is snoozed"
-msgstr "nessuno di questi messaggi è posticipato"
+msgstr "nessuno di questi messaggi è messo in Più tardi"
 
 msgid "that is not a picture that can be shown"
 msgstr "non è un'immagine che può essere mostrata"
@@ -4556,7 +4556,7 @@ msgid "the server sent data it has no reason to send while idle"
 msgstr "il server ha inviato dati che non aveva motivo di inviare mentre era in attesa"
 
 msgid "this message is in the Snoozed folder already"
-msgstr "questo messaggio è già nella cartella Posticipati"
+msgstr "questo messaggio è già nella cartella Più tardi"
 
 msgid "{host} is what Mozilla's ISP database lists for {domain}."
 msgstr "{host} è ciò che il database ISP di Mozilla elenca per {domain}."
