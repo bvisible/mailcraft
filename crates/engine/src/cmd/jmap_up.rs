@@ -54,6 +54,11 @@ pub fn message_changes(s: &Session, account: Id, limit: usize) -> (Vec<JmapChang
     let outbox = mb.folder_of_kind(account, mailcraft_model::FolderKind::Outbox);
     for m in mb.messages.values().filter(|m| m.account == account && Some(m.folder) != outbox) {
         let Some(server) = m.server.as_ref().filter(|server| !server.gone && plausible_id(&server.id)) else { continue };
+        // A message its server is putting away or bringing back (« Plus tard », `snooze_hosted`): the server makes the move,
+        // and its marks go up once its answer says the id it has there.
+        if m.snooze.is_some_and(|z| z.placing) {
+            continue;
+        }
         if let Some(marks) = marks_of(m, server) {
             note(&|| marks.clone());
         }

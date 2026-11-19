@@ -156,6 +156,8 @@ pub mod signature;
 #[cfg(test)]
 mod signature_tests;
 pub mod snooze;
+// //// Neoffice — « Plus tard » in a hosting page's tab, kept by the mailbox's server.
+pub mod snooze_hosted;
 #[cfg(test)]
 mod snooze_review_tests;
 #[cfg(test)]
@@ -198,6 +200,8 @@ pub fn registry() -> Registry {
     v.extend(edit::specs());
     v.extend(mail::specs());
     v.extend(snooze::specs());
+    // //// Neoffice — see `snooze_hosted`.
+    v.extend(snooze_hosted::specs());
     v.extend(gmail_move::specs());
     v.extend(compose::specs());
     v.extend(format::specs());

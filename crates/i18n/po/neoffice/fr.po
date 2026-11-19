@@ -5384,7 +5384,7 @@ msgid "Signing in isn't available on this phone."
 msgstr "La connexion n’est pas disponible sur ce téléphone."
 
 msgid "Snoozed"
-msgstr "Reporté"
+msgstr "Plus tard"
 
 msgid "System default"
 msgstr "Valeur par défaut du système"
@@ -5757,3 +5757,77 @@ msgstr "Téléchargement des pièces jointes…"
 
 msgid "The attachments of this message are still on the server."
 msgstr "Les pièces jointes de ce message sont toujours sur le serveur."
+
+msgctxt "snooze"
+msgid "Later"
+msgstr "Plus tard"
+
+msgctxt "snooze"
+msgid "Later Today"
+msgstr "Plus tard aujourd’hui"
+
+msgctxt "snooze"
+msgid "Tomorrow Morning"
+msgstr "Demain matin"
+
+msgctxt "snooze"
+msgid "Next Week"
+msgstr "La semaine prochaine"
+
+msgctxt "snooze"
+msgid "Tomorrow {time}"
+msgstr "Demain {time}"
+
+msgctxt "snooze"
+msgid "Not back"
+msgstr "Pas revenu"
+
+msgctxt "snooze"
+msgid "Choose a Date and Time…"
+msgstr "Choisir une date et une heure…"
+
+msgctxt "snooze"
+msgid "Bring Back Now"
+msgstr "Faire revenir maintenant"
+
+msgctxt "snooze"
+msgid "Choose the day"
+msgstr "Choisir le jour"
+
+msgctxt "snooze"
+msgid "Put Away"
+msgstr "Mettre de côté"
+
+msgctxt "snooze"
+msgid "Choose a time in the future."
+msgstr "Choisissez une heure à venir."
+
+msgid "Later"
+msgstr "Plus tard"
+
+msgid "Put away until a time of your choosing"
+msgstr "Mettre de côté jusqu’à l’heure de votre choix"
+
+msgid "'{subject}' could not be put away: it stays where it was."
+msgstr "« {subject} » n’a pas pu être mis de côté : il reste où il était."
+
+msgid "'{subject}' could not be brought back now: it stays in the Snoozed folder."
+msgstr "« {subject} » n’a pas pu revenir maintenant : il reste dans Plus tard."
+
+msgid "this mailbox's server doesn't keep snoozed mail"
+msgstr "le serveur de cette boîte ne garde pas le courrier mis en Plus tard"
+
+msgid "this message is being put away or brought back: try again in a moment"
+msgstr "ce message est en cours de mise de côté ou de retour : réessayez dans un instant"
+
+msgid "this message isn't on its server yet: try again in a moment"
+msgstr "ce message n’est pas encore sur son serveur : réessayez dans un instant"
+
+msgid "Set Snoozes"
+msgstr "Mettre en Plus tard"
+
+msgid "Snooze Answered"
+msgstr "Réponse de Plus tard"
+
+msgid "this message is being moved: try again in a moment"
+msgstr "ce message est en cours de déplacement : réessayez dans un instant"

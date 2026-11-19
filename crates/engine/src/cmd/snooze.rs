@@ -31,7 +31,8 @@ use crate::{CmdResult, CommandSpec, Session};
 
 /// Enabled only with messages selected that may be snoozed: none that a JMAP account's server has, for now.
 fn needs_snoozable(s: &Session) -> Option<&'static str> {
-    needs_message(s).or_else(|| s.mailbox.snooze_refusal(&s.sel.messages))
+    // //// Neoffice — in a hosting page's tab, a JMAP server that keeps snoozes takes its mail's (snooze_hosted.rs).
+    needs_message(s).or_else(|| super::snooze_hosted::refusal(s, &s.sel.messages).unwrap_or_else(|| s.mailbox.snooze_refusal(&s.sel.messages)))
 }
 
 /// The most messages one `mail.returnDue` brings back; the rest come at the next one, a minute on.
@@ -83,6 +84,10 @@ fn snooze(s: &mut Session, v: &Value) -> CmdResult {
     let at = until(s, v)?;
     let ids = targets_whole(s, v)?;
     let before = s.rows();
+    // //// Neoffice — in a hosting page's tab, the server of the mail puts it away and brings it back (snooze_hosted.rs).
+    if let Some(answer) = super::snooze_hosted::snooze(s, at, &ids, &before) {
+        return answer;
+    }
     let name = s.interface_language.t("Snoozed").to_string();
     // Taken whole: a refusal leaves the mailbox as it was.
     let count = s.mailbox.snooze_messages(&ids, at, &name)?;
@@ -94,6 +99,10 @@ fn snooze(s: &mut Session, v: &Value) -> CmdResult {
 fn unsnooze(s: &mut Session, v: &Value) -> CmdResult {
     let ids = targets(s, v)?;
     let before = s.rows();
+    // //// Neoffice — in a hosting page's tab, what its server keeps is brought back by the server (snooze_hosted.rs).
+    if let Some(answer) = super::snooze_hosted::unsnooze(s, &ids, &before) {
+        return answer;
+    }
     let now = s.now();
     let back = s.mailbox.return_snoozed(&ids, now);
     if back.is_empty() {

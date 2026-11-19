@@ -365,6 +365,23 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (below) the round is in the lead column, in the unread dot's place under the pointer, and a day's title has its round
   there too; a message « Afficher les traités » lists as done wears it full, and a click puts it back in its account's
   Inbox (`done::listed_done_round`). In the Neoffice look the unread dot is the signal.
+- « Plus tard » (upstream's Snooze, #949) in a hosting page's tab, kept by the mailbox's server, which brings the message
+  back at its time even with every window closed (frappe_webmail's `neomail_snooze`, `NeomailSnooze/get` and `/set` under
+  `https://neoffice.me/jmap/neomail-snooze`). Upstream refuses a JMAP server's mail (`JMAP_NOT_YET`): kept so on the
+  desktop. The engine's `cmd/snooze_hosted.rs` (tests in `snooze_hosted_tests.rs`): `mail.snooze` and `mail.unsnooze` of
+  such a mailbox ask its server (`Session::hosted_snooze`, a marked field of `session.rs`; marked hooks in `snooze.rs`),
+  the message lying at once where it goes here, marked
+  `Snooze::placing` (a marked field of `crates/model/src/mailbox_snooze.rs`, with `Snooze::failed`) so that no move of it
+  goes up (`jmap_up.rs`); neither is a step of the history (`Session::unrecorded`, marked lines of `session.rs`'s run: the
+  server keeps what was done); `mail.snoozeAnswered` and `mail.setSnoozes` take in the server's answers and records. The
+  web build's `apps/mailcraft-web/src/snooze.rs` (tests in `snooze_tests.rs`, marked lines of `main.rs` and `web.rs`) asks
+  and reads the server. The window's `crates/ui-egui/src/snooze_hosted.rs` (tests in `snooze_hosted_tests.rs`): the clock
+  among a row's quick actions in the Inbox and in the « Plus tard » folder (`done.rs`), beside the actions of the message
+  being read (a marked line of `reading.rs`), « Plus tard » in the message's menu (`mail_view.rs`) and in the Home tab's
+  Tags group (`Menu::Snooze`, marked lines of `ribbon.rs`), the window of times of the tab's own key, Mod+Shift+L (marked
+  lines of `keys.rs` and `lib.rs`; upstream's Snooze has no key), and the time each message of the folder comes back on
+  its row (marked lines of `mail_view.rs`). The fork's JMAP stand-in keeps « Plus tard » as the server does when
+  `MAILCRAFT_STANDIN_SNOOZE=1` (`crates/jmap-fork/src/standin/snooze.rs`), for a browser to try it.
 - The message list of a hosting page's tab as Spark has it, variant D of the NeoMail design (15.11; `mail_view::spark_list`,
   `mail_view/header.rs`, `nora/ask_bar.rs`, tests in `mail_view/variant_d_tests.rs`, `nora/ask_bar_tests.rs`,
   `crates/engine/src/all_inboxes_tests.rs`); the desktop keeps upstream's list. One mark at a row's left, in a lead column of

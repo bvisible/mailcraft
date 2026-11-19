@@ -569,6 +569,9 @@ const NEVER: &[&str] = &[
     "sync.applyJmapFetch",
     // //// Neoffice — the tab a message is in (a person, a notification, a newsletter) is what the Neoffice server said of it: the host's to say, as a synchronisation is.
     "mail.setStreams",
+    // //// Neoffice — what a mailbox's server keeps of « Plus tard », and what it answered: the host's to say, as a synchronisation is.
+    "mail.setSnoozes",
+    "mail.snoozeAnswered",
     // //// Neoffice — Nora spends the owner's calls to the Neoffice server's model on the owner's mail and text: the owner's own click only.
     "ui.noraReply",
     "ui.noraTranslate",

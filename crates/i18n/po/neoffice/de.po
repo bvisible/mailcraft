@@ -4399,7 +4399,7 @@ msgid "Signing in isn't available on this phone."
 msgstr "Anmeldung ist auf diesem Telefon nicht verfügbar."
 
 msgid "Snoozed"
-msgstr "Zurückgestellt"
+msgstr "Später"
 
 msgid "System default"
 msgstr "Systemstandard"
@@ -4772,3 +4772,77 @@ msgstr "Anhänge werden heruntergeladen…"
 
 msgid "The attachments of this message are still on the server."
 msgstr "Die Anhänge dieser Nachricht liegen noch auf dem Server."
+
+msgctxt "snooze"
+msgid "Later"
+msgstr "Später"
+
+msgctxt "snooze"
+msgid "Later Today"
+msgstr "Heute später"
+
+msgctxt "snooze"
+msgid "Tomorrow Morning"
+msgstr "Morgen früh"
+
+msgctxt "snooze"
+msgid "Next Week"
+msgstr "Nächste Woche"
+
+msgctxt "snooze"
+msgid "Tomorrow {time}"
+msgstr "Morgen {time}"
+
+msgctxt "snooze"
+msgid "Not back"
+msgstr "Nicht zurückgeholt"
+
+msgctxt "snooze"
+msgid "Choose a Date and Time…"
+msgstr "Datum und Uhrzeit wählen…"
+
+msgctxt "snooze"
+msgid "Bring Back Now"
+msgstr "Jetzt zurückholen"
+
+msgctxt "snooze"
+msgid "Choose the day"
+msgstr "Tag wählen"
+
+msgctxt "snooze"
+msgid "Put Away"
+msgstr "Zurückstellen"
+
+msgctxt "snooze"
+msgid "Choose a time in the future."
+msgstr "Wählen Sie einen Zeitpunkt in der Zukunft."
+
+msgid "Later"
+msgstr "Später"
+
+msgid "Put away until a time of your choosing"
+msgstr "Bis zu einem Zeitpunkt Ihrer Wahl zurückstellen"
+
+msgid "'{subject}' could not be put away: it stays where it was."
+msgstr "„{subject}“ konnte nicht zurückgestellt werden: Die Nachricht bleibt, wo sie war."
+
+msgid "'{subject}' could not be brought back now: it stays in the Snoozed folder."
+msgstr "„{subject}“ konnte jetzt nicht zurückgeholt werden: Die Nachricht bleibt im Ordner Später."
+
+msgid "this mailbox's server doesn't keep snoozed mail"
+msgstr "der Server dieses Postfachs speichert keine zurückgestellten Nachrichten"
+
+msgid "this message is being put away or brought back: try again in a moment"
+msgstr "diese Nachricht wird gerade zurückgestellt oder zurückgeholt: versuchen Sie es in einem Moment erneut"
+
+msgid "this message isn't on its server yet: try again in a moment"
+msgstr "diese Nachricht liegt noch nicht auf dem Server: versuchen Sie es in einem Moment erneut"
+
+msgid "Set Snoozes"
+msgstr "Zurückstellungen festlegen"
+
+msgid "Snooze Answered"
+msgstr "Antwort auf Zurückstellung"
+
+msgid "this message is being moved: try again in a moment"
+msgstr "diese Nachricht wird gerade verschoben: versuchen Sie es in einem Moment erneut"

@@ -248,6 +248,8 @@ impl eframe::App for WebShell {
             crate::kept::frame(&mut self.app);
             // //// Neoffice — and the kind of sender of the Inbox's messages, for the tabs, is asked of the server and put (streams.rs).
             crate::streams::frame(&mut self.app);
+            // //// Neoffice — and what « Plus tard » asks of the server is sent, and what the server keeps of it is put (snooze.rs).
+            crate::snooze::frame(&mut self.app);
             // //// Neoffice — and the mailboxes are kept in this browser for the next visit, when they changed (hosted/cache.rs).
             crate::hosted::cache::tick(&mut self.app);
             // //// Neoffice — and what the Échanges pane asks of the server is asked, and what came is put (exchanges.rs).
@@ -480,6 +482,8 @@ fn hosted_app(accounts: &[crate::host::HostAccount], kept: Option<Mailbox>, inbo
     crate::kept::start(accounts, credentials.clone(), ctx.clone());
     // //// Neoffice — the kind of sender of these mailboxes' Inbox messages is asked of their server for the window's tabs (streams.rs).
     crate::streams::start(accounts, credentials.clone(), ctx.clone());
+    // //// Neoffice — « Plus tard » of these mailboxes is kept by their server, which brings each message back at its time (snooze.rs).
+    crate::snooze::start(accounts, credentials.clone(), ctx.clone());
     // //// Neoffice — the Échanges pane asks the server of these mailboxes who their senders are and what was said with them (exchanges.rs).
     crate::exchanges::start(accounts, credentials.clone(), ctx.clone());
     // //// Neoffice — the round of a row shows its sender's domain's icon where the server finds one (sender_icons.rs).

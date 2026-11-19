@@ -119,10 +119,11 @@ pub(crate) fn archive_shown(s: &mailcraft_engine::Session, account: Id) -> Optio
     s.mailbox.folder(archive)?.server.as_ref().map(|server| server.id.clone()).filter(|id| !id.is_empty())
 }
 
-/// Whether a row has these quick actions (`bar`) in place of upstream's two: where « Traité » is offered, and among search results
-/// where a host carries Nora's sorting, as in the Inbox (the ⚡ of an Inbox's message among them: priority.rs).
+/// Whether a row has these quick actions (`bar`) in place of upstream's two: where « Traité » is offered, among search results
+/// where a host carries Nora's sorting, as in the Inbox (the ⚡ of an Inbox's message among them: priority.rs), and in the
+/// « Plus tard » folder its server keeps, where the clock brings a message back now (snooze_hosted.rs).
 pub(crate) fn quick_offered(app: &MailApp) -> bool {
-    offered(app) || super::priority::searched(app)
+    offered(app) || super::priority::searched(app) || crate::snooze_hosted::in_view(app)
 }
 
 /// Whether « Traité » is offered: a hosting page's tab, its Inbox in view.
@@ -339,9 +340,12 @@ pub(super) enum Quick {
     Delete,
     /// « Prioritaire » (⚡): in or out of it (priority.rs).
     Priority,
+    /// « Plus tard » (the clock): its times, or bring it back now, where the mailbox's server keeps it (snooze_hosted.rs).
+    Snooze,
 }
 
-/// A row's quick actions, right to left from its end: delete, move, flag, pin, read, and ⚡ where « Prioritaire » is offered.
+/// A row's quick actions, right to left from its end: delete, move, the clock of « Plus tard » where its server keeps it, flag,
+/// pin, read, and ⚡ where « Prioritaire » is offered.
 pub(super) struct Bar {
     buttons: Vec<(Quick, Response, Rect)>,
     /// The mailbox of the row's message on the server and its JMAP id, and whether it is in « Prioritaire », where it is offered.
@@ -357,13 +361,17 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
     let mut buttons = Vec::new();
     // ⚡: where « Prioritaire » is offered, and among search results, for a message of an Inbox its server has (priority.rs).
     let priority = super::priority::bolt_of(app, m);
-    let quicks: &[Quick] = if priority.is_some() {
-        &[Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read, Quick::Priority]
-    } else {
-        &[Quick::Delete, Quick::Move, Quick::Flag, Quick::Pin, Quick::Read]
-    };
+    let mut quicks = vec![Quick::Delete, Quick::Move];
+    if crate::snooze_hosted::offered(app, &row.members) || crate::snooze_hosted::returnable(app, &row.members) {
+        quicks.push(Quick::Snooze);
+    }
+    quicks.extend([Quick::Flag, Quick::Pin, Quick::Read]);
+    if priority.is_some() {
+        quicks.push(Quick::Priority);
+    }
     for quick in quicks.iter().copied() {
         let tip = match quick {
+            Quick::Snooze => tlc!("snooze", "Later"),
             Quick::Priority if priority.as_ref().is_some_and(|(_, _, on)| *on) => tl!("Take out of Priority"),
             Quick::Priority => tl!("Put in Priority"),
             Quick::Delete => tl!("Delete"),
@@ -383,6 +391,7 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
             Quick::Pin => "doneQuickPin",
             Quick::Read => "doneQuickRead",
             Quick::Priority => "doneQuickPriority",
+            Quick::Snooze => "doneQuickSnooze",
         };
         app.hit.add(name, row.id, at);
         buttons.push((quick, resp, at));
@@ -392,10 +401,12 @@ pub(super) fn bar(app: &mut MailApp, ui: &Ui, key: (Id, u16), row: &Row, m: &Mes
     Bar { buttons, priority, left }
 }
 
-/// Whether the row's move menu is open: its quick actions stay while the pointer is in it.
+/// Whether the row's move menu, or its menu of « Plus tard »'s times, is open: its quick actions stay while the pointer is in it.
 pub(super) fn menu_open(ui: &Ui, key: (Id, u16)) -> bool {
-    let id = ui.scope_id().with(("msg_quick", Quick::Move as u8, key));
-    egui::Popup::is_id_open(ui.ctx(), id.with("popup"))
+    [Quick::Move, Quick::Snooze].iter().any(|quick| {
+        let id = ui.scope_id().with(("msg_quick", *quick as u8, key));
+        egui::Popup::is_id_open(ui.ctx(), id.with("popup"))
+    })
 }
 
 /// Paint the quick actions.
@@ -427,6 +438,7 @@ pub(super) fn paint_bar(ui: &Ui, t: &Tokens, bar: &Bar, row: &Row, m: &Message) 
             Quick::Pin => ("pin", m.pinned),
             Quick::Read if row.unread > 0 => ("markRead", false),
             Quick::Read => ("markUnread", false),
+            Quick::Snooze => ("clock", false),
             // (Drawn above.)
             Quick::Priority => continue,
         };
@@ -453,6 +465,16 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
             }
             continue;
         }
+        if *quick == Quick::Snooze {
+            let mut gone = false;
+            egui::Popup::menu(resp).show(|ui| {
+                gone = crate::snooze_hosted::menu(ui, app, &row.members);
+            });
+            if gone {
+                return true;
+            }
+            continue;
+        }
         if !resp.clicked() {
             continue;
         }
@@ -462,7 +484,7 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
             Quick::Pin => ("mail.pin", json!({"ids": [row.id]})),
             Quick::Read if unread => ("mail.markRead", json!({"ids": row.members})),
             Quick::Read => ("mail.markUnread", json!({"ids": [row.id]})),
-            Quick::Move => continue,
+            Quick::Move | Quick::Snooze => continue,
             Quick::Priority => {
                 if let Some((account, email, on)) = bar.priority.clone() {
                     crate::nora::sorting::act(app, crate::nora::sorting::Intent::Priority { account, email, on: !on });

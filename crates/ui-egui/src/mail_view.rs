@@ -1349,6 +1349,8 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     let mut x = sender_line_end;
     let date =
         crate::dates::list_label(mailcraft_engine::list::when(&m), app.session.now(), app.session.offset_at(m.date), app.session.prefs.twelve_hour);
+    // //// Neoffice — a message waiting in « Plus tard » says when it comes back instead, where its server keeps it (snooze_hosted.rs).
+    let date = crate::snooze_hosted::row_label(app, &m).unwrap_or(date);
     // //// Neoffice — in variant D's single line, the time, the subject and the preview are larger (`d_text`).
     let d_text = if d && one { D_ONE_LINE_TEXT } else { LIST_TEXT };
     let (date_font, date_color) = match (unread, overdue) {
@@ -1407,6 +1409,11 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     }
     if let Some(seal) = seal {
         marker(seal, t.icon);
+    }
+    // //// Neoffice — the clock of a message waiting in « Plus tard », the overdue colour when its server could not bring it
+    // //// Neoffice — back (snooze_hosted.rs).
+    if let Some(failed) = crate::snooze_hosted::row_mark(app, &m) {
+        marker("clock", if failed { t.overdue } else { t.text_dim });
     }
     // A meeting that came by mail wears its mark; its calendar part is not one of its files.
     let (meeting, files) = crate::reading::list_marks(&m);
@@ -1684,6 +1691,8 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         // Gmail's categories, for mail of a Gmail Inbox, where moves between them are on (#911).
         crate::gmail_move::menu(app, ui);
         mi(ui, app, "Archive", "mail.archive", json!({}));
+        // //// Neoffice — « Plus tard », where the mailbox's server keeps it: its times, or bring it back now (snooze_hosted.rs).
+        crate::snooze_hosted::context_menu(app, ui);
         ui.menu_button(tl!("Junk"), |ui| crate::ribbon::junk_menu(ui, app));
         mi(ui, app, "Delete", "mail.delete", json!({}));
         ui.separator();

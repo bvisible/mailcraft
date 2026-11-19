@@ -1200,6 +1200,14 @@ pub struct Session {
     /// nothing of them between visits. What would vanish at the next visit is then refused, with the reason, rather than
     /// made. Set by the host, never by a command's params. Never saved.
     pub keeps_local: bool,
+    // //// Neoffice — « Plus tard » in a hosting page's tab, kept by the mailbox's server (`cmd::snooze_hosted`). Never saved.
+    /// What this tab knows of the servers' snoozes and what it is to ask them ([`crate::cmd::snooze_hosted::Hosted`]).
+    pub hosted_snooze: crate::cmd::snooze_hosted::Hosted,
+    // //// Neoffice — a command whose change is its server's to make and to undo (« Plus tard » in a hosting page's tab) is no
+    // //// Neoffice — step of the history: an undo would put the message back here while the server keeps it away.
+    /// The command running makes no step of the history: what it changed is the server's to undo. Set by the command,
+    /// cleared before each one. Never saved.
+    pub unrecorded: bool,
     // //// Neoffice — whether a server's list of address books (or its word that it keeps none) has come since this session
     // began: before it, New Contact says the books are still being read, not that there are none
     // (`cmd::remote_contacts::adding_refusal`). Set by `sync.applyBooks` and by the host. Never saved.
@@ -1389,6 +1397,9 @@ impl Session {
             server_search: Default::default(),
             // //// Neoffice — see the field: kept, unless the host says otherwise.
             keeps_local: true,
+            // //// Neoffice — see the fields.
+            hosted_snooze: Default::default(),
+            unrecorded: false,
             // //// Neoffice — see the field: not yet.
             books_listed: false,
             // //// Neoffice — see the field: none, unless the host says it runs one.
@@ -3771,6 +3782,8 @@ impl Session {
         // ([`crate::import_pst::finish`]), and a batch that fails takes itself out again.
         let staged = id == "file.importPst" && self.agent.is_none() && params.get("staged").and_then(Value::as_bool) == Some(true);
         let history = spec.mutates && !matches!(id, "edit.undo" | "edit.redo") && !background && !staged;
+        // //// Neoffice — see `Session::unrecorded`: said by the command that runs, for this run alone.
+        self.unrecorded = false;
         // The computer may have been carried to another zone since the last command: the
         // mailbox is put by that zone's clock first, and that is not this command's to undo.
         self.settle_zone();
@@ -3950,7 +3963,8 @@ impl Session {
                         self.history.clear();
                         self.redo.clear();
                         self.steps_moved = self.steps_moved.wrapping_add(1);
-                    } else if history {
+                    // //// Neoffice — a command whose change is its server's to undo makes no step (`Session::unrecorded`).
+                    } else if history && !self.unrecorded {
                         self.dirty = true;
                         let mut before = before;
                         before.touched = crate::undo::touched(&before.mailbox, &self.mailbox);
@@ -3961,7 +3975,8 @@ impl Session {
                             self.history.remove(0);
                         }
                         self.redo.clear();
-                    } else if background {
+                    // //// Neoffice — (and so is the change of a command that makes no step: `Session::unrecorded`)
+                    } else if background || self.unrecorded {
                         // Not to undo, but to keep: the file is written.
                         self.dirty = true;
                     }

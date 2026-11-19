@@ -529,6 +529,8 @@ fn header(app: &mut MailApp, ui: &mut Ui, m: &Arc<Message>, place: Place, pictur
                             let _ = app.run(id, json!({}));
                         }
                     }
+                    // //// Neoffice — « Plus tard »'s clock, where the mailbox's server keeps it: its times (snooze_hosted.rs).
+                    crate::snooze_hosted::reading_button(app, ui, m);
                     // //// Neoffice — Nora's button beside the actions, when a host reaches her: reply with her, or have her translate the message (nora/pane.rs).
                     crate::nora::pane::button(app, ui, m);
                     // //// Neoffice — and the one that opens what was said with the sender, whether or not there is a strip to open it by (exchanges.rs).

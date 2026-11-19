@@ -264,6 +264,8 @@ mod hosted_signatures;
 // //// Neoffice — File › Info in a tab of a hosting page: its mailboxes are set up on its site, and their Settings open it.
 mod hosted_accounts;
 mod signatures;
+// //// Neoffice — « Plus tard » in a hosting page's tab, kept by the mailbox's server: where the person reaches it.
+pub(crate) mod snooze_hosted;
 #[cfg(test)]
 mod snooze_tell_tests;
 mod snooze_tick;
@@ -5604,6 +5606,8 @@ impl MailApp {
         nora::ready::style_panel(self, &ctx);
         // //// Neoffice — the card that turns « Trier avec Nora » on, while it is up (nora/sorting_view.rs).
         nora::sorting_view::card(self, &ctx);
+        // //// Neoffice — « Plus tard »: the window of its times while it is open, and what its server refused (snooze_hosted.rs).
+        snooze_hosted::frame(self, &ctx);
         close_to_tray::show(&ctx, self);
         reminders::show(self, &ctx);
         // What was chosen in a text's menu, once everything that has one is drawn.

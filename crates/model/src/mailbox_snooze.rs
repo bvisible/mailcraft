@@ -53,6 +53,18 @@ pub struct Snooze {
     /// How many times the server refused to move it back ([`MAX_SNOOZE_REFUSALS`]).
     #[serde(skip_serializing_if = "is_zero", deserialize_with = "crate::sync::lenient_or_default")]
     pub refusals: u8,
+    // //// Neoffice — in a hosting page's tab the server puts the message away and brings it back (the engine's
+    // //// Neoffice — `cmd/snooze_hosted.rs`): it lies where it was put here while the server is asked, and no move goes up.
+    /// It was put here (into the Snoozed folder, or back) while its server is asked to move it: no move goes up for it,
+    /// and the server's answer settles where it lies. Kept with the mailbox, so that one whose answer never came is put
+    /// back where its server has it.
+    #[serde(skip_serializing_if = "std::ops::Not::not", deserialize_with = "crate::sync::lenient_or_default")]
+    pub placing: bool,
+    // //// Neoffice — the server tried to bring it back and could not (its mailbox refused it): it waits in the folder, said so.
+    /// Its server tried to bring it back and could not, the last times it was allowed to: it stays in the Snoozed folder,
+    /// and its row says so.
+    #[serde(skip_serializing_if = "std::ops::Not::not", deserialize_with = "crate::sync::lenient_or_default")]
+    pub failed: bool,
 }
 
 fn is_zero(n: &u8) -> bool {

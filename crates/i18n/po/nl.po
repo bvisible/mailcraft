@@ -130,6 +130,16 @@ msgstr ""
 msgid "\"{title}\" will be removed from Neoffice's notes."
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "'{subject}' could not be brought back now: it stays in the Snoozed folder."
+msgstr ""
+
+#. what a command says
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "'{subject}' could not be put away: it stays where it was."
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "'{subject}' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."
@@ -202,7 +212,7 @@ msgid "(no recipients)"
 msgstr "(geen ontvangers)"
 
 #. interface, what a command says, why a mail server couldn't be used
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/snooze.rs crates/mobile/src/sync.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/snooze.rs crates/engine/src/cmd/snooze_hosted.rs crates/mobile/src/sync.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "(no subject)"
 msgstr "(geen onderwerp)"
@@ -934,7 +944,7 @@ msgid "Accounts"
 msgstr "Accounts"
 
 #. ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/stream.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Actions"
 msgstr "Acties"
@@ -2644,7 +2654,7 @@ msgid "Can't sign"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/close_to_tray.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/mail_view/stream_tabs.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/security.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/help.rs crates/ui-egui/src/chrome.rs crates/ui-egui/src/close_to_tray.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/import_tree.rs crates/ui-egui/src/mail_view/stream_tabs.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/notes_view.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/security.rs crates/ui-egui/src/snooze_hosted.rs
 #, fuzzy
 msgid "Cancel"
 msgstr "Annuleren"
@@ -5528,7 +5538,7 @@ msgid "Fold the calendars of this group away"
 msgstr "De agenda's van deze groep invouwen"
 
 #. interface, name, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/imported_dupes.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/stream.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/imported_dupes.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
 #, fuzzy
 msgid "Folder"
 msgstr "Map"
@@ -13990,6 +14000,11 @@ msgid "Server: {address}"
 msgstr "Server: {address}"
 
 #. command label
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "Set Snoozes"
+msgstr ""
+
+#. command label
 #: crates/engine/src/cmd/stream.rs
 msgid "Set Streams"
 msgstr ""
@@ -14772,6 +14787,11 @@ msgstr ""
 #, fuzzy
 msgid "Snooze"
 msgstr "Uitstellen"
+
+#. command label
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "Snooze Answered"
+msgstr ""
 
 #. command label
 #: crates/ui-egui/src/lib.rs
@@ -20280,8 +20300,8 @@ msgstr "een koppeling gaat naar een adres zoals https://..., mailto:... of ms-se
 msgid "a list holds {n} entries at most"
 msgstr "een lijst bevat hoogstens {n} vermeldingen"
 
-#. what a command says
-#: crates/model/src/mailbox_snooze.rs
+#. what a command says, why a command can't run
+#: crates/engine/src/cmd/snooze_hosted.rs crates/model/src/mailbox_snooze.rs
 msgid "a message being written or waiting to be sent can't be snoozed"
 msgstr ""
 
@@ -21697,6 +21717,72 @@ msgstr "meld u eerst aan bij {who}"
 #, fuzzy
 msgid "sign-in failed: {reason}"
 msgstr "aanmelden mislukt: {reason}"
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Bring Back Now"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Choose a Date and Time…"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Choose a time in the future."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Choose the day"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Later"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Later Today"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Next Week"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Not back"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Put Away"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Tomorrow Morning"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Tomorrow {time}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms/junk.rs
@@ -23431,6 +23517,11 @@ msgstr "dit postvak is niet bereikbaar via Microsoft Graph (MailboxNotEnabledFor
 msgid "this mailbox is too large ({mb} MB) to save as one self-contained file: save it to another folder instead, which keeps its content in a folder beside the file"
 msgstr "dit postvak is te groot ({mb} MB) om als één zelfstandig bestand op te slaan: sla het in een andere map op, die de inhoud in een map naast het bestand bewaart"
 
+#. why a command can't run
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "this mailbox's server doesn't keep snoozed mail"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/share.rs
 #, fuzzy
@@ -23461,6 +23552,16 @@ msgstr "dit bericht heeft geen afzenderadres om naar te zoeken"
 msgid "this message has no subject to look for"
 msgstr "dit bericht heeft geen onderwerp om naar te zoeken"
 
+#. why a command can't run
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "this message is being moved: try again in a moment"
+msgstr ""
+
+#. why a command can't run
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "this message is being put away or brought back: try again in a moment"
+msgstr ""
+
 #. what a command says
 #: crates/model/src/mailbox_snooze.rs
 msgid "this message is in the Snoozed folder already"
@@ -23471,6 +23572,11 @@ msgstr ""
 #, fuzzy
 msgid "this message isn't downloaded: open it once you're online, then send it again"
 msgstr "dit bericht is nog niet gedownload: open het zodra u online bent en verzend het daarna opnieuw"
+
+#. why a command can't run
+#: crates/engine/src/cmd/snooze_hosted.rs
+msgid "this message isn't on its server yet: try again in a moment"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/invitation.rs

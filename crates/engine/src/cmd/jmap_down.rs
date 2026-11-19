@@ -310,6 +310,13 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     if follows {
         m.folder = folder;
     }
+    // « Plus tard » (`snooze_hosted`): a message being put away or brought back that the server lists where it lies here
+    // has been moved there: it is no longer being placed, whatever became of the answer.
+    if m.folder == folder
+        && let Some(z) = m.snooze.filter(|z| z.placing)
+    {
+        m.snooze = z.waiting().then_some(mailcraft_model::Snooze { placing: false, ..z });
+    }
     m.server = Some(ServerMessage {
         id: now.id.clone(),
         folder: server_folder.to_string(),

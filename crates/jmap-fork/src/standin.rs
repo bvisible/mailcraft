@@ -92,6 +92,8 @@ mod notes;
 mod outgoing;
 mod pim;
 mod set;
+mod snooze;
+pub use snooze::{Record as SnoozeRecord, SNOOZE, Snoozes};
 
 pub use demo::{DEMO_ALIAS, DEMO_CARDS, DEMO_PERSON, crowd, crowd_cards, demo};
 pub use facade::Profile;
@@ -302,6 +304,8 @@ pub struct Data {
     pub pim: Pim,
     /// A person's notes, when a test turns them on ([`Notes`], `standin/notes.rs`). Nothing at first.
     pub notes: Notes,
+    /// « Plus tard », as the Neoffice server keeps it, when a test turns it on ([`Snoozes`], `standin/snooze.rs`).
+    pub snoozes: Snoozes,
     /// The oldest state `Email/changes` calculates from ([`Data::forget_changes`]): 0, every one it handed out.
     pub changes_from: u32,
     /// `Email/changes` is a method this server doesn't have.
@@ -349,6 +353,7 @@ impl Data {
             lost_answers: 0,
             pim: Pim::default(),
             notes: Notes::default(),
+            snoozes: Snoozes::default(),
             changes_from: 0,
             changes_unknown: false,
             journal: changes::Journal::default(),
@@ -616,6 +621,7 @@ impl Data {
         // Calendars and address books, when a test turns them on (`standin/pim.rs`).
         self.pim.add_to(&mut session, ACCOUNT);
         self.notes.add_to(&mut session, ACCOUNT);
+        self.snoozes.add_to(&mut session, ACCOUNT);
         session
     }
 
@@ -636,6 +642,7 @@ impl Data {
                 || (capability == SUBMISSION && self.submission)
                 || self.pim.knows(capability)
                 || self.notes.knows(capability)
+                || (capability == SNOOZE && self.snoozes.on)
         };
         if using.iter().any(|capability| !known(capability)) {
             return rejected("unknownCapability", "a capability this server doesn't have is in `using`");
@@ -709,6 +716,7 @@ impl Data {
             "ParticipantIdentity/get" if self.pim.calendars && self.pim.says_identities => Some(CALENDARS),
             "AddressBook/get" | "ContactCard/query" | "ContactCard/get" | "ContactCard/set" if self.pim.contacts => Some(CONTACTS),
             _ if self.notes.has(name) => Some(crate::pim::notes::NOTES),
+            _ if self.snoozes.has(name) => Some(SNOOZE),
             _ => None,
         };
         if needs.is_none_or(|capability| !using.contains(&capability)) {
@@ -737,6 +745,7 @@ impl Data {
             "ContactCard/get" => self.pim.card_get(&args, self.max_get),
             "ContactCard/set" => self.pim.card_set(&args, self.max_set),
             _ if self.notes.has(name) => self.notes.method(name, &args, self.max_get, self.max_set),
+            _ if self.snoozes.has(name) => self.snooze_method(name, &args),
             _ => self.email_get(&args),
         }
     }

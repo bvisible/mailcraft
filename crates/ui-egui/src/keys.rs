@@ -807,6 +807,12 @@ pub fn global_shortcuts(app: &mut MailApp, ctx: &egui::Context) {
             let _ = app.run("ui.selectAllInMessage", place);
             continue;
         }
+        // //// Neoffice — « Plus tard »'s key, in a hosting page's tab whose mailbox's server keeps it: the window of its times
+        // //// Neoffice — (snooze_hosted.rs). Not upstream's Snooze's: the desktop has no window of times, nor this key.
+        if k == crate::snooze_hosted::KEY && crate::snooze_hosted::key_opens(app) {
+            crate::snooze_hosted::open(app, ctx, &[]);
+            continue;
+        }
         if let Some(id) = resolve(app, &k).and_then(|id| window_command(app, id)) {
             let params = key_params(app, id, modifiers);
             let _ = app.run(id, params);

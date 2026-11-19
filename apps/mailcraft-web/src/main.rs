@@ -74,6 +74,9 @@ mod streams;
 mod exchanges;
 // //// Neoffice — the icons of senders' domains, asked of the Neoffice server (sender_icons.rs).
 mod sender_icons;
+// //// Neoffice — « Plus tard »: what the window puts away and brings back, asked of the Neoffice server, which keeps it (built
+// everywhere, so that its calls are tested natively).
+mod snooze;
 #[cfg(target_arch = "wasm32")]
 mod web;
 

@@ -215,6 +215,13 @@ fn serve_the_stand_in_on_loopback() {
     crowd_cards(&stand_in, cards);
     let notes = std::env::var("MAILCRAFT_STANDIN_NOTES").ok().and_then(|n| n.parse::<usize>().ok()).unwrap_or(0).min(4_000);
     stand_in.with(|d| crowd_notes(&mut d.notes, notes));
+    // « Plus tard », as the Neoffice server keeps it, and its messages named by where they lie, as that server names them.
+    if std::env::var("MAILCRAFT_STANDIN_SNOOZE").is_ok_and(|v| v == "1") {
+        stand_in.with(|d| {
+            d.snoozes.on = true;
+            d.profile = crate::standin::Profile::by_place();
+        });
+    }
     println!(
         "the stand-in, with the demo around {}, {more} more events, {cards} more cards and {notes} more notes, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
         today.iso()

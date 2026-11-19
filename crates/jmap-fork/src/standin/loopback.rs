@@ -26,6 +26,9 @@
 //!   `GET /__token` gives, as a hosting page's renewal would). `GET /__log` lists the methods it was asked to call,
 //!   `GET /__written` the changes of events it was sent, `GET /__mail` the mail it would have sent about them, and
 //!   `GET /__cards` the cards it has now with what it was sent of them.
+//! - « Plus tard », when `MAILCRAFT_STANDIN_SNOOZE=1` turns it on (`standin/snooze.rs`, and the messages named by where they lie,
+//!   as the Neoffice server names them): `GET /__tick` runs the server's minute job now (`?at=<seconds>`: as it runs then),
+//!   `GET /__snoozes` lists its records, `GET /__where` where each email lies and whether it was read.
 //! - Anything else is the stand-in's, at its own address: the session (`/jmap/session`, whose other addresses are
 //!   relative to it), the API, the downloads.
 
@@ -105,6 +108,38 @@ pub(super) fn answer(stand_in: &StandIn, trouble: &mut Trouble, raw: &[u8]) -> O
                 }
             }
             return Some(reply(200, "application/json", format!("{trouble:?}").as_bytes(), None));
+        }
+        "/__tick" => {
+            // « Plus tard »: the server's minute job, now, or as it runs at `?at=<seconds since 1970>` (`standin/snooze.rs`).
+            let at = query.split('&').find_map(|w| w.strip_prefix("at=")).and_then(|v| v.parse::<i64>().ok()).unwrap_or_else(mailcraft_time::now);
+            let back = stand_in.with(|d| d.snoozes_due(at));
+            return Some(reply(200, "application/json", format!("{{\"returned\":{back}}}").as_bytes(), None));
+        }
+        "/__snoozes" => {
+            let records: Vec<serde_json::Value> = stand_in.with(|d| {
+                d.snoozes
+                    .records
+                    .iter()
+                    .map(|r| serde_json::json!({"id": r.id, "email": r.email, "from": r.from, "until": r.until, "state": r.state}))
+                    .collect()
+            });
+            return Some(reply(200, "application/json", &serde_json::to_vec(&records).unwrap_or_default(), None));
+        }
+        "/__where" => {
+            // Where each email lies, by mailbox name, and whether it was read: what a browser test checks.
+            let mail: Vec<serde_json::Value> = stand_in.with(|d| {
+                d.emails
+                    .iter()
+                    .map(|e| {
+                        let folders: Vec<String> =
+                            e.mailboxes.iter().filter_map(|m| d.mailboxes.iter().find(|x| &x.id == m).map(|x| x.name.clone())).collect();
+                        let subject =
+                            String::from_utf8_lossy(&e.raw).lines().find_map(|l| l.strip_prefix("Subject: ").map(str::to_string)).unwrap_or_default();
+                        serde_json::json!({"id": e.id, "subject": subject, "folders": folders, "seen": e.keywords.contains("$seen")})
+                    })
+                    .collect()
+            });
+            return Some(reply(200, "application/json", &serde_json::to_vec(&mail).unwrap_or_default(), None));
         }
         "/__token" => {
             let token = stand_in.with(|d| d.token.clone()).unwrap_or_default();
