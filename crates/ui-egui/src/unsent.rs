@@ -1,65 +1,46 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! Whether the window holds work that leaving it now would lose: what a hosting page needs to know to ask before it
-//! closes (Neodesk's window asks only when the page says so, and leaves the browser's own question aside; the web build
-//! tells it, `apps/mailcraft-web/src/host_dirty.rs`).
+//! Whether the window holds something the person wrote that leaving it now would lose: what a hosting page needs to know to ask
+//! before it closes (Neodesk's window asks only when the page says so, and leaves the browser's own question aside; the web build
+//! tells it, `apps/mailcraft-web/src/host_dirty.rs`, and the desk's page asks the browser's « Leave site? » while it says so).
 //!
 //! - A message being written that has changes not saved, as closing the desktop window asks about
 //!   ([`MailApp::close_requested`]).
 //! - An appointment or a meeting whose window has changes not saved ([`crate::windows`]), and a form a dialog holds
 //!   with something typed into it: an appointment's, a contact's.
-//! - In a tab that keeps nothing of its own between visits ([`mailcraft_engine::Session::keeps_local`] false): what
-//!   waits to go to a server, made here and not told to it yet: a change of an event or of a contact, mail that waits
-//!   in an Outbox, a draft saved here that the next run files on the server, a move or a delete for good the server is
-//!   yet to be told of (`Mailbox::pending`, `Mailbox::queued`), and a JMAP account's messages read, flagged or moved here
-//!   (`jmap_up::message_changes`, worked out once for each state of the mailbox). The next visit starts from what the
-//!   servers have, and these would not be there.
+//! - In a tab that keeps nothing of its own between visits ([`mailcraft_engine::Session::keeps_local`] false): what the person
+//!   wrote here that waits to go to a server and would not be there at the next visit: a change of an event or of a contact,
+//!   mail that waits in an Outbox, a draft saved here that the next run files on the server.
 //! - What the notes' own question before leaving counts ([`MailApp::notes_unsent`]): a change of a note that waits to
 //!   go, a note here alone, words typed into a note and not in it yet.
+//!
+//! Not what only waits to be told to a server: a message read, flagged, moved, filed or deleted here (`jmap_up::message_changes`,
+//! `Mailbox::pending`, `Mailbox::queued`). Nothing the person wrote goes with it: the server keeps the message as it was, and the
+//! next visit shows that. Counted, it made the page ask « Leave site? » on a reload a moment after a message was opened, marked
+//! done or put away, while its mark or its move was on its way (19.11).
 
-use mailcraft_engine::cmd::{jmap_send, jmap_up};
-use mailcraft_model::{AccountKind, FolderKind};
+use mailcraft_engine::cmd::jmap_send;
+use mailcraft_model::FolderKind;
 
 use crate::MailApp;
 use crate::dialogs::Dialog;
 
 impl MailApp {
-    /// Whether leaving the window now would lose work done here (see the module's documentation).
+    /// Whether leaving the window now would lose something the person wrote (see the module's documentation).
     pub fn unsent_work(&self) -> bool {
         let writing = self.session.compose.as_ref().is_some_and(|c| c.dirty);
         let forms = self.windows.unsaved() > 0 || matches!(&self.dialog, Some(Dialog::Form(form)) if form.holds_unsent());
-        writing || forms || (!self.session.keeps_local && self.waits_to_go()) || self.notes_unsent()
+        writing || forms || (!self.session.keeps_local && self.written_waits_to_go()) || self.notes_unsent()
     }
 
-    /// Whether something made here waits to go to a server: a change of an event or of a contact not yet told to it,
-    /// mail in an Outbox, a draft to file, a move or a delete to tell, a change of a JMAP account's messages.
-    fn waits_to_go(&self) -> bool {
+    /// Whether something the person wrote here waits to go to a server: a change of an event or of a contact not yet told to it,
+    /// mail in an Outbox, a draft to file.
+    fn written_waits_to_go(&self) -> bool {
         let mb = &self.session.mailbox;
         let outbox = mb.folders.iter().filter(|f| f.kind == FolderKind::Outbox).any(|f| mb.count(f.id) > 0);
         let drafts = mb.accounts.iter().any(|a| jmap_send::pending_drafts(mb, a.id) > 0);
-        !mb.event_changes.is_empty()
-            || !mb.contact_changes.is_empty()
-            || outbox
-            || drafts
-            || !mb.pending.is_empty()
-            || !mb.queued.is_empty()
-            || self.mail_changes_wait()
-    }
-
-    /// Whether a JMAP account's messages were changed here (read, flagged, moved) and its server is yet to be told: worked
-    /// out once for each state of the mailbox, as it reads every message.
-    fn mail_changes_wait(&self) -> bool {
-        let at = (self.session.openings(), self.session.rev());
-        if let Some((openings, rev, waits)) = self.unsent_marks.get()
-            && (openings, rev) == at
-        {
-            return waits;
-        }
-        let mut jmap = self.session.mailbox.accounts.iter().filter(|a| a.kind == AccountKind::Jmap);
-        let waits = jmap.any(|account| jmap_up::message_changes(&self.session, account.id, 1).1 > 0);
-        self.unsent_marks.set(Some((at.0, at.1, waits)));
-        waits
+        !mb.event_changes.is_empty() || !mb.contact_changes.is_empty() || outbox || drafts
     }
 }
 
@@ -133,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn what_waits_to_go_to_a_server_is_unsent_work_in_a_tab_that_keeps_nothing() {
+    fn what_the_person_wrote_that_waits_to_go_to_a_server_is_unsent_work_in_a_tab_that_keeps_nothing() {
         for keeps_local in [false, true] {
             // Mail that waits in the Outbox.
             let mut app = window(keeps_local);
@@ -153,12 +134,35 @@ mod tests {
             let mut app = window(keeps_local);
             app.session.mailbox.notes.changes.push(mailcraft_model::note::NoteChange::default());
             assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a note's change");
-            // A delete for good the server is yet to be told of.
-            let mut app = window(keeps_local);
-            let delete = mailcraft_model::Pending::Delete { account: 1, from: "INBOX".into(), uid: 7, message_id: String::new(), seen: None };
-            app.session.mailbox.pending.push(delete);
-            assert_eq!(app.unsent_work(), !keeps_local, "keeps_local {keeps_local}: a delete for good");
         }
+    }
+
+    /// What only waits to be told to a server is nothing the person wrote: a reload loses none of it (the server keeps the
+    /// message as it was, and the next visit shows that), and the page asks nothing. It asked, and a reload right after a
+    /// message was opened (read here, unread there) raised the browser's « Leave site? » for nothing.
+    #[test]
+    fn a_mark_a_move_or_a_delete_still_to_tell_a_server_is_no_unsent_work() {
+        let (mut app, account, inbox, _) = jmap_window();
+        let server = mailcraft_model::sync::ServerMessage { id: "M1".into(), folder: "f-inbox".into(), read: false, ..Default::default() };
+        let read = Message { account, folder: inbox, subject: "Hello".into(), read: false, server: Some(server), ..Default::default() };
+        let id = app.session.mailbox.add_message(read).unwrap();
+        app.session.mailbox_changed();
+        app.session.run("mail.markRead", &json!({"ids": [id]})).unwrap();
+        assert!(!app.unsent_work(), "read here, unread there");
+        app.session.run("mail.toggleFlag", &json!({"ids": [id]})).unwrap();
+        assert!(!app.unsent_work(), "flagged here");
+        // A move or a delete for good the server is yet to be told of.
+        let mut app = window(false);
+        let delete = mailcraft_model::Pending::Delete { account: 1, from: "INBOX".into(), uid: 7, message_id: String::new(), seen: None };
+        app.session.mailbox.pending.push(delete);
+        assert!(!app.unsent_work(), "a delete for good");
+        let mut app = window(false);
+        app.session.mailbox.queued.push(mailcraft_model::Queued::DeleteMessage { account: 1, id: "M7".into(), kept: None });
+        assert!(!app.unsent_work(), "a delete for good of a JMAP or Microsoft account");
+        // Words written still are: a message being written, with them.
+        app.execute("mail.new", json!({})).unwrap();
+        app.execute("compose.set", json!({"subject": "Plans"})).unwrap();
+        assert!(app.unsent_work(), "a message being written");
     }
 
     /// A JMAP account with its Inbox and Drafts: the window, the account, its Inbox and its Drafts.
@@ -183,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn a_draft_saved_here_and_a_message_marked_here_wait_to_go_in_a_tab_that_keeps_nothing() {
+    fn a_draft_saved_here_waits_to_go_in_a_tab_that_keeps_nothing() {
         // A draft saved here, which the next run files on the server.
         let (mut app, account, _, drafts) = jmap_window();
         assert!(!app.unsent_work(), "nothing yet");
@@ -198,17 +202,5 @@ mod tests {
         app.session.mailbox.add_message(draft).unwrap();
         app.session.mailbox_changed();
         assert!(app.unsent_work(), "a draft to file");
-        // A message read here that its server still has unread.
-        let (mut app, account, inbox, _) = jmap_window();
-        let server = mailcraft_model::sync::ServerMessage { id: "M1".into(), folder: "f-inbox".into(), read: false, ..Default::default() };
-        let read = Message { account, folder: inbox, subject: "Hello".into(), read: false, server: Some(server), ..Default::default() };
-        let id = app.session.mailbox.add_message(read).unwrap();
-        app.session.mailbox_changed();
-        assert!(!app.unsent_work(), "as the server has it");
-        app.session.run("mail.markRead", &json!({"ids": [id]})).unwrap();
-        assert!(app.unsent_work(), "read here, unread there");
-        // Worked out once for that state, again for the next.
-        app.session.run("mail.markUnread", &json!({"ids": [id]})).unwrap();
-        assert!(!app.unsent_work(), "as the server has it again");
     }
 }

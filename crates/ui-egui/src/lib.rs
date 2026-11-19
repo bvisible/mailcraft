@@ -2030,9 +2030,6 @@ pub struct MailApp {
     pub(crate) refused: Option<String>,
     /// Messages and appointments opened in windows of their own ([`windows`]).
     pub(crate) windows: windows::Windows,
-    // //// Neoffice — whether a change of a JMAP account's messages waits to go up, worked out once for each state of the
-    // mailbox rather than at every frame (`unsent`).
-    pub(crate) unsent_marks: std::cell::Cell<Option<(u64, u64, bool)>>,
     /// Pictures from the web: which messages may show them, and the ones on their way.
     pub(crate) remote_pictures: reading::RemotePictures,
     /// The pictures of the senders in the message list, as far as they have come.
@@ -2230,8 +2227,6 @@ impl MailApp {
             last_error: None,
             refused: None,
             windows: Default::default(),
-            // //// Neoffice — see the field.
-            unsent_marks: Default::default(),
             remote_pictures: Default::default(),
             sender_images: Default::default(),
             out_of_sight: Default::default(),

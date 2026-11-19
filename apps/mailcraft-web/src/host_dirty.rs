@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: MailCraft contributors
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // //// Neoffice — added file (no upstream equivalent)
-//! A hosting page is told whether the window holds work that closing it would lose
-//! ([`mailcraft_ui_egui::MailApp::unsent_work`]), and when that clears: the contract the Craft editors speak with the page
-//! that frames them (`<editor>:dirty`), so that one host asks before it closes any of them.
+//! A hosting page is told whether the window holds something the person wrote that closing it would lose
+//! ([`mailcraft_ui_egui::MailApp::unsent_work`], and a rule, a category or a list of senders still to be written: kept.rs), and
+//! when that clears: the contract the Craft editors speak with the page that frames them (`<editor>:dirty`), so that one host
+//! asks before it closes any of them. Not what only waits to be told to a server (a read mark, a move, what was marked done):
+//! nothing the person wrote goes with it, and the desk's page asked « Leave site? » for it on a reload (19.11).
 //!
 //! The page that frames the browser build on the same origin (Neodesk's window) gets a `postMessage`:
 //!

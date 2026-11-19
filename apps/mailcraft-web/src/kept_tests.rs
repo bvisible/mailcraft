@@ -15,7 +15,7 @@ use mailcraft_ui_egui::mail_view::done::Item;
 use serde_json::{Value, json};
 
 use super::{
-    DONE_DAYS, DoneEntry, Kept, MAX_DONE, Runs, RunsOver, Written, for_good, merge_categories, merge_done, merge_lists, merge3, put_done,
+    DONE_DAYS, DoneEntry, Kept, MAX_DONE, Parts, Runs, RunsOver, Written, for_good, merge_categories, merge_done, merge_lists, merge3, put_done,
     put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
 };
 
@@ -501,4 +501,24 @@ fn what_another_window_marked_done_or_put_back_is_merged_with_this_ones() {
     let put = vec![Item { id: 999, message_id: "w@example.org".into(), from: items[0].from, at: NOW, who: String::new(), subject: String::new() }];
     let all: Vec<Id> = with_done(&mb, &items, ADA, put).iter().map(|i| i.id).collect();
     assert_eq!(all, [y, z, 999]);
+}
+
+/// A change of a rule, a category or a list of senders that waits to be written is the person's own: the page asks before it is
+/// left. What was marked done is not (the message is in its Archive whatever happens to the mark): a reload right after a message
+/// was marked done raised the browser's « Leave site? » for it (19.11).
+#[test]
+fn the_page_asks_before_it_is_left_for_the_persons_rules_categories_and_lists_not_for_what_was_marked_done() {
+    let entry = DoneEntry { message_id: "m1@example.org".into(), from: "Min".into(), at: 1_800_000_000, who: "Ada".into(), subject: "Hello".into() };
+    let done = Parts { done: BTreeMap::from([(ADA.to_string(), (Vec::new(), vec![entry]))]), ..Default::default() };
+    assert!(!done.asks_before_leaving(), "what was marked done");
+    assert!(!Parts::default().asks_before_leaving(), "nothing");
+    let rules = Parts { rules: Some((Vec::new(), vec![json!({"name": "Invoices"})])), ..Default::default() };
+    assert!(rules.asks_before_leaving(), "a rule");
+    let categories = Parts { categories: Some((Vec::new(), vec![Category::default()])), ..Default::default() };
+    assert!(categories.asks_before_leaving(), "a category");
+    let senders = Parts { senders: BTreeMap::from([(ADA.to_string(), (JunkLists::default(), JunkLists::default()))]), ..Default::default() };
+    assert!(senders.asks_before_leaving(), "a list of senders");
+    // A done mark with a rule: the rule asks.
+    let both = Parts { rules: rules.rules.clone(), ..done };
+    assert!(both.asks_before_leaving());
 }

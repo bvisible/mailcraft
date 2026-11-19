@@ -35,8 +35,8 @@
 //!
 //! **Writing.** Every couple of seconds a changed part is written, the rules and categories to the first mailbox that
 //! answered, each mailbox's lists to it. One the server refuses is not tried again (said once in the console); one that
-//! didn't go through is tried again half a minute later. While a change waits, the page is told that leaving would lose
-//! work (host_dirty.rs).
+//! didn't go through is tried again half a minute later. While a change the person made waits (a rule, a category, a list of
+//! senders: not what was marked done), the page is told that leaving would lose work (host_dirty.rs).
 // Outside the browser only the tests use it.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
@@ -562,6 +562,29 @@ pub fn for_good(kind: &str) -> bool {
 #[path = "kept_tests.rs"]
 mod tests;
 
+/// The parts a write sends, each as (its base, the window's).
+#[derive(Clone, Default)]
+pub struct Parts {
+    pub rules: Option<(Vec<Value>, Vec<Value>)>,
+    pub categories: Option<(Vec<Category>, Vec<Category>)>,
+    pub senders: BTreeMap<String, (JunkLists, JunkLists)>,
+    pub done: BTreeMap<String, (Vec<DoneEntry>, Vec<DoneEntry>)>,
+}
+
+impl Parts {
+    fn is_empty(&self) -> bool {
+        self.rules.is_none() && self.categories.is_none() && self.senders.is_empty() && self.done.is_empty()
+    }
+
+    /// Whether leaving the page while these changes wait to be written (or are being written) would lose something the person
+    /// made, which the page asks about first (`pending`): a rule, a category, a list of senders. Not what was marked done: the
+    /// message is in its Archive whatever happens to the mark, and asking for it made a reload right after a message was marked
+    /// done raise the browser's « Leave site? » (19.11).
+    pub fn asks_before_leaving(&self) -> bool {
+        self.rules.is_some() || self.categories.is_some() || !self.senders.is_empty()
+    }
+}
+
 #[cfg(target_arch = "wasm32")]
 pub use run::{frame, pending, start};
 
@@ -579,8 +602,8 @@ mod run {
     use serde_json::{Value, json};
 
     use super::{
-        DoneEntry, GET, REFRESH_MS, Runs, SET, SETTINGS, SINGLETON, Saved, Written, for_good, key, merge_categories, merge_done, merge_lists, merge3,
-        put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
+        DoneEntry, GET, Parts, REFRESH_MS, Runs, SET, SETTINGS, SINGLETON, Saved, Written, for_good, key, merge_categories, merge_done, merge_lists,
+        merge3, put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
     };
     use crate::credentials::{Credentials, Renewal};
     use crate::host::{HostAccount, HostCredentials};
@@ -594,21 +617,6 @@ mod run {
     /// window wrote in between.
     const READS: u32 = 3;
     const WRITES: u32 = 3;
-
-    /// The parts a write sends, each as (its base, the window's).
-    #[derive(Clone, Default)]
-    struct Parts {
-        rules: Option<(Vec<Value>, Vec<Value>)>,
-        categories: Option<(Vec<Category>, Vec<Category>)>,
-        senders: BTreeMap<String, (JunkLists, JunkLists)>,
-        done: BTreeMap<String, (Vec<DoneEntry>, Vec<DoneEntry>)>,
-    }
-
-    impl Parts {
-        fn is_empty(&self) -> bool {
-            self.rules.is_none() && self.categories.is_none() && self.senders.is_empty() && self.done.is_empty()
-        }
-    }
 
     /// How a write ended: each part written (the window's as it was sent, and what was written: the window's with what
     /// another window wrote since its base) or refused for good, and whether some didn't go through.
@@ -647,6 +655,10 @@ mod run {
         writing: bool,
         ended: Option<Ended>,
         changed: bool,
+        /// What changed (or is being written) is something the person made ([`Parts::asks_before_leaving`]), and when that was
+        /// last looked at during a write or before a write is tried again.
+        asks: bool,
+        asked_at: f64,
         next: f64,
     }
 
@@ -654,9 +666,10 @@ mod run {
         static STATE: RefCell<State> = RefCell::new(State::default());
     }
 
-    /// Whether a change waits to be written (or is being written): leaving the page now would lose it.
+    /// Whether a change the person made waits to be written (or is being written): leaving the page now would lose it
+    /// ([`Parts::asks_before_leaving`]).
     pub fn pending() -> bool {
-        STATE.with(|s| s.try_borrow().is_ok_and(|s| s.changed || s.writing))
+        STATE.with(|s| s.try_borrow().is_ok_and(|s| s.asks && (s.changed || s.writing)))
     }
 
     /// Read what the server keeps for the mailboxes the page handed over.
@@ -748,7 +761,14 @@ mod run {
             }
             if let Some(ended) = s.ended.take() {
                 s.writing = false;
+                let failed = ended.failed;
                 put |= ended_write(s, app, ended, now);
+                // (Written, or refused for good: what waits now is what was changed since, if anything.)
+                if !failed {
+                    let changes = changes(s, app);
+                    s.changed = !changes.is_empty();
+                    s.asks = changes.asks_before_leaving();
+                }
             }
             // What was marked done follows the mailbox as it changes, and as its runs go through.
             s.runs.see(&app.session.sync_progress.accounts, app.session.now());
@@ -761,6 +781,12 @@ mod run {
             if put {
                 app.session.forget_history();
             }
+            // While a write is under way, or one that didn't go through waits to be tried again, a change the person makes
+            // meanwhile asks before the page is left too.
+            if (s.writing || s.changed) && now - s.asked_at >= EVERY_MS {
+                s.asked_at = now;
+                s.asks |= changes(s, app).asks_before_leaving();
+            }
             if s.writing || s.reading || s.answered.is_empty() {
                 return;
             }
@@ -769,6 +795,7 @@ mod run {
                 s.next = now + EVERY_MS;
                 let changes = changes(s, app);
                 s.changed = !changes.is_empty();
+                s.asks = changes.asks_before_leaving();
                 if s.changed {
                     if let Some(credentials) = s.credentials.clone() {
                         s.writing = true;

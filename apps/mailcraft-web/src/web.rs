@@ -244,7 +244,7 @@ impl eframe::App for WebShell {
         // //// Neoffice — a hosting page's window tells the page that frames it whether closing it now would lose work (host_dirty.rs).
         if !self.app.session.keeps_local {
             // //// Neoffice — and what it keeps on its server between two visits is put, and written when it changes; a change
-            // //// Neoffice — that waits to be written is work that leaving would lose (kept.rs).
+            // //// Neoffice — the person made that waits to be written is work that leaving would lose (kept.rs).
             crate::kept::frame(&mut self.app);
             // //// Neoffice — and the kind of sender of the Inbox's messages, for the tabs, is asked of the server and put (streams.rs).
             crate::streams::frame(&mut self.app);
