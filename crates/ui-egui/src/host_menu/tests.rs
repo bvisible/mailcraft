@@ -339,6 +339,40 @@ fn each_folder_comes_with_the_number_the_pane_shows_beside_it() {
 }
 
 #[test]
+fn plus_tard_is_told_with_its_role_right_after_drafts_and_everything_waiting_in_it() {
+    let (mut app, ada, _, _) = page();
+    // Ada's server keeps « Plus tard », in a folder of its own: two messages wait there, read.
+    let snoozed = app.session.mailbox.add_folder_free(ada, None, "Plus tard").unwrap();
+    app.session.mailbox.folder_mut(snoozed).unwrap().server =
+        Some(mailcraft_model::ServerFolder { id: "Msn".into(), name: "Plus tard".into(), ..Default::default() });
+    for id in ["A1", "A3"] {
+        let m = folder_of(&app, ada, "Min");
+        let message = app.session.mailbox.messages_in(m).find(|x| x.server.as_ref().is_some_and(|s| s.id == id)).unwrap().id;
+        let m = app.session.mailbox.message_mut(message).unwrap();
+        m.folder = snoozed;
+        m.read = true;
+    }
+    app.session.mailbox_changed();
+    app.session.run("mail.setSnoozes", &json!({"account": ADA, "mailbox": "Msn", "records": []})).unwrap();
+    let told = state(&app).unwrap();
+    let folders = told["accounts"][1]["folders"].as_array().unwrap();
+    let ids: Vec<&str> = folders.iter().map(|f| f["id"].as_str().unwrap()).collect();
+    assert_eq!(&ids[..3], ["Min", "Mdr", "Msn"], "right after Drafts: {ids:?}");
+    let plus_tard = &folders[2];
+    assert_eq!(plus_tard["role"], "snoozed", "its own role: the page draws its clock");
+    assert_eq!(plus_tard["count"], json!({"value": 2, "kind": "total"}), "everything waiting in it, read or not");
+    // A folder of that name whose server doesn't keep « Plus tard » is one of the person's own, as before.
+    let (app, ada, _, _) = page();
+    let mut app = app;
+    let other = app.session.mailbox.add_folder_free(ada, None, "Plus tard").unwrap();
+    app.session.mailbox.folder_mut(other).unwrap().server =
+        Some(mailcraft_model::ServerFolder { id: "Msn".into(), name: "Plus tard".into(), ..Default::default() });
+    let told = state(&app).unwrap();
+    let folder = told["accounts"][1]["folders"].as_array().unwrap().iter().find(|f| f["id"] == "Msn").unwrap().clone();
+    assert_eq!(folder["role"], Value::Null);
+}
+
+#[test]
 fn the_views_are_those_offered_here_notes_only_where_they_are() {
     let (mut app, ada, _, _) = page();
     // A hosting page's tab whose server keeps no notes: `view.notes` is refused there, and Notes is not offered.

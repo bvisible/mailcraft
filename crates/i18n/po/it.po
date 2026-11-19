@@ -11129,7 +11129,7 @@ msgid "Pick a date"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/forms.rs
+#: crates/ui-egui/src/forms.rs crates/ui-egui/src/snooze_hosted.rs
 #, fuzzy
 msgid "Pick a time"
 msgstr "Scegliere un orario"
@@ -20999,6 +20999,12 @@ msgstr ""
 #: crates/ui-egui/src/snooze_hosted.rs
 msgctxt "snooze"
 msgid "Tomorrow {time}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/snooze_hosted.rs
+msgctxt "snooze"
+msgid "Type a time, such as {time}."
 msgstr ""
 
 #. interface

@@ -137,6 +137,10 @@ fn folder_id(f: &Folder) -> String {
     }
 }
 
+/// The role of a folder « Plus tard » its server keeps (snooze_hosted.rs): the page draws it with the clock of its quick action,
+/// and keeps its name and its place as a special folder's.
+const SNOOZED: &str = "snoozed";
+
 /// What a folder is for, in the page's words: `null` for one of the person's own.
 fn role(kind: FolderKind) -> Option<&'static str> {
     match kind {
@@ -186,23 +190,25 @@ pub fn state(app: &MailApp) -> Option<Value> {
             Some(json!({"account": h.email, "folder": folder_id(f), "name": crate::nav::result_folder_label(mb, f), "unread": unread(f.id)}))
         })
         .collect();
+    // The folders « Plus tard » their servers keep: right after Drafts, with their clock (`snoozed`) and all they hold.
+    let snoozed = crate::snooze_hosted::folders(s);
     let accounts: Vec<Value> = handed
         .iter()
         .map(|(h, account)| {
             // Every folder in the pane's order, folded or not.
-            let folders: Vec<Value> = crate::nav::visible(mb, &[], *account)
+            let folders: Vec<Value> = crate::nav::visible_with(mb, &[], *account, &snoozed)
                 .iter()
                 .map(|(f, _, _)| {
                     json!({
                         "id": folder_id(f),
                         "name": crate::nav::folder_name(f),
-                        "role": role(f.kind),
+                        "role": if snoozed.contains(&f.id) { Some(SNOOZED) } else { role(f.kind) },
                         "parent": f.parent.and_then(|p| mb.folder(p)).map(folder_id),
                         "unread": unread(f.id),
                         // Every folder the pane lists can be shown.
                         "selectable": true,
                         // What the pane shows beside it, by the pane's own rule.
-                        "count": pane_count(crate::nav::shown_count(counts, f)),
+                        "count": pane_count(crate::nav::shown_count(counts, f, &snoozed)),
                     })
                 })
                 .collect();

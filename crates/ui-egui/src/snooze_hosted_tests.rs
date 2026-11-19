@@ -3,7 +3,9 @@
 // //// Neoffice — added file (no upstream equivalent): tests of snooze_hosted.rs.
 //! In the window of a hosting page's tab whose mailbox's server keeps « Plus tard »: the times offered, the clock of a row and
 //! of the message being read, the Home tab's entry, the key and its window of times, the folder's rows that say when each
-//! message comes back, and nothing of it where the window keeps its mail or the server does not keep it.
+//! message comes back, and nothing of it where the window keeps its mail or the server does not keep it. The window takes a time
+//! typed to the minute (« 17:35 », « 17h35 »), refuses one that is no time or is past, in the person's zone; the folder « Plus
+//! tard » comes right after Drafts in the pane.
 //! And (`--ignored`, with `SNOOZE_SHOTS=<folder>`) the window drawn in French, light and dark, to PNG files.
 
 use egui::{Event, Key, Modifiers, PointerButton};
@@ -169,7 +171,7 @@ fn the_key_opens_the_window_of_times_which_refuses_a_time_past_and_puts_away_at_
     assert_eq!(Some(s.mailbox.message(first).unwrap().folder), inbox, "still in the Inbox");
     // Friday at 17:30: put away.
     window.date = Date::new(2026, 10, 16).unwrap();
-    window.minutes = 17 * 60 + 30;
+    window.time = "17:30".into();
     window.error = None;
     ctx.data_mut(|d| d.insert_temp(egui::Id::unique("snooze_hosted_window"), window));
     w.run_steps(3);
@@ -214,6 +216,159 @@ fn the_folders_rows_say_when_each_comes_back_and_the_clock_brings_it_back_now() 
     assert_ne!(back.folder, snoozed, "back at once");
     assert!(!back.read);
     assert!(w.state().session.hosted_snooze.asking());
+}
+
+/// The window of times opened by its key on the first message of the Inbox, its day set to `day`: the window and the message.
+fn window_on(day: Date) -> (testing::Window, Id, Id) {
+    let (mut w, snoozed) = inbox(true, true);
+    let first = drawn(&mut w)[0];
+    click(&mut w, "message", first);
+    let shift_mod = Modifiers { command: true, shift: true, ..Default::default() };
+    for pressed in [true, false] {
+        w.input_mut().events.push(Event::Key { key: Key::L, physical_key: None, pressed, repeat: false, modifiers: shift_mod });
+    }
+    w.run_steps(4);
+    let ctx = w.ctx.clone();
+    let mut window: Window = ctx.data(|d| d.get_temp(egui::Id::unique("snooze_hosted_window"))).expect("open");
+    window.date = day;
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("snooze_hosted_window"), window));
+    w.run_steps(3);
+    (w, first, snoozed)
+}
+
+/// `text` typed into the window's time, in place of what it holds, as the keyboard types it.
+fn type_time(w: &mut testing::Window, text: &str) {
+    click(w, "snoozeWindowTime", 0);
+    let all = Modifiers { command: true, ..Default::default() };
+    for pressed in [true, false] {
+        w.input_mut().events.push(Event::Key { key: Key::A, physical_key: None, pressed, repeat: false, modifiers: all });
+    }
+    w.step();
+    w.input_mut().events.push(Event::Text(text.into()));
+    w.run_steps(3);
+}
+
+fn window_error(w: &testing::Window) -> Option<String> {
+    w.ctx.data(|d| d.get_temp::<Window>(egui::Id::unique("snooze_hosted_window"))).and_then(|w| w.error)
+}
+
+#[test]
+fn the_window_takes_a_time_typed_to_the_minute() {
+    // Friday 16 October at 17:35, typed: put away then, in the person's zone.
+    let (mut w, first, snoozed) = window_on(Date::new(2026, 10, 16).unwrap());
+    type_time(&mut w, "17:35");
+    click(&mut w, "snoozeWindowPut", 0);
+    assert!(!is_open(&w.ctx.clone()), "closed");
+    assert_eq!(w.state().session.mailbox.message(first).unwrap().folder, snoozed);
+    let friday = w.state().session.instant_of(at(2026, 10, 16, 17, 35));
+    assert_eq!(asked_until(&mut w), [friday]);
+    // As French writes it, and Enter puts away as the button does.
+    let (mut w, first, snoozed) = window_on(Date::new(2026, 10, 16).unwrap());
+    type_time(&mut w, "9h05");
+    testing::key(&mut w, Key::Enter);
+    w.run_steps(3);
+    assert_eq!(w.state().session.mailbox.message(first).unwrap().folder, snoozed, "Enter");
+    assert_eq!(asked_until(&mut w), [w.state().session.instant_of(at(2026, 10, 16, 9, 5))]);
+}
+
+#[test]
+fn the_time_takes_the_keyboard_as_the_window_opens_and_what_is_typed_replaces_it_and_escape_closes_it() {
+    // The key, then « 17h35 » typed at once, no click: in place of the time it opened on, and Enter puts away.
+    let (mut w, first, snoozed) = window_on(Date::new(2026, 10, 16).unwrap());
+    w.input_mut().events.push(Event::Text("17h35".into()));
+    w.run_steps(3);
+    let typed_in: Window = w.ctx.data(|d| d.get_temp(egui::Id::unique("snooze_hosted_window"))).unwrap();
+    assert_eq!(typed_in.time, "17h35");
+    testing::key(&mut w, Key::Enter);
+    w.run_steps(3);
+    assert_eq!(w.state().session.mailbox.message(first).unwrap().folder, snoozed);
+    assert_eq!(asked_until(&mut w), [w.state().session.instant_of(at(2026, 10, 16, 17, 35))]);
+    // Escape closes it, nothing put away, the time's field having the keyboard.
+    let (mut w, first, snoozed) = window_on(Date::new(2026, 10, 16).unwrap());
+    testing::key(&mut w, Key::Escape);
+    w.run_steps(3);
+    assert!(!is_open(&w.ctx.clone()), "closed");
+    assert_ne!(w.state().session.mailbox.message(first).unwrap().folder, snoozed);
+    assert!(asked_until(&mut w).is_empty());
+}
+
+#[test]
+fn the_window_refuses_what_is_no_time_and_a_time_typed_that_is_past() {
+    for wrong in ["25:10", "tomorrow", "17:75"] {
+        let (mut w, first, _) = window_on(Date::new(2026, 10, 16).unwrap());
+        type_time(&mut w, wrong);
+        click(&mut w, "snoozeWindowPut", 0);
+        assert!(window_error(&w).is_some(), "{wrong}: said");
+        assert!(is_open(&w.ctx.clone()), "{wrong}: the window stays");
+        assert_ne!(w.state().session.mailbox.message(first).unwrap().folder, snooze_folder(&w), "{wrong}: nothing done");
+        assert!(asked_until(&mut w).is_empty());
+    }
+    // Today (Wednesday 14 October, 16:00 here) at 15:55: past, refused; at 16:05: put away.
+    let (mut w, first, snoozed) = window_on(Date::new(2026, 10, 14).unwrap());
+    type_time(&mut w, "15:55");
+    click(&mut w, "snoozeWindowPut", 0);
+    assert!(window_error(&w).is_some(), "a time past is refused");
+    assert!(asked_until(&mut w).is_empty());
+    type_time(&mut w, "16:05");
+    click(&mut w, "snoozeWindowPut", 0);
+    assert_eq!(w.state().session.mailbox.message(first).unwrap().folder, snoozed);
+    assert_eq!(asked_until(&mut w), [w.state().session.instant_of(at(2026, 10, 14, 16, 5))]);
+}
+
+#[test]
+fn a_time_is_read_as_it_is_typed_in_any_of_its_usual_ways() {
+    for (text, read) in [
+        ("17:35", Some((17, 35))),
+        ("17h35", Some((17, 35))),
+        ("17H35", Some((17, 35))),
+        ("17h", Some((17, 0))),
+        ("17.35", Some((17, 35))),
+        ("1735", Some((17, 35))),
+        ("17 h 35", Some((17, 35))),
+        ("9 h", Some((9, 0))),
+        (" 9 ", Some((9, 0))),
+        ("9:05", Some((9, 5))),
+        ("5:35 pm", Some((17, 35))),
+        ("5:35 p.m.", Some((17, 35))),
+        ("8:00 a. m.", Some((8, 0))),
+        ("12:10 AM", Some((0, 10))),
+        ("25:10", None),
+        ("17:75", None),
+        ("930", None),
+        ("１７３５", None),
+        ("é", None),
+        ("", None),
+    ] {
+        assert_eq!(typed(text), read, "{text:?}");
+    }
+    // What the window writes, it reads back, on either clock.
+    for twelve in [false, true] {
+        assert_eq!(typed(&crate::forms::kit::clock_text(17 * 60 + 35, twelve)), Some((17, 35)), "twelve {twelve}");
+    }
+}
+
+/// The folder « Plus tard » of the account in view.
+fn snooze_folder(w: &testing::Window) -> Id {
+    let s = &w.state().session;
+    let account = s.mailbox.folder(s.view.folder).unwrap().account;
+    s.mailbox.snoozed_folder(account).unwrap()
+}
+
+#[test]
+fn the_folder_comes_right_after_drafts_in_the_pane() {
+    let (w, snoozed) = inbox(true, true);
+    let s = &w.state().session;
+    let account = s.mailbox.folder(snoozed).unwrap().account;
+    let drafts = s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap();
+    let (drafts_row, snoozed_row) = (w.state().hit.rect("folder", drafts).unwrap(), w.state().hit.rect("folder", snoozed).unwrap());
+    assert!((snoozed_row.min.y - drafts_row.max.y).abs() < 1.0, "right under Drafts: {drafts_row:?} {snoozed_row:?}");
+    // Where the window keeps its mail, as upstream lists a folder of the person's: by its name.
+    let (w, snoozed) = inbox(false, true);
+    let s = &w.state().session;
+    let account = s.mailbox.folder(snoozed).unwrap().account;
+    let drafts = s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap();
+    let (drafts_row, snoozed_row) = (w.state().hit.rect("folder", drafts).unwrap(), w.state().hit.rect("folder", snoozed).unwrap());
+    assert!(snoozed_row.min.y > drafts_row.max.y + 1.0, "not moved");
 }
 
 /// `put` put away as the window does (`mail.snooze`), the server saying yes (`mail.snoozeAnswered`), then its records read

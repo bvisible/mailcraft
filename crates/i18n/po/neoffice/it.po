@@ -4833,6 +4833,10 @@ msgctxt "snooze"
 msgid "Choose a time in the future."
 msgstr "Scelga un orario futuro."
 
+msgctxt "snooze"
+msgid "Type a time, such as {time}."
+msgstr "Inserisca un orario, ad esempio {time}."
+
 msgid "Later"
 msgstr "Più tardi"
 

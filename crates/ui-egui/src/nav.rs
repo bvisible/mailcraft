@@ -230,16 +230,26 @@ const MAX_ROWS: usize = mailcraft_model::MAX_FOLDERS;
 
 /// The folders of `account` as the pane lists them, depth first, skipping what is under a folded
 /// one: each with its depth and whether it has subfolders.
-// //// Neoffice — and, nothing folded, every folder in the pane's order for a hosting page that lists them in its own menu
-// //// Neoffice — (host_menu.rs): not for the tests alone.
-pub(crate) fn visible(mailbox: &Mailbox, folded: &[Id], account: Id) -> Vec<(Folder, usize, bool)> {
-    let mut trees = trees(mailbox, |a| a == account);
+#[cfg(test)]
+fn visible(mailbox: &Mailbox, folded: &[Id], account: Id) -> Vec<(Folder, usize, bool)> {
+    // //// Neoffice — (no folder « Plus tard » lifted: upstream's order, `visible_with`)
+    visible_with(mailbox, folded, account, &[])
+}
+
+// //// Neoffice — [`visible`] for a hosting page that lists every folder (nothing folded) in its own menu (host_menu.rs), with the
+// //// Neoffice — folders « Plus tard » its servers keep right after their account's Drafts (`ahead`, snooze_hosted.rs `folders`), as
+// //// Neoffice — the pane lists them.
+pub(crate) fn visible_with(mailbox: &Mailbox, folded: &[Id], account: Id, ahead: &[Id]) -> Vec<(Folder, usize, bool)> {
+    let mut trees = trees(mailbox, |a| a == account, ahead);
     visible_in(trees.remove(&account).unwrap_or_default(), folded)
 }
 
 /// The folders of each account that `wanted` names, by account and parent, in one pass over all the
 /// folders however many accounts there are, each list in the order the pane shows it.
-fn trees(mailbox: &Mailbox, wanted: impl Fn(Id) -> bool) -> HashMap<Id, Tree<'_>> {
+// //// Neoffice — and each of `ahead` (an account's « Plus tard » that its server keeps, in a hosting page's tab: snooze_hosted.rs
+// //// Neoffice — `folders`) right after its account's Drafts, by the Inbox: upstream lists it by its name among the person's own,
+// //// Neoffice — at the foot of the list. None where the window keeps its mail (`ahead` empty): upstream's order.
+fn trees<'a>(mailbox: &'a Mailbox, wanted: impl Fn(Id) -> bool, ahead: &[Id]) -> HashMap<Id, Tree<'a>> {
     let mut trees: HashMap<Id, Tree> = HashMap::new();
     for f in mailbox.folders.iter().filter(|f| wanted(f.account)) {
         trees.entry(f.account).or_default().entry(f.parent).or_default().push(f);
@@ -247,9 +257,24 @@ fn trees(mailbox: &Mailbox, wanted: impl Fn(Id) -> bool) -> HashMap<Id, Tree<'_>
     for tree in trees.values_mut() {
         for (parent, list) in tree.iter_mut() {
             sort_as_listed(list, parent.is_none());
+            // //// Neoffice — (see the function)
+            if parent.is_none() {
+                lift(list, ahead);
+            }
         }
     }
     trees
+}
+
+// //// Neoffice — the folders of `ahead` in an account's top-level `list`, each moved right after its Drafts (else its Inbox).
+fn lift(list: &mut Vec<&Folder>, ahead: &[Id]) {
+    for id in ahead {
+        let Some(at) = list.iter().position(|f| f.id == *id) else { continue };
+        let folder = list.remove(at);
+        let after = |kind: FolderKind| list.iter().position(|f| f.kind == kind).map(|n| n + 1);
+        let to = after(FolderKind::Drafts).or_else(|| after(FolderKind::Inbox)).unwrap_or(0);
+        list.insert(to, folder);
+    }
 }
 
 type Tree<'a> = HashMap<Option<Id>, Vec<&'a Folder>>;
@@ -317,9 +342,14 @@ impl Count {
 }
 
 // //// Neoffice — the number beside a folder, from the counts, in one place: the pane shows it, and a hosting page that lists the folders in its own menu is told it (host_menu.rs), so that the two never disagree.
+// //// Neoffice — A folder « Plus tard » of `snoozed` (snooze_hosted.rs `folders`) shows everything waiting in it, read or not, as Drafts
+// //// Neoffice — does: what was put away is mostly read, and its unread count left it bare.
 /// What the pane shows beside `f`, with the mailbox's [`FolderCounts`].
-pub(crate) fn shown_count(counts: &mailcraft_engine::counts::FolderCounts, f: &Folder) -> Count {
+pub(crate) fn shown_count(counts: &mailcraft_engine::counts::FolderCounts, f: &Folder, snoozed: &[Id]) -> Count {
     let held = counts.folder(f.id);
+    if snoozed.contains(&f.id) {
+        return if held.total > 0 { Count::Total(held.total) } else { Count::Nothing };
+    }
     Count::of(f.kind, held.total, held.unread)
 }
 
@@ -943,8 +973,10 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             // (Counted once per change to the mailbox, not at every frame: `Session::folder_counts`.)
             let counts = app.session.folder_counts();
-            // //// Neoffice — by the one rule a hosting page's menu is told too (`shown_count`, host_menu.rs).
-            let count = |f: &Folder| shown_count(&counts, f);
+            // //// Neoffice — by the one rule a hosting page's menu is told too (`shown_count`, host_menu.rs); « Plus tard » right after
+            // //// Neoffice — Drafts, with everything waiting in it (snooze_hosted.rs `folders`).
+            let snoozed = crate::snooze_hosted::folders(&app.session);
+            let count = |f: &Folder| shown_count(&counts, f, &snoozed);
             // What is listed: the favourites, and under each account what isn't folded away.
             let folded = app.ui.collapsed_folders.clone();
             // The favourites as the engine lists them: Outlook's own, in Outlook's order, for an
@@ -955,7 +987,8 @@ pub fn folder_pane(app: &mut MailApp, ui: &mut Ui) {
             let note = app.favorites_note();
             // (A shared mailbox right after the account it is opened through, #70.)
             // (The folders are grouped by account once, not once for each account.)
-            let mut trees = trees(&app.session.mailbox, |a| !folded.contains(&a));
+            // //// Neoffice — (`snoozed`: see `count`)
+            let mut trees = trees(&app.session.mailbox, |a| !folded.contains(&a), &snoozed);
             let lists: Vec<(Id, String, Vec<(Folder, usize, bool)>)> = app
                 .session
                 .mailbox

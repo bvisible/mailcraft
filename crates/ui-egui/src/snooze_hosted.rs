@@ -12,12 +12,16 @@
 //!   (`reading.rs`): a menu of times;
 //! - « Plus tard » in the message's menu (`mail_view.rs`) and in the Home tab's Tags group (`ribbon.rs`), and its key ([`KEY`]:
 //!   Ctrl+Shift+L, ⌘⇧L; this tab's alone, not upstream's Snooze's), which opens the window of times ([`open`]);
-//! - the folder « Plus tard » itself in the folder pane: each of its rows says when the message comes back ([`row_label`]), or
-//!   that its server could not bring it back, and the same clock brings it back now.
+//! - the folder « Plus tard » itself in the folder pane, right after Drafts ([`folders`]), with everything waiting in it beside its
+//!   name as Drafts has it, and its clock where a hosting page draws the folders in its own menu (host_menu.rs): each of its rows
+//!   says when the message comes back ([`row_label`]), or that its server could not bring it back, and the same clock brings it
+//!   back now.
 //!
 //! The times: later today (three hours on, at the next full hour, while that is before nine in the evening), tomorrow
-//! morning (8:00), next week (Monday, 8:00), or a date and time chosen in the window, all in the zone the window shows its
-//! times in (a change of the clocks between now and then is the engine's to weigh: it takes the wall-clock time).
+//! morning (8:00), next week (Monday, 8:00), or a date and a time of one's own in the window, the time typed to the minute
+//! (« 17:35 », « 17h35 », « 5:35 pm ») or picked from its half hours ([`typed`]), all in the zone the window shows its times in
+//! (a change of the clocks between now and then is the engine's to weigh: it takes the wall-clock time). A time that is no time,
+//! or is past, is said in the window, and nothing is put away.
 
 use egui::{Ui, vec2};
 use mailcraft_engine::cmd::snooze_hosted;
@@ -66,11 +70,29 @@ pub(crate) struct Choice {
 pub(crate) struct Window {
     pub(crate) ids: Vec<Id>,
     pub(crate) date: Date,
-    /// Minutes after midnight.
-    pub(crate) minutes: u16,
+    /// The time, as typed or picked ([`typed`] reads it).
+    pub(crate) time: String,
     pub(crate) error: Option<String>,
-    /// The list of times is open and was scrolled to the one chosen.
-    pub(crate) listed: bool,
+    /// The time takes the keyboard as the window opens: typed, then Enter.
+    pub(crate) focus: bool,
+}
+
+/// The hour and minute of a time typed in the window: `17:35`, `9`, `5:35 pm` as the window's forms read them, and as French and
+/// German write them too, `17h35`, `17h`, `17.35`, and `1735`. `None` for what is no time.
+pub(crate) fn typed(text: &str) -> Option<(u8, u8)> {
+    let mut text = text.trim().to_lowercase();
+    for (written, read) in [("a. m.", "am"), ("p. m.", "pm"), ("a.m.", "am"), ("p.m.", "pm")] {
+        text = text.replace(written, read);
+    }
+    // « 17h35 », « 17h », « 17.35 »: the first `h` or `.` after a digit parts the hour from the minutes.
+    let parts = text.char_indices().find(|(at, c)| matches!(c, 'h' | '.') && text[..*at].trim_end().ends_with(|p: char| p.is_ascii_digit()));
+    if let Some((at, _)) = parts {
+        text.replace_range(at..=at, ":");
+    }
+    let text = text.strip_suffix(':').unwrap_or(&text);
+    let digits = text.len() == 4 && text.bytes().all(|b| b.is_ascii_digit());
+    let text = if digits { format!("{}:{}", &text[..2], &text[2..]) } else { text.to_string() };
+    mailcraft_time::parse_time(&text).map(|(hour, minute, _)| (hour, minute))
 }
 
 fn label(choice: &Choice) -> &'static str {
@@ -161,6 +183,18 @@ pub(crate) fn in_view(app: &MailApp) -> bool {
         && s.mailbox
             .folder(s.view.folder)
             .is_some_and(|f| s.hosted_snooze.servers.contains(&f.account) && s.mailbox.snoozed_folder(f.account) == Some(f.id))
+}
+
+/// The folders « Plus tard » the window lists as such: of each account whose server keeps it, in a hosting page's tab. The pane
+/// lists each right after its account's Drafts, with everything waiting in it beside its name, as Drafts has it (nav.rs); a
+/// hosting page that draws the folders in its own menu is told it is one (`snoozed`, host_menu.rs), and draws its clock.
+pub(crate) fn folders(s: &mailcraft_engine::Session) -> Vec<Id> {
+    if s.keeps_local {
+        return Vec::new();
+    }
+    let mut out: Vec<Id> = s.hosted_snooze.servers.iter().filter_map(|account| s.mailbox.snoozed_folder(*account)).collect();
+    out.sort_unstable();
+    out
 }
 
 /// Whether one of `ids` waits in « Plus tard » and can be brought back now.
@@ -255,7 +289,9 @@ pub(crate) fn open(app: &mut MailApp, ctx: &egui::Context, ids: &[Id]) {
         return;
     }
     let first = choices(app).into_iter().find(|c| c.key == "tomorrow").map(|c| c.at).unwrap_or_else(|| app.session.wall_at(app.session.now()));
-    let window = Window { ids, date: first.date, minutes: u16::from(first.hour) * 60 + u16::from(first.minute), error: None, listed: false };
+    // (Written as the forms write a time, which [`typed`] reads back in any language.)
+    let time = crate::forms::kit::clock_text(u32::from(first.hour) * 60 + u32::from(first.minute), app.session.prefs.twelve_hour);
+    let window = Window { ids, date: first.date, time, error: None, focus: true };
     ctx.data_mut(|d| d.insert_temp(window_id(), window));
 }
 
@@ -281,8 +317,11 @@ pub(crate) fn frame(app: &mut MailApp, ctx: &egui::Context) {
 fn window(app: &mut MailApp, ctx: &egui::Context) {
     let Some(mut w) = ctx.data(|d| d.get_temp::<Window>(window_id())) else { return };
     let t = Tokens::get(ctx);
-    let mut close = false;
+    // Escape closes it, as it closes the other dialogs (the gate's: not while its calendar or its list of times is open).
+    let mut close = crate::keys::escape(ctx, crate::keys::dialog_layer());
     let mut put: Option<DateTime> = None;
+    // Enter in the time typed: as « Plus tard ».
+    let mut submit = false;
     let open = crate::dialogs::window(ctx, tlc!("snooze", "Later"), 340.0, |ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
         for choice in choices(app) {
@@ -311,26 +350,7 @@ fn window(app: &mut MailApp, ctx: &egui::Context) {
                 w.date = day;
                 w.error = None;
             }
-            let twelve = app.session.prefs.twelve_hour;
-            let shown = crate::dates::time((w.minutes / 60) as u8, (w.minutes % 60) as u8, twelve);
-            let listed = w.listed;
-            let combo = egui::ComboBox::from_id_salt(window_id().with("time")).selected_text(shown).width(96.0).show_ui(ui, |ui| {
-                for step in 0..48u16 {
-                    let minutes = step * 30;
-                    let text = crate::dates::time((minutes / 60) as u8, (minutes % 60) as u8, twelve);
-                    let item = ui.selectable_label(w.minutes == minutes, text);
-                    // Opened on the time chosen, not at midnight.
-                    if w.minutes == minutes && !listed {
-                        item.scroll_to_me(Some(egui::Align::Center));
-                    }
-                    if item.clicked() {
-                        w.minutes = minutes;
-                        w.error = None;
-                    }
-                }
-            });
-            w.listed = combo.inner.is_some();
-            app.hit.add("snoozeWindowTime", 0, combo.response.rect);
+            submit |= time_field(app, ui, &t, &mut w);
         });
         if let Some(error) = &w.error {
             ui.label(egui::RichText::new(error).font(regular(12.0)).color(t.overdue));
@@ -340,9 +360,14 @@ fn window(app: &mut MailApp, ctx: &egui::Context) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let ok = crate::widgets::primary_button(ui, tlc!("snooze", "Put Away"), true);
                 app.hit.add("snoozeWindowPut", 0, ok.rect);
-                if ok.clicked() {
-                    let at = DateTime { date: w.date, hour: (w.minutes / 60) as u8, minute: (w.minutes % 60) as u8, second: 0 };
-                    put = Some(at);
+                if ok.clicked() || submit {
+                    match typed(&w.time) {
+                        Some((hour, minute)) => put = Some(DateTime { date: w.date, hour, minute, second: 0 }),
+                        None => {
+                            let example = crate::dates::time(14, 30, app.session.prefs.twelve_hour);
+                            w.error = Some(crate::i18n::fmt(tlc!("snooze", "Type a time, such as {time}."), &[("time", &example)]));
+                        }
+                    }
                 }
                 if ui.button(tl!("Cancel")).clicked() {
                     close = true;
@@ -365,6 +390,68 @@ fn window(app: &mut MailApp, ctx: &egui::Context) {
     } else {
         ctx.data_mut(|d| d.insert_temp(window_id(), w));
     }
+}
+
+/// The window's time: typed (the keyboard is its own: Enter puts away, `true`), tidied as times are shown when it is left, outlined
+/// in red while it is no time, and the half hours of the day to pick from beside it.
+fn time_field(app: &mut MailApp, ui: &mut Ui, t: &Tokens, w: &mut Window) -> bool {
+    let twelve = app.session.prefs.twelve_hour;
+    let gap = std::mem::replace(&mut ui.spacing_mut().item_spacing.x, 2.0);
+    let edit = egui::TextEdit::singleline(&mut w.time)
+        .id(window_id().with("time"))
+        .desired_width(76.0)
+        .char_limit(11)
+        .hint_text(crate::dates::time(14, 30, twelve));
+    let resp = crate::text_menu::field(ui.add(edit));
+    app.hit.add("snoozeWindowTime", 0, resp.rect);
+    if std::mem::take(&mut w.focus) {
+        resp.request_focus();
+        // (All of it selected: what is typed takes the place of the time it opened on.)
+        let mut state = egui::TextEdit::load_state(ui.ctx(), resp.id).unwrap_or_default();
+        let all = egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(usize::MAX));
+        state.cursor.set_char_range(Some(all));
+        state.store(ui.ctx(), resp.id);
+    }
+    if resp.changed() {
+        w.error = None;
+    }
+    // (Through the keyboard's gate, as a form's field reads it: the window's Enter, not one under it.)
+    let entered = resp.lost_focus() && crate::keys::enter(ui.ctx(), ui.layer_id());
+    if crate::text_menu::left(&resp)
+        && let Some((hour, minute)) = typed(&w.time)
+    {
+        w.time = crate::forms::kit::clock_text(u32::from(hour) * 60 + u32::from(minute), twelve);
+    }
+    if !w.time.trim().is_empty() && typed(&w.time).is_none() {
+        ui.painter().rect_stroke(resp.rect, 4.0, egui::Stroke::new(1.0, t.red), egui::StrokeKind::Inside);
+    }
+    let button = crate::widgets::icon_button(ui, "dropdown", tl!("Pick a time"), 10.0, true);
+    app.hit.add("snoozeWindowTimes", 0, button.rect);
+    ui.spacing_mut().item_spacing.x = gap;
+    let opening = !egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&button));
+    let current = typed(&w.time).map(|(hour, minute)| u32::from(hour) * 60 + u32::from(minute));
+    let mut picked = None;
+    egui::Popup::menu(&button).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+        egui::ScrollArea::vertical().max_height(232.0).show(ui, |ui| {
+            ui.set_min_width(92.0);
+            for (minutes, label) in crate::forms::kit::slots(None, twelve) {
+                let item = ui.selectable_label(current == Some(minutes), label);
+                // Opened on the time typed, not at midnight.
+                if opening && current.is_some_and(|c| c / 30 * 30 == minutes) {
+                    item.scroll_to_me_animation(Some(egui::Align::Center), egui::style::ScrollAnimation::none());
+                }
+                if item.clicked() {
+                    picked = Some(minutes);
+                    ui.close();
+                }
+            }
+        });
+    });
+    if let Some(minutes) = picked {
+        w.time = crate::forms::kit::clock_text(minutes, twelve);
+        w.error = None;
+    }
+    entered
 }
 
 /// « Plus tard » in the Home tab's Tags group, after Follow Up, where the mailbox's server keeps it: its times.
