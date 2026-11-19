@@ -25972,6 +25972,11 @@ msgstr "在其服务器上找不到“{subject}”，因此无法将其作为附
 msgid "‹ Back to the conversation"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "→ {tab}"
+msgstr ""
+
 #, fuzzy
 #~ msgid "Apply Downloaded JMAP Messages"
 #~ msgstr "应用已下载的 JMAP 邮件"

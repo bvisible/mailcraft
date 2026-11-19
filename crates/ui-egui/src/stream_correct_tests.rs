@@ -171,9 +171,9 @@ fn the_offer_names_its_sender_or_counts_them_and_has_shorter_ways() {
     assert_eq!(offer_text(&many).1, "The next ones from these 2 senders too");
 }
 
-/// Where Nora's bar is drawn, the offer is the line above it, as the one that follows a ⚡: no bar of its own in the list.
-#[test]
-fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others() {
+/// A hosting page with Nora's bar over its Inbox, two messages of one sender there, the first put under Newsletters alone; the
+/// window drawn, and the two messages.
+fn nora_page_after_a_choice() -> (egui_kittest::Harness<'static, MailApp>, [Id; 2]) {
     let (mut app, _calls, _) = crate::nora::testing::page(true);
     app.session.keeps_local = false;
     app.execute("folder.select", json!({"kind": "inbox"})).unwrap();
@@ -182,8 +182,8 @@ fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others(
     let account = s.mailbox.folder(inbox).unwrap().account;
     s.mailbox.folder_mut(inbox).unwrap().server = Some(ServerFolder { id: "Min".into(), name: "INBOX".into(), ..Default::default() });
     let from = mailcraft_model::Address::new("The Shop", "news@shop.example");
-    let mut ids = Vec::new();
-    for n in 0..2 {
+    let mut ids = [0; 2];
+    for (n, id) in ids.iter_mut().enumerate() {
         let m = mailcraft_model::Message {
             folder: inbox,
             account,
@@ -192,7 +192,7 @@ fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others(
             server: Some(ServerMessage { id: format!("S{n}"), folder: "Min".into(), ..Default::default() }),
             ..Default::default()
         };
-        ids.push(s.mailbox.add_message(m).unwrap());
+        *id = s.mailbox.add_message(m).unwrap();
     }
     let email = s.mailbox.account(account).unwrap().email.clone();
     s.run("mail.offerStreamCorrection", &json!({"account": email, "offered": true})).unwrap();
@@ -211,14 +211,64 @@ fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others(
             app,
         );
     h.run_steps(4);
+    (h, ids)
+}
+
+fn click_line(h: &mut egui_kittest::Harness<'static, MailApp>, hit: &str) {
+    let at = h.state().hit.rect(hit, 0).unwrap_or_else(|| panic!("no {hit}")).center();
+    crate::people_view::testing::click(h, at, PointerButton::Primary, 1);
+    h.run_steps(3);
+}
+
+/// Where Nora's bar is drawn, the offer is the line above it, as the one that follows a ⚡: no bar of its own in the list.
+#[test]
+fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others() {
+    let (mut h, ids) = nora_page_after_a_choice();
     assert!(h.state().hit.rect("noraHintButton", 0).is_some(), "the line above Nora's bar says it");
     assert!(h.state().hit.rect("streamOfferYes", 0).is_none(), "and no bar of its own pushes the list down");
     assert!(h.query_all_by_label_contains("The next ones from The Shop too").next().is_some());
-    let at = h.state().hit.rect("noraHintButton", 0).unwrap().center();
-    crate::people_view::testing::click(&mut h, at, PointerButton::Primary, 1);
-    h.run_steps(3);
+    click_line(&mut h, "noraHintButton");
     assert_eq!(h.state().session.mailbox.message(ids[1]).unwrap().stream, Some(Stream::Newsletter), "the sender's other follows");
     assert!(h.state().session.hosted_stream.proposal.is_none());
+}
+
+#[test]
+fn the_lines_close_leaves_the_senders_other_message_where_it_was() {
+    let (mut h, ids) = nora_page_after_a_choice();
+    let before = h.state().session.mailbox.message(ids[1]).unwrap().stream;
+    click_line(&mut h, "noraHintClose");
+    assert_eq!(h.state().session.mailbox.message(ids[1]).unwrap().stream, before);
+    assert_eq!(h.state().session.mailbox.message(ids[0]).unwrap().stream, Some(Stream::Newsletter), "the message chosen stays");
+    assert!(h.state().session.hosted_stream.proposal.is_none());
+    assert!(h.state().hit.rect("noraHintButton", 0).is_none(), "and the line is gone");
+}
+
+/// The line says where the message went: whole where it has room, as « → Newsletters » where the list is narrow; in the very
+/// narrowest line (about 260 px) only its shortest button is left, the whole of its words under the pointer.
+#[test]
+fn the_line_says_where_the_message_went_at_any_width() {
+    let (mut app, _calls, _) = crate::nora::testing::page(true);
+    app.session.hosted_stream.proposal = Some(mailcraft_engine::cmd::stream_correct::Proposal {
+        ids: vec![1],
+        stream: Stream::Newsletter,
+        senders: vec!["Nora".into()],
+        at: app.session.now(),
+    });
+    let line = hint(&app).expect("the offer is a line above Nora's bar");
+    let ctx = egui::Context::default();
+    ctx.set_fonts(crate::theme::font_definitions_with(&crate::theme::SystemFont::none()));
+    ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
+    let mut said = Vec::new();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        for widest in [640.0, 360.0, 300.0] {
+            said.push(crate::nora::ask_bar::words_said(ui, &line, widest));
+        }
+    })
+    .drop_without_applying_deltas();
+    assert_eq!(said[0].as_deref(), Some("Moved to Newsletters."), "whole where there is room");
+    for words in &said[1..] {
+        assert!(words.as_deref().is_some_and(|w| w.contains("Newsletters")), "the tab is said in a narrow list too: {said:?}");
+    }
 }
 
 /// The texts are this fork's own: they live in `po/neoffice/`, not in upstream's generated catalogues.
@@ -237,6 +287,7 @@ fn every_text_it_shows_has_a_french_translation() {
         "The next ones from {sender} too",
         "The next ones from these {count} senders too",
         "The next ones too",
+        "→ {tab}",
     ];
     let missing: Vec<&&str> = plain.iter().chain(&reasons).filter(|text| french.get(text).is_none()).collect();
     assert!(missing.is_empty(), "no French for {missing:?}: add them to crates/i18n/po/neoffice/fr.po");

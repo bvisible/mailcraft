@@ -5880,3 +5880,6 @@ msgstr "Les prochains de ces {count} expéditeurs aussi"
 
 msgid "The next ones too"
 msgstr "Les prochains aussi"
+
+msgid "→ {tab}"
+msgstr "→ {tab}"

@@ -4911,3 +4911,6 @@ msgstr "Anche i prossimi di questi {count} mittenti"
 
 msgid "The next ones too"
 msgstr "Anche i prossimi"
+
+msgid "→ {tab}"
+msgstr "→ {tab}"

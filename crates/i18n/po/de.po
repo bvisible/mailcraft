@@ -24888,6 +24888,11 @@ msgstr "„{subject}“ wurde auf seinem Server nicht gefunden, daher kann die N
 msgid "‹ Back to the conversation"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "→ {tab}"
+msgstr ""
+
 #, fuzzy
 #~ msgid "{not_sending_yet}, and no other account here has a mail server to send this through."
 #~ msgstr "{not_sending_yet}, und kein anderes Konto hier hat einen Mailserver, über den dies gesendet werden kann."

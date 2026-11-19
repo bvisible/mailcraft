@@ -348,8 +348,9 @@ fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> Fitted {
     let (button, text_w) = fit(ui, &buttons, &semibold(12.0), widest - pad - 18.0);
     let button_w = text_w + 18.0;
     let room = widest - pad - button_w - 8.0;
-    // //// Neoffice — (and the offer that follows « Classer dans »)
-    let words = if matches!(hint.close, Close::Offer | Close::StreamOffer) {
+    // //// Neoffice — (the offer that follows « Classer dans » keeps a shorter way of its words, « → Notifications »: without
+    // //// Neoffice — them the line said only « Les prochains aussi », and nothing of where the message went; the screen test of 20.11)
+    let words = if hint.close == Close::Offer {
         let w = ui.painter().layout_no_wrap(hint.words.clone(), regular(13.0), egui::Color32::WHITE).size().x;
         (w <= room).then(|| (hint.words.clone(), w))
     } else {
@@ -359,6 +360,13 @@ fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> Fitted {
     };
     let width = (pad + button_w + words.as_ref().map_or(0.0, |(_, w)| 8.0 + w)).min(widest);
     Fitted { rect: Rect::from_min_max(pos2(end.x - width, end.y - HINT_H), end), words: words.map(|(w, _)| w), button, button_w }
+}
+
+// //// Neoffice — the words a line says over a list's room `widest` wide, for the tests of « Classer dans » (stream_correct_tests.rs).
+/// What of `hint`'s words the line says where it is `widest` wide.
+#[cfg(test)]
+pub(crate) fn words_said(ui: &Ui, hint: &Hint, widest: f32) -> Option<String> {
+    measure(ui, hint, pos2(widest, 100.0), widest).words
 }
 
 /// The line above the bar in `rect`: its words, its button, its ✕. Whether the button and the ✕ were clicked.

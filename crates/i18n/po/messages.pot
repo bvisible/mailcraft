@@ -22590,3 +22590,8 @@ msgstr ""
 msgid "‹ Back to the conversation"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "→ {tab}"
+msgstr ""
+

@@ -4895,3 +4895,6 @@ msgstr "Die nächsten dieser {count} Absender auch"
 
 msgid "The next ones too"
 msgstr "Die nächsten auch"
+
+msgid "→ {tab}"
+msgstr "→ {tab}"

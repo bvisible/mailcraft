@@ -25925,6 +25925,11 @@ msgstr "„{subject}” is niet op de server gevonden, dus het kan niet als bijl
 msgid "‹ Back to the conversation"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "→ {tab}"
+msgstr ""
+
 #, fuzzy
 #~ msgid "Apply Downloaded JMAP Messages"
 #~ msgstr "Gedownloade JMAP-berichten toepassen"

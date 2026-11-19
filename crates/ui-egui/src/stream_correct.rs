@@ -132,11 +132,13 @@ pub(crate) fn offer_text(offer: &stream_correct::Proposal) -> (String, String, V
 pub(crate) fn hint(app: &MailApp) -> Option<crate::nora::ask_bar::Hint> {
     let offer = live(app)?;
     let (words, button, button_shorter) = offer_text(offer);
+    // Shorter, where the list is narrow: the tab alone, so that the line always says where the message went.
+    let words_shorter = vec![crate::i18n::fmt(tl!("→ {tab}"), &[("tab", tab_name(offer.stream))])];
     Some(crate::nora::ask_bar::Hint {
         account: String::new(),
         words,
         button,
-        words_shorter: Vec::new(),
+        words_shorter,
         button_shorter,
         intent: crate::nora::sorting::Intent::StreamSender,
         close: crate::nora::ask_bar::Close::StreamOffer,

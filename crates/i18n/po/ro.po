@@ -26301,6 +26301,11 @@ msgstr "„{subject}” nu a fost găsit pe server, deci nu poate fi redirecțio
 msgid "‹ Back to the conversation"
 msgstr ""
 
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "→ {tab}"
+msgstr ""
+
 #, fuzzy
 #~ msgid "Apply Downloaded JMAP Messages"
 #~ msgstr "Aplicare mesaje JMAP descărcate"
