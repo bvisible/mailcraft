@@ -12,6 +12,11 @@
 //!   (back to the folder it was in) and « Tout annuler ». A host keeps it between visits ([`MailApp::done_items`],
 //!   [`MailApp::set_done_items`]: the web build keeps it on the Neoffice server, by each message's Message-ID, and puts it back
 //!   for the messages that are in their account's Archive).
+//! - Whatever archives in such a tab marks done ([`before_archive`], [`after_archive`]: `MailApp::run`): Backspace, which the
+//!   round's words name, the ribbon's Archive, a menu's, in any folder. Done is archived, nothing else, and what was done
+//!   elsewhere than in the Inbox has its way back too: the section shows it in the folder it came from, and in the Inbox, with
+//!   everything else done today. (Not a message waiting in « Plus tard »: its server brings it back from there at its time, and
+//!   « Annuler » could not give it that time again. It is archived as before.)
 //!
 //! The round is ink on the paper (dark: the bright paper on the espresso), a ring at rest, full under the pointer; what was
 //! done wears the signal's tint (the design system's, as the window's tokens are in a hosting page's tab).
@@ -90,6 +95,20 @@ fn today(app: &MailApp) -> Vec<Item> {
     app.done.items.iter().filter(|i| app.session.local(i.at).date == day).filter(done).cloned().collect()
 }
 
+/// What the section shows in the folder in view: in the Inbox (where « Traité » is offered) everything of [`today`]; in another
+/// folder of a hosting page's tab, what was marked done from it today ([`before_archive`]); nothing where the window keeps its
+/// mail.
+fn here(app: &MailApp) -> Vec<Item> {
+    if offered(app) {
+        return today(app);
+    }
+    if app.session.keeps_local || app.session.view.module != Module::Mail {
+        return Vec::new();
+    }
+    let folder = app.session.view.folder;
+    today(app).into_iter().filter(|i| i.from == folder).collect()
+}
+
 /// Where a row's or a heading's round is, from the left edge `x` of the list and the middle `y` of its line: in the lead column
 /// of variant D (`d`), else left of the read switch. Its centre and radius.
 pub(super) fn round_at(x: f32, y: f32, d: bool) -> (Pos2, f32) {
@@ -133,28 +152,46 @@ pub(crate) fn offered(app: &MailApp) -> bool {
         && app.session.mailbox.folder(app.session.view.folder).is_some_and(|f| f.kind == FolderKind::Inbox)
 }
 
-/// Mark `ids` done: archived, and kept in the section with the folder each was in. `false` when nothing was.
+/// Mark `ids` done: archived, which keeps them in the section with the folder each was in ([`after_archive`]). `false` when
+/// nothing was.
 pub(crate) fn mark(app: &mut MailApp, ids: &[Id]) -> bool {
-    let items: Vec<Item> = ids
+    if ids.is_empty() {
+        return false;
+    }
+    app.run("mail.archive", json!({"ids": ids})).is_ok_and(|v| v.get("moved").and_then(serde_json::Value::as_u64).is_some_and(|n| n > 0))
+}
+
+/// What `mail.archive` (`params`) is to take in a hosting page's tab, before it runs, as the section keeps a message done: each
+/// with the folder it is in and what its row says. `None` where the window keeps its mail (upstream's Archive alone). Not a
+/// message waiting in « Plus tard » (see the module's documentation).
+pub(crate) fn before_archive(app: &mut MailApp, params: &serde_json::Value) -> Option<Vec<Item>> {
+    if app.session.keeps_local {
+        return None;
+    }
+    // (As the command names them: `id`, `ids`, else what is selected, from the list the command reads too.)
+    let ids = mailcraft_engine::p::ids_strict(params).ok().flatten().unwrap_or_else(|| app.session.acting_on());
+    let at = app.session.now();
+    // (Nor one in « Plus tard » whose record the server has not told yet.)
+    let snoozed = crate::snooze_hosted::folders(&app.session);
+    let items = ids
         .iter()
-        .filter_map(|id| {
-            app.session.mailbox.message(*id).map(|m| Item {
-                id: *id,
-                message_id: m.message_id.clone(),
-                from: m.folder,
-                at: app.session.now(),
-                who: m.from.display().to_string(),
-                subject: m.subject.trim().to_string(),
-            })
+        .filter_map(|id| app.session.mailbox.message(*id))
+        .filter(|m| !m.snooze.is_some_and(|z| z.waiting()) && !snoozed.contains(&m.folder))
+        .map(|m| Item {
+            id: m.id,
+            message_id: m.message_id.clone(),
+            from: m.folder,
+            at,
+            who: m.from.display().to_string(),
+            subject: m.subject.trim().to_string(),
         })
         .collect();
-    if items.is_empty() {
-        return false;
-    }
-    let asked: Vec<Id> = items.iter().map(|i| i.id).collect();
-    if app.run("mail.archive", json!({"ids": asked})).is_err() {
-        return false;
-    }
+    Some(items)
+}
+
+/// After `mail.archive` ran: `items` ([`before_archive`]) whose message left the folder it was in are marked done, newest
+/// first in the section. `false` when none did.
+pub(crate) fn after_archive(app: &mut MailApp, items: Vec<Item>) -> bool {
     let moved: Vec<Item> = items.into_iter().filter(|i| app.session.mailbox.message(i.id).is_some_and(|m| m.folder != i.from)).collect();
     if moved.is_empty() {
         return false;
@@ -166,10 +203,11 @@ pub(crate) fn mark(app: &mut MailApp, ids: &[Id]) -> bool {
             app.nora.sorting.priority_stale(&name);
         }
     }
-    app.done.items.retain(|d| !moved.iter().any(|m| m.id == d.id));
-    for item in moved.into_iter().rev() {
-        app.done.items.insert(0, item);
-    }
+    // Newest first, each once: in one pass, however many were archived at once.
+    let ids: std::collections::HashSet<Id> = moved.iter().map(|i| i.id).collect();
+    let mut items = moved;
+    items.extend(std::mem::take(&mut app.done.items).into_iter().filter(|d| !ids.contains(&d.id)));
+    app.done.items = items;
     true
 }
 
@@ -183,9 +221,9 @@ pub(crate) fn undo(app: &mut MailApp, id: Id) {
     app.done.items.retain(|i| i.id != id);
 }
 
-/// Put back all of what the section shows (today's), each where it was: one move for each folder they came from.
+/// Put back all of what the section shows ([`here`]), each where it was: one move for each folder they came from.
 pub(crate) fn undo_all(app: &mut MailApp) {
-    let all: Vec<Id> = today(app).iter().map(|i| i.id).collect();
+    let all: Vec<Id> = here(app).iter().map(|i| i.id).collect();
     undo_these(app, &all);
 }
 
@@ -501,8 +539,8 @@ pub(super) fn bar_clicks(app: &mut MailApp, bar: &Bar, row: &Row) -> bool {
 /// « Marqués comme traités (N) » above the list, while something was marked done: its heading folds or opens it, « Tout
 /// annuler » puts them all back, and open, each with « Annuler ».
 pub(super) fn section(app: &mut MailApp, ui: &mut Ui) {
-    let shown = today(app);
-    if shown.is_empty() || !offered(app) {
+    let shown = here(app);
+    if shown.is_empty() {
         return;
     }
     let t = Tokens::get(ui.ctx());
@@ -585,12 +623,9 @@ const D_ROW_H: f32 = 50.0;
 const D_ROWS: usize = 5;
 
 pub(super) fn section_d(app: &mut MailApp, ui: &mut Ui) {
-    if !offered(app) {
-        return;
-    }
-    let group = super::bundle::open_group(app.session.view.filter);
+    let group = super::bundle::open_group(app.session.view.filter).filter(|_| offered(app));
     let items: Vec<Item> =
-        today(app).into_iter().filter(|i| group.is_none_or(|g| app.session.mailbox.message(i.id).is_some_and(|m| m.stream == Some(g)))).collect();
+        here(app).into_iter().filter(|i| group.is_none_or(|g| app.session.mailbox.message(i.id).is_some_and(|m| m.stream == Some(g)))).collect();
     if items.is_empty() {
         return;
     }

@@ -2457,6 +2457,10 @@ impl MailApp {
         if id.starts_with("view.") {
             host_modules::leave(self);
         }
+        // //// Neoffice — what a hosting page's tab archives is marked done, whatever archives it (the round, Backspace, the
+        // //// Neoffice — ribbon, a menu), in any folder: the section of what was done keeps it with the folder it was in, so that
+        // //// Neoffice — « Annuler » puts it back there (mail_view/done.rs). Upstream's Archive alone where the window keeps its mail.
+        let archiving = if id == "mail.archive" { mail_view::done::before_archive(self, &params) } else { None };
         let r = match id {
             updates::CHECK => self.check_for_updates(true),
             updates::RESTART => self.restart_to_update(),
@@ -2475,6 +2479,10 @@ impl MailApp {
                 r
             }
         };
+        // //// Neoffice — (those it moved out of their folder: done.rs)
+        if let (Some(items), Ok(_)) = (archiving, &r) {
+            mail_view::done::after_archive(self, items);
+        }
         // View Source pressed by the owner: its window, with what it answered.
         if let (Ok(v), "mail.viewSource") = (&r, id) {
             self.show_source(v);

@@ -8,6 +8,8 @@
 //! Archive beside the Inbox, each with its round full, which puts it back.
 //! The section shows what was marked done today; what a host puts back at the next visit (each message found again in its
 //! account's Archive) shows there as it did, and each « Annuler » and « Tout annuler » puts it back where it was.
+//! Backspace, which the round's words name, marks done what it archives in any folder of such a tab, and the section shows it in the
+//! folder it came from, and in the Inbox: each « Annuler » puts it back there.
 //! And (`--ignored`, with `DONE_SHOTS=<folder>`) the list drawn in French, light and dark, to PNG files.
 
 use egui::PointerButton;
@@ -405,4 +407,110 @@ fn the_inbox_opened_from_favorites_has_it_too() {
     hover(&mut w, "message", first);
     assert!(has(&w, "doneRound", first));
     assert!(any_group_round(&mut w));
+}
+
+/// The folder « Receipts » of the sample, with the first two messages of the Inbox moved there, in view: the window and the folder.
+fn receipts(w: &mut testing::Window) -> (Id, Vec<Id>) {
+    let moved: Vec<Id> = drawn(w).into_iter().take(2).collect();
+    let folder = w.state().session.mailbox.folders.iter().find(|f| f.name == "Receipts").map(|f| f.id).expect("the sample's Receipts");
+    w.state_mut().execute("mail.move", json!({"ids": moved, "folder": folder})).unwrap();
+    w.state_mut().execute("folder.select", json!({"id": folder})).unwrap();
+    w.run_steps(3);
+    (folder, moved)
+}
+
+/// Backspace on the selection, the key the round's words name.
+fn backspace_on(w: &mut testing::Window, id: Id) {
+    click(w, "messageSender", id);
+    assert_eq!(w.state().session.sel.messages, [id]);
+    testing::key(w, egui::Key::Backspace);
+    w.run_steps(3);
+}
+
+#[test]
+fn backspace_marks_done_what_it_archives_in_the_inbox_as_the_rounds_words_say() {
+    let mut w = inbox(true);
+    let first = drawn(&mut w)[0];
+    backspace_on(&mut w, first);
+    assert_eq!(folder_kind(&w, first), Some(FolderKind::Archive), "archived");
+    assert_eq!(w.state().done.items.iter().map(|i| i.id).collect::<Vec<_>>(), [first], "and kept as done");
+    assert!(has(&w, "doneUndo", first), "in the section, which puts it back");
+    click(&mut w, "doneUndo", first);
+    assert_eq!(folder_kind(&w, first), Some(FolderKind::Inbox));
+}
+
+#[test]
+fn backspace_in_another_folder_marks_it_done_and_the_section_there_and_the_inboxs_put_it_back_where_it_was() {
+    let mut w = inbox(true);
+    let (folder, moved) = receipts(&mut w);
+    let here = |w: &testing::Window, id: Id| w.state().session.mailbox.message(id).map(|m| m.folder);
+    // Backspace in « Receipts »: archived, kept as done with the folder it was in, and shown here.
+    backspace_on(&mut w, moved[0]);
+    assert_eq!(folder_kind(&w, moved[0]), Some(FolderKind::Archive));
+    let item = w.state().done.items.iter().find(|i| i.id == moved[0]).cloned().expect("kept as done");
+    assert_eq!(item.from, folder, "with the folder it was in");
+    assert!(has(&w, "doneSection", 0) && has(&w, "doneUndo", moved[0]), "the section shows it in the folder it left");
+    click(&mut w, "doneUndo", moved[0]);
+    assert_eq!(here(&w, moved[0]), Some(folder), "« Annuler »: back in « Receipts »");
+    assert!(!has(&w, "doneSection", 0));
+    // Done again, then put back from the Inbox's section, where everything done today shows.
+    backspace_on(&mut w, moved[1]);
+    assert_eq!(folder_kind(&w, moved[1]), Some(FolderKind::Archive));
+    w.state_mut().execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    w.run_steps(3);
+    assert!(has(&w, "doneUndo", moved[1]), "the Inbox's section has it too");
+    click(&mut w, "doneUndoAll", 0);
+    assert_eq!(here(&w, moved[1]), Some(folder), "« Tout annuler »: back in « Receipts », not in the Inbox");
+}
+
+#[test]
+fn what_is_done_elsewhere_shows_in_the_folder_it_came_from_and_the_inbox_alone() {
+    let mut w = inbox(true);
+    let (folder, moved) = receipts(&mut w);
+    backspace_on(&mut w, moved[0]);
+    // Sent Items: nothing of it.
+    w.state_mut().execute("folder.select", json!({"kind": "sent"})).unwrap();
+    w.run_steps(3);
+    assert!(!has(&w, "doneSection", 0) && !has(&w, "doneUndo", moved[0]));
+    // Done in the Inbox: shown there, not in « Receipts ».
+    w.state_mut().execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    w.run_steps(3);
+    let first = drawn(&mut w)[0];
+    backspace_on(&mut w, first);
+    w.state_mut().execute("folder.select", json!({"id": folder})).unwrap();
+    w.run_steps(3);
+    assert!(has(&w, "doneUndo", moved[0]) && !has(&w, "doneUndo", first), "« Receipts » shows its own");
+}
+
+#[test]
+fn where_the_window_keeps_its_mail_backspace_archives_as_upstream_has_it() {
+    let mut w = inbox(false);
+    let first = drawn(&mut w)[0];
+    backspace_on(&mut w, first);
+    assert_eq!(folder_kind(&w, first), Some(FolderKind::Archive));
+    assert!(w.state().done.items.is_empty(), "nothing kept as done");
+}
+
+#[test]
+fn a_message_in_plus_tard_is_archived_as_before_not_kept_as_done_and_many_at_once_are_kept_newest_first() {
+    let mut w = inbox(true);
+    let ids: Vec<Id> = drawn(&mut w).into_iter().take(3).collect();
+    // « Plus tard » that the account's server keeps, with the first message in it (its record not read yet).
+    let account = w.state().session.mailbox.message(ids[0]).unwrap().account;
+    let snoozed = w.state_mut().session.mailbox.add_folder_free(account, None, "Plus tard").unwrap();
+    w.state_mut().session.mailbox.folder_mut(snoozed).unwrap().server =
+        Some(mailcraft_model::ServerFolder { id: "MSnz".into(), name: "Plus tard".into(), ..Default::default() });
+    w.state_mut().session.mailbox.message_mut(ids[0]).unwrap().folder = snoozed;
+    w.state_mut().session.mailbox_changed();
+    let email = w.state().session.mailbox.account(account).unwrap().email.clone();
+    w.state_mut().session.run("mail.setSnoozes", &json!({"account": email, "mailbox": "MSnz", "records": []})).unwrap();
+    w.state_mut().run("mail.archive", json!({"ids": [ids[0]]})).unwrap();
+    assert_eq!(folder_kind(&w, ids[0]), Some(FolderKind::Archive), "archived");
+    assert!(w.state().done.items.is_empty(), "not kept as done: nothing would give it its time again");
+    // Two at once: both kept, in the order they were named; archived again (already there), nothing twice.
+    w.state_mut().run("mail.archive", json!({"ids": [ids[1], ids[2]]})).unwrap();
+    let kept = |w: &testing::Window| w.state().done.items.iter().map(|i| i.id).collect::<Vec<_>>();
+    assert_eq!(kept(&w), [ids[1], ids[2]]);
+    let _ = w.state_mut().run("mail.archive", json!({"ids": [ids[1]]}));
+    assert_eq!(kept(&w), [ids[1], ids[2]]);
 }

@@ -222,6 +222,26 @@ fn serve_the_stand_in_on_loopback() {
             d.profile = crate::standin::Profile::by_place();
         });
     }
+    // An Archive, and a folder of the person's own with two messages in it: « Traité » outside the Inbox (Backspace there).
+    if std::env::var("MAILCRAFT_STANDIN_FOLDERS").is_ok_and(|v| v == "1") {
+        stand_in.with(|d| {
+            d.mailbox("Archive", None, Some("archive"));
+            let suppliers = d.mailbox("Suppliers", None, None);
+            let morning = DateTime::at_midnight(today).to_timestamp(0) + 5 * 3_600;
+            let letters = [
+                ("Erin Weber", "erin@example.org", "Invoice for the October delivery", "Please find the invoice for the October delivery."),
+                ("Felix Roth", "felix@example.org", "New price list", "Our prices change on the first of the month."),
+            ];
+            for (n, (name, email, subject, words)) in letters.iter().enumerate() {
+                let sent = morning + 1_800 * i64::try_from(n).unwrap_or(0);
+                let raw = format!(
+                    "From: {name} <{email}>\r\nTo: Ada Marlow <{DEMO_PERSON}>\r\nSubject: {subject}\r\nMessage-ID: <supplier-{n}@example.org>\r\nDate: {}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{words}\r\n",
+                    mailcraft_time::format_rfc5322(sent, 60)
+                );
+                d.deliver(&suppliers, raw.as_bytes(), &["$seen"], &mailcraft_time::format_iso_utc(sent));
+            }
+        });
+    }
     println!(
         "the stand-in, with the demo around {}, {more} more events, {cards} more cards and {notes} more notes, on http://127.0.0.1:{port}/jmap/session (token {TOKEN}); stop it with Ctrl-C",
         today.iso()

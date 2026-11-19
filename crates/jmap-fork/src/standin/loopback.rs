@@ -29,6 +29,8 @@
 //! - « Plus tard », when `MAILCRAFT_STANDIN_SNOOZE=1` turns it on (`standin/snooze.rs`, and the messages named by where they lie,
 //!   as the Neoffice server names them): `GET /__tick` runs the server's minute job now (`?at=<seconds>`: as it runs then),
 //!   `GET /__snoozes` lists its records, `GET /__where` where each email lies and whether it was read.
+//! - An Archive and a folder of the person's own (« Suppliers », two messages), when `MAILCRAFT_STANDIN_FOLDERS=1` asks for them:
+//!   what is marked done outside the Inbox.
 //! - Anything else is the stand-in's, at its own address: the session (`/jmap/session`, whose other addresses are
 //!   relative to it), the API, the downloads.
 
