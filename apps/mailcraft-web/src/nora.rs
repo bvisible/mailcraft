@@ -25,12 +25,17 @@
 //! object of arguments without a `cmd` key, within 8 MB (what Neodesk's shell takes). An answer is read up to
 //! [`MAX_ANSWER`] bytes, its text as UTF-8 with what isn't replaced; a call is given up after
 //! [`GIVE_UP_MS`]. A call that got no answer comes back with status 0 and why, which the window says.
+//!
+//! A dictation in her pane ([`DICTATION`], where it can go: [`dictation`]) is the one call that is no JSON at the server: a form with
+//! the recording as a file and the language ([`dictation_form`]), made here for the page's own `fetch`, with the same session and
+//! token, and by the host where the host makes the calls. The recording goes only to where her other calls go.
 
 // Outside the browser only the tests use what is here.
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 
+use base64::Engine as _;
 use mailcraft_ui_egui::NoraCall;
-use mailcraft_ui_egui::nora::{CHAT_METHODS, METHODS, PageMailbox, READY_METHODS, SORTING_METHODS};
+use mailcraft_ui_egui::nora::{CHAT_METHODS, DICTATION, MAX_DICTATION, METHODS, PageMailbox, READY_METHODS, SORTING_METHODS};
 
 use crate::hosted::HostAccount;
 
@@ -102,11 +107,15 @@ pub fn handed_mailbox(handed: &HostAccount) -> PageMailbox {
 
 /// The body a call goes with, when it may go out at all: one of the six methods, of the seven of her
 /// conversation (her pane's, [`CHAT_METHODS`]) or of the two of her ready replies ([`READY_METHODS`]), a plain object of
-/// arguments without a `cmd` key, within 8 MB.
+/// arguments without a `cmd` key, within 8 MB; or a dictation ([`DICTATION`]), its arguments those of a recording.
 pub fn allowed(call: &NoraCall) -> Result<String, String> {
     let listed = |list: &[&str]| list.contains(&call.method);
-    if !listed(&METHODS) && !listed(&CHAT_METHODS) && !listed(&READY_METHODS) && !listed(&SORTING_METHODS) {
+    let dictation = call.method == DICTATION;
+    if !dictation && !listed(&METHODS) && !listed(&CHAT_METHODS) && !listed(&READY_METHODS) && !listed(&SORTING_METHODS) {
         return Err("that is not one of Nora's methods".into());
+    }
+    if dictation {
+        dictation_form(&call.args)?;
     }
     let Some(args) = call.args.as_object() else { return Err("the arguments are not a plain object".into()) };
     if args.contains_key("cmd") {
@@ -117,6 +126,42 @@ pub fn allowed(call: &NoraCall) -> Result<String, String> {
         return Err("the arguments are too large".into());
     }
     Ok(body)
+}
+
+/// What the form of a dictation carries (the server's `nora.api.stt.transcribe` takes a form, not JSON).
+#[derive(Debug, PartialEq, Eq)]
+pub struct DictationForm {
+    /// The recording, its type, and a file name with the extension the server reads the type by.
+    pub audio: Vec<u8>,
+    pub mime: String,
+    pub file_name: String,
+    /// The language spoken, two letters.
+    pub language: String,
+}
+
+/// The kinds of recording a browser makes (`MediaRecorder`), by the extension the server reads them by.
+const AUDIO_KINDS: [(&str, &str); 5] =
+    [("audio/webm", "webm"), ("audio/ogg", "ogg"), ("audio/mp4", "m4a"), ("audio/mpeg", "mp3"), ("audio/wav", "wav")];
+
+/// The form of a dictation from its arguments: `audio_base64`, `mime` and `language` (two lowercase letters), and nothing else.
+pub fn dictation_form(args: &serde_json::Value) -> Result<DictationForm, String> {
+    let refused = |why: &str| format!("the dictation is refused: {why}");
+    let Some(args) = args.as_object() else { return Err(refused("its arguments are not a plain object")) };
+    if args.len() != 3 {
+        return Err(refused("its arguments are not the three of a recording"));
+    }
+    let text = |key: &str| args.get(key).and_then(serde_json::Value::as_str).ok_or_else(|| refused("an argument is missing"));
+    let (audio, mime, language) = (text("audio_base64")?, text("mime")?, text("language")?);
+    if audio.is_empty() || audio.len() > MAX_DICTATION {
+        return Err(refused("the recording is empty or too long"));
+    }
+    let kind = mime.split(';').next().unwrap_or_default().trim().to_ascii_lowercase();
+    let Some((mime, extension)) = AUDIO_KINDS.iter().find(|(known, _)| *known == kind) else { return Err(refused("that is no recording")) };
+    if language.len() != 2 || !language.bytes().all(|b| b.is_ascii_lowercase()) {
+        return Err(refused("the language is not two letters"));
+    }
+    let audio = base64::engine::general_purpose::STANDARD.decode(audio).map_err(|_| refused("the recording can't be read"))?;
+    Ok(DictationForm { audio, mime: (*mime).to_string(), file_name: format!("dictation.{extension}"), language: language.to_string() })
 }
 
 /// Where a call to `method` goes: under `origin`, or a path of the page's own (`origin` empty).
@@ -145,7 +190,7 @@ fn too_late() -> String {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub use browser::{chat, opener, service, sorting};
+pub use browser::{chat, dictation, opener, service, sorting};
 
 #[cfg(target_arch = "wasm32")]
 mod browser {
@@ -158,12 +203,20 @@ mod browser {
 
     use mailcraft_ui_egui::nora::MAX_ANSWER;
 
-    use super::{GIVE_UP_MS, allowed, param, status, text, too_late, too_long, url};
+    use super::{DICTATION, DictationForm, GIVE_UP_MS, allowed, dictation_form, param, status, text, too_late, too_long, url};
 
     /// What the timer of a call through the host resolves with, told from any answer of the host.
     const TIMED_OUT: &str = "mailcraft:nora-timed-out";
     /// The longest CSRF token taken from the page.
     const MAX_TOKEN: usize = 512;
+
+    /// What a call carries to the server.
+    enum Payload {
+        /// Its arguments, as JSON.
+        Json(String),
+        /// A dictation's form: the browser writes its type, with the boundary.
+        Form(web_sys::FormData),
+    }
 
     /// The way to Nora when the hosting page turns her on (`?nora`, or `mailcraftNoraCall`); `None`
     /// otherwise. Each call's answer comes through its channel, and the window is woken for it.
@@ -205,9 +258,15 @@ mod browser {
             Ok(_) if super::READY_METHODS.contains(&call.method) && !chat() => Err("this host doesn't take Nora's ready replies".to_string()),
             // //// Neoffice — « Trier avec Nora » where its calls may go (the page's own `fetch`, or a host that says it takes them).
             Ok(_) if super::SORTING_METHODS.contains(&call.method) && !sorting() => Err("this host doesn't take Nora's filing".to_string()),
+            // //// Neoffice — a dictation where it may go (the page's own `fetch`, or a host that says it makes its form).
+            Ok(_) if call.method == DICTATION && !dictation() => Err("this host doesn't carry a dictation".to_string()),
             Ok(body) => match host_call() {
                 Some((owner, function)) => call_host(&owner, &function, call.method, &body).await,
-                None => fetch(origin, call.method, body).await,
+                None if call.method == DICTATION => match dictation_form(&call.args).and_then(|parts| form_of(&parts)) {
+                    Ok(form) => fetch(origin, call.method, Payload::Form(form)).await,
+                    Err(why) => Err(why),
+                },
+                None => fetch(origin, call.method, Payload::Json(body)).await,
             },
         };
         match reached {
@@ -235,6 +294,28 @@ mod browser {
             None => true,
             Some((owner, _)) => chat() && crate::host::get(&owner, "mailcraftNoraSorting").and_then(|v| v.as_bool()) == Some(true),
         }
+    }
+
+    /// Whether a dictation in her pane ([`DICTATION`]) goes out: always as the page's own `fetch` (`/neomail`, the desk's page: the
+    /// form is made here); through a host that makes the calls itself only when it says it makes that form, with
+    /// `window.mailcraftNoraDictation === true` beside its `mailcraftNoraCall` (an older Neodesk never says so: no microphone there).
+    pub fn dictation() -> bool {
+        match host_call() {
+            None => true,
+            Some((owner, _)) => chat() && crate::host::get(&owner, "mailcraftNoraDictation").and_then(|v| v.as_bool()) == Some(true),
+        }
+    }
+
+    /// The form the server takes for a dictation: the recording as a file, and the language.
+    fn form_of(parts: &DictationForm) -> Result<web_sys::FormData, String> {
+        let form = web_sys::FormData::new().map_err(|e| reason(&e))?;
+        let bytes = js_sys::Array::of1(&js_sys::Uint8Array::from(parts.audio.as_slice()));
+        let kind = web_sys::BlobPropertyBag::new();
+        kind.set_type(&parts.mime);
+        let file = web_sys::Blob::new_with_u8_array_sequence_and_options(&bytes, &kind).map_err(|e| reason(&e))?;
+        form.append_with_blob_and_filename("file", &file, &parts.file_name).map_err(|e| reason(&e))?;
+        form.append_with_str("language", &parts.language).map_err(|e| reason(&e))?;
+        Ok(form)
     }
 
     /// How the page opens a page of the person's instance that a card or a link of her pane leads to, on the person's
@@ -307,11 +388,17 @@ mod browser {
     }
 
     /// One call as a `fetch` to `origin`, given up after [`GIVE_UP_MS`].
-    async fn fetch(origin: &str, method: &str, body: String) -> Result<(u16, String), String> {
+    async fn fetch(origin: &str, method: &str, payload: Payload) -> Result<(u16, String), String> {
         let window = web_sys::window().ok_or("no window")?;
         let page = window.location().origin().unwrap_or_default();
         let headers = web_sys::Headers::new().map_err(|e| reason(&e))?;
-        headers.set("Content-Type", "application/json").map_err(|e| reason(&e))?;
+        let body = match payload {
+            Payload::Json(body) => {
+                headers.set("Content-Type", "application/json").map_err(|e| reason(&e))?;
+                JsValue::from_str(&body)
+            }
+            Payload::Form(form) => form.into(),
+        };
         headers.set("Accept", "application/json").map_err(|e| reason(&e))?;
         // The page's token goes to the page's own origin only.
         if crate::nora_origin::is_page_origin(origin, &page)
@@ -346,13 +433,13 @@ mod browser {
         window: &web_sys::Window,
         url: &str,
         headers: &web_sys::Headers,
-        body: &str,
+        body: &JsValue,
         signal: &web_sys::AbortSignal,
     ) -> Result<(u16, String), String> {
         let init = web_sys::RequestInit::new();
         init.set_method("POST");
         init.set_headers(headers);
-        init.set_body(&JsValue::from_str(body));
+        init.set_body(body);
         // The desk's own session to the page's own origin; nothing of it to another.
         init.set_credentials(web_sys::RequestCredentials::SameOrigin);
         init.set_cache(web_sys::RequestCache::NoStore);
@@ -507,6 +594,44 @@ mod tests {
             (METHODS[1], json!({"reply_context": "x".repeat(9 << 20)})),
         ] {
             assert!(allowed(&call(method, args)).is_err(), "{method}");
+        }
+    }
+
+    /// A dictation is the one call whose arguments are a recording: they go out only as what the panel hands over, and become the
+    /// form the server takes, as Neodesk's shell makes it.
+    #[test]
+    fn a_dictation_goes_out_as_a_recording_and_nothing_else() {
+        let call = |args| NoraCall { id: 1, method: DICTATION, args };
+        assert_eq!(DICTATION, "nora.api.stt.transcribe");
+        let good = json!({"audio_base64": "QUJDRA==", "mime": "audio/webm", "language": "de"});
+        assert!(allowed(&call(good.clone())).is_ok());
+        assert_eq!(
+            dictation_form(&good),
+            Ok(DictationForm { audio: b"ABCD".to_vec(), mime: "audio/webm".into(), file_name: "dictation.webm".into(), language: "de".into() })
+        );
+        for (mime, name) in [("audio/mp4", "dictation.m4a"), ("audio/ogg", "dictation.ogg"), ("AUDIO/WEBM;codecs=opus", "dictation.webm")] {
+            let form = dictation_form(&json!({"audio_base64": "QUJDRA==", "mime": mime, "language": "fr"})).unwrap();
+            assert_eq!(form.file_name, name, "{mime}");
+            assert!(form.mime.starts_with("audio/") && !form.mime.contains(';') && form.mime == form.mime.to_lowercase(), "{mime}");
+        }
+        let at_most = "A".repeat(MAX_DICTATION);
+        assert!(dictation_form(&json!({"audio_base64": at_most, "mime": "audio/webm", "language": "fr"})).is_ok());
+        for bad in [
+            json!({}),
+            json!({"audio_base64": "QUJDRA==", "mime": "audio/webm"}),
+            json!({"audio_base64": "", "mime": "audio/webm", "language": "fr"}),
+            json!({"audio_base64": "not base64!", "mime": "audio/webm", "language": "fr"}),
+            json!({"audio_base64": 12, "mime": "audio/webm", "language": "fr"}),
+            json!({"audio_base64": "A".repeat(MAX_DICTATION + 4), "mime": "audio/webm", "language": "fr"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "text/html", "language": "fr"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "", "language": "fr"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "audio/webm", "language": "french"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "audio/webm", "language": "FR"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "audio/webm", "language": "fr", "cmd": "frappe.client.delete"}),
+            json!({"audio_base64": "QUJDRA==", "mime": "audio/webm", "language": "fr", "user": "someone"}),
+        ] {
+            assert!(allowed(&call(bad.clone())).is_err(), "{bad}");
+            assert!(dictation_form(&bad).is_err(), "{bad}");
         }
     }
 

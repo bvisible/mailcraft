@@ -331,6 +331,8 @@ fn services(inbox: Inbox, ctx: egui::Context) -> Services {
         open: crate::nora::opener(),
         // //// Neoffice — « Trier avec Nora » where its calls can go (`nora::sorting`).
         sorting: crate::nora::sorting(),
+        // //// Neoffice — the microphone of her pane where a dictation can go (`nora::dictation`).
+        dictation: crate::nora::dictation(),
     });
     // Each pick is numbered, so that two for one message are never one batch.
     let picks = std::cell::Cell::new(0u64);

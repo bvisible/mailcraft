@@ -166,11 +166,13 @@ arboard = { version = "3.7", default-features = false }
 # //// Neoffice — The pane's empty conversation is the app's to draw there (`NoraPanel::show_with`: the recipes, recipes.rs).
 # //// Neoffice — 32473870 (craft-libs version-15, the revision the four editors pin): the pane in the Neoffice design system's look
 # //// Neoffice — (paper, ink, Karla and Forum, her sphere, the line that says what she is doing), its own head with a close
-# //// Neoffice — button (`closable`), and dictation, which NeoMail leaves off (`dictation = false`: its host has no door for it).
+# //// Neoffice — button (`closable`), and dictation.
 # //// Neoffice — 4876ba6e (craft-libs version-15): New conversation offered over the flow of « Trier avec Nora », drawn in the
 # //// Neoffice — empty conversation (`new_leaves_page`), so that it leaves the flow (neoffice-maintenance#2487's batch).
-craft-nora ={ git = "https://github.com/bvisible/craft-libs", rev = "4876ba6e61a13ff7dd7adc087f87403c6353e197" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "4876ba6e61a13ff7dd7adc087f87403c6353e197" }
+# //// Neoffice — 018334d4 (craft-libs version-15): the app can let go of the microphone (`cancel_dictation`, `Input::CancelDictation`) and the
+# //// Neoffice — recorder closes it when the page is out of sight, for the dictation of her pane (crates/ui-egui/src/nora/assist.rs).
+craft-nora ={ git = "https://github.com/bvisible/craft-libs", rev = "018334d42f45d5902a3419d4dd65a08426194a96" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "018334d42f45d5902a3419d4dd65a08426194a96" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

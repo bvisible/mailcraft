@@ -106,6 +106,13 @@ pub const CHAT_METHODS: [&str; 7] = [
     "nora.api.cards.confirm_template",
 ];
 
+/// The server method that writes down what the person dictated in her pane ([`assist`]): craft-nora's `STT_TRANSCRIBE`, without
+/// `/api/method/`. A call of its own rather than one of [`CHAT_METHODS`]: its arguments are a recording (`audio_base64`, `mime`,
+/// `language`), which the host turns into the form the server takes, and only a host that says so does ([`Host::dictation`]).
+pub const DICTATION: &str = "nora.api.stt.transcribe";
+/// The longest recording of a dictation, as base64 (craft-nora's limit: some two minutes of the browser's audio).
+pub const MAX_DICTATION: usize = craft_nora::protocol::MAX_AUDIO_BASE64;
+
 /// The methods of « Trier avec Nora » ([`sorting`]): what the server says of a mailbox's filing (its state, what Nora read,
 /// her plan, her journal, the mails of a run, her questions), what the person in charge of the box changes (the switch,
 /// a plan proposed then validated, the tidying of the inbox and its stop, a run undone), and Nora's questions (the person's
@@ -198,6 +205,10 @@ pub struct Host {
     /// `fetch`), and a host that makes the calls itself says so (`window.mailcraftNoraSorting`, Neodesk's shell once its
     /// list has them). Without it nothing of it is shown.
     pub sorting: bool,
+    /// Whether the host carries a dictation to the server ([`DICTATION`]: it makes the form the server takes): the page `/neomail`
+    /// does (its own `fetch`), and a host that makes the calls itself says so (`window.mailcraftNoraDictation`). Without it her
+    /// pane offers no microphone.
+    pub dictation: bool,
 }
 
 /// A mailbox the hosting page handed over, as the server knows it.

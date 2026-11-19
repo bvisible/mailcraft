@@ -38,6 +38,10 @@
 //!
 //! While she works, the panel's Ask button is a Stop button; a failure of the connection to her is said
 //! in the interface's language.
+//!
+//! The person may dictate, where the host carries a recording to her server ([`super::Host::dictation`]) and the browser records:
+//! what the server writes down goes into the pane's text box for them to read and send. The microphone stays open only while the
+//! pane shows her conversation ([`stop_dictation`]).
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Duration;
@@ -52,7 +56,7 @@ use mailcraft_model::Id;
 use mailcraft_model::RichText as MailText;
 use serde_json::{Value, json};
 
-use super::{CHAT_METHODS, DEADLINE_MS, MAX_REPLY, NoraAnswer, NoraCall, look, observe, own_text, recipes, sorting, sorting_view};
+use super::{CHAT_METHODS, DEADLINE_MS, DICTATION, MAX_REPLY, NoraAnswer, NoraCall, look, observe, own_text, recipes, sorting, sorting_view};
 use crate::i18n::fmt;
 use crate::theme::{Tokens, semibold};
 use crate::{MailApp, now_ms};
@@ -129,6 +133,8 @@ pub(crate) struct Assist {
     /// The pane stands in the place of the message being read, this frame (`mail_view::pane_in_message_place`): worked out where
     /// the pane is laid out, before the mail ([`side`]), and read by the mail's layout ([`in_message_place`]).
     in_place: bool,
+    /// The last frame drew her conversation: read at the next one ([`poll`]), a pane that no longer shows it lets go of the microphone.
+    conversation_drawn: bool,
 }
 
 /// How long her pane says she has no more questions before her conversation comes back, in milliseconds.
@@ -190,6 +196,7 @@ impl Default for Assist {
             questions: false,
             questions_done_at: None,
             in_place: false,
+            conversation_drawn: false,
         }
     }
 }
@@ -212,8 +219,7 @@ struct Home {
 }
 
 /// The panel that draws her conversation: its own head (her sphere and her name, New conversation, and the close button the
-/// pane has no other of: [`side`]), in the interface's language. No microphone: the hosting page carries none of a dictation to
-/// her server (`nora.api.stt.transcribe` takes a form, which neither `/neomail` nor Neodesk's shell makes for NeoMail).
+/// pane has no other of: [`side`]), in the interface's language. No microphone until [`side`] finds a host that carries a dictation.
 fn panel() -> NoraPanel {
     let mut panel = NoraPanel::new().with_error_words(error_words);
     panel.closable = true;
@@ -318,10 +324,26 @@ pub(crate) fn age_questions_done(app: &mut MailApp, ms: f64) {
     }
 }
 
+/// The microphone is let go and the dictation given up: the recording stops, and what was on its way to the server is forgotten, so
+/// that no words of it wait in the box. For a pane that closes or no longer shows her conversation (drawn no more, the panel would
+/// leave the microphone open, and nothing would ever end the recording).
+fn stop_dictation(app: &mut MailApp) {
+    let assist = &mut app.nora.assist;
+    assist.panel.cancel_dictation();
+    assist.session.handle(Input::CancelDictation);
+}
+
+/// The language the person dictates in, two letters: the interface's (the server's speech engine detects none; a person reading
+/// NeoMail in German is not to be heard in French, craft-nora's default).
+fn spoken_language() -> &'static str {
+    crate::i18n::current().code().split(['-', '_']).next().unwrap_or("fr")
+}
+
 /// The pane closes: what Nora was doing stops with it (she would go on writing into a message the person
-/// no longer watches her write into).
+/// no longer watches her write into), and the microphone is let go.
 fn close(app: &mut MailApp) {
     app.nora.assist.open = false;
+    stop_dictation(app);
     // « Trier avec Nora » in the pane goes with it, and her questions in place of her conversation.
     sorting::closed(app);
     app.nora.assist.questions = false;
@@ -351,6 +373,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
     let mut answered = None;
     let held = app.nora.assist.held.as_ref().map(|held| held.mailbox.clone());
     let opens = app.services.nora.as_ref().is_some_and(|host| host.open.is_some());
+    let carries_dictation = app.services.nora.as_ref().is_some_and(|host| host.dictation);
     // « Trier avec Nora »: what its flow and the pane's home need of the window, and what the person asked of it.
     let show_box = app.services.nora.as_ref().is_some_and(|host| host.mailboxes.len() > 1);
     let home = Home { today: app.session.today(), changing: app.nora.sorting.changing(), shown: sorting_view::home_of(app), show_box };
@@ -417,7 +440,8 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
             assist.panel.resume_words = resume_words();
             assist.panel.correction_words = correction_words();
             assist.panel.closable = true;
-            assist.panel.dictation = false;
+            // The microphone over her conversation only: the panel writes the words in the box of the conversation it is given.
+            assist.panel.dictation = carries_dictation && !asking && sorting.flow.is_none();
             assist.panel.open_links = opens;
             // Only a card's Open leads to a page of the instance: a link in a reply is its words, as a link Nora repeats may
             // come from a message rather than from her.
@@ -459,6 +483,7 @@ pub(crate) fn side(app: &mut MailApp, ui: &mut Ui) {
                 // of its hint (which they carry), a click asks what the person would have typed; « Trier ma boîte » first, and
                 // the switch « Nora range mon courrier » after them, where Nora files the mailbox in view.
                 None => {
+                    assist.conversation_drawn = true;
                     assist.panel.new_leaves_page = false;
                     let shown = home.shown.clone();
                     let questions = &mut sorting.questions;
@@ -543,6 +568,9 @@ fn on_actions(app: &mut MailApp, actions: Vec<PanelAction>) -> Vec<Output> {
             // Where the person is, as of the message: told to Nora with it.
             let context = context_of(app);
             outputs.extend(app.nora.assist.session.handle(Input::SetContext(context)));
+        }
+        if matches!(action, PanelAction::Dictate { .. }) {
+            app.nora.assist.session.set_language(spoken_language());
         }
         if action == PanelAction::NewConversation {
             app.nora.assist.changes.clear();
@@ -716,8 +744,7 @@ fn activity_words() -> ActivityWords {
     }
 }
 
-/// The microphone's words, in the interface's language: given for the day a hosting page carries a dictation (the pane offers
-/// none today, [`panel`]).
+/// The microphone's words, in the interface's language.
 fn voice_words() -> VoiceWords {
     VoiceWords {
         dictate: tl!("Dictate").into(),
@@ -785,6 +812,11 @@ fn context_of(_app: &MailApp) -> PageContext {
 /// and what it asks is done.
 pub(crate) fn poll(app: &mut MailApp) {
     let now = now_ms();
+    // Her conversation was not drawn by the last frame (the pane is closed, or File, a module of the page or her questions stand in
+    // its place): nothing would stop a recording or read its words.
+    if !std::mem::take(&mut app.nora.assist.conversation_drawn) {
+        stop_dictation(app);
+    }
     // The clock first, then the answers: after a gap without frames (a tab in the background) the conversation knows it
     // before it reads an answer that waited in the page, whose action it then refuses rather than plays late.
     let mut outputs = app.nora.assist.session.handle(Input::Tick { now_ms: now.max(0.0) as u64 });
@@ -874,11 +906,13 @@ fn perform(app: &mut MailApp, outputs: Vec<Output>) {
     }
 }
 
-/// One call of the conversation, to the host: only one of [`CHAT_METHODS`], only to a host that takes them.
-/// One that can't go is answered at once, with why.
+/// One call of the conversation, to the host: only one of [`CHAT_METHODS`], only to a host that takes them, or a dictation
+/// ([`DICTATION`]), only to a host that carries one. One that can't go is answered at once, with why.
 fn send(app: &mut MailApp, request: HttpRequest) -> Vec<Output> {
-    let method = request.path.strip_prefix("/api/method/").and_then(|asked| CHAT_METHODS.iter().copied().find(|m| *m == asked));
-    let host = app.services.nora.as_ref().filter(|host| host.chat);
+    let asked = request.path.strip_prefix("/api/method/");
+    let dictation = asked == Some(DICTATION);
+    let method = asked.and_then(|asked| CHAT_METHODS.iter().copied().find(|m| *m == asked)).or(dictation.then_some(DICTATION));
+    let host = app.services.nora.as_ref().filter(|host| host.chat && (host.dictation || !dictation));
     match (method, host) {
         (Some(method), Some(host)) => {
             let answer = (host.call)(NoraCall { id: request.id, method, args: request.body });
@@ -1189,6 +1223,9 @@ fn undo(app: &mut MailApp) -> Result<Value, String> {
     Ok(json!({"undone": true}))
 }
 
+#[cfg(test)]
+#[path = "dictation_tests.rs"]
+mod dictation_tests;
 #[cfg(test)]
 #[path = "pane_tests.rs"]
 mod pane_tests;

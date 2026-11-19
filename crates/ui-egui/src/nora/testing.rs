@@ -96,6 +96,7 @@ pub(crate) fn host(app: &mut MailApp, mailboxes: &[(&str, &str)]) -> Calls {
         chat: true,
         open: None,
         sorting: true,
+        dictation: true,
     });
     calls
 }

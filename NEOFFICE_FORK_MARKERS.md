@@ -299,10 +299,11 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   rather than drawn over them). Since craft-libs `32473870` (the revision the four editors pin, 2026-11-13) the panel draws
   itself in the Neoffice design system's look (the paper, ink, Karla and Forum, her sphere, the line that says what she is
   doing, in mail's words) with its own head and close button (`closable`): the pane's own title and colours are gone, the
-  recipes (`nora/recipes.rs`) stand in place of the panel's hint under its greeting, in its colours and families, and the
-  microphone stays off (`dictation = false`: neither `/neomail` nor Neodesk's shell carries a recording to
-  `nora.api.stt.transcribe`). Its words are in `crates/i18n/po/neoffice/` in the five languages (`assist_tests.rs` holds
-  them there). Since craft-libs `4876ba6e` the panel offers New conversation over the flow of « Trier avec Nora », which it
+  recipes (`nora/recipes.rs`) stand in place of the panel's hint under its greeting, in its colours and families. Its
+  words are in `crates/i18n/po/neoffice/` in the five languages (`assist_tests.rs` holds them there). The panel's microphone
+  is on where the host carries a recording to `nora.api.stt.transcribe` (`Host::dictation`: `apps/mailcraft-web/src/nora.rs`
+  makes the form for the page's own `fetch`, a host with `mailcraftNoraCall` says `mailcraftNoraDictation`), over her
+  conversation only; since craft-libs `018334d4` the pane lets it go when it closes or shows something else (`nora/assist.rs`). Since craft-libs `4876ba6e` the panel offers New conversation over the flow of « Trier avec Nora », which it
   draws in the empty conversation (`new_leaves_page`): it leaves the flow and her questions for a new conversation, as does
   the New conversation of her questions' head (`nora/sorting_view.rs`). Where the window is too narrow for the list at its
   width (240 to 380), the pane at its own and a readable message (380), below 1090 with the widths a window starts with,
