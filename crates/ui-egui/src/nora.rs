@@ -46,8 +46,9 @@ mod recipes;
 pub(crate) mod ribbon;
 pub(crate) mod sorting;
 pub(crate) mod sorting_view;
+// //// Neoffice — (crate-wide: the tests of « Classer dans » build a hosting page with Nora's bar as hers do, stream_correct_tests.rs)
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 // //// Neoffice — « Prioritaire ».
 #[cfg(test)]
 mod priority_tests;

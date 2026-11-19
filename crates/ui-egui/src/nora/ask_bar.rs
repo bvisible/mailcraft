@@ -49,6 +49,12 @@ const VEIL: f32 = 0.55;
 /// The narrowest list the bar is drawn over.
 const LIST_MIN: f32 = 220.0;
 
+// //// Neoffice — whether the line above the bar is there to carry an offer, over a list `width` wide (stream_correct.rs).
+/// Whether the bar, and the line above it, are drawn over a list `width` wide.
+pub(crate) fn drawn(app: &MailApp, width: f32) -> bool {
+    shown(app) && width >= LIST_MIN
+}
+
 /// What the line above the bar says, and what its button does.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Hint {
@@ -71,6 +77,8 @@ pub(crate) struct Hint {
 pub(crate) enum Close {
     UntilTomorrow,
     Offer,
+    // //// Neoffice — the offer that follows « Classer dans »: its ✕ lets it go (stream_correct.rs).
+    StreamOffer,
     None,
 }
 
@@ -88,6 +96,10 @@ fn hidden(app: &MailApp, account: &str) -> bool {
 /// questions (« Nora a 3 questions · Voir », as long as some wait, in any folder), then what « Trier avec Nora » has to say of the
 /// Inbox in view, unless its ✕ hid it today. `None` where there is nothing.
 pub(crate) fn hint(app: &MailApp) -> Option<Hint> {
+    // //// Neoffice — first the offer that follows « Classer dans »: the same for the senders' next ones (stream_correct.rs).
+    if let Some(offer) = crate::stream_correct::hint(app) {
+        return Some(offer);
+    }
     // (Not over another mailbox than the one of the bolt.)
     if let Some(offer) = sorting::sender_offer(app).filter(|o| sorting::box_in_view(app, false).is_none_or(|a| a == o.account)) {
         let button = if offer.on { tl!("Always priority for {sender}") } else { tl!("No longer priority for {sender}") };
@@ -255,6 +267,8 @@ pub(crate) fn show(app: &mut MailApp, ui: &mut Ui, room: Rect, rows_end: f32) {
             app.ui.nora_hint_hidden.insert(account, today);
         }
         Some((Close::Offer, _)) => sorting::drop_sender_offer(app),
+        // //// Neoffice — see `Close::StreamOffer`.
+        Some((Close::StreamOffer, _)) => crate::stream_correct::drop_offer(app),
         _ => {}
     }
     // Her questions: her pane on them; the rest is « Trier avec Nora »'s.
@@ -334,7 +348,8 @@ fn measure(ui: &Ui, hint: &Hint, end: egui::Pos2, widest: f32) -> Fitted {
     let (button, text_w) = fit(ui, &buttons, &semibold(12.0), widest - pad - 18.0);
     let button_w = text_w + 18.0;
     let room = widest - pad - button_w - 8.0;
-    let words = if hint.close == Close::Offer {
+    // //// Neoffice — (and the offer that follows « Classer dans »)
+    let words = if matches!(hint.close, Close::Offer | Close::StreamOffer) {
         let w = ui.painter().layout_no_wrap(hint.words.clone(), regular(13.0), egui::Color32::WHITE).size().x;
         (w <= room).then(|| (hint.words.clone(), w))
     } else {
@@ -385,7 +400,8 @@ fn line(app: &mut MailApp, ui: &mut Ui, ds: &Ds, hint: &Hint, fitted: &Fitted, p
     if !closable {
         return (b.clicked(), false);
     }
-    let words = if hint.close == Close::Offer { tl!("Close") } else { tl!("Hide until tomorrow") };
+    // //// Neoffice — (and the offer that follows « Classer dans »)
+    let words = if matches!(hint.close, Close::Offer | Close::StreamOffer) { tl!("Close") } else { tl!("Hide until tomorrow") };
     let x = ui
         .interact(close, ui.scope_id().with("nora_hint_close"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)

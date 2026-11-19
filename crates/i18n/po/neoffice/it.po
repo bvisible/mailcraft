@@ -4903,12 +4903,11 @@ msgstr "Non è stato possibile spostare « {subject} » in quella scheda: resta 
 msgid "Moved to {tab}."
 msgstr "Spostata in {tab}."
 
-msgid "Do the same for the next emails from {sender}?"
-msgstr "Fare lo stesso per le prossime email di {sender}?"
+msgid "The next ones from {sender} too"
+msgstr "Anche i prossimi di {sender}"
 
-msgid "Do the same for the next emails from these {count} senders?"
-msgstr "Fare lo stesso per le prossime email di questi {count} mittenti?"
+msgid "The next ones from these {count} senders too"
+msgstr "Anche i prossimi di questi {count} mittenti"
 
-msgctxt "stream"
-msgid "Yes"
-msgstr "Sì"
+msgid "The next ones too"
+msgstr "Anche i prossimi"

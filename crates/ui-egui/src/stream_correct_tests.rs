@@ -161,11 +161,64 @@ fn the_offer_goes_by_itself_after_its_time() {
 }
 
 #[test]
-fn the_offer_names_its_sender_or_counts_them() {
+fn the_offer_names_its_sender_or_counts_them_and_has_shorter_ways() {
     let one = mailcraft_engine::cmd::stream_correct::Proposal { ids: vec![1], stream: Stream::Newsletter, senders: vec!["The Shop".into()], at: 0 };
-    assert_eq!(offer_text(&one), "Moved to Newsletters. Do the same for the next emails from The Shop?");
+    let (words, button, shorter) = offer_text(&one);
+    assert_eq!((words.as_str(), button.as_str()), ("Moved to Newsletters.", "The next ones from The Shop too"));
+    assert_eq!(shorter.first().map(String::as_str), Some("The next ones from The Sho… too"));
+    assert_eq!(shorter.last().map(String::as_str), Some("The next ones too"));
     let many = mailcraft_engine::cmd::stream_correct::Proposal { senders: vec!["A".into(), "B".into()], ..one };
-    assert!(offer_text(&many).ends_with("Do the same for the next emails from these 2 senders?"));
+    assert_eq!(offer_text(&many).1, "The next ones from these 2 senders too");
+}
+
+/// Where Nora's bar is drawn, the offer is the line above it, as the one that follows a ⚡: no bar of its own in the list.
+#[test]
+fn with_noras_bar_the_offer_is_its_line_and_its_button_takes_the_senders_others() {
+    let (mut app, _calls, _) = crate::nora::testing::page(true);
+    app.session.keeps_local = false;
+    app.execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    let s = &mut app.session;
+    let inbox = s.view.folder;
+    let account = s.mailbox.folder(inbox).unwrap().account;
+    s.mailbox.folder_mut(inbox).unwrap().server = Some(ServerFolder { id: "Min".into(), name: "INBOX".into(), ..Default::default() });
+    let from = mailcraft_model::Address::new("The Shop", "news@shop.example");
+    let mut ids = Vec::new();
+    for n in 0..2 {
+        let m = mailcraft_model::Message {
+            folder: inbox,
+            account,
+            from: from.clone(),
+            subject: format!("Offers {n}"),
+            server: Some(ServerMessage { id: format!("S{n}"), folder: "Min".into(), ..Default::default() }),
+            ..Default::default()
+        };
+        ids.push(s.mailbox.add_message(m).unwrap());
+    }
+    let email = s.mailbox.account(account).unwrap().email.clone();
+    s.run("mail.offerStreamCorrection", &json!({"account": email, "offered": true})).unwrap();
+    s.run("mail.correctStream", &json!({"ids": [ids[0]], "stream": "newsletter"})).unwrap();
+    let mut h = egui_kittest::Harness::builder()
+        .with_accessibility_check(false)
+        .allow_missing_glyphs()
+        .with_size(egui::vec2(1280.0, 800.0))
+        .with_step_dt(1.0 / 60.0)
+        .build_ui_state(
+            |ui, app: &mut MailApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            app,
+        );
+    h.run_steps(4);
+    assert!(h.state().hit.rect("noraHintButton", 0).is_some(), "the line above Nora's bar says it");
+    assert!(h.state().hit.rect("streamOfferYes", 0).is_none(), "and no bar of its own pushes the list down");
+    assert!(h.query_all_by_label_contains("The next ones from The Shop too").next().is_some());
+    let at = h.state().hit.rect("noraHintButton", 0).unwrap().center();
+    crate::people_view::testing::click(&mut h, at, PointerButton::Primary, 1);
+    h.run_steps(3);
+    assert_eq!(h.state().session.mailbox.message(ids[1]).unwrap().stream, Some(Stream::Newsletter), "the sender's other follows");
+    assert!(h.state().session.hosted_stream.proposal.is_none());
 }
 
 /// The texts are this fork's own: they live in `po/neoffice/`, not in upstream's generated catalogues.
@@ -181,8 +234,9 @@ fn every_text_it_shows_has_a_french_translation() {
         "Offer Stream Correction",
         "Stream Corrected",
         "Moved to {tab}.",
-        "Do the same for the next emails from {sender}?",
-        "Do the same for the next emails from these {count} senders?",
+        "The next ones from {sender} too",
+        "The next ones from these {count} senders too",
+        "The next ones too",
     ];
     let missing: Vec<&&str> = plain.iter().chain(&reasons).filter(|text| french.get(text).is_none()).collect();
     assert!(missing.is_empty(), "no French for {missing:?}: add them to crates/i18n/po/neoffice/fr.po");

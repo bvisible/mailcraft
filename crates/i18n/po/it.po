@@ -4360,16 +4360,6 @@ msgid "Do"
 msgstr "Esegui"
 
 #. interface
-#: crates/ui-egui/src/stream_correct.rs
-msgid "Do the same for the next emails from these {count} senders?"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/stream_correct.rs
-msgid "Do the same for the next emails from {sender}?"
-msgstr ""
-
-#. interface
 #: crates/ui-egui/src/agent_gate.rs
 #, fuzzy
 msgid "Don't Allow"
@@ -15816,6 +15806,21 @@ msgid "The new message could not be opened."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "The next ones from these {count} senders too"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "The next ones from {sender} too"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "The next ones too"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "The next read brings the server's card too."
 msgstr ""
@@ -21031,12 +21036,6 @@ msgstr ""
 #: crates/ui-egui/src/stream_correct.rs
 msgctxt "stream"
 msgid "Move to Tab"
-msgstr ""
-
-#. interface
-#: crates/ui-egui/src/stream_correct.rs
-msgctxt "stream"
-msgid "Yes"
 msgstr ""
 
 #. what a command says

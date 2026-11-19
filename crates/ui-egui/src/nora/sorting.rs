@@ -1194,6 +1194,8 @@ pub(crate) enum Intent {
     },
     /// Her questions, in her pane (the line above her bar).
     Questions,
+    // //// Neoffice — the offer that follows « Classer dans »: the same for the senders' next ones (stream_correct.rs).
+    StreamSender,
     /// The card's « Activer et voir le plan », and « Plus tard ».
     Activate,
     CloseCard,
@@ -2348,6 +2350,8 @@ pub(crate) fn act(app: &mut MailApp, intent: Intent) {
             }
         }
         Intent::CloseCard => app.nora.sorting.card = None,
+        // //// Neoffice — see `Intent::StreamSender`.
+        Intent::StreamSender => crate::stream_correct::yes(app),
         Intent::Retry => {
             let Some(account) = flow_account else { return };
             let journal = app.nora.sorting.flow.as_ref().is_some_and(|f| f.journal_first);

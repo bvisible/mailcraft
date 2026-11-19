@@ -18,7 +18,7 @@
 //! The tab the selection is under is ticked. A server that refused is told the person ([`frame`]): the messages are put
 //! back where they were.
 
-use egui::{CornerRadius, Frame, Margin, Stroke, Ui, vec2};
+use egui::{CornerRadius, Frame, Margin, Stroke, Ui};
 use mailcraft_engine::cmd::stream_correct;
 use mailcraft_model::{Id, Stream};
 use serde_json::json;
@@ -26,8 +26,9 @@ use serde_json::json;
 use crate::MailApp;
 use crate::theme::{Tokens, regular, semibold};
 
-/// How long the offer of the same for the senders' next ones stays, unanswered, in seconds.
-pub(crate) const OFFER_S: i64 = 30;
+/// How long the offer of the same for the senders' next ones stays, unanswered, in seconds: as the one that follows a ⚡
+/// (Nora's `sorting::OFFER_MS`).
+pub(crate) const OFFER_S: i64 = 15;
 
 /// The tabs, in the order the list's header shows them, with their names (English; shown through `tl!`, as the header does).
 pub(crate) const TABS: [(Stream, &str); 3] = [(Stream::Person, "Main"), (Stream::Notification, "Notifications"), (Stream::Newsletter, "Newsletters")];
@@ -105,32 +106,73 @@ fn tab_name(stream: Stream) -> &'static str {
     TABS.iter().find(|(s, _)| *s == stream).map_or("", |(_, name)| tl!(name))
 }
 
-/// What the offer says: where the messages went, and the question for their senders' next ones.
-pub(crate) fn offer_text(offer: &stream_correct::Proposal) -> String {
-    let moved = crate::i18n::fmt(tl!("Moved to {tab}."), &[("tab", tab_name(offer.stream))]);
-    let question = match offer.senders.as_slice() {
-        [one] => crate::i18n::fmt(tl!("Do the same for the next emails from {sender}?"), &[("sender", one)]),
-        many => crate::i18n::fmt(tl!("Do the same for the next emails from these {count} senders?"), &[("count", &many.len().to_string())]),
-    };
-    format!("{moved} {question}")
+/// The offer while it stands ([`OFFER_S`]).
+fn live(app: &MailApp) -> Option<&stream_correct::Proposal> {
+    app.session.hosted_stream.proposal.as_ref().filter(|o| app.session.now() - o.at < OFFER_S)
 }
 
-/// « Classé dans Newsletters. Faire de même pour les prochains e-mails de … ? [Oui] [✕] » above the list, after messages were
-/// put under a tab alone, for [`OFFER_S`] seconds: « Oui » puts their senders' other messages there too and has the server
-/// keep it for the next ones; ✕ (or the time) leaves the messages alone where they are.
+/// What the offer says: where the messages went (its words), and the same for their senders' next ones (its button), with
+/// shorter ways of the button where the list is narrow: the sender's name cut short (three letters at the least), then without it.
+pub(crate) fn offer_text(offer: &stream_correct::Proposal) -> (String, String, Vec<String>) {
+    let words = crate::i18n::fmt(tl!("Moved to {tab}."), &[("tab", tab_name(offer.stream))]);
+    let fmt = |name: &str| crate::i18n::fmt(tl!("The next ones from {sender} too"), &[("sender", name)]);
+    let (button, mut shorter) = match offer.senders.as_slice() {
+        [one] => {
+            let name: Vec<char> = one.trim().chars().collect();
+            let cut = (3..name.len()).rev().map(|keep| fmt(&format!("{}…", name[..keep].iter().collect::<String>().trim_end()))).collect();
+            (fmt(one.trim()), cut)
+        }
+        many => (crate::i18n::fmt(tl!("The next ones from these {count} senders too"), &[("count", &many.len().to_string())]), Vec::new()),
+    };
+    shorter.push(tl!("The next ones too").to_string());
+    (words, button, shorter)
+}
+
+/// The offer as the line above Nora's bar says it (her `ask_bar::hint`, first of all), while it stands.
+pub(crate) fn hint(app: &MailApp) -> Option<crate::nora::ask_bar::Hint> {
+    let offer = live(app)?;
+    let (words, button, button_shorter) = offer_text(offer);
+    Some(crate::nora::ask_bar::Hint {
+        account: String::new(),
+        words,
+        button,
+        words_shorter: Vec::new(),
+        button_shorter,
+        intent: crate::nora::sorting::Intent::StreamSender,
+        close: crate::nora::ask_bar::Close::StreamOffer,
+    })
+}
+
+/// The person's yes: their senders' other messages there too, and the server keeps it for their next ones.
+pub(crate) fn yes(app: &mut MailApp) {
+    let Some(offer) = app.session.hosted_stream.proposal.take() else { return };
+    let _ = app.run("mail.correctStream", json!({"ids": offer.ids, "stream": offer.stream.code(), "sender": true}));
+}
+
+/// The offer's ✕: the messages chosen stay where they were put, alone.
+pub(crate) fn drop_offer(app: &mut MailApp) {
+    app.session.hosted_stream.proposal = None;
+}
+
+/// The offer where the line above Nora's bar is not there to say it (her pane open, a list too narrow, a tab without her), in
+/// the list's flow above its rows, its words folded on as many lines as they need; and, wherever it is said, its end: the offer
+/// goes after [`OFFER_S`] seconds unanswered.
 pub(crate) fn offer_bar(app: &mut MailApp, ui: &mut Ui) {
     let Some(offer) = app.session.hosted_stream.proposal.clone() else { return };
     let left = OFFER_S - (app.session.now() - offer.at);
-    if left <= 0 || app.session.view.module != mailcraft_engine::Module::Mail {
-        if left <= 0 {
-            app.session.hosted_stream.proposal = None;
-        }
+    if left <= 0 {
+        app.session.hosted_stream.proposal = None;
         return;
     }
     ui.ctx().request_repaint_after(std::time::Duration::from_secs(left.max(1) as u64));
+    if app.session.view.module != mailcraft_engine::Module::Mail
+        || (crate::mail_view::spark_list(app) && crate::nora::ask_bar::drawn(app, ui.max_rect().width()))
+    {
+        return;
+    }
     let t = Tokens::get(ui.ctx());
-    let text = offer_text(&offer);
-    let (mut yes, mut close) = (false, false);
+    let (words, button, _) = offer_text(&offer);
+    let (mut yes_clicked, mut close) = (false, false);
     Frame::new()
         .fill(t.surface_sunken)
         .stroke(Stroke::new(1.0, t.border))
@@ -138,26 +180,21 @@ pub(crate) fn offer_bar(app: &mut MailApp, ui: &mut Ui) {
         .inner_margin(Margin::symmetric(12, 6))
         .outer_margin(Margin { left: 12, right: 10, top: 6, bottom: 6 })
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let shut = crate::widgets::icon_button(ui, "close", tl!("Close"), 14.0, true);
-                    app.hit.add("streamOfferClose", 0, shut.rect);
-                    close = shut.clicked();
-                    let words = egui::RichText::new(tlc!("stream", "Yes")).font(semibold(13.0)).color(t.accent_text);
-                    let answer = ui.add(egui::Button::new(words).frame(false).min_size(vec2(40.0, 24.0)));
-                    app.hit.add("streamOfferYes", 0, answer.rect);
-                    yes = answer.clicked();
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.add(egui::Label::new(egui::RichText::new(&text).font(regular(13.0)).color(t.text)).truncate()).on_hover_text(&text);
-                    });
-                });
+            ui.horizontal_wrapped(|ui| {
+                ui.label(egui::RichText::new(&words).font(regular(13.0)).color(t.text));
+                let text = egui::RichText::new(&button).font(semibold(13.0)).color(t.accent_text);
+                let answer = ui.add(egui::Button::new(text).frame(false));
+                app.hit.add("streamOfferYes", 0, answer.rect);
+                yes_clicked = answer.clicked();
+                let shut = crate::widgets::icon_button(ui, "close", tl!("Close"), 14.0, true);
+                app.hit.add("streamOfferClose", 0, shut.rect);
+                close = shut.clicked();
             });
         });
-    if yes {
-        let _ = app.run("mail.correctStream", json!({"ids": offer.ids, "stream": offer.stream.code(), "sender": true}));
-        app.session.hosted_stream.proposal = None;
+    if yes_clicked {
+        yes(app);
     } else if close {
-        app.session.hosted_stream.proposal = None;
+        drop_offer(app);
     }
 }
 

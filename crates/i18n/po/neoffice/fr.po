@@ -5872,12 +5872,11 @@ msgstr "« {subject} » n’a pas pu être classé dans cet onglet : il reste à
 msgid "Moved to {tab}."
 msgstr "Classé dans {tab}."
 
-msgid "Do the same for the next emails from {sender}?"
-msgstr "Faire de même pour les prochains e-mails de {sender} ?"
+msgid "The next ones from {sender} too"
+msgstr "Les prochains de {sender} aussi"
 
-msgid "Do the same for the next emails from these {count} senders?"
-msgstr "Faire de même pour les prochains e-mails de ces {count} expéditeurs ?"
+msgid "The next ones from these {count} senders too"
+msgstr "Les prochains de ces {count} expéditeurs aussi"
 
-msgctxt "stream"
-msgid "Yes"
-msgstr "Oui"
+msgid "The next ones too"
+msgstr "Les prochains aussi"

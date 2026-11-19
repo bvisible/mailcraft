@@ -4887,12 +4887,11 @@ msgstr "„{subject}“ konnte nicht unter diesen Reiter verschoben werden: die 
 msgid "Moved to {tab}."
 msgstr "Verschoben nach {tab}."
 
-msgid "Do the same for the next emails from {sender}?"
-msgstr "Dasselbe für die nächsten E-Mails von {sender} tun?"
+msgid "The next ones from {sender} too"
+msgstr "Die nächsten von {sender} auch"
 
-msgid "Do the same for the next emails from these {count} senders?"
-msgstr "Dasselbe für die nächsten E-Mails dieser {count} Absender tun?"
+msgid "The next ones from these {count} senders too"
+msgstr "Die nächsten dieser {count} Absender auch"
 
-msgctxt "stream"
-msgid "Yes"
-msgstr "Ja"
+msgid "The next ones too"
+msgstr "Die nächsten auch"

@@ -4905,12 +4905,11 @@ msgstr "« {subject} » no se pudo poner bajo esa pestaña: se queda donde estab
 msgid "Moved to {tab}."
 msgstr "Movido a {tab}."
 
-msgid "Do the same for the next emails from {sender}?"
-msgstr "¿Hacer lo mismo con los próximos correos de {sender}?"
+msgid "The next ones from {sender} too"
+msgstr "También los próximos de {sender}"
 
-msgid "Do the same for the next emails from these {count} senders?"
-msgstr "¿Hacer lo mismo con los próximos correos de estos {count} remitentes?"
+msgid "The next ones from these {count} senders too"
+msgstr "También los próximos de estos {count} remitentes"
 
-msgctxt "stream"
-msgid "Yes"
-msgstr "Sí"
+msgid "The next ones too"
+msgstr "También los próximos"
