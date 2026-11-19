@@ -171,8 +171,10 @@ arboard = { version = "3.7", default-features = false }
 # //// Neoffice — empty conversation (`new_leaves_page`), so that it leaves the flow (neoffice-maintenance#2487's batch).
 # //// Neoffice — 018334d4 (craft-libs version-15): the app can let go of the microphone (`cancel_dictation`, `Input::CancelDictation`) and the
 # //// Neoffice — recorder closes it when the page is out of sight, for the dictation of her pane (crates/ui-egui/src/nora/assist.rs).
-craft-nora ={ git = "https://github.com/bvisible/craft-libs", rev = "018334d42f45d5902a3419d4dd65a08426194a96" }
-craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "018334d42f45d5902a3419d4dd65a08426194a96" }
+# //// Neoffice — 8fe8f1ff (craft-libs version-15): the recorder also lets the microphone go when the panel is no longer drawn, when the
+# //// Neoffice — page is left (`pagehide`) and when the browser refuses its recorder; an app's tests can open the panel's microphone.
+craft-nora ={ git = "https://github.com/bvisible/craft-libs", rev = "8fe8f1ff3d8d48769e693a503069f425028f81bc" }
+craft-nora-ui = { git = "https://github.com/bvisible/craft-libs", rev = "8fe8f1ff3d8d48769e693a503069f425028f81bc" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
