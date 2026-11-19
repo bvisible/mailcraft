@@ -43,34 +43,72 @@ fn stream(s: &Session, id: Id) -> Option<Stream> {
     s.mailbox.message(id).unwrap().stream
 }
 
-#[test]
-fn a_message_goes_under_the_tab_chosen_with_its_senders_others_and_the_server_is_asked() {
-    let (mut s, _, inbox) = setup();
-    let shop = add(&mut s, inbox, "E1", "News@Shop.example", "Offers of the week");
-    let shop_again = add(&mut s, inbox, "E2", "news@shop.example", "Offers of the month");
-    let friend = add(&mut s, inbox, "E3", "ada@example.net", "Lunch?");
+/// Three messages, two of one shop's address (one named), one of a friend, all said to be a person's.
+fn shop_and_friend(s: &mut Session, inbox: Id) -> (Id, Id, Id) {
+    let shop = add(s, inbox, "E1", "News@Shop.example", "Offers of the week");
+    s.mailbox.message_mut(shop).unwrap().from = Address::new("The Shop", "News@Shop.example");
+    let shop_again = add(s, inbox, "E2", "news@shop.example", "Offers of the month");
+    let friend = add(s, inbox, "E3", "ada@example.net", "Lunch?");
     s.run(
         "mail.setStreams",
         &json!({"streams": [{"id": shop, "stream": "person"}, {"id": shop_again, "stream": "person"}, {"id": friend, "stream": "person"}]}),
     )
     .unwrap();
+    (shop, shop_again, friend)
+}
+
+#[test]
+fn a_message_goes_alone_under_the_tab_chosen_and_the_window_offers_its_senders_next_ones() {
+    let (mut s, _, inbox) = setup();
+    let (shop, shop_again, friend) = shop_and_friend(&mut s, inbox);
     let steps = s.undo_steps_moved();
     let answer = s.run("mail.correctStream", &json!({"ids": [shop], "stream": "newsletter"})).unwrap();
-    assert_eq!((answer["changed"].clone(), answer["asked"].clone()), (json!(2), json!(1)));
-    assert_eq!((stream(&s, shop), stream(&s, shop_again)), (Some(Stream::Newsletter), Some(Stream::Newsletter)), "the sender's other follows");
-    assert_eq!(stream(&s, friend), Some(Stream::Person), "another sender stays");
+    assert_eq!((answer["changed"].clone(), answer["asked"].clone()), (json!(1), json!(1)));
+    assert_eq!((stream(&s, shop), stream(&s, shop_again)), (Some(Stream::Newsletter), Some(Stream::Person)), "the message alone");
+    assert_eq!(stream(&s, friend), Some(Stream::Person));
     assert_eq!(s.undo_steps_moved(), steps, "no step: the server keeps the choice");
     let asked = s.hosted_stream.take();
     assert_eq!(asked.len(), 1);
-    assert_eq!((asked[0].message, asked[0].email_id.as_str(), asked[0].stream), (shop, "E1", Stream::Newsletter));
-    assert_eq!(asked[0].was, [(shop, Some(Stream::Person)), (shop_again, Some(Stream::Person))]);
+    assert_eq!((asked[0].message, asked[0].email_id.as_str(), asked[0].stream, asked[0].sender), (shop, "E1", Stream::Newsletter, false));
+    assert_eq!(asked[0].was, [(shop, Some(Stream::Person))]);
     assert!(s.hosted_stream.take().is_empty(), "taken once");
-    // The server took it: nothing comes back, nothing is said.
+    let offer = s.hosted_stream.proposal.clone().expect("the same for its sender's next ones is offered");
+    assert_eq!((offer.ids, offer.stream, offer.senders), (vec![shop], Stream::Newsletter, vec!["The Shop".to_string()]));
+    // The server took it: nothing comes back, nothing is said, the offer stays.
     let told = s.run("mail.streamCorrected", &json!({"message": shop, "ok": true})).unwrap();
     assert_eq!(told["back"], 0);
     assert!(!s.hosted_stream.asking());
     assert!(s.hosted_stream.said.is_empty());
-    assert_eq!(stream(&s, shop_again), Some(Stream::Newsletter));
+    assert!(s.hosted_stream.proposal.is_some());
+}
+
+#[test]
+fn on_the_persons_yes_its_senders_others_follow_and_the_server_keeps_the_sender() {
+    let (mut s, _, inbox) = setup();
+    let (shop, shop_again, friend) = shop_and_friend(&mut s, inbox);
+    s.run("mail.correctStream", &json!({"ids": [shop], "stream": "newsletter"})).unwrap();
+    s.hosted_stream.take();
+    let answer = s.run("mail.correctStream", &json!({"ids": [shop], "stream": "newsletter", "sender": true})).unwrap();
+    assert_eq!((answer["changed"].clone(), answer["asked"].clone()), (json!(1), json!(1)));
+    assert_eq!(stream(&s, shop_again), Some(Stream::Newsletter), "the sender's other follows");
+    assert_eq!(stream(&s, friend), Some(Stream::Person), "another sender stays");
+    let asked = s.hosted_stream.take();
+    assert_eq!((asked[0].message, asked[0].sender), (shop, true));
+    assert_eq!(asked[0].was, [(shop_again, Some(Stream::Person))]);
+    assert!(s.hosted_stream.proposal.is_none(), "the yes ends the offer");
+}
+
+#[test]
+fn a_refusal_ends_the_offer_and_a_sender_without_an_address_is_offered_nothing() {
+    let (mut s, _, inbox) = setup();
+    let (shop, _, _) = shop_and_friend(&mut s, inbox);
+    s.run("mail.correctStream", &json!({"ids": [shop], "stream": "notification"})).unwrap();
+    s.hosted_stream.take();
+    s.run("mail.streamCorrected", &json!({"message": shop, "ok": false})).unwrap();
+    assert!(s.hosted_stream.proposal.is_none());
+    let nameless = add(&mut s, inbox, "E9", "", "No sender");
+    s.run("mail.correctStream", &json!({"ids": [nameless], "stream": "newsletter"})).unwrap();
+    assert!(s.hosted_stream.proposal.is_none(), "nobody to offer it for");
 }
 
 #[test]
@@ -80,7 +118,7 @@ fn a_refusal_puts_back_what_went_and_the_person_is_told() {
     let other = add(&mut s, inbox, "E2", "noreply@bank.example", "A login");
     s.run("mail.setStreams", &json!({"streams": [{"id": alert, "stream": "notification"}]})).unwrap();
     s.run("mail.setStreams", &json!({"streams": [{"id": other, "stream": "newsletter"}]})).unwrap();
-    s.run("mail.correctStream", &json!({"ids": [alert], "stream": "person"})).unwrap();
+    s.run("mail.correctStream", &json!({"ids": [alert], "stream": "person", "sender": true})).unwrap();
     assert_eq!((stream(&s, alert), stream(&s, other)), (Some(Stream::Person), Some(Stream::Person)));
     s.hosted_stream.take();
     let told = s.run("mail.streamCorrected", &json!({"message": alert, "ok": false})).unwrap();
@@ -181,6 +219,6 @@ fn choosing_the_tab_ticked_again_asks_nothing() {
     let answer = s.run("mail.correctStream", &json!({"ids": [unsaid], "stream": "person"})).unwrap();
     assert_eq!(answer["asked"], 0);
     assert!(!s.hosted_stream.asking(), "nothing to tell the server");
-    // But the main one for the newsletter's sender moves both, and asks.
+    // But the main one for the newsletter moves it, and asks.
     assert_eq!(s.run("mail.correctStream", &json!({"ids": [news], "stream": "person"})).unwrap()["asked"], 1);
 }

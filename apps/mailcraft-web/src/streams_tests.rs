@@ -585,7 +585,7 @@ fn a_server_that_does_not_offer_the_tabs_is_never_tried_again() {
 // //// Neoffice — a person's choice of tab (« Classer dans », neoffice-maintenance#3142).
 
 fn choice(message: Id, email_id: &str, stream: Stream, was: &[(Id, Option<Stream>)]) -> Correction {
-    Correction { account: 1, message, email_id: email_id.into(), stream, was: was.to_vec(), sent: true }
+    Correction { account: 1, message, email_id: email_id.into(), stream, sender: false, was: was.to_vec(), sent: true }
 }
 
 #[test]
@@ -598,10 +598,13 @@ fn the_server_takes_a_choice_of_tab_only_where_its_account_capability_says_so() 
 
 #[test]
 fn a_set_carries_each_choice_by_the_servers_id_and_the_answer_says_which_it_took() {
-    let asks = [choice(7, "E7", Stream::Newsletter, &[(7, None), (9, Some(Stream::Person))]), choice(8, "E8", Stream::Person, &[(8, None)])];
+    let mut asks = [choice(7, "E7", Stream::Newsletter, &[(7, None), (9, Some(Stream::Person))]), choice(8, "E8", Stream::Person, &[(8, None)])];
+    asks[0].sender = true;
     assert_eq!(
         set_arguments("A1", &asks),
-        json!({"accountId": "A1", "corrections": [{"id": "E7", "stream": "newsletter"}, {"id": "E8", "stream": "person"}]})
+        json!({"accountId": "A1", "corrections": [
+            {"id": "E7", "stream": "newsletter", "sender": true}, {"id": "E8", "stream": "person", "sender": false},
+        ]})
     );
     let answer = json!({"accountId": "A1", "updated": ["E7"], "notUpdated": {"E8": {"type": "notFound", "description": "no such message"}}});
     assert_eq!(corrected(&asks, &answer), [(7, true), (8, false)]);

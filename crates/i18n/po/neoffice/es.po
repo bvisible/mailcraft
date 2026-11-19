@@ -4900,3 +4900,17 @@ msgstr "demasiados mensajes a la vez: elija menos"
 
 msgid "'{subject}' could not be put under that tab: it stays where it was."
 msgstr "« {subject} » no se pudo poner bajo esa pestaña: se queda donde estaba."
+
+# « Classer dans »: the offer of the same for the sender's next ones, as Gmail asks (#3142).
+msgid "Moved to {tab}."
+msgstr "Movido a {tab}."
+
+msgid "Do the same for the next emails from {sender}?"
+msgstr "¿Hacer lo mismo con los próximos correos de {sender}?"
+
+msgid "Do the same for the next emails from these {count} senders?"
+msgstr "¿Hacer lo mismo con los próximos correos de estos {count} remitentes?"
+
+msgctxt "stream"
+msgid "Yes"
+msgstr "Sí"

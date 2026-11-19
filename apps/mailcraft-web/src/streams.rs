@@ -23,10 +23,11 @@
 //!
 //! **A person's choice of tab** (« Classer dans », neoffice-maintenance#3142). Where the capability says `correct: true`, the
 //! window offers to put a message of the Inbox under another tab (the engine's `cmd/stream_correct.rs`): what it asks is sent
-//! here as `NeomailStream/set {accountId, corrections: [{id, stream}]}`, a mailbox's at once, and the answer goes back through
-//! `mail.streamCorrected` (a message the server did not take is put back). The server keeps the choice for the sender, for this
-//! person and this mailbox, and its next answers say it; what was chosen here is remembered as said, so that a
-//! synchronisation that takes the stream puts the chosen one back.
+//! here as `NeomailStream/set {accountId, corrections: [{id, stream, sender}]}`, a mailbox's at once, and the answer goes back
+//! through `mail.streamCorrected` (a message the server did not take is put back). The server keeps the choice for the message,
+//! and with `sender: true` (the person's yes to its sender's next ones) for the sender, for this person and this mailbox; its
+//! next answers say it. What was chosen here is remembered as said, so that a synchronisation that takes the stream puts the
+//! chosen one back.
 //!
 //! **What is not here.** The server's model, its headers rules and its cache are the server's; the tabs, the boxes and the bar are
 //! the window's (`ui-egui`); this file is only what asks and what puts.
@@ -217,7 +218,8 @@ pub fn takes_corrections(capability: Option<&Value>) -> bool {
 
 /// The arguments of a `NeomailStream/set` for these choices of one mailbox, by the ids its server gave the messages.
 pub fn set_arguments(account: &str, asks: &[Correction]) -> Value {
-    let corrections: Vec<Value> = asks.iter().take(MAX_IDS).map(|a| json!({"id": a.email_id, "stream": a.stream.code()})).collect();
+    let corrections: Vec<Value> =
+        asks.iter().take(MAX_IDS).map(|a| json!({"id": a.email_id, "stream": a.stream.code(), "sender": a.sender})).collect();
     json!({"accountId": account, "corrections": corrections})
 }
 
@@ -488,7 +490,8 @@ mod run {
         let mut by_mailbox: BTreeMap<String, Vec<Correction>> = BTreeMap::new();
         for ask in asks {
             // What is put back after a synchronisation is what the person chose, from now on.
-            let chosen: Vec<(Id, Stream)> = ask.was.iter().map(|(id, _)| (*id, ask.stream)).collect();
+            let chosen: Vec<(Id, Stream)> =
+                std::iter::once(ask.message).chain(ask.was.iter().map(|(id, _)| *id)).map(|id| (id, ask.stream)).collect();
             s.book.chosen(&chosen);
             let email = app.session.mailbox.account(ask.account).map(|a| key(&a.email)).unwrap_or_default();
             by_mailbox.entry(email).or_default().push(ask);

@@ -2791,7 +2791,7 @@ msgid "Clipboard"
 msgstr ""
 
 #. interface, ribbon
-#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ask_bar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/nora/sorting_view.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
+#: crates/ui-egui/src/account_setup.rs crates/ui-egui/src/account_setup/exchange.rs crates/ui-egui/src/compose.rs crates/ui-egui/src/dialogs.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/find_replace.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/forms.rs crates/ui-egui/src/import_pst.rs crates/ui-egui/src/mail_view/new_senders.rs crates/ui-egui/src/meeting_dialogs.rs crates/ui-egui/src/meeting_dialogs/share.rs crates/ui-egui/src/merge_contacts.rs crates/ui-egui/src/nora/ask_bar.rs crates/ui-egui/src/nora/assist.rs crates/ui-egui/src/nora/ready.rs crates/ui-egui/src/nora/sorting_view.rs crates/ui-egui/src/reminders.rs crates/ui-egui/src/report_problem.rs crates/ui-egui/src/ribbon.rs crates/ui-egui/src/stream_correct.rs crates/ui-egui/src/symbol.rs crates/ui-egui/src/sync_panel.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/view_source.rs
 msgid "Close"
 msgstr ""
 
@@ -3901,6 +3901,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/forms.rs
 msgid "Do"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "Do the same for the next emails from these {count} senders?"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "Do the same for the next emails from {sender}?"
 msgstr ""
 
 #. interface
@@ -7797,6 +7807,11 @@ msgstr ""
 #. command label
 #: crates/engine/src/cmd/calendar.rs
 msgid "Move to the Account's Calendar"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgid "Moved to {tab}."
 msgstr ""
 
 #. interface
@@ -18896,6 +18911,12 @@ msgstr ""
 #: crates/ui-egui/src/stream_correct.rs
 msgctxt "stream"
 msgid "Move to Tab"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgctxt "stream"
+msgid "Yes"
 msgstr ""
 
 #. what a command says

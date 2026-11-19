@@ -95,6 +95,79 @@ fn a_refusal_of_the_server_is_said_and_the_message_comes_back() {
     assert_eq!(testing::dialog(&w), Some("refused"), "the person is told");
 }
 
+fn stream_of(w: &testing::Window, id: Id) -> Option<Stream> {
+    w.state().session.mailbox.message(id).unwrap().stream
+}
+
+fn click_hit(w: &mut testing::Window, kind: &str) {
+    let pos = w.state().hit.rect(kind, 0).unwrap_or_else(|| panic!("no {kind} in the window")).center();
+    testing::click(w, pos, PointerButton::Primary, 1);
+    w.run_steps(3);
+}
+
+/// The first row's message and another message of the Inbox made one of the same sender. The window, them.
+fn two_of_one_sender() -> (testing::Window, Id, Id) {
+    let mut w = inbox(true, true);
+    let first = first_row(&mut w);
+    let (folder, from) = {
+        let m = w.state().session.mailbox.message(first).unwrap();
+        (m.folder, m.from.clone())
+    };
+    let other = w.state().session.mailbox.messages_in(folder).map(|m| m.id).find(|id| *id != first).unwrap();
+    w.state_mut().session.mailbox.message_mut(other).unwrap().from = from;
+    (w, first, other)
+}
+
+#[test]
+fn after_a_choice_the_bar_offers_the_senders_next_ones_and_yes_takes_its_others() {
+    let (mut w, first, other) = two_of_one_sender();
+    w.state_mut().execute("mail.correctStream", json!({"ids": [first], "stream": "newsletter"})).unwrap();
+    w.run_steps(3);
+    assert_eq!(stream_of(&w, first), Some(Stream::Newsletter));
+    assert_ne!(stream_of(&w, other), Some(Stream::Newsletter), "the message alone, until the person says yes");
+    assert!(w.state().hit.rect("streamOfferYes", 0).is_some(), "the offer is shown");
+    w.state_mut().session.hosted_stream.take();
+    click_hit(&mut w, "streamOfferYes");
+    assert_eq!(stream_of(&w, other), Some(Stream::Newsletter), "the sender's other follows");
+    let asked = w.state_mut().session.hosted_stream.take();
+    assert!(asked.iter().any(|a| a.message == first && a.sender), "the server is asked to keep the sender");
+    assert!(w.state().session.hosted_stream.proposal.is_none());
+    assert!(w.state().hit.rect("streamOfferYes", 0).is_none(), "and the bar is gone");
+}
+
+#[test]
+fn closing_the_offer_leaves_the_senders_other_messages_where_they_are() {
+    let (mut w, first, other) = two_of_one_sender();
+    let before = stream_of(&w, other);
+    w.state_mut().execute("mail.correctStream", json!({"ids": [first], "stream": "notification"})).unwrap();
+    w.run_steps(3);
+    click_hit(&mut w, "streamOfferClose");
+    assert_eq!(stream_of(&w, other), before);
+    assert!(w.state().session.hosted_stream.proposal.is_none());
+}
+
+#[test]
+fn the_offer_goes_by_itself_after_its_time() {
+    let (mut w, first, _) = two_of_one_sender();
+    w.state_mut().execute("mail.correctStream", json!({"ids": [first], "stream": "newsletter"})).unwrap();
+    w.run_steps(3);
+    let now = w.state().session.now();
+    if let Some(offer) = w.state_mut().session.hosted_stream.proposal.as_mut() {
+        offer.at = now - OFFER_S - 1;
+    }
+    w.run_steps(3);
+    assert!(w.state().session.hosted_stream.proposal.is_none());
+    assert!(w.state().hit.rect("streamOfferYes", 0).is_none());
+}
+
+#[test]
+fn the_offer_names_its_sender_or_counts_them() {
+    let one = mailcraft_engine::cmd::stream_correct::Proposal { ids: vec![1], stream: Stream::Newsletter, senders: vec!["The Shop".into()], at: 0 };
+    assert_eq!(offer_text(&one), "Moved to Newsletters. Do the same for the next emails from The Shop?");
+    let many = mailcraft_engine::cmd::stream_correct::Proposal { senders: vec!["A".into(), "B".into()], ..one };
+    assert!(offer_text(&many).ends_with("Do the same for the next emails from these 2 senders?"));
+}
+
 /// The texts are this fork's own: they live in `po/neoffice/`, not in upstream's generated catalogues.
 #[test]
 fn every_text_it_shows_has_a_french_translation() {
@@ -107,6 +180,9 @@ fn every_text_it_shows_has_a_french_translation() {
         "'{subject}' could not be put under that tab: it stays where it was.",
         "Offer Stream Correction",
         "Stream Corrected",
+        "Moved to {tab}.",
+        "Do the same for the next emails from {sender}?",
+        "Do the same for the next emails from these {count} senders?",
     ];
     let missing: Vec<&&str> = plain.iter().chain(&reasons).filter(|text| french.get(text).is_none()).collect();
     assert!(missing.is_empty(), "no French for {missing:?}: add them to crates/i18n/po/neoffice/fr.po");

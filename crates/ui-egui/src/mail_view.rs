@@ -706,6 +706,8 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     if streams.is_some() && (if d { app.session.sel.messages.len() >= 2 } else { stream_tabs::bar_shown(app, &rows) }) {
         stream_tabs::bar(app, ui, &rows);
     }
+    // //// Neoffice — « Classé dans … Faire de même pour les prochains e-mails de … ? », after a choice of tab (stream_correct.rs).
+    crate::stream_correct::offer_bar(app, ui);
     // //// Neoffice — « Marqués comme traités (N) »: what was marked done in this session (done.rs); in variant D its rows joined by a rail.
     if d {
         done::section_d(app, ui);
