@@ -310,6 +310,12 @@ pub(crate) fn frame(app: &mut MailApp, ctx: &egui::Context) {
     for account in std::mem::take(&mut app.session.hosted_snooze.to_read) {
         let _ = app.run("ui.sync", json!({"account": account, "quiet": true}));
     }
+    // The folder its server made at the first message put away, « Plus tard » (after Drafts, with its count and its clock) as
+    // soon as a run lists it.
+    if snooze_hosted::adopt(&mut app.session) {
+        // (Drawn in its place at once, not at the next event.)
+        ctx.request_repaint();
+    }
     window(app, ctx);
 }
 

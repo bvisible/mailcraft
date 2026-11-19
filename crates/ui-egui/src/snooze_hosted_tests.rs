@@ -371,6 +371,79 @@ fn the_folder_comes_right_after_drafts_in_the_pane() {
     assert!(snoozed_row.min.y > drafts_row.max.y + 1.0, "not moved");
 }
 
+#[test]
+fn the_folder_the_server_makes_at_the_first_put_away_comes_after_drafts_once_listed() {
+    // A server that keeps « Plus tard » but has no folder for it yet: none is listed here.
+    let mut w = testing::window("view.mail");
+    w.state_mut().session.keeps_local = false;
+    w.state_mut().execute("ui.dismissReminder", json!({"all": true})).unwrap();
+    w.state_mut().execute("folder.select", json!({"kind": "inbox"})).unwrap();
+    let (account, first) = {
+        let s = &mut w.state_mut().session;
+        let inbox = s.view.folder;
+        let account = s.mailbox.folder(inbox).unwrap().account;
+        s.mailbox.folder_mut(inbox).unwrap().server = Some(ServerFolder { id: "Min".into(), name: "INBOX".into(), ..Default::default() });
+        let first = s.mailbox.messages_in(inbox).map(|m| m.id).next().unwrap();
+        let m = s.mailbox.message_mut(first).unwrap();
+        m.server = Some(ServerMessage { id: "E1".into(), folder: "Min".into(), read: m.read, ..Default::default() });
+        m.message_id = "<first@example.org>".into();
+        let email = s.mailbox.account(account).unwrap().email.clone();
+        s.run("mail.setSnoozes", &json!({"account": email, "records": []})).unwrap();
+        (account, first)
+    };
+    // Put away: the server makes the folder and answers with it, which this window doesn't list yet.
+    let s = &mut w.state_mut().session;
+    let tomorrow = s.instant_of(at(2026, 10, 15, 8, 0));
+    s.run("mail.snooze", &json!({"ids": [first], "until": tomorrow})).unwrap();
+    s.hosted_snooze.take();
+    s.run("mail.snoozeAnswered", &json!({"message": first, "ok": true, "record": "r1", "emailId": "E9", "mailboxId": "MNew"})).unwrap();
+    assert_eq!(s.mailbox.snoozed_folder(account), None, "not listed yet");
+    // The run that follows lists it, with the message in it.
+    let made = s.mailbox.add_folder_free(account, None, "Plus tard").unwrap();
+    s.mailbox.folder_mut(made).unwrap().server = Some(ServerFolder { id: "MNew".into(), name: "Plus tard".into(), ..Default::default() });
+    let m = s.mailbox.message_mut(first).unwrap();
+    m.folder = made;
+    if let Some(server) = m.server.as_mut() {
+        server.folder = "MNew".into();
+    }
+    s.mailbox_changed();
+    w.run_steps(3);
+    let s = &w.state().session;
+    assert_eq!(s.mailbox.snoozed_folder(account), Some(made), "taken as « Plus tard » at once, not at the next reading of its records");
+    let drafts = s.mailbox.folder_of_kind(account, FolderKind::Drafts).unwrap();
+    let (drafts_row, made_row) = (w.state().hit.rect("folder", drafts).unwrap(), w.state().hit.rect("folder", made).unwrap());
+    assert!((made_row.min.y - drafts_row.max.y).abs() < 1.0, "right under Drafts: {drafts_row:?} {made_row:?}");
+}
+
+#[test]
+fn the_folder_its_server_names_in_its_records_wins_over_one_an_earlier_answer_named() {
+    let (mut w, snoozed) = inbox(true, true);
+    let first = drawn(&mut w)[0];
+    let s = &mut w.state_mut().session;
+    let account = s.mailbox.message(first).unwrap().account;
+    let email = s.mailbox.account(account).unwrap().email.clone();
+    // An answer names a folder not listed yet; then the server's records name its « Plus tard » (MSnz), listed.
+    let tomorrow = s.instant_of(at(2026, 10, 15, 8, 0));
+    s.run("mail.snooze", &json!({"ids": [first], "until": tomorrow})).unwrap();
+    s.hosted_snooze.take();
+    s.run("mail.snoozeAnswered", &json!({"message": first, "ok": true, "record": "r1", "emailId": "E9", "mailboxId": "MOld"})).unwrap();
+    s.run("mail.setSnoozes", &json!({"account": email, "mailbox": "MSnz", "records": []})).unwrap();
+    // The folder the answer named is listed later: the records' stays « Plus tard ».
+    let other = s.mailbox.add_folder_free(account, None, "Plus tard 2").unwrap();
+    s.mailbox.folder_mut(other).unwrap().server = Some(ServerFolder { id: "MOld".into(), name: "Plus tard 2".into(), ..Default::default() });
+    s.mailbox_changed();
+    w.run_steps(3);
+    assert_eq!(w.state().session.mailbox.snoozed_folder(account), Some(snoozed), "what its records say");
+    // And an answer that refused names nothing.
+    let s = &mut w.state_mut().session;
+    let second = s.mailbox.messages_in(s.mailbox.folder_of_kind(account, FolderKind::Inbox).unwrap()).map(|m| m.id).find(|id| *id != first).unwrap();
+    s.run("mail.snooze", &json!({"ids": [second], "until": tomorrow})).unwrap();
+    s.hosted_snooze.take();
+    s.run("mail.snoozeAnswered", &json!({"message": second, "ok": false, "error": "no", "mailboxId": "MOld"})).unwrap();
+    w.run_steps(3);
+    assert_eq!(w.state().session.mailbox.snoozed_folder(account), Some(snoozed));
+}
+
 /// `put` put away as the window does (`mail.snooze`), the server saying yes (`mail.snoozeAnswered`), then its records read
 /// (`mail.setSnoozes`): each message, when it comes back, and why its server could not bring it back.
 fn put_away_for(w: &mut testing::Window, email: &str, put: &[(Id, i64, Option<&str>)]) {

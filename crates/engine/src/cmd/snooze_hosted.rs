@@ -45,6 +45,10 @@ pub struct Hosted {
     pub said: Vec<String>,
     /// The accounts to read again at once: a message went to a folder this tab has not listed yet.
     pub to_read: HashSet<Id>,
+    /// The « Plus tard » folder each account's server named in an answer while this tab didn't list it yet (it made it then,
+    /// at the first message put away): its server id, taken as the account's Snoozed folder as soon as a run lists it
+    /// ([`adopt`]), not at the next reading of the records.
+    pub named: HashMap<Id, String>,
 }
 
 /// The server's record of a message put away.
@@ -317,7 +321,11 @@ fn answered(s: &mut Session, v: &Value) -> CmdResult {
                     }
                     _ => {
                         // A folder this window doesn't list yet (the server made it now): where the server had it until the
-                        // next run, which lists it and brings the message there.
+                        // next run, which lists it and brings the message there; the folder is « Plus tard » as soon as it is
+                        // listed ([`adopt`]).
+                        if let Some(id) = mailbox.clone() {
+                            s.hosted_snooze.named.insert(account, id);
+                        }
                         let to = s.mailbox.folder_by_server(account, &server_had).unwrap_or(from);
                         if let Ok(m) = s.mailbox.message_mut(message) {
                             m.folder = to;
@@ -395,6 +403,31 @@ fn refusal_said(s: &Session, subject: &str, error: Option<&str>, returning: bool
     }
 }
 
+/// The « Plus tard » folder each server named in an answer ([`Hosted::named`]), taken as its account's Snoozed folder once a run
+/// lists it (a folder of the person's own, as `mail.setSnoozes` takes it). Nothing to look for, nothing done: called at every
+/// frame of a hosting page's window. Whether one was taken.
+pub fn adopt(s: &mut Session) -> bool {
+    if s.hosted_snooze.named.is_empty() {
+        return false;
+    }
+    let named: Vec<(Id, String)> = s.hosted_snooze.named.iter().map(|(account, id)| (*account, id.clone())).collect();
+    let mut taken = false;
+    for (account, id) in named {
+        let Some(folder) = s.mailbox.folder_by_server(account, &id).filter(|f| s.mailbox.folder(*f).is_some_and(|f| f.kind == FolderKind::Custom))
+        else {
+            continue;
+        };
+        if let Ok(a) = s.mailbox.account_mut(account)
+            && a.snoozed_folder != Some(folder)
+        {
+            a.snoozed_folder = Some(folder);
+            taken = true;
+        }
+        s.hosted_snooze.named.remove(&account);
+    }
+    taken
+}
+
 fn set_snoozes(s: &mut Session, v: &Value) -> CmdResult {
     p::only(v, &["account", "mailbox", "records", "offered"])?;
     let email = p::req_str(v, "account")?.trim().to_lowercase();
@@ -405,6 +438,7 @@ fn set_snoozes(s: &mut Session, v: &Value) -> CmdResult {
         // Its server does not keep « Plus tard » (any more): nothing of it is shown, and what was being put away or brought
         // back here lies where its server has it.
         s.hosted_snooze.servers.remove(&account);
+        s.hosted_snooze.named.remove(&account);
         s.hosted_snooze.asks.retain(|a| a.account != account);
         let mut fix = Vec::new();
         for m in s.mailbox.messages.values().filter(|m| m.account == account && m.snooze.is_some()) {
@@ -432,6 +466,10 @@ fn set_snoozes(s: &mut Session, v: &Value) -> CmdResult {
         records.push((field("id"), field("emailId"), norm(&field("messageId")), field("fromMailboxId"), until, failed));
     }
     s.hosted_snooze.servers.insert(account);
+    // What the server says of its folder is the last word: one an earlier answer named waits no more ([`adopt`]).
+    if v.get("mailbox").and_then(Value::as_str).is_some_and(plausible_id) {
+        s.hosted_snooze.named.remove(&account);
+    }
     // The Snoozed folder, by its id on the server.
     if let Some(folder) =
         v.get("mailbox").and_then(Value::as_str).filter(|id| plausible_id(id)).and_then(|id| s.mailbox.folder_by_server(account, id))
