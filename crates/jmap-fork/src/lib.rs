@@ -470,6 +470,9 @@ pub struct Client<H> {
     notes: Option<String>,
     notes_writable: Option<Vec<String>>,
     notes_limits: (usize, usize),
+    /// What the session says of the mail account (its `accountCapabilities`), for a capability a caller reads itself (the
+    /// Neoffice server's `correct` of its tabs, neoffice-maintenance#3142).
+    mail_capabilities: Value,
 }
 
 /// What may be shown of a client: sizes, never an address or a credential.
@@ -595,10 +598,21 @@ impl<H: Http> Client<H> {
             notes_limits: pim::notes::limits(of_notes),
             notes,
             calendars,
+            mail_capabilities: doc
+                .get("accounts")
+                .and_then(|a| a.get(account))
+                .and_then(|a| a.get("accountCapabilities"))
+                .cloned()
+                .unwrap_or(Value::Null),
             auth,
             secrets,
             http,
         })
+    }
+
+    /// What the session says of the mail account for `capability` (its object in `accountCapabilities`), when it says it.
+    pub fn account_capability(&self, capability: &str) -> Option<&Value> {
+        self.mail_capabilities.get(capability)
     }
 
     /// The id of the account that holds the mail: the session's primary account for mail.

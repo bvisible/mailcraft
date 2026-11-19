@@ -4864,3 +4864,35 @@ msgstr "Respuesta de Más tarde"
 
 msgid "this message is being moved: try again in a moment"
 msgstr "este mensaje se está moviendo: inténtelo de nuevo en un momento"
+
+# « Classer dans »: a person's choice of tab for a message of the Inbox, kept by a hosting page's mailbox server (#3142).
+msgctxt "stream"
+msgid "Move to Tab"
+msgstr "Mover a"
+
+msgid "Move to Tab"
+msgstr "Mover a pestaña"
+
+msgid "Move to\nTab"
+msgstr "Mover a\npestaña"
+
+msgid "Put the messages under another tab of the Inbox: their sender's next ones will come under it too"
+msgstr "Poner los mensajes bajo otra pestaña de la Bandeja de entrada: los próximos de su remitente también irán bajo ella"
+
+msgid "Offer Stream Correction"
+msgstr "Ofrecer corrección de flujo"
+
+msgid "Stream Corrected"
+msgstr "Flujo corregido"
+
+msgid "this mailbox's server doesn't keep a choice of tab"
+msgstr "el servidor de este buzón no guarda una elección de pestaña"
+
+msgid "only a message of the Inbox goes under a tab"
+msgstr "solo un mensaje de la Bandeja de entrada puede ir bajo una pestaña"
+
+msgid "too many messages at once: choose fewer"
+msgstr "demasiados mensajes a la vez: elija menos"
+
+msgid "'{subject}' could not be put under that tab: it stays where it was."
+msgstr "« {subject} » no se pudo poner bajo esa pestaña: se queda donde estaba."

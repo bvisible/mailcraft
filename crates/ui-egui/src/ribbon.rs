@@ -142,6 +142,8 @@ pub(crate) enum Menu {
     HostChat,
     // //// Neoffice — « Plus tard »'s times, where the mailbox's server keeps it (snooze_hosted.rs).
     Snooze,
+    // //// Neoffice — « Classer dans »'s tabs, where the mailbox's server keeps a choice of tab (stream_correct.rs).
+    StreamTab,
     MoveFolder,
     ReadingPane,
     GmailCategories,
@@ -415,6 +417,8 @@ pub(crate) fn describe_tab(app: &MailApp, name: &str) -> Tab {
     crate::host_share::ribbon(app, &mut tab);
     // //// Neoffice — « Plus tard » in the Tags group, where the mailbox's server keeps it (snooze_hosted.rs).
     crate::snooze_hosted::ribbon(app, &mut tab);
+    // //// Neoffice — « Classer dans » in the Tags group, where the mailbox's server keeps a choice of tab (stream_correct.rs).
+    crate::stream_correct::ribbon(app, &mut tab);
     // //// Neoffice — and no Copy Diagnostics nor Report a Problem in the Help tab of a hosting page's tab (host_diagnostics.rs).
     crate::host_diagnostics::ribbon(app, &mut tab);
     fit::prioritise(&mut tab, which);
@@ -1375,6 +1379,11 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
             let ids = app.session.sel.messages.clone();
             crate::snooze_hosted::menu(ui, app, &ids);
         }
+        // //// Neoffice — « Classer dans »'s tabs for the messages selected (stream_correct.rs).
+        Menu::StreamTab => {
+            let ids = app.session.sel.messages.clone();
+            crate::stream_correct::menu(ui, app, &ids);
+        }
         Menu::MoveMessages => {
             if app.session.sel.messages.is_empty() {
                 ui.label(tl!("Select a message first"));
@@ -1870,6 +1879,8 @@ fn drop_menu(ui: &mut Ui, app: &mut MailApp, b: &Button<'_>) {
 pub(crate) fn menu_refusal(app: &MailApp, menu: Option<Menu>) -> Option<&'static str> {
     let s = &app.session;
     let command = match menu? {
+        // //// Neoffice — « Classer dans » greyed, and why, when the messages selected can't go under a tab (stream_correct.rs).
+        Menu::StreamTab => return crate::stream_correct::refusal(app),
         Menu::CategorizeContact if s.sel.contact.is_some() => "people.categorize",
         Menu::CategorizeEvent if s.sel.event.is_some() => "calendar.categorize",
         Menu::CategorizeTask if s.sel.task.is_some() => "tasks.categorize",

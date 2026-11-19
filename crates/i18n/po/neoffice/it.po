@@ -4862,3 +4862,35 @@ msgstr "Risposta di Più tardi"
 
 msgid "this message is being moved: try again in a moment"
 msgstr "questo messaggio è in fase di spostamento: riprovi tra un momento"
+
+# « Classer dans »: a person's choice of tab for a message of the Inbox, kept by a hosting page's mailbox server (#3142).
+msgctxt "stream"
+msgid "Move to Tab"
+msgstr "Sposta in"
+
+msgid "Move to Tab"
+msgstr "Sposta in una scheda"
+
+msgid "Move to\nTab"
+msgstr "Sposta in\nscheda"
+
+msgid "Put the messages under another tab of the Inbox: their sender's next ones will come under it too"
+msgstr "Sposta i messaggi sotto un’altra scheda della Posta in arrivo: anche i successivi del loro mittente finiranno lì"
+
+msgid "Offer Stream Correction"
+msgstr "Proponi correzione del flusso"
+
+msgid "Stream Corrected"
+msgstr "Flusso corretto"
+
+msgid "this mailbox's server doesn't keep a choice of tab"
+msgstr "il server di questa casella non conserva una scelta di scheda"
+
+msgid "only a message of the Inbox goes under a tab"
+msgstr "solo un messaggio della Posta in arrivo può essere spostato in una scheda"
+
+msgid "too many messages at once: choose fewer"
+msgstr "troppi messaggi insieme: sceglierne meno"
+
+msgid "'{subject}' could not be put under that tab: it stays where it was."
+msgstr "Non è stato possibile spostare « {subject} » in quella scheda: resta dov’era."

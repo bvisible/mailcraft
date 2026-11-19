@@ -365,6 +365,17 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   (below) the round is in the lead column, in the unread dot's place under the pointer, and a day's title has its round
   there too; a message « Afficher les traités » lists as done wears it full, and a click puts it back in its account's
   Inbox (`done::listed_done_round`). In the Neoffice look the unread dot is the signal.
+- « Classer dans » (neoffice-maintenance#3142), a person's choice of tab for a message of the Inbox in a hosting page's tab,
+  kept by the mailbox's server for its sender (frappe_webmail's `mailcraft_stream`, `NeomailStream/set` under
+  `https://neoffice.me/jmap/neomail-stream`, offered where the account's capability says `correct: true`); upstream has no
+  tabs. The engine's `cmd/stream_correct.rs` (tests in `stream_correct_tests.rs`): `mail.correctStream` puts the messages and
+  their sender's others in that Inbox under the tab at once and asks the server (`Session::hosted_stream`, a marked field of
+  `session.rs`; no step of the history), `mail.streamCorrected` takes its answer, `mail.offerStreamCorrection` says which
+  mailboxes take it; the three are refused to an agent (marked lines of `agent.rs`): what a person chose is what the
+  server's model learns from. The web build's `apps/mailcraft-web/src/streams.rs` reads `correct` from the capability and
+  sends the choices. The window's `crates/ui-egui/src/stream_correct.rs` (tests in `stream_correct_tests.rs`): « Classer
+  dans » in the message's menu (`mail_view.rs`) and in the Home tab's Tags group (`Menu::StreamTab`, marked lines of
+  `ribbon.rs`), and what a server refused said (`lib.rs`).
 - « Plus tard » (upstream's Snooze, #949) in a hosting page's tab, kept by the mailbox's server, which brings the message
   back at its time even with every window closed (frappe_webmail's `neomail_snooze`, `NeomailSnooze/get` and `/set` under
   `https://neoffice.me/jmap/neomail-snooze`). Upstream refuses a JMAP server's mail (`JMAP_NOT_YET`): kept so on the

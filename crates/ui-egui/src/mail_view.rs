@@ -1693,6 +1693,8 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         mi(ui, app, "Archive", "mail.archive", json!({}));
         // //// Neoffice — « Plus tard », where the mailbox's server keeps it: its times, or bring it back now (snooze_hosted.rs).
         crate::snooze_hosted::context_menu(app, ui);
+        // //// Neoffice — « Classer dans », where the mailbox's server keeps a choice of tab (stream_correct.rs).
+        crate::stream_correct::context_menu(app, ui);
         ui.menu_button(tl!("Junk"), |ui| crate::ribbon::junk_menu(ui, app));
         mi(ui, app, "Delete", "mail.delete", json!({}));
         ui.separator();

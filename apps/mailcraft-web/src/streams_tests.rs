@@ -218,6 +218,8 @@ struct Server {
     on_session: RefCell<VecDeque<Fault>>,
     on_api: RefCell<VecDeque<Fault>>,
     sessions: Cell<u32>,
+    /// Its account takes a person's choice of tab (`correct: true` in its capability, #3142).
+    correct: bool,
 }
 
 impl Server {
@@ -231,6 +233,7 @@ impl Server {
             on_session: RefCell::new(VecDeque::new()),
             on_api: RefCell::new(VecDeque::new()),
             sessions: Cell::new(0),
+            correct: false,
         }
     }
 
@@ -248,12 +251,15 @@ impl Server {
             "urn:ietf:params:jmap:core": {"maxObjectsInGet": 500, "maxCallsInRequest": 16},
             "urn:ietf:params:jmap:mail": {},
         });
+        let mut account = json!({"urn:ietf:params:jmap:mail": {}});
         if self.offered {
             capabilities[STREAM] = json!({});
+            // As frappe_webmail's `session_parts`: what it takes, in the account's own capabilities.
+            account[STREAM] = if self.correct { json!({"maxIds": MAX_IDS, "correct": true}) } else { json!({"maxIds": MAX_IDS}) };
         }
         json!({
             "capabilities": capabilities,
-            "accounts": {"A1": {"name": ME, "isPersonal": true, "isReadOnly": false, "accountCapabilities": {"urn:ietf:params:jmap:mail": {}}}},
+            "accounts": {"A1": {"name": ME, "isPersonal": true, "isReadOnly": false, "accountCapabilities": account}},
             "primaryAccounts": {"urn:ietf:params:jmap:mail": "A1"},
             "username": ME,
             "apiUrl": "/jmap/api",
@@ -574,4 +580,62 @@ fn a_server_that_does_not_offer_the_tabs_is_never_tried_again() {
     assert_eq!(answer, Err(Failure::Unsupported));
     assert!(kept.is_none() && waits.is_empty(), "a method the server no longer has is not a trouble that passes");
     assert_eq!(server.asked.borrow().len(), 1);
+}
+
+// //// Neoffice — a person's choice of tab (« Classer dans », neoffice-maintenance#3142).
+
+fn choice(message: Id, email_id: &str, stream: Stream, was: &[(Id, Option<Stream>)]) -> Correction {
+    Correction { account: 1, message, email_id: email_id.into(), stream, was: was.to_vec(), sent: true }
+}
+
+#[test]
+fn the_server_takes_a_choice_of_tab_only_where_its_account_capability_says_so() {
+    assert!(takes_corrections(Some(&json!({"maxIds": 200, "correct": true}))));
+    assert!(!takes_corrections(Some(&json!({"maxIds": 200}))), "a server whose site keeps the choice off");
+    assert!(!takes_corrections(Some(&json!({"correct": "yes"}))));
+    assert!(!takes_corrections(None));
+}
+
+#[test]
+fn a_set_carries_each_choice_by_the_servers_id_and_the_answer_says_which_it_took() {
+    let asks = [choice(7, "E7", Stream::Newsletter, &[(7, None), (9, Some(Stream::Person))]), choice(8, "E8", Stream::Person, &[(8, None)])];
+    assert_eq!(
+        set_arguments("A1", &asks),
+        json!({"accountId": "A1", "corrections": [{"id": "E7", "stream": "newsletter"}, {"id": "E8", "stream": "person"}]})
+    );
+    let answer = json!({"accountId": "A1", "updated": ["E7"], "notUpdated": {"E8": {"type": "notFound", "description": "no such message"}}});
+    assert_eq!(corrected(&asks, &answer), [(7, true), (8, false)]);
+    // No answer (a failure, a server that does not take it): each is put back.
+    assert_eq!(corrected(&asks, &Value::Null), [(7, false), (8, false)]);
+}
+
+#[test]
+fn what_the_person_chose_is_what_comes_back_after_a_synchronisation_and_a_refusal_undoes_it() {
+    let (mut mb, inbox) = mailbox();
+    let a = add(&mut mb, mail(inbox, "a", 10));
+    let b = add(&mut mb, mail(inbox, "b", 20));
+    let mut book = Book::default();
+    let asked = book.plan(&mb, ME).ask;
+    let said = book.take(&asked, &Answer { says: vec![("a".into(), Stream::Person), ("b".into(), Stream::Person)], ..Default::default() });
+    mb.set_streams(&said);
+    // The person put both under Newsletters; a synchronisation takes the streams: the choice comes back.
+    book.chosen(&[(a, Stream::Newsletter), (b, Stream::Newsletter)]);
+    for id in [a, b] {
+        mb.message_mut(id).unwrap().stream = None;
+    }
+    let restore = book.plan(&mb, ME).restore;
+    assert!(restore.contains(&(a, Stream::Newsletter)) && restore.contains(&(b, Stream::Newsletter)));
+    // The server did not take it: what each had before.
+    book.unchosen(&[(a, Some(Stream::Person)), (b, None)]);
+    let plan = book.plan(&mb, ME);
+    assert!(plan.restore.contains(&(a, Stream::Person)));
+    assert!(!plan.restore.iter().any(|(id, _)| *id == b), "b had nothing said of it");
+}
+
+#[test]
+fn an_ask_reads_whether_the_server_takes_a_choice_of_tab() {
+    let off = Server::new(says);
+    assert!(!block_on(ask(&connect(&off).unwrap(), &["n1".into()])).unwrap().correct, "a site that keeps it off");
+    let on = Rc::new(Server { correct: true, ..Server::plain(true, says, None) });
+    assert!(block_on(ask(&connect(&on).unwrap(), &["n1".into()])).unwrap().correct);
 }

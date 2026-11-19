@@ -5831,3 +5831,35 @@ msgstr "Réponse de Plus tard"
 
 msgid "this message is being moved: try again in a moment"
 msgstr "ce message est en cours de déplacement : réessayez dans un instant"
+
+# « Classer dans »: a person's choice of tab for a message of the Inbox, kept by a hosting page's mailbox server (#3142).
+msgctxt "stream"
+msgid "Move to Tab"
+msgstr "Classer dans"
+
+msgid "Move to Tab"
+msgstr "Classer dans un onglet"
+
+msgid "Move to\nTab"
+msgstr "Classer\ndans"
+
+msgid "Put the messages under another tab of the Inbox: their sender's next ones will come under it too"
+msgstr "Classer les messages sous un autre onglet de la Boîte de réception : les prochains messages de leur expéditeur iront aussi sous cet onglet"
+
+msgid "Offer Stream Correction"
+msgstr "Proposer une correction de flux"
+
+msgid "Stream Corrected"
+msgstr "Flux corrigé"
+
+msgid "this mailbox's server doesn't keep a choice of tab"
+msgstr "le serveur de cette boîte n’enregistre pas de choix d’onglet"
+
+msgid "only a message of the Inbox goes under a tab"
+msgstr "seul un message de la Boîte de réception peut être classé dans un onglet"
+
+msgid "too many messages at once: choose fewer"
+msgstr "trop de messages à la fois : choisissez-en moins"
+
+msgid "'{subject}' could not be put under that tab: it stays where it was."
+msgstr "« {subject} » n’a pas pu être classé dans cet onglet : il reste à sa place."

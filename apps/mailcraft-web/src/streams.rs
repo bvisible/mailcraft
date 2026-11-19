@@ -21,6 +21,13 @@
 //! (a server starting again, a network blink) is made once more after a moment, and a sign-in the server refuses is renewed by the
 //! page once, as for the Échanges pane: `exchanges::ask_with` is the one place that settles both.
 //!
+//! **A person's choice of tab** (« Classer dans », neoffice-maintenance#3142). Where the capability says `correct: true`, the
+//! window offers to put a message of the Inbox under another tab (the engine's `cmd/stream_correct.rs`): what it asks is sent
+//! here as `NeomailStream/set {accountId, corrections: [{id, stream}]}`, a mailbox's at once, and the answer goes back through
+//! `mail.streamCorrected` (a message the server did not take is put back). The server keeps the choice for the sender, for this
+//! person and this mailbox, and its next answers say it; what was chosen here is remembered as said, so that a
+//! synchronisation that takes the stream puts the chosen one back.
+//!
 //! **What is not here.** The server's model, its headers rules and its cache are the server's; the tabs, the boxes and the bar are
 //! the window's (`ui-egui`); this file is only what asks and what puts.
 // Outside the browser only the tests use it.
@@ -30,6 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::rc::Rc;
 
+use mailcraft_engine::cmd::stream_correct::Correction;
 use mailcraft_jmap::{CORE, Client, Error, Http};
 use mailcraft_model::{FolderKind, Id, Mailbox, Stream};
 use serde_json::{Value, json};
@@ -45,6 +53,8 @@ fn key(email: &str) -> String {
 /// The capability: a data type of the Neoffice server (frappe_webmail's mailcraft_stream), named by it.
 pub const STREAM: &str = "https://neoffice.me/jmap/neomail-stream";
 pub const GET: &str = "NeomailStream/get";
+// //// Neoffice — a person's choice of tab (#3142).
+pub const SET: &str = "NeomailStream/set";
 /// The most ids one ask holds: what the server takes (a window of the list).
 pub const MAX_IDS: usize = 200;
 /// How many times a message is asked about without the server giving a stream (its model was away, or it was gone): then it
@@ -61,6 +71,8 @@ pub struct Answer {
     /// The messages it did not find (gone from the folder, or an id it could not read) and the ones it said a kind this window
     /// does not know (a newer server): neither is asked about again.
     pub left: Vec<String>,
+    /// The mailbox's server takes a person's choice of tab (its capability says `correct: true`).
+    pub correct: bool,
 }
 
 /// What was asked and told, and what is not to be asked about.
@@ -145,6 +157,23 @@ impl Book {
     pub fn waiting(&self) -> bool {
         self.tries.values().any(|n| *n < MAX_TRIES)
     }
+
+    /// The person chose these streams (`mail.correctStream`, sent to the server): what is put back after a synchronisation.
+    pub fn chosen(&mut self, said: &[(Id, Stream)]) {
+        for (id, stream) in said {
+            self.told.insert(*id, *stream);
+        }
+    }
+
+    /// The server did not take a choice: what each message had before is what is put back.
+    pub fn unchosen(&mut self, was: &[(Id, Option<Stream>)]) {
+        for (id, stream) in was {
+            match stream {
+                Some(stream) => self.told.insert(*id, *stream),
+                None => self.told.remove(id),
+            };
+        }
+    }
 }
 
 /// What a `NeomailStream/get` answer says.
@@ -175,7 +204,28 @@ pub fn arguments(account: &str, ids: &[String]) -> Value {
 pub async fn ask<H: Http>(client: &Client<H>, ids: &[String]) -> Result<Answer, Error> {
     let mut answers = client.call(&[CORE, STREAM], vec![(GET, arguments(client.account_id(), ids))]).await?;
     let answer = answers.take(0)?;
-    read_answer(&answer).ok_or_else(|| Error::Protocol("no list in the stream answer".into()))
+    let mut answer = read_answer(&answer).ok_or_else(|| Error::Protocol("no list in the stream answer".into()))?;
+    // //// Neoffice — whether its server takes a person's choice of tab, as the session it signed in with says (#3142).
+    answer.correct = takes_corrections(client.account_capability(STREAM));
+    Ok(answer)
+}
+
+/// Whether an account's capability (its object in `accountCapabilities`) says the server takes a person's choice of tab.
+pub fn takes_corrections(capability: Option<&Value>) -> bool {
+    capability.and_then(|c| c.get("correct")).and_then(Value::as_bool) == Some(true)
+}
+
+/// The arguments of a `NeomailStream/set` for these choices of one mailbox, by the ids its server gave the messages.
+pub fn set_arguments(account: &str, asks: &[Correction]) -> Value {
+    let corrections: Vec<Value> = asks.iter().take(MAX_IDS).map(|a| json!({"id": a.email_id, "stream": a.stream.code()})).collect();
+    json!({"accountId": account, "corrections": corrections})
+}
+
+/// What a `NeomailStream/set` answer says of each choice: whether the server took it (its id is among `updated`). Anything
+/// else (not found, an answer of another shape, no answer) is a refusal: the window puts the messages back.
+pub fn corrected(asks: &[Correction], answer: &Value) -> Vec<(Id, bool)> {
+    let updated: BTreeSet<&str> = answer.get("updated").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).collect();
+    asks.iter().map(|a| (a.message, updated.contains(a.email_id.as_str()))).collect()
 }
 
 /// Put what the server said (and what was put back) in the window, as `mail.setStreams` does. How many messages changed.
@@ -257,11 +307,14 @@ mod run {
     use std::rc::Rc;
     use std::time::Duration;
 
-    use mailcraft_jmap::Client;
-    use mailcraft_model::Id;
+    use mailcraft_engine::cmd::stream_correct::Correction;
+    use mailcraft_jmap::{CORE, Client};
+    use mailcraft_model::{Id, Stream};
     use mailcraft_ui_egui::MailApp;
+    use serde_json::{Value, json};
 
-    use super::{Answer, Book, Failure, ask_streams, key, put};
+    use super::{Answer, Book, Failure, MAX_IDS, SET, STREAM, ask_streams, corrected, key, kind, put, set_arguments};
+    use crate::exchanges::{Outcome, ask_with};
     use crate::host::{HostAccount, HostCredentials};
 
     /// How long to wait before looking again: after an answer that holds something to finish, after one that did not, when there
@@ -296,6 +349,10 @@ mod run {
         next: f64,
         /// Which mailbox the next look starts at, so that one with much to ask does not starve the others.
         turn: usize,
+        // //// Neoffice — a person's choice of tab (#3142): whether each mailbox's server takes it, as last told the window, and
+        // //// Neoffice — the answers of the choices sent.
+        offered: BTreeMap<String, bool>,
+        chosen: Vec<(String, Vec<Correction>, Outcome<Value>)>,
     }
 
     thread_local! {
@@ -329,6 +386,11 @@ mod run {
                 s.asking = false;
                 s.next = now + settle(s, app, ended);
             }
+            // //// Neoffice — a person's choice of tab: the answers that came, and what the window asked to send (#3142).
+            for (email, asks, outcome) in std::mem::take(&mut s.chosen) {
+                answered(s, app, &email, &asks, outcome);
+            }
+            send(s, app);
             if !s.asking && now >= s.next {
                 s.next = now + look(s, app);
             }
@@ -345,11 +407,14 @@ mod run {
             Ok(answer) => {
                 let said = s.book.take(&ended.asked, &answer);
                 put(&mut app.session, &said);
+                // //// Neoffice — whether its server takes a person's choice of tab, told the window when it changes (#3142).
+                offer(s, app, &ended.email, answer.correct);
                 if s.book.waiting() { PENDING_MS } else { SOON_MS }
             }
             Err(Failure::Unsupported) => {
                 // Said once a mailbox (it is never asked again), and nothing of it: why its Inbox shows no tabs.
                 log::info!("neomail streams: the server does not offer the Inbox tabs (Main, Notifications, Newsletters)");
+                offer(s, app, &ended.email, false);
                 s.unsupported.insert(ended.email);
                 SOON_MS
             }
@@ -398,5 +463,93 @@ mod run {
             return SOON_MS;
         }
         IDLE_MS
+    }
+
+    // //// Neoffice — a person's choice of tab (« Classer dans », #3142).
+    /// Tell the window whether the mailbox `email`'s server takes a person's choice of tab, when that changed.
+    fn offer(s: &mut State, app: &mut MailApp, email: &str, offered: bool) {
+        if s.offered.get(email) == Some(&offered) {
+            return;
+        }
+        s.offered.insert(email.to_string(), offered);
+        let _ = app.session.run("mail.offerStreamCorrection", &json!({"account": email, "offered": offered}));
+    }
+
+    fn session_of(s: &State, email: &str) -> Option<String> {
+        s.handed.iter().find(|(e, _)| e == email).map(|(_, session)| session.clone())
+    }
+
+    /// The choices the window asked, one call per mailbox ([`MAX_IDS`] at most each).
+    fn send(s: &mut State, app: &mut MailApp) {
+        let asks = app.session.hosted_stream.take();
+        if asks.is_empty() {
+            return;
+        }
+        let mut by_mailbox: BTreeMap<String, Vec<Correction>> = BTreeMap::new();
+        for ask in asks {
+            // What is put back after a synchronisation is what the person chose, from now on.
+            let chosen: Vec<(Id, Stream)> = ask.was.iter().map(|(id, _)| (*id, ask.stream)).collect();
+            s.book.chosen(&chosen);
+            let email = app.session.mailbox.account(ask.account).map(|a| key(&a.email)).unwrap_or_default();
+            by_mailbox.entry(email).or_default().push(ask);
+        }
+        for (email, asks) in by_mailbox {
+            for part in asks.chunks(MAX_IDS) {
+                let part = part.to_vec();
+                let (Some(session), Some(credentials)) = (session_of(s, &email), s.credentials.clone()) else {
+                    // A mailbox the page did not hand over: nobody to ask; the window puts the messages back.
+                    s.chosen.push((email.clone(), part, Outcome::Answered(Value::Null)));
+                    continue;
+                };
+                let client = s.clients.get(&email).cloned();
+                let ctx = s.ctx.clone();
+                let email = email.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    let sent = part.clone();
+                    let call = move |client: Rc<Client<crate::fetch::Fetch>>| {
+                        let arguments = set_arguments(client.account_id(), &sent);
+                        async move {
+                            let mut answers = client.call(&[CORE, STREAM], vec![(SET, arguments)]).await?;
+                            answers.take(0)
+                        }
+                    };
+                    let (client, outcome) =
+                        ask_with(crate::fetch::Fetch, &*credentials, &email, &session, STREAM, client, call, |ms| crate::fetch::sleep(ms as i32))
+                            .await;
+                    STATE.with(|s| {
+                        let mut s = s.borrow_mut();
+                        if let Some(client) = client {
+                            s.clients.insert(email.clone(), client);
+                        }
+                        s.chosen.push((email, part, outcome));
+                    });
+                    if let Some(ctx) = ctx {
+                        ctx.request_repaint();
+                    }
+                });
+            }
+        }
+    }
+
+    /// What a server answered of choices: each taken, or put back by the window (which tells the person).
+    fn answered(s: &mut State, app: &mut MailApp, email: &str, asks: &[Correction], outcome: Outcome<Value>) {
+        let answer = match outcome {
+            Outcome::Answered(answer) => answer,
+            Outcome::Unsupported => {
+                offer(s, app, email, false);
+                Value::Null
+            }
+            Outcome::Failed(e) => {
+                log::warn!("neomail streams: a choice of tab couldn't be sent ({})", kind(&e));
+                s.clients.remove(email);
+                Value::Null
+            }
+        };
+        for ((message, ok), ask) in corrected(asks, &answer).into_iter().zip(asks) {
+            if !ok {
+                s.book.unchosen(&ask.was);
+            }
+            let _ = app.session.run("mail.streamCorrected", &json!({"message": message, "ok": ok}));
+        }
     }
 }

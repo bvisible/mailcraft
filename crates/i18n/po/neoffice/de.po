@@ -4846,3 +4846,35 @@ msgstr "Antwort auf Zurückstellung"
 
 msgid "this message is being moved: try again in a moment"
 msgstr "diese Nachricht wird gerade verschoben: versuchen Sie es in einem Moment erneut"
+
+# « Classer dans »: a person's choice of tab for a message of the Inbox, kept by a hosting page's mailbox server (#3142).
+msgctxt "stream"
+msgid "Move to Tab"
+msgstr "Verschieben nach"
+
+msgid "Move to Tab"
+msgstr "In Reiter verschieben"
+
+msgid "Move to\nTab"
+msgstr "Verschieben\nnach"
+
+msgid "Put the messages under another tab of the Inbox: their sender's next ones will come under it too"
+msgstr "Die Nachrichten unter einem anderen Reiter des Posteingangs ablegen: die nächsten Nachrichten dieses Absenders landen dann ebenfalls dort"
+
+msgid "Offer Stream Correction"
+msgstr "Stream-Korrektur anbieten"
+
+msgid "Stream Corrected"
+msgstr "Stream korrigiert"
+
+msgid "this mailbox's server doesn't keep a choice of tab"
+msgstr "der Server dieses Postfachs speichert keine Reiterauswahl"
+
+msgid "only a message of the Inbox goes under a tab"
+msgstr "nur eine Nachricht aus dem Posteingang kann unter einem Reiter abgelegt werden"
+
+msgid "too many messages at once: choose fewer"
+msgstr "zu viele Nachrichten auf einmal: weniger auswählen"
+
+msgid "'{subject}' could not be put under that tab: it stays where it was."
+msgstr "„{subject}“ konnte nicht unter diesen Reiter verschoben werden: die Nachricht bleibt, wo sie war."

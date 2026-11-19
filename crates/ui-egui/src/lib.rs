@@ -270,6 +270,7 @@ pub(crate) mod snooze_hosted;
 mod snooze_tell_tests;
 mod snooze_tick;
 pub mod software;
+pub(crate) mod stream_correct; // //// Neoffice — « Classer dans », a choice of tab kept by a hosting page's mailbox server.
 mod symbol;
 mod sync_panel;
 pub mod task_sync;
@@ -5608,6 +5609,8 @@ impl MailApp {
         nora::sorting_view::card(self, &ctx);
         // //// Neoffice — « Plus tard »: the window of its times while it is open, and what its server refused (snooze_hosted.rs).
         snooze_hosted::frame(self, &ctx);
+        // //// Neoffice — « Classer dans »: what its server refused (stream_correct.rs).
+        stream_correct::frame(self);
         close_to_tray::show(&ctx, self);
         reminders::show(self, &ctx);
         // What was chosen in a text's menu, once everything that has one is drawn.

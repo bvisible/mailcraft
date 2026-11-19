@@ -140,6 +140,11 @@ msgstr ""
 msgid "'{subject}' could not be put away: it stays where it was."
 msgstr ""
 
+#. what a command says
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "'{subject}' could not be put under that tab: it stays where it was."
+msgstr ""
+
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "'{subject}' may have been sent, although it was taken out of the Outbox meanwhile. Look in Sent."
@@ -212,7 +217,7 @@ msgid "(no recipients)"
 msgstr "(geen ontvangers)"
 
 #. interface, what a command says, why a mail server couldn't be used
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/snooze.rs crates/engine/src/cmd/snooze_hosted.rs crates/mobile/src/sync.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/graph_drafts.rs crates/engine/src/cmd/graph_send.rs crates/engine/src/cmd/snooze.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream_correct.rs crates/mobile/src/sync.rs crates/net/src/sync.rs crates/ui-egui/src/alerts.rs crates/ui-egui/src/exchanges_pane.rs crates/ui-egui/src/i18n/run_words.rs crates/ui-egui/src/mail_view.rs crates/ui-egui/src/mail_view/done.rs crates/ui-egui/src/mail_view/server_rows.rs crates/ui-egui/src/people_view.rs crates/ui-egui/src/pick_item.rs crates/ui-egui/src/reading.rs crates/ui-egui/src/tasks_view.rs crates/ui-egui/src/windows.rs
 #, fuzzy
 msgid "(no subject)"
 msgstr "(geen onderwerp)"
@@ -944,7 +949,7 @@ msgid "Accounts"
 msgstr "Accounts"
 
 #. ribbon, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/ui-egui/src/ribbon.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/meeting.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/people_merge.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/engine/src/cmd/stream_correct.rs crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "Actions"
 msgstr "Acties"
@@ -5538,7 +5543,7 @@ msgid "Fold the calendars of this group away"
 msgstr "De agenda's van deze groep invouwen"
 
 #. interface, name, ribbon location
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/imported_dupes.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar_opened.rs crates/engine/src/cmd/folder.rs crates/engine/src/cmd/imported_dupes.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream.rs crates/engine/src/cmd/stream_correct.rs crates/model/src/mailbox.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs
 #, fuzzy
 msgid "Folder"
 msgstr "Map"
@@ -8615,7 +8620,7 @@ msgstr[0] "{n} contactpersoon samenvoegen…"
 msgstr[1] "{n} contactpersonen samenvoegen…"
 
 #. interface, name, ribbon location
-#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/edit.rs crates/engine/src/cmd/format.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/tasks_view.rs
+#: crates/engine/src/cmd/compose.rs crates/engine/src/cmd/edit.rs crates/engine/src/cmd/format.rs crates/engine/src/cmd/stream_correct.rs crates/ui-egui/src/lib.rs crates/ui-egui/src/menubar.rs crates/ui-egui/src/tasks_view.rs
 #, fuzzy
 msgid "Message"
 msgstr "Bericht"
@@ -9039,6 +9044,11 @@ msgstr "Naar ongewenste e-mail verplaatsen"
 #, fuzzy
 msgid "Move to My Account's Calendar"
 msgstr "Naar de agenda van mijn account verplaatsen"
+
+#. command label
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "Move to Tab"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -10625,6 +10635,11 @@ msgstr "oktober"
 #. interface
 #: crates/ui-egui/src/nora/sorting_view.rs
 msgid "Off: Nora files nothing by herself."
+msgstr ""
+
+#. command label
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "Offer Stream Correction"
 msgstr ""
 
 #. name
@@ -15081,6 +15096,11 @@ msgstr "Bezig met stoppen…"
 #, fuzzy
 msgid "Stopping… what has come in stays."
 msgstr "Bezig met stoppen… wat er binnenkwam, blijft."
+
+#. command label
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "Stream Corrected"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -21532,6 +21552,11 @@ msgstr "van elke"
 msgid "on"
 msgstr "op"
 
+#. why a command can't run
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "only a message of the Inbox goes under a tab"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/compose.rs
 #, fuzzy
@@ -21666,7 +21691,7 @@ msgid "select a conversation in conversation view first"
 msgstr "selecteer eerst een gesprek in de gespreksweergave"
 
 #. what a command says, why a command can't run
-#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/invitation.rs crates/engine/src/cmd/check_again.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/file.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/mail_source.rs crates/engine/src/cmd/mod.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/save_all.rs crates/engine/src/cmd/tasks.rs
+#: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/invitation.rs crates/engine/src/cmd/check_again.rs crates/engine/src/cmd/compose.rs crates/engine/src/cmd/file.rs crates/engine/src/cmd/mail.rs crates/engine/src/cmd/mail_source.rs crates/engine/src/cmd/mod.rs crates/engine/src/cmd/people.rs crates/engine/src/cmd/rules.rs crates/engine/src/cmd/save_all.rs crates/engine/src/cmd/stream_correct.rs crates/engine/src/cmd/tasks.rs
 #, fuzzy
 msgid "select a message first"
 msgstr "selecteer eerst een bericht"
@@ -21789,6 +21814,12 @@ msgstr ""
 #, fuzzy
 msgid "someone@example.org or @example.org"
 msgstr "naam@example.org of @example.org"
+
+#. interface
+#: crates/ui-egui/src/stream_correct.rs
+msgctxt "stream"
+msgid "Move to Tab"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/calendar.rs
@@ -23518,6 +23549,11 @@ msgid "this mailbox is too large ({mb} MB) to save as one self-contained file: s
 msgstr "dit postvak is te groot ({mb} MB) om als één zelfstandig bestand op te slaan: sla het in een andere map op, die de inhoud in een map naast het bestand bewaart"
 
 #. why a command can't run
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "this mailbox's server doesn't keep a choice of tab"
+msgstr ""
+
+#. why a command can't run
 #: crates/engine/src/cmd/snooze_hosted.rs
 msgid "this mailbox's server doesn't keep snoozed mail"
 msgstr ""
@@ -23574,7 +23610,7 @@ msgid "this message isn't downloaded: open it once you're online, then send it a
 msgstr "dit bericht is nog niet gedownload: open het zodra u online bent en verzend het daarna opnieuw"
 
 #. why a command can't run
-#: crates/engine/src/cmd/snooze_hosted.rs
+#: crates/engine/src/cmd/snooze_hosted.rs crates/engine/src/cmd/stream_correct.rs
 msgid "this message isn't on its server yet: try again in a moment"
 msgstr ""
 
@@ -23635,6 +23671,11 @@ msgstr "te veel bestanden met dezelfde naam"
 #, fuzzy
 msgid "too many flags for one command"
 msgstr "te veel vlaggen voor één opdracht"
+
+#. why a command can't run
+#: crates/engine/src/cmd/stream_correct.rs
+msgid "too many messages at once: choose fewer"
+msgstr ""
 
 #. what a command says
 #: crates/engine/src/cmd/junk.rs

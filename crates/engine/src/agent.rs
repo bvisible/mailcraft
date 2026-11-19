@@ -572,6 +572,12 @@ const NEVER: &[&str] = &[
     // //// Neoffice — what a mailbox's server keeps of « Plus tard », and what it answered: the host's to say, as a synchronisation is.
     "mail.setSnoozes",
     "mail.snoozeAnswered",
+    // //// Neoffice — « Classer dans »: the owner's own click only. What a person chose is what the Neoffice server's model learns
+    // //// Neoffice — from (neoffice-maintenance#3142); a choice made by an agent would teach it its own guesses. Whether a server
+    // //// Neoffice — takes the choice, and its answer, are the host's to say, as a synchronisation is.
+    "mail.correctStream",
+    "mail.offerStreamCorrection",
+    "mail.streamCorrected",
     // //// Neoffice — Nora spends the owner's calls to the Neoffice server's model on the owner's mail and text: the owner's own click only.
     "ui.noraReply",
     "ui.noraTranslate",

@@ -1203,6 +1203,10 @@ pub struct Session {
     // //// Neoffice — « Plus tard » in a hosting page's tab, kept by the mailbox's server (`cmd::snooze_hosted`). Never saved.
     /// What this tab knows of the servers' snoozes and what it is to ask them ([`crate::cmd::snooze_hosted::Hosted`]).
     pub hosted_snooze: crate::cmd::snooze_hosted::Hosted,
+    // //// Neoffice — « Classer dans » in a hosting page's tab, kept by the mailbox's server (`cmd::stream_correct`). Never saved.
+    /// What this tab knows of its servers' taking a choice of tab, and what it is to tell them
+    /// ([`crate::cmd::stream_correct::Hosted`]).
+    pub hosted_stream: crate::cmd::stream_correct::Hosted,
     // //// Neoffice — a command whose change is its server's to make and to undo (« Plus tard » in a hosting page's tab) is no
     // //// Neoffice — step of the history: an undo would put the message back here while the server keeps it away.
     /// The command running makes no step of the history: what it changed is the server's to undo. Set by the command,
@@ -1399,6 +1403,8 @@ impl Session {
             keeps_local: true,
             // //// Neoffice — see the fields.
             hosted_snooze: Default::default(),
+            // //// Neoffice — see the field.
+            hosted_stream: Default::default(),
             unrecorded: false,
             // //// Neoffice — see the field: not yet.
             books_listed: false,

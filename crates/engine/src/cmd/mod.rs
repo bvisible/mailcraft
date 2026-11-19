@@ -68,6 +68,8 @@ pub mod graph_switch;
 pub mod graph_up;
 pub mod help;
 pub mod stream;
+// //// Neoffice — « Classer dans »: a person's choice of tab, kept by a hosting page's mailbox server.
+pub mod stream_correct;
 // //// Neoffice — upstream's `jmap_down` and `jmap_mail` (M6 3/6) are the fork's own files, declared below with the rest of the fork's JMAP run.
 #[cfg(test)]
 mod hidden_selection_tests;
@@ -229,6 +231,8 @@ pub fn registry() -> Registry {
     v.extend(category::specs());
     // //// Neoffice — see `stream`.
     v.extend(stream::specs());
+    // //// Neoffice — see `stream_correct`.
+    v.extend(stream_correct::specs());
     v.extend(account::specs());
     v.extend(auto_replies::specs());
     v.extend(offline::specs());
