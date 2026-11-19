@@ -376,7 +376,10 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   server's model learns from. The web build's `apps/mailcraft-web/src/streams.rs` reads `correct` from the capability and
   sends the choices. The window's `crates/ui-egui/src/stream_correct.rs` (tests in `stream_correct_tests.rs`): « Classer
   dans » in the message's menu (`mail_view.rs`) and in the Home tab's Tags group (`Menu::StreamTab`, marked lines of
-  `ribbon.rs`), the offer's bar above the list (a marked line of `mail_view.rs`), and what a server refused said (`lib.rs`).
+  `ribbon.rs`), the offer as the line above Nora's bar, where the offer after a ⚡ is (`nora/ask_bar.rs`: `Close::StreamOffer`,
+  `drawn`, and the line's words kept shorter, « → Notifications »; `nora/sorting.rs`: `Intent::StreamSender`; marked lines),
+  its fallback bar above the list where that line is not drawn (a marked line of `mail_view.rs`), and what a server refused
+  said (`lib.rs`); `nora.rs` opens its `testing` module to the crate for the tests.
 - « Plus tard » (upstream's Snooze, #949) in a hosting page's tab, kept by the mailbox's server, which brings the message
   back at its time even with every window closed (frappe_webmail's `neomail_snooze`, `NeomailSnooze/get` and `/set` under
   `https://neoffice.me/jmap/neomail-snooze`). Upstream refuses a JMAP server's mail (`JMAP_NOT_YET`): kept so on the
