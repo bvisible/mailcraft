@@ -11,7 +11,8 @@
 //!   the capability each time it asks the server for the tabs (`apps/mailcraft-web/src/streams.rs`).
 //! - `mail.correctStream` puts the messages under the tab chosen here at once, and with each the other messages of its
 //!   sender in the same Inbox (the server keeps the choice for the sender, for this person and this mailbox, and its next
-//!   answers say it), then asks the server ([`Correction`], taken by the host).
+//!   answers say it), then asks the server ([`Correction`], taken by the host). A message whose sender's mail in the Inbox
+//!   is all under that tab already (the tab ticked chosen again) asks nothing.
 //! - `mail.streamCorrected` is the server's answer: a message it did not take is put back under the tab it had, with the
 //!   sender's others that went with it, and the person is told.
 //!
@@ -212,11 +213,16 @@ fn correct(s: &mut Session, v: &Value) -> CmdResult {
             }
             moved.insert(mid);
             let Ok(m) = s.mailbox.message_mut(mid) else { continue };
-            if m.stream == Some(stream) {
+            // Already shown under that tab (a message nobody said anything of is under the main one): nothing moves.
+            if m.stream_or_person() == stream {
                 continue;
             }
             was.push((mid, m.stream));
             m.stream = Some(stream);
+        }
+        // Nothing moved (the tab ticked chosen again): the server is not asked, and its model hears nothing (#3142, the screen test).
+        if was.is_empty() {
+            continue;
         }
         asks.push(Correction { account, message: *id, email_id, stream, was, sent: false });
     }

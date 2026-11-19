@@ -79,12 +79,13 @@ fn a_refusal_puts_back_what_went_and_the_person_is_told() {
     let alert = add(&mut s, inbox, "E1", "noreply@bank.example", "Your statement");
     let other = add(&mut s, inbox, "E2", "noreply@bank.example", "A login");
     s.run("mail.setStreams", &json!({"streams": [{"id": alert, "stream": "notification"}]})).unwrap();
+    s.run("mail.setStreams", &json!({"streams": [{"id": other, "stream": "newsletter"}]})).unwrap();
     s.run("mail.correctStream", &json!({"ids": [alert], "stream": "person"})).unwrap();
     assert_eq!((stream(&s, alert), stream(&s, other)), (Some(Stream::Person), Some(Stream::Person)));
     s.hosted_stream.take();
     let told = s.run("mail.streamCorrected", &json!({"message": alert, "ok": false})).unwrap();
     assert_eq!(told["back"], 2);
-    assert_eq!((stream(&s, alert), stream(&s, other)), (Some(Stream::Notification), None), "each as it was");
+    assert_eq!((stream(&s, alert), stream(&s, other)), (Some(Stream::Notification), Some(Stream::Newsletter)), "each as it was");
     assert_eq!(s.hosted_stream.said.len(), 1);
     assert!(s.hosted_stream.said[0].contains("Your statement"));
     // An answer nobody awaits changes nothing.
@@ -165,4 +166,21 @@ fn an_agent_never_chooses_a_tab() {
         assert!(s.registry.get(command).is_some(), "{command} is a command");
         assert_eq!(crate::agent::access(command), Some(crate::agent::Access::Never), "{command} is the owner's click or the host's word");
     }
+}
+
+#[test]
+fn choosing_the_tab_ticked_again_asks_nothing() {
+    let (mut s, _, inbox) = setup();
+    let news = add(&mut s, inbox, "E1", "news@shop.example", "Offers");
+    let again = add(&mut s, inbox, "E2", "news@shop.example", "More offers");
+    let unsaid = add(&mut s, inbox, "E3", "ada@example.net", "Lunch?");
+    s.run("mail.setStreams", &json!({"streams": [{"id": news, "stream": "newsletter"}, {"id": again, "stream": "newsletter"}]})).unwrap();
+    let answer = s.run("mail.correctStream", &json!({"ids": [news], "stream": "newsletter"})).unwrap();
+    assert_eq!((answer["changed"].clone(), answer["asked"].clone()), (json!(0), json!(0)));
+    // A message nobody said anything of is under the main one: choosing it there asks nothing either.
+    let answer = s.run("mail.correctStream", &json!({"ids": [unsaid], "stream": "person"})).unwrap();
+    assert_eq!(answer["asked"], 0);
+    assert!(!s.hosted_stream.asking(), "nothing to tell the server");
+    // But the main one for the newsletter's sender moves both, and asks.
+    assert_eq!(s.run("mail.correctStream", &json!({"ids": [news], "stream": "person"})).unwrap()["asked"], 1);
 }
