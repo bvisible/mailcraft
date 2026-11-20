@@ -117,6 +117,11 @@ fn search_commands_leaves_out_what_acts_on_a_subscribed_calendar_where_none_can_
         for id in crate::host_later::SUBSCRIPTION_LEFTOVERS {
             assert_eq!(listed.iter().any(|l| l == id), !hosted, "{id} listed (hosted: {hosted})");
         }
+        // A hosting page's own commands, nowhere.
+        for id in crate::host_later::HOST_PLUMBING {
+            assert!(app.session.registry.get(id).is_some(), "{id} is a command");
+            assert!(!listed.iter().any(|l| l == id), "{id} listed (hosted: {hosted})");
+        }
         // The Reminders window stays: the reminders it rings are the events', which the calendars' server keeps.
         assert!(listed.iter().any(|l| l == "view.reminders"), "hosted: {hosted}");
     }

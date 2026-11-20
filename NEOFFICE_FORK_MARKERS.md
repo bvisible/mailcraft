@@ -780,7 +780,8 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - Search Commands in a hosting page's tab: Snooze and Return Now by the names « Plus tard »'s button and menus give them, and
   Snooze opens its window of times, the Enter that picked it taken out first (`snooze_hosted.rs`, `search_label`;
   `dialogs.rs`); and nothing that acts on a calendar
-  subscribed to on the web, where none can be (`host_later.rs`, `SUBSCRIPTION_LEFTOVERS`).
+  subscribed to on the web, where none can be (`host_later.rs`, `SUBSCRIPTION_LEFTOVERS`). The fork's commands that only a
+  hosting page's code runs (« Plus tard »'s and the Inbox tabs' records and answers) are in it nowhere (`HOST_PLUMBING`).
 - This file.
 
 ## What cannot carry a comment

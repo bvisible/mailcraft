@@ -33,9 +33,15 @@ pub(crate) fn offered(app: &MailApp) -> bool {
 /// unsubscribe has no calendar to name, the others nothing to do), only left out of Search Commands.
 pub(crate) const SUBSCRIPTION_LEFTOVERS: [&str; 3] = ["calendar.unsubscribe", "sync.subscriptionRequest", "sync.applySubscription"];
 
-/// Whether Search Commands leaves `id` out: one of their commands, in a tab that doesn't offer them.
+/// This fork's commands that only a hosting page's code runs: what the mailbox's server keeps of « Plus tard » and of the Inbox's
+/// tabs, and what it answered. Nobody does them by hand, and their names read like things one does (« Mettre en Plus tard » beside
+/// « Plus tard »): never in Search Commands, wherever the window is.
+pub(crate) const HOST_PLUMBING: [&str; 5] =
+    ["mail.setSnoozes", "mail.snoozeAnswered", "mail.setStreams", "mail.offerStreamCorrection", "mail.streamCorrected"];
+
+/// Whether Search Commands leaves `id` out: one of their commands, in a tab that doesn't offer them; or a hosting page's own.
 pub(crate) fn hidden(app: &MailApp, id: &str) -> bool {
-    !offered(app) && (LATER.contains(&id) || SUBSCRIBED.contains(&id) || SUBSCRIPTION_LEFTOVERS.contains(&id))
+    HOST_PLUMBING.contains(&id) || !offered(app) && (LATER.contains(&id) || SUBSCRIBED.contains(&id) || SUBSCRIPTION_LEFTOVERS.contains(&id))
 }
 
 /// Whether the window `name` (`ui.dialog`) doesn't open: one of theirs, in a tab that doesn't offer them.
