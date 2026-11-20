@@ -47,6 +47,9 @@ pub const TREE_WIDE: &[(&str, &str)] = &[
         "apps/mailcraft-cli/tests/graph_changes.rs",
         "(binary_id(mailcraft-cli::graph_changes) & test(/graphs_delete_past_the_retention_period_is_nowhere_in_the_code$/))",
     ),
+    // //// Neoffice — the fork's census of the sentences a JMAP run or the engine writes in English, each with its row in
+    // //// Neoffice — `run_words` (it reads the engine's and jmap-fork's files, which the window doesn't depend on for that).
+    ("crates/ui-egui/src/i18n/run_words/tests.rs", "(package(mailcraft-ui-egui) & test(/every_sentence_of_the_census_has_a_row$/))"),
 ];
 
 /// The phone binding, which the `android` job checks for Android.
