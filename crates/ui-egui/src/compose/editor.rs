@@ -857,6 +857,20 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
 
     // The keyboard.
     let focused = editable && (resp.has_focus() || ctx.memory(|m| m.has_focus(id)));
+    // //// Neoffice — the keys of this frame that are the body's: a frame can hold keys typed before a click and the click that
+    // //// Neoffice — moved the keyboard (`crate::input_order`), and the body read all of the frame's keys once it had the keyboard
+    // //// Neoffice — at its end: what was typed in the Subject came into the body, and what was typed in the body before a click in
+    // //// Neoffice — the Subject was lost. Now the keys before a click are the body's when it had the keyboard at the frame's start,
+    // //// Neoffice — those after it when it has the keyboard now; a frame with no click, as upstream reads it.
+    let frame_events: Vec<Event> = ui.input(|i| i.events.clone());
+    let had = editable && ctx.memory(|m| m.had_focus_last_frame(id));
+    let (own_keys, keys): (bool, Vec<Event>) = match frame_events.iter().position(|e| matches!(e, Event::PointerButton { pressed: true, .. })) {
+        None => (focused, frame_events),
+        Some(_) if had && focused => (true, frame_events),
+        Some(at) if had => (true, frame_events[..at].to_vec()),
+        Some(at) if focused => (true, frame_events[at..].to_vec()),
+        Some(_) => (false, Vec::new()),
+    };
     // Coming back to the window: the system's input method is armed again (some desktops leave
     // it off after the window was left, and then nothing typed arrives), and what it was
     // composing when the window was left is forgotten.
@@ -867,12 +881,16 @@ pub(crate) fn show_doc(app: &mut MailApp, ui: &mut Ui, which: Which, min_height:
     if left || came_back {
         st.preedit.clear();
     }
-    if focused {
-        ctx.memory_mut(|m| {
-            m.set_focus_lock_filter(id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: false })
-        });
+    // //// Neoffice — (`own_keys`, `keys`: see above.)
+    if own_keys {
+        if focused {
+            ctx.memory_mut(|m| {
+                m.set_focus_lock_filter(id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: false })
+            });
+        }
         let page = ui.clip_rect().height().max(40.0) - 20.0;
-        for event in ui.input(|i| i.events.clone()) {
+        // //// Neoffice — (the frame's keys that are the body's: `keys`, above.)
+        for event in keys {
             resync(&mut layout, app);
             let Some((sel, plain)) = now(app, which) else { break };
             let asked = match event {

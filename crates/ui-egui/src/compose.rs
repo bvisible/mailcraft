@@ -15,6 +15,9 @@ mod font_tests;
 pub(crate) mod from_list;
 #[cfg(test)]
 mod from_list_tests;
+// //// Neoffice — the body takes its own keys when a frame holds keys and a click (`crate::input_order`).
+#[cfg(test)]
+mod input_order_tests;
 // //// Neoffice — the owner's own signature shows its pictures on the web (reading.rs `show_own_signature`).
 #[cfg(test)]
 mod own_signature_tests;

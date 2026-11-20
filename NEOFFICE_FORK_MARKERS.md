@@ -752,6 +752,15 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   browser has no host to post one click with, and opening its address as a page may not unsubscribe; a list whose header also
   gives an address to write to is asked by mail, a message that goes through the mailbox's run, kept from going twice. The
   window's question says that way (`reading/unsubscribe.rs`).
+- Each field of a message being written takes the keys typed in it, also when the browser draws late (a page in the background,
+  a busy frame) and hands one frame keys typed in a field and the click that moves the keyboard to another: egui let the body
+  read all of the frame's keys once its click gave it the keyboard (what was typed in the Subject or To came into the body), and
+  the body dropped the keys typed before a click in the Subject. A click and what is typed never share a frame now: the
+  window's input hook gives what was typed before a click, the click, and what is typed after it a frame each, in order
+  (`crates/ui-egui/src/input_order.rs` and its tests; `MailApp::raw_input_hook`, its `held_input`, the repaint `ui` asks for in
+  `lib.rs`), and the body reads, of a frame that holds both, only its own keys: those before the click when it had the
+  keyboard at the frame's start, those after it when the click gave it the keyboard (`compose/editor.rs`; tests in
+  `compose/input_order_tests.rs`, which show each case red on the code before).
 - This file.
 
 ## What cannot carry a comment

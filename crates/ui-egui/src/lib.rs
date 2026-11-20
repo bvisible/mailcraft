@@ -161,6 +161,8 @@ pub mod host_attachments;
 mod host_diagnostics;
 // //// Neoffice — no Send Later, Delay Delivery nor follow-up reminders in a hosting page's tab: they would wait in it.
 mod host_later;
+// //// Neoffice — a click and what is typed never share a frame, so that each field takes its own keys.
+mod input_order;
 // //// Neoffice — the mark at the top left of a hosting page's tab: Neoffice's icon, from its design system, not MailCraft's tile.
 mod host_mark;
 // //// Neoffice — a hosting page that draws the navigation in its own menu: what it is told and what it may ask.
@@ -2059,6 +2061,8 @@ pub struct MailApp {
     shot_images: std::sync::Arc<std::sync::Mutex<Vec<(u64, std::sync::Arc<egui::ColorImage>)>>>,
     pending_shots: Vec<(u64, Option<String>, bool, std::sync::mpsc::Sender<Value>, f64)>,
     pub(crate) synthetic: Vec<egui::Event>,
+    // //// Neoffice — what the last frame's input held back, the click or what was typed after it, for this one (`input_order`).
+    held_input: Vec<egui::Event>,
     /// What agents want that waits for the owner's yes ([`agent_gate`]).
     pub(crate) asking: agent_gate::Questions,
     styled: bool,
@@ -2344,6 +2348,8 @@ impl MailApp {
             shot_images: Default::default(),
             pending_shots: Vec::new(),
             synthetic: Vec::new(),
+            // //// Neoffice — (see the field.)
+            held_input: Vec::new(),
             asking: Default::default(),
             styled: false,
             applied_theme: None,
@@ -5891,6 +5897,9 @@ impl MailApp {
 
     /// Inject synthetic input events from the control channel (one pointer event per frame).
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        // //// Neoffice — a click and what is typed never share a frame: the rest of the input waits for the next frame, which `ui`
+        // //// Neoffice — asks for (`input_order`: text typed in the Subject came into the body, and the body's was lost).
+        input_order::split(&mut self.held_input, raw);
         self.driven = !self.synthetic.is_empty();
         if self.synthetic.is_empty() {
             return;
@@ -5928,6 +5937,10 @@ impl MailApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let t0 = now_ms();
         let ctx = ui.ctx().clone();
+        // //// Neoffice — input held back for the next frame comes at once (`input_order`).
+        if !self.held_input.is_empty() {
+            ctx.request_repaint();
+        }
         self.apply_language();
         // Fonts installed by `logic` take effect on the next frame.
         if self.fonts_frames < 2 {
