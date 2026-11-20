@@ -168,7 +168,9 @@ impl Rig {
     /// Write a message from the account and press Send: it waits in the Outbox.
     fn send(&mut self, to: &str, subject: &str) {
         self.s.run("mail.new", &json!({"to": to, "subject": subject, "body": format!("About {subject}."), "account": self.account})).unwrap();
-        self.s.run("compose.send", &json!({})).unwrap();
+        // (Sent as the owner who said yes to upstream's warnings before sending, #509: the scenarios write to addresses that look
+        // like others and to many people, to see what the run and its server make of them.)
+        self.s.run("compose.send", &json!({"confirmed": true})).unwrap();
     }
 
     /// Write a draft from the account and save it: it waits to go up.
