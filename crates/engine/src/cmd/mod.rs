@@ -22,6 +22,10 @@ pub mod calendar;
 pub mod calendar_extra;
 pub mod calendar_opened;
 pub mod calendar_settings;
+pub mod calendar_subscribed;
+pub mod categories_remote;
+#[cfg(test)]
+mod categories_remote_tests;
 pub mod category;
 #[cfg(test)]
 mod category_tests;
@@ -31,10 +35,21 @@ pub mod compose;
 mod compose_trust_tests;
 #[cfg(test)]
 mod conversation_thread_tests;
+pub mod dav_account;
+#[cfg(test)]
+mod dav_account_tests;
+pub mod dav_sync;
+pub mod device_limits;
+#[cfg(test)]
+mod device_limits_relist_tests;
+#[cfg(test)]
+mod device_limits_tests;
 pub mod edit;
 mod ews_down;
 pub mod ews_mail;
 mod ews_up;
+#[cfg(test)]
+mod failing_messages_tests;
 #[cfg(test)]
 mod favorites_tests;
 pub mod file;
@@ -44,7 +59,12 @@ mod folder_empty_tests;
 #[cfg(test)]
 mod folder_kind_tests;
 #[cfg(test)]
+mod folder_new_tests;
+#[cfg(test)]
 mod folder_properties_tests;
+pub mod followup;
+#[cfg(test)]
+mod followup_tests;
 pub mod format;
 #[cfg(test)]
 mod format_tests;
@@ -79,6 +99,9 @@ mod imap_outbox_tests;
 pub mod imported_dupes;
 #[cfg(test)]
 mod imported_dupes_tests;
+pub mod item_from_message;
+#[cfg(test)]
+mod item_from_message_tests;
 #[cfg(test)]
 mod jmap_sending_tests;
 // //// Neoffice — an account kept in step with a JMAP server (its request, what comes down, what goes up, and its messages fetched whole).
@@ -132,10 +155,15 @@ pub mod pst_items;
 mod quote_tests;
 #[cfg(test)]
 mod range_select_tests;
+pub mod react;
+#[cfg(test)]
+mod react_tests;
 #[cfg(test)]
 mod read_receipt_tests;
 #[cfg(test)]
 mod refused_delete_tests;
+#[cfg(test)]
+mod relay_without_sign_in_tests;
 pub mod remote;
 // //// Neoffice — the address books of a server (JMAP for Contacts) and what the owner may do with their contacts.
 pub mod remote_contacts;
@@ -152,7 +180,11 @@ mod search_scope_tests;
 pub mod search_server;
 #[cfg(test)]
 mod search_suggest_tests;
+pub mod send_later;
 pub mod send_receive;
+pub mod senders;
+#[cfg(test)]
+mod senders_tests;
 pub mod shared;
 pub mod signature;
 #[cfg(test)]
@@ -174,6 +206,14 @@ mod tasks_remote_tests;
 #[cfg(test)]
 mod tasks_tests;
 mod thread_ids;
+pub mod unsubscribe;
+// //// Neoffice — `mail.unsubscribe` in a hosting page's tab.
+#[cfg(test)]
+mod unsubscribe_hosted_tests;
+#[cfg(test)]
+mod unsubscribe_tests;
+#[cfg(test)]
+mod upcoming_reminders_tests;
 pub mod view;
 #[cfg(test)]
 mod wipe_tests;
@@ -204,6 +244,7 @@ pub fn registry() -> Registry {
     v.extend(snooze::specs());
     // //// Neoffice — see `snooze_hosted`.
     v.extend(snooze_hosted::specs());
+    v.extend(followup::specs());
     v.extend(gmail_move::specs());
     v.extend(compose::specs());
     v.extend(format::specs());
@@ -214,6 +255,7 @@ pub fn registry() -> Registry {
     v.extend(calendar::specs());
     v.extend(calendar_extra::specs());
     v.extend(calendar_opened::specs());
+    v.extend(calendar_subscribed::specs());
     v.extend(calendar_settings::specs());
     v.extend(zones::specs());
     v.extend(people::specs());
@@ -223,26 +265,35 @@ pub fn registry() -> Registry {
     // //// Neoffice — see `notes`.
     // //// Neoffice — see `pst_items`.
     v.extend(pst_items::specs());
+    v.extend(item_from_message::specs());
     v.extend(notes::specs());
     v.extend(rules::specs());
     v.extend(rules_remote::specs());
     v.extend(junk::specs());
+    v.extend(unsubscribe::specs());
     v.extend(keys::specs());
     v.extend(category::specs());
     // //// Neoffice — see `stream`.
     v.extend(stream::specs());
     // //// Neoffice — see `stream_correct`.
     v.extend(stream_correct::specs());
+    v.extend(categories_remote::specs());
     v.extend(account::specs());
     v.extend(auto_replies::specs());
     v.extend(offline::specs());
+    v.extend(device_limits::specs());
     v.extend(send_receive::specs());
+    v.extend(send_later::specs());
+    v.extend(react::specs());
     v.extend(signature::specs());
+    v.extend(senders::specs());
     v.extend(graph_mail::specs());
     // //// Neoffice — the commands of an account kept in step with a JMAP server.
     v.extend(jmap_mail::specs());
     v.extend(jmap_fetch::specs());
     v.extend(ews_mail::specs());
+    v.extend(dav_account::specs());
+    v.extend(dav_sync::specs());
     v.extend(shared::specs());
     v.extend(graph_switch::specs());
     v.extend(graph_send::specs());

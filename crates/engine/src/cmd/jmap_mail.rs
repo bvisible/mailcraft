@@ -438,7 +438,9 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     s.graph_index = index;
     // Every window was read to its end: what is still gone is gone here too.
     if result.whole {
-        graph_down::sweep(&mut s.mailbox, account, &mut down);
+        // //// Neoffice — upstream's `sweep` takes the start of a device's window (MB3.16, a phone's): a JMAP run reads windows of
+        // //// Neoffice — its own and keeps no device window, as an Exchange server account's run (`ews_mail`) passes none.
+        graph_down::sweep(&mut s.mailbox, account, None, &mut down);
     }
     // Where the mail stood when the run ended, for the next to ask what changed since.
     let state_kept = keep_state(&mut s.mailbox, account, &result);

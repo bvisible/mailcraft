@@ -530,6 +530,10 @@ const CENSUS: &[&str] = &[
 
 /// Sentences of those files that no row reads, and why: they are no line a person is shown, or not one of a JMAP account's.
 const NOT_READ: &[(&str, &str)] = &[
+    // //// Neoffice — upstream's (0.14.0, #661), put in the interface's language where they are written (`lang.t`, `lang.tn`).
+    ("The category '{name}' couldn't be put back: the list of categories is full.", "written in the interface's language (`lang.t`)"),
+    ("{n} category couldn't be put back: the list of categories is full.", "as above (`lang.tn`)"),
+    ("{n} categories couldn't be put back: the list of categories is full.", "as above"),
     ("sign-in failed: {0}", "a refused sign-in ends the run as `auth_refused`, with no line (the engine says STA1)"),
     ("the user name and password are too long", "an `Error::Auth`, as above"),
     ("the user name or password holds a control character", "an `Error::Auth`, as above"),

@@ -13,6 +13,7 @@ use mailcraft_time::Timestamp;
 
 // //// Neoffice — a message's categories kept on a JMAP server, as keywords of their own (neoffice-maintenance#2487).
 mod category_keywords;
+mod directory;
 mod drafts;
 mod ews;
 mod jmap;
@@ -25,6 +26,7 @@ mod progress;
 mod search;
 // //// Neoffice — see `category_keywords`.
 pub use category_keywords::*;
+pub use directory::*;
 pub use drafts::*;
 pub use ews::*;
 pub use jmap::*;
@@ -61,7 +63,18 @@ pub struct FolderState {
     /// too old, so that every folder is read in full now and then.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<crate::ImapStatus>,
+    /// Messages of the folder that failed to download, by UID, and how many runs they failed
+    /// (#1581). Tried again until [`MAX_TRIES`], then left out until the owner asks for them
+    /// again (`sync.retryFailed`).
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub failing: std::collections::BTreeMap<u32, u8>,
 }
+
+/// How many runs a message that fails to download is tried in before it is left out (#1581).
+pub const MAX_TRIES: u8 = 3;
+
+/// Most failing messages kept for one folder (#1581): a result can say anything.
+pub const MAX_FAILING: usize = 1000;
 
 /// A change made here for the server to take on. Server mailboxes are named by their path
 /// ([`FolderState::remote`]), messages by their UID there.
@@ -248,6 +261,19 @@ pub struct Tokens {
     /// identity token says it, and it tells an organisation's account from a personal one
     /// ([`crate::Directory::of_tenant`]). An identifier, not a secret; kept in memory like the rest.
     pub tenant: String,
+    /// Set by the one page for an older sign-in when it came back without the shared mailboxes'
+    /// and calendars' permissions (the account can't have them, so the page was asked again
+    /// without them): the tokens are good for everything else, and nobody may take them for
+    /// allowed to read or send from a shared mailbox.
+    pub shared_not_given: bool,
+    /// Set by the one page for an older sign-in when the provider had no To Do lists or mailbox
+    /// settings to give (the page was asked again for the shared mailboxes' permissions alone):
+    /// the tokens are good for the rest, and nobody may take them for allowed to keep the tasks,
+    /// rules, automatic replies and categories in step.
+    pub sync_not_given: bool,
+    /// The `scope` the token endpoint's answer states (RFC 6749 §5.1), empty when it said none:
+    /// the answer then matches what was asked. Names of permissions, not secrets.
+    pub granted_scope: String,
 }
 
 /// How long before an access token runs out it is renewed rather than used (seconds).
@@ -482,6 +508,15 @@ pub struct GraphFetchRequest {
     /// Nobody is waiting: it gets the share of requests background work has.
     #[serde(skip_serializing_if = "is_false")]
     pub background: bool,
+    /// The most bytes one message may come as: one larger is passed over, named in
+    /// [`GraphFetchResult::too_large`]. 0 is the host's own cap (160 MB); a phone asks for less
+    /// (MB3.17).
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub most_bytes: u64,
+    /// The most bytes the batch brings together: once past it, the messages not asked for yet
+    /// wait for the next batch (they are neither fetched nor failed). 0: no cap of its own.
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub most_total: u64,
 }
 
 /// What fetching brought: each message's MIME as it came, and what the server no longer has.
@@ -506,6 +541,10 @@ pub struct GraphFetchResult {
     /// up the rest. Opening one still asks for it.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub failed: Vec<String>,
+    /// Of `failed`, those larger than the request's [`GraphFetchRequest::most_bytes`] (or the
+    /// host's own cap): they wait until the owner opens them on a device that takes them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub too_large: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub errors: Vec<String>,
     /// The server could not be reached: whatever wasn't fetched waits until it can.
@@ -600,6 +639,15 @@ pub struct FolderDelta {
     /// after, so many times.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub refetch_refused: Vec<u32>,
+    /// UIDs of messages that failed to download in this run (#1581): the mailbox counts the run
+    /// against each ([`FolderState::failing`]); one that downloads is not named.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failed: Vec<u32>,
+    /// UIDs of [`FolderState::failing`] the server no longer lists, or that the limit on how many
+    /// messages to have here leaves out now: no longer counted (#1581). (Not `removed`: nothing of
+    /// theirs is here to take out, and a change waiting for one of them must stay.)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failing_gone: Vec<u32>,
     /// For a Gmail account's Inbox: which of Gmail's categories each message of it is in, as
     /// Gmail's searches said this run (#911), and Gmail's id of it. Said once, with the piece that
     /// ends the folder's reading; empty from every other server and folder.
@@ -945,6 +993,8 @@ impl SyncResult {
                         refetch_done,
                         refetch_too_large,
                         refetch_refused,
+                        failed,
+                        failing_gone,
                         gmail,
                         gmail_labels,
                     } = delta;
@@ -961,6 +1011,8 @@ impl SyncResult {
                     folder.refetch_done.extend(refetch_done);
                     folder.refetch_too_large.extend(refetch_too_large);
                     folder.refetch_refused.extend(refetch_refused);
+                    folder.failed.extend(failed);
+                    folder.failing_gone.extend(failing_gone);
                     folder.gmail.extend(gmail);
                     folder.gmail_labels.extend(gmail_labels);
                     folder.complete |= complete;
@@ -1176,6 +1228,11 @@ pub struct GraphMailRequest {
     /// asked for those ids after the rest of the run, at most [`MAX_THREAD_ASKS`] (#795).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub threads: Vec<String>,
+    /// On a device with limits (a phone, MB3.16): a folder listed from its start lists only mail
+    /// received at or after this time ([`crate::Mailbox::listed_since`]); its delta link goes on
+    /// with the same filter. `None`, a computer's: everything.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since: Option<Timestamp>,
 }
 
 /// Most changes of messages one Graph run is asked to make; more go over several runs.
@@ -1323,6 +1380,15 @@ pub struct GraphLink {
     /// be passed over (#276).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub counts: Option<FolderCounts>,
+    /// The folder is listed afresh from its start, whatever `link` says (S11): what the listing
+    /// doesn't bring is gone here at the end of a whole run. A phone whose window was made longer
+    /// lists its folders so (MB3.16), to bring the older mail the window now covers.
+    #[serde(skip_serializing_if = "is_false")]
+    pub afresh: bool,
+    /// Which request for a listing afresh this is ([`crate::ServerFolder::relist_gen`]), echoed by
+    /// the first page of the listing it began.
+    #[serde(skip_serializing_if = "is_zero_u32")]
+    pub relist_gen: u32,
 }
 
 /// A message as a folder's delta gives it: what the message list needs (R3 spec S9).
@@ -1376,6 +1442,10 @@ pub struct MessagePage {
     /// (R3 spec S11).
     #[serde(skip_serializing_if = "is_false")]
     pub afresh: bool,
+    /// For a page that begins a listing afresh that a request for one asked for: the request's
+    /// number ([`GraphLink::relist_gen`]), so that only that request is met by it.
+    #[serde(skip_serializing_if = "is_zero_u32")]
+    pub relist_gen: u32,
     /// For a page that ends a round begun after this run's listing: the folder's counts in that
     /// listing, kept with the link ([`crate::ServerFolder::counts`], #276). Otherwise `None`,
     /// and the counts kept for the folder are forgotten with its old link.

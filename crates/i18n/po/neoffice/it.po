@@ -4914,3 +4914,35 @@ msgstr "Anche i prossimi"
 
 msgid "→ {tab}"
 msgstr "→ {tab}"
+
+# Upstream v0.14.0: texts its catalogue has no translation of (the fork's .pst notes under their own names, Save Message As #1561, a signature). Haiku.
+msgid "Get Imported Note"
+msgstr "Ottieni nota importata"
+
+msgid "List Imported Notes"
+msgstr "Elenca note importate"
+
+msgid "Saved the message to {name}, written from what this computer keeps of it: not byte for byte as it was received"
+msgstr "Messaggio salvato in {name}, ricostruito da ciò che questo computer ne conserva: non byte per byte come è stato ricevuto"
+
+msgid "no such signature"
+msgstr "firma inesistente"
+
+msgid "only the headers of “{subject}” are here, so it can't be saved as a message"
+msgstr "sono presenti solo le intestazioni di «{subject}», quindi non può essere salvato come messaggio"
+
+msgid "the text of “{subject}” can't be read on this computer, so it can't be saved as a message"
+msgstr "il testo di «{subject}» non può essere letto su questo computer, quindi non può essere salvato come messaggio"
+
+msgid "“{subject}” isn't downloaded yet: open it once you're online, then save it"
+msgstr "«{subject}» non è ancora stato scaricato: lo apra una volta connesso, poi lo salvi"
+
+msgid "“{subject}” was too large to download: only its header is here, so it can't be saved as a message"
+msgstr "«{subject}» era troppo grande per essere scaricato: è presente solo la sua intestazione, quindi non può essere salvato come messaggio"
+
+# Why a hosting page's tab refuses upstream's Send Later, follow-up reminders and calendars subscribed to on the web (kept_here.rs). Haiku.
+msgid "This page keeps nothing of its own: a message to send later, or a reminder, would wait in this tab and neither go nor ring once it is closed"
+msgstr "Questa pagina non conserva nulla di proprio: un messaggio da inviare più tardi, o un promemoria, resterebbe in questa scheda e una volta chiusa non partirebbe né suonerebbe"
+
+msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
+msgstr "Questa pagina non conserva nulla di proprio: un calendario sottoscritto qui non verrebbe aggiornato e andrebbe perso alla prossima visita"

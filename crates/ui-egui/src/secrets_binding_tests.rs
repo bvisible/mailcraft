@@ -357,6 +357,10 @@ fn the_secret_cache_and_the_old_names_are_used_only_where_they_are_listed() {
         ("secret_read.rs", "secret_cache.contains_key(", 2),
         // //// Neoffice — the fork's JMAP run forgets a refused password under the old name too (it deletes, it never reads one: jmap_job.rs).
         ("jmap_job.rs", "legacy_secret_key(", 1),
+        // A subscribed calendar's address is kept like a password (#209): found again by the name
+        // that holds its host (`subscribed_address`), and moved into memory for the session when
+        // remembering is switched off (`keep_read_subscription_addresses`): two reads.
+        ("subscribed.rs", "secret_cache.get(", 2),
     ];
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut stack = vec![root.clone()];

@@ -165,6 +165,10 @@ pub struct Calendar {
     /// proposed times. A calendar written before there was this reads as one whose server keeps all.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub plain: bool,
+    /// Set for a calendar that is a copy of an `.ics` file on the web (Internet Calendars): what
+    /// the mailbox keeps of the subscription. The address itself is never kept here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subscription: Option<crate::subscription::Subscription>,
 }
 
 fn is_edit(rights: &Rights) -> bool {
@@ -189,6 +193,8 @@ struct CalendarFile {
     online_providers: Option<Vec<OnlineProvider>>,
     // //// Neoffice — the fork's `plain` (see `Calendar::plain`), read back from the file as it was written.
     plain: bool,
+    #[serde(deserialize_with = "crate::sync::lenient")]
+    subscription: Option<crate::subscription::Subscription>,
 }
 
 impl From<CalendarFile> for Calendar {
@@ -199,13 +205,15 @@ impl From<CalendarFile> for Calendar {
             color: file.color,
             visible: file.visible,
             origin: file.origin,
-            rights: file.rights.unwrap_or_else(|| Rights::from_read_only(file.read_only)),
+            // (A copy of a calendar on the web is read, whatever a file says.)
+            rights: if file.subscription.is_some() { Rights::Read } else { file.rights.unwrap_or_else(|| Rights::from_read_only(file.read_only)) },
             owner: file.owner.and_then(|owner| owner.cleaned()),
             group: file.group,
             own_color: file.own_color,
             online_providers: file.online_providers,
             // //// Neoffice — see `CalendarFile::plain`.
             plain: file.plain,
+            subscription: file.subscription,
         }
     }
 }
@@ -213,7 +221,18 @@ impl From<CalendarFile> for Calendar {
 impl Calendar {
     /// Whether the events of this calendar may be changed here.
     pub fn can_edit(&self) -> bool {
-        self.rights.can_edit()
+        self.rights.can_edit() && self.subscription.is_none()
+    }
+
+    /// Whether the calendar is the mailbox's own, kept on this computer and changed here: no
+    /// server keeps it and it is not a copy of one on the web.
+    pub fn is_own(&self) -> bool {
+        self.origin.is_local() && !self.is_subscribed()
+    }
+
+    /// Whether the calendar is a copy of one on the web, which is never changed here.
+    pub fn is_subscribed(&self) -> bool {
+        self.subscription.is_some()
     }
 
     /// Whether a meeting in this calendar may be made a Teams meeting, as far as is known: its
@@ -237,6 +256,23 @@ impl Calendar {
     /// The colour it is shown in: the one chosen here when there is one, else its own.
     pub fn shown_color(&self) -> Rgb {
         self.own_color.unwrap_or(self.color)
+    }
+
+    /// Whether this calendar, one that an account has from its server, is somebody else's, shared
+    /// with the account: its owner is a person other than the account. `own` are the account's
+    /// addresses: the one it was added with, and the one its server names as the owner of its main
+    /// calendar ([`crate::Mailbox::main_calendar_owner`]), which an alias or a sign-in name given
+    /// as the address is not (#661). Never the account's own calendars (its server names the
+    /// account as their owner too), and never one whose owner the server didn't say. One opened
+    /// by address (#70) always is, whatever address was opened: the account's own calendars are
+    /// in its list already, so a copy of them would be counted twice.
+    pub fn is_shared_with(&self, own: &[&str]) -> bool {
+        if self.origin.id.starts_with(crate::remote::OPENED_PREFIX) {
+            return true;
+        }
+        let Some(owner) = self.owner.as_ref().map(|o| o.address.as_str()).filter(|a| !a.is_empty()) else { return false };
+        let mut own = own.iter().map(|a| a.trim()).filter(|a| !a.is_empty()).peekable();
+        !self.origin.id.is_empty() && own.peek().is_some() && !own.any(|a| owner.eq_ignore_ascii_case(a))
     }
 }
 

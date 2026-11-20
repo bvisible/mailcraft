@@ -605,3 +605,35 @@ msgstr[1] "{n} vragen"
 
 msgid "New conversation"
 msgstr "Nieuw gesprek"
+
+# Upstream v0.14.0: texts its catalogue has no translation of (the fork's .pst notes under their own names, Save Message As #1561, a signature). Haiku.
+msgid "Get Imported Note"
+msgstr "Geïmporteerde notitie ophalen"
+
+msgid "List Imported Notes"
+msgstr "Geïmporteerde notities weergeven"
+
+msgid "Saved the message to {name}, written from what this computer keeps of it: not byte for byte as it was received"
+msgstr "Bericht opgeslagen naar {name}, opgesteld uit wat deze computer ervan bewaart: niet byte voor byte zoals het ontvangen is"
+
+msgid "no such signature"
+msgstr "onbekende handtekening"
+
+msgid "only the headers of “{subject}” are here, so it can't be saved as a message"
+msgstr "alleen de koppen van ‘{subject}’ zijn hier, dus het kan niet als bericht worden opgeslagen"
+
+msgid "the text of “{subject}” can't be read on this computer, so it can't be saved as a message"
+msgstr "de tekst van ‘{subject}’ kan op deze computer niet worden gelezen, dus het kan niet als bericht worden opgeslagen"
+
+msgid "“{subject}” isn't downloaded yet: open it once you're online, then save it"
+msgstr "‘{subject}’ is nog niet gedownload: open het zodra u online bent en sla het daarna op"
+
+msgid "“{subject}” was too large to download: only its header is here, so it can't be saved as a message"
+msgstr "‘{subject}’ was te groot om te downloaden: alleen de koptekst is hier, dus het kan niet als bericht worden opgeslagen"
+
+# Why a hosting page's tab refuses upstream's Send Later, follow-up reminders and calendars subscribed to on the web (kept_here.rs). Haiku.
+msgid "This page keeps nothing of its own: a message to send later, or a reminder, would wait in this tab and neither go nor ring once it is closed"
+msgstr "Deze pagina bewaart zelf niets: een bericht om later te versturen of een herinnering zou in dit tabblad blijven wachten en na sluiting noch verstuurd worden noch afgaan"
+
+msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
+msgstr "Deze pagina bewaart zelf niets: een hier geabonneerde agenda zou niet worden bijgewerkt en zou bij het volgende bezoek verloren gaan"

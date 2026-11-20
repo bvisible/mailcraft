@@ -86,6 +86,17 @@ const REFUSED_FAMILIES: &[&str] = &[
     "view.",
     "options.",
     "categories.",
+    // The lists of categories of an account (`category.set`, `category.addToOutlook`, which writes to a Microsoft server), the Safe and
+    // Blocked Senders (rules of a kind), the keys, and the rest of the window's families: the pane refuses them too, this says it first.
+    "category.",
+    "junk.",
+    "keys.",
+    "help.",
+    "insert.",
+    "journal.",
+    "pstNotes.",
+    "review.",
+    "test.",
     "search.",
     "engine.",
 ];

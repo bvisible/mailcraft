@@ -514,3 +514,30 @@ fn the_panels_own_words_are_translated_in_every_language_of_the_fork() {
     // The mail's words, not the document's that the panel says by default.
     assert!(!words.iter().any(|w| w.contains("document")), "{words:?}");
 }
+
+/// Every command of the window's registry, upstream's new ones with it (Send Later, follow-up reminders, React, Unsubscribe,
+/// subscribed calendars, the categories of an account, the sender addresses), is refused by the conversation before it reaches
+/// the pane: she sends nothing, deletes nothing, changes no rule or setting. Only the pane's own [`COMMANDS`] go through.
+#[test]
+fn every_command_of_the_window_is_refused_by_the_conversations_policy() {
+    let policy = policy();
+    let (app, _, _) = page(true);
+    let allowed: Vec<&str> =
+        app.session.registry.all().iter().map(|spec| spec.id).filter(|id| policy.check(id) != craft_nora::Decision::Deny).collect();
+    assert!(allowed.is_empty(), "let through: {allowed:?}");
+    for id in [
+        "mail.react",
+        "mail.unsubscribe",
+        "compose.sendLater",
+        "compose.followUp",
+        "mail.reminder",
+        "category.addToOutlook",
+        "account.setSenderAddresses",
+        "rules.add",
+    ] {
+        assert_eq!(policy.check(id), craft_nora::Decision::Deny, "{id}");
+    }
+    for id in COMMANDS {
+        assert_ne!(policy.check(id), craft_nora::Decision::Deny, "{id}");
+    }
+}

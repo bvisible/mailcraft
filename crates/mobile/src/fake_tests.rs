@@ -42,6 +42,8 @@ pub(crate) fn block_on<F: Future>(f: F) -> F::Output {
 #[derive(Default)]
 pub(crate) struct FakeSecrets {
     pub(crate) kept: Mutex<Vec<(String, String)>>,
+    /// Set to have the store refuse to keep anything.
+    pub(crate) refuse: std::sync::atomic::AtomicBool,
     /// How many of the next writes of the index of names fail.
     pub(crate) fail_index: std::sync::atomic::AtomicUsize,
     /// Deleting removes nothing (the store refuses, and says nothing).
@@ -65,6 +67,9 @@ impl SecretStore for FakeSecrets {
     }
 
     fn set(&self, key: String, secret: String) -> Result<(), HostError> {
+        if self.refuse.load(Ordering::Relaxed) {
+            return Err(HostError::Failed);
+        }
         if key.contains("notice") && self.notice_unwritable.load(Ordering::Relaxed) {
             return Err(HostError::Unsupported);
         }
@@ -108,6 +113,8 @@ pub(crate) struct FakePlatform {
     pub(crate) net: Mutex<NetworkKind>,
     /// The pages the core asked to be opened.
     pub(crate) opened: Mutex<Vec<String>>,
+    /// The files handed to another app: name and size.
+    pub(crate) files: Mutex<Vec<(String, usize)>>,
     /// The notifications the core asked to be shown (it raises events instead; none is expected).
     pub(crate) shown: Mutex<Vec<NotificationRecord>>,
 }
@@ -127,6 +134,7 @@ impl FakePlatform {
             no_store: std::sync::atomic::AtomicBool::new(false),
             net: Mutex::new(NetworkKind::Online { metered: true, data_saving: false }),
             opened: Mutex::new(Vec::new()),
+            files: Mutex::new(Vec::new()),
             shown: Mutex::new(Vec::new()),
         })
     }
@@ -163,8 +171,14 @@ impl Platform for FakePlatform {
         Err(HostError::Unsupported)
     }
 
-    fn open_file(&self, _name: String, _bytes: Vec<u8>) -> Result<(), HostError> {
-        Err(HostError::Unsupported)
+    fn open_file(&self, name: String, bytes: Vec<u8>) -> Result<(), HostError> {
+        self.files.lock().unwrap().push((name, bytes.len()));
+        Ok(())
+    }
+
+    fn open_link(&self, url: String) -> Result<(), HostError> {
+        self.opened.lock().unwrap().push(url);
+        Ok(())
     }
 
     fn now(&self) -> Result<i64, HostError> {

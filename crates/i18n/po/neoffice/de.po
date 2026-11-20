@@ -4898,3 +4898,35 @@ msgstr "Die nächsten auch"
 
 msgid "→ {tab}"
 msgstr "→ {tab}"
+
+# Upstream v0.14.0: texts its catalogue has no translation of (the fork's .pst notes under their own names, Save Message As #1561, a signature). Haiku.
+msgid "Get Imported Note"
+msgstr "Importierte Notiz abrufen"
+
+msgid "List Imported Notes"
+msgstr "Importierte Notizen auflisten"
+
+msgid "Saved the message to {name}, written from what this computer keeps of it: not byte for byte as it was received"
+msgstr "Nachricht unter {name} gespeichert, aus dem erstellt, was dieser Computer davon aufbewahrt: nicht Byte für Byte so, wie sie empfangen wurde"
+
+msgid "no such signature"
+msgstr "Signatur nicht vorhanden"
+
+msgid "only the headers of “{subject}” are here, so it can't be saved as a message"
+msgstr "nur die Kopfzeilen von „{subject}“ sind hier, daher kann es nicht als Nachricht gespeichert werden"
+
+msgid "the text of “{subject}” can't be read on this computer, so it can't be saved as a message"
+msgstr "der Text von „{subject}“ kann auf diesem Computer nicht gelesen werden, daher kann er nicht als Nachricht gespeichert werden"
+
+msgid "“{subject}” isn't downloaded yet: open it once you're online, then save it"
+msgstr "„{subject}“ ist noch nicht heruntergeladen: Öffnen Sie es einmal online und speichern Sie es dann"
+
+msgid "“{subject}” was too large to download: only its header is here, so it can't be saved as a message"
+msgstr "„{subject}“ war zu groß zum Herunterladen: nur sein Kopfteil ist hier, daher kann es nicht als Nachricht gespeichert werden"
+
+# Why a hosting page's tab refuses upstream's Send Later, follow-up reminders and calendars subscribed to on the web (kept_here.rs). Haiku.
+msgid "This page keeps nothing of its own: a message to send later, or a reminder, would wait in this tab and neither go nor ring once it is closed"
+msgstr "Diese Seite speichert nichts selbst: Eine später zu sendende Nachricht oder eine Erinnerung würde in diesem Tab warten und nach dem Schließen weder verschickt noch ausgelöst"
+
+msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
+msgstr "Diese Seite speichert nichts selbst: Ein hier abonnierter Kalender würde nicht aktualisiert und ginge beim nächsten Besuch verloren"

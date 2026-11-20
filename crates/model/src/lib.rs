@@ -13,10 +13,15 @@ pub mod auth_results;
 pub mod auto_replies;
 // //// Neoffice — the address books of servers (JMAP for Contacts): what a kept contact is in, and what the account may do there.
 pub mod book;
+pub mod brands;
 mod calendar;
 pub mod confusables;
 mod contact;
 pub mod dav;
+mod dav_server;
+pub mod device_limits;
+#[cfg(test)]
+mod device_limits_tests;
 pub mod digital_signature;
 mod ews_server;
 // //// Neoffice — what was said with someone, for NeoMail's Échanges pane (exchanges.rs).
@@ -34,6 +39,7 @@ mod messages_tests;
 // //// Neoffice — notes: the mailbox's own and those of a server that keeps them (a Notes module).
 pub mod note;
 mod offline;
+pub mod outlook_colors;
 pub mod pictures;
 pub mod pop;
 pub mod protected;
@@ -51,14 +57,20 @@ mod report_tests;
 pub mod rich;
 mod rule;
 pub mod search;
+pub mod send_warnings;
 pub mod sender_warnings;
+pub mod senders;
+#[cfg(test)]
+mod senders_tests;
 // //// Neoffice — the kind of sender of a message, for the tabs of an inbox (stream.rs).
 pub mod shown;
 pub mod signature;
 pub mod stream;
+pub mod subscription;
 pub mod sync;
 mod task;
 pub mod thread_index;
+pub mod unsubscribe;
 pub mod update;
 pub mod words;
 pub mod zoned;
@@ -73,7 +85,9 @@ pub use calendar::{
     OpenedCalendar, Proposal, Recurrence, Response, ResponseOptions, Rights, ShowAs,
 };
 pub use contact::{Contact, ContactKey, KeyKind, Labeled, PostalAddress};
-pub use ews_server::{EwsServer, is_exchange_online, is_microsoft_domain, is_within};
+pub use dav_server::{DavCollectionState, DavServer, origin_of};
+pub use device_limits::{DeviceLimits, PHONE_DEFAULTS, PHONE_DOWNLOAD, PHONE_KEEP, PHONE_STORAGE};
+pub use ews_server::{EwsServer, is_exchange_online, is_google_host, is_microsoft_domain, is_within};
 pub use gmail::{GmailCategory, is_gmail_host};
 pub use headers::{HeaderBlock, HeaderLine};
 pub use jmap_server::{JmapServer, MAX_JMAP_ID, is_jmap_id};
@@ -81,9 +95,10 @@ pub use junk::{Added, JunkList, JunkLists, MAX_JUNK_ENTRIES, junk_entry, junk_ke
 pub use load_limit::{MIN_ITEM_BYTES, from_json};
 pub use mailbox::{
     Account, AccountKind, AsWritten, BETWEEN_MAILBOXES, COPY_INTO_OUTBOX, Category, Directory, DownloadInFull, FOLDERS_NOT_DELETED_YET,
-    FOLDERS_STAY_YET, Folder, FolderCounts, FolderKind, GREY_CATEGORY, GraphSwitch, IMPORTED, INTO_OUTBOX, ImapStatus, MAX_FOLDER_DEPTH, MAX_FOLDERS,
-    MAX_RULES, MAX_SHARED, MAX_SNOOZE_AHEAD, MAX_SNOOZE_REFUSALS, MOVED_INTO_OUTBOX, MailIdentity, Mailbox, OAuth, OAuthProvider,
-    ONLY_SERVER_FOLDERS, PALETTE, Pending, Queued, Security, Server, ServerFavorites, ServerFolder, Settled, Snooze, preset_category_color,
+    FOLDERS_STAY_YET, Folder, FolderCounts, FolderKind, FollowUp, FollowUpsSettled, GREY_CATEGORY, GraphSwitch, IMPORTED, INTO_OUTBOX, ImapStatus,
+    MAX_CATEGORIES, MAX_FOLDER_DEPTH, MAX_FOLDERS, MAX_FOLLOW_UP_AHEAD, MAX_RULES, MAX_SHARED, MAX_SNOOZE_AHEAD, MAX_SNOOZE_REFUSALS,
+    MOVED_INTO_OUTBOX, MailIdentity, Mailbox, OAuth, OAuthProvider, ONLY_SERVER_FOLDERS, PALETTE, Pending, PendingFollowUp, Queued, Security, Server,
+    ServerFavorites, ServerFolder, Settled, Snooze, categories_read_only_text, category_key,
 };
 // //// Neoffice — why mail isn't moved between a JMAP account and another account, nor copied to or from one, and how many deletes may wait for an id.
 pub use mailbox::{ACROSS_JMAP, COPY_JMAP, MAX_UNNAMED_DELETES, NOT_SENDING_YET};
@@ -97,11 +112,13 @@ pub use messages::Messages;
 // //// Neoffice — see `note`.
 pub use note::Note;
 pub use offline::{KeepOffline, OfflineWindow};
+pub use outlook_colors::preset_category_color;
 // //// Neoffice — see `pst_note`.
 pub use pst_note::{JournalEntry, PstNote};
 pub use remote::{AccountChoice, Origin};
 pub use rich::{RichBody, RichText};
 pub use rule::{Action, Condition, Keep, MAX_RULE_GONE, Rule, RuleGone, ServerRule};
+pub use senders::{MAX_SENDER_ADDRESSES, SenderAddress, SenderProblem, clean_sender_addresses};
 pub use signature::Signature;
 // //// Neoffice — see `stream`.
 pub use stream::{Stream, StreamCounts};
@@ -185,6 +202,8 @@ mod account_order_tests;
 #[cfg(test)]
 mod auth_results_tests;
 #[cfg(test)]
+mod auth_summary_tests;
+#[cfg(test)]
 mod auto_replies_tests;
 #[cfg(test)]
 mod calendar_rights_tests;
@@ -215,6 +234,8 @@ mod public_keys_tests;
 #[cfg(test)]
 mod recurrence_tests;
 #[cfg(test)]
+mod relay_without_sign_in_tests;
+#[cfg(test)]
 mod rule_tests;
 #[cfg(test)]
 mod search_advanced_tests;
@@ -229,6 +250,8 @@ mod search_suggest_tests;
 #[cfg(test)]
 mod search_tests;
 #[cfg(test)]
+mod send_warnings_tests;
+#[cfg(test)]
 mod sender_warnings_tests;
 #[cfg(test)]
 mod shown_tests;
@@ -237,6 +260,8 @@ mod snooze_tests;
 // //// Neoffice — tests of stream.rs.
 #[cfg(test)]
 mod stream_tests;
+#[cfg(test)]
+mod unsubscribe_tests;
 #[cfg(test)]
 mod well_known_folder_tests;
 

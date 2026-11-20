@@ -101,7 +101,10 @@ const MAX_UNWANTED: usize = 100;
 pub fn sends(s: &Session, account: Id) -> Vec<JmapSend> {
     let mb = &s.mailbox;
     let Some(outbox) = mb.folder_of_kind(account, FolderKind::Outbox) else { return Vec::new() };
-    let mut waiting: Vec<Id> = mb.messages_in(outbox).filter(|m| m.account == account && m.held.is_empty()).map(|m| m.id).collect();
+    // (Not one whose Send time has not come: the wait of upstream's Undo Send, #950, which `waiting_to_go` leaves out too.)
+    let now = s.now();
+    let mut waiting: Vec<Id> =
+        mb.messages_in(outbox).filter(|m| m.account == account && m.held.is_empty() && !m.waits_until(now)).map(|m| m.id).collect();
     waiting.sort_unstable();
     waiting
         .into_iter()

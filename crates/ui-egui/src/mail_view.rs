@@ -284,13 +284,24 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
     }
     let frame = egui::Frame::NONE.fill(t.surface).stroke(Stroke::new(1.0, t.border));
     if pane == Pane::Bottom {
-        let h = (ui.available_height() * 0.42).clamp(140.0, 520.0);
-        egui::Panel::top("message_list")
-            .default_size(h)
-            .size_range(120.0..=(ui.available_height() - 140.0).max(160.0))
+        let max = (ui.available_height() - 140.0).max(160.0);
+        let h = if app.ui.list_height > 0.0 { app.ui.list_height } else { (ui.available_height() * 0.42).clamp(140.0, 520.0) };
+        // The splitter under the list: egui names a panel's resize handle after the panel.
+        let splitter = ui.scope_id().with_salt(egui::IdSalt::new("message_list")).with("__resize");
+        let shown = egui::Panel::top("message_list")
+            .default_size(h.min(max))
+            .size_range(120.0..=max)
             .resizable(true)
             .frame(frame)
             .show(ui, |ui| list(app, ui));
+        app.hit.add("messageList", 0, shown.response.rect);
+        // Only the owner's resize of the splitter changes the height kept, by a drag (its last frame
+        // included) or through assistive technology: a window too short for it lays the list out
+        // shorter, and that isn't kept (#1372).
+        let dragged = ui.ctx().read_response(splitter).is_some_and(|r| r.dragged() || r.drag_stopped());
+        if dragged || splitter_asked(ui, splitter) {
+            app.ui.list_height = shown.response.rect.height();
+        }
     } else if room.list {
         // //// Neoffice — while the message beside the list needs the room, the list narrows to what is left, under another id,
         // so that the person's own width (the list's, and egui's memory of it) stays as it was; a message being written,
@@ -332,6 +343,13 @@ pub fn show(app: &mut MailApp, ui: &mut Ui) {
             let _ = app.run("mail.editDraft", json!({}));
         }
     }
+}
+
+/// Whether assistive technology asked the splitter `id` this frame to move (AccessKit's Increment,
+/// Decrement or SetValue, which egui's panel answers by resizing).
+fn splitter_asked(ui: &Ui, id: egui::Id) -> bool {
+    use egui::accesskit::Action;
+    ui.input(|i| [Action::Increment, Action::Decrement, Action::SetValue].into_iter().any(|a| i.has_accesskit_action_request(id, a)))
 }
 
 /// A row and the line under it: 72 with one line of preview (15 clear above the sender's
@@ -772,7 +790,9 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     let below = if searching { server_rows::height(app, &local, server_h) } else { 0.0 };
     let overlay = app.overlay_scroll_bars;
     let lane_w = lane_width(app);
+    let swipe_scope = crate::swipe::Scope { opening: app.session.openings(), folder: app.session.view.folder, list: ui.scope_id() };
     if rows.is_empty() {
+        crate::swipe::reconcile(ui, swipe_scope, |_, _| false);
         let r = ui.available_rect_before_wrap();
         let msg = if searching {
             tl!("Nothing matches the search.")
@@ -834,6 +854,8 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
     let bottom = if d { crate::nora::ask_bar::room_below(app, ui.max_rect()) } else { 0.0 };
     let total = y + below + bottom;
     let reveal = std::mem::take(&mut app.reveal_selection);
+    // After a new arrangement the selected row goes to the middle of the list (#1511).
+    let centered = std::mem::take(&mut app.reveal_centered);
     // The row the focus is on: the one clicked or stepped to, else the message's first (#503: a
     // newer message of its open conversation came, and its own row there is another), and for one
     // picked as its conversation, the conversation's row.
@@ -881,7 +903,7 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
             let above = if row.group.is_some() { group_h } else { 0.0 };
             // //// Neoffice — (`bottom`: clear of Nora's bar.)
             let rect = Rect::from_min_max(pos2(origin.x, origin.y + top - above), pos2(origin.x + width, origin.y + top + row_h + bottom));
-            ui.scroll_to_rect(rect, None);
+            ui.scroll_to_rect(rect, centered.then_some(egui::Align::Center));
         }
         // //// Neoffice — « Prioritaire », where it is in view.
         if head > 0.0 && viewport.min.y < head {
@@ -889,6 +911,13 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
         }
         // Only the rows in view are laid out.
         let first = tops.partition_point(|top| top + row_h < viewport.min.y).saturating_sub(1);
+        crate::swipe::reconcile(ui, swipe_scope, |id, copy| {
+            rows.iter()
+                .enumerate()
+                .skip(first)
+                .take_while(|(i, _)| tops.get(*i).is_some_and(|top| *top <= viewport.max.y))
+                .any(|(i, row)| row.id == id && row.copy == copy && tops.get(i).is_some_and(|top| *top + row_h > viewport.min.y))
+        });
         for (i, row) in rows.iter().enumerate().skip(first) {
             let Some(top) = tops.get(i).copied() else { break };
             // //// Neoffice — (`group_h`.)
@@ -929,7 +958,7 @@ fn list_rows(app: &mut MailApp, ui: &mut Ui) {
                 bundle::row(app, ui, row, rect, one_line);
                 continue;
             }
-            message_row(app, ui, row, rect, &drawn, focus);
+            message_row(app, ui, row, rect, &drawn, focus, swipe_scope);
         }
         if below > 0.0 {
             server_rows::show(app, ui, &local, origin.x, origin.y + rows_end, width, server_h, viewport.translate(origin.to_vec2()));
@@ -1136,7 +1165,50 @@ fn drawn_selection(app: &mut MailApp, rows: &Arc<Vec<Row>>) -> Arc<Drawn> {
     drawn
 }
 
-fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Drawn, focus: Option<(Id, u16)>) {
+fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Drawn, focus: Option<(Id, u16)>, scope: crate::swipe::Scope) {
+    let over = ui.rect_contains_pointer(rect) && egui::DragAndDrop::payload::<MessageDrag>(ui.ctx()).is_none();
+    let swipe = crate::swipe::input(ui, scope, (row.id, row.copy), &row.members, over, rect.width(), (app.ui.swipe_left, app.ui.swipe_right));
+    if let Some((action, members)) = swipe.completed
+        && let Some(command) = action.command()
+    {
+        let _ = app.run(command, json!({"ids": members}));
+        return;
+    }
+    if swipe.offset.abs() < 0.1 {
+        return message_row_content(app, ui, row, rect, drawn, focus);
+    }
+    let t = Tokens::get(ui.ctx());
+    let (background, ink) = if swipe.action == crate::swipe::Action::Delete {
+        (t.red, if ui.visuals().dark_mode { t.ink_on_light } else { Color32::WHITE })
+    } else {
+        (t.accent, t.on_accent)
+    };
+    let p = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    p.rect_filled(rect, 0.0, background);
+    let left = swipe.offset > 0.0;
+    let edge = if left { rect.min.x } else { rect.max.x };
+    let center = pos2(edge + if left { 28.0 } else { -28.0 }, rect.center().y);
+    let icon_rect = Rect::from_center_size(center, vec2(20.0, 20.0));
+    icons::paint(&p, icon_rect, swipe.action.code(), ink, ink);
+    if swipe.offset.abs() > 90.0 {
+        let x = edge + if left { 46.0 } else { -46.0 };
+        p.text(
+            pos2(x, rect.center().y),
+            if left { Align2::LEFT_CENTER } else { Align2::RIGHT_CENTER },
+            swipe.action.label(),
+            regular(LIST_TEXT),
+            ink,
+        );
+    }
+    let moved = rect.translate(vec2(swipe.offset, 0.0));
+    p.rect_filled(moved, 0.0, t.surface);
+    ui.scope(|ui| {
+        ui.set_clip_rect(rect.intersect(ui.clip_rect()));
+        message_row_content(app, ui, row, moved, drawn, focus);
+    });
+}
+
+fn message_row_content(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Drawn, focus: Option<(Id, u16)>) {
     let t = Tokens::get(ui.ctx());
     // The shared pointer, not a copy of the message.
     let Some(m) = app.session.mailbox.messages.get(&row.id).cloned() else { return };
@@ -1570,7 +1642,11 @@ fn message_row(app: &mut MailApp, ui: &mut Ui, row: &Row, rect: Rect, drawn: &Dr
     // Dragging a row carries it to a folder: the whole selection when the row is part of it,
     // otherwise just what the row stands for.
     if resp.drag_started() {
-        let ids: Vec<Id> = if selected { app.session.acting_on() } else { row.members.clone() };
+        let mut ids: Vec<Id> = if selected { app.session.acting_on() } else { row.members.clone() };
+        // The row grabbed first: what a drop on the module bar opens (#873).
+        if let Some(at) = ids.iter().position(|id| *id == row.id) {
+            ids[..=at].rotate_right(1);
+        }
         resp.dnd_set_drag_payload(MessageDrag(ids));
     }
     // //// Neoffice — the round of « Traité », drawn over the row, and Spark's quick actions (done.rs); in variant D in the lead column,
@@ -1631,9 +1707,11 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         let _ = app.run("ui.openWindow", json!({"message": id}));
     }
     // A right click on a row outside the selection acts on that row (a conversation's row and
-    // its newest message's own row under it are two rows, #503).
-    if resp.secondary_clicked() && !selected {
-        let _ = app.execute("mail.select", json!({"id": id, "copy": copy}));
+    // its newest message's own row under it are two rows, #503), shown as a click shows it (#727).
+    // When the row can't be selected (the message being written can't be saved), no menu opens:
+    // its Delete would act on the selection as it was.
+    if resp.secondary_clicked() && !selected && app.run("mail.select", json!({"id": id, "copy": copy})).is_err() {
+        return;
     }
     let (read, flagged, pinned) = (m.read, m.flag == FlagStatus::Flagged, m.pinned);
     let sent = app.session.mailbox.folder(m.folder).is_some_and(|f| f.kind == mailcraft_model::FolderKind::Sent);
@@ -1663,9 +1741,22 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
             mi(ui, app, "Chat with Everyone", crate::host_share::CHAT_ALL, json!({}));
         }
         ui.separator();
-        mi(ui, app, if read { "Mark as Unread" } else { "Mark as Read" }, if read { "mail.markUnread" } else { "mail.markRead" }, json!({}));
-        mi(ui, app, if flagged { "Clear Flag" } else { "Follow Up" }, if flagged { "mail.clearFlag" } else { "mail.flag" }, json!({}));
-        mi(ui, app, if pinned { "Unpin" } else { "Pin" }, "mail.pin", json!({}));
+        mi(
+            ui,
+            app,
+            if read { tl_later!("Mark as Unread") } else { tl_later!("Mark as Read") },
+            if read { "mail.markUnread" } else { "mail.markRead" },
+            json!({}),
+        );
+        mi(
+            ui,
+            app,
+            if flagged { tl_later!("Clear Flag") } else { tl_later!("Follow Up") },
+            if flagged { "mail.clearFlag" } else { "mail.flag" },
+            json!({}),
+        );
+        crate::ribbon::follow_up_items(ui, app);
+        mi(ui, app, if pinned { tl_later!("Unpin") } else { tl_later!("Pin") }, "mail.pin", json!({}));
         ui.menu_button(tl!("Categorize"), |ui| {
             let ids = app.session.sel.messages.clone();
             let accounts = crate::ribbon::selected_accounts(app);
@@ -1685,7 +1776,7 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         let movable = app.session.enabled("mail.move");
         ui.add_enabled_ui(movable, |ui| {
             ui.menu_button(tl!("Move"), |ui| {
-                crate::ribbon::folder_menu(ui, app, |app, folder| {
+                crate::ribbon::folder_menu_all(ui, app, |app, folder| {
                     let _ = app.run("mail.move", json!({"folder": folder}));
                 });
             });
@@ -1704,6 +1795,10 @@ fn clicks(app: &mut MailApp, ui: &Ui, resp: &egui::Response, row: &Row, m: &Mess
         mi(ui, app, "Add Sender to Contacts", "people.fromMessage", json!({}));
         mi(ui, app, "Find Related Messages", "mail.findRelated", json!({}));
         mi(ui, app, "Messages from Sender", "mail.findFromSender", json!({"id": id}));
+        // Only when it can be done: the bar above the message says the same (#1207).
+        if crate::reading::unsubscribe::offered(app, m) {
+            mi(ui, app, "Unsubscribe", "ui.unsubscribe", json!({"message": id}));
+        }
         mi(ui, app, "Save Message As…", "file.exportMessage", json!({}));
         mi(ui, app, "View Source", "mail.viewSource", json!({}));
     });
@@ -1722,6 +1817,8 @@ mod from_sender_menu_tests;
 #[cfg(test)]
 mod hidden_selection_tests;
 #[cfg(test)]
+mod list_height_tests;
+#[cfg(test)]
 mod open_conversation_tests;
 #[cfg(test)]
 mod overlay_scroll_tests;
@@ -1731,6 +1828,8 @@ mod stream_tabs_tests;
 // //// Neoffice — tests of the list of variant D in a hosting page's tab.
 #[cfg(test)]
 mod variant_d_tests;
+#[cfg(test)]
+mod wheel_scroll_tests;
 
 #[cfg(test)]
 mod tests {

@@ -9,6 +9,42 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `979953f` (upstream's tag v0.14.0, 2026-11-19, 1,087 commits after v0.13.0: Send Later, Delay Delivery and Undo Send (#950,
+  `cmd/send_later.rs`); follow-up reminders and "remind me if nobody replies" (#948, `cmd/followup.rs`); React, a message answered
+  with one emoji (#1544, RFC 9078, `cmd/react.rs`); Unsubscribe, by one click, by mail or on the list's page (#1207, RFC 8058);
+  warnings before sending (a recipient that looks like a contact, outsiders who see one another, #509) and senders who pose as a
+  brand (#1208); the files of a `winmail.dat` (TNEF, `crates/tnef`, #1307); pictures behind a table, a cell or the message, the
+  message's own only (#601); SPF, DKIM and DMARC said to agents (#1472); an IMAP account's other sender addresses and the From
+  line (#797); picture attachments shown as pictures and the bar of attachments (#834); messages dropped on the module bar
+  (#873); swipe actions in the message list (#1616); subscribed calendars on the web (#209), CalDAV and CardDAV (`crates/dav`),
+  a Microsoft account's categories kept in step (#661) and an Exchange account's address list (#1262), on the desktop; Save
+  Message As as it was received (#1561); Hungarian, Polish, Czech and Georgian as previews), merged into `version-15` on
+  2026-11-20 with conflicts in 40 files, the catalogues among them. Where upstream's change meets the fork's: the fork's JMAP run
+  stays the one built (`cmd/jmap_mail.rs` and its tests whole; upstream's `graph_down::sweep` takes the start of a device's
+  window, which a JMAP run has not: `None`, as an Exchange account's run passes); what waits for its Send time, upstream's
+  Undo Send's wait among it, is not offered to a JMAP run before its time (`jmap_send::sends`, as `waiting_to_go` leaves it out;
+  upstream's test of it reads the fork's request); a reaction and an unsubscribe by mail go from a JMAP account where the host
+  runs the fork's run (`Session::sends_mail_of`, `react.rs`, `unsubscribe.rs`), through its Outbox and its guard against a
+  second send. In a hosting page's tab (`Session::keeps_local` false), which keeps nothing between visits: Send Later, Delay
+  Delivery, the follow-up reminders and the calendars subscribed to on the web are neither drawn nor run (`kept_here::later_refusal`, `LATER`, refused in
+  `Session::run_here` whoever asks; `crates/ui-egui/src/host_later.rs`: the arrow beside Send, Delay Delivery and the Follow Up
+  of the message being written, Add Reminder, Change Send Time, Search Commands, their windows), Undo Send stays; a list that
+  gives an address to write to is unsubscribed from by mail rather than by one click, which the browser can't post
+  (`unsubscribe::hosted_way`, the window's question saying the same); Move and Copy to Folder offer the one mailbox of the
+  message (upstream's every account, #451, would offer folders the fork's JMAP run refuses, `ACROSS_JMAP`), and in « Toutes les
+  boîtes » that of the message acted on (`ribbon::folder_rows_of`, `folder_menu_of`, over upstream's `FolderScope`); a contact's
+  picture in People (#1364) is its site's icon, as a sender's, under the tab's own switch (`sender_images::contact_picture`).
+  Upstream's bar of attachments (`file_item`, a chip or a picture) carries the fork's « Ouvrir dans NeoGrille » between the file
+  and its `▾`; the rail keys `module` and `moduleDrop` by the module, which modules are offered varying (`nav.rs`); upstream's
+  sticky notes of a .pst file in the categories' rename are the fork's `pst_notes` (`mailbox.rs`, `category_tests.rs`);
+  upstream's undo tells its events' servers again (`tell_events_again`) after the fork's notes are kept in step; Nora's band
+  sits at the fields' label width, which upstream now works out (`label_width`); the priority senders' rows take no swipe
+  (`priority.rs`); upstream's own face for React leaves the fork's `emoji` icon to Synk's chat. Nora's pane refuses every family
+  of the window's commands by name (`nora/assist.rs` `REFUSED_FAMILIES`: `category.`, `junk.`, `keys.` and the rest added, a
+  test over the whole registry). Upstream's catalogues were taken, then `cargo xtask i18n`; the eight texts with no French
+  (the fork's .pst notes under their names, Save Message As, a signature) were translated into the fork's French, German,
+  Italian, Spanish and Dutch (`po/neoffice/`, Haiku), and none of the fork's translations was lost (compared before and
+  after). What came before it:
 - `240d1d4` (upstream's tag v0.13.0, 2026-11-15, 513 commits after v0.12.0: new mail at once on IMAP accounts through IDLE and
   a Send/Receive that passes over IMAP folders whose STATUS is unchanged (#276); a JMAP account's changes and mail sent by
   upstream's own engine and client (#1074) and the JMAP types in a crate of their own (`crates/jmap-types`, #1236); Snooze in
@@ -700,6 +736,22 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - Junk E-mail Options in the interface's language (`crates/ui-egui/src/forms/junk.rs`): its pages' names and what each is
   for are literals of `tl!` (the scan of the interface's strings took none of upstream's `tl!(title(page))`), its tabs as
   wide as their names and named to a screen reader (tests in `forms/junk_words_tests.rs`).
+- No Send Later, Delay Delivery nor follow-up reminders in a tab whose mailboxes a hosting page handed over
+  (`Session::keeps_local` false): upstream's (0.14.0, #950 and #948) keep the message in the Outbox of the tab, and the
+  reminder rings in it, so neither would go nor ring once it is closed, and a reminder "if nobody replies" would be a second way
+  beside Nora's follow-up, which the mailbox's server keeps. The commands refuse whoever asks
+  (`crates/engine/src/cmd/kept_here.rs`: `LATER`, `later_refusal`, read in `Session::run_here` and in the `.when`s of
+  `send_later.rs`, `followup.rs` and `compose.followUp`); the window draws none of them (`crates/ui-egui/src/host_later.rs` and
+  its tests: the arrow beside Send in `send_later.rs`, Delay Delivery and the Follow Up of the message being written in the
+  ribbon, Add Reminder in Follow Up and in a message's menu, Change Send Time over a message waiting in the Outbox, Search
+  Commands, and their windows in `dialogs.rs`). Undo Send and Cancel Send stay. The calendars subscribed to on the web (#209)
+  go the same way (`SUBSCRIBED`, `subscription_refusal`, `.when`s of `calendar_subscribed.rs`; Open Calendar › From Internet… in
+  `ribbon.rs`, File › Info's Subscribed calendars in `backstage.rs`): the browser build has no host to update them, and the
+  subscription would be gone at the next visit. A window without a hosting page keeps them all.
+- Unsubscribe in such a tab (`crates/engine/src/cmd/unsubscribe.rs`, `hosted_way`, and `unsubscribe_hosted_tests.rs`): the
+  browser has no host to post one click with, and opening its address as a page may not unsubscribe; a list whose header also
+  gives an address to write to is asked by mail, a message that goes through the mailbox's run, kept from going twice. The
+  window's question says that way (`reading/unsubscribe.rs`).
 - This file.
 
 ## What cannot carry a comment
@@ -718,7 +770,9 @@ the marker check does not know as one that takes comments:
   the workspace since 0.13.0, the apps' `mailcraft-jmap` being the fork's client); nothing else.
 - `crates/i18n/po/messages.pot`, `crates/i18n/po/fr.po`, `crates/i18n/po/de.po`, `crates/i18n/po/es.po`,
   `crates/i18n/po/it.po`, `crates/i18n/po/nl.po` (upstream's Dutch, 0.8.1 on), `crates/i18n/po/ro.po` and
-  `crates/i18n/po/zh_CN.po` (upstream's Romanian and Simplified Chinese, 0.13.0 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
+  `crates/i18n/po/zh_CN.po` (upstream's Romanian and Simplified Chinese, 0.13.0 on), `crates/i18n/po/cs.po`,
+  `crates/i18n/po/hu.po`, `crates/i18n/po/ka.po` and `crates/i18n/po/pl.po` (upstream's Czech, Hungarian, Georgian and
+  Polish, 0.14.0 on): written by `cargo xtask i18n`, never by hand. They differ from upstream's by the fork's
   texts the extractor finds (new entries, untranslated in upstream's catalogues: their translations are in the fork's
   catalogues below) and by the files named in the references of
   shared texts. At the next upstream merge: take upstream's, then run `cargo xtask i18n` again.

@@ -460,6 +460,21 @@ pub(super) static ROWS: &[Row] = &[
     row(KEPT_HERE, Line, run_word!("This page keeps no certificates or keys: they would be gone at the next visit"), &[]),
     // //// Neoffice — (« Toutes les boîtes » and « Afficher les traités »: the list of a hosting page's tab alone)
     row(KEPT_HERE, Line, run_word!("This view is offered in NeoMail only"), &[]),
+    // //// Neoffice — (upstream's Send Later, Delay Delivery and follow-up reminders, and calendars subscribed to on the web: not in such a page)
+    row(
+        KEPT_HERE,
+        Line,
+        run_word!(
+            "This page keeps nothing of its own: a message to send later, or a reminder, would wait in this tab and neither go nor ring once it is closed"
+        ),
+        &[],
+    ),
+    row(
+        KEPT_HERE,
+        Line,
+        run_word!("This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"),
+        &[],
+    ),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
     // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
     row(CONTACTS, Line, run_word!("{name}: its address book can't be changed any more, so the change made here was undone."), &[]),

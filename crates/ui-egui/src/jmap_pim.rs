@@ -132,6 +132,9 @@ struct InFlight {
 #[derive(Default)]
 pub(crate) struct JmapPim {
     rx: Option<InFlight>,
+    /// Tests only: a Microsoft Graph calendar job is in flight (upstream's `CalendarJobs` can't be started without one's account).
+    #[cfg(test)]
+    pub(crate) graph_calendar_busy: bool,
     /// When each account's days on screen were last asked for, and its list with the wide stretch (milliseconds).
     checked: HashMap<Id, f64>,
     wide: HashMap<Id, f64>,
@@ -171,6 +174,14 @@ pub(crate) struct JmapPim {
 }
 
 impl MailApp {
+    /// Whether a Microsoft Graph calendar job (upstream's `CalendarJobs`) is in flight: a JMAP calendar job waits for it.
+    fn graph_calendar_busy(&self) -> bool {
+        #[cfg(test)]
+        if self.jmap_pim.graph_calendar_busy {
+            return true;
+        }
+        self.calendar_syncing()
+    }
     /// Whether a calendar job of a JMAP account is in flight.
     pub fn jmap_pim_running(&self) -> bool {
         self.jmap_pim.rx.is_some()
@@ -264,7 +275,7 @@ impl MailApp {
             return false;
         }
         // One at a time; and none beside a Microsoft Graph calendar job.
-        if self.jmap_pim.rx.is_some() || self.calendar.rx.is_some() {
+        if self.jmap_pim.rx.is_some() || self.graph_calendar_busy() {
             return false;
         }
         // What waits and can't be sent any more is given up before anything is sent: with a word to the owner, never
@@ -457,7 +468,7 @@ impl MailApp {
         if self.services.jmap_pim.is_none() {
             return Err(tl!("This build can't reach the account's calendar.").to_string());
         }
-        if self.jmap_pim.rx.is_some() || self.calendar.rx.is_some() {
+        if self.jmap_pim.rx.is_some() || self.graph_calendar_busy() {
             return Err(tl!("The calendar is being updated already.").to_string());
         }
         let now = now_ms();

@@ -12,6 +12,14 @@
 //! - **A contact's categories and whether it is a favourite** are this computer's, whichever book the contact is in
 //!   ([`marks_refusal`]).
 //!
+//! - **Send Later, Delay Delivery and follow-up reminders** (upstream's #950 and #948): the message waits in the Outbox of this
+//!   computer and the reminder rings here, so neither goes nor rings once the tab is closed ([`later_refusal`]); and a reminder
+//!   "if nobody replies" would be a second way beside Nora's follow-up, which the mailbox's server keeps. Undo Send stays: its
+//!   wait is seconds, in the tab that is open.
+//! - **Calendars subscribed to on the web** (upstream's #209): the subscription is kept in the mailbox, and only a host that
+//!   reaches the web updates it; the browser build has none, so it would never be updated and be gone at the next visit
+//!   ([`subscription_refusal`]). Unsubscribing stays.
+//!
 //! The reasons are fixed words, which a greyed control says on hover too; the window reads them in its own language.
 
 use crate::Session;
@@ -53,6 +61,64 @@ pub fn support_refusal(s: &Session) -> Option<&'static str> {
 /// Why Public keys can't be imported or removed, when they can't.
 pub fn keys_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_KEYS_HERE)
+}
+
+/// Why Send Later, Delay Delivery and the follow-up reminders are not offered: they wait on this computer alone.
+pub const NO_LATER_HERE: &str =
+    "This page keeps nothing of its own: a message to send later, or a reminder, would wait in this tab and neither go nor ring once it is closed";
+
+/// Upstream's commands of Send Later and Delay Delivery (#950) and of follow-up reminders (#948): what they keep waits on this
+/// computer. Undo Send (`compose.undoSend`, `sync.waitBeforeSending`) and Cancel Send (`mail.cancelSend`) are not among them.
+pub const LATER: &[&str] = &[
+    "compose.sendLater",
+    "compose.delay",
+    "mail.setSendTime",
+    "compose.followUp",
+    "mail.reminder",
+    "mail.clearReminder",
+    "mail.settleReminders",
+    "mail.dueReminders",
+    "mail.dismissReminder",
+    "mail.postponeReminder",
+];
+
+/// Why Send Later, Delay Delivery and the follow-up reminders are not offered, when they aren't.
+pub fn later_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_LATER_HERE)
+}
+
+/// Why no calendar is subscribed to on the web: it would not be updated here, and would be gone at the next visit.
+pub const NO_SUBSCRIPTIONS_HERE: &str =
+    "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit";
+
+/// Upstream's commands that subscribe to a calendar on the web or keep one up to date (#209). Unsubscribing is not among them.
+pub const SUBSCRIBED: &[&str] = &["calendar.subscribe", "calendar.refreshSubscribed", "calendar.subscriptionSettings"];
+
+/// Why no calendar is subscribed to on the web, when none is.
+pub fn subscription_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_SUBSCRIPTIONS_HERE)
+}
+
+/// Why the command `id` is refused whoever asks (a script, an agent, a call that names its messages), when it is one of [`LATER`]
+/// or [`SUBSCRIBED`].
+pub fn later_refusal_of(s: &Session, id: &str) -> Option<&'static str> {
+    if LATER.contains(&id) {
+        later_refusal(s)
+    } else if SUBSCRIBED.contains(&id) {
+        subscription_refusal(s)
+    } else {
+        None
+    }
+}
+
+/// [`later_refusal`], then upstream's own condition: a message being written.
+pub(crate) fn later_while_writing(s: &Session) -> Option<&'static str> {
+    later_refusal(s).or_else(|| super::needs_compose(s))
+}
+
+/// [`later_refusal`], then upstream's own condition: a selected message.
+pub(crate) fn later_on_messages(s: &Session) -> Option<&'static str> {
+    later_refusal(s).or_else(|| super::needs_message(s))
 }
 
 /// Why a contact's categories and whether it is a favourite can't be set, when they can't.

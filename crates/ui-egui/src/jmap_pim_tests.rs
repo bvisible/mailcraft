@@ -271,11 +271,10 @@ fn one_job_at_a_time_and_none_beside_a_mail_run_of_the_account_or_a_graph_calend
     assert!(!app.jmap_pim_tick_at(true, 3.0 * MINUTE));
     app.jmap_rx = None;
     // A Graph calendar job is under way: everything waits.
-    let (_graph, graph_rx) = mpsc::channel();
-    // //// Neoffice — upstream's job carries the mailbox opening it was started under now.
-    app.calendar.rx = Some((99, false, 0.0, app.session.openings(), graph_rx));
+    // (Upstream's calendar job is kept by its `CalendarJobs`, which only a Microsoft account's plan starts: said by the flag.)
+    app.jmap_pim.graph_calendar_busy = true;
     assert!(!app.jmap_pim_tick_at(true, 3.0 * MINUTE));
-    app.calendar.rx = None;
+    app.jmap_pim.graph_calendar_busy = false;
     assert!(app.jmap_pim_tick_at(true, 3.0 * MINUTE));
 }
 

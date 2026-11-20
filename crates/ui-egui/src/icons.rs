@@ -519,6 +519,13 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.head(16.5, 5.5, 0.0, 4.0, c);
             pen.envelope(11.5, 12.0, 18.0, 17.0, c);
         }
+        // React (#1544): a face.
+        "react" => {
+            pen.circle(10.0, 10.0, 7.0, c);
+            pen.fcircle(7.5, 8.0, 0.9, c);
+            pen.fcircle(12.5, 8.0, 0.9, c);
+            pen.line(&[(6.5, 11.5), (8.0, 13.5), (12.0, 13.5), (13.5, 11.5)]);
+        }
         "delete" | "deleted" | "discard" | "remove" => {
             pen.lid(false, c);
             pen.rounded(&[(5.0, 5.5), (5.0, 16.5), (15.0, 16.5), (15.0, 5.5)], false, 1.0, c);
@@ -1292,7 +1299,8 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(4.0, 7.5), (16.5, 7.5)]);
             pen.line(&[(3.5, 12.5), (16.0, 12.5)]);
         }
-        "emoji" | "react" => {
+        // //// Neoffice — (upstream draws its own "react" since #1544, above: this face is the fork's "emoji" alone.)
+        "emoji" => {
             pen.circle(10.0, 10.0, 7.5, c);
             pen.fcircle(7.5, 8.0, 1.0, c);
             pen.fcircle(12.5, 8.0, 1.0, c);
@@ -1335,6 +1343,7 @@ pub const NAMES: &[&str] = &[
     "replyAll",
     "forward",
     "forwardAsAttachment",
+    "react",
     "delete",
     "deleted",
     "discard",
@@ -1508,7 +1517,6 @@ pub const NAMES: &[&str] = &[
     "dictate",
     "channel",
     "emoji",
-    "react",
     "notes",
     "description",
     "work",
