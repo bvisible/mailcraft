@@ -490,6 +490,12 @@ pub struct Account {
     /// every other account, and in a file from before there were any.
     #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "crate::sync::lenient")]
     pub jmap: Option<JmapServer>,
+    // //// Neoffice — for a JMAP account, the host of the mail server behind its JMAP server, as a Neoffice server names it in its
+    // //// Neoffice — session (each run sets it): read as an IMAP account's incoming host, for whose `Authentication-Results` are
+    // //// Neoffice — believed (`auth_results`). Empty: none named, and none believed, as before. (Here, not in `JmapServer`, whose
+    // //// Neoffice — upstream literals name every field.)
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub jmap_mail_host: String,
     /// For an [`AccountKind::Exchange`] account: where its Exchange Web Services are, the user
     /// name it signs in with and the certificate it trusts ([`EwsServer`]). Plain settings: the
     /// password is never kept here. `None` for every other account, and in a file from before

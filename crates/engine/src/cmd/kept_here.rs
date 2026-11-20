@@ -126,6 +126,15 @@ pub fn marks_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_MARKS_HERE)
 }
 
+/// Why a flag isn't given a due date: a JMAP server keeps a message's flag (`$flagged`) and nothing of its date, which the tab
+/// would lose at the next visit. A flag without a date is set everywhere.
+pub const NO_DUE_HERE: &str = "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit";
+
+/// Why a flag isn't given a due date, when it isn't: a hosting page's tab.
+pub fn due_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_DUE_HERE)
+}
+
 /// Why « Toutes les boîtes » and « Afficher les traités » are not offered: the list of a hosting page's tab has them (variant D),
 /// the program that keeps its mail keeps upstream's list.
 pub const HOSTED_ONLY: &str = "This view is offered in NeoMail only";

@@ -891,3 +891,30 @@ proptest! {
         let _ = Auth::bearer(text).header();
     }
 }
+
+/// The mail server a Neoffice session names ([`MAIL_SERVER`]): a host name in lower case without its trailing dot, or nothing.
+#[test]
+fn the_mail_server_a_session_names_is_a_host_or_nothing() {
+    let of = |value: serde_json::Value| incoming_host_of(Some(&value));
+    assert_eq!(of(json!({"incomingHost": "mail.example.org"})), "mail.example.org");
+    assert_eq!(of(json!({"incomingHost": " Mail.Example.ORG. "})), "mail.example.org");
+    assert_eq!(of(json!({"incomingHost": "192.0.2.10"})), "192.0.2.10");
+    for odd in [
+        json!({}),
+        json!({"incomingHost": ""}),
+        json!({"incomingHost": "localhost"}),
+        json!({"incomingHost": "mail.example.org:993"}),
+        json!({"incomingHost": "mail example.org"}),
+        json!({"incomingHost": "mail..example.org"}),
+        json!({"incomingHost": "-mail.example.org"}),
+        json!({"incomingHost": "mail.example.org/x"}),
+        json!({"incomingHost": "imap://mail.example.org"}),
+        json!({"incomingHost": format!("{}.example.org", "a".repeat(250))}),
+        json!({"incomingHost": 7}),
+        json!({"incomingHost": ["mail.example.org"]}),
+        json!("mail.example.org"),
+    ] {
+        assert_eq!(of(odd.clone()), "", "{odd}");
+    }
+    assert_eq!(incoming_host_of(None), "");
+}

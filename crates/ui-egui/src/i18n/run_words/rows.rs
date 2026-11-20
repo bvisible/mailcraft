@@ -475,6 +475,13 @@ pub(super) static ROWS: &[Row] = &[
         run_word!("This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"),
         &[],
     ),
+    // //// Neoffice — (a flag's due date: its server keeps the flag alone)
+    row(
+        KEPT_HERE,
+        Line,
+        run_word!("This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"),
+        &[],
+    ),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
     // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
     row(CONTACTS, Line, run_word!("{name}: its address book can't be changed any more, so the change made here was undone."), &[]),

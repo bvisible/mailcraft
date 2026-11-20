@@ -559,6 +559,16 @@ mod tests {
         assert_eq!(Lang::French.t("Share\nin Synk"), "Partager\ndans Synk");
     }
 
+    // //// Neoffice — upstream's refusal of a second reaction begins with a capital where the fork translates it: the window shows
+    // //// Neoffice — it alone, in a message box.
+    #[test]
+    fn the_refusal_of_a_second_reaction_begins_with_a_capital() {
+        for lang in [Lang::French, Lang::German, Lang::Spanish, Lang::Italian, Lang::Dutch] {
+            let said = lang.t("you already reacted to this message with {emoji}");
+            assert!(said.contains("{emoji}") && said.chars().next().is_some_and(char::is_uppercase), "{lang:?}: {said}");
+        }
+    }
+
     #[test]
     fn english_plurals() {
         assert_eq!(Lang::English.tn(1, "{n} message", "{n} messages"), "{n} message");

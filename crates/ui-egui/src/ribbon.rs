@@ -1671,7 +1671,8 @@ pub(crate) fn junk_menu(ui: &mut Ui, app: &mut MailApp) {
 }
 
 /// What `menu` lists.
-fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
+// //// Neoffice — (`pub(crate)`: host_later's tests draw the Follow Up menu.)
+pub(crate) fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
     match menu {
         Menu::RecentAttachments => crate::recent_attachments::contents(ui, app),
         Menu::NewItems => new_items(ui, app),
@@ -1760,8 +1761,15 @@ fn menu_contents(ui: &mut Ui, app: &mut MailApp, menu: Menu) {
         Menu::FollowUp => {
             let today = app.session.today();
             let weekday = i64::from(today.weekday().index());
-            for (label, days) in [("Today", 0), ("Tomorrow", 1), ("This Week", 4 - weekday), ("Next Week", 11 - weekday)] {
-                mi(ui, app, label, "mail.flag", json!({"due": today.add_days(days.max(0)).iso()}));
+            // //// Neoffice — the dated flags only where the window keeps their date: a hosting page's tab sets the flag alone, which
+            // //// Neoffice — its server keeps (host_later.rs, `kept_here::due_refusal`).
+            let dated: &[(&str, i64)] = if crate::host_later::offered(app) {
+                &[("Today", 0), ("Tomorrow", 1), ("This Week", 4 - weekday), ("Next Week", 11 - weekday)]
+            } else {
+                &[]
+            };
+            for (label, days) in dated {
+                mi(ui, app, label, "mail.flag", json!({"due": today.add_days((*days).max(0)).iso()}));
             }
             mi(ui, app, "No Date", "mail.flag", json!({}));
             ui.separator();

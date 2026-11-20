@@ -773,6 +773,21 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 - The attachments' bar (upstream's #834): its rows are top-aligned (egui gave every row after a picture's tile that tile's
   height, its chips centred in it), and a picture's room is as tall as the picture, at least `MIN_ROOM`
   (`reading.rs`, `attachments`; `reading/attachment_pictures.rs`, `tile`; test in `attachment_pictures_tests.rs`).
+- A JMAP account believes its mail server's `Authentication-Results` as an IMAP account believes its host's (upstream: a JMAP
+  account believed none, so in a hosting page's tab no list mail was offered Unsubscribe): a Neoffice server names the mail
+  server behind the mailbox in its session (`crates/jmap-fork/src/lib.rs`, `MAIL_SERVER`, `incoming_host_of`), each run's piece
+  carries it (`JmapMailResult::incoming_host` in `crates/model/src/sync/jmap.rs`; `mail.rs`, `Run::piece`), the engine keeps it on
+  the account (`Account::jmap_mail_host` in `crates/model/src/mailbox.rs`; `cmd/jmap_mail.rs`), and `auth_results::incoming_host`
+  reads it for a JMAP account; the sender warnings' fingerprint counts it (`engine/src/sender_warnings.rs`). Only the topmost
+  results are read, as upstream reads them: a pass a sender writes under the server's own, in its name, is not believed. The
+  stand-in names one when a test sets `Data::incoming_host`. Tests: `auth_results_tests.rs`, `jmap-fork/src/tests.rs`,
+  `apps/mailcraft-cli/tests/jmap_unsubscribe.rs` (through the server, the header in its order).
+- No due date for a flag in a hosting page's tab: a JMAP server keeps the flag (`$flagged`) and nothing of its date, which the tab
+  would lose. Follow Up offers the flag without a date only (`ribbon.rs`, `Menu::FollowUp`; `menu_contents` is `pub(crate)` for the
+  test), and `mail.flag` with a `due` is refused whoever asks (`cmd/kept_here.rs`, `due_refusal`, read in `cmd/mail.rs`, `flag`;
+  its sentence in the `run_words` rows and the fork's catalogues). Test in `host_later_tests.rs`.
+- Upstream's refusal of a second reaction (« you already reacted to this message with … ») begins with a capital in the fork's
+  French, Italian, Spanish and Dutch catalogues (the window shows it alone in a message box; test in `crates/i18n/src/lib.rs`).
 - The six emoji of a reaction in Noto Emoji's current black-and-white design, in front of egui's older Noto Emoji in every
   family (`crates/ui-egui/src/theme.rs`, `REACTION_FACE`; `assets/fonts/NotoEmoji-Reactions.ttf`): egui's faces (😂 😮 😢)
   are filled shapes that read as blots at the picker's size, and the browser build has no colour face; the system's colour

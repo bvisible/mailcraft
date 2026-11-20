@@ -77,6 +77,8 @@ fn result() -> JmapMailResult {
         threads: vec![crate::sync::ThreadOf { id: "E5".into(), thread: "T5".into(), ..Default::default() }],
         email: ME.into(),
         session: SESSION.into(),
+        // //// Neoffice — (the mail server the session named)
+        incoming_host: Some("mail.example.org".into()),
         changes: vec![
             JmapChangeDone { change: JmapChange::Destroy { id: "E9".into() }, outcome: JmapOutcome::Done { id: String::new() } },
             JmapChangeDone {
@@ -150,6 +152,8 @@ fn a_request_and_a_result_read_and_write_as_json() {
         r#""session":""#,
         r#""drafts":[{"message":8,"saves":2,"id":"E10","folder":"M3","refused":"#,
         r#""unwanted":["E11"]"#,
+        // //// Neoffice — (the mail server the session named)
+        r#""incomingHost":"mail.example.org""#,
         // //// Neoffice — (the emails gone, and the state)
         r#""destroyed":["E12"]"#,
         r#""emailState":"7-13""#,

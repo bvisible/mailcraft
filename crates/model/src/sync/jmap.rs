@@ -379,6 +379,10 @@ pub struct JmapMailResult {
     /// What became of the changes of messages sent.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub changes: Vec<JmapChangeDone>,
+    // //// Neoffice — the host of the account's mail server, as a Neoffice server names it in the session (`Account::jmap_mail_host`,
+    // //// Neoffice — read by `auth_results`): `Some("")` when it names none, `None` from a run that didn't read the session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub incoming_host: Option<String>,
     // //// Neoffice — see `JmapMailRequest::folders`.
     /// What became of the folder changes sent. A folder a server names by where it lies has a new id once it is renamed
     /// or moved: its outcome names it.

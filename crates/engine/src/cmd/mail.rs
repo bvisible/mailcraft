@@ -913,6 +913,12 @@ fn mark_all_read(s: &mut Session, v: &Value) -> CmdResult {
 
 fn flag(s: &mut Session, v: &Value) -> CmdResult {
     let due = p::date(v, "due")?;
+    // //// Neoffice — no due date in a hosting page's tab, whoever asks: its server keeps the flag alone (`kept_here::due_refusal`).
+    if due.is_some()
+        && let Some(why) = super::kept_here::due_refusal(s)
+    {
+        return Err(fail(why));
+    }
     let offset = s.offset_at(s.now());
     // Due at the end of the working day.
     let due = due.and_then(|d| mailcraft_time::DateTime::new(d, s.prefs.work_end.min(23), 0, 0)).map(|t| t.to_timestamp(offset));

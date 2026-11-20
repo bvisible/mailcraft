@@ -4930,3 +4930,7 @@ msgstr "Diese Seite speichert nichts selbst: Eine später zu sendende Nachricht 
 
 msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
 msgstr "Diese Seite speichert nichts selbst: Ein hier abonnierter Kalender würde nicht aktualisiert und ginge beim nächsten Besuch verloren"
+
+# Why a hosting page's tab refuses a due date for a flag: its JMAP server keeps the flag alone (kept_here.rs). Haiku.
+msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
+msgstr "Diese Seite speichert kein Fälligkeitsdatum für eine Kennzeichnung: Der Server behält nur die Kennzeichnung, und das Datum ginge beim nächsten Besuch verloren"

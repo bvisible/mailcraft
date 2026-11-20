@@ -4946,3 +4946,11 @@ msgstr "Questa pagina non conserva nulla di proprio: un messaggio da inviare pi√
 
 msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
 msgstr "Questa pagina non conserva nulla di proprio: un calendario sottoscritto qui non verrebbe aggiornato e andrebbe perso alla prossima visita"
+
+# Why a hosting page's tab refuses a due date for a flag: its JMAP server keeps the flag alone (kept_here.rs). Haiku.
+msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
+msgstr "Questa pagina non conserva una scadenza per il contrassegno: il suo server mantiene solo il contrassegno e la data andrebbe persa alla visita successiva"
+
+# Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
+msgid "you already reacted to this message with {emoji}"
+msgstr "Hai gi√† reagito a questo messaggio con {emoji}"

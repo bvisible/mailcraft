@@ -73,8 +73,28 @@ pub const SUBMISSION: &str = "urn:ietf:params:jmap:submission";
 pub const CONTACTS: &str = "urn:ietf:params:jmap:contacts";
 /// The capability of calendars and their events (JMAP for Calendars, the IETF's draft on RFC 8620).
 pub const CALENDARS: &str = "urn:ietf:params:jmap:calendars";
+/// The capability by which a Neoffice server names the mail server of a mailbox it serves (`incomingHost`): the server that
+/// writes the `Authentication-Results` its mail arrives with, whose word is taken as an IMAP account's server's is
+/// ([`incoming_host_of`]).
+pub const MAIL_SERVER: &str = "https://neoffice.me/jmap/neomail-mail-server";
 /// The kind of a problem that names a limit of the request that was exceeded (RFC 8620 §3.6.1).
 const LIMIT_PROBLEM: &str = "urn:ietf:params:jmap:error:limit";
+
+/// Longest host name taken from a session (RFC 1035 §2.3.4).
+const MAX_HOST: usize = 253;
+
+/// The host a [`MAIL_SERVER`] capability names (`{"incomingHost": "mail.example.org"}`), in lower case and without a trailing dot:
+/// letters, digits, dashes and dots, with a dot in it, no label empty, at most [`MAX_HOST`] characters. Empty for anything else,
+/// or none: a session is hostile, and what this names decides whose `Authentication-Results` are believed.
+pub fn incoming_host_of(capability: Option<&Value>) -> String {
+    let Some(host) = capability.and_then(|c| c.get("incomingHost")).and_then(Value::as_str) else { return String::new() };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let fits = host.len() <= MAX_HOST
+        && host.contains('.')
+        && host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+        && host.split('.').all(|label| !label.is_empty() && !label.starts_with('-') && !label.ends_with('-'));
+    if fits { host } else { String::new() }
+}
 
 /// What a bare host is given after it (RFC 8620 §2.2).
 const WELL_KNOWN: &str = "/.well-known/jmap";
@@ -613,6 +633,12 @@ impl<H: Http> Client<H> {
     /// What the session says of the mail account for `capability` (its object in `accountCapabilities`), when it says it.
     pub fn account_capability(&self, capability: &str) -> Option<&Value> {
         self.mail_capabilities.get(capability)
+    }
+
+    /// The host of the mail server of the account, as its session names it ([`MAIL_SERVER`], [`incoming_host_of`]); empty when it
+    /// names none.
+    pub fn incoming_host(&self) -> String {
+        incoming_host_of(self.account_capability(MAIL_SERVER))
     }
 
     /// The id of the account that holds the mail: the session's primary account for mail.

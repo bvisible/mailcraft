@@ -5915,3 +5915,11 @@ msgstr "Cette page ne conserve rien par elle-même : un message à envoyer plus 
 
 msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
 msgstr "Cette page ne conserve rien par elle-même : un calendrier auquel vous vous abonnez ici ne serait pas mis à jour et serait perdu à la prochaine visite"
+
+# Why a hosting page's tab refuses a due date for a flag: its JMAP server keeps the flag alone (kept_here.rs). Haiku.
+msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
+msgstr "Cette page ne conserve pas d’échéance pour un indicateur : son serveur ne garde que l’indicateur, et la date serait perdue à la prochaine visite"
+
+# Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
+msgid "you already reacted to this message with {emoji}"
+msgstr "Vous avez déjà réagi à ce message avec {emoji}"

@@ -332,6 +332,14 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     if s.file_is_current() {
         s.note_saved();
     }
+    // The host of the account's mail server, as its server names it now (`Account::jmap_mail_host`): whose
+    // `Authentication-Results` are believed. None named, none believed.
+    if let Some(host) = result.incoming_host.take()
+        && let Ok(owner) = s.mailbox.account_mut(account)
+        && owner.jmap_mail_host != host
+    {
+        owner.jmap_mail_host = host;
+    }
     let mut taken = Taken::default();
     let mut errors: Vec<String> = result.errors.iter().take(MAX_ERRORS).map(|e| said(e)).filter(|e| !e.is_empty()).collect();
     if result.auth_refused && !result.partial {

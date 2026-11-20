@@ -361,3 +361,30 @@ fn ionos_results_signed_kundenserver_vouch_for_the_sender() {
     let other = Account { incoming: Some(Server { host: "imap.mail.example".into(), port: 993, security: Security::Tls }), ..ionos.clone() };
     assert!(!vouched(Some(&other), &pass));
 }
+
+// //// Neoffice — a JMAP account whose Neoffice server names its mail server (`Account::jmap_mail_host`): the topmost
+// //// Neoffice — `Authentication-Results` written with that server's id is believed, as an IMAP account's host's is; a pass
+// //// Neoffice — written under it with the same id, by whoever sent the message, is not; and with no server named, none is.
+#[test]
+fn a_jmap_account_believes_the_topmost_results_of_the_mail_server_its_server_names() {
+    let jmap = |host: &str| Account { kind: AccountKind::Jmap, email: "box@neo.example".into(), jmap_mail_host: host.into(), ..Account::default() };
+    let message = |results: &[&str]| Message {
+        // On the server, as a JMAP account's mail is.
+        server: Some(crate::sync::ServerMessage { id: "E1".into(), ..Default::default() }),
+        from: Address { name: String::new(), email: "letter@news.example".into() },
+        headers: results.iter().map(|value| h("Authentication-Results", value)).collect(),
+        ..Message::default()
+    };
+    const PASS: &str = "mail.neo.example; spf=pass smtp.mailfrom=news.example; dkim=pass header.d=news.example; dmarc=pass header.from=news.example";
+    const FAIL: &str = "mail.neo.example; spf=fail smtp.mailfrom=news.example; dmarc=none header.from=news.example";
+    const FORGED: &str = "mail.neo.example; dmarc=pass header.from=news.example";
+    let named = jmap("mail.neo.example");
+    assert!(vouched(Some(&named), &message(&[PASS])));
+    // The server's own results first, and a pass under them in its name: the pass is the sender's.
+    assert!(!vouched(Some(&named), &message(&[FAIL, FORGED])));
+    // Another server's id, or none named: not believed.
+    assert!(!vouched(Some(&named), &message(&["mx.elsewhere.example; dmarc=pass header.from=news.example"])));
+    assert!(!vouched(Some(&jmap("")), &message(&[PASS])));
+    // The host is an IMAP account's only for a JMAP account.
+    assert!(!vouched(Some(&Account { kind: AccountKind::Local, ..named.clone() }), &message(&[PASS])));
+}

@@ -144,3 +144,38 @@ fn no_calendar_is_subscribed_to_on_the_web_in_a_hosting_pages_tab() {
         assert_eq!(crate::dialogs::Dialog::open("subscribe", &app, &json!({})).is_some(), !hosted, "its window (hosted: {hosted})");
     }
 }
+
+/// A flag's due date is not kept by a JMAP server: in a hosting page's tab, Follow Up offers the flag without a date only, a date
+/// asked for is refused whoever asks, and a flag set is a flag.
+#[test]
+fn follow_up_offers_no_dated_flag_in_a_hosting_pages_tab() {
+    use egui_kittest::kittest::Queryable;
+    use mailcraft_engine::cmd::kept_here::NO_DUE_HERE;
+    use mailcraft_model::FlagStatus;
+    for hosted in [false, true] {
+        let (mut app, _) = app(hosted);
+        let message = app.session.mailbox.messages.values().find(|m| !m.draft && m.flag == FlagStatus::None).map(|m| m.id).unwrap();
+        app.session.sel.messages = vec![message];
+        let dated = app.session.run("mail.flag", &json!({"ids": [message], "due": "2026-10-16"}));
+        assert_eq!(dated.is_ok(), !hosted, "a dated flag (hosted: {hosted})");
+        if hosted {
+            assert!(dated.unwrap_err().to_string().contains(NO_DUE_HERE));
+            assert_eq!(app.session.mailbox.message(message).unwrap().flag, FlagStatus::None, "nothing set by a refusal");
+        }
+        // A flag without a date: everywhere, and it stays one.
+        app.session.run("mail.flag", &json!({"ids": [message]})).unwrap();
+        assert_eq!(app.session.mailbox.message(message).unwrap().flag, FlagStatus::Flagged);
+        // The menu of Follow Up.
+        let mut h = Harness::builder()
+            .with_accessibility_check(false)
+            .allow_missing_glyphs()
+            .build_ui_state(|ui, app: &mut MailApp| crate::ribbon::menu_contents(ui, app, Menu::FollowUp), app);
+        h.run_steps(2);
+        for label in ["Today", "Tomorrow", "This Week", "Next Week"] {
+            assert_eq!(h.query_by_label_contains(label).is_some(), !hosted, "{label} (hosted: {hosted})");
+        }
+        for label in ["No Date", "Mark Complete", "Clear Flag"] {
+            assert!(h.query_by_label_contains(label).is_some(), "{label} (hosted: {hosted})");
+        }
+    }
+}

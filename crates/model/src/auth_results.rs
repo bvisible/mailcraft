@@ -194,7 +194,10 @@ fn on_exchange_online(account: &Account) -> bool {
 
 /// `account`'s incoming server's host, in lower case and without a trailing dot.
 fn incoming_host(account: &Account) -> Option<String> {
-    account.incoming.as_ref().map(|server| server.host.trim().trim_end_matches('.').to_ascii_lowercase())
+    // //// Neoffice — or a JMAP account's mail server, as its Neoffice server names it (`Account::jmap_mail_host`): the topmost
+    // //// Neoffice — `Authentication-Results` is that server's, as an IMAP account's is its host's (upstream: none for JMAP).
+    let jmap = || (account.kind == AccountKind::Jmap).then_some(account.jmap_mail_host.as_str()).filter(|host| !host.trim().is_empty());
+    account.incoming.as_ref().map(|server| server.host.as_str()).or_else(jmap).map(|host| host.trim().trim_end_matches('.').to_ascii_lowercase())
 }
 
 /// Whether Exchange Online says `m` came from inside the owner's own organisation: the account is

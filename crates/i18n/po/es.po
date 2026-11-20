@@ -21440,6 +21440,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "This page keeps no tasks: they would be gone at the next visit"
 msgstr ""
 

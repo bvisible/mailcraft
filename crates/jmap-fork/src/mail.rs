@@ -418,7 +418,14 @@ impl<'a, H: Http> Run<'a, H> {
 
     /// A piece of the result, for this run's account.
     fn piece(&self, piece: JmapMailResult) -> JmapMailResult {
-        JmapMailResult { account: self.request.account, email: self.request.email.clone(), session: self.request.session.clone(), ..piece }
+        JmapMailResult {
+            account: self.request.account,
+            email: self.request.email.clone(),
+            session: self.request.session.clone(),
+            // (Every piece says it: the first taken in sets it, before the windows it brings.)
+            incoming_host: Some(self.client.incoming_host()),
+            ..piece
+        }
     }
 
     /// What `error` says, fit for a line: no credential and no address in it.

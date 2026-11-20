@@ -14,6 +14,9 @@
 //! The calendars subscribed to on the web (#209) go the same way: the browser build has no host to update them, and the
 //! subscription would be gone at the next visit (`kept_here::subscription_refusal`): not Open Calendar › From Internet…, not the
 //! Subscribed calendars of File › Info, not Search Commands, and their window doesn't open.
+//!
+//! A flag's due date too: a JMAP server keeps a message's flag and nothing of its date. Follow Up offers the flag without a date
+//! only (not Today, Tomorrow, This Week, Next Week), and a date asked for is refused (`kept_here::due_refusal`); a flag set stays.
 
 use crate::MailApp;
 use crate::ribbon::{Menu, Tab};

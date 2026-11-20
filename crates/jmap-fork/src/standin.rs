@@ -81,7 +81,7 @@ use base64::Engine as _;
 use mailcraft_model::{Address, Message};
 use serde_json::{Map, Value, json};
 
-use crate::{CALENDARS, CONTACTS, CORE, Error, Http, MAIL, Request, Response, Result, SUBMISSION, Url, valid_id};
+use crate::{CALENDARS, CONTACTS, CORE, Error, Http, MAIL, MAIL_SERVER, Request, Response, Result, SUBMISSION, Url, valid_id};
 
 mod changes;
 mod demo;
@@ -306,6 +306,9 @@ pub struct Data {
     pub notes: Notes,
     /// « Plus tard », as the Neoffice server keeps it, when a test turns it on ([`Snoozes`], `standin/snooze.rs`).
     pub snoozes: Snoozes,
+    /// The mail server the session names, as a Neoffice server names its mailbox's ([`MAIL_SERVER`]): what it says as
+    /// `incomingHost`, when a test sets it. Nothing at first.
+    pub incoming_host: Option<String>,
     /// The oldest state `Email/changes` calculates from ([`Data::forget_changes`]): 0, every one it handed out.
     pub changes_from: u32,
     /// `Email/changes` is a method this server doesn't have.
@@ -354,6 +357,7 @@ impl Data {
             pim: Pim::default(),
             notes: Notes::default(),
             snoozes: Snoozes::default(),
+            incoming_host: None,
             changes_from: 0,
             changes_unknown: false,
             journal: changes::Journal::default(),
@@ -622,6 +626,11 @@ impl Data {
         self.pim.add_to(&mut session, ACCOUNT);
         self.notes.add_to(&mut session, ACCOUNT);
         self.snoozes.add_to(&mut session, ACCOUNT);
+        // The mail server, as a Neoffice server names it (an account's capability alone: nothing is called by it).
+        if let Some(host) = &self.incoming_host {
+            session["capabilities"][MAIL_SERVER] = json!({});
+            session["accounts"][ACCOUNT]["accountCapabilities"][MAIL_SERVER] = json!({ "incomingHost": host });
+        }
         session
     }
 

@@ -637,3 +637,11 @@ msgstr "Deze pagina bewaart zelf niets: een bericht om later te versturen of een
 
 msgid "This page keeps nothing of its own: a calendar subscribed to here would not be updated and would be gone at the next visit"
 msgstr "Deze pagina bewaart zelf niets: een hier geabonneerde agenda zou niet worden bijgewerkt en zou bij het volgende bezoek verloren gaan"
+
+# Why a hosting page's tab refuses a due date for a flag: its JMAP server keeps the flag alone (kept_here.rs). Haiku.
+msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
+msgstr "Deze pagina bewaart geen vervaldatum voor een vlag: de server houdt alleen de vlag bij, en de datum zou bij het volgende bezoek verloren gaan"
+
+# Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
+msgid "you already reacted to this message with {emoji}"
+msgstr "U hebt op dit bericht al gereageerd met {emoji}"
