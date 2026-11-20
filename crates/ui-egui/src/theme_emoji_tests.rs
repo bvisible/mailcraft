@@ -40,7 +40,8 @@ fn the_colour_emoji_face_goes_in_front_of_the_black_and_white() {
     let without = font_definitions_with(&SystemFont::none());
     for (family, faces) in &fonts.families {
         let at = faces.iter().position(|name| name == "SystemEmoji").unwrap_or_else(|| panic!("{family:?} has no colour emoji"));
-        assert_eq!(faces[at + 1], "NotoEmoji-Regular", "{family:?}");
+        // //// Neoffice — (then the reactions' face, then egui's: `REACTION_FACE`.)
+        assert_eq!((faces[at + 1].as_str(), faces[at + 2].as_str()), (super::REACTION_FACE, "NotoEmoji-Regular"), "{family:?}");
         let mut rest = faces.clone();
         rest.remove(at);
         assert_eq!(rest, without.families[family], "{family:?}");
@@ -85,4 +86,27 @@ fn the_heart_as_sent_has_a_character_no_font_draws() {
     assert!(!ctx.fonts_mut(|f| f.has_glyphs(&id, heart)));
     assert_eq!(crate::reading::react::drawn(heart), "\u{2764}");
     assert_eq!(crate::reading::react::drawn("\u{1F44D}"), "\u{1F44D}");
+}
+
+// //// Neoffice — the six reactions are drawn by their own face (`REACTION_FACE`), in front of egui's older Noto Emoji whose faces
+// //// Neoffice — read as blots, in every family; the face draws the six by itself.
+#[test]
+fn the_six_reactions_come_from_their_own_face() {
+    let mut fonts = font_definitions_with(&SystemFont::none());
+    for (family, faces) in &fonts.families {
+        let ours = faces.iter().position(|name| name == super::REACTION_FACE).unwrap_or_else(|| panic!("{family:?}"));
+        let egui = faces.iter().position(|name| name == "NotoEmoji-Regular").unwrap_or_else(|| panic!("{family:?}"));
+        assert!(ours < egui, "{family:?}: {faces:?}");
+    }
+    let alone = FontFamily::Name("reactions alone".into());
+    fonts.families.insert(alone.clone(), vec![super::REACTION_FACE.into()]);
+    let ctx = egui::Context::default();
+    ctx.set_fonts(fonts);
+    ctx.run_ui(egui::RawInput::default(), |_| {}).drop_without_applying_deltas();
+    let id = FontId::new(22.0, alone);
+    for (emoji, name) in mailcraft_engine::cmd::react::REACTIONS {
+        assert!(ctx.fonts_mut(|f| f.has_glyphs(&id, crate::reading::react::drawn(emoji))), "{name} {emoji}");
+    }
+    // And a few kilobytes, no more.
+    assert!(include_bytes!("../../../assets/fonts/NotoEmoji-Reactions.ttf").len() < 8 * 1024);
 }

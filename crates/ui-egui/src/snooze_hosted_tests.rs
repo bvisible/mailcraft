@@ -478,6 +478,28 @@ fn a_refusal_of_the_server_is_said_to_the_person() {
     assert_eq!(testing::dialog(&w), Some("refused"));
 }
 
+/// Search Commands names Snooze as its button does where the server keeps « Plus tard », and picking it opens the window of
+/// times (upstream's name, « Reporter », ran it without a time, which is refused); elsewhere it is upstream's.
+#[test]
+fn search_commands_names_it_as_its_button_does_and_opens_its_window() {
+    for (hosted, server) in [(true, true), (true, false), (false, false)] {
+        let (mut w, _) = inbox(hosted, server);
+        let first = drawn(&mut w)[0];
+        click(&mut w, "message", first);
+        let listed = crate::dialogs::all_commands(w.state());
+        let label = |id: &str| listed.iter().find(|c| c.0 == id).map(|c| c.1.clone()).unwrap();
+        let kept = hosted && server;
+        assert_eq!(label("mail.snooze"), if kept { "Later" } else { "Snooze" }, "hosted: {hosted}, server: {server}");
+        assert_eq!(label("mail.unsnooze"), if kept { "Bring Back Now" } else { "Return Now" }, "hosted: {hosted}, server: {server}");
+        w.state_mut().dialog = Some(crate::dialogs::Dialog::Commands { query: "mail.snooze".into(), selected: 0 });
+        w.run_steps(2);
+        testing::key(&mut w, Key::Enter);
+        w.run_steps(3);
+        assert_eq!(is_open(&w.ctx.clone()), kept, "the window of times (hosted: {hosted}, server: {server})");
+        assert_eq!(w.state().session.mailbox.message(first).unwrap().folder, w.state().session.view.folder, "nothing put away yet");
+    }
+}
+
 /// The window in French, light and dark, to PNG files in `SNOOZE_SHOTS`: a row's clock and its menu, the window of times, and
 /// the folder « Plus tard » with the time each message comes back (one its server could not bring back).
 #[test]

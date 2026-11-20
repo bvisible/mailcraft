@@ -295,6 +295,20 @@ pub(crate) fn open(app: &mut MailApp, ctx: &egui::Context, ids: &[Id]) {
     ctx.data_mut(|d| d.insert_temp(window_id(), window));
 }
 
+/// The name Search Commands gives `id` where the mailbox's server keeps « Plus tard »: upstream's Snooze (`mail.snooze`) is
+/// « Plus tard », and Return Now (`mail.unsnooze`) « Faire revenir maintenant », as the button, the key and the menus say.
+/// `None` for any other command, or where « Plus tard » isn't offered.
+pub(crate) fn search_label(app: &MailApp, id: &str) -> Option<&'static str> {
+    if !snooze_hosted::available(&app.session) {
+        return None;
+    }
+    match id {
+        "mail.snooze" => Some(tlc!("snooze", "Later")),
+        "mail.unsnooze" => Some(tlc!("snooze", "Bring Back Now")),
+        _ => None,
+    }
+}
+
 /// Whether the window of times is open.
 #[cfg(test)]
 pub(crate) fn is_open(ctx: &egui::Context) -> bool {

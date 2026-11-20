@@ -222,6 +222,21 @@ fn the_message_id_is_without_its_brackets_and_a_header_that_is_twice_there_is_re
 }
 
 #[test]
+fn what_a_message_answers_is_read_without_its_brackets() {
+    // A reaction filed in Sent is known by what it answers before it is fetched (`react` refuses the same one twice).
+    let m = read(&[("Message-ID", " <r1@example.org>"), ("In-Reply-To", " <q1@example.org>")]);
+    assert_eq!((m.message_id.as_str(), m.in_reply_to.as_str()), ("r1@example.org", "q1@example.org"));
+    // Folded, with a comment, or with a second id after the first: the first.
+    assert_eq!(read(&[("in-reply-to", "\r\n <q2@example.org> (Bo's)")]).in_reply_to, "q2@example.org");
+    assert_eq!(read(&[("In-Reply-To", " <q3@example.org> <q4@example.org>")]).in_reply_to, "q3@example.org");
+    // None, or nothing an id: empty.
+    assert_eq!(read(&[("Subject", " Hello")]).in_reply_to, "");
+    assert_eq!(read(&[("In-Reply-To", " <>")]).in_reply_to, "");
+    // Not more than an id may be.
+    assert_eq!(read(&[("In-Reply-To", &format!(" <{}@example.org>", "i".repeat(5_000)))]).in_reply_to, "");
+}
+
+#[test]
 fn a_field_cannot_be_made_to_say_more_than_it_does() {
     // A value with a line break and another field in it is one line of its own field's text.
     let m = read(&[

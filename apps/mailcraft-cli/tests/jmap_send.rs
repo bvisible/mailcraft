@@ -182,6 +182,41 @@ fn a_reply_that_went_marks_what_it_answers_and_not_before() {
 }
 
 #[test]
+fn the_same_reaction_goes_once_even_when_its_copy_in_sent_is_the_servers() {
+    for (kind, profile) in both() {
+        let mut rig = Rig::new(profile);
+        let raw = format!(
+            "From: Bo <bo@example.org>\r\nTo: Ada <{ADDRESS}>\r\nSubject: Question\r\nMessage-ID: <q1@example.org>\r\nDate: Thu, 15 Oct 2026 09:30:00 +0200\r\n\r\nWhen?\r\n"
+        );
+        rig.server.with(|d| d.deliver(&rig.inbox, raw.as_bytes(), &[], "2026-10-15T07:30:00Z"));
+        rig.run(true);
+        let question = rig.mail(FolderKind::Inbox)[0].id;
+        let react = |rig: &mut Rig, emoji: &str| rig.s.run("mail.react", &json!({"id": question, "emoji": emoji})).map_err(|e| e.to_string());
+        react(&mut rig, "\u{1F44D}").unwrap();
+        // Twice before the run: the first waits in the Outbox, the second is refused.
+        assert!(react(&mut rig, "\u{1F44D}").unwrap_err().contains("already reacted"), "{kind}");
+        rig.run(false);
+        assert_eq!(rig.delivered().len(), 1, "{kind}");
+        // It went: the same reaction again is refused, and nothing more goes.
+        assert!(rig.mail(FolderKind::Outbox).is_empty(), "{kind}");
+        assert!(react(&mut rig, "\u{1F44D}").unwrap_err().contains("already reacted"), "{kind}");
+        // What refuses it is the copy in Sent, the server's, not fetched: what it answers comes with its header.
+        let sent = rig.mail(FolderKind::Sent);
+        assert_eq!(sent.len(), 1, "{kind}");
+        assert!(sent[0].server.is_some() && sent[0].unfetched, "{kind}");
+        assert_eq!((sent[0].in_reply_to.as_str(), sent[0].body.text.as_str()), ("q1@example.org", "\u{1F44D}"), "{kind}");
+        rig.run(true);
+        assert_eq!(rig.delivered().len(), 1, "{kind}");
+        assert!(react(&mut rig, "\u{1F44D}").unwrap_err().contains("already reacted"), "{kind}: after a whole run too");
+        // Another emoji is another reaction: it goes.
+        react(&mut rig, "\u{2764}\u{FE0F}").unwrap();
+        rig.run(false);
+        assert_eq!(rig.delivered().len(), 2, "{kind}");
+        assert_eq!(rig.mail(FolderKind::Sent).len(), 2, "{kind}");
+    }
+}
+
+#[test]
 fn a_message_the_server_refuses_is_held_with_why_leaves_nothing_in_sent_and_goes_when_the_owner_sends_it_again() {
     for (kind, profile) in both() {
         let mut rig = Rig::new(profile);

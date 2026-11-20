@@ -1399,6 +1399,11 @@ pub struct GraphMessage {
     pub server: ServerMessage,
     /// `Message-ID` without angle brackets.
     pub message_id: String,
+    // //// Neoffice — the `In-Reply-To` of it, without angle brackets: what a message filed in Sent answers is known before
+    // //// Neoffice — it is fetched (a reaction sent from a JMAP account came back without it, so the same one could go twice).
+    // //// Neoffice — Empty when the server didn't say (Graph and EWS don't, here).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub in_reply_to: String,
     pub subject: String,
     pub from: Address,
     pub to: Vec<Address>,

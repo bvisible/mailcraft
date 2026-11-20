@@ -279,6 +279,8 @@ fn read_item(item: &Node) -> Option<GraphMessage> {
         preview: line(item.child_in(TYPES, "Preview").map_or("", |n| n.text.as_str()), MAX_PREVIEW),
         has_attachments: flag(item, "HasAttachments"),
         draft: item.child_in(TYPES, "IsDraft").map(|n| n.text.trim().eq_ignore_ascii_case("true")),
+        // //// Neoffice — (what it answers isn't asked of EWS here: it comes with the message when it is fetched)
+        in_reply_to: String::new(),
     })
 }
 

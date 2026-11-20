@@ -1145,6 +1145,9 @@ pub fn with_extra_face(mut fonts: FontDefinitions, name: &str, bytes: Vec<u8>) -
     Some(fonts)
 }
 
+// //// Neoffice — the face of the six reactions' emoji (`font_definitions_with`).
+pub const REACTION_FACE: &str = "NotoEmojiReactions";
+
 /// The interface fonts with `system` in front of the bundled ones.
 pub fn font_definitions_with(system: &SystemFont) -> FontDefinitions {
     let mut fonts = FontDefinitions::default();
@@ -1174,6 +1177,13 @@ pub fn font_definitions_with(system: &SystemFont) -> FontDefinitions {
         let at = fallback.iter().position(|name| name.contains("Emoji")).unwrap_or(0);
         fallback.insert(at, "SystemEmoji".into());
     }
+    // //// Neoffice — the six emoji of a reaction in Noto Emoji's current black-and-white design (2.001, a 5 KB subset:
+    // //// Neoffice — `assets/fonts/NotoEmoji-Reactions.ttf`), in front of egui's older Noto Emoji, whose faces (😂 😮 😢) are
+    // //// Neoffice — filled shapes that read as blots at the picker's size (the browser build has no colour face); behind the
+    // //// Neoffice — system's colour emoji where there is one.
+    add(&mut fonts, REACTION_FACE, include_bytes!("../../../assets/fonts/NotoEmoji-Reactions.ttf"));
+    let at = fallback.iter().position(|name| name == "NotoEmoji-Regular").unwrap_or(fallback.len());
+    fallback.insert(at, REACTION_FACE.into());
     fallback.push("SourceSans".into());
     // Last, JetBrains Mono, for what only it has: U+FFFD among them, the mark of a character that
     // couldn't be read, which would otherwise be an empty box (#180).
@@ -1198,6 +1208,9 @@ pub fn font_definitions_with(system: &SystemFont) -> FontDefinitions {
     fonts.families.insert(FontFamily::Name("bold".into()), chain(&[bold, semibold, Some("InterSemiBold"), regular, Some("Inter")]));
     if let Some(m) = fonts.families.get_mut(&FontFamily::Monospace) {
         m.insert(0, "Mono".into());
+        // //// Neoffice — (the reactions' face there too, in front of egui's Noto Emoji.)
+        let at = m.iter().position(|name| name == "NotoEmoji-Regular").unwrap_or(m.len());
+        m.insert(at, REACTION_FACE.into());
         if system.emoji.is_some() {
             let at = m.iter().position(|name| name.contains("Emoji")).unwrap_or(m.len());
             m.insert(at, "SystemEmoji".into());

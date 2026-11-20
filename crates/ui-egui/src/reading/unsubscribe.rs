@@ -150,6 +150,12 @@ pub(crate) fn question(app: &MailApp, p: &Value) -> Option<crate::dialogs::Quest
     let id = p.get("message").and_then(Value::as_u64).or_else(|| app.session.sel.focus())?;
     let m = app.session.mailbox.messages.get(&id)?;
     let host = |url: &str| mailcraft_link::WebLink::parse(url).map_or_else(String::new, |l| l.host().to_string());
+    // //// Neoffice — nothing is proposed for mail the engine refuses for where it lies or for its server's word (in Junk E-mail,
+    // //// Neoffice — or not vouched for: `mailcraft_engine::cmd::unsubscribe::offered`): upstream asked « Ouvrir la page »
+    // //// Neoffice — first, and the engine refused after the click. Now the command says why at once.
+    if app.session.mailbox.in_junk(m.folder) || !mailcraft_model::auth_results::vouched(app.session.mailbox.account(m.account), m) {
+        return None;
+    }
     // //// Neoffice — in a hosting page's tab, the way its engine takes (`mailcraft_engine::cmd::unsubscribe::hosted_way`).
     let found = way(app.session.mailbox.account(m.account), m)?;
     let found = if app.session.keeps_local { found } else { mailcraft_engine::cmd::unsubscribe::hosted_way(m, found) };

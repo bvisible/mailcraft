@@ -28,9 +28,14 @@ pub(crate) fn offered(app: &MailApp) -> bool {
     app.session.keeps_local
 }
 
+/// Upstream's commands about calendars subscribed to on the web that have nothing to act on where none can be subscribed to:
+/// unsubscribing from one, and a host's look at them (which calendars are due, and what it brought). They are not refused (an
+/// unsubscribe has no calendar to name, the others nothing to do), only left out of Search Commands.
+pub(crate) const SUBSCRIPTION_LEFTOVERS: [&str; 3] = ["calendar.unsubscribe", "sync.subscriptionRequest", "sync.applySubscription"];
+
 /// Whether Search Commands leaves `id` out: one of their commands, in a tab that doesn't offer them.
 pub(crate) fn hidden(app: &MailApp, id: &str) -> bool {
-    !offered(app) && (LATER.contains(&id) || SUBSCRIBED.contains(&id))
+    !offered(app) && (LATER.contains(&id) || SUBSCRIBED.contains(&id) || SUBSCRIPTION_LEFTOVERS.contains(&id))
 }
 
 /// Whether the window `name` (`ui.dialog`) doesn't open: one of theirs, in a tab that doesn't offer them.

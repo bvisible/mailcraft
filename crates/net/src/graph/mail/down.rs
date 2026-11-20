@@ -695,6 +695,8 @@ fn entry_of(value: &Value, folder: &str) -> Option<Entry> {
         preview: capped(value, "bodyPreview", MAX_PREVIEW),
         has_attachments: value.get("hasAttachments").and_then(Value::as_bool).unwrap_or(false),
         draft: value.get("isDraft").and_then(Value::as_bool),
+        // //// Neoffice — (what it answers isn't asked of Graph here: it comes with the message when it is fetched)
+        in_reply_to: String::new(),
     })))
 }
 

@@ -1085,7 +1085,15 @@ fn email_json(email: &Email, properties: &[String]) -> Value {
             "size" => json!(email.raw.len()),
             "receivedAt" => json!(email.received),
             "hasAttachment" => json!(text.to_ascii_lowercase().contains("content-disposition: attachment")),
-            "preview" => json!(body.split_whitespace().collect::<Vec<&str>>().join(" ").chars().take(MAX_PREVIEW).collect::<String>()),
+            // The words of its text, as a store gives them (RFC 8621 §4.1.4): of a message in parts, its text (a reaction's
+            // emoji, not the parts' boundaries and fields); of one that isn't, its body.
+            "preview" => {
+                let multipart = fields.iter().any(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-type") && value.trim_start().to_ascii_lowercase().starts_with("multipart/")
+                });
+                let words = if multipart { mailcraft_mime_model::parse(&email.raw).body.text } else { body.to_string() };
+                json!(words.split_whitespace().collect::<Vec<&str>>().join(" ").chars().take(MAX_PREVIEW).collect::<String>())
+            }
             "headers" => Value::Array(fields.iter().map(|(name, value)| json!({"name": name, "value": value})).collect()),
             // //// Neoffice — upstream's #795, see `thread_of`.
             "threadId" => json!(thread_of(email)),

@@ -35,8 +35,10 @@ const MAX_DATE: usize = 64;
 
 /// The header fields a message list needs: the name to match, the name to write, how many bytes of it are
 /// read in all (together, at most 64 KB), and whether a second field of that name adds to the first.
-const FIELDS: [(&str, &str, usize, bool); 6] = [
+const FIELDS: [(&str, &str, usize, bool); 7] = [
     ("message-id", "Message-ID", 2_048, false),
+    // (What a message answers: a reaction in Sent is known by it before it is fetched.)
+    ("in-reply-to", "In-Reply-To", 1_024, false),
     ("subject", "Subject", 8_192, false),
     ("from", "From", 4_096, false),
     ("to", "To", 24_576, true),
@@ -132,6 +134,7 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
     GraphMessage {
         server: ServerMessage { thread, ..server(id, mailbox, marks, entry.get("size").and_then(Value::as_u64).unwrap_or(0)) },
         message_id: fields.message_id,
+        in_reply_to: fields.in_reply_to,
         subject: fields.subject,
         from: fields.from,
         to: fields.to,
@@ -149,6 +152,7 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
 #[derive(Default)]
 struct Fields {
     message_id: String,
+    in_reply_to: String,
     subject: String,
     from: Address,
     to: Vec<Address>,
@@ -164,7 +168,8 @@ impl Fields {
         }
         let message = mailcraft_mime_model::parse(block.as_bytes());
         Fields {
-            message_id: message.message_id.chars().filter(|c| !c.is_control() && !c.is_whitespace()).take(MAX_TEXT).collect(),
+            message_id: id_text(&message.message_id),
+            in_reply_to: id_text(&message.in_reply_to),
             subject: line(&message.subject, MAX_TEXT),
             from: person(message.from).unwrap_or_default(),
             to: people(message.to),
@@ -173,6 +178,11 @@ impl Fields {
             date: Some(message.date).filter(|date| *date != 0),
         }
     }
+}
+
+/// A `Message-ID` as kept: no control character and no blank, at most [`MAX_TEXT`] characters.
+fn id_text(id: &str) -> String {
+    id.chars().filter(|c| !c.is_control() && !c.is_whitespace()).take(MAX_TEXT).collect()
 }
 
 fn people(list: Vec<Address>) -> Vec<Address> {

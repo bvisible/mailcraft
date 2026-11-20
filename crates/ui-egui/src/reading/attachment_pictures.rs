@@ -51,6 +51,10 @@ const MIN_WIDTH: f32 = 120.0;
 const PAD: f32 = 6.0;
 const CAPTION: f32 = 32.0;
 
+// //// Neoffice — the least height of a picture's room (upstream: always `BOX.y`, so a 16-pixel picture had a tile 178 points
+// //// Neoffice — tall, mostly empty). Its room is as tall as the picture, and no less than a chip, so its name stays readable.
+pub const MIN_ROOM: f32 = 40.0;
+
 /// Whether an attachment may be a picture that is shown, by what the message says of it: its
 /// declared type, or for a file of no particular type its name. Only to choose which files kept
 /// on disk are brought in: whether one is shown is told by its bytes.
@@ -206,7 +210,9 @@ pub(super) fn tile(app: &mut MailApp, ui: &mut Ui, m: &Message, index: usize, a:
     let shown = mailcraft_engine::opening::file_name(&a.name);
     let picture = fit(size, BOX);
     let inner = picture.x.max(MIN_WIDTH);
-    let tile = vec2(inner + 2.0 * PAD + crate::ribbon::DROP_W, PAD + BOX.y + CAPTION);
+    // //// Neoffice — (as tall as the picture, at least `MIN_ROOM`; upstream: `BOX.y` whatever the picture.)
+    let room_h = picture.y.clamp(MIN_ROOM, BOX.y);
+    let tile = vec2(inner + 2.0 * PAD + crate::ribbon::DROP_W, PAD + room_h + CAPTION);
     // The texture is made for the size it is shown at, in pixels.
     let ppp = ui.ctx().pixels_per_point().clamp(1.0, 4.0);
     let max_side = u32::try_from(ui.ctx().input(|i| i.max_texture_side)).unwrap_or(images::MAX_TEXTURE_SIDE).min(images::MAX_TEXTURE_SIDE);
@@ -219,7 +225,8 @@ pub(super) fn tile(app: &mut MailApp, ui: &mut Ui, m: &Message, index: usize, a:
     };
     let size_label = mailcraft_model::size_label_in(crate::i18n::current(), a.size() as u64);
     super::file_item(app, ui, m, index, &shown, tile, t, |painter, main| {
-        let room = Rect::from_min_size(main.min + vec2(PAD, PAD), vec2(main.width() - 2.0 * PAD, BOX.y));
+        // //// Neoffice — (`room_h`: see above.)
+        let room = Rect::from_min_size(main.min + vec2(PAD, PAD), vec2(main.width() - 2.0 * PAD, room_h));
         let at = Rect::from_center_size(room.center(), picture);
         match &texture {
             Some(texture) => {

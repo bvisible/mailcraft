@@ -245,6 +245,9 @@ pub(crate) fn new_message(folder: Id, server_folder: &str, there: &GraphMessage)
     Message {
         folder,
         message_id: there.message_id.trim().trim_start_matches('<').trim_end_matches('>').to_string(),
+        // //// Neoffice — what it answers, when the server said (a JMAP server does): a reaction filed in Sent is known
+        // //// Neoffice — by it before it is fetched, so the same one isn't sent twice (`react`).
+        in_reply_to: there.in_reply_to.trim().trim_start_matches('<').trim_end_matches('>').to_string(),
         from: there.from.clone(),
         to: there.to.clone(),
         cc: there.cc.clone(),

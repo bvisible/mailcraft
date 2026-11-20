@@ -761,6 +761,26 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   `lib.rs`), and the body reads, of a frame that holds both, only its own keys: those before the click when it had the
   keyboard at the frame's start, those after it when the click gave it the keyboard (`compose/editor.rs`; tests in
   `compose/input_order_tests.rs`, which show each case red on the code before).
+- What a message answers comes with its header from a JMAP server (`In-Reply-To`: `GraphMessage::in_reply_to` in
+  `crates/model/src/sync.rs`, read in `crates/jmap-fork/src/mail/message.rs`, taken in by `graph_down::new_message`; Graph's
+  and EWS's literals in `crates/net/src/graph/mail/down.rs` and `crates/ews/src/items.rs` give none): the copy of a reaction
+  the server files in Sent, the one that stays once the run has sent it, is known by it before it is fetched, so the same
+  reaction twice is refused there too (`react`'s check; upstream's own tests send from accounts whose Sent copy is local). The
+  stand-in's preview of a message in parts is its text, as a store gives it (`crates/jmap-fork/src/standin.rs`). Test:
+  `apps/mailcraft-cli/tests/jmap_send.rs`, red on the code before.
+- Unsubscribe's question asks nothing the engine then refuses (`reading/unsubscribe.rs`, `question`): mail in Junk E-mail, or
+  that its server doesn't vouch for (`auth_results::vouched`), gets no question, and the command says why at once.
+- The attachments' bar (upstream's #834): its rows are top-aligned (egui gave every row after a picture's tile that tile's
+  height, its chips centred in it), and a picture's room is as tall as the picture, at least `MIN_ROOM`
+  (`reading.rs`, `attachments`; `reading/attachment_pictures.rs`, `tile`; test in `attachment_pictures_tests.rs`).
+- The six emoji of a reaction in Noto Emoji's current black-and-white design, in front of egui's older Noto Emoji in every
+  family (`crates/ui-egui/src/theme.rs`, `REACTION_FACE`; `assets/fonts/NotoEmoji-Reactions.ttf`): egui's faces (😂 😮 😢)
+  are filled shapes that read as blots at the picker's size, and the browser build has no colour face; the system's colour
+  face stays in front where there is one (tests in `theme_emoji_tests.rs`).
+- Search Commands in a hosting page's tab: Snooze and Return Now by the names « Plus tard »'s button and menus give them, and
+  Snooze opens its window of times, the Enter that picked it taken out first (`snooze_hosted.rs`, `search_label`;
+  `dialogs.rs`); and nothing that acts on a calendar
+  subscribed to on the web, where none can be (`host_later.rs`, `SUBSCRIPTION_LEFTOVERS`).
 - This file.
 
 ## What cannot carry a comment
@@ -795,6 +815,8 @@ the marker check does not know as one that takes comments:
   text is added to `fr.po`, it is added to these three too.
 - `assets/neoffice/neoffice-icon-64.png`: Neoffice's icon, the design system's `assets/logo/favicon.png` as it is (a PNG
   takes no comment; `ATTRIBUTION.md` names it, with a marked row).
+- `assets/fonts/NotoEmoji-Reactions.ttf`: the six emoji of a reaction from Noto Emoji 2.001 (OFL-1.1), a 5 KB subset (a font
+  takes no comment; `ATTRIBUTION.md` and `NOTICE` name it, with marked rows; its licence is `assets/fonts/OFL-NotoEmoji.txt`).
 - `crates/i18n/po/neoffice/nl.po`: the Dutch of the fork's own texts that upstream's Dutch lacks (so far the inbox's tabs,
   which a merge once left without a word in any language because they lived only in the generated catalogues; a test of
   `stream_tabs_tests.rs` holds their French to the catalogue, and the words Nora's pane took from craft-libs `32473870`);

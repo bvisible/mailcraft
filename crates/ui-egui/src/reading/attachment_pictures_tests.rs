@@ -285,6 +285,37 @@ fn a_double_click_on_the_picture_opens_it() {
     assert_eq!(opened.lock().unwrap().as_slice(), ["IMG_20261108_101112.jpg"]);
 }
 
+// //// Neoffice — a small picture's tile is as tall as the picture (at least `MIN_ROOM`), not 178 points; and the rows of chips
+// //// Neoffice — after a picture are as close as rows of chips are (upstream: each was as tall as the picture's tile, its chips
+// //// Neoffice — centred in it, ~110 points from one row to the next).
+#[test]
+fn a_small_picture_has_a_small_tile_and_the_rows_after_a_picture_are_close() {
+    let mut h = testing::window("view.mail");
+    let app = h.state_mut();
+    let _ = app.execute("ui.dismissReminder", json!({"all": true}));
+    let mut files = vec![Attachment::new("photo.jpg", "image/jpeg", png(400, 300)), Attachment::new("icon.png", "image/png", png(16, 16))];
+    files.extend((0..24).map(|i| Attachment::new(format!("quarterly-report-{i:02}.pdf"), "application/pdf", b"%PDF".to_vec())));
+    app.session.mailbox.message_mut(ID).unwrap().attachments = files;
+    app.run("mail.select", json!({"id": ID})).unwrap();
+    h.run_steps(6);
+    // The photo's tile is as before; the 16-pixel picture's is no taller than its room at least, its name and size.
+    assert!(item(&h, 0).height() > 100.0, "{:?}", item(&h, 0));
+    let small = item(&h, 1).height();
+    assert!((small - (6.0 + super::attachment_pictures::MIN_ROOM + 32.0)).abs() < 0.5, "{small}");
+    // The chips: each row starts where the one above it ends (a chip's height and the spacing), wherever the picture is.
+    let chips: Vec<egui::Rect> = (2..26).map(|index| item(&h, index)).collect();
+    let mut tops: Vec<f32> = chips.iter().map(|r| r.min.y).collect();
+    tops.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+    assert!(tops.len() >= 3, "the chips are on several rows: {tops:?}");
+    let chip = chips[0].height();
+    for pair in tops.windows(2).skip(1) {
+        assert!(pair[1] - pair[0] <= chip + 6.0 + 0.5, "rows of chips {} points apart: {tops:?}", pair[1] - pair[0]);
+    }
+    // And no chip of a row with a picture in it hangs below the picture's top: the row is top-aligned.
+    let first_row = item(&h, 0).min.y;
+    assert!(chips.iter().filter(|r| r.min.y < item(&h, 0).max.y).all(|r| (r.min.y - first_row).abs() < 0.5), "{chips:?}");
+}
+
 #[test]
 fn the_setting_is_kept_and_answers_the_command() {
     assert!(crate::UiState::default().attachment_pictures);

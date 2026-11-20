@@ -110,6 +110,19 @@ fn no_arrow_beside_send_in_a_hosting_pages_tab() {
 }
 
 #[test]
+fn search_commands_leaves_out_what_acts_on_a_subscribed_calendar_where_none_can_be() {
+    for hosted in [false, true] {
+        let (app, _) = app(hosted);
+        let listed: Vec<String> = crate::dialogs::all_commands(&app).into_iter().map(|c| c.0).collect();
+        for id in crate::host_later::SUBSCRIPTION_LEFTOVERS {
+            assert_eq!(listed.iter().any(|l| l == id), !hosted, "{id} listed (hosted: {hosted})");
+        }
+        // The Reminders window stays: the reminders it rings are the events', which the calendars' server keeps.
+        assert!(listed.iter().any(|l| l == "view.reminders"), "hosted: {hosted}");
+    }
+}
+
+#[test]
 fn no_calendar_is_subscribed_to_on_the_web_in_a_hosting_pages_tab() {
     for hosted in [false, true] {
         let (mut app, _) = app(hosted);

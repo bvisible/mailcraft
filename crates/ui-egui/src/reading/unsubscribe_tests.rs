@@ -137,8 +137,35 @@ fn without_a_host_one_click_opens_its_page_and_unvouched_mail_offers_nothing() {
     let mut harness = window(app, (1280.0, 900.0));
     select(&mut harness, id);
     assert!(harness.query_all_by_label_contains("From a mailing list").next().is_none());
+    // //// Neoffice — and no question first: nothing is proposed that the engine then refuses.
+    assert!(question(harness.state(), &json!({"message": id})).is_none());
     assert!(harness.state_mut().execute("ui.unsubscribe", json!({"message": id})).is_err());
     assert!(asked.lock().unwrap().is_empty());
+}
+
+// //// Neoffice — the question asks only what the engine does: nothing for mail in Junk E-mail; and in a hosting page's tab, a
+// //// Neoffice — list that gives an address to write to besides its page is asked by mail (`hosted_way`), as the bar does.
+#[test]
+fn the_question_proposes_what_the_engine_does() {
+    let both = [
+        ("Authentication-Results", PASSED),
+        ("List-Unsubscribe", "<mailto:leave@news.example?subject=leave>, <https://news.example/u/7f3a>"),
+        ("List-Unsubscribe-Post", "List-Unsubscribe=One-Click"),
+        ("DKIM-Signature", "v=1; d=news.example; s=s1; h=from:list-unsubscribe:list-unsubscribe-post; bh=AA; b=BB"),
+    ];
+    let (mut app, id) = list_app(&both);
+    app.session.keeps_local = false;
+    let q = question(&app, &json!({"message": id})).unwrap();
+    assert!(q.text.contains("leave@news.example") && !q.text.contains("browser"), "{}", q.text);
+    let way = app.session.unsubscribe_way(id).unwrap();
+    assert!(matches!(way, Way::Mail { ref to, .. } if to == "leave@news.example"), "{way:?}");
+    // In Junk E-mail: nothing asked, and the command says why.
+    let (mut app, id) = list_app(&both);
+    let account = app.session.mailbox.message(id).unwrap().account;
+    let junk = app.session.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Junk).unwrap();
+    app.session.mailbox.message_mut(id).unwrap().folder = junk;
+    assert!(question(&app, &json!({"message": id})).is_none());
+    assert!(app.session.unsubscribe_way(id).unwrap_err().contains("Junk"));
 }
 
 #[test]

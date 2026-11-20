@@ -43,6 +43,9 @@ list (author, source, license) is in ATTRIBUTION.md.
   carries each licence text: Ubuntu Light (Ubuntu Font Licence 1.0), Hack (MIT, with the
   Bitstream Vera Licence for the glyphs from Bitstream Vera Sans Mono), Noto Emoji (SIL Open Font
   License 1.1; Copyright 2013 Google Inc.) and emoji-icon-font (MIT).
+- //// Neoffice — Noto Emoji 2.001 (assets/fonts/NotoEmoji-Reactions.ttf, six glyphs: the emoji of a
+  reaction) — SIL Open Font License 1.1; Copyright 2013, 2022 Google Inc. See
+  assets/fonts/OFL-NotoEmoji.txt.
 - No colour emoji face is bundled: the system's own (Segoe UI Emoji on Windows, Noto Color Emoji
   or another on Linux) is read from its fonts folder when the program starts, as Segoe UI is.
 - All UI icons are drawn in code (crates/ui-egui/src/icons.rs) and the app icon is drawn in code

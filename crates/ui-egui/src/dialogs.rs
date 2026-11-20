@@ -1568,7 +1568,9 @@ pub(crate) fn all_commands(app: &MailApp) -> Vec<(String, String, String, String
         .map(|c| {
             (
                 c.id.to_string(),
-                tl!(c.label).to_string(),
+                // //// Neoffice — Snooze by the name its button and key have where the mailbox's server keeps it: « Plus tard »
+                // //// Neoffice — (snooze_hosted.rs); upstream's name read « Reporter » beside it.
+                crate::snooze_hosted::search_label(app, c.id).unwrap_or_else(|| tl!(c.label)).to_string(),
                 crate::i18n::location(c.location),
                 crate::widgets::shortcut_text(app, c.id),
                 (c.enabled)(&app.session).is_none() && crate::windows::compose_window::acts_here(app, c.id),
@@ -2474,6 +2476,14 @@ pub fn show(app: &mut MailApp, ctx: &egui::Context) {
             "account.graphSwitch" => "ui.graphSwitch".to_string(),
             _ => id,
         };
+        // //// Neoffice — Snooze needs its time: where « Plus tard » is offered, its window of times asks for it (upstream ran it
+        // //// Neoffice — with none, which is refused). It is drawn later in this same frame: the Enter that picked the command is
+        // //// Neoffice — taken out first, or its time field would take it as « Plus tard » and put the messages away at once.
+        if id == "mail.snooze" && crate::snooze_hosted::search_label(app, &id).is_some() {
+            crate::keys::take_enter_out(ctx, layer);
+            crate::snooze_hosted::open(app, ctx, &[]);
+            return;
+        }
         let _ = app.run(&id, json!({}));
     }
 }

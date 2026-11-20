@@ -807,7 +807,16 @@ pub(crate) fn attachments(app: &mut MailApp, ui: &mut Ui, m: &Message, place: Pl
     // Which of them are shown as pictures, when the owner has them so (#834).
     let sizes = attachment_pictures::looks(app, ui.ctx(), m, place, &files);
     ui.add_space(2.0);
-    ui.horizontal_wrapped(|ui| {
+    // //// Neoffice — the files' rows are top-aligned (upstream: `horizontal_wrapped`, centred): egui gives every row after a
+    // //// Neoffice — picture's tile the tile's height, so the rows of chips under it stood ~110 points apart, each chip
+    // //// Neoffice — centred in a row as tall as the picture. Top-aligned, a row starts where the one above it ends.
+    let rows = if ui.layout().prefer_right_to_left() {
+        egui::Layout::right_to_left(egui::Align::Min)
+    } else {
+        egui::Layout::left_to_right(egui::Align::Min)
+    };
+    let initial = vec2(ui.available_size_before_wrap().x, ui.spacing().interact_size.y);
+    ui.allocate_ui_with_layout(initial, rows.with_main_wrap(true), |ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         for ((index, a), look) in files.iter().zip(&sizes) {
             match look {
