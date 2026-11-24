@@ -178,6 +178,19 @@ fn a_meeting_nobody_is_invited_to_yet_stays_in_its_calendar() {
     let asked = drawn(&h);
     assert!(asked.iter().any(|text| text.contains("Send the invitation")) && asked.iter().any(|text| text.contains("Don't Send")), "{asked:?}");
     h.state_mut().dialog = None;
+    // Its form sends the invitation (nothing was sent that an update would be of), and deletes rather than cancels.
+    let opened = h.state_mut().execute("ui.openWindow", json!({"event": id})).unwrap()["window"].as_u64().unwrap();
+    h.run_steps(4);
+    let form = drawn(&h);
+    assert!(!form.iter().any(|text| text.contains("Send Update") || text.contains("Cancel Meeting")), "{form:?}");
+    assert!(form.iter().any(|text| text == "Send"), "{form:?}");
+    h.state_mut().execute("ui.closeWindow", json!({"window": opened})).unwrap();
+    h.run_steps(2);
+    // Deleted: asked about once, as any event of a server's calendar; nobody is told, as nobody was invited.
+    h.state_mut().run("calendar.delete", json!({"id": id})).unwrap();
+    h.run_steps(3);
+    assert!(drawn(&h).iter().any(|text| text == "Delete This Event?"), "{:?}", drawn(&h));
+    h.state_mut().dialog = None;
     assert!(h.state_mut().execute("calendar.delete", json!({"id": id})).is_ok(), "nobody was invited: no cancellation");
 }
 

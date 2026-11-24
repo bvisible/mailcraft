@@ -2055,6 +2055,8 @@ mod event {
         meeting: bool,
         /// The event had attendees when it was opened.
         was_meeting: bool,
+        // //// Neoffice — it stays in its calendar unsent: what Send sends is the invitation (`hosted_calendar`).
+        unsent: bool,
         /// Somebody else organizes it and an account's server keeps it: who is invited, and how
         /// it repeats, are not the owner's to say.
         guest: bool,
@@ -2226,6 +2228,8 @@ mod event {
                 id: Some(id),
                 meeting: e.is_meeting(),
                 was_meeting: e.is_meeting(),
+                // //// Neoffice — see `unsent`.
+                unsent: mailcraft_engine::cmd::hosted_calendar::unsent(&s.mailbox, e),
                 guest: e.origin.guest && mailcraft_engine::cmd::remote::keeper(&s.mailbox, &e.origin).is_some(),
                 title: e.title.clone(),
                 location: e.location.clone(),
@@ -2901,7 +2905,8 @@ mod event {
             };
             // A meeting the owner organizes is sent; anything else is saved.
             let organizes = self.meeting && !self.guest;
-            let sent = organizes && self.id.is_some() && self.was_meeting;
+            // //// Neoffice — (not one that stays in its calendar unsent, see `unsent`.)
+            let sent = organizes && self.id.is_some() && self.was_meeting && !self.unsent;
             let mut items = Vec::new();
             if organizes {
                 let label = if sent { tl!("Send Update") } else { tl!("Send") };

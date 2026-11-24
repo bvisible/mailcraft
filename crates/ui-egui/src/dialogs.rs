@@ -2026,7 +2026,7 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
             && !app.session.keeps_local
             && keeper(mb, &e.origin).is_some()
             && !e.origin.guest
-            && e.attendees.is_empty()
+            && (e.attendees.is_empty() || mailcraft_engine::cmd::hosted_calendar::unsent(mb, e))
             && (e.recurrence.is_none() || !has("scope"))
     }) {
         return Some(delete_question(e, calendar, params));
