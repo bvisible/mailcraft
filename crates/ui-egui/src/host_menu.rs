@@ -385,7 +385,11 @@ pub fn run(app: &mut MailApp, command: &Command) -> Result<(), String> {
             return show(app, message);
         }
     };
-    refused(app, ran, since)
+    refused(app, ran, since)?;
+    // What the page's menu asked for is in front: the window's File page stood over it, and the menu did nothing to see
+    // (neoffice-maintenance#3335).
+    app.ui.backstage = false;
+    Ok(())
 }
 
 /// A command's refusal, in the interface's language: as the window has just said it in its status bar (`MailApp::run`), else
@@ -414,6 +418,7 @@ fn show(app: &mut MailApp, message: Id) -> Result<(), String> {
     let ran = app.run("mail.select", json!({"id": message}));
     refused(app, ran, since)?;
     app.reveal_selection = true;
+    app.ui.backstage = false;
     Ok(())
 }
 

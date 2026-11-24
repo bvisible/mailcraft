@@ -313,6 +313,9 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
     // //// Neoffice — the groups of Principal (`bundles`): its notifications and its newsletters, each a row of its own.
     let bundling = bundles(s, &query);
     let mut bundled: [Vec<&Message>; 2] = [Vec::new(), Vec::new()];
+    // //// Neoffice — a search in Principal finds its notifications and its newsletters too: their groups' rows are not drawn while
+    // //// Neoffice — something is searched for, so one that matched had no row anywhere, and the search said it found nothing.
+    let every_stream = !s.keeps_local && s.view.filter == Filter::Main && !query.is_empty();
     let mut shown: Vec<&Message> = looked
         .into_iter()
         .filter(|m| {
@@ -328,7 +331,8 @@ pub(crate) fn listing(s: &Session, decided: &HashMap<Id, bool>, searched: &HashM
             // //// Neoffice — its text is searched in full.
             unfetched = unfetched.saturating_add(usize::from(m.unfetched && !m.files_on_server));
             let hit = gmail.as_ref().is_none_or(|g| g.keeps(m))
-                && filtered(s, m, &me)
+                // //// Neoffice — (`every_stream`.)
+                && (every_stream || filtered(s, m, &me))
                 && (query.is_empty()
                     || match decided.get(&m.id).or_else(|| searched.get(&m.id).filter(|_| m.body_is_kept())) {
                         Some(hit) => *hit,

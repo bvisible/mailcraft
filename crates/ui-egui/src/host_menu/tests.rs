@@ -991,3 +991,17 @@ fn a_message_the_exchanges_pane_opens_is_fetched_once_shown_and_answers_nobody()
     // A mailbox the page didn't hand over is refused, in words.
     assert!(open_server_message(&mut app, "nobody@example.org", "A9").is_err());
 }
+
+#[test]
+fn what_the_page_s_menu_asks_for_closes_the_file_page_and_a_refusal_leaves_it() {
+    let mut w = sample(true);
+    for command in [Command::View("view.calendar"), Command::View("view.mail"), Command::NewMail, Command::Search("figures".into())] {
+        w.state_mut().ui.backstage = true;
+        run(w.state_mut(), &command).unwrap();
+        assert!(!w.state().ui.backstage);
+    }
+    w.state_mut().ui.backstage = true;
+    let unknown = Command::Folder { account: "nobody@example.org".into(), folder: "Minbox".into() };
+    assert!(run(w.state_mut(), &unknown).is_err());
+    assert!(w.state().ui.backstage, "nothing was shown: the page stays");
+}

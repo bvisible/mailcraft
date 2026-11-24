@@ -210,3 +210,28 @@ fn clearing_the_selection_with_no_ids_leaves_nothing_ticked() {
     s.run("mail.select", &json!({"ids": []})).unwrap();
     assert!(s.sel.messages.is_empty());
 }
+
+#[test]
+fn a_search_in_principal_finds_the_mail_of_its_groups_in_a_hosting_page_s_tab() {
+    let (mut s, _) = said();
+    s.keeps_local = false;
+    assert_eq!(s.view.filter, crate::Filter::Main);
+    for (query, found) in [("digest", "digest"), ("alert", "alert"), ("lunch", "lunch?"), ("unsaid", "unsaid")] {
+        s.run("view.search", &json!({"query": query})).unwrap();
+        assert_eq!(subjects(&s), [found], "{query}");
+        assert!(list::rows(&s).iter().all(|r| r.bundle.is_none()), "no group's row while something is searched for");
+    }
+    // Once the search is cleared, Principal and its two groups again.
+    s.run("view.search", &json!({"query": ""})).unwrap();
+    assert_eq!(list::rows(&s).iter().filter(|r| r.bundle.is_some()).count(), 2);
+    // The window's own tab (a computer's mailbox) searches what it lists, as before.
+    s.keeps_local = true;
+    s.run("view.search", &json!({"query": "digest"})).unwrap();
+    assert!(subjects(&s).is_empty());
+    // And so does a group opened: its own mail alone.
+    s.keeps_local = false;
+    s.run("view.search", &json!({"query": ""})).unwrap();
+    s.run("view.filter", &json!({"value": "newsletters"})).unwrap();
+    s.run("view.search", &json!({"query": "alert"})).unwrap();
+    assert!(subjects(&s).is_empty());
+}
