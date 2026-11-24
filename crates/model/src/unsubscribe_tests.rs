@@ -206,3 +206,30 @@ proptest! {
         let _ = addresses(&list);
     }
 }
+
+// //// Neoffice — added tests: a `mailto:` with a subject and a text, accents among them, and a header in encoded-words.
+#[test]
+fn a_mailto_gives_its_subject_and_its_text_with_their_accents() {
+    let way = mailto("mailto:leave@news.example?subject=D%C3%A9sabonnement%20L5&body=Merci%20de%20me%20retirer%2C%0A%C3%A0%20bient%C3%B4t").unwrap();
+    assert_eq!(
+        way,
+        Way::Mail { to: "leave@news.example".into(), subject: "Désabonnement L5".into(), body: "Merci de me retirer,\nà bientôt".into() }
+    );
+}
+
+#[test]
+fn addresses_in_encoded_words_are_read() {
+    // As Python's `email` writes an address longer than a line.
+    let folded = "=?utf-8?q?=3Cmailto=3Aleave=40news=2Eexample=3Fsubject=3DD=25C3=25A9s?=\r\n =?utf-8?q?abonnement=26body=3DMerci=2520de=2520me=2520retirer=3E?=";
+    let list = addresses(folded);
+    assert_eq!(list, ["mailto:leave@news.example?subject=D%C3%A9sabonnement&body=Merci%20de%20me%20retirer"]);
+    assert_eq!(
+        mailto(&list[0]),
+        Some(Way::Mail { to: "leave@news.example".into(), subject: "Désabonnement".into(), body: "Merci de me retirer".into() })
+    );
+    assert_eq!(addresses("=?utf-8?b?PGh0dHBzOi8vbmV3cy5leGFtcGxlL3U+?="), ["https://news.example/u"]);
+    // Another character set, or broken ones: nothing, as a header that says nothing.
+    for odd in ["=?koi8-r?q?=3Cmailto=3Aa=40b=2Ec=3E?=", "=?utf-8?b?***?=", "=?utf-8?x?a?=", "=?utf-8?q?abc", "=?utf-8?q?=FF=3Cx=3E?= tail"] {
+        assert_eq!(addresses(odd), Vec::<String>::new(), "{odd}");
+    }
+}

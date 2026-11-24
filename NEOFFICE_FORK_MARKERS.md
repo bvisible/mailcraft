@@ -41,7 +41,14 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
   the fork's own tests, red on `ff37550`: `cmd/hidden_quote_hosted_tests.rs` (every way a hosted answer quotes, the draft again and what
   is sent) and `nora/assist_tests.rs` (the reply Nora opens). Upstream's catalogues were taken, then `cargo xtask i18n`; the thirteen
   texts with no French were translated into the fork's French, German, Italian, Spanish and Dutch (`po/neoffice/`, Haiku), and none of
-  the fork's translations was lost (compared before and after). What came before it:
+  the fork's translations was lost (compared before and after). Since the merge (2026-11-24): nothing of a hosting page's calendar is
+  kept "on this computer" (`crates/engine/src/cmd/hosted_calendar.rs`: an event a JMAP server calls otherwise with the same `uid` is
+  the one that is here, `same_by_uid`; what a server refuses, or takes and doesn't list, stays in its calendar `unsent`, hooked in
+  `remote.rs` by `page`; `bring_home` empties the calendars a window of before left; no calendar of the mailbox's own is made,
+  `kept_here::OWN_CALENDARS`), and nothing drawn there names a computer or Outlook (`ui-egui/src/hosted_words_tests.rs` reads all that is
+  painted); the Favorites of a Microsoft account and removing a mailbox are refused there; a rule is said in the interface's language,
+  whole (`ui-egui/src/rule_words.rs`, held to upstream's English), and kept by its mailbox's address (`kept.rs`); a `List-Unsubscribe`
+  in encoded-words is read (`model/src/unsubscribe.rs` `unworded`), and the text a list asks for is in the question. What came before it:
 - `979953f` (upstream's tag v0.14.0, 2026-11-19, 1,087 commits after v0.13.0: Send Later, Delay Delivery and Undo Send (#950,
   `cmd/send_later.rs`); follow-up reminders and "remind me if nobody replies" (#948, `cmd/followup.rs`); React, a message answered
   with one emoji (#1544, RFC 9078, `cmd/react.rs`); Unsubscribe, by one click, by mail or on the list's page (#1207, RFC 8058);

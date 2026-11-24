@@ -529,3 +529,26 @@ fn a_list_a_hosting_pages_tab_asked_already_is_said_as_that() {
     assert!(refused.contains("asked already"), "{refused}");
     assert_eq!(outbox(&app), ["leave@shop.example"]);
 }
+
+// //// Neoffice — added test: what several lists are written, text included, is in the question; and the status bar says nothing there is none of.
+#[test]
+fn the_text_a_list_asks_for_is_shown_and_sent_and_nothing_is_counted_that_is_not_there() {
+    let (mut app, _) = list_app(&[]);
+    app.session.keeps_local = false;
+    let list = "<mailto:leave@shop.example?subject=D%C3%A9sabonnement%20L4&body=STOPQ4%20merci>";
+    let shop = add_at(&mut app, "deals@shop.example", 60, &[("List-Unsubscribe", list)]);
+    let club = add_at(&mut app, "news@club.example", 120, &[("List-Unsubscribe", "<mailto:quit@club.example>")]);
+    let (asked, _) = super::question_many(&mut app, &json!({"ids": [shop, club]})).unwrap();
+    assert!(asked.text.contains("• to leave@shop.example, subject “Désabonnement L4”, text “STOPQ4 merci”"), "{}", asked.text);
+    assert!(asked.text.contains("• to quit@club.example, subject “Unsubscribe”"), "{}", asked.text);
+    app.execute("ui.unsubscribeMany", json!({"ids": [shop, club], "mail": [shop, club]})).unwrap();
+    let outbox = app
+        .session
+        .mailbox
+        .folder_of_kind(1, mailcraft_model::FolderKind::Outbox)
+        .or_else(|| app.session.mailbox.folders.iter().find(|f| f.kind == mailcraft_model::FolderKind::Outbox).map(|f| f.id))
+        .unwrap();
+    let sent = app.session.mailbox.messages_in(outbox).find(|m| m.to.iter().any(|to| to.email == "leave@shop.example")).unwrap();
+    assert_eq!((sent.subject.as_str(), sent.body.text.trim()), ("Désabonnement L4", "STOPQ4 merci"), "what was shown");
+    assert_eq!(app.status_msg.as_ref().map(|(said, _)| said.as_str()), Some("Unsubscribing: 2 by mail."));
+}

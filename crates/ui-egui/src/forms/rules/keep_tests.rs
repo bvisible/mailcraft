@@ -559,9 +559,12 @@ fn the_dialog_says_a_refusal_in_the_windows_language() {
         f.acts = vec![Act { kind: Do::Copy, folder: outbox, ..f.fresh_action() }];
     }
     h.run_steps(4);
-    // The window turns German at its next frame, the one that takes the click.
+    // The window turns German at its next frame.
     h.state_mut().ui.language = "de".into();
-    h.get_by_label("Add Rule").click();
+    // //// Neoffice — the rules are said in the window's language, each on as many lines as it takes (`rule_words`): in German they take
+    // //// Neoffice — others, and the button is elsewhere in the frame that turned German, so the click comes after it (upstream's comes in it).
+    h.run_steps(2);
+    h.get_by_label("Regel hinzufügen").click();
     h.run_steps(4);
     let app = h.state();
     assert_eq!(app.session.mailbox.rules.len(), before, "the rule was refused");

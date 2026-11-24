@@ -5467,7 +5467,7 @@ msgid "Don't Save"
 msgstr "არ შეინახოს"
 
 #. interface
-#: crates/ui-egui/src/agent_gate.rs
+#: crates/ui-egui/src/agent_gate.rs crates/ui-egui/src/dialogs.rs
 #, fuzzy
 msgid "Don't Send"
 msgstr "არ გაიგზავნოს"
@@ -8636,6 +8636,16 @@ msgid "It stays here until this tab is closed: copy what you need of it."
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It stays in its calendar here, and is not on the server."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "It stays in its calendar here, and is not on the server: change it to send it again."
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/signature.rs
 #, fuzzy
 msgid "It uses an algorithm MailCraft doesn't know."
@@ -9067,6 +9077,11 @@ msgstr "ინახება მხოლოდ ამ კომპიუტე
 #. interface
 #: crates/ui-egui/src/nora/ready.rs
 msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor Nora's memory see it."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/backstage.rs
+msgid "Kept on your mailboxes' servers."
 msgstr ""
 
 #. interface
@@ -12015,6 +12030,11 @@ msgstr "ძიების შესაბამისი არავინ ა
 msgid "Nobody matches: {names}"
 msgstr "შესაბამისი არავინ არის: {names}"
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Nobody was invited: the meeting stays in its calendar here, and is not on the server"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/sync_driver/free_busy.rs
 #, fuzzy
@@ -12539,6 +12559,11 @@ msgstr "ახლა არა: ის MailCraft-იდან გასვლი
 #, fuzzy
 msgid "Not on Outlook's list: mail, events and to-dos you give it still carry its name to the account's server, where it has no colour"
 msgstr "Outlook-ის სიაში არ არის: ფოსტას, ღონისძიებებსა და დავალებებს, რომლებსაც მას მიანიჭებთ, მისი სახელი მაინც მიაქვს ანგარიშის სერვერზე, სადაც მას ფერი არ აქვს"
+
+#. interface
+#: crates/ui-egui/src/notes_view.rs crates/ui-egui/src/people_view.rs
+msgid "Not on the server"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/backstage.rs
@@ -21131,9 +21156,8 @@ msgstr "ეს შეხვედრებია, რომლებსაც �
 
 #. interface
 #: crates/ui-egui/src/meeting_dialogs/share.rs
-#, fuzzy
-msgid "These are the answers this computer has been told of."
-msgstr "ეს ის პასუხებია, რომლებიც ამ კომპიუტერს ეცნობა."
+msgid "These are the answers received so far."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/dialogs.rs
@@ -21796,6 +21820,11 @@ msgstr "ეს ელემენტი ანგარიშის {who} სე
 msgid "This item is still on its way to the account's server. Move it once it is there (in a moment)."
 msgstr "ეს ელემენტი ჯერ კიდევ გზაშია ანგარიშის სერვერისკენ. გადაიტანეთ, როცა იქ აღმოჩნდება (ცოტა ხანში)."
 
+#. interface
+#: crates/ui-egui/src/calendar_sync.rs
+msgid "This item stays in its calendar here, and is not on the server"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/private_keys.rs
 #, fuzzy
@@ -22058,6 +22087,11 @@ msgstr "ეს წერილი „არასასურველ ფოს
 msgid "This message isn't an invitation that can be answered."
 msgstr "ეს წერილი ისეთი მოწვევა არ არის, რომელზეც პასუხის გაცემა შეიძლება."
 
+#. interface
+#: crates/ui-egui/src/reading.rs
+msgid "This message isn't downloaded yet. It will be when you're online."
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/calendar/invitation.rs
 #, fuzzy
@@ -22154,6 +22188,11 @@ msgid "This note's text is changed where it was written: open it on the web"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page keeps no calendar of its own: the calendars here are those of your mailboxes' servers"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs crates/ui-egui/src/pim_rights.rs
 msgid "This page keeps no categories or favorites: they would be gone at the next visit"
 msgstr ""
@@ -22201,6 +22240,16 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "This page reports problems to the people who run it, not to MailCraft's makers"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page's Favorites are your own"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "This page's mailboxes come from the site that opened them: remove one there"
 msgstr ""
 
 #. interface
@@ -23040,9 +23089,8 @@ msgstr "გამოწერა გაუქმდა."
 
 #. interface
 #: crates/ui-egui/src/reading/unsubscribe.rs
-#, fuzzy
-msgid "Unsubscribing: {click} in one click, {mail} by mail, {pages} to do on their own page, {left} left out."
-msgstr "გამოწერის გაუქმება: {click} ერთი დაწკაპუნებით, {mail} წერილით, {pages} მათ საკუთარ გვერდზე გასაკეთებელი, {left} გამოტოვებული."
+msgid "Unsubscribing: {parts}."
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/unsubscribe.rs
@@ -23483,6 +23531,11 @@ msgstr "რა მოხდა და რას ელოდით — ერთ
 msgid "What happens to mail as it arrives"
 msgstr "რა ემართება ფოსტას მიღებისას"
 
+#. interface
+#: crates/ui-egui/src/backstage.rs
+msgid "What happens to the mail you run them over"
+msgstr ""
+
 #. android
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/AboutPages.kt
 #, fuzzy
@@ -23618,6 +23671,16 @@ msgstr "როდის"
 #, fuzzy
 msgid "When you switch:"
 msgstr "გადართვისას:"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "When {when}, except if {except}: {then}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "When {when}: {then}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/reading/invitation.rs
@@ -24374,7 +24437,7 @@ msgid "Your rights do not let you add contacts"
 msgstr ""
 
 #. interface
-#: crates/ui-egui/src/i18n/run_words/rows.rs
+#: crates/ui-egui/src/i18n/run_words/rows.rs crates/ui-egui/src/people_view.rs
 msgid "Your rights do not let you change this contact"
 msgstr ""
 
@@ -24966,6 +25029,11 @@ msgctxt "between e-mail addresses"
 msgid "{others}, {last}"
 msgstr "{others}, {last}"
 
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "body contains {words}"
+msgstr ""
+
 #. what a command says, why a command can't run
 #: crates/engine/src/cmd/calendar.rs crates/engine/src/cmd/calendar/invitation.rs
 #, fuzzy
@@ -24993,6 +25061,16 @@ msgstr "გაუქმებულია"
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "carries a user name or a password: the secret is given apart from the address"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "categorize it as {category}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "category is {words}"
 msgstr ""
 
 #. interface
@@ -25041,6 +25119,16 @@ msgstr ""
 msgid "choose a time within a year"
 msgstr "აირჩიეთ დრო ერთი წლის ფარგლებში"
 
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "clear its categories"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "clear its flag"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/mail.rs
 #, fuzzy
@@ -25071,6 +25159,16 @@ msgstr "კავშირის პრობლემა: {reason}"
 msgid "contact"
 msgstr "კონტაქტი"
 
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "copy it to a folder that is gone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "copy it to {folder}"
+msgstr ""
+
 #. why a mail server couldn't be used
 #: crates/net/src/lib.rs
 #, fuzzy
@@ -25088,6 +25186,11 @@ msgstr "სერვერთან {host} დაკავშირება ვ
 #, fuzzy
 msgid "day"
 msgstr "დღე"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "delete it"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/forms.rs
@@ -25118,6 +25221,31 @@ msgstr "ყველა დომენიდან @{domain}"
 #, fuzzy
 msgid "expected and replacement must be on one line"
 msgstr "მოსალოდნელი და ჩამნაცვლებელი ტექსტი ერთ ხაზზე უნდა იყოს"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "flag it"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "flag it for next week"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "flag it for this week"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "flag it for today"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "flag it for tomorrow"
+msgstr ""
 
 #. folder name
 #: crates/model/src/mailbox.rs
@@ -25194,10 +25322,20 @@ msgid "folders are nested too deeply"
 msgstr "საქაღალდეები ზედმეტად ღრმადაა ჩადგმული"
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "from contains {words}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/account_setup/exchange.rs
 #, fuzzy
 msgid "from {from} to {to}"
 msgstr "{from} – {to}"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "from {words}"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
@@ -25212,6 +25350,11 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "has a port that isn't a number from 1 to 65535"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "has an attachment"
 msgstr ""
 
 #. interface
@@ -25242,6 +25385,21 @@ msgstr "iCloud"
 #, fuzzy
 msgid "icloud.com, me.com and mac.com"
 msgstr "icloud.com, me.com და mac.com"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "importance is high"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "importance is low"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "importance is normal"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/security.rs
@@ -25279,13 +25437,28 @@ msgid "is a link: not followed, and nothing in it was removed"
 msgstr "ბმულია: არ გადავედით და მასში არაფერი წაშლილა"
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "is a meeting invitation or update"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "is a plain http:// address to a server that isn't on this computer: use https://"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "is an automatic reply"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "is empty"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "is flagged"
 msgstr ""
 
 #. interface
@@ -25548,6 +25721,11 @@ msgid "mark '{subject}' as unread"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "mark it as read"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "mark {n} messages as read"
 msgstr ""
@@ -25604,6 +25782,16 @@ msgid "move '{subject}' to {folder}"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "move it to a folder that is gone"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "move it to {folder}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "move {n} messages"
 msgstr ""
@@ -25611,6 +25799,26 @@ msgstr ""
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "move {n} messages to {folder}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "my address is in Cc"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "my address is in To"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "my address is in To or Cc"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "my address isn't in To"
 msgstr ""
 
 #. interface
@@ -26189,6 +26397,36 @@ msgstr "ინტერნეტიდან სურათები არ ჩ
 msgid "readOnly"
 msgstr "მხოლოდ წასაკითხი"
 
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "received from {from} to {to}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "received on any day"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "received on or after {day}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "received on or before {day}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "recipient contains {words}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "recipient's address contains {words}"
+msgstr ""
+
 #. what a command says
 #: crates/engine/src/cmd/compose.rs
 #, fuzzy
@@ -26254,6 +26492,11 @@ msgid "select an appointment first"
 msgstr "ჯერ მონიშნეთ ჩანაწერი"
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sender's address contains {words}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/forms.rs
 #, fuzzy
 msgctxt "sensitivity"
@@ -26281,6 +26524,51 @@ msgctxt "sensitivity"
 msgid "Private"
 msgstr "პირადი"
 
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sensitivity is confidential"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sensitivity is normal"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sensitivity is personal"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sensitivity is private"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sent only to me"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "sent to {words}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "set importance to high"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "set importance to low"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "set importance to normal"
+msgstr ""
+
 #. android
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/ComposeModel.kt
 #, fuzzy
@@ -26298,6 +26586,11 @@ msgstr "საერთო საფოსტო ყუთები იხსნ
 #, fuzzy
 msgid "shared mailboxes open under an account that is kept in step through Microsoft Graph"
 msgstr "საერთო საფოსტო ყუთები იხსნება ანგარიშით, რომელიც Microsoft Graph-ით სინქრონიზდება"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "show a desktop alert"
+msgstr ""
 
 #. why a mail server couldn't be used
 #: crates/net/src/lib.rs
@@ -26322,6 +26615,11 @@ msgstr "შესვლა ვერ მოხერხდა: {reason}"
 #, fuzzy
 msgid "sign-in needed"
 msgstr "საჭიროა შესვლა"
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "size is {min} KB to {max} KB"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/snooze_hosted.rs
@@ -26405,6 +26703,16 @@ msgstr "someone@example.org ან @example.org"
 #: crates/ui-egui/src/stream_correct.rs
 msgctxt "stream"
 msgid "Move to Tab"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "subject contains {words}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "subject or body contains {words}"
 msgstr ""
 
 #. what a command says
@@ -28995,6 +29303,16 @@ msgid "{every} · next run at {time}"
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "{first} and {second}"
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/rule_words.rs
+msgid "{first} or {second}"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/import_tree.rs
 #, fuzzy
 msgid "{folders} will be made under a new folder called {name} on this computer, with {messages}."
@@ -29500,6 +29818,11 @@ msgstr ""
 
 #. interface
 #: crates/ui-egui/src/i18n/run_words/rows.rs
+msgid "{name} was made here and the server said it took it, but it is not in the server's calendar."
+msgstr ""
+
+#. interface
+#: crates/ui-egui/src/i18n/run_words/rows.rs
 msgid "{name} was made here and the server said it took it, but it is not in the server's calendar. It is kept on this computer only: it is not in your Outlook calendar."
 msgstr ""
 
@@ -29708,6 +30031,13 @@ msgid "{n} by a message from your account through your Outbox:"
 msgid_plural "{n} by a message each from your account through your Outbox:"
 msgstr[0] "{n} თქვენი ანგარიშიდან წერილით, გასაგზავნების გავლით:"
 msgstr[1] "{n} თითოეული თქვენი ანგარიშიდან წერილით, გასაგზავნების გავლით:"
+
+#. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "{n} by mail"
+msgid_plural "{n} by mail"
+msgstr[0] ""
+msgstr[1] ""
 
 #. what a command says
 #: crates/model/src/message.rs
@@ -30023,6 +30353,13 @@ msgstr[1] "{n} საათით ადრე"
 
 #. interface
 #: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "{n} in one click"
+msgid_plural "{n} in one click"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
 #, fuzzy
 msgid "{n} in one click: its server is sent the address it gave, nothing else."
 msgid_plural "{n} in one click: each list's server is sent the address it gave, nothing else, one at a time."
@@ -30114,6 +30451,13 @@ msgid "{n} kept because it differs"
 msgid_plural "{n} kept because they differ"
 msgstr[0] "{n} დარჩა, რადგან განსხვავდება"
 msgstr[1] "{n} დარჩა, რადგან განსხვავდება"
+
+#. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "{n} left out"
+msgid_plural "{n} left out"
+msgstr[0] ""
+msgstr[1] ""
 
 #. interface
 #: crates/ui-egui/src/reading/unsubscribe.rs
@@ -30852,6 +31196,13 @@ msgstr[0] "მასში {n} რამ დანარჩენს არ შ�
 msgstr[1] "მასში {n} რამ დანარჩენს არ შეესაბამებოდა და გასწორდა."
 
 #. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "{n} to do on its own page"
+msgid_plural "{n} to do on their own page"
+msgstr[0] ""
+msgstr[1] ""
+
+#. interface
 #: crates/ui-egui/src/backstage.rs crates/ui-egui/src/folder_properties.rs crates/ui-egui/src/gmail_tabs.rs crates/ui-egui/src/nav.rs
 #, fuzzy
 msgid "{n} unread"
@@ -31250,6 +31601,11 @@ msgid "• to {to}, subject “{subject}”"
 msgstr "• ადრესატი: {to}, თემა: „{subject}“"
 
 #. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "• to {to}, subject “{subject}”, text “{text}”"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/ribbon.rs
 #, fuzzy
 msgid "…and {n} more — type to narrow it"
@@ -31276,6 +31632,14 @@ msgstr ""
 #: crates/ui-egui/src/credits.rs
 msgid "−Lines"
 msgstr ""
+
+#, fuzzy
+#~ msgid "These are the answers this computer has been told of."
+#~ msgstr "ეს ის პასუხებია, რომლებიც ამ კომპიუტერს ეცნობა."
+
+#, fuzzy
+#~ msgid "Unsubscribing: {click} in one click, {mail} by mail, {pages} to do on their own page, {left} left out."
+#~ msgstr "გამოწერის გაუქმება: {click} ერთი დაწკაპუნებით, {mail} წერილით, {pages} მათ საკუთარ გვერდზე გასაკეთებელი, {left} გამოტოვებული."
 
 #, fuzzy
 #~ msgid "Apply Downloaded JMAP Messages"

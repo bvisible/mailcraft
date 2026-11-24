@@ -301,7 +301,8 @@ pub(crate) const MAX_MAIL_ASKED: usize = 20;
 /// and how many senders are left out.
 struct Plan {
     click: Vec<(u64, String)>,
-    mail: Vec<(u64, String, String)>,
+    // //// Neoffice — (and its text, last, when its address gives one.)
+    mail: Vec<(u64, String, String, String)>,
     pages: usize,
     left_out: usize,
     // //// Neoffice — of those left out, the lists asked already (`mailcraft_engine::cmd::unsubscribe::ASKED_ALREADY`).
@@ -327,7 +328,8 @@ fn plan(app: &mut MailApp, ids: &[u64]) -> Result<Plan, String> {
                 plan.left_out += 1;
                 plan.asked += 1;
             }
-            Some("mail") => plan.mail.push((id, text("to"), text("subject"))),
+            // //// Neoffice — (with its text.)
+            Some("mail") => plan.mail.push((id, text("to"), text("subject"), text("body"))),
             Some("page") => plan.pages += 1,
             _ => {}
         }
@@ -384,8 +386,14 @@ pub(crate) fn question_many(app: &mut MailApp, p: &Value) -> Result<(crate::dial
         ));
         // Whole, on one line: what is sent is what was seen (the address bounds both).
         let line = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
-        for (_, to, subject) in &plan.mail {
-            said.push(crate::i18n::fmt(tl!("• to {to}, subject “{subject}”"), &[("to", &line(to)), ("subject", &line(subject))]));
+        for (_, to, subject, body) in &plan.mail {
+            // //// Neoffice — and the text, when the address gives one: upstream sends it without showing it here.
+            let (to, subject, body) = (line(to), line(subject), line(body));
+            said.push(if body.is_empty() {
+                crate::i18n::fmt(tl!("• to {to}, subject “{subject}”"), &[("to", &to), ("subject", &subject)])
+            } else {
+                crate::i18n::fmt(tl!("• to {to}, subject “{subject}”, text “{text}”"), &[("to", &to), ("subject", &subject), ("text", &body)])
+            });
         }
     }
     if later > 0 {
@@ -457,11 +465,22 @@ fn many(app: &mut MailApp, p: &Value) -> Result<Value, String> {
         mail += 1;
     }
     poll(app);
-    let n = |count: usize| count.to_string();
-    app.status(crate::i18n::fmt(
-        tl!("Unsubscribing: {click} in one click, {mail} by mail, {pages} to do on their own page, {left} left out."),
-        &[("click", &n(click)), ("mail", &n(mail)), ("pages", &n(pages)), ("left", &n(left_out))],
-    ));
+    // //// Neoffice — what there is none of is not said (« 0 en un clic », « 0 laissés de côté »).
+    let mut parts: Vec<String> = Vec::new();
+    let n = |count: usize| count as u64;
+    if click > 0 {
+        parts.push(tln!(n(click), "{n} in one click", "{n} in one click"));
+    }
+    if mail > 0 {
+        parts.push(tln!(n(mail), "{n} by mail", "{n} by mail"));
+    }
+    if pages > 0 {
+        parts.push(tln!(n(pages), "{n} to do on its own page", "{n} to do on their own page"));
+    }
+    if left_out > 0 {
+        parts.push(tln!(n(left_out), "{n} left out", "{n} left out"));
+    }
+    app.status(crate::i18n::fmt(tl!("Unsubscribing: {parts}."), &[("parts", &parts.join(", "))]));
     Ok(json!({"oneClick": click, "mail": mail, "pages": pages, "leftOut": left_out}))
 }
 

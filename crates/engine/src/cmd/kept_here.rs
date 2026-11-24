@@ -29,6 +29,11 @@
 //! - **Shaded rows** (upstream's #1657): the list of such a tab is the design system's (variant D), which has no bands, and the
 //!   choice would be lost at the next visit ([`own_list_refusal`]).
 //!
+//! - **A calendar of the mailbox's own** (« On this computer »: Add Calendar, Move to the Account's Calendar): the calendars of
+//!   such a tab are its servers' ([`own_calendar_refusal`], `hosted_calendar`).
+//! - **The Favorites of a Microsoft account** ([`outlook_favorites_refusal`]): no page hands one over. The person's own stay.
+//! - **Removing a mailbox** ([`account_removal_refusal`]): the page hands it over again at the next visit.
+//!
 //! The reasons are fixed words, which a greyed control says on hover too; the window reads them in its own language.
 
 use mailcraft_model::{Action, Rule};
@@ -151,8 +156,38 @@ pub fn rule_refusal(s: &Session, r: &Rule) -> Option<&'static str> {
     })
 }
 
+/// Why a hosting page's tab makes no calendar of its own, and moves nothing from one.
+pub const NO_OWN_CALENDAR: &str = "This page keeps no calendar of its own: the calendars here are those of your mailboxes' servers";
+
+/// Upstream's commands about calendars of the mailbox's own (`hosted_calendar`).
+pub const OWN_CALENDARS: &[&str] = &["calendar.addCalendar", "calendar.moveToAccount"];
+
+/// Why no calendar of the mailbox's own is made, or emptied, when none is.
+pub fn own_calendar_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_OWN_CALENDAR)
+}
+
+/// Why the Favorites aren't Outlook's: they follow a Microsoft account's, and a hosting page hands none over.
+pub const NO_OUTLOOK_HERE: &str = "This page's Favorites are your own";
+
+/// Upstream's commands about the Favorites of a Microsoft account. Adding a folder to the Favorites and taking it out stay.
+pub const OUTLOOK_FAVORITES: &[&str] = &["view.favorites", "sync.applyFavorites"];
+
+/// Why the Favorites don't follow Outlook's, when they don't.
+pub fn outlook_favorites_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_OUTLOOK_HERE)
+}
+
+/// Why a mailbox isn't removed here: its site hands it over at every visit, so it would be back at the next one.
+pub const NO_REMOVAL_HERE: &str = "This page's mailboxes come from the site that opened them: remove one there";
+
+/// Why a mailbox isn't removed, when it isn't.
+pub fn account_removal_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_REMOVAL_HERE)
+}
+
 /// Why the command `id` is refused whoever asks (a script, an agent, a call that names its messages), when it is one of [`LATER`],
-/// [`SUBSCRIBED`] or [`ORDERED`], or [`SHADED`].
+/// [`SUBSCRIBED`], [`ORDERED`], [`OWN_CALENDARS`] or [`OUTLOOK_FAVORITES`], [`SHADED`], or removes an account.
 pub fn later_refusal_of(s: &Session, id: &str) -> Option<&'static str> {
     if LATER.contains(&id) {
         later_refusal(s)
@@ -162,6 +197,12 @@ pub fn later_refusal_of(s: &Session, id: &str) -> Option<&'static str> {
         order_refusal(s)
     } else if id == SHADED {
         own_list_refusal(s)
+    } else if OWN_CALENDARS.contains(&id) {
+        own_calendar_refusal(s)
+    } else if OUTLOOK_FAVORITES.contains(&id) {
+        outlook_favorites_refusal(s)
+    } else if id == "account.remove" {
+        account_removal_refusal(s)
     } else {
         None
     }

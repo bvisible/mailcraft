@@ -1645,3 +1645,227 @@ fn one_day_of_a_series_made_online_goes_without_it_and_says_the_whole_series_is_
 // The person's notes, on the same rig.
 #[path = "jmap_notes_flow_tests.rs"]
 mod notes;
+
+// Nothing of a hosting page's tab is "on this computer" (`hosted_calendar`): what the server has is what is here.
+
+impl Flow {
+    /// The window of a hosting page's tab, as the browser shell makes it.
+    fn hosted() -> Flow {
+        let mut flow = Flow::start();
+        flow.app.session.keeps_local = false;
+        flow
+    }
+
+    /// How many events are called `title` here, in any calendar.
+    fn count(&self, title: &str) -> usize {
+        self.app.session.mailbox.events.values().filter(|e| e.title == title).count()
+    }
+
+    /// The server calls the event `raw` by the name `new` from now on.
+    fn renamed(&self, title: &str, new: &str) {
+        self.server.with(|d| {
+            let event = d.pim.events.iter_mut().find(|e| e.props.get("title") == Some(&json!(title))).unwrap();
+            event.raw = new.to_string();
+        });
+    }
+
+    /// Several reads in a row, the ones that look again at what was sent among them.
+    fn look_again(&mut self) {
+        for _ in 0..6 {
+            self.look(11.0 * SECOND);
+        }
+        self.look(2.0 * MINUTE + SECOND);
+    }
+
+    /// What the window says went wrong, and the names of its calendars: none names a computer or Outlook.
+    fn nothing_on_this_computer(&self) {
+        let problems = self.app.sync_problems_of(self.account);
+        let names: Vec<String> = self.app.session.mailbox.calendars.iter().map(|c| c.name.clone()).collect();
+        let groups: Vec<String> =
+            mailcraft_engine::cmd::calendar_settings::calendar_groups(&self.app.session).into_iter().map(|group| group.title).collect();
+        for line in problems.iter().chain(&names).chain(&groups) {
+            assert!(!line.contains("computer") && !line.contains("device") && !line.contains("Outlook"), "{line}");
+        }
+    }
+}
+
+#[test]
+fn an_event_that_comes_back_under_another_id_is_the_event_that_was_made_here() {
+    let mut flow = Flow::hosted();
+    flow.server.with(|d| d.pim.listed_otherwise = true);
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    // Every answer names it otherwise (a server that names the events of a period by the answer they are in).
+    for name in ["reading-1", "reading-2", "reading-3", "reading-4", "reading-5"] {
+        flow.renamed("Dentist", name);
+        flow.look(11.0 * SECOND);
+        flow.look(2.0 * MINUTE + SECOND);
+        assert_eq!(flow.count("Dentist"), 1, "{name}");
+    }
+    flow.nothing_on_this_computer();
+    assert!(flow.app.sync_problems_of(flow.account).is_empty(), "{:?}", flow.app.sync_problems_of(flow.account));
+    assert_eq!(flow.event("Dentist").unwrap().origin.id, Pim::event_id("reading-5"));
+    // Changed, and deleted, under the name it has now.
+    let here = flow.event("Dentist").unwrap().id;
+    flow.app.execute("calendar.edit", json!({"id": here, "location": "Rue du Lac 4"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert_eq!(flow.on_server("Dentist").unwrap().props["locations"]["l1"]["name"], "Rue du Lac 4");
+    flow.app.execute("calendar.delete", json!({"id": here})).unwrap();
+    flow.renamed("Dentist", "reading-6");
+    flow.look_again();
+    assert!(flow.event("Dentist").is_none(), "deleted here: not back under another name");
+}
+
+#[test]
+fn a_series_that_comes_back_under_another_id_is_the_series_that_was_made_here() {
+    let mut flow = Flow::hosted();
+    flow.server.with(|d| d.pim.listed_otherwise = true);
+    flow.app
+        .execute(
+            "calendar.new",
+            json!({"title": "Yoga", "start": "2026-10-13T18:00", "end": "2026-10-13T19:00", "recurrence": {"freq": "weekly", "count": 3}}),
+        )
+        .unwrap();
+    assert!(flow.look(SECOND));
+    for name in ["reading-1", "reading-2", "reading-3", "reading-4"] {
+        flow.renamed("Yoga", name);
+        flow.look(11.0 * SECOND);
+        flow.look(2.0 * MINUTE + SECOND);
+        assert_eq!(flow.count("Yoga"), 1, "{name}");
+    }
+    assert_eq!(flow.when("Yoga"), ["2026-10-13T18:00:00", "2026-10-20T18:00:00", "2026-10-27T18:00:00"]);
+    flow.nothing_on_this_computer();
+}
+
+/// What the window of before left in the browser's copy: a double of `title` in a calendar of its own, with the same uid.
+fn leave_a_double(flow: &mut Flow, title: &str) -> Id {
+    let mut double = flow.event(title).unwrap();
+    let mailbox = &mut flow.app.session.mailbox;
+    let own = match mailbox.calendars.iter().find(|c| c.name == "On this computer") {
+        Some(own) => own.id,
+        None => {
+            let id = mailbox.alloc_id();
+            let calendar = mailcraft_model::Calendar { id, name: "On this computer".into(), visible: true, ..Default::default() };
+            mailbox.calendars.push(calendar);
+            id
+        }
+    };
+    double.id = 0;
+    double.calendar = own;
+    double.origin = Default::default();
+    mailbox.add_event(double).unwrap()
+}
+
+#[test]
+fn a_double_left_by_an_earlier_visit_goes_at_the_next_read() {
+    let mut flow = Flow::hosted();
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    leave_a_double(&mut flow, "Dentist");
+    assert_eq!(flow.count("Dentist"), 2);
+    // Two reads: the double goes by itself, with the calendar it was in.
+    flow.look(2.0 * MINUTE + SECOND);
+    assert_eq!(flow.count("Dentist"), 1);
+    assert_eq!(flow.event("Dentist").unwrap().origin.account, flow.account, "the server's stays");
+    assert!(flow.server.with(|d| d.pim.events.iter().filter(|e| e.props.get("title") == Some(&json!("Dentist"))).count()) == 1);
+    flow.nothing_on_this_computer();
+}
+
+#[test]
+fn a_double_the_person_changed_since_is_not_lost() {
+    let mut flow = Flow::hosted();
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    assert!(flow.look(SECOND));
+    let double = leave_a_double(&mut flow, "Dentist");
+    flow.app.session.mailbox.event_mut(double).unwrap().location = "Rue du Lac 4".into();
+    flow.look(2.0 * MINUTE + SECOND);
+    flow.look(11.0 * SECOND);
+    assert_eq!(flow.count("Dentist"), 1);
+    assert_eq!(flow.event("Dentist").unwrap().location, "Rue du Lac 4");
+    assert_eq!(flow.on_server("Dentist").unwrap().props["locations"]["l1"]["name"], "Rue du Lac 4", "what was changed goes to the server");
+    flow.nothing_on_this_computer();
+}
+
+#[test]
+fn what_was_only_on_this_computer_goes_to_the_accounts_calendar() {
+    let mut flow = Flow::hosted();
+    // (Made before the server's calendars came, or left there by a window of before.)
+    let mailbox = &mut flow.app.session.mailbox;
+    let own = mailbox.alloc_id();
+    mailbox.calendars.push(mailcraft_model::Calendar { id: own, name: "On this computer".into(), visible: true, ..Default::default() });
+    let at = |text: &str| mailcraft_time::parse_iso(text).unwrap().0;
+    let (start, end) = (at("2026-10-16T08:00"), at("2026-10-16T09:00"));
+    let event = mailcraft_model::Event { calendar: own, title: "Garage".into(), uid: "garage@old".into(), start, end, ..Default::default() };
+    mailbox.add_event(event).unwrap();
+    flow.look(2.0 * MINUTE + SECOND);
+    flow.look(11.0 * SECOND);
+    assert_eq!(flow.count("Garage"), 1);
+    assert!(flow.on_server("Garage").is_some(), "on the server, in the account's calendar");
+    flow.nothing_on_this_computer();
+}
+
+#[test]
+fn an_event_the_server_took_and_doesnt_list_stays_and_is_said_without_a_computer() {
+    let mut flow = Flow::hosted();
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    // The server says it took it, and doesn't have it.
+    flow.server.with(|d| d.pim.drops_new = true);
+    assert!(flow.look(SECOND));
+    flow.look_again();
+    flow.look_again();
+    flow.server.with(|d| d.pim.drops_new = false);
+    assert_eq!(flow.count("Dentist"), 1, "what the person typed is not lost");
+    let here = flow.event("Dentist").unwrap();
+    assert_eq!(here.calendar, flow.calendar("Ada").unwrap().id, "in the calendar it was made in");
+    let problems = flow.app.sync_problems_of(flow.account);
+    assert!(problems.iter().any(|line| line.contains("Dentist")), "{problems:?}");
+    flow.nothing_on_this_computer();
+    // It is not sent again and again by itself, and a change of it sends it again.
+    assert!(flow.on_server("Dentist").is_none());
+    flow.app.execute("calendar.edit", json!({"id": here.id, "location": "Rue du Lac 4"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Dentist").is_some());
+    flow.look_again();
+    assert_eq!(flow.count("Dentist"), 1);
+}
+
+#[test]
+fn an_event_the_server_refuses_stays_in_its_calendar_and_is_said_without_a_computer() {
+    let mut flow = Flow::hosted();
+    flow.app.execute("calendar.new", json!({"title": "Dentist", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00"})).unwrap();
+    let mark = flow.app.session.mailbox.event_changes.last().unwrap().token.clone();
+    flow.server.with(|d| d.pim.refused_events.insert(mark, "forbidden"));
+    assert!(flow.look(SECOND));
+    flow.look_again();
+    assert_eq!(flow.event("Dentist").unwrap().calendar, flow.calendar("Ada").unwrap().id);
+    flow.nothing_on_this_computer();
+    let here = flow.event("Dentist").unwrap();
+    flow.app.execute("calendar.edit", json!({"id": here.id, "title": "Dentist (Dr Lee)"})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Dentist (Dr Lee)").is_some());
+}
+
+#[test]
+fn a_hosting_pages_tab_makes_no_calendar_of_its_own() {
+    let mut flow = Flow::hosted();
+    assert!(flow.app.execute("calendar.addCalendar", json!({"name": "Mine"})).is_err());
+    assert!(flow.app.execute("calendar.moveToAccount", json!({})).is_err());
+    // A meeting nobody is invited to yet stays in the account's calendar, and isn't sent.
+    flow.app
+        .execute(
+            "calendar.newMeeting",
+            json!({"title": "Kickoff", "start": "2026-10-15T14:00", "end": "2026-10-15T15:00", "attendees": "bob@example.org", "send": false}),
+        )
+        .unwrap();
+    flow.look_again();
+    assert_eq!(flow.event("Kickoff").unwrap().calendar, flow.calendar("Ada").unwrap().id);
+    assert!(flow.on_server("Kickoff").is_none(), "nobody is invited");
+    flow.nothing_on_this_computer();
+    // Invited later: it goes then.
+    let here = flow.event("Kickoff").unwrap().id;
+    flow.app.execute("calendar.edit", json!({"id": here, "location": "Room 2", "send": true})).unwrap();
+    assert!(flow.look(SECOND));
+    assert!(flow.on_server("Kickoff").is_some());
+    flow.look_again();
+    assert_eq!(flow.count("Kickoff"), 1);
+}

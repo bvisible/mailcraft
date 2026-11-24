@@ -405,9 +405,12 @@ impl Pim {
             }
         }
         let online = event.contains_key(ONLINE).then(|| Value::Object(virtual_locations(&made.props)));
-        self.events.push(made);
+        if !self.drops_new {
+            self.events.push(made);
+        }
         self.made.insert(uid.clone(), raw.clone());
-        Ok((Pim::event_id(&raw), uid, online))
+        let named = if self.listed_otherwise { format!("{raw}-asked") } else { raw };
+        Ok((Pim::event_id(&named), uid, online))
     }
 
     /// A room for an online meeting: its link. Refused where the server makes none (`forbidden`), or with the SetError

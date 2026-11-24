@@ -587,6 +587,10 @@ mod notes;
 #[path = "jmap_pim_flow_tests.rs"]
 mod pim_flow_tests;
 
+#[cfg(test)]
+#[path = "jmap_mail_flow_tests.rs"]
+mod mail_flow_tests;
+
 // The sentences of a failed Send/Receive, from the real runner, read back in French (`run_words`).
 #[cfg(test)]
 #[path = "run_words_tests.rs"]

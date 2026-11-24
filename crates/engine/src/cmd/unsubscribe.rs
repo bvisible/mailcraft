@@ -23,7 +23,8 @@ pub fn specs() -> Vec<CommandSpec> {
             .selection(needs_message),
         CommandSpec::new("mail.unsubscribeMany", "Unsubscribe from the Selected Messages", "Message", unsubscribe_many)
             .reads()
-            .params(r#"{"ids"?: [number] (default: the selected messages; named wrongly, refused)} — each sender once (by its newest message among them), as `mail.unsubscribe` would: answers {"senders": [{"message", "sender", "way", "url"? (oneClick and page), "to"?, "subject"? (mail)}], "leftOut": [{"message", "sender", "why"}]}. Sends nothing: a request by mail goes one message at a time, with `mail.unsubscribe` and "send": true, so that its address and subject are seen first ("send" here is refused). At most 500 messages"#)
+            // //// Neoffice — (its text with it: `"body"`.)
+            .params(r#"{"ids"?: [number] (default: the selected messages; named wrongly, refused)} — each sender once (by its newest message among them), as `mail.unsubscribe` would: answers {"senders": [{"message", "sender", "way", "url"? (oneClick and page), "to"?, "subject"?, "body"? (mail)}], "leftOut": [{"message", "sender", "why"}]}. Sends nothing: a request by mail goes one message at a time, with `mail.unsubscribe` and "send": true, so that its address and subject are seen first ("send" here is refused). At most 500 messages"#)
             .selection(needs_message),
     ]
 }
@@ -59,9 +60,14 @@ fn unsubscribe_many(s: &mut Session, v: &Value) -> CmdResult {
                 let mut said = json!({"message": id, "sender": sender, "way": way.kind()});
                 match &way {
                     Way::OneClick { url } | Way::Page { url } => said["url"] = json!(url),
-                    Way::Mail { to, subject, .. } => {
+                    // //// Neoffice — (its text with it, below.)
+                    Way::Mail { to, subject, body } => {
                         said["to"] = json!(to);
                         said["subject"] = json!(if subject.trim().is_empty() { "Unsubscribe" } else { subject.as_str() });
+                        // //// Neoffice — and the text the address gives, when it gives one: the window's question shows what is sent.
+                        if !body.trim().is_empty() {
+                            said["body"] = json!(body);
+                        }
                     }
                 }
                 senders.push(said);

@@ -206,7 +206,8 @@ impl Tracking {
             });
         });
         ui.add(
-            egui::Label::new(egui::RichText::new(tl!("These are the answers this computer has been told of.")).color(t.text_dim).size(11.0)).wrap(),
+            // //// Neoffice — (said of no computer: a hosting page's tab is told by its server.)
+            egui::Label::new(egui::RichText::new(tl!("These are the answers received so far.")).color(t.text_dim).size(11.0)).wrap(),
         );
         let mut close = false;
         crate::dialogs::button_row(ui, |ui| {

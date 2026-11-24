@@ -484,6 +484,9 @@ pub(super) static ROWS: &[Row] = &[
     ),
     row(KEPT_HERE, Line, run_word!("This page keeps no order of folders: it would be lost at the next visit"), &[]),
     row(KEPT_HERE, Line, run_word!("This page's message list has a look of its own"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page keeps no calendar of its own: the calendars here are those of your mailboxes' servers"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page's Favorites are your own"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page's mailboxes come from the site that opened them: remove one there"), &[]),
     row(KEPT_HERE, Line, run_word!("This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"), &[]),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
     // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
@@ -553,6 +556,8 @@ pub(super) static ROWS: &[Row] = &[
     row(CONTACTS, Tail, run_word!("It is back in the contacts."), &[]),
     row(REMOTE, Tail, run_word!("It is back in the calendar."), &[]),
     row(REMOTE, Tail, run_word!("It is kept on this device only."), &[]),
+    row(REMOTE, Tail, run_word!("It stays in its calendar here, and is not on the server."), &[]),
+    row(REMOTE, Tail, run_word!("It stays in its calendar here, and is not on the server: change it to send it again."), &[]),
     // What became of a change of an event a server was told, or that waited for it (`remote`): for a JMAP account's
     // calendar and a Microsoft one's alike.
     row(REMOTE, Why, run_word!("it would have made the server write to the people invited, and nobody said to send that"), &[]),
@@ -734,6 +739,7 @@ pub(super) static ROWS: &[Row] = &[
         ),
         &[],
     ),
+    row(REMOTE, Line, run_word!("{name} was made here and the server said it took it, but it is not in the server's calendar."), &[]),
     row(
         REMOTE,
         Line,

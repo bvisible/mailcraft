@@ -1932,7 +1932,8 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
             invited_line(n),
             tl!("Send the invitation to them? The account's server sends it by mail as soon as the meeting is saved.")
         );
-        let keep = tl!("Don't Send, Keep on This Computer");
+        // //// Neoffice — in a hosting page's tab it stays in its calendar, on no computer (`hosted_calendar`).
+        let keep = if app.session.keeps_local { tl!("Don't Send, Keep on This Computer") } else { tl!("Don't Send") };
         return Some(Question::new(tl!("Send This Invitation?"), text, tl!("Send"), json!({"send": true})).or(keep, json!({"send": false})));
     }
     // A batch of calendar items is asked about as the set it names, never as the one in focus:
@@ -1997,7 +1998,10 @@ fn calendar_question(app: &MailApp, id: &str, params: &Value) -> Option<Question
                 invited_line(n),
                 tl!("Send the invitation to them? The account's server sends it by mail once the meeting is in its calendar.")
             );
-            return Some(Question::new(tl!("Send This Invitation?"), text, tl!("Send"), json!({"send": true})));
+            let ask = Question::new(tl!("Send This Invitation?"), text, tl!("Send"), json!({"send": true}));
+            // //// Neoffice — a meeting that stays in its calendar unsent may stay so (`hosted_calendar`).
+            let unsent = mailcraft_engine::cmd::hosted_calendar::unsent(mb, e);
+            return Some(if unsent { ask.or(tl!("Don't Send"), json!({"send": false})) } else { ask });
         }
         Some(Mail::Update(n)) => {
             let text = format!("{} {}", invited_line(n), tl!("Send the update to them? The account's server sends them the change by mail."));

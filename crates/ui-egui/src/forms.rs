@@ -3564,7 +3564,12 @@ mod event {
         fn done(&mut self, app: &mut MailApp, answer: &Value, after: After) -> Verdict {
             // A meeting or a series can't be on a server's calendar yet: say where it went.
             if answer.get("keptHere").and_then(Value::as_bool) == Some(true) {
-                app.status(tl!("Kept on this computer only: invitations and repeating events aren't sent to the server yet"));
+                // //// Neoffice — in a hosting page's tab it stays in its calendar, on no computer (`hosted_calendar`).
+                app.status(if app.session.keeps_local {
+                    tl!("Kept on this computer only: invitations and repeating events aren't sent to the server yet")
+                } else {
+                    tl!("Nobody was invited: the meeting stays in its calendar here, and is not on the server")
+                });
             }
             self.error.clear();
             if after == After::Close {
@@ -4641,7 +4646,10 @@ pub(crate) mod rules {
     use mailcraft_engine::Session;
     use mailcraft_engine::cmd::rules::{NotOnServer, by_address, server_cannot, server_cannot_draft};
     use mailcraft_model::time::Date;
-    use mailcraft_model::{Action, FlagDue, FolderKind, Id, Importance, Keep, MAX_WORD, MAX_WORDS_EACH, Mailbox, Rule, Sensitivity};
+    // //// Neoffice — (`Action` is `rule_words`' to read: here the tests' alone.)
+    #[cfg(test)]
+    use mailcraft_model::Action;
+    use mailcraft_model::{FlagDue, FolderKind, Id, Importance, Keep, MAX_WORD, MAX_WORDS_EACH, Mailbox, Rule, Sensitivity};
     use serde_json::{Value, json};
 
     use super::kit::{Pass, body, close_button, error, row, shown, tall_row};
@@ -5195,33 +5203,9 @@ pub(crate) mod rules {
 
     /// The rule in words, naming the folder a move goes to:
     /// `When from contains "x": move it to Inbox/Projects, flag it`.
+    // //// Neoffice — in the interface's language (upstream says it in English alone): `rule_words`.
     pub fn describe(mb: &Mailbox, r: &Rule) -> String {
-        let addresses = mb.rule_reads_addresses(r);
-        let when = r.conditions.iter().map(|c| c.describe_as(addresses)).collect::<Vec<_>>().join(" and ");
-        let except = r.exceptions.iter().map(|c| c.describe_as(addresses)).collect::<Vec<_>>().join(" or ");
-        // (A rule for every account's mail names the account too: it is shown under each.)
-        let into = |verb: &str, f: Id| match mb.folder(f) {
-            Some(folder) if folder.account == r.account => format!("{verb} it to {}", crate::nav::folder_path(mb, f)),
-            Some(folder) if let Some(other) = mb.account(folder.account) => {
-                let who = if other.email.trim().is_empty() { other.name.trim() } else { other.email.trim() };
-                format!("{verb} it to {} - {who}", crate::nav::folder_path(mb, f))
-            }
-            _ => format!("{verb} it to a folder that is gone"),
-        };
-        let mut then: Vec<String> = r
-            .actions
-            .iter()
-            .map(|a| match a {
-                Action::MoveTo(f) => into("move", *f),
-                Action::CopyTo(f) => into("copy", *f),
-                other => other.describe(),
-            })
-            .collect();
-        if r.alert {
-            then.push("show a desktop alert".into());
-        }
-        let then = then.join(", ");
-        if except.is_empty() { format!("When {when}: {then}") } else { format!("When {when}, except if {except}: {then}") }
+        crate::rule_words::describe(mb, r)
     }
 
     /// Where a rule is kept, and why, as the dialog says it under the rule (#566).
@@ -5310,18 +5294,24 @@ pub(crate) mod rules {
             // Four buttons to the right, the same in every row, so that they stand in a column.
             let buttons = 4.0 * BUTTON + 4.0 * ui.spacing().item_spacing.x;
             let width = (ui.available_width() - buttons).max(40.0);
-            let (rect, resp) = ui.allocate_exact_size(vec2(width, 54.0), Sense::hover());
+            // //// Neoffice — (the row's place is taken below, once its lines are known.)
             let words = if r.known() {
                 shown(&describe(mb, r), 600)
             } else {
                 tl!("Made in another program or on the web, with parts MailCraft can't show").to_string()
             };
+            // //// Neoffice — what the rule does is read whole, on as many lines as it takes (upstream cuts it to one).
+            let lines = ui.painter().layout(words.clone(), regular(11.5), t.text_dim, width);
+            let more = (lines.size().y - ui.text_style_height(&egui::TextStyle::Small).max(14.0)).max(0.0);
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, 54.0 + more), Sense::hover());
             let shade = if r.enabled { t.text } else { t.text_disabled };
             paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 11.0), width, &shown(&r.name, 200), semibold(12.5), shade);
-            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 27.0), width, &words, regular(11.5), t.text_dim);
+            // //// Neoffice — see `lines`, above; what comes after them follows.
+            ui.painter().galley(pos2(rect.min.x, rect.min.y + 20.0), lines, t.text_dim);
             let held = r.changed_here() && app.rules_held(r.account);
             let mark_colour = if r.waiting() || !r.refused.is_empty() || held { t.orange } else { t.text_dim };
-            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 43.0), width, mark, regular(11.0), mark_colour);
+            // //// Neoffice — (after the lines, above.)
+            paint_clipped(ui.painter(), pos2(rect.min.x, rect.min.y + 43.0 + more), width, mark, regular(11.0), mark_colour);
             resp.on_hover_text(format!("{words}\n{mark}"));
             let place = |direction: &str| json!({"id": r.id, "direction": direction, "account": account});
             if icon_button(ui, "moveUp", tl!("Move this rule up: it runs earlier"), 14.0, up && !fixed).clicked() && up && !fixed {

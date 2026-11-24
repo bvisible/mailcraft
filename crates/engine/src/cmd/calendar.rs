@@ -233,7 +233,9 @@ fn happens_with_offset(e: &Event, day: Date, here: mailcraft_model::zoned::Offse
 /// deleted there: those invited to a meeting the owner organizes. None for an appointment, for
 /// somebody else's meeting (it is the owner's copy that changes) and for anything kept here.
 fn invited(s: &Session, e: &Event) -> usize {
-    if kept_by(s, e).is_some() && !e.origin.guest { e.attendees.len() } else { 0 }
+    // //// Neoffice — (nobody was invited to one that stays in its calendar unsent: `hosted_calendar`.)
+    let unsent = super::hosted_calendar::unsent(&s.mailbox, e);
+    if kept_by(s, e).is_some() && !e.origin.guest && !unsent { e.attendees.len() } else { 0 }
 }
 
 /// What a command is refused with when it would make a server write to `people` and wasn't
@@ -586,8 +588,13 @@ fn create(s: &mut Session, v: &Value, meeting: bool) -> CmdResult {
     // says so; with nothing said, nothing is made.
     let people = if served(s, e.calendar) { e.attendees.len() } else { 0 };
     let kept_here = people > 0 && p::bool(v, "send") == Some(false);
-    if kept_here {
+    // //// Neoffice — in a hosting page's tab nothing is kept on this computer: it stays in its calendar, unsent (`hosted_calendar`).
+    let held = kept_here && !s.keeps_local;
+    if kept_here && !held {
         e.calendar = own_calendar_or_new(s)?;
+    } else if held {
+        // //// Neoffice — (see above.)
+        writable(s, e.calendar)?;
     } else if people > 0 && p::bool(v, "send") != Some(true) {
         let who = if people == 1 { "1 person is".to_string() } else { format!("{people} people are") };
         return Err(fail(format!(
@@ -616,7 +623,12 @@ fn create(s: &mut Session, v: &Value, meeting: bool) -> CmdResult {
     }
     let id = s.mailbox.add_event(e)?;
     // In a calendar that a server keeps: the server is to have it too.
-    remote::note_created(s, id)?;
+    // //// Neoffice — (not one that stays there unsent, see above.)
+    if held {
+        super::hosted_calendar::hold(&mut s.mailbox, id);
+    } else {
+        remote::note_created(s, id)?;
+    }
     if people > 0 && !kept_here {
         let account = s.mailbox.event(id).map_or(0, |e| e.origin.account);
         remote::approve_mail(&mut s.mailbox, account, id, "", "");
@@ -640,6 +652,10 @@ fn new_meeting(s: &mut Session, v: &Value) -> CmdResult {
 fn may_change(s: &Session, v: &Value, before: &Event, e: &Event) -> Result<bool, CmdError> {
     let Some(who) = kept_by(s, before) else { return Ok(false) };
     writable(s, before.calendar)?;
+    // //// Neoffice — one that stays in its calendar unsent: nobody has been written to, and they are invited only on a yes (`hosted_calendar`).
+    if super::hosted_calendar::unsent(&s.mailbox, before) {
+        return Ok(!e.attendees.is_empty() && p::bool(v, "send") == Some(true));
+    }
     let fields = remote::changed_fields(before, e, &remote::offset_of(s));
     if before.origin.guest {
         let why = if fields.attendees.is_some() {
@@ -803,6 +819,10 @@ pub fn mail_of(s: &Session, id: &str, v: &Value) -> Option<Mail> {
     }
     if before.origin.guest {
         return None;
+    }
+    // //// Neoffice — one that stays in its calendar unsent has invited nobody yet: what would go are the invitations (`hosted_calendar`).
+    if super::hosted_calendar::unsent(&s.mailbox, &before) {
+        return (!e.attendees.is_empty()).then_some(Mail::Invitation(e.attendees.len()));
     }
     let people = before.attendees.len().max(e.attendees.len());
     let seen = remote::seen_by_others(&remote::changed_fields(&before, &e, &remote::offset_of(s)));
@@ -1290,7 +1310,9 @@ fn from_message(s: &mut Session, v: &Value) -> CmdResult {
     }
     let start = default_start(s);
     // A meeting: it stays on this computer (nothing made here sends invitations yet).
-    let calendar = own_calendar_or_new(s)?;
+    // //// Neoffice — in a hosting page's tab, in the calendar worked in, unsent (`hosted_calendar`).
+    let held = !s.keeps_local && served(s, current_calendar(s));
+    let calendar = if held { current_calendar(s) } else { own_calendar_or_new(s)? };
     let e = Event {
         calendar,
         title: m.topic(),
@@ -1303,6 +1325,10 @@ fn from_message(s: &mut Session, v: &Value) -> CmdResult {
         ..Default::default()
     };
     let id = s.mailbox.add_event(e)?;
+    // //// Neoffice — see above.
+    if held {
+        super::hosted_calendar::hold(&mut s.mailbox, id);
+    }
     focus(s, id);
     s.view.module = Module::Calendar;
     s.view.date = start.date;

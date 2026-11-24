@@ -322,6 +322,11 @@ mod shared_mailboxes;
 mod hosted_signatures;
 // //// Neoffice — File › Info in a tab of a hosting page: its mailboxes are set up on its site, and their Settings open it.
 mod hosted_accounts;
+// //// Neoffice — a rule in words, in the interface's language.
+mod rule_words;
+// //// Neoffice — tests: nothing drawn in a hosting page's tab names a computer or Outlook.
+#[cfg(test)]
+mod hosted_words_tests;
 mod shared_permission;
 #[cfg(test)]
 mod shared_permission_tests;

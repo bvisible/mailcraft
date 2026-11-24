@@ -26,6 +26,12 @@
 //! window of a build that knows no exceptions keeps such a rule aside too, instead of acting on the mail they leave alone. What is put can't be undone (the window's history is forgotten): an Undo
 //! would bring back the window from before, and write it.
 //!
+//! **Whose a rule is.** A rule's account is written by its mailbox's address ([`rule_out`]), as its folders are: the numbers of the
+//! window's accounts are a visit's own, and the rule of one mailbox came back as another's, or as nobody's, where the mailboxes
+//! were handed over in another order. A window of before writes a number: it is read as the account of that number while there
+//! is one ([`whose`]), and written again by its address ([`base_of`]). Such a window can't read an address, and keeps the rule
+//! aside, unchanged, as it does one with exceptions.
+//!
 //! **Done.** What was marked done in a mailbox ([`DoneEntry`]: by its Message-ID, never an id of its server, which names the
 //! place and changes as the message goes to the Archive), [`MAX_DONE`] at most, of the last [`DONE_DAYS`]. At the next visit
 //! each is put back ([`put_done_seen`]) once its message is in its account's Archive here; one whose message isn't (yet: the run
@@ -133,12 +139,16 @@ fn names_folder(action: &Value) -> bool {
     matches!(action.get("type").and_then(Value::as_str), Some("moveTo" | "copyTo"))
 }
 
-/// A rule in the server's shape: without its id, its folders by their mailbox and their id on the server, its exceptions
-/// among its conditions ([`EXCEPT`]).
+/// A rule in the server's shape: without its id, its account by its mailbox's address, its folders by their mailbox and their
+/// id on the server, its exceptions among its conditions ([`EXCEPT`]).
 fn rule_out(mb: &Mailbox, rule: &Rule) -> Value {
     let mut v = serde_json::to_value(rule).unwrap_or(Value::Null);
     if let Some(o) = v.as_object_mut() {
         o.remove("id");
+        o.remove("account");
+        if let Some(email) = mb.account(rule.account).map(|a| key(&a.email)).filter(|email| !email.is_empty()) {
+            o.insert("account".into(), json!(email));
+        }
         if let Some(exceptions) = o.remove("exceptions")
             && let Some(conditions) = o.get_mut("conditions").and_then(Value::as_array_mut)
         {
@@ -407,6 +417,28 @@ fn targets(rule: &Value) -> Vec<String> {
         .collect()
 }
 
+/// The mailbox whose rule `rule` is, as the server keeps it, when it says one by its address.
+fn mailbox_of(rule: &Value) -> Option<String> {
+    rule.get("account").and_then(Value::as_str).map(key)
+}
+
+/// The account a rule of a window of before is of, which says its number in that window: the account of that number here, when
+/// it is a mailbox's; else the only mailbox there is. `None` for another: the rule is then for every account's mail.
+fn whose(mb: &Mailbox, number: Id) -> Option<Id> {
+    let mailboxes: Vec<Id> = mb.accounts.iter().filter(|a| a.shared_of.is_none() && !a.email.trim().is_empty()).map(|a| a.id).collect();
+    match mailboxes.as_slice() {
+        _ if mailboxes.contains(&number) => Some(number),
+        [only] => Some(*only),
+        _ => None,
+    }
+}
+
+/// The rules the window holds (`here`) as the base of what the server said (`server`): the server's, when a window of before
+/// wrote some, so that they differ and are written again as this one writes them.
+pub fn base_of(server: &[Value], here: Vec<Value>) -> Vec<Value> {
+    if server.iter().any(|rule| rule.get("account").is_some_and(Value::is_number)) { server.to_vec() } else { here }
+}
+
 /// Whether the folders of the account `id` are listed: one of them has its name on the server.
 fn listed(mb: &Mailbox, id: Id) -> bool {
     mb.folders.iter().any(|f| f.account == id && folder_key(f).is_some())
@@ -428,7 +460,8 @@ pub fn put_rules(mb: &mut Mailbox, rules: &[Value]) -> Option<Vec<Value>> {
     let mut aside = Vec::new();
     let mut here = Vec::new();
     for rule in rules.iter().take(MAX_RULES) {
-        let mut absent = false;
+        // (A rule of a mailbox not handed over this time waits for it.)
+        let mut absent = mailbox_of(rule).is_some_and(|mailbox| accounts_of(mb, &mailbox).is_empty());
         for mailbox in targets(rule) {
             // (A folder of no mailbox's: the action goes, as for a folder that is gone.)
             if mailbox.is_empty() {
@@ -469,6 +502,18 @@ fn rule_in(mb: &mut Mailbox, rule: &Value) -> Placed {
     let mut v = rule.clone();
     let Some(o) = v.as_object_mut() else { return Placed::Unread };
     o.remove("id");
+    let account = match o.remove("account") {
+        Some(Value::String(email)) => match accounts_of(mb, &key(&email)).first() {
+            Some(account) => Some(*account),
+            None => return Placed::Unread,
+        },
+        Some(Value::Number(number)) => number.as_u64().and_then(|number| whose(mb, number)),
+        Some(_) => return Placed::Unread,
+        None => None,
+    };
+    if let Some(account) = account {
+        o.insert("account".into(), json!(account));
+    }
     if let Some(conditions) = o.get_mut("conditions").and_then(Value::as_array_mut) {
         let mut exceptions = Vec::new();
         conditions.retain(|c| {
@@ -637,8 +682,9 @@ mod run {
     use serde_json::{Value, json};
 
     use super::{
-        DoneEntry, GET, Parts, REFRESH_MS, Runs, SET, SETTINGS, SINGLETON, Saved, Written, for_good, key, merge_categories, merge_done, merge_lists,
-        merge3, put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
+        DoneEntry, GET, Parts, REFRESH_MS, Runs, SET, SETTINGS, SINGLETON, Saved, Written, base_of, for_good, key, merge_categories, merge_done,
+        merge_lists, merge3, put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done,
+        written,
     };
     use crate::credentials::{Credentials, Renewal};
     use crate::host::{HostAccount, HostCredentials};
@@ -787,7 +833,7 @@ mod run {
                     Some(aside) => {
                         s.aside = aside;
                         // The base as the window gives it back (the rules kept aside last): what it holds is no change
-                        s.rules = Some(here_rules(s, app));
+                        s.rules = Some(base_of(&rules, here_rules(s, app)));
                         put = true;
                     }
                     None if now - since < RULES_WAIT_MS => s.rules_waiting = Some((rules, since)),
@@ -937,7 +983,7 @@ mod run {
             match (saved.rules, s.rules.clone()) {
                 (Some(server), Some(base)) if same(&rules_here, &base) && !same(&server, &base) => {
                     if put_all_rules(s, app, &server) {
-                        s.rules = Some(here_rules(s, app));
+                        s.rules = Some(base_of(&server, here_rules(s, app)));
                         put = true;
                     }
                 }

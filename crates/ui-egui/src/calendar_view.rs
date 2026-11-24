@@ -2081,6 +2081,10 @@ const LOCAL_LINE_H: f32 = 30.0;
 /// server, and hold something ([`mailcraft_engine::cmd::remote::only_here`]): what is in them
 /// is in nobody's Outlook calendar.
 fn local_only(app: &MailApp) -> Vec<Id> {
+    // //// Neoffice — none in a hosting page's tab, where nothing is kept on this computer (`hosted_calendar`).
+    if !app.session.keeps_local {
+        return Vec::new();
+    }
     mailcraft_engine::cmd::remote::only_here(&app.session.mailbox).into_iter().map(|(calendar, _)| calendar).take(50).collect()
 }
 
@@ -2089,6 +2093,10 @@ fn local_only(app: &MailApp) -> Vec<Id> {
 /// a change to one of them goes nowhere. The line says so, and offers to move them where they
 /// are thought to be.
 fn local_notice(app: &mut MailApp, ui: &mut Ui) {
+    // //// Neoffice — (none in a hosting page's tab, see `local_only`.)
+    if !app.session.keeps_local {
+        return;
+    }
     let mailbox = &app.session.mailbox;
     let shown = |calendar: &Id| mailbox.calendar(*calendar).is_some_and(|c| c.visible);
     let only_here = mailcraft_engine::cmd::remote::only_here(mailbox);

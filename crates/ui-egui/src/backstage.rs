@@ -199,9 +199,15 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         // The text runs up to the buttons at the right: Settings, and Remove. The only account can
         // be removed too, leaving an empty mailbox (#313); the empty mailbox's own placeholder
         // can't. (A shared mailbox has both: its settings are its name and colour, #1385.)
-        let removable = a.is_shared() || app.session.mailbox.placeholder() != Some(a.id);
-        let buttons = usize::from(!a.email.is_empty()) + usize::from(removable);
-        let text_w = r.width() - 70.0 - 82.0 * buttons as f32;
+        // //// Neoffice — not in a hosting page's tab: its site hands the mailbox over at every visit, so it would be back at the next one (`kept_here::NO_REMOVAL_HERE`).
+        let removable = app.session.keeps_local && (a.is_shared() || app.session.mailbox.placeholder() != Some(a.id));
+        // //// Neoffice — each button is as wide as its word (upstream's 74 cut « Paramètres » and « Supprimer » in the middle).
+        let wide = |word: &str| {
+            (ui.painter().layout_no_wrap(word.to_string(), egui::TextStyle::Button.resolve(ui.style()), t.text).size().x + 20.0).max(74.0)
+        };
+        let (settings_wide, remove_wide) = (wide(tl!("Settings")), wide(tl!("Remove")));
+        let taken = if a.email.is_empty() { 0.0 } else { settings_wide + 8.0 } + if removable { remove_wide + 8.0 } else { 0.0 };
+        let text_w = r.width() - 70.0 - taken;
         crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 58.0, r.min.y + 20.0), text_w, &title, semibold(13.0), t.text);
         let detail = account_detail(app, a);
         crate::theme::paint_clipped(ui.painter(), pos2(r.min.x + 58.0, r.min.y + 39.0), text_w, &detail, regular(11.5), t.text_dim);
@@ -223,11 +229,14 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         }
         // The buttons sit on the card: placed without moving the page's layout on (`ui.put` would
         // take it back up into the card, and what follows was drawn over it).
-        let on_card = |ui: &mut Ui, right: f32, button: egui::Button<'_>| {
-            let br = Rect::from_min_size(pos2(r.max.x - right, r.center().y - 13.0), vec2(74.0, 26.0));
+        // //// Neoffice — (its width with it, see `wide`.)
+        let on_card = |ui: &mut Ui, right: f32, wide: f32, button: egui::Button<'_>| {
+            let br = Rect::from_min_size(pos2(r.max.x - right, r.center().y - 13.0), vec2(wide, 26.0));
             ui.new_child(egui::UiBuilder::new().max_rect(br)).add_sized(br.size(), button)
         };
-        let settings_at = if removable { 168.0 } else { 86.0 };
+        // //// Neoffice — (see `wide`.)
+        let remove_at = remove_wide + 12.0;
+        let settings_at = settings_wide + 12.0 + if removable { remove_wide + 8.0 } else { 0.0 };
         // //// Neoffice — a mailbox a hosting page handed over is set up on its site: its Settings opens its page there, the window's own would be lost with the tab (hosted_accounts.rs).
         let site_page = crate::hosted_accounts::settings_page(app, a);
         // (An account kept in step through Graph has no servers to change, #312.)
@@ -242,7 +251,8 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         } else {
             tl!("Change this account's name, servers and sign-in")
         };
-        if !a.email.is_empty() && on_card(ui, settings_at, egui::Button::new(tl!("Settings"))).on_hover_text(settings_tip).clicked() {
+        // //// Neoffice — (its width with it, see `wide`; so for Remove below.)
+        if !a.email.is_empty() && on_card(ui, settings_at, settings_wide, egui::Button::new(tl!("Settings"))).on_hover_text(settings_tip).clicked() {
             // //// Neoffice — see above.
             match &site_page {
                 Some(page) => crate::hosted_accounts::open(ui, page),
@@ -252,14 +262,16 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
             }
         }
         if a.is_shared() {
-            if on_card(ui, 86.0, egui::Button::new(tl!("Remove")))
+            // //// Neoffice — (see above.)
+            if on_card(ui, remove_at, remove_wide, egui::Button::new(tl!("Remove")))
                 .on_hover_text(tl!("Close this shared mailbox and remove the mail kept for it here. Nothing on the server changes."))
                 .clicked()
             {
                 let _ = app.run("account.removeSharedMailbox", json!({"id": a.id}));
             }
         } else if removable
-            && on_card(ui, 86.0, egui::Button::new(tl!("Remove"))).on_hover_text(tl!("Remove this account and the mail kept for it here")).clicked()
+            // //// Neoffice — (see above.)
+            && on_card(ui, remove_at, remove_wide, egui::Button::new(tl!("Remove"))).on_hover_text(tl!("Remove this account and the mail kept for it here")).clicked()
         {
             let _ = app.run("account.remove", json!({"id": a.id}));
         }
@@ -419,12 +431,17 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
         let place = match (&app.session.path, app.services.persist.is_some()) {
             (Some(p), _) => crate::i18n::fmt(tl!("Kept in {path}, saved as you go."), &[("path", &p.to_string_lossy())]),
             (None, true) => tl!("Kept in this browser's storage, saved as you go. Use Open & Export to keep a copy as a file.").to_string(),
+            // //// Neoffice — in a hosting page's tab the mail is its servers' (upstream's words are of a mailbox nothing keeps).
+            (None, _) if !app.session.keeps_local => tl!("Kept on your mailboxes' servers.").to_string(),
             (None, false) => tl!("Not kept anywhere yet: use Open & Export › Save Mailbox As.").to_string(),
         };
         ui.label(egui::RichText::new(place).color(t.text_dim));
     }
     section(ui, tl!("Rules and Categories"), t);
-    if tile(ui, "rules", tl!("Manage Rules"), tl!("What happens to mail as it arrives"), t) {
+    // //// Neoffice — in a hosting page's tab a rule runs when the person runs it.
+    let rules_do =
+        if app.session.keeps_local { tl!("What happens to mail as it arrives") } else { tl!("What happens to the mail you run them over") };
+    if tile(ui, "rules", tl!("Manage Rules"), rules_do, t) {
         let _ = app.run("ui.dialog", json!({"name": "rules"}));
     }
     if tile(ui, "categorize", tl!("Categories"), tl!("Names and colours for sorting mail, events, people and tasks"), t) {
@@ -432,6 +449,47 @@ fn info(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     }
     // Everything MailCraft keeps here, gone (#177).
     crate::data_removal::section(app, ui, t);
+}
+
+// //// Neoffice — added: the sign-in rows of File › Options, apart (`options`), as upstream has them.
+/// Whether passwords and sign-ins are remembered, and what Microsoft and Google know this installation by.
+fn sign_ins(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
+    let mut remember = app.ui.remember_sign_in;
+    if ui
+        .checkbox(&mut remember, tl!("Remember passwords and sign-ins on this computer"))
+        .on_hover_text(tl!(
+            "Kept in the system's credential store, never in the mailbox or its settings. Without it you sign in again each time MailCraft starts."
+        ))
+        .changed()
+    {
+        let _ = app.run("ui.rememberSignIn", json!({"value": remember}));
+    }
+    // Said in the status bar once; kept in sight here for as long as the session lasts.
+    if remember && let Some(trouble) = app.secrets_trouble {
+        ui.label(egui::RichText::new(crate::store_trouble_notice(trouble)).color(t.text_dim));
+    }
+    row(ui, tl!("Microsoft application ID"), |ui| {
+        // What Microsoft knows this installation by when an account signs in on its page; an
+        // identifier from an app registration, not a secret.
+        let built_in = !app.services.microsoft_client_id.is_empty();
+        let mut id = app.ui.microsoft_client_id.clone();
+        let hint = if built_in { tl!("The one this build came with") } else { tl!("Needed for Outlook.com and Microsoft 365 accounts") };
+        let edit = egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0);
+        if crate::text_menu::field(ui.add(edit)).changed() {
+            let _ = app.execute("ui.microsoftClientId", json!({"value": id.trim()}));
+        }
+    });
+    row(ui, tl!("Google Desktop application ID"), |ui| {
+        let mut id = app.ui.google_client_id.clone();
+        let hint = if app.services.google_client_id.is_empty() {
+            tl!("Waiting for MailCraft's Google registration")
+        } else {
+            tl!("The one this build came with")
+        };
+        if ui.add(egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0)).changed() {
+            let _ = app.execute("ui.googleClientId", json!({"value": id.trim()}));
+        }
+    });
 }
 
 /// The calendars subscribed to (#209): where each is read from, how it is doing, and what the
@@ -987,42 +1045,10 @@ fn options(app: &mut MailApp, ui: &mut Ui, t: &Tokens) {
     crate::reading::attachment_pictures::options(app, ui);
     crate::attachment_preview::options(app, ui);
     section(ui, tl!("Accounts"), t);
-    let mut remember = app.ui.remember_sign_in;
-    if ui
-        .checkbox(&mut remember, tl!("Remember passwords and sign-ins on this computer"))
-        .on_hover_text(tl!(
-            "Kept in the system's credential store, never in the mailbox or its settings. Without it you sign in again each time MailCraft starts."
-        ))
-        .changed()
-    {
-        let _ = app.run("ui.rememberSignIn", json!({"value": remember}));
+    // //// Neoffice — none of it in a hosting page's tab, whose page signs its mailboxes in: no password to keep, no Microsoft or Google sign-in.
+    if app.session.keeps_local {
+        sign_ins(app, ui, t);
     }
-    // Said in the status bar once; kept in sight here for as long as the session lasts.
-    if remember && let Some(trouble) = app.secrets_trouble {
-        ui.label(egui::RichText::new(crate::store_trouble_notice(trouble)).color(t.text_dim));
-    }
-    row(ui, tl!("Microsoft application ID"), |ui| {
-        // What Microsoft knows this installation by when an account signs in on its page; an
-        // identifier from an app registration, not a secret.
-        let built_in = !app.services.microsoft_client_id.is_empty();
-        let mut id = app.ui.microsoft_client_id.clone();
-        let hint = if built_in { tl!("The one this build came with") } else { tl!("Needed for Outlook.com and Microsoft 365 accounts") };
-        let edit = egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0);
-        if crate::text_menu::field(ui.add(edit)).changed() {
-            let _ = app.execute("ui.microsoftClientId", json!({"value": id.trim()}));
-        }
-    });
-    row(ui, tl!("Google Desktop application ID"), |ui| {
-        let mut id = app.ui.google_client_id.clone();
-        let hint = if app.services.google_client_id.is_empty() {
-            tl!("Waiting for MailCraft's Google registration")
-        } else {
-            tl!("The one this build came with")
-        };
-        if ui.add(egui::TextEdit::singleline(&mut id).hint_text(hint).desired_width(300.0)).changed() {
-            let _ = app.execute("ui.googleClientId", json!({"value": id.trim()}));
-        }
-    });
     row(ui, tl!("Send and receive automatically"), |ui| {
         let label = |n: u32| match n {
             0 => tl!("Only when I ask").to_string(),

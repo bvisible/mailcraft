@@ -106,7 +106,8 @@ fn shown_title(note: &Note) -> String {
 /// Where a note is kept, in words.
 fn kept_where(app: &MailApp, note: &Note) -> String {
     if note.origin.is_local() {
-        tl!("On this computer").to_string()
+        // //// Neoffice — (a hosting page's tab keeps nothing on this computer.)
+        if app.session.keeps_local { tl!("On this computer").to_string() } else { tl!("Not on the server").to_string() }
     } else {
         app.session.mailbox.account(note.origin.account).map(|account| account.email.trim().to_string()).unwrap_or_default()
     }

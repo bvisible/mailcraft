@@ -698,3 +698,227 @@ msgid "{n} list was asked already: the request is in your Outbox or in Sent Item
 msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
 msgstr[0] "U heeft al om afmelding van {n} lijst gevraagd: het verzoek staat in uw Postvak UIT of in Verzonden items."
 msgstr[1] "U heeft al om afmelding van {n} lijsten gevraagd: de verzoeken staan in uw Postvak UIT of in Verzonden items."
+
+msgid "It stays in its calendar here, and is not on the server."
+msgstr "Het blijft hier in de agenda en staat niet op de server."
+
+msgid "It stays in its calendar here, and is not on the server: change it to send it again."
+msgstr "Het blijft hier in de agenda en staat niet op de server: wijzig het om het opnieuw te verzenden."
+
+msgid "Kept on your mailboxes' servers."
+msgstr "Bewaard op de servers van uw postvakken."
+
+msgid "Nobody was invited: the meeting stays in its calendar here, and is not on the server"
+msgstr "Niemand was uitgenodigd: de vergadering blijft hier in uw agenda en staat niet op de server"
+
+msgid "Not on the server"
+msgstr "Niet op de server"
+
+msgid "These are the answers received so far."
+msgstr "Dit zijn de antwoorden die tot nu toe zijn ontvangen."
+
+msgid "This item stays in its calendar here, and is not on the server"
+msgstr "Dit element blijft hier in uw agenda en staat niet op de server"
+
+msgid "This message isn't downloaded yet. It will be when you're online."
+msgstr "Dit bericht is nog niet gedownload. Dat gebeurt zodra u online bent."
+
+msgid "This page keeps no calendar of its own: the calendars here are those of your mailboxes' servers"
+msgstr "Deze pagina heeft geen eigen agenda: de agenda's hier zijn die van de servers van uw postvakken"
+
+msgid "This page's mailboxes come from the site that opened them: remove one there"
+msgstr "De postvakken van deze pagina komen van de site die ze heeft geopend: verwijder er daar een"
+
+msgid "Unsubscribing: {parts}."
+msgstr "Afmelden: {parts}."
+
+msgid "What happens to the mail you run them over"
+msgstr "Wat er gebeurt met de berichten waarop u ze uitvoert"
+
+msgid "When {when}, except if {except}: {then}"
+msgstr "Wanneer {when}, behalve als {except}: {then}"
+
+msgid "When {when}: {then}"
+msgstr "Wanneer {when}: {then}"
+
+msgid "body contains {words}"
+msgstr "de tekst {words} bevat"
+
+msgid "categorize it as {category}"
+msgstr "het als {category} categoriseren"
+
+msgid "category is {words}"
+msgstr "de categorie {words} is"
+
+msgid "clear its categories"
+msgstr "de categorieën ervan wissen"
+
+msgid "clear its flag"
+msgstr "de markering ervan verwijderen"
+
+msgid "copy it to a folder that is gone"
+msgstr "het kopiëren naar een map die niet meer bestaat"
+
+msgid "copy it to {folder}"
+msgstr "het kopiëren naar {folder}"
+
+msgid "delete it"
+msgstr "het verwijderen"
+
+msgid "flag it"
+msgstr "het markeren"
+
+msgid "flag it for next week"
+msgstr "het markeren voor volgende week"
+
+msgid "flag it for this week"
+msgstr "het markeren voor deze week"
+
+msgid "flag it for today"
+msgstr "het markeren voor vandaag"
+
+msgid "flag it for tomorrow"
+msgstr "het markeren voor morgen"
+
+msgid "from contains {words}"
+msgstr "de afzender {words} bevat"
+
+msgid "from {words}"
+msgstr "het bericht van {words} komt"
+
+msgid "has an attachment"
+msgstr "het bericht een bijlage heeft"
+
+msgid "importance is high"
+msgstr "het belang hoog is"
+
+msgid "importance is low"
+msgstr "het belang laag is"
+
+msgid "importance is normal"
+msgstr "het belang normaal is"
+
+msgid "is a meeting invitation or update"
+msgstr "het bericht een uitnodiging voor een vergadering of een wijziging is"
+
+msgid "is an automatic reply"
+msgstr "het bericht een automatisch antwoord is"
+
+msgid "is flagged"
+msgstr "het bericht gemarkeerd is"
+
+msgid "mark it as read"
+msgstr "het als gelezen markeren"
+
+msgid "move it to a folder that is gone"
+msgstr "het verplaatsen naar een map die niet meer bestaat"
+
+msgid "move it to {folder}"
+msgstr "het verplaatsen naar {folder}"
+
+msgid "my address is in Cc"
+msgstr "mijn adres in CC staat"
+
+msgid "my address is in To"
+msgstr "mijn adres in Aan staat"
+
+msgid "my address is in To or Cc"
+msgstr "mijn adres in Aan of CC staat"
+
+msgid "my address isn't in To"
+msgstr "mijn adres niet in Aan staat"
+
+msgid "received from {from} to {to}"
+msgstr "het bericht van {from} tot {to} is ontvangen"
+
+msgid "received on any day"
+msgstr "het bericht op een willekeurige dag is ontvangen"
+
+msgid "received on or after {day}"
+msgstr "het bericht op {day} of later is ontvangen"
+
+msgid "received on or before {day}"
+msgstr "het bericht op {day} of eerder is ontvangen"
+
+msgid "recipient contains {words}"
+msgstr "de ontvanger {words} bevat"
+
+msgid "recipient's address contains {words}"
+msgstr "het adres van de ontvanger {words} bevat"
+
+msgid "sender's address contains {words}"
+msgstr "het adres van de afzender {words} bevat"
+
+msgid "sensitivity is confidential"
+msgstr "de gevoeligheid vertrouwelijk is"
+
+msgid "sensitivity is normal"
+msgstr "de gevoeligheid normaal is"
+
+msgid "sensitivity is personal"
+msgstr "de gevoeligheid persoonlijk is"
+
+msgid "sensitivity is private"
+msgstr "de gevoeligheid privé is"
+
+msgid "sent only to me"
+msgstr "het bericht alleen naar mij is verzonden"
+
+msgid "sent to {words}"
+msgstr "het bericht naar {words} is verzonden"
+
+msgid "set importance to high"
+msgstr "het belang op hoog zetten"
+
+msgid "set importance to low"
+msgstr "het belang op laag zetten"
+
+msgid "set importance to normal"
+msgstr "het belang op normaal zetten"
+
+msgid "show a desktop alert"
+msgstr "een melding op het bureaublad tonen"
+
+msgid "size is {min} KB to {max} KB"
+msgstr "de grootte van {min} KB tot {max} KB is"
+
+msgid "subject contains {words}"
+msgstr "het onderwerp {words} bevat"
+
+msgid "subject or body contains {words}"
+msgstr "het onderwerp of de tekst {words} bevat"
+
+msgid "{first} and {second}"
+msgstr "{first} en {second}"
+
+msgid "{first} or {second}"
+msgstr "{first} of {second}"
+
+msgid "{name} was made here and the server said it took it, but it is not in the server's calendar."
+msgstr "{name} is hier aangemaakt en de server zei dat hij het heeft ontvangen, maar hij staat niet in de agenda van de server."
+
+msgid "{n} by mail"
+msgid_plural "{n} by mail"
+msgstr[0] "{n} per e-mail"
+msgstr[1] "{n} per e-mail"
+
+msgid "{n} in one click"
+msgid_plural "{n} in one click"
+msgstr[0] "{n} met één klik"
+msgstr[1] "{n} met één klik"
+
+msgid "{n} left out"
+msgid_plural "{n} left out"
+msgstr[0] "{n} overgeslagen"
+msgstr[1] "{n} overgeslagen"
+
+msgid "{n} to do on its own page"
+msgid_plural "{n} to do on their own page"
+msgstr[0] "{n} zelf te doen op de eigen pagina"
+msgstr[1] "{n} zelf te doen op hun eigen pagina's"
+
+msgid "• to {to}, subject “{subject}”, text “{text}”"
+msgstr "• aan {to}, onderwerp “{subject}”, tekst “{text}”"
+
+msgid "This page's Favorites are your own"
+msgstr "De favorieten van deze pagina zijn van u"

@@ -324,6 +324,11 @@ impl MailApp {
                 | "calendar.categorize"
         );
         let event = answer.get("id").and_then(Value::as_u64).filter(|_| changes)?;
+        // //// Neoffice — in a hosting page's tab nothing is kept on this computer: one that isn't on its server says that (`hosted_calendar`).
+        if !self.session.keeps_local {
+            let unsent = self.session.mailbox.event(event).is_some_and(|e| mailcraft_engine::cmd::hosted_calendar::unsent(&self.session.mailbox, e));
+            return unsent.then(|| tl!("This item stays in its calendar here, and is not on the server").to_string());
+        }
         remote::stays_here(&self.session.mailbox, event)
             .then(|| tl!("Saved on this computer only: this item is not in your Outlook calendar").to_string())
     }

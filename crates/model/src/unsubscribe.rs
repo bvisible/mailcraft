@@ -66,6 +66,9 @@ const MIN_HEADER_B: usize = 8;
 /// a folded header leaves inside taken out, at most [`MAX_ADDRESSES`], none longer than
 /// [`MAX_ADDRESS`].
 pub fn addresses(value: &str) -> Vec<String> {
+    // //// Neoffice — a value written in encoded-words is read as what they say (`unworded`).
+    let unworded = unworded(value);
+    let value = unworded.as_deref().unwrap_or(value);
     let mut out = Vec::new();
     let mut rest = value;
     while out.len() < MAX_ADDRESSES {
@@ -79,6 +82,59 @@ pub fn addresses(value: &str) -> Vec<String> {
         rest = after.get(close + 1..).unwrap_or("");
     }
     out
+}
+
+// //// Neoffice — added: a program that folds a header by its length alone (Python's `EmailMessage` under its default policy) writes an address
+// //// Neoffice — longer than a line in encoded-words, against RFC 2047 (5); upstream then finds no address in the header, and the message shows no
+// //// Neoffice — Unsubscribe, for no reason the person can see.
+/// `value` as its encoded-words (RFC 2047) say it, when it holds no address as it stands: UTF-8 or ASCII ones, in `Q` or `B`.
+fn unworded(value: &str) -> Option<String> {
+    if value.contains('<') || !value.contains("=?") || value.len() > MAX_ADDRESSES * MAX_ADDRESS {
+        return None;
+    }
+    let mut bytes: Vec<u8> = Vec::new();
+    for word in value.split_whitespace() {
+        let mut parts = word.strip_prefix("=?")?.strip_suffix("?=")?.splitn(3, '?');
+        let (charset, encoding, text) = (parts.next()?, parts.next()?, parts.next()?);
+        if !["utf-8", "us-ascii", "iso-8859-1"].iter().any(|known| charset.eq_ignore_ascii_case(known)) {
+            return None;
+        }
+        match encoding {
+            "q" | "Q" => {
+                // (`_` is a space, `=XX` a byte: as a percent-encoded address, whose decoder does the rest.)
+                let percent: String = text.chars().map(|c| if c == '_' { ' ' } else { c }).collect::<String>().replace('%', "%25").replace('=', "%");
+                bytes.extend(percent_decoded(&percent).into_bytes());
+            }
+            "b" | "B" => bytes.extend(base64(text)?),
+            _ => return None,
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+// //// Neoffice — see `unworded`.
+/// The bytes `text` is in base64 (RFC 4648, 4); `None` for a character that is none of it.
+fn base64(text: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    let (mut held, mut bits) = (0u32, 0u32);
+    for c in text.trim_end_matches('=').bytes() {
+        let six = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        held = (held << 6) | u32::from(six);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(u8::try_from((held >> bits) & 0xFF).ok()?);
+            held &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 /// Whether `value` is RFC 8058's `List-Unsubscribe=One-Click` (the key in any letter case).

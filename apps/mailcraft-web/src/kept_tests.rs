@@ -15,8 +15,8 @@ use mailcraft_ui_egui::mail_view::done::Item;
 use serde_json::{Value, json};
 
 use super::{
-    DONE_DAYS, DoneEntry, Kept, MAX_DONE, Parts, Runs, RunsOver, Written, for_good, merge_categories, merge_done, merge_lists, merge3, put_done,
-    put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
+    DONE_DAYS, DoneEntry, Kept, MAX_DONE, Parts, Runs, RunsOver, Written, base_of, for_good, merge_categories, merge_done, merge_lists, merge3,
+    put_done, put_done_seen, put_rules, put_senders, read_answer, refresh_done, same, take, take_done, tidy_done, update, with_done, written,
 };
 
 const ADA: &str = "ada@example.org";
@@ -150,6 +150,54 @@ fn a_rules_exceptions_come_back_and_an_older_window_cant_read_the_rule_without_t
     let mut next = window(&[ADA], &["Minvoices"], true, 3);
     assert_eq!(put_rules(&mut next, std::slice::from_ref(&two)), Some(vec![two.clone()]));
     assert!(next.rules.is_empty());
+}
+
+/// A rule is its mailbox's at the next visit too, whatever number its account has there.
+#[test]
+fn a_rule_is_its_mailboxs_at_the_next_visit_where_the_mailboxes_come_in_another_order() {
+    let mut first = window(&[ADA, BOB], &["Minvoices"], true, 0);
+    let bob = account(&first, BOB);
+    first.rules = vec![Rule { account: bob, ..rule("Bob's", vec![Action::Flag]) }, rule("Everyone's", vec![Action::MarkRead])];
+    let kept = take(&first, &handed());
+    assert_eq!((&kept.rules[0]["account"], kept.rules[1].get("account")), (&json!(BOB), None), "by its address");
+    let mut next = window(&[BOB, ADA], &["Minvoices"], true, 7);
+    assert_ne!(account(&next, BOB), bob, "another number");
+    assert_eq!(put_rules(&mut next, &kept.rules), Some(vec![]));
+    assert_eq!(next.rules.iter().map(|r| r.account).collect::<Vec<_>>(), [account(&next, BOB), 0]);
+    assert_eq!(take(&next, &handed()), kept, "read back, the same");
+    assert_eq!(base_of(&kept.rules, kept.rules.clone()), kept.rules, "nothing to write again");
+    // Bob's mailbox not handed over: the rule waits for it, unchanged.
+    let mut alone = window(&[ADA], &["Minvoices"], true, 7);
+    assert_eq!(put_rules(&mut alone, &kept.rules), Some(vec![kept.rules[0].clone()]));
+    assert_eq!(alone.rules.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(), ["Everyone's"]);
+    // A window of before can't read an address: aside, not another mailbox's rule.
+    let mut older = kept.rules[0].clone();
+    older.as_object_mut().unwrap().insert("id".into(), json!(0));
+    assert!(serde_json::from_value::<Rule>(older).is_err());
+}
+
+/// A rule a window of before wrote, with its account's number in that window, is not lost: its account when there is one of that
+/// number, the only mailbox's, else every account's; and it is written again by its address.
+#[test]
+fn a_rule_of_a_window_of_before_is_read_and_written_by_its_address() {
+    let old = |number: u64| {
+        let mut v = serde_json::to_value(rule("Old", vec![Action::Flag])).unwrap();
+        v.as_object_mut().unwrap().remove("id");
+        v["account"] = json!(number);
+        v
+    };
+    let mut two = window(&[ADA, BOB], &["Minvoices"], true, 0);
+    let bob = account(&two, BOB);
+    assert_eq!(put_rules(&mut two, &[old(bob)]), Some(vec![]));
+    assert_eq!(two.rules[0].account, bob);
+    let here = take(&two, &handed()).rules;
+    assert_eq!(here[0]["account"], json!(BOB));
+    assert_eq!(base_of(&[old(bob)], here.clone()), [old(bob)], "differs from what is here: written again");
+    assert_eq!(put_rules(&mut two, &[old(99)]), Some(vec![]));
+    assert_eq!(two.rules[0].account, 0, "nobody knows whose: every account's, and none lost");
+    let mut one = window(&[ADA], &["Minvoices"], true, 40);
+    assert_eq!(put_rules(&mut one, &[old(99)]), Some(vec![]));
+    assert_eq!(one.rules[0].account, account(&one, ADA), "the only mailbox's");
 }
 
 #[test]

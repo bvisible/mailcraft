@@ -918,6 +918,8 @@ pub(crate) fn note_changed(mailbox: &mut Mailbox, before: &Event, offset_at: &dy
     let Some(account) = keeper(mailbox, &now.origin).map(|account| account.id) else { return Ok(()) };
     // One the server doesn't have yet is sent as it is when it goes.
     if now.origin.id.is_empty() {
+        // //// Neoffice — one that stays in its calendar unsent goes with this change (`hosted_calendar`).
+        super::hosted_calendar::send_again(mailbox, account, now.id);
         return Ok(());
     }
     let waiting = |change: &EventChange| change.kind == EventChangeKind::Update && change.account == account && change.remote == now.origin.id;
@@ -1166,7 +1168,8 @@ fn events_here(mailbox: &Mailbox) -> HashSet<(Id, &str)> {
 /// them goes without a word: what each changed here is put back to what the server has, and
 /// what became of it is said ([`Dropped`]), for the owner and for the log. A note that says
 /// nothing any more (the event is as the server has it again) just goes: there was nothing to send.
-fn tidy_changes(mailbox: &mut Mailbox) -> Vec<Dropped> {
+// //// Neoffice — `page`: as [`give_up`] has it.
+fn tidy_changes(mailbox: &mut Mailbox, page: bool) -> Vec<Dropped> {
     if mailbox.event_changes.is_empty() {
         return Vec::new();
     }
@@ -1205,7 +1208,8 @@ fn tidy_changes(mailbox: &mut Mailbox) -> Vec<Dropped> {
         log::debug!("calendar: {said_nothing} waiting changes had nothing left to send");
     }
     mailbox.event_changes = kept;
-    given_up.iter().take(MAX_OUTCOMES).map(|(change, reason)| give_up(mailbox, change, reason)).collect()
+    // //// Neoffice — (`page`, see above.)
+    given_up.iter().take(MAX_OUTCOMES).map(|(change, reason)| give_up(mailbox, change, reason, page)).collect()
 }
 
 /// Whether a noted change has nothing to tell the server any more: the event is, in everything
@@ -1255,7 +1259,8 @@ fn keep_on_this_computer(mailbox: &mut Mailbox, id: Id) -> bool {
 /// Give a waiting change up for `reason`: what it changed here is put back to what the server
 /// has, where that can be told, and what became of it is said, for the owner (who is named the
 /// event) and for the log (which is not).
-fn give_up(mailbox: &mut Mailbox, change: &EventChange, reason: &'static str) -> Dropped {
+// //// Neoffice — `page`: in a hosting page's tab, where nothing is kept on this computer (`hosted_calendar`).
+fn give_up(mailbox: &mut Mailbox, change: &EventChange, reason: &'static str, page: bool) -> Dropped {
     let here = mailbox.event(change.event).filter(|event| event.origin.account == change.account).cloned();
     let name = called(here.as_ref().or(change.base.as_deref()));
     let unasked = "it would have made the server write to the people invited, and nobody said to send that";
@@ -1287,7 +1292,10 @@ fn give_up(mailbox: &mut Mailbox, change: &EventChange, reason: &'static str) ->
             format!("The change to {name} was not sent: {unasked}. It was put back to what the server has.")
         }
         (NOT_SAID, EventChangeKind::Create) => {
-            if keep_on_this_computer(mailbox, change.event) {
+            // //// Neoffice — in a hosting page's tab it stays in its calendar, on no computer (`hosted_calendar`).
+            if page && super::hosted_calendar::hold(mailbox, change.event) {
+                format!("{name} was not sent to the server: {unasked}. It stays in its calendar here, and is not on the server.")
+            } else if keep_on_this_computer(mailbox, change.event) {
                 format!("{name} was not sent to the server: {unasked}. It is kept on this computer only.")
             } else {
                 format!("{name} was not sent to the server: {unasked}.")
@@ -1316,7 +1324,8 @@ fn give_up(mailbox: &mut Mailbox, change: &EventChange, reason: &'static str) ->
 /// tell the owner and to log.
 pub fn settle_changes(s: &mut Session) -> Vec<Dropped> {
     let before = s.mailbox.event_changes.len();
-    let dropped = tidy_changes(&mut s.mailbox);
+    // //// Neoffice — (a hosting page's tab or not, see `tidy_changes`.)
+    let dropped = tidy_changes(&mut s.mailbox, !s.keeps_local);
     if s.mailbox.event_changes.len() != before || !dropped.is_empty() {
         s.mailbox_changed();
     }
@@ -1654,9 +1663,12 @@ pub fn apply_event_outcomes(s: &mut Session, uploaded: &EventsUploaded) -> Resul
     for outcome in uploaded.outcomes.iter().take(MAX_OUTCOMES) {
         let mut outcome = outcome.clone();
         outcome.tidy();
+        // //// Neoffice — see below.
+        let page = !s.keeps_local;
         let mailbox = &mut s.mailbox;
         match outcome.op.kind {
-            EventChangeKind::Create => created(mailbox, account, &outcome, &offset_at, now, &mut applied, &mut told),
+            // //// Neoffice — (a hosting page's tab or not, see `created`.)
+            EventChangeKind::Create => created(mailbox, account, &outcome, &offset_at, now, &mut applied, &mut told, page),
             EventChangeKind::Forward => forwarded(mailbox, account, &outcome, now, &mut applied, &mut told),
             _ if outcome.op.of_occurrence() => one_occurrence(mailbox, account, &outcome, &offset_at, now, &mut applied, &mut told),
             EventChangeKind::Update => updated(mailbox, account, &outcome, &offset_at, now, &mut applied, &mut told),
@@ -1664,7 +1676,8 @@ pub fn apply_event_outcomes(s: &mut Session, uploaded: &EventsUploaded) -> Resul
             EventChangeKind::Respond => responded(mailbox, account, &outcome, now, &mut applied, &mut told),
         }
     }
-    for dropped in tidy_changes(&mut s.mailbox) {
+    // //// Neoffice — (a hosting page's tab or not, see `tidy_changes`.)
+    for dropped in tidy_changes(&mut s.mailbox, !s.keeps_local) {
         applied.say(dropped.message.clone());
         applied.dropped.push(dropped);
     }
@@ -1715,6 +1728,8 @@ fn held_back(change: &mut EventChange, outcome: &EventOutcome, now: Timestamp) -
 }
 
 /// The answer to making an event.
+// //// Neoffice — `page`: in a hosting page's tab, where nothing is kept on this computer (`hosted_calendar`).
+#[allow(clippy::too_many_arguments)]
 fn created(
     mailbox: &mut Mailbox,
     account: Id,
@@ -1723,6 +1738,8 @@ fn created(
     now: Timestamp,
     applied: &mut EventsApplied,
     told: &mut bool,
+    // //// Neoffice — see above.
+    page: bool,
 ) {
     let op = &outcome.op;
     let noted = |change: &EventChange| {
@@ -1853,7 +1870,13 @@ fn created(
             }
             // What was written is not thrown away: it stays, in a calendar of the mailbox's own.
             let name = called(event.and_then(|id| mailbox.event(id)));
-            if event.is_some_and(|id| keep_on_this_computer(mailbox, id)) {
+            // //// Neoffice — in a hosting page's tab, in the calendar it was made in, on no computer (`hosted_calendar`).
+            if page && event.is_some_and(|id| super::hosted_calendar::hold(mailbox, id)) {
+                applied.say(format!(
+                    "The server wouldn't take {name}{}. It stays in its calendar here, and is not on the server: change it to send it again.",
+                    because(&outcome.error)
+                ));
+            } else if event.is_some_and(|id| keep_on_this_computer(mailbox, id)) {
                 applied.say(format!("The server wouldn't take {name}{}. It is kept on this device only.", because(&outcome.error)));
             } else {
                 applied.say(format!("The server wouldn't take {name}{}.", because(&outcome.error)));
@@ -1897,6 +1920,8 @@ fn skip_days_there(mailbox: &mut Mailbox, account: Id, id: Id, offset_at: &dyn F
 /// The owner said yes to the mail that what was just done to an event makes its server send
 /// (`event` is the event here, `remote` what the server calls it), with a note to go along.
 pub(crate) fn approve_mail(mailbox: &mut Mailbox, account: Id, event: Id, remote: &str, comment: &str) {
+    // //// Neoffice — a meeting that stays in its calendar unsent goes with the owner's yes (`hosted_calendar`).
+    super::hosted_calendar::invite(mailbox, account, event);
     let about = |change: &EventChange| match change.kind {
         EventChangeKind::Create => change.event == event,
         _ => !remote.is_empty() && change.remote == remote,
@@ -2931,6 +2956,8 @@ fn check_sent(
     email: &str,
     offset_at: &dyn Fn(Timestamp) -> i32,
     merged: &mut Merged,
+    // //// Neoffice — in a hosting page's tab, where nothing is kept on this computer (`hosted_calendar`).
+    page: bool,
 ) -> Checked {
     let mut checked = Checked::default();
     if !mailbox.event_checks.iter().any(|check| check.account == account) {
@@ -3099,7 +3126,13 @@ fn check_sent(
                     failed(merged, &check, "the server doesn't have the copy of a moved event", line);
                     continue;
                 }
-                if check.kind == EventChangeKind::Create && keep_on_this_computer(mailbox, here.id) {
+                // //// Neoffice — in a hosting page's tab it stays in its calendar, on no computer (`hosted_calendar`).
+                if page && check.kind == EventChangeKind::Create && super::hosted_calendar::hold(mailbox, here.id) {
+                    let line = format!(
+                        "{name} was made here and the server said it took it, but it is not in the server's calendar. It stays in its calendar here, and is not on the server: change it to send it again."
+                    );
+                    failed(merged, &check, "the server doesn't have the event", line);
+                } else if check.kind == EventChangeKind::Create && keep_on_this_computer(mailbox, here.id) {
                     let line = format!(
                         "{name} was made here and the server said it took it, but it is not in the server's calendar. It is kept on this computer only: it is not in your Outlook calendar."
                     );
@@ -3131,12 +3164,19 @@ fn check_sent(
 /// `offset_at` is the local zone's offset (minutes east of UTC) at an instant
 /// ([`event_from_remote`]). Nothing is changed when this returns an error.
 pub fn merge_events(mailbox: &mut Mailbox, download: &EventsDownload, offset_at: &dyn Fn(Timestamp) -> i32) -> Result<Merged, CmdError> {
+    merge_events_in(mailbox, download, offset_at, false)
+}
+
+// //// Neoffice — [`merge_events`] in a hosting page's tab (`page`) or not: there nothing is kept on this computer (`hosted_calendar`).
+fn merge_events_in(mailbox: &mut Mailbox, download: &EventsDownload, offset_at: &dyn Fn(Timestamp) -> i32, page: bool) -> Result<Merged, CmdError> {
     let (account, email) = owner(mailbox, download.account, &download.email).map(|owner| (owner.id, owner.email.clone()))?;
     let remote_calendar = download.calendar.trim();
     if remote_calendar.len() > MAX_KEY || remote_calendar.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(bad("`calendar` isn't what a server calls a calendar"));
     }
     let (calendar, new_calendar) = calendar_for(mailbox, account, remote_calendar)?;
+    // //// Neoffice — an event that comes back under another name with the same uid is the one that is here (`hosted_calendar`).
+    super::hosted_calendar::same_by_uid(mailbox, account, calendar, download);
     let mut merged = Merged { calendar, new_calendar, ..Default::default() };
     // A calendar whose events can't be listed, only its free and busy times (#70), is shown as
     // that; one whose events can be listed again is at least read.
@@ -3216,7 +3256,8 @@ pub fn merge_events(mailbox: &mut Mailbox, download: &EventsDownload, offset_at:
     // What was sent to the server and is yet to be seen there: is it in this download as it was
     // sent? What isn't yet stays as it is here for now, as what waits to be sent does.
     let before_checks = mailbox.event_checks.clone();
-    let checked = check_sent(mailbox, account, calendar, download, &series, &rest, &waiting, &email, offset_at, &mut merged);
+    // //// Neoffice — (`page`, see above.)
+    let checked = check_sent(mailbox, account, calendar, download, &series, &rest, &waiting, &email, offset_at, &mut merged, page);
     waiting.extend(checked.held);
     for (name, days) in checked.held_days {
         waiting_days.entry(name).or_default().extend(days);
@@ -3465,6 +3506,8 @@ pub fn merge_events(mailbox: &mut Mailbox, download: &EventsDownload, offset_at:
             .filter(|(remote, _)| !seen.contains(*remote) && !waiting.contains_key(*remote))
             .filter_map(|(_, id)| mailbox.event(*id))
             .filter(|event| within(event) && event.recurrence.is_none())
+            // //// Neoffice — (nor one that stays in its calendar unsent from now on: `hosted_calendar`.)
+            .filter(|event| !event.origin.id.is_empty())
             .map(|event| event.id)
             .chain(extra)
             .collect();
@@ -3475,7 +3518,8 @@ pub fn merge_events(mailbox: &mut Mailbox, download: &EventsDownload, offset_at:
         }
     }
     // A change that can't be sent any more is given up, and says so.
-    for dropped in tidy_changes(mailbox) {
+    // //// Neoffice — (`page`, see above.)
+    for dropped in tidy_changes(mailbox, page) {
         if !dropped.message.is_empty() && !merged.messages.contains(&dropped.message) {
             merged.say(dropped.message.clone());
         }
@@ -3680,11 +3724,14 @@ pub fn take_in_events(s: &mut Session, download: &EventsDownload) -> Result<Merg
     if expired > 0 {
         log::debug!("calendar: {expired} sent changes were not seen in any download for a day");
     }
-    let merged = merge_events(&mut s.mailbox, download, &offset_at)?;
+    // //// Neoffice — (in a hosting page's tab or not; and there what was kept on this computer goes where it belongs.)
+    let merged = merge_events_in(&mut s.mailbox, download, &offset_at, !s.keeps_local)?;
     if merged.changed() || expired > 0 {
         // Not through `run` when the host calls this, so say it here: what is shown is out of date.
         s.mailbox_changed();
     }
+    // //// Neoffice — see above.
+    super::hosted_calendar::bring_home(s);
     Ok(merged)
 }
 
@@ -3902,7 +3949,8 @@ pub fn apply_calendars(s: &mut Session, download: &CalendarsDownload) -> CmdResu
             let _ = mailbox.remove_event(id);
         }
         mailbox.calendars.retain(|calendar| !gone.contains(&calendar.id));
-        dropped = tidy_changes(mailbox);
+        // //// Neoffice — (a hosting page's tab or not, see `tidy_changes`.)
+        dropped = tidy_changes(mailbox, !s.keeps_local);
     }
     settle_calendars(mailbox);
     let before = s.mailbox.account(account).map(|a| a.opened_calendars.clone());
@@ -3911,6 +3959,8 @@ pub fn apply_calendars(s: &mut Session, download: &CalendarsDownload) -> CmdResu
     if added + updated + gone.len() > 0 || changed_list {
         s.mailbox_changed();
     }
+    // //// Neoffice — in a hosting page's tab, what was kept on this computer goes where it belongs (`hosted_calendar`).
+    super::hosted_calendar::bring_home(s);
     Ok(json!({
         "added": added, "updated": updated, "removed": gone.len(), "complete": download.complete, "dropped": dropped_json(&dropped),
         "refused": about_opened["refused"], "duplicates": about_opened["duplicates"], "listedTwice": about_opened["listedTwice"],
@@ -3926,7 +3976,8 @@ pub(crate) fn forget_calendars(mailbox: &mut Mailbox, ids: &[Id]) -> usize {
         let _ = mailbox.remove_event(*id);
     }
     mailbox.calendars.retain(|calendar| !ids.contains(&calendar.id));
-    tidy_changes(mailbox);
+    // //// Neoffice — (what it gives up are changes of events that went: none is kept anywhere.)
+    tidy_changes(mailbox, false);
     events.len()
 }
 

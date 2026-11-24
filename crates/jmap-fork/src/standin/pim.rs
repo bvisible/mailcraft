@@ -352,6 +352,11 @@ pub struct Pim {
     pub refused_events: BTreeMap<String, &'static str>,
     /// Events (their ids in the API) whose time a change says it took, and doesn't keep.
     pub keeps_old_times: BTreeSet<String>,
+    /// A new event is listed under another id than the one its making was answered with (a server that names the events of
+    /// a period by the answer they are in).
+    pub listed_otherwise: bool,
+    /// A new event is answered as made, and is not kept.
+    pub drops_new: bool,
     /// The person's answer to an invitation is told to its organizer (as such a server does since it answers through
     /// the desk's own answer); off: kept on the person's copy only.
     pub tells_the_organizer: bool,
@@ -404,6 +409,8 @@ impl Default for Pim {
             written: Vec::new(),
             refused_events: BTreeMap::new(),
             keeps_old_times: BTreeSet::new(),
+            listed_otherwise: false,
+            drops_new: false,
             tells_the_organizer: true,
             made: BTreeMap::new(),
             made_count: 0,

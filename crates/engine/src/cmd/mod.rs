@@ -126,6 +126,8 @@ mod junk_tests;
 // //// Neoffice — tests of the inbox's tabs by kind of sender.
 #[cfg(test)]
 mod stream_tests;
+// //// Neoffice — nothing of a hosting page's calendar is kept on this computer.
+pub mod hosted_calendar;
 // //// Neoffice — what a session that keeps nothing of its own between visits refuses (tasks, importing, a contact's marks).
 pub mod kept_here;
 #[cfg(test)]

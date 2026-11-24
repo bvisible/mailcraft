@@ -930,22 +930,34 @@ pub(crate) fn field(ui: &mut Ui, icon: &str, value: &str, label: &str, link: boo
 /// Where the contact is kept, where there is more than one place it could be.
 fn kept_in(app: &MailApp, c: &Contact) -> Option<String> {
     let mailbox = &app.session.mailbox;
+    // //// Neoffice — in a hosting page's tab nothing is kept on this computer: a contact that isn't in a server's book says that.
+    if !app.session.keeps_local && !c.origin.is_remote() {
+        return Some(tl!("Not on the server").to_string());
+    }
     (c.origin.is_remote() || !people::contact_accounts(mailbox).is_empty()).then(|| widgets::place_name(mailbox, c.origin.account))
 }
 
 /// Whether the contact is a copy of what its account's server keeps, which can't be changed here
 /// (`remote::changeable`): the card says so beside whose it is, before Edit or Delete is tried.
 fn read_only_here(app: &MailApp, c: &Contact) -> bool {
+    // //// Neoffice — (but for one of a server's book this account may change, which goes there: `remote_contacts`.)
     mailcraft_engine::cmd::remote::keeper(&app.session.mailbox, &c.origin).is_some()
+        && mailcraft_engine::cmd::remote_contacts::writable_book_of(&app.session.mailbox, c).is_none()
 }
 
 fn card_account(app: &MailApp, ui: &mut Ui, c: &Contact) {
     if let Some(place) = kept_in(app, c) {
         section(ui, tl!("Account"));
         if read_only_here(app, c) {
-            field(ui, "account", &place, tl!("Read-only"), false).on_hover_text(tl!(
-                "This account's server keeps this contact. Changes made here aren't sent back yet, so it can't be edited or deleted here. Favorite and categories are kept on this computer."
-            ));
+            // //// Neoffice — in a hosting page's tab nothing is kept on this computer, and what isn't changed is what this account may not.
+            let tip = if app.session.keeps_local {
+                tl!(
+                    "This account's server keeps this contact. Changes made here aren't sent back yet, so it can't be edited or deleted here. Favorite and categories are kept on this computer."
+                )
+            } else {
+                tl!("Your rights do not let you change this contact")
+            };
+            field(ui, "account", &place, tl!("Read-only"), false).on_hover_text(tip);
         } else {
             field(ui, "account", &place, "", false);
         }

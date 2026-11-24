@@ -344,7 +344,12 @@ pub(crate) fn unfetched_said(app: &MailApp, m: &Message) -> &'static str {
         // Older than its mail to keep offline (#143): only its headers and preview are kept here.
         tl!("Not connected: the rest of this message is on the server")
     } else if app.session.driver.fetch.offline {
-        tl!("This message isn't on this computer yet. It will download when you're online.")
+        // //// Neoffice — (a hosting page's tab keeps nothing on this computer.)
+        if app.session.keeps_local {
+            tl!("This message isn't on this computer yet. It will download when you're online.")
+        } else {
+            tl!("This message isn't downloaded yet. It will be when you're online.")
+        }
     } else if app.opened_after_batch(m.id) {
         tl!("This message downloads once the messages being downloaded now are here.")
     } else {

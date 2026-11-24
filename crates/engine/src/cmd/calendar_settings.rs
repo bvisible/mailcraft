@@ -145,7 +145,8 @@ pub fn calendar_groups(s: &Session) -> Vec<CalendarGroup> {
         }
     }
     let here: Vec<Id> = listed.iter().filter(|c| keeper(c).is_none() && !c.is_subscribed()).map(|c| c.id).collect();
-    if !here.is_empty() {
+    // //// Neoffice — none beside a server's in a hosting page's tab, where nothing is kept on this computer: what may be in one goes to the account's at the next read (`hosted_calendar`).
+    if !here.is_empty() && (s.keeps_local || accounts.is_empty()) {
         let title = if accounts.is_empty() { MY_CALENDARS } else { remote::LOCAL_CALENDAR };
         groups.push(CalendarGroup { title: title.to_string(), account: 0, calendars: here });
     }

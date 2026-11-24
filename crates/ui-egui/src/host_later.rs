@@ -19,6 +19,10 @@
 //! pane is dragged up or down, no Move Up and Move Down in its menu (`nav.rs`), neither command in Search Commands. And the list's
 //! Shade Rows (#1657) is not offered, its list being the design system's (`kept_here::own_list_refusal`).
 //!
+//! The calendars of the mailbox's own (Add Calendar, Move to the Account's Calendar: `kept_here::own_calendar_refusal`), the
+//! Favorites of a Microsoft account (`kept_here::outlook_favorites_refusal`) and what else is of Microsoft's alone
+//! ([`MICROSOFT_ONLY`]) are not in Search Commands; File › Info removes no mailbox (`kept_here::account_removal_refusal`).
+//!
 //! Where the host has no dictionary (the browser build), Review shows no Spelling (#954), whose menu would only say so.
 //!
 //! A flag's due date too: a JMAP server keeps a message's flag and nothing of its date. Follow Up offers the flag without a date
@@ -26,7 +30,7 @@
 
 use crate::MailApp;
 use crate::ribbon::{Menu, Tab};
-use mailcraft_engine::cmd::kept_here::{LATER, ORDERED, SHADED, SUBSCRIBED};
+use mailcraft_engine::cmd::kept_here::{LATER, ORDERED, OUTLOOK_FAVORITES, OWN_CALENDARS, SHADED, SUBSCRIBED};
 
 /// The windows of Send Later, Delay Delivery, Change Send Time, the reminders and a subscription (`ui.dialog`'s names).
 const DIALOGS: [&str; 6] = ["sendLater", "delay", "sendTime", "addReminder", "followUpDate", "subscribe"];
@@ -53,9 +57,14 @@ pub(crate) const HOST_PLUMBING: [&str; 5] =
 /// person who picked one would be told of a parameter.
 pub(crate) const WANT_PARAMS: [&str; 2] = ["compose.replaceText", "compose.picture.set"];
 
+/// Upstream's commands that do something for a Microsoft (or Exchange) account alone, which no page hands over: not refused (each
+/// says there is none), only left out of Search Commands.
+pub(crate) const MICROSOFT_ONLY: [&str; 3] = ["category.addToOutlook", "account.graphSwitch", "account.thinOffline"];
+
 /// Whether Search Commands leaves `id` out: one of their commands, in a tab that doesn't offer them; or a hosting page's own.
 pub(crate) fn hidden(app: &MailApp, id: &str) -> bool {
-    let kept_here = [LATER, SUBSCRIBED, ORDERED, &SUBSCRIPTION_LEFTOVERS[..], &WANT_PARAMS[..]].iter().any(|list| list.contains(&id)) || id == SHADED;
+    let lists = [LATER, SUBSCRIBED, ORDERED, OWN_CALENDARS, OUTLOOK_FAVORITES, &SUBSCRIPTION_LEFTOVERS[..], &WANT_PARAMS[..], &MICROSOFT_ONLY[..]];
+    let kept_here = lists.iter().any(|list| list.contains(&id)) || id == SHADED || id == "account.remove";
     HOST_PLUMBING.contains(&id) || !offered(app) && kept_here
 }
 

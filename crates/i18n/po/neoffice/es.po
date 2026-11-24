@@ -5009,3 +5009,227 @@ msgid "{n} list was asked already: the request is in your Outbox or in Sent Item
 msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
 msgstr[0] "Ya ha pedido la baja de {n} lista: la solicitud está en la bandeja de salida o en los elementos enviados."
 msgstr[1] "Ya ha pedido la baja de {n} listas: las solicitudes están en la bandeja de salida o en los elementos enviados."
+
+msgid "It stays in its calendar here, and is not on the server."
+msgstr "Permanece en su calendario de aquí y no está en el servidor."
+
+msgid "It stays in its calendar here, and is not on the server: change it to send it again."
+msgstr "Permanece en su calendario de aquí y no está en el servidor: modifíquelo para volver a enviarlo."
+
+msgid "Kept on your mailboxes' servers."
+msgstr "Guardado en los servidores de sus buzones."
+
+msgid "Nobody was invited: the meeting stays in its calendar here, and is not on the server"
+msgstr "Nadie fue invitado: la reunión permanece en su calendario de aquí y no está en el servidor"
+
+msgid "Not on the server"
+msgstr "No está en el servidor"
+
+msgid "These are the answers received so far."
+msgstr "Estas son las respuestas recibidas hasta ahora."
+
+msgid "This item stays in its calendar here, and is not on the server"
+msgstr "Este elemento permanece en su calendario de aquí y no está en el servidor"
+
+msgid "This message isn't downloaded yet. It will be when you're online."
+msgstr "Este mensaje aún no se ha descargado. Se descargará cuando esté en línea."
+
+msgid "This page keeps no calendar of its own: the calendars here are those of your mailboxes' servers"
+msgstr "Esta página no tiene calendario propio: los calendarios de aquí son los de los servidores de sus buzones"
+
+msgid "This page's mailboxes come from the site that opened them: remove one there"
+msgstr "Los buzones de esta página vienen del sitio que los abrió: elimine uno allí"
+
+msgid "Unsubscribing: {parts}."
+msgstr "Cancelación de suscripciones: {parts}."
+
+msgid "What happens to the mail you run them over"
+msgstr "Qué ocurre con los mensajes sobre los que las ejecuta"
+
+msgid "When {when}, except if {except}: {then}"
+msgstr "Cuando {when}, excepto si {except}: {then}"
+
+msgid "When {when}: {then}"
+msgstr "Cuando {when}: {then}"
+
+msgid "body contains {words}"
+msgstr "el cuerpo contiene {words}"
+
+msgid "categorize it as {category}"
+msgstr "clasificarlo como {category}"
+
+msgid "category is {words}"
+msgstr "la categoría es {words}"
+
+msgid "clear its categories"
+msgstr "quitarle sus categorías"
+
+msgid "clear its flag"
+msgstr "quitarle la marca"
+
+msgid "copy it to a folder that is gone"
+msgstr "copiarlo a una carpeta que ya no existe"
+
+msgid "copy it to {folder}"
+msgstr "copiarlo a {folder}"
+
+msgid "delete it"
+msgstr "eliminarlo"
+
+msgid "flag it"
+msgstr "marcarlo"
+
+msgid "flag it for next week"
+msgstr "marcarlo para la próxima semana"
+
+msgid "flag it for this week"
+msgstr "marcarlo para esta semana"
+
+msgid "flag it for today"
+msgstr "marcarlo para hoy"
+
+msgid "flag it for tomorrow"
+msgstr "marcarlo para mañana"
+
+msgid "from contains {words}"
+msgstr "el remitente contiene {words}"
+
+msgid "from {words}"
+msgstr "el mensaje procede de {words}"
+
+msgid "has an attachment"
+msgstr "el mensaje tiene un adjunto"
+
+msgid "importance is high"
+msgstr "la importancia es alta"
+
+msgid "importance is low"
+msgstr "la importancia es baja"
+
+msgid "importance is normal"
+msgstr "la importancia es normal"
+
+msgid "is a meeting invitation or update"
+msgstr "el mensaje es una invitación a una reunión o una actualización"
+
+msgid "is an automatic reply"
+msgstr "el mensaje es una respuesta automática"
+
+msgid "is flagged"
+msgstr "el mensaje está marcado"
+
+msgid "mark it as read"
+msgstr "marcarlo como leído"
+
+msgid "move it to a folder that is gone"
+msgstr "moverlo a una carpeta que ya no existe"
+
+msgid "move it to {folder}"
+msgstr "moverlo a {folder}"
+
+msgid "my address is in Cc"
+msgstr "mi dirección está en CC"
+
+msgid "my address is in To"
+msgstr "mi dirección está en Para"
+
+msgid "my address is in To or Cc"
+msgstr "mi dirección está en Para o en CC"
+
+msgid "my address isn't in To"
+msgstr "mi dirección no está en Para"
+
+msgid "received from {from} to {to}"
+msgstr "el mensaje se recibió del {from} al {to}"
+
+msgid "received on any day"
+msgstr "el mensaje se recibió un día cualquiera"
+
+msgid "received on or after {day}"
+msgstr "el mensaje se recibió el {day} o después"
+
+msgid "received on or before {day}"
+msgstr "el mensaje se recibió el {day} o antes"
+
+msgid "recipient contains {words}"
+msgstr "el destinatario contiene {words}"
+
+msgid "recipient's address contains {words}"
+msgstr "la dirección del destinatario contiene {words}"
+
+msgid "sender's address contains {words}"
+msgstr "la dirección del remitente contiene {words}"
+
+msgid "sensitivity is confidential"
+msgstr "la confidencialidad es confidencial"
+
+msgid "sensitivity is normal"
+msgstr "la confidencialidad es normal"
+
+msgid "sensitivity is personal"
+msgstr "la confidencialidad es personal"
+
+msgid "sensitivity is private"
+msgstr "la confidencialidad es privada"
+
+msgid "sent only to me"
+msgstr "el mensaje se envía solo a mí"
+
+msgid "sent to {words}"
+msgstr "el mensaje se envía a {words}"
+
+msgid "set importance to high"
+msgstr "poner la importancia en alta"
+
+msgid "set importance to low"
+msgstr "poner la importancia en baja"
+
+msgid "set importance to normal"
+msgstr "poner la importancia en normal"
+
+msgid "show a desktop alert"
+msgstr "mostrar una alerta en el escritorio"
+
+msgid "size is {min} KB to {max} KB"
+msgstr "el tamaño va de {min} KB a {max} KB"
+
+msgid "subject contains {words}"
+msgstr "el asunto contiene {words}"
+
+msgid "subject or body contains {words}"
+msgstr "el asunto o el cuerpo contiene {words}"
+
+msgid "{first} and {second}"
+msgstr "{first} y {second}"
+
+msgid "{first} or {second}"
+msgstr "{first} o {second}"
+
+msgid "{name} was made here and the server said it took it, but it is not in the server's calendar."
+msgstr "{name} se creó aquí y el servidor dijo que lo aceptó, pero no está en el calendario del servidor."
+
+msgid "{n} by mail"
+msgid_plural "{n} by mail"
+msgstr[0] "{n} por correo"
+msgstr[1] "{n} por correo"
+
+msgid "{n} in one click"
+msgid_plural "{n} in one click"
+msgstr[0] "{n} con un clic"
+msgstr[1] "{n} con un clic"
+
+msgid "{n} left out"
+msgid_plural "{n} left out"
+msgstr[0] "{n} excluida"
+msgstr[1] "{n} excluidas"
+
+msgid "{n} to do on its own page"
+msgid_plural "{n} to do on their own page"
+msgstr[0] "{n} por hacer en su propia página"
+msgstr[1] "{n} por hacer en sus propias páginas"
+
+msgid "• to {to}, subject “{subject}”, text “{text}”"
+msgstr "• a {to}, asunto «{subject}», texto «{text}»"
+
+msgid "This page's Favorites are your own"
+msgstr "Los favoritos de esta página son suyos"
