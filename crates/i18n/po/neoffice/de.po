@@ -4976,3 +4976,14 @@ msgstr "diese Nachricht ist ein Entwurf: Öffnen Sie sie und senden Sie sie"
 
 msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
 msgstr "Noch keine Regeln. Eine Regel legt die E-Mails, auf die Sie sie anwenden, ab, markiert oder löscht sie."
+
+msgid "Kept with your mailboxes"
+msgstr "Mit Ihren Postfächern gespeichert"
+
+msgid "Switch this rule on or off"
+msgstr "Diese Regel ein- oder ausschalten"
+
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] "Sie haben bereits die Abmeldung von {n} Liste angefragt: Die Anfrage liegt im Postausgang oder in den gesendeten Elementen."
+msgstr[1] "Sie haben bereits die Abmeldung von {n} Listen angefragt: Die Anfragen liegen im Postausgang oder in den gesendeten Elementen."

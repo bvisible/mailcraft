@@ -5965,3 +5965,14 @@ msgstr "ce message est un brouillon : ouvrez-le et envoyez-le"
 
 msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
 msgstr "Aucune règle pour l’instant. Une règle classe, marque d’un indicateur ou supprime le courrier auquel vous l’appliquez."
+
+msgid "Kept with your mailboxes"
+msgstr "Conservée avec vos boîtes aux lettres"
+
+msgid "Switch this rule on or off"
+msgstr "Activer ou désactiver cette règle"
+
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] "Vous avez déjà demandé le désabonnement de {n} liste : la demande est dans votre boîte d’envoi ou dans les éléments envoyés."
+msgstr[1] "Vous avez déjà demandé le désabonnement de {n} listes : les demandes sont dans votre boîte d’envoi ou dans les éléments envoyés."

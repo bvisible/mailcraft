@@ -266,3 +266,20 @@ fn the_rule_builder_offers_what_runs_in_a_hosting_pages_tab() {
         assert!(!hosted || h.query_by_label_contains("while MailCraft is open").is_none(), "nothing else said of where it runs");
     }
 }
+
+/// Where a rule is kept, as it is said under it: never the computer in a hosting page's tab, whose server keeps it.
+#[test]
+fn a_rule_of_a_hosting_pages_tab_is_said_to_be_kept_with_the_mailboxes() {
+    for hosted in [false, true] {
+        let (mut app, _) = app(hosted);
+        let inbox = app.session.view.folder;
+        let account = app.session.mailbox.folder(inbox).unwrap().account;
+        let to = app.session.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Archive).unwrap();
+        app.execute("rules.add", json!({"name": "Plans", "account": account, "conditions": [{"type": "fromContains", "value": "zoe"}], "actions": [{"type": "moveTo", "value": to}]}))
+            .unwrap();
+        let rule = app.session.mailbox.rules.last().unwrap().clone();
+        let mark = crate::forms::rules::mark(&app, &rule, account);
+        assert_eq!(mark == "Kept with your mailboxes", hosted, "{mark}");
+        assert_eq!(mark.contains("this computer"), !hosted, "{mark}");
+    }
+}

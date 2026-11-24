@@ -507,3 +507,25 @@ fn more_requests_by_mail_than_a_question_lists_are_refused() {
     assert!(refused.contains("20"), "{refused}");
     assert!(outbox(&app).is_empty());
 }
+
+// //// Neoffice — added test: in a hosting page's tab, a list asked already is said as that, not as mail that can't be believed.
+#[test]
+fn a_list_a_hosting_pages_tab_asked_already_is_said_as_that() {
+    let (mut app, _) = list_app(&[]);
+    app.session.keeps_local = false;
+    let shop = add_at(&mut app, "deals@shop.example", 60, &[("List-Unsubscribe", "<mailto:leave@shop.example?subject=Leave%20me>")]);
+    let club = add_at(&mut app, "news@club.example", 120, &[("List-Unsubscribe", "<mailto:quit@club.example>")]);
+    app.execute("ui.unsubscribeMany", json!({"ids": [shop], "mail": [shop]})).unwrap();
+    assert_eq!(outbox(&app), ["leave@shop.example"]);
+    // With another list to ask, and one that can't be believed: three things said.
+    let junk = add_at(&mut app, "win@prize.example", 180, &[]);
+    let (question, _) = super::question_many(&mut app, &json!({"ids": [shop, club, junk]})).unwrap();
+    for said in ["Unsubscribe from 1 list.", "1 list was asked already", "1 sender is left out"] {
+        assert!(question.text.contains(said), "{said}: {}", question.text);
+    }
+    assert!(!question.text.contains("leave@shop.example"), "{}", question.text);
+    // Alone, nothing is asked: the refusal says why.
+    let refused = super::question_many(&mut app, &json!({"ids": [shop]})).map(|_| ()).unwrap_err();
+    assert!(refused.contains("asked already"), "{refused}");
+    assert_eq!(outbox(&app), ["leave@shop.example"]);
+}

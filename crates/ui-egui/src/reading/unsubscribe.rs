@@ -304,12 +304,16 @@ struct Plan {
     mail: Vec<(u64, String, String)>,
     pages: usize,
     left_out: usize,
+    // //// Neoffice — of those left out, the lists asked already (`mailcraft_engine::cmd::unsubscribe::ASKED_ALREADY`).
+    asked: usize,
 }
 
 fn plan(app: &mut MailApp, ids: &[u64]) -> Result<Plan, String> {
     let told = app.session.run("mail.unsubscribeMany", &json!({"ids": ids})).map_err(|e| e.to_string())?;
-    let mut plan =
-        Plan { click: Vec::new(), mail: Vec::new(), pages: 0, left_out: told.get("leftOut").and_then(Value::as_array).map_or(0, Vec::len) };
+    let left_out = told.get("leftOut").and_then(Value::as_array).map_or(&[][..], Vec::as_slice);
+    // //// Neoffice — (those asked already counted apart.)
+    let asked = left_out.iter().filter(|l| l["why"] == mailcraft_engine::cmd::unsubscribe::ASKED_ALREADY).count();
+    let mut plan = Plan { click: Vec::new(), mail: Vec::new(), pages: 0, left_out: left_out.len(), asked };
     for sender in told.get("senders").and_then(Value::as_array).into_iter().flatten() {
         let Some(id) = sender.get("message").and_then(Value::as_u64) else { continue };
         let text = |k: &str| sender.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
@@ -319,7 +323,10 @@ fn plan(app: &mut MailApp, ids: &[u64]) -> Result<Plan, String> {
             Some("oneClick") if app.services.unsubscribe.is_none() => plan.pages += 1,
             Some("oneClick") => plan.click.push((id, text("url"))),
             // //// Neoffice — (one this window has just asked is left out: its copy in Sent Items may not be here yet.)
-            Some("mail") if app.unsubscribing.asked(id) => plan.left_out += 1,
+            Some("mail") if app.unsubscribing.asked(id) => {
+                plan.left_out += 1;
+                plan.asked += 1;
+            }
             Some("mail") => plan.mail.push((id, text("to"), text("subject"))),
             Some("page") => plan.pages += 1,
             _ => {}
@@ -347,8 +354,17 @@ pub(crate) fn question_many(app: &mut MailApp, p: &Value) -> Result<(crate::dial
     let later = plan.mail.len().saturating_sub(MAX_MAIL_ASKED);
     plan.mail.truncate(MAX_MAIL_ASKED);
     let (click, mail, pages) = (plan.click.len(), plan.mail.len(), plan.pages);
+    // //// Neoffice — a list asked already is said as that: it is not mail that can't be believed.
+    let asked_already = (plan.asked > 0).then(|| {
+        tln!(
+            plan.asked as u64,
+            "{n} list was asked already: the request is in your Outbox or in Sent Items.",
+            "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+        )
+    });
     if click + mail + pages == 0 {
-        return Err(tl!("None of these messages can be unsubscribed from here.").to_string());
+        // //// Neoffice — (said when that is why nothing is left to ask.)
+        return Err(asked_already.unwrap_or_else(|| tl!("None of these messages can be unsubscribed from here.").to_string()));
     }
     let n = |count: usize| count as u64;
     let mut said = vec![tln!(n(click + mail + pages), "Unsubscribe from {n} list.", "Unsubscribe from {n} lists.")];
@@ -386,9 +402,12 @@ pub(crate) fn question_many(app: &mut MailApp, p: &Value) -> Result<(crate::dial
             "{n} unsubscribe on their own page: open each of those messages to do it there."
         ));
     }
-    if plan.left_out > 0 {
+    // //// Neoffice — (and apart from the others, below.)
+    said.extend(asked_already);
+    let others = plan.left_out - plan.asked;
+    if others > 0 {
         said.push(tln!(
-            n(plan.left_out),
+            n(others), // //// Neoffice — (upstream: `plan.left_out`.)
             "{n} sender is left out: mail your server doesn't vouch for, in Junk E-mail, with a warning about its sender, or that doesn't say how.",
             "{n} senders are left out: mail your server doesn't vouch for, in Junk E-mail, with a warning about its sender, or that doesn't say how."
         ));

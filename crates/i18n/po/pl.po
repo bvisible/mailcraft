@@ -9113,6 +9113,11 @@ msgid "Kept on your Neoffice server, for you alone: neither your colleagues nor 
 msgstr ""
 
 #. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Kept with your mailboxes"
+msgstr ""
+
+#. interface
 #: crates/ui-egui/src/reading/signature.rs
 #, fuzzy
 msgid "Key made:"
@@ -18519,6 +18524,11 @@ msgstr "Przesunięcie w prawo"
 #, fuzzy
 msgid "Switch"
 msgstr "Przełącz"
+
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "Switch this rule on or off"
+msgstr ""
 
 #. interface
 #: crates/ui-egui/src/account_setup.rs
@@ -30344,6 +30354,14 @@ msgid_plural "{n} kept because they differ"
 msgstr[0] "Zachowano {n}, ponieważ się różni"
 msgstr[1] "Zachowano {n}, ponieważ się różnią"
 msgstr[2] "Zachowano {n}, ponieważ się różnią"
+
+#. interface
+#: crates/ui-egui/src/reading/unsubscribe.rs
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
 
 #. interface
 #: crates/ui-egui/src/import_tree.rs

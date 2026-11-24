@@ -4998,3 +4998,14 @@ msgstr "ese mensaje es un borrador: ábralo y envíelo"
 
 msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
 msgstr "Todavía no hay reglas. Una regla archiva, marca o elimina los mensajes a los que usted la aplique manualmente."
+
+msgid "Kept with your mailboxes"
+msgstr "Guardada con sus buzones de correo"
+
+msgid "Switch this rule on or off"
+msgstr "Activar o desactivar esta regla"
+
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] "Ya ha pedido la baja de {n} lista: la solicitud está en la bandeja de salida o en los elementos enviados."
+msgstr[1] "Ya ha pedido la baja de {n} listas: las solicitudes están en la bandeja de salida o en los elementos enviados."

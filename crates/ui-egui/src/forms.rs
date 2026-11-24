@@ -5229,6 +5229,10 @@ pub(crate) mod rules {
         let mb = &app.session.mailbox;
         let why = |n: NotOnServer| tl!(n.said()).to_string();
         let only_here = |why: &str| crate::i18n::fmt(tl!("Only on this computer: {why}"), &[("why", why)]);
+        // //// Neoffice — a hosting page's tab keeps its rules with the mailboxes, on the page's server: none is on the computer.
+        if !app.session.keeps_local && !r.on_server() {
+            return tl!("Kept with your mailboxes").to_string();
+        }
         if r.account == 0 {
             return tl!("On this computer, for the mail of every account").to_string();
         }
@@ -5294,7 +5298,12 @@ pub(crate) mod rules {
         };
         ui.horizontal(|ui| {
             let mut on = r.enabled;
-            let tip = if fixed { tl!("The server doesn't let this rule be changed") } else { tl!("Run this rule on mail as it arrives") };
+            // //// Neoffice — (in a hosting page's tab a rule runs when it is run, not as mail arrives.)
+            let tip = match (fixed, app.session.keeps_local) {
+                (true, _) => tl!("The server doesn't let this rule be changed"),
+                (false, true) => tl!("Run this rule on mail as it arrives"),
+                (false, false) => tl!("Switch this rule on or off"),
+            };
             if ui.add_enabled(!fixed, egui::Checkbox::without_text(&mut on)).on_hover_text(tip).on_disabled_hover_text(tip).changed() {
                 *run = Some(("rules.enable", json!({"id": r.id, "value": on})));
             }

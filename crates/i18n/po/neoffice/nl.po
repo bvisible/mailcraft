@@ -687,3 +687,14 @@ msgstr "dat bericht is een concept: open het en verstuur het"
 
 msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
 msgstr "Nog geen regels. Een regel verplaatst, markeert of verwijdert de e-mails waarop u haar handmatig toepast."
+
+msgid "Kept with your mailboxes"
+msgstr "Bewaard bij uw postvakken"
+
+msgid "Switch this rule on or off"
+msgstr "Deze regel in- of uitschakelen"
+
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] "U heeft al om afmelding van {n} lijst gevraagd: het verzoek staat in uw Postvak UIT of in Verzonden items."
+msgstr[1] "U heeft al om afmelding van {n} lijsten gevraagd: de verzoeken staan in uw Postvak UIT of in Verzonden items."

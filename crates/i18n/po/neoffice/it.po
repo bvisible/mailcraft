@@ -4996,3 +4996,14 @@ msgstr "questo messaggio è una bozza: lo apra e lo invii"
 
 msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
 msgstr "Nessuna regola per il momento. Una regola sposta in una cartella, contrassegna o elimina i messaggi ai quali la si applica manualmente."
+
+msgid "Kept with your mailboxes"
+msgstr "Conservata con le caselle di posta"
+
+msgid "Switch this rule on or off"
+msgstr "Attivare o disattivare questa regola"
+
+msgid "{n} list was asked already: the request is in your Outbox or in Sent Items."
+msgid_plural "{n} lists were asked already: the requests are in your Outbox or in Sent Items."
+msgstr[0] "Ha già chiesto la cancellazione da {n} lista: la richiesta si trova nella posta in uscita o nella posta inviata."
+msgstr[1] "Ha già chiesto la cancellazione da {n} liste: le richieste si trovano nella posta in uscita o nella posta inviata."
