@@ -482,6 +482,9 @@ pub(super) static ROWS: &[Row] = &[
         run_word!("This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"),
         &[],
     ),
+    row(KEPT_HERE, Line, run_word!("This page keeps no order of folders: it would be lost at the next visit"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page's message list has a look of its own"), &[]),
+    row(KEPT_HERE, Line, run_word!("This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"), &[]),
     row(COMMANDS, Line, run_word!("not available: {why}"), &[("why", Line)]),
     // What became of a change of a contact a server was told, or that waited for it (`remote_contacts::written`).
     row(CONTACTS, Line, run_word!("{name}: its address book can't be changed any more, so the change made here was undone."), &[]),

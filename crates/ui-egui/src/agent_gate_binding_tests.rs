@@ -47,6 +47,7 @@ struct Ids {
     task2: Id,
     event: Id,
     event2: Id,
+    paste_event: Id,
     rule: Id,
     calendar: Id,
 }
@@ -75,6 +76,7 @@ fn ids(a: &MailApp) -> Ids {
         task2: tasks[1],
         event: events[0],
         event2: events[1],
+        paste_event: mb.events.values().find(|e| e.recurrence.is_none()).expect("the sample has an ordinary appointment for paste").id,
         rule: mb.rules[0].id,
         calendar: mb.calendars.first().map(|c| c.id).unwrap_or(0),
     }
@@ -94,6 +96,7 @@ fn params(text: &str, i: &Ids) -> Value {
         ("$contact", i.contact),
         ("$task", i.task),
         ("$event", i.event),
+        ("$pasteEvent", i.paste_event),
         ("$rule", i.rule),
         ("$calendar", i.calendar),
     ] {
@@ -119,6 +122,9 @@ enum Setup {
     /// The account signs in with Microsoft, and the selected to-do is in its To Do list shared
     /// with other people, with a category.
     Shared,
+    /// The calendar shown in London's zone, and a rule here that reads the days mail came by it
+    /// and moves that mail onto another account's server.
+    Days,
     // //// Neoffice — an account whose server keeps notes, with two notes on it, the first selected.
     Notes,
     // //// Neoffice — an account kept in step with a JMAP server whose address book the selected contact is in, and that a new contact goes to.
@@ -141,6 +147,7 @@ const ROWS: &[(&str, &str, Setup)] = &[
     ("mail.react", r#"{"id": $message, "emoji": "👍"}"#, Setup::None),
     ("ui.downloadPictures", "{}", Setup::None),
     ("ui.unsubscribe", "{}", Setup::None),
+    ("ui.unsubscribeMany", r#"{"ids": [$message]}"#, Setup::None),
     ("mail.unsubscribe", r#"{"send": true}"#, Setup::None),
     ("ui.retryPictures", "{}", Setup::None),
     ("ui.joinMeeting", r#"{"event": $event}"#, Setup::None),
@@ -204,6 +211,8 @@ const ROWS: &[(&str, &str, Setup)] = &[
     ("calendar.propose", "{}", Setup::None),
     ("calendar.delete", "{}", Setup::None),
     ("calendar.deleteAnsweredRequests", "{}", Setup::None),
+    // Unlike the older calendar commands, paste never borrows its source or time from focus.
+    ("calendar.paste", r#"{"items": [{"id": $pasteEvent}], "start": "2026-12-02T09:00", "send": true}"#, Setup::None),
     ("people.meeting", r#"{"send": true}"#, Setup::None),
     // The mailbox file.
     ("file.new", "{}", Setup::None),
@@ -274,6 +283,7 @@ const ROWS: &[(&str, &str, Setup)] = &[
     ("tasks.new", r#"{"title": "x", "account": $account}"#, Setup::Shared),
     ("tasks.fromMessage", "{}", Setup::Shared),
     ("category.rename", r#"{"from": "Shared", "to": "y"}"#, Setup::Shared),
+    ("view.timeZone", r#"{"zone": "Asia/Tokyo"}"#, Setup::Days),
     // //// Neoffice — what is written to a server's notes, and what is deleted of them or opened on the web.
     ("notes.new", r#"{"title": "x"}"#, Setup::Notes),
     ("notes.edit", r#"{"title": "y"}"#, Setup::Notes),
@@ -367,6 +377,16 @@ fn set_up(a: &mut MailApp, setup: Setup, i: &Ids) {
             t.origin.id = "t1".to_string();
             t.list = "L1".to_string();
             t.categories = vec!["Shared".to_string()];
+        }
+        Setup::Days => {
+            a.session.clock.offset = None;
+            a.session.clock.zone = mailcraft_time::Zone::named("Europe/London");
+            a.execute("view.timeZone", json!({"zone": "Europe/London"})).unwrap();
+            let other = a.execute("account.add", json!({"email": "elsewhere@example.org", "kind": "microsoft"})).unwrap()["id"].as_u64().unwrap();
+            let there = a.session.mailbox.folder_of_kind(other, FolderKind::Inbox).unwrap();
+            let rule = json!({"name": "Old news", "account": i.account, "server": false,
+                "conditions": [{"type": "receivedBetween", "value": {"to": "2026-01-01"}}], "actions": [{"type": "moveTo", "value": there}]});
+            a.execute("rules.add", rule).unwrap();
         }
         // //// Neoffice — see `Setup::Notes`.
         Setup::Notes => {
@@ -472,7 +492,16 @@ fn a_yes_reaches_nothing_but_what_the_question_showed_for_every_command() {
             not_asked.push(format!("{id}: {now:?}"));
             continue;
         }
-        meanwhile(&mut a, &i);
+        // (The paste is pinned to the item it names: only that item is changed meanwhile, so that a
+        // refusal can't come from the window's other state instead.)
+        if id != "calendar.paste" {
+            meanwhile(&mut a, &i);
+        }
+        if id == "calendar.paste" {
+            // An explicitly pinned paste intentionally survives unrelated selection changes.
+            // Change its actual named source instead; retain the same all-or-nothing assertion.
+            a.execute("calendar.edit", json!({"id": i.paste_event, "title": "Changed while awaiting consent"})).unwrap();
+        }
         let before = a.session.mailbox.clone();
         // The question the agent asked first is the one on screen.
         answer(&mut a, true);
@@ -484,6 +513,23 @@ fn a_yes_reaches_nothing_but_what_the_question_showed_for_every_command() {
     }
     assert!(not_asked.is_empty(), "these weren't asked about in the sample (give them params or a setup): {not_asked:#?}");
     assert!(reached.is_empty(), "a yes reached what the question didn't show: {reached:#?}");
+}
+
+/// The control for the paste row above: the same question, nothing changed meanwhile, and the
+/// owner's yes makes the copy (CodeRabbit on #1665, agent_gate_binding_tests.rs:418).
+#[test]
+fn an_agents_paste_whose_source_nobody_changed_goes_through_on_the_owners_yes() {
+    let mut a = app();
+    let i = ids(&a);
+    let title = a.session.mailbox.event(i.paste_event).map(|event| event.title.clone()).unwrap();
+    let copies = |a: &MailApp| a.session.mailbox.events.values().filter(|event| event.title == title).count();
+    let before = copies(&a);
+    let (now, rx) = agent(&mut a, "calendar.paste", json!({"items": [{"id": i.paste_event}], "start": "2026-12-02T09:00", "send": true}));
+    assert!(now.is_none() && !a.asking.is_empty(), "the paste is asked about: {now:?}");
+    answer(&mut a, true);
+    let r = rx.try_recv().unwrap();
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(copies(&a), before + 1, "the copy was made");
 }
 
 #[test]

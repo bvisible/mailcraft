@@ -397,8 +397,13 @@ where
     let with_answered = |mut answer: JmapPimResult, answered: &[EventOutcome], answered_cards: &[ContactOutcome], notes: &notes::NotesReplay| {
         if !answered.is_empty() {
             let token_refused = answer.uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);
-            answer.uploaded =
-                Some(EventsUploaded { account: request.account, email: request.email.clone(), outcomes: answered.to_vec(), token_refused });
+            answer.uploaded = Some(EventsUploaded {
+                account: request.account,
+                email: request.email.clone(),
+                outcomes: answered.to_vec(),
+                token_refused,
+                renamed: None,
+            });
         }
         if !answered_cards.is_empty() {
             let token_refused = answer.contacts_uploaded.as_ref().is_some_and(|uploaded| uploaded.token_refused);

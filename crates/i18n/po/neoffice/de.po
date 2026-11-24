@@ -4934,3 +4934,42 @@ msgstr "Diese Seite speichert nichts selbst: Ein hier abonnierter Kalender würd
 # Why a hosting page's tab refuses a due date for a flag: its JMAP server keeps the flag alone (kept_here.rs). Haiku.
 msgid "This page keeps no due date for a flag: its server keeps the flag alone, and the date would be gone at the next visit"
 msgstr "Diese Seite speichert kein Fälligkeitsdatum für eine Kennzeichnung: Der Server behält nur die Kennzeichnung, und das Datum ginge beim nächsten Besuch verloren"
+
+msgid "Accent colour as hex"
+msgstr "Akzentfarbe als Hex-Code"
+
+msgid "Align Text"
+msgstr "Text ausrichten"
+
+msgid "Custom color"
+msgstr "Benutzerdefinierte Farbe"
+
+msgid "Paste Text Only"
+msgstr "Nur Text einfügen"
+
+msgid "Shade\nRows"
+msgstr "Zeilen\nschattieren"
+
+msgid "Shade Alternate Rows"
+msgstr "Jede zweite Zeile schattieren"
+
+msgid "The signature couldn't be saved: {why}. Close again to leave it unsaved."
+msgstr "Die Signatur konnte nicht gespeichert werden: {why}. Schliessen Sie das Fenster erneut, um es ohne Speichern zu verlassen."
+
+msgid "This page keeps no order of folders: it would be lost at the next visit"
+msgstr "Diese Seite speichert keine Reihenfolge der Ordner: Sie ginge beim nächsten Besuch verloren"
+
+msgid "This page's message list has a look of its own"
+msgstr "Die Nachrichtenliste dieser Seite hat ein eigenes Erscheinungsbild"
+
+msgid "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"
+msgstr "Die Regeln dieser Seite laufen, wenn Sie sie starten, nicht bei eingehender Post: Eine Regel zeigt hier keine Benachrichtigung auf dem Desktop an"
+
+msgid "This rule is kept with your mailboxes. It runs over the mail already there when you run it, not as mail arrives."
+msgstr "Diese Regel wird mit Ihren Postfächern gespeichert. Sie wird beim Start auf die bereits vorhandene Post angewendet, nicht bei eingehender Post."
+
+msgid "You have already asked this list to unsubscribe you: the request is in your Outbox or in Sent Items."
+msgstr "Sie haben diese Liste bereits gebeten, Sie abzumelden: Die Anfrage liegt im Postausgang oder in den gesendeten Elementen."
+
+msgid "that message is a draft: open it and send it"
+msgstr "diese Nachricht ist ein Entwurf: Öffnen Sie sie und senden Sie sie"

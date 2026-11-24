@@ -15,12 +15,18 @@
 //! subscription would be gone at the next visit (`kept_here::subscription_refusal`): not Open Calendar › From Internet…, not the
 //! Subscribed calendars of File › Info, not Search Commands, and their window doesn't open.
 //!
+//! The order of folders and Favorites (#1514) would be lost at the next visit (`kept_here::order_refusal`): no row of the folder
+//! pane is dragged up or down, no Move Up and Move Down in its menu (`nav.rs`), neither command in Search Commands. And the list's
+//! Shade Rows (#1657) is not offered, its list being the design system's (`kept_here::own_list_refusal`).
+//!
+//! Where the host has no dictionary (the browser build), Review shows no Spelling (#954), whose menu would only say so.
+//!
 //! A flag's due date too: a JMAP server keeps a message's flag and nothing of its date. Follow Up offers the flag without a date
 //! only (not Today, Tomorrow, This Week, Next Week), and a date asked for is refused (`kept_here::due_refusal`); a flag set stays.
 
 use crate::MailApp;
 use crate::ribbon::{Menu, Tab};
-use mailcraft_engine::cmd::kept_here::{LATER, SUBSCRIBED};
+use mailcraft_engine::cmd::kept_here::{LATER, ORDERED, SHADED, SUBSCRIBED};
 
 /// The windows of Send Later, Delay Delivery, Change Send Time, the reminders and a subscription (`ui.dialog`'s names).
 const DIALOGS: [&str; 6] = ["sendLater", "delay", "sendTime", "addReminder", "followUpDate", "subscribe"];
@@ -42,9 +48,15 @@ pub(crate) const SUBSCRIPTION_LEFTOVERS: [&str; 3] = ["calendar.unsubscribe", "s
 pub(crate) const HOST_PLUMBING: [&str; 5] =
     ["mail.setSnoozes", "mail.snoozeAnswered", "mail.setStreams", "mail.offerStreamCorrection", "mail.streamCorrected"];
 
+/// Upstream's commands of v0.15.0 that do nothing without what nobody types into a search box (a place in the text and the words put
+/// there; a picture and a width): the spelling menu and the Picture size strip run them. Left out of Search Commands there, where a
+/// person who picked one would be told of a parameter.
+pub(crate) const WANT_PARAMS: [&str; 2] = ["compose.replaceText", "compose.picture.set"];
+
 /// Whether Search Commands leaves `id` out: one of their commands, in a tab that doesn't offer them; or a hosting page's own.
 pub(crate) fn hidden(app: &MailApp, id: &str) -> bool {
-    HOST_PLUMBING.contains(&id) || !offered(app) && (LATER.contains(&id) || SUBSCRIBED.contains(&id) || SUBSCRIPTION_LEFTOVERS.contains(&id))
+    let kept_here = [LATER, SUBSCRIBED, ORDERED, &SUBSCRIPTION_LEFTOVERS[..], &WANT_PARAMS[..]].iter().any(|list| list.contains(&id)) || id == SHADED;
+    HOST_PLUMBING.contains(&id) || !offered(app) && kept_here
 }
 
 /// Whether the window `name` (`ui.dialog`) doesn't open: one of theirs, in a tab that doesn't offer them.
@@ -52,14 +64,19 @@ pub(crate) fn dialog_hidden(app: &MailApp, name: &str) -> bool {
     !offered(app) && DIALOGS.contains(&name)
 }
 
-/// Delay Delivery and the Follow Up of the message being written taken out of `tab` where the window doesn't offer them (the Follow
-/// Up of a message read stays: its flags are the server's; its Add Reminder is left out, `ribbon::follow_up_items`).
+/// Delay Delivery, the Follow Up of the message being written and Shade Rows taken out of `tab` where the window doesn't offer them
+/// (the Follow Up of a message read stays: its flags are the server's; its Add Reminder is left out, `ribbon::follow_up_items`),
+/// and Spelling where the host has no dictionary.
 pub(crate) fn ribbon(app: &MailApp, tab: &mut Tab) {
     if offered(app) {
         return;
     }
     for group in &mut tab.groups {
-        group.items.retain(|item| item.command.as_ref().is_none_or(|(id, _)| !LATER.contains(id)) && item.menu != Some(Menu::ComposeFollowUp));
+        group.items.retain(|item| {
+            item.command.as_ref().is_none_or(|(id, _)| !LATER.contains(id) && *id != SHADED)
+                && item.menu != Some(Menu::ComposeFollowUp)
+                && (item.menu != Some(Menu::Spelling) || app.services.spelling.is_some())
+        });
     }
 }
 

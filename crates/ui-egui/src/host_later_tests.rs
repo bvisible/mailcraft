@@ -117,6 +117,10 @@ fn search_commands_leaves_out_what_acts_on_a_subscribed_calendar_where_none_can_
         for id in crate::host_later::SUBSCRIPTION_LEFTOVERS {
             assert_eq!(listed.iter().any(|l| l == id), !hosted, "{id} listed (hosted: {hosted})");
         }
+        for id in crate::host_later::WANT_PARAMS {
+            assert!(app.session.registry.get(id).is_some(), "{id} is a command");
+            assert_eq!(listed.iter().any(|l| l == id), !hosted, "{id} listed (hosted: {hosted})");
+        }
         // A hosting page's own commands, nowhere.
         for id in crate::host_later::HOST_PLUMBING {
             assert!(app.session.registry.get(id).is_some(), "{id} is a command");
@@ -177,5 +181,87 @@ fn follow_up_offers_no_dated_flag_in_a_hosting_pages_tab() {
         for label in ["No Date", "Mark Complete", "Clear Flag"] {
             assert!(h.query_by_label_contains(label).is_some(), "{label} (hosted: {hosted})");
         }
+    }
+}
+
+/// The order of folders and Favorites (upstream's #1514) is kept on this computer alone: in a hosting page's tab a folder's row isn't
+/// dragged up or down, its menu has no Move Up and Move Down, and neither command is in Search Commands. Nor is Shade Rows (#1657),
+/// on the View tab or there; the rows of its list wear no band whatever the setting says. And Review shows no Spelling (#954) where
+/// the host has no dictionary.
+#[test]
+fn folders_keep_their_places_and_the_list_its_look_in_a_hosting_pages_tab() {
+    use egui_kittest::kittest::Queryable;
+    use mailcraft_engine::cmd::kept_here::{ORDERED, SHADED};
+    for hosted in [false, true] {
+        let (mut app, _) = app(hosted);
+        // (At the top level of the first account, in sight, Favorites folded away.)
+        let account = app.session.mailbox.accounts[0].id;
+        let folder =
+            app.session.run("folder.new", &json!({"name": "Zz Project", "account": account, "parent": null})).unwrap()["id"].as_u64().unwrap();
+        app.session.run("folder.new", &json!({"name": "Zz Quote", "account": account, "parent": null})).unwrap();
+        app.execute("ui.toggleFolder", json!({"id": 0})).unwrap();
+        let listed: Vec<String> = crate::dialogs::all_commands(&app).into_iter().map(|c| c.0).collect();
+        for id in ORDERED.iter().chain([&SHADED]) {
+            assert_eq!(listed.iter().any(|l| l == id), !hosted, "{id} listed (hosted: {hosted})");
+        }
+        let shade = crate::ribbon::describe_tab(&app, "View").items().any(|item| item.command.as_ref().is_some_and(|(id, _)| *id == SHADED));
+        assert_eq!(shade, !hosted, "Shade Rows on the View tab (hosted: {hosted})");
+        let spelling = crate::ribbon::describe_tab(&app, "Review").items().any(|item| item.menu == Some(Menu::Spelling));
+        assert_eq!(spelling, !hosted, "Spelling on the Review tab (hosted: {hosted})");
+        app.session.prefs.shade_rows = true;
+        let mut h = window(app);
+        h.run_steps(3);
+        let shaded = h.state().session.mailbox.messages.keys().any(|id| h.state().hit.rect("messageShade", *id).is_some());
+        assert_eq!(shaded, !hosted, "a shaded row (hosted: {hosted})");
+        let at = h.state().hit.rect("folder", folder).unwrap().center();
+        // A drag of the row: carried only where it can be put elsewhere.
+        let press = |pressed: bool, pos: egui::Pos2| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        h.run_steps(45);
+        h.event(egui::Event::PointerMoved(at));
+        h.run_steps(1);
+        h.event(press(true, at));
+        h.run_steps(1);
+        for step in 1..=4 {
+            h.event(egui::Event::PointerMoved(at + egui::vec2(0.0, 8.0 * step as f32)));
+            h.run_steps(1);
+        }
+        assert_eq!(egui::DragAndDrop::has_payload_of_type::<crate::nav::FolderDrag>(&h.ctx), !hosted, "carried (hosted: {hosted})");
+        let away = at + egui::vec2(500.0, 0.0);
+        h.event(egui::Event::PointerMoved(away));
+        h.event(press(false, away));
+        h.run_steps(3);
+        for pressed in [true, false] {
+            h.event(egui::Event::PointerMoved(at));
+            h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() });
+            h.run_steps(2);
+        }
+        h.run_steps(3);
+        assert!(h.query_all_by_label_contains("Mark All as Read").next().is_some(), "the folder's menu is open (hosted: {hosted})");
+        assert_eq!(h.query_by_label("Move Up").is_some(), !hosted, "Move Up (hosted: {hosted})");
+    }
+}
+
+/// A rule's builder in a hosting page's tab offers no desktop alert, no due day for a flag and no copy of a JMAP account's mail, and
+/// says that the rule runs when it is run (its JMAP runs put no new mail through the rules).
+#[test]
+fn the_rule_builder_offers_what_runs_in_a_hosting_pages_tab() {
+    use egui_kittest::kittest::Queryable;
+    for hosted in [false, true] {
+        let (mut app, _) = app(hosted);
+        let inbox = app.session.view.folder;
+        let m = app.session.mailbox.messages_in(inbox).find(|m| !m.from.email.is_empty()).map(|m| m.id).unwrap();
+        let account = app.session.mailbox.message(m).unwrap().account;
+        let to = app.session.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Archive).unwrap();
+        app.session.sel.messages = vec![m];
+        app.execute("ui.dialog", json!({"name": "rules", "folder": to})).unwrap();
+        let mut h = window(app);
+        h.run_steps(4);
+        assert_eq!(h.query_by_label_contains("Show a desktop alert").is_some(), !hosted, "the alert (hosted: {hosted})");
+        assert_eq!(h.query_by_label_contains("not as mail arrives").is_some(), hosted, "what is said (hosted: {hosted})");
     }
 }

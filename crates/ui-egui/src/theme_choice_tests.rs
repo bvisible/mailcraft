@@ -70,12 +70,91 @@ fn the_window_shows_the_accent_and_high_contrast_at_once() {
     let ctx = egui::Context::default();
     a.logic(&ctx);
     let t = Tokens::get(&ctx);
-    assert_eq!(t.accent, Accent::Graphite.ink(false, true).accent);
+    assert_eq!(t.accent, Accent::Graphite.ink(false, true, None).accent);
     assert!(t.high_contrast);
     a.execute("ui.highContrast", json!({"on": false})).unwrap();
     a.execute("ui.accent", json!({"accent": "blue"})).unwrap();
     a.logic(&ctx);
     assert_eq!(Tokens::get(&ctx).accent, Tokens::light().accent);
+}
+
+#[test]
+fn a_custom_accent_takes_its_colour_from_the_command_and_keeps_it() {
+    let mut a = app();
+    // "custom" with a colour, in the forms the command takes them.
+    let r = a.execute("ui.accent", json!({"accent": "custom", "color": "#ff8800"})).unwrap();
+    assert_eq!(r["accent"], "custom");
+    assert_eq!(r["color"], "#FF8800");
+    assert_eq!((a.ui.accent, a.ui.custom_accent), (Accent::Custom, Some(egui::Color32::from_rgb(0xFF, 0x88, 0x00))));
+    assert_eq!(a.execute("ui.accent", json!({"accent": "#0af"})).unwrap()["color"], "#00AAFF");
+    assert_eq!(a.ui.custom_accent, Some(egui::Color32::from_rgb(0x00, 0xAA, 0xFF)));
+    assert_eq!(a.execute("ui.accent", json!({"accent": "custom", "color": [10, 20, 30]})).unwrap()["color"], "#0A141E");
+    assert_eq!(a.ui.custom_accent, Some(egui::Color32::from_rgb(10, 20, 30)));
+    // "custom" without a colour keeps the one last picked.
+    let r = a.execute("ui.accent", json!({"accent": "custom"})).unwrap();
+    assert_eq!(r["color"], "#0A141E");
+    assert_eq!(a.ui.custom_accent, Some(egui::Color32::from_rgb(10, 20, 30)));
+    // A preset still works and leaves the custom colour where it was.
+    assert_eq!(a.execute("ui.accent", json!({"accent": "teal"})).unwrap()["accent"], "teal");
+    assert_eq!((a.ui.accent, a.ui.custom_accent), (Accent::Teal, Some(egui::Color32::from_rgb(10, 20, 30))));
+    // Junk is refused and changes nothing.
+    for junk in [
+        json!({"accent": "custom", "color": "pink"}),
+        json!({"accent": "custom", "color": "#12345"}),
+        json!({"accent": "custom", "color": "#1234567"}),
+        json!({"accent": "custom", "color": 7}),
+        json!({"accent": "custom", "color": [1, 2]}),
+        json!({"accent": "custom", "color": [1, 2, 300]}),
+        json!({"accent": "custom", "color": null}),
+        json!({"accent": "#"}),
+        json!({"accent": ""}),
+        json!({"accent": "cust0m"}),
+        json!({"color": "#ff8800"}),
+    ] {
+        assert!(a.execute("ui.accent", junk.clone()).is_err(), "{junk} was taken");
+    }
+    assert_eq!((a.ui.accent, a.ui.custom_accent), (Accent::Teal, Some(egui::Color32::from_rgb(10, 20, 30))));
+}
+
+#[test]
+fn a_custom_accent_is_saved_and_a_missing_or_unreadable_one_falls_back() {
+    let ui = UiState { accent: Accent::Custom, custom_accent: Some(egui::Color32::from_rgb(0x12, 0x34, 0x56)), ..UiState::default() };
+    let saved: Value = serde_json::to_value(&ui).unwrap();
+    assert_eq!(saved["accent"], "custom");
+    assert_eq!(saved["customAccent"], "#123456");
+    let back: UiState = serde_json::from_value(saved).unwrap();
+    assert_eq!((back.accent, back.custom_accent), (Accent::Custom, Some(egui::Color32::from_rgb(0x12, 0x34, 0x56))));
+    // A custom accent with no colour saved (or an unreadable one) reads back with none, and the
+    // window falls back to the default custom colour.
+    for junk in [json!(null), json!("mauve"), json!(5), json!([1, 2, 3]), json!({"a": 1})] {
+        let old: UiState = serde_json::from_value(json!({"accent": "custom", "customAccent": junk})).unwrap();
+        assert_eq!(old.accent, Accent::Custom);
+        assert_eq!(old.custom_accent, None);
+        assert_eq!(old.custom_accent_color(), crate::theme::DEFAULT_CUSTOM_COLOR);
+    }
+    let old: UiState = serde_json::from_value(json!({"accent": "violet"})).unwrap();
+    assert_eq!(old.custom_accent, None);
+}
+
+#[test]
+fn the_window_shows_a_custom_accent_at_once() {
+    let mut a = app();
+    a.execute("ui.theme", json!({"value": "light"})).unwrap();
+    let c = egui::Color32::from_rgb(0x12, 0x34, 0x56);
+    a.execute("ui.accent", json!({"accent": "custom", "color": "#123456"})).unwrap();
+    let ctx = egui::Context::default();
+    a.logic(&ctx);
+    let t = Tokens::get(&ctx);
+    assert_eq!(t.accent, Tokens::build_choice(false, Accent::Custom, Some(c), false).accent);
+    // A different colour re-themes the window, and a preset sets it back.
+    a.execute("ui.accent", json!({"accent": "#FF8800"})).unwrap();
+    a.logic(&ctx);
+    let t2 = Tokens::get(&ctx);
+    assert_ne!(t2.accent, t.accent);
+    assert_eq!(t2.accent, Tokens::build_choice(false, Accent::Custom, Some(egui::Color32::from_rgb(0xFF, 0x88, 0x00)), false).accent);
+    a.execute("ui.accent", json!({"accent": "violet"})).unwrap();
+    a.logic(&ctx);
+    assert_eq!(Tokens::get(&ctx).accent, Accent::Violet.ink(false, false, None).accent);
 }
 
 // //// Neoffice — added: a hosting page's tab takes the Neoffice design system's look (theme/neoffice.rs), in light and
@@ -96,6 +175,20 @@ fn a_hosting_pages_tab_takes_the_neoffice_look_in_light_and_dark() {
         // A message on a light page in the dark theme: the paper's white, not upstream's.
         assert_eq!(Tokens::light_of(&ctx).accent_text, Tokens::neoffice(false).accent_text);
     }
+    // Nor does a colour of one's own (upstream's #1737) reach it, in light, in dark or in high contrast: the look is the page's.
+    for (value, high) in [("light", false), ("dark", false), ("light", true), ("dark", true)] {
+        a.execute("ui.theme", json!({"value": value})).unwrap();
+        a.execute("ui.highContrast", json!({"on": high})).unwrap();
+        a.execute("ui.accent", json!({"accent": "violet"})).unwrap();
+        a.logic(&ctx);
+        let before = Tokens::get(&ctx);
+        a.execute("ui.accent", json!({"accent": "custom", "color": "#00AAFF"})).unwrap();
+        a.logic(&ctx);
+        let after = Tokens::get(&ctx);
+        assert_eq!((after.accent, after.accent_text, after.selection), (before.accent, before.accent_text, before.selection), "{value} {high}");
+    }
+    a.execute("ui.highContrast", json!({"on": false})).unwrap();
+    a.execute("ui.accent", json!({"accent": "violet"})).unwrap();
     // Every action ink (dark: the bright paper), the signal only as a field and a gesture; no blue.
     let (light, dark) = (Tokens::neoffice(false), Tokens::neoffice(true));
     assert_eq!((light.accent, dark.accent), (egui::Color32::from_rgb(0x14, 0x14, 0x14), egui::Color32::from_rgb(0xFF, 0xFD, 0xF8)));
@@ -110,10 +203,10 @@ fn a_hosting_pages_tab_takes_the_neoffice_look_in_light_and_dark() {
     // High contrast: upstream's, in graphite (the design system has no ramp at 7:1).
     a.execute("ui.highContrast", json!({"on": true})).unwrap();
     a.logic(&ctx);
-    assert_eq!(Tokens::get(&ctx).accent, Accent::Graphite.ink(true, true).accent);
+    assert_eq!(Tokens::get(&ctx).accent, Accent::Graphite.ink(true, true, None).accent);
     // The program that keeps its mail on the computer: upstream's look, in the accent picked.
     a.session.keeps_local = true;
     a.execute("ui.highContrast", json!({"on": false})).unwrap();
     a.logic(&ctx);
-    assert_eq!(Tokens::get(&ctx).accent, Accent::Violet.ink(true, false).accent);
+    assert_eq!(Tokens::get(&ctx).accent, Accent::Violet.ink(true, false, None).accent);
 }

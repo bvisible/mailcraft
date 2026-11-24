@@ -1756,7 +1756,7 @@ proptest! {
 
     #[test]
     fn any_email_is_a_message_within_its_sizes(entry in prop_oneof![7 => email_like(), 1 => crate::tests::any_json()], marks in any::<[bool; 5]>()) {
-        let marks = Marks { read: marks[0], flagged: marks[1], answered: marks[2], forwarded: marks[3], draft: marks[4], categories: Vec::new() };
+        let marks = Marks { read: marks[0], flagged: marks[1], answered: marks[2], forwarded: marks[3], draft: marks[4], categories: Vec::new(), categories_cut: false };
         let m = message::whole("E1", "M1", &entry, marks.clone());
         check_message(&m);
         prop_assert_eq!((m.server.id.as_str(), m.server.folder.as_str(), m.server.read, m.draft), ("E1", "M1", marks.read, Some(marks.draft)));

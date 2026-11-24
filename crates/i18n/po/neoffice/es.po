@@ -4956,3 +4956,42 @@ msgstr "Esta página no guarda una fecha límite para la marca: su servidor cons
 # Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
 msgid "you already reacted to this message with {emoji}"
 msgstr "Ya reaccionaste a este mensaje con {emoji}"
+
+msgid "Accent colour as hex"
+msgstr "Color de acento en hexadecimal"
+
+msgid "Align Text"
+msgstr "Alinear texto"
+
+msgid "Custom color"
+msgstr "Color personalizado"
+
+msgid "Paste Text Only"
+msgstr "Pegar solo texto"
+
+msgid "Shade\nRows"
+msgstr "Sombrear\nfilas"
+
+msgid "Shade Alternate Rows"
+msgstr "Sombrear filas alternas"
+
+msgid "The signature couldn't be saved: {why}. Close again to leave it unsaved."
+msgstr "No se pudo guardar la firma: {why}. Cierre de nuevo para salir sin guardarla."
+
+msgid "This page keeps no order of folders: it would be lost at the next visit"
+msgstr "Esta página no guarda el orden de las carpetas: se perdería en la próxima visita"
+
+msgid "This page's message list has a look of its own"
+msgstr "La lista de mensajes de esta página tiene un aspecto propio"
+
+msgid "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"
+msgstr "Las reglas de esta página se ejecutan cuando usted las lanza, no al llegar el correo: aquí una regla no muestra alertas en el escritorio"
+
+msgid "This rule is kept with your mailboxes. It runs over the mail already there when you run it, not as mail arrives."
+msgstr "Esta regla se guarda con sus buzones de correo. Se aplica al correo que ya existe cuando la ejecuta, no al llegar los mensajes."
+
+msgid "You have already asked this list to unsubscribe you: the request is in your Outbox or in Sent Items."
+msgstr "Ya ha pedido a esta lista que le dé de baja: la solicitud está en la bandeja de salida o en los elementos enviados."
+
+msgid "that message is a draft: open it and send it"
+msgstr "ese mensaje es un borrador: ábralo y envíelo"

@@ -4954,3 +4954,42 @@ msgstr "Questa pagina non conserva una scadenza per il contrassegno: il suo serv
 # Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
 msgid "you already reacted to this message with {emoji}"
 msgstr "Hai già reagito a questo messaggio con {emoji}"
+
+msgid "Accent colour as hex"
+msgstr "Colore di accento in esadecimale"
+
+msgid "Align Text"
+msgstr "Allinea testo"
+
+msgid "Custom color"
+msgstr "Colore personalizzato"
+
+msgid "Paste Text Only"
+msgstr "Incolla solo testo"
+
+msgid "Shade\nRows"
+msgstr "Ombreggia\nle righe"
+
+msgid "Shade Alternate Rows"
+msgstr "Ombreggia le righe alternate"
+
+msgid "The signature couldn't be saved: {why}. Close again to leave it unsaved."
+msgstr "Non è stato possibile salvare la firma: {why}. Chiuda di nuovo per uscire senza salvarla."
+
+msgid "This page keeps no order of folders: it would be lost at the next visit"
+msgstr "Questa pagina non conserva l’ordine delle cartelle: andrebbe perso alla prossima visita"
+
+msgid "This page's message list has a look of its own"
+msgstr "L’elenco dei messaggi di questa pagina ha un aspetto proprio"
+
+msgid "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"
+msgstr "Le regole di questa pagina vengono eseguite quando le avvia, non all’arrivo della posta: qui una regola non mostra avvisi sul desktop"
+
+msgid "This rule is kept with your mailboxes. It runs over the mail already there when you run it, not as mail arrives."
+msgstr "Questa regola è conservata con le caselle di posta. Viene applicata alla posta già presente quando la avvia, non all’arrivo dei messaggi."
+
+msgid "You have already asked this list to unsubscribe you: the request is in your Outbox or in Sent Items."
+msgstr "Ha già chiesto a questa lista di annullare l’iscrizione: la richiesta si trova nella posta in uscita o nella posta inviata."
+
+msgid "that message is a draft: open it and send it"
+msgstr "questo messaggio è una bozza: lo apra e lo invii"

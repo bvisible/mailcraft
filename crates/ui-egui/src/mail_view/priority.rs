@@ -211,7 +211,7 @@ pub(super) fn show(
             };
             // (Upstream's row takes a swipe since #1580; the band of priority senders stays out of it: a swipe is the list's,
             // reconciled with its rows, `swipe::reconcile`.)
-            super::message_row_content(app, ui, &row, r, drawn, focus);
+            super::message_row_content(app, ui, &row, r, super::Look { drawn, focus, shade: false });
             app.hit.add("priorityRow", w.id, r);
             let why = why_said(&w.why);
             let _ = ui.interact(r, ui.scope_id().with(("priority_why", w.id)), Sense::hover()).on_hover_text(why);

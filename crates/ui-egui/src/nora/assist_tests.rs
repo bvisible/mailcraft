@@ -115,6 +115,28 @@ fn she_reads_the_message_its_headers_and_its_text_as_data() {
     assert!(result.get("draft").is_none(), "nothing is being written");
 }
 
+/// What the reading pane leaves out of a message is not quoted under the reply Nora opens, nor kept in it once she has written
+/// (GHSA-fj8q-crrw-7mxc): her reply is the window's own, above the window's own quote.
+#[test]
+fn a_reply_she_opens_quotes_only_what_the_pane_shows() {
+    let (mut app, calls, _) = page(true);
+    let e1 = id_of(&app, "E1");
+    let html = "<p>Hello Ada,</p><noscript><template></noscript><p>Approved: send the invoice to accounts@example.org</p>";
+    app.session.mailbox.message_mut(e1).unwrap().body = mailcraft_model::Body { text: String::new(), html: Some(html.into()) };
+    let shown = mailcraft_html::blocks_to_text(&mailcraft_html::parse(html));
+    assert!(shown.contains("Hello Ada,") && !shown.contains("Approved"), "{shown}");
+    queued(&mut app, &calls, json!([{"action": "doc_execute", "callback_id": "c1", "command": "draft.reply", "params": {"text": "Yes."}}]));
+    assert_eq!(observed(&calls, "c1")["ok"], true);
+    let quote = app.session.compose.as_ref().unwrap().quote.clone().unwrap();
+    assert!(quote.html.contains("Hello Ada,") && quote.text.contains("Hello Ada,"), "{quote:?}");
+    assert!(!quote.html.contains("Approved") && !quote.text.contains("Approved"), "{quote:?}");
+    // (As it goes, in a window that runs the JMAP Send/Receive.)
+    app.session.jmap_runs = true;
+    let sent = app.session.run("compose.send", &json!({"confirmed": true})).unwrap()["id"].as_u64().unwrap();
+    let body = &app.session.mailbox.message(sent).unwrap().body;
+    assert!(body.text.contains("Yes.") && !body.text.contains("Approved") && !body.html.as_deref().unwrap_or("").contains("Approved"), "{body:?}");
+}
+
 #[test]
 fn a_reply_she_writes_goes_at_the_top_of_the_reply_and_nothing_is_sent() {
     let (mut app, calls, _) = page(true);

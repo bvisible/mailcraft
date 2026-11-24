@@ -455,7 +455,8 @@ pub fn apply_jmap_mail(s: &mut Session, mut result: JmapMailResult) -> CmdResult
     // //// Neoffice — the conversations of mail listed before they were asked for (upstream's #795, `thread_ids`).
     super::thread_ids::bounded(&mut result.threads, plausible_id);
     let threaded = super::thread_ids::take(&mut s.mailbox, account, &result.threads);
-    if taken != Taken::default() || down != Down::default() || !result.pages.is_empty() || threaded || state_kept {
+    // //// Neoffice — (`took_anything`, as upstream asks of what the pages brought; `state_kept`: where the mail stood, `keep_state`.)
+    if taken != Taken::default() || down.took_anything() || !result.pages.is_empty() || threaded || state_kept {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there.
@@ -557,7 +558,7 @@ pub fn apply_jmap_opened(s: &mut Session, result: &JmapMailResult) -> Result<Vec
         }
     }
     s.graph_index = index;
-    if down != Down::default() || taken != Taken::default() {
+    if down.took_anything() || taken != Taken::default() {
         s.mailbox_changed();
     }
     // The view stays on a folder that is there (a listing may have taken one away).

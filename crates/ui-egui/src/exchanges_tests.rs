@@ -209,6 +209,7 @@ fn strip_parts(width: f32, dark: bool, shot: Option<&std::path::Path>) -> Vec<(S
             let choice = crate::theme::ThemeChoice {
                 appearance: if dark { crate::theme::Appearance::Dark } else { crate::theme::Appearance::Light },
                 accent: Default::default(),
+                custom: None,
                 high_contrast: false,
                 neoffice: true,
                 dark_style: Default::default(),

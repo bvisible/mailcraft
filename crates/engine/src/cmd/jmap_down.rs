@@ -307,6 +307,8 @@ fn update(mb: &mut Mailbox, account: Id, id: Id, folder: Id, server_folder: &str
     } else if now.categories != last.categories {
         m.categories = mailcraft_model::sync::merge_categories(&last.categories, &m.categories, &now.categories);
     }
+    // (What the listing left out of its categories stays left out: no rule tells from it what they said, upstream's #566.)
+    m.categories_cut |= there.categories_cut;
     if follows {
         m.folder = folder;
     }
@@ -347,7 +349,7 @@ pub(crate) const MAX_PREVIEW: usize = 256;
 /// Longest name and address kept, in characters, and most addresses of a `To` or a `Cc`.
 const MAX_NAME: usize = 256;
 const MAX_ADDRESS: usize = 320;
-const MAX_PEOPLE: usize = 500;
+pub(crate) const MAX_PEOPLE: usize = 500;
 /// Longest a busy server is waited for, in seconds: a day.
 pub(crate) const MAX_BUSY: u32 = 86_400;
 /// Most messages of a batch fetched whole, the largest taken (Download messages in full goes up to

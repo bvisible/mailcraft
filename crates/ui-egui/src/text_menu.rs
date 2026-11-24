@@ -12,6 +12,8 @@
 //!   state, which no command reaches; the key's input is what does exactly what the key does.
 //! - Cut and Copy are greyed while nothing is selected; a password offers Paste alone, a text that
 //!   is only read Copy and Select All; Paste is greyed with no host clipboard (the browser).
+//! - The body of a message or a signature also offers Paste Text Only: the clipboard's text, with
+//!   none of the HTML or picture beside it, so what is pasted has no formatting of its own.
 //! - Using the menu isn't leaving the text ([`left`]).
 //! - A choice made by input the control channel injected (`MailApp::driven`) cuts, copies and
 //!   pastes nothing.
@@ -39,6 +41,8 @@ enum Item {
     Cut,
     Copy,
     Paste,
+    /// The clipboard's text alone, into a text that takes more ([`Takes::Pictures`]).
+    PasteText,
     SelectAll,
 }
 
@@ -93,7 +97,8 @@ struct OpenMenu {
 }
 
 /// The HTML a body's Paste found on the clipboard beside the text when it was chosen: the body
-/// pastes this rather than what is on the clipboard by the time it reads it.
+/// pastes this rather than what is on the clipboard by the time it reads it. None, for Paste Text
+/// Only: the text alone.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Captured {
     pub html: Option<String>,
@@ -146,6 +151,12 @@ fn pasting() -> Id {
     asked().with("paste")
 }
 
+// //// Neoffice — added: a browser's clipboard (`items`, `carry_out`).
+/// Where [`carry_out`] says whether the clipboard is there but read by a paste's key alone.
+fn pasting_by_key() -> Id {
+    asked().with("paste-by-key")
+}
+
 /// Where the menu of the text `id` keeps whether it is open, when it is a submenu ([`Nested`]).
 fn shown(id: Id) -> Id {
     id.with("text-menu")
@@ -163,15 +174,21 @@ pub(crate) fn menu_item(ui: &mut Ui, enabled: bool, label: &str, key: &str) -> R
     ui.add_enabled(enabled, button)
 }
 
-/// The items for a text of `kind`, `selected` whether anything is selected in it, `paste`
-/// whether there is a clipboard to paste from. What was chosen; the menu shuts then.
-fn items(ui: &mut Ui, kind: Kind, selected: bool, paste: bool) -> (Option<Item>, bool) {
+/// The items for a text of `kind` that takes `takes`, `selected` whether anything is selected in
+/// it, `paste` whether there is a clipboard to paste from. What was chosen; the menu shuts then.
+fn items(ui: &mut Ui, kind: Kind, takes: Takes, selected: bool, paste: bool) -> (Option<Item>, bool) {
     let (mut chosen, mut keyboard) = (None, false);
     let edits = kind == Kind::Text;
+    // //// Neoffice — see Paste Text Only, below.
+    let by_key = ui.data(|d| d.get_temp::<bool>(pasting_by_key())).unwrap_or(false);
     let shown = [
         (edits, selected, "Cut", "Mod+X", Item::Cut),
         (kind != Kind::Secret, selected, "Copy", "Mod+C", Item::Copy),
         (kind != Kind::ReadOnly, paste, "Paste", "Mod+V", Item::Paste),
+        // //// Neoffice — in a browser, whose clipboard is read by its own paste alone (`RichClipboard::reads_on_demand`), it is greyed as
+        // //// Neoffice — Paste is, with the key that does it there (`by_key`): the browser's paste without formatting, which brings no
+        // //// Neoffice — HTML.
+        (edits && takes == Takes::Pictures, paste, tl_later!("Paste Text Only"), if by_key { "Mod+Shift+V" } else { "" }, Item::PasteText),
         (kind != Kind::Secret, true, "Select All", "Mod+A", Item::SelectAll),
     ];
     for (offered, enabled, label, key, item) in shown {
@@ -197,6 +214,10 @@ fn items(ui: &mut Ui, kind: Kind, selected: bool, paste: bool) -> (Option<Item>,
 /// has its menu as a submenu of it instead: open by its own note ([`Nested`]), and counted by the
 /// drop-down as one of its own (`MenuState`), so that neither closes the other.
 fn menu(resp: &Response, kind: Kind, selected: bool, takes: Takes) {
+    menu_with(resp, kind, selected, takes, |_| false);
+}
+
+fn menu_with(resp: &Response, kind: Kind, selected: bool, takes: Takes, mut extra: impl FnMut(&mut Ui) -> bool) {
     let ctx = &resp.ctx;
     let id = Popup::default_response_id(resp);
     let pass = ctx.cumulative_pass_nr();
@@ -214,6 +235,11 @@ fn menu(resp: &Response, kind: Kind, selected: bool, takes: Takes) {
     }
     let paste = ctx.data(|d| d.get_temp::<bool>(pasting())).unwrap_or(false);
     let (mut chosen, mut keyboard) = (None, false);
+    let mut contents = |ui: &mut Ui| {
+        let extra_keyboard = extra(ui);
+        (chosen, keyboard) = items(ui, kind, takes, selected, paste);
+        keyboard |= extra_keyboard;
+    };
     let open = match nested.as_mut() {
         Some(n) => {
             n.pass = pass;
@@ -223,14 +249,14 @@ fn menu(resp: &Response, kind: Kind, selected: bool, takes: Takes) {
             if crate::keys::list_escape(ctx) && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
                 n.open = false;
             }
-            Popup::menu(resp).open_bool(&mut n.open).at_position(at).show(|ui| (chosen, keyboard) = items(ui, kind, selected, paste));
+            Popup::menu(resp).open_bool(&mut n.open).at_position(at).show(contents);
             if n.open {
                 MenuState::from_id(ctx, resp.layer_id.id, |state| state.open_item = Some(id));
             }
             n.open
         }
         None => {
-            Popup::context_menu(resp).show(|ui| (chosen, keyboard) = items(ui, kind, selected, paste));
+            Popup::context_menu(resp).show(&mut contents);
             Popup::is_id_open(ctx, id)
         }
     };
@@ -361,8 +387,8 @@ fn attach(resp: Response, kind: Kind) -> Response {
 /// The body of a message being written, or a signature being edited, `resp`, with the menu;
 /// `selected`: whether anything is selected in it; `takes`: what a paste brings into it. (Where a
 /// right click puts the caret is the body's own.)
-pub(crate) fn body(resp: &Response, selected: bool, takes: Takes) {
-    menu(resp, Kind::Text, selected, takes);
+pub(crate) fn body(resp: &Response, selected: bool, takes: Takes, extra: impl FnMut(&mut Ui) -> bool) {
+    menu_with(resp, Kind::Text, selected, takes, extra);
 }
 
 /// What was chosen this pass becomes its input, for [`deliver`]. The extra pass asked for runs in
@@ -371,6 +397,7 @@ pub(crate) fn body(resp: &Response, selected: bool, takes: Takes) {
 pub(crate) fn carry_out(app: &mut MailApp, ctx: &Context) {
     // //// Neoffice — a clipboard that can't be read when asked (the browser's, neoffice-maintenance#1705) offers no Paste.
     ctx.data_mut(|d| d.insert_temp(pasting(), app.services.clipboard.as_ref().is_some_and(|b| b.reads_on_demand())));
+    ctx.data_mut(|d| d.insert_temp(pasting_by_key(), app.services.clipboard.as_ref().is_some_and(|b| !b.reads_on_demand())));
     let pass = ctx.cumulative_pass_nr();
     // Input for a window that has gone since.
     if ctx.data(|d| d.get_temp::<Pending>(pending())).is_some_and(|p| p.pass.saturating_add(PENDING_PASSES) < pass) {
@@ -392,6 +419,7 @@ pub(crate) fn carry_out(app: &mut MailApp, ctx: &Context) {
             None,
         ),
         Item::Paste => paste(app, asked.takes),
+        Item::PasteText => paste_text(app),
     };
     let (events, captured) = events;
     let pending = Pending { viewport: asked.viewport, target: asked.target, takes: asked.takes, events, captured, pass };
@@ -422,6 +450,18 @@ fn paste(app: &MailApp, takes: Takes) -> (Vec<Event>, Option<Captured>) {
         None if takes == Takes::Pictures => (board.image().and_then(|png| picture(&png)).into_iter().collect(), None),
         None => (Vec::new(), None),
     }
+}
+
+/// What Paste Text Only gives a body, the clipboard read once, now: its text as Paste gives it,
+/// with nothing beside it ([`Captured`] without HTML), so the body pastes the text alone. Nothing
+/// when there is no text, a picture alone included.
+fn paste_text(app: &MailApp) -> (Vec<Event>, Option<Captured>) {
+    let Some(text) = app.services.clipboard.as_ref().and_then(|board| board.text()) else { return (Vec::new(), None) };
+    let text = text.replace("\r\n", "\n");
+    if text.is_empty() {
+        return (Vec::new(), None);
+    }
+    (vec![Event::Paste(text)], Some(Captured::default()))
 }
 
 /// A picture on the clipboard, PNG, as egui's backend hands one over (`Event::PasteImage`); none

@@ -22,7 +22,8 @@
 //! (a rule names its folder by its mailbox and the folder's id on the server, never by an id of this visit). A rule
 //! that files into a mailbox not handed over this time, or that this build can't read (a newer one wrote it), is kept
 //! aside, unchanged, and written back with the others; one whose folder is gone from a mailbox that is there loses
-//! that action (and goes, with none left). What is put can't be undone (the window's history is forgotten): an Undo
+//! that action (and goes, with none left). A rule's exceptions are written among its conditions ([`EXCEPT`]), so that a
+//! window of a build that knows no exceptions keeps such a rule aside too, instead of acting on the mail they leave alone. What is put can't be undone (the window's history is forgotten): an Undo
 //! would bring back the window from before, and write it.
 //!
 //! **Done.** What was marked done in a mailbox ([`DoneEntry`]: by its Message-ID, never an id of its server, which names the
@@ -122,14 +123,30 @@ pub fn take(mb: &Mailbox, handed: &[String]) -> Kept {
     Kept { rules, categories: mb.categories.clone(), senders }
 }
 
-/// A rule in the server's shape: without its id, its folders by their mailbox and their id on the server.
+/// The condition a rule's exceptions are written as on the server (upstream's #566), with them as its value: a window of a
+/// build from before exceptions would read the rule without them, act on the mail they leave alone, and write it back so.
+/// It can't read this condition, and keeps the rule aside, unchanged ([`put_rules`]).
+const EXCEPT: &str = "exceptAny";
+
+/// Whether `action` (as it is written) puts mail in a folder it names.
+fn names_folder(action: &Value) -> bool {
+    matches!(action.get("type").and_then(Value::as_str), Some("moveTo" | "copyTo"))
+}
+
+/// A rule in the server's shape: without its id, its folders by their mailbox and their id on the server, its exceptions
+/// among its conditions ([`EXCEPT`]).
 fn rule_out(mb: &Mailbox, rule: &Rule) -> Value {
     let mut v = serde_json::to_value(rule).unwrap_or(Value::Null);
     if let Some(o) = v.as_object_mut() {
         o.remove("id");
+        if let Some(exceptions) = o.remove("exceptions")
+            && let Some(conditions) = o.get_mut("conditions").and_then(Value::as_array_mut)
+        {
+            conditions.push(json!({"type": EXCEPT, "value": exceptions}));
+        }
         if let Some(actions) = o.get_mut("actions").and_then(Value::as_array_mut) {
             for (out, action) in actions.iter_mut().zip(&rule.actions) {
-                if let (Action::MoveTo(folder), Some(out)) = (action, out.as_object_mut()) {
+                if let (Action::MoveTo(folder) | Action::CopyTo(folder), Some(out)) = (action, out.as_object_mut()) {
                     out.insert("value".into(), folder_out(mb, *folder));
                 }
             }
@@ -385,7 +402,7 @@ pub fn put_senders(mb: &mut Mailbox, email: &str, lists: &JunkLists) {
 fn targets(rule: &Value) -> Vec<String> {
     let actions = rule.get("actions").and_then(Value::as_array).into_iter().flatten();
     actions
-        .filter(|a| a.get("type").and_then(Value::as_str) == Some("moveTo"))
+        .filter(|a| names_folder(a))
         .map(|a| a.get("value").and_then(|v| v.get("mailbox")).and_then(Value::as_str).map(key).unwrap_or_default())
         .collect()
 }
@@ -429,7 +446,7 @@ pub fn put_rules(mb: &mut Mailbox, rules: &[Value]) -> Option<Vec<Value>> {
     let mut put = Vec::new();
     for rule in here {
         match rule_in(mb, rule) {
-            Placed::Put(rule) => put.push(rule),
+            Placed::Put(rule) => put.push(*rule),
             Placed::Unread => aside.push(rule.clone()),
             Placed::Emptied => {}
         }
@@ -440,7 +457,7 @@ pub fn put_rules(mb: &mut Mailbox, rules: &[Value]) -> Option<Vec<Value>> {
 
 /// What became of a rule of the server.
 enum Placed {
-    Put(Rule),
+    Put(Box<Rule>),
     /// This build can't read it (a condition or an action of a newer one).
     Unread,
     /// Every folder it filed into is gone.
@@ -452,19 +469,37 @@ fn rule_in(mb: &mut Mailbox, rule: &Value) -> Placed {
     let mut v = rule.clone();
     let Some(o) = v.as_object_mut() else { return Placed::Unread };
     o.remove("id");
+    if let Some(conditions) = o.get_mut("conditions").and_then(Value::as_array_mut) {
+        let mut exceptions = Vec::new();
+        conditions.retain(|c| {
+            let except = c.get("type").and_then(Value::as_str) == Some(EXCEPT);
+            if except {
+                exceptions.push(c.get("value").cloned().unwrap_or(Value::Null));
+            }
+            !except
+        });
+        // (Exactly one, as it was written: two would be a newer build's, which this one can't read.)
+        match exceptions.len() {
+            0 => {}
+            1 => {
+                o.insert("exceptions".into(), exceptions.swap_remove(0));
+            }
+            _ => return Placed::Unread,
+        }
+    }
     let mut had = false;
     if let Some(actions) = o.get_mut("actions").and_then(Value::as_array_mut) {
         had = !actions.is_empty();
         let mut kept = Vec::new();
         for action in actions.drain(..) {
-            if action.get("type").and_then(Value::as_str) != Some("moveTo") {
+            if !names_folder(&action) {
                 kept.push(action);
                 continue;
             }
             let at = |name: &str| action.get("value").and_then(|v| v.get(name)).and_then(Value::as_str).unwrap_or_default().to_string();
             if let Some(folder) = resolve(mb, &key(&at("mailbox")), &at("folder")) {
                 let mut moved = Map::new();
-                moved.insert("type".into(), json!("moveTo"));
+                moved.insert("type".into(), action.get("type").cloned().unwrap_or_default());
                 moved.insert("value".into(), json!(folder));
                 kept.push(Value::Object(moved));
             }
@@ -476,7 +511,7 @@ fn rule_in(mb: &mut Mailbox, rule: &Value) -> Placed {
         return Placed::Emptied;
     }
     rule.id = mb.alloc_id();
-    Placed::Put(rule)
+    Placed::Put(Box::new(rule))
 }
 
 /// The `update` of a `NeomailSettings/set`, with the parts it writes.

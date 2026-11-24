@@ -61,7 +61,7 @@ fn rule(name: &str, actions: Vec<Action>) -> Rule {
         id: 0,
         name: name.into(),
         enabled: true,
-        conditions: vec![Condition::SubjectContains("invoice".into())],
+        conditions: vec![Condition::SubjectContains(vec!["invoice".into()])],
         actions,
         stop: false,
         ..Default::default()
@@ -117,6 +117,39 @@ fn rules_categories_and_lists_come_back_at_the_next_visit_where_the_ids_differ()
     assert_eq!(&next.rules[0].actions[1..], &first.rules[0].actions[1..]);
     assert!(next.rules[0].id > 40, "an id of this visit");
     assert_eq!(take(&next, &handed()), kept, "read back, the same");
+}
+
+/// A rule's exceptions, several words and a copy (upstream's #566) come back at the next visit; and a window of a build from
+/// before exceptions can't read the rule at all: it keeps it aside instead of acting on the mail the exceptions leave alone.
+#[test]
+fn a_rules_exceptions_come_back_and_an_older_window_cant_read_the_rule_without_them() {
+    let mut first = window(&[ADA], &["Minvoices"], true, 0);
+    let invoices = folder(&first, ADA, "Minvoices");
+    let spared = vec![Condition::SubjectContains(vec!["reminder".into(), "second".into()]), Condition::HasAttachment];
+    first.rules = vec![
+        Rule { exceptions: spared.clone(), ..rule("Spares", vec![Action::MoveTo(invoices)]) },
+        rule("Copies", vec![Action::CopyTo(invoices), Action::ClearFlag]),
+    ];
+    let kept = take(&first, &[ADA.to_string()]);
+    assert!(kept.rules[0].get("exceptions").is_none(), "nothing an older window would read past: {}", kept.rules[0]);
+    // What an older window does with what the server says: the rule without its folder's name, read as it is.
+    let mut older = kept.rules[0].clone();
+    older["actions"] = json!([{"type": "flag"}]);
+    assert!(serde_json::from_value::<Rule>(older).is_err(), "not read as a rule with no exceptions");
+    assert_eq!(kept.rules[1]["actions"][0], json!({"type": "copyTo", "value": {"mailbox": ADA, "folder": "Minvoices", "name": "Folder Minvoices"}}));
+    // The next visit, where the ids differ.
+    let mut next = window(&[ADA], &["Minvoices"], true, 40);
+    assert_eq!(put_rules(&mut next, &kept.rules), Some(vec![]));
+    assert_eq!(next.rules[0].exceptions, spared);
+    assert_eq!(next.rules[0].conditions, first.rules[0].conditions);
+    assert_eq!(next.rules[1].actions, vec![Action::CopyTo(folder(&next, ADA, "Minvoices")), Action::ClearFlag]);
+    assert_eq!(take(&next, &[ADA.to_string()]), kept, "read back, the same");
+    // A newer build's two lists of them can't be read here: aside, unchanged.
+    let mut two = kept.rules[0].clone();
+    two["conditions"].as_array_mut().unwrap().push(json!({"type": "exceptAny", "value": []}));
+    let mut next = window(&[ADA], &["Minvoices"], true, 3);
+    assert_eq!(put_rules(&mut next, std::slice::from_ref(&two)), Some(vec![two.clone()]));
+    assert!(next.rules.is_empty());
 }
 
 #[test]

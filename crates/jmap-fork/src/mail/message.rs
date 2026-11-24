@@ -13,7 +13,7 @@
 
 use std::collections::HashSet;
 
-use mailcraft_model::sync::{GraphMessage, ServerMessage};
+use mailcraft_model::sync::{GraphMessage, MAX_CATEGORIES, ServerMessage, keyword_category};
 use mailcraft_model::{Address, FlagStatus};
 use mailcraft_time::Timestamp;
 use serde_json::Value;
@@ -56,6 +56,8 @@ pub(super) struct Marks {
     pub forwarded: bool,
     pub draft: bool,
     pub categories: Vec<String>,
+    /// More categories than are read of one message ([`MAX_CATEGORIES`]): the rest are left out.
+    pub categories_cut: bool,
 }
 
 impl Marks {
@@ -76,6 +78,7 @@ impl Marks {
             marks.forwarded |= is("$forwarded");
             marks.draft |= is("$draft");
         }
+        marks.categories_cut = on.iter().filter(|keyword| keyword_category(keyword).is_some()).count() > MAX_CATEGORIES;
         marks.categories = mailcraft_model::sync::categories_of(on);
         marks
     }
@@ -117,7 +120,8 @@ fn server(id: &str, mailbox: &str, marks: Marks, size: u64) -> ServerMessage {
 
 /// An email this mailbox has already: its marks and nothing else (the engine takes nothing else of it).
 pub(super) fn known(id: &str, mailbox: &str, marks: Marks) -> GraphMessage {
-    GraphMessage { server: server(id, mailbox, marks, 0), ..Default::default() }
+    let categories_cut = marks.categories_cut;
+    GraphMessage { server: server(id, mailbox, marks, 0), categories_cut, ..Default::default() }
 }
 
 /// An email this mailbox has not: its header fields, size, arrival, preview and marks.
@@ -130,7 +134,7 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
         .and_then(|date| mailcraft_time::iso_to_timestamp(date, 0));
     // //// Neoffice — the thread it is in (RFC 8621 §4.1.1, upstream's #795): an id as opaque as the email's; anything odd is none.
     let thread = mailcraft_model::sync::thread_id(entry.get("threadId").and_then(Value::as_str).unwrap_or_default());
-    let draft = marks.draft;
+    let (draft, categories_cut) = (marks.draft, marks.categories_cut);
     GraphMessage {
         server: ServerMessage { thread, ..server(id, mailbox, marks, entry.get("size").and_then(Value::as_u64).unwrap_or(0)) },
         message_id: fields.message_id,
@@ -145,6 +149,9 @@ pub(super) fn whole(id: &str, mailbox: &str, entry: &Value, marks: Marks) -> Gra
         has_attachments: entry.get("hasAttachment").and_then(Value::as_bool).unwrap_or(false),
         // (An `Option` since upstream's #611, `None` being "the server didn't say": a JMAP server always does, with `$draft`.)
         draft: Some(draft),
+        // What was left out of its recipients, its subject or its categories: no rule tells from it what they said (#566).
+        cut: fields.cut,
+        categories_cut,
     }
 }
 
@@ -158,22 +165,28 @@ struct Fields {
     to: Vec<Address>,
     cc: Vec<Address>,
     date: Option<Timestamp>,
+    /// Some of its recipients, or the end of its subject, were left out: past what is kept, or an address that can't be.
+    cut: bool,
 }
 
 impl Fields {
     fn read(headers: Option<&Value>) -> Fields {
-        let block = block(headers);
+        let (block, block_cut) = block(headers);
         if block.is_empty() {
-            return Fields::default();
+            return Fields { cut: block_cut, ..Fields::default() };
         }
         let message = mailcraft_mime_model::parse(block.as_bytes());
+        let (listed, long) = ((message.to.len(), message.cc.len()), line(&message.subject, MAX_TEXT + 2).chars().count() > MAX_TEXT);
+        let (to, cc) = (people(message.to), people(message.cc));
+        let cut = block_cut || message.headers_cut || long || (to.len(), cc.len()) != listed;
         Fields {
             message_id: id_text(&message.message_id),
             in_reply_to: id_text(&message.in_reply_to),
             subject: line(&message.subject, MAX_TEXT),
             from: person(message.from).unwrap_or_default(),
-            to: people(message.to),
-            cc: people(message.cc),
+            to,
+            cc,
+            cut,
             // (0 is what the reader says of a date that is missing or makes no sense.)
             date: Some(message.date).filter(|date| *date != 0),
         }
@@ -224,10 +237,12 @@ pub(super) fn line(text: &str, most: usize) -> String {
 /// value everything after the colon with its folds) that a list needs, as a header block the MIME reader
 /// takes: each on one line (a fold is a blank, so a value cannot end the block or start another field),
 /// under a name of ours. The first of a field that is only once in a message; all of a `To` or a `Cc`, to
-/// the room a field has. At most 500 fields are looked at, and at most 64 KB are kept.
-fn block(headers: Option<&Value>) -> String {
+/// the room a field has. At most 500 fields are looked at, and at most 64 KB are kept; whether something of the recipients or
+/// the subject may have been left out of it.
+fn block(headers: Option<&Value>) -> (String, bool) {
     let mut out = String::new();
-    let Some(list) = headers.and_then(Value::as_array) else { return out };
+    let Some(list) = headers.and_then(Value::as_array) else { return (out, false) };
+    let mut cut = list.len() > MAX_FIELDS;
     let mut used = [0usize; FIELDS.len()];
     for field in list.iter().take(MAX_FIELDS) {
         let (Some(name), Some(value)) = (field.get("name").and_then(Value::as_str), field.get("value").and_then(Value::as_str)) else {
@@ -238,7 +253,8 @@ fn block(headers: Option<&Value>) -> String {
         if *spent > 0 && !*repeats {
             continue;
         }
-        let text = folded(value, room.saturating_sub(*spent), *repeats);
+        let (text, short) = folded(value, room.saturating_sub(*spent), *repeats);
+        cut |= short && matches!(*written, "To" | "Cc" | "Subject");
         if text.is_empty() {
             continue;
         }
@@ -251,14 +267,14 @@ fn block(headers: Option<&Value>) -> String {
     if !out.is_empty() {
         out.push_str("\r\n");
     }
-    out
+    (out, cut)
 }
 
 /// `value` on one line (a fold or any control character is one blank, a run of blanks is one) of at most
-/// `room` bytes; a list of addresses that is cut loses the address it was cut in, not half of it.
-fn folded(value: &str, room: usize, list: bool) -> String {
+/// `room` bytes; a list of addresses that is cut loses the address it was cut in, not half of it. And whether it was cut.
+fn folded(value: &str, room: usize, list: bool) -> (String, bool) {
     let mut out = String::new();
-    let mut blank = false;
+    let (mut blank, mut cut) = (false, false);
     for c in value.chars() {
         if c == ' ' || c.is_control() {
             blank = !out.is_empty();
@@ -269,6 +285,7 @@ fn folded(value: &str, room: usize, list: bool) -> String {
             if list && let Some(at) = out.rfind([',', ';']) {
                 out.truncate(at);
             }
+            cut = true;
             break;
         }
         if blank {
@@ -277,7 +294,7 @@ fn folded(value: &str, room: usize, list: bool) -> String {
         }
         out.push(c);
     }
-    out
+    (out, cut)
 }
 
 #[cfg(test)]

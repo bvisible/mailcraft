@@ -645,3 +645,42 @@ msgstr "Deze pagina bewaart geen vervaldatum voor een vlag: de server houdt alle
 # Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
 msgid "you already reacted to this message with {emoji}"
 msgstr "U hebt op dit bericht al gereageerd met {emoji}"
+
+msgid "Accent colour as hex"
+msgstr "Accentkleur als hex"
+
+msgid "Align Text"
+msgstr "Tekst uitlijnen"
+
+msgid "Custom color"
+msgstr "Aangepaste kleur"
+
+msgid "Paste Text Only"
+msgstr "Alleen tekst plakken"
+
+msgid "Shade\nRows"
+msgstr "Rijen\narceren"
+
+msgid "Shade Alternate Rows"
+msgstr "Afwisselende rijen arceren"
+
+msgid "The signature couldn't be saved: {why}. Close again to leave it unsaved."
+msgstr "De handtekening kon niet worden opgeslagen: {why}. Sluit opnieuw om hem niet op te slaan."
+
+msgid "This page keeps no order of folders: it would be lost at the next visit"
+msgstr "Deze pagina bewaart geen volgorde van mappen: die zou bij het volgende bezoek verloren gaan"
+
+msgid "This page's message list has a look of its own"
+msgstr "De berichtenlijst van deze pagina heeft een eigen uiterlijk"
+
+msgid "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"
+msgstr "De regels van deze pagina worden uitgevoerd wanneer u ze start, niet bij binnenkomende post: een regel toont hier geen melding op het bureaublad"
+
+msgid "This rule is kept with your mailboxes. It runs over the mail already there when you run it, not as mail arrives."
+msgstr "Deze regel wordt bewaard bij uw postvakken. Hij wordt toegepast op de post die er al is wanneer u hem uitvoert, niet bij binnenkomende post."
+
+msgid "You have already asked this list to unsubscribe you: the request is in your Outbox or in Sent Items."
+msgstr "U heeft deze lijst al gevraagd u af te melden: het verzoek staat in uw Postvak UIT of in Verzonden items."
+
+msgid "that message is a draft: open it and send it"
+msgstr "dat bericht is een concept: open het en verstuur het"

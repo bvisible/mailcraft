@@ -93,7 +93,7 @@ fn job(ops: Vec<EventOp>) -> JmapPimRequest {
         now: NOW,
         from: NOW - 7 * DAY,
         to: NOW + 14 * DAY,
-        changes: Some(EventsUpload { account: 7, email: ME.into(), ops, zone: "Europe/Zurich".into() }),
+        changes: Some(EventsUpload { account: 7, email: ME.into(), ops, zone: "Europe/Zurich".into(), rename: None }),
         ..Default::default()
     }
 }

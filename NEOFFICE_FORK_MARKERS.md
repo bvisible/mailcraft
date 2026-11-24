@@ -9,6 +9,39 @@ A file this fork adds says so in its first lines. `.github/workflows/neoffice-ma
 
 ## Base of the divergence
 
+- `448ad7a` (upstream's tag v0.15.0, 2026-11-22, 474 commits after v0.14.0: a reply or forward quotes only what the reading pane
+  shows (GHSA-fj8q-crrw-7mxc: `crates/html/src/quote.rs` over `blocks::seen`, `Session::read_at`, `ReadIn`); every string and error
+  an agent gets through MCP framed as untrusted (GHSA-78v3-fvm2-qhjx); attachments opened on Linux and the BSDs by the desktop's type
+  (GHSA-2669-rh8f-mcw8); rules with exceptions, people, words, sizes, days, copies, flags and desktop alerts (#566); every installed
+  font in the Font menu (#1493) and a picture's size in a message (#1310); spelling by the system's dictionaries on Windows and macOS
+  (#954); several appointments copied, cut, pasted or deleted together (#1663, `cmd/calendar/selection.rs`); folders and Favorites in
+  the owner's order (#1514); several lists unsubscribed from at once (#1207); a message list easier to read (#1657), an accent of
+  one's own (#1737), Paste Text Only (#1721), recipients by how often they were written to (#1776), Send Again (#1747, #1748),
+  a filtering gateway's `Authentication-Results` (#1568), renamed categories on a Microsoft account's server (#851), undo of server
+  calendars (#1674)), merged into `version-15` on 2026-11-24 with conflicts in 45 files, the catalogues among them. Where upstream's
+  change meets the fork's: the fork's JMAP run stays the one built (`cmd/jmap_mail.rs`, `jmap_down.rs`, `jmap_sending_tests.rs` whole;
+  a piece is looked at with upstream's `Down::took_anything`; its client says what a listing cut of the recipients, the subject or
+  the categories, `GraphMessage::cut` and `categories_cut`, which upstream's rules read; a run asks for no renaming of a category);
+  no new mail of a JMAP account is put through the rules, as upstream's neither does, and a rule that copies a JMAP account's mail
+  is refused (`kept_here::rule_refusal`, `COPY_JMAP`; upstream's test of one is left out, marked). `crates/mcp/src/tools.rs` is
+  upstream's whole again: it frames everything, so the fork's lists of notes' commands and keys went. In a hosting page's tab
+  (`Session::keeps_local` false): the order of folders and Favorites is neither drawn nor run (`kept_here::ORDERED`, `order_refusal`,
+  `nav.rs` `movable`: no drag, no Move Up and Move Down), nor Shade Rows (`SHADED`, `own_list_refusal`); the list (variant D) keeps its
+  lines, its sender in ink and no band (`mail_view.rs`), over upstream's layers and inks; a colour of one's own never reaches the design
+  system's look (`ThemeChoice::palette`); a rule shows no desktop alert and flags with no due day (`rule_refusal`; the builder offers
+  neither, nor a copy, and says when the rule runs, `forms.rs` `Offers`); the rules the page's server keeps carry their exceptions as a
+  condition an older window can't read, so that none acts without them (`apps/mailcraft-web/src/kept.rs` `EXCEPT`), and a copy's
+  folder as a move's; a list asked to unsubscribe the person by mail is not asked twice (`unsubscribe::asked_already`, and
+  `Unsubscribing::asked` before its copy is in Sent Items), the question showing the word that is sent, not its translation; Review
+  shows no Spelling where the host has no dictionary (`host_later::ribbon`); Paste Text Only, greyed as Paste is where the clipboard
+  is read by the browser's paste alone, names the key that does it there (`text_menu.rs`). What is pasted into a calendar whose
+  server keeps only the basics is held to them (`fits_plain` in `selection.rs`). The body's keys (`own_keys`, `input_order`) sit over
+  upstream's spelling and input-method state, and the macOS Edit menu's input (`edit_keys_for_main`) goes through `input_order::split`
+  as the rest. A refused command is said by upstream's `refusal_said`, with the fork's reading (`run_words`) in it. GHSA-fj8q is held by
+  the fork's own tests, red on `ff37550`: `cmd/hidden_quote_hosted_tests.rs` (every way a hosted answer quotes, the draft again and what
+  is sent) and `nora/assist_tests.rs` (the reply Nora opens). Upstream's catalogues were taken, then `cargo xtask i18n`; the thirteen
+  texts with no French were translated into the fork's French, German, Italian, Spanish and Dutch (`po/neoffice/`, Haiku), and none of
+  the fork's translations was lost (compared before and after). What came before it:
 - `979953f` (upstream's tag v0.14.0, 2026-11-19, 1,087 commits after v0.13.0: Send Later, Delay Delivery and Undo Send (#950,
   `cmd/send_later.rs`); follow-up reminders and "remind me if nobody replies" (#948, `cmd/followup.rs`); React, a message answered
   with one emoji (#1544, RFC 9078, `cmd/react.rs`); Unsubscribe, by one click, by mail or on the list's page (#1207, RFC 8058);

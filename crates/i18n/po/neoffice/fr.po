@@ -5923,3 +5923,42 @@ msgstr "Cette page ne conserve pas d’échéance pour un indicateur : son serve
 # Upstream's refusal of a second reaction (react.rs), with a capital, as the window shows it alone in a message box.
 msgid "you already reacted to this message with {emoji}"
 msgstr "Vous avez déjà réagi à ce message avec {emoji}"
+
+msgid "Accent colour as hex"
+msgstr "Couleur d’accent en hexadécimal"
+
+msgid "Align Text"
+msgstr "Aligner le texte"
+
+msgid "Custom color"
+msgstr "Couleur personnalisée"
+
+msgid "Paste Text Only"
+msgstr "Coller le texte seul"
+
+msgid "Shade\nRows"
+msgstr "Ombrer\nles lignes"
+
+msgid "Shade Alternate Rows"
+msgstr "Ombrer une ligne sur deux"
+
+msgid "The signature couldn't be saved: {why}. Close again to leave it unsaved."
+msgstr "La signature n’a pas pu être enregistrée : {why}. Fermez à nouveau pour la laisser non enregistrée."
+
+msgid "This page keeps no order of folders: it would be lost at the next visit"
+msgstr "Cette page ne conserve pas l’ordre des dossiers : il serait perdu à la prochaine visite"
+
+msgid "This page's message list has a look of its own"
+msgstr "La liste des messages de cette page a son propre aspect"
+
+msgid "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here"
+msgstr "Les règles de cette page s’appliquent quand vous les lancez, et non à l’arrivée des messages : une règle n’affiche ici aucune alerte sur le bureau"
+
+msgid "This rule is kept with your mailboxes. It runs over the mail already there when you run it, not as mail arrives."
+msgstr "Cette règle est conservée avec vos boîtes aux lettres. Elle s’applique au courrier déjà présent lorsque vous la lancez, et non à l’arrivée des messages."
+
+msgid "You have already asked this list to unsubscribe you: the request is in your Outbox or in Sent Items."
+msgstr "Vous avez déjà demandé votre désabonnement à cette liste : la demande est dans votre boîte d’envoi ou dans les éléments envoyés."
+
+msgid "that message is a draft: open it and send it"
+msgstr "ce message est un brouillon : ouvrez-le et envoyez-le"

@@ -153,7 +153,8 @@ pub(super) async fn push<H: Http>(client: &Client<H>, request: &JmapPimRequest, 
     }
     let outcomes: Vec<EventOutcome> = writer.outcomes.into_iter().flatten().collect();
     log::debug!("jmap pim: {} of {} change(s) answered", outcomes.len(), upload.ops.len().min(MAX_EVENT_OPS));
-    out.uploaded = Some(EventsUploaded { account: request.account, email: request.email.clone(), outcomes, token_refused });
+    // (No category is renamed on a JMAP server by a run: what a rename leaves to the server is a Microsoft account's.)
+    out.uploaded = Some(EventsUploaded { account: request.account, email: request.email.clone(), outcomes, token_refused, renamed: None });
     going
 }
 

@@ -489,3 +489,53 @@ fn an_appointment_held_online_is_no_meeting_and_keeps_its_room_when_people_are_i
     assert_eq!(invited, ["grace@example.org"]);
     assert_eq!(s.mailbox.event(id).and_then(|e| e.join_link().map(str::to_string)).as_deref(), Some(link));
 }
+
+/// Several items cut and pasted at once (upstream's #1663) in a server's calendar: a meeting of the owner's asks her before the
+/// people invited are written to, and nothing is moved until she says yes; an appointment beside it goes without a word; and
+/// what such a server doesn't keep isn't copied into its calendar.
+#[test]
+fn a_set_pasted_into_a_servers_calendar_writes_to_nobody_without_the_owners_yes() {
+    let (mut s, mine, _) = session(true);
+    let account = s.mailbox.accounts.iter().find(|a| a.email == "ada@example.org").map(|a| a.id).unwrap();
+    let review = RemoteEvent {
+        id: "V9".into(),
+        title: "Review".into(),
+        start: at(21, 9),
+        end: at(21, 10),
+        organizer: Some(Address::new("Ada", "ada@example.org")),
+        attendees: vec![Attendee { address: Address::new("Bo", "bo@example.org"), ..Default::default() }],
+        is_organizer: Some(true),
+        ..Default::default()
+    };
+    let download =
+        EventsDownload { account, email: "ada@example.org".into(), from: at(1, 0), to: at(31, 0), events: vec![review], ..Default::default() };
+    apply_events(&mut s, &download).unwrap();
+    let review = s.mailbox.events.values().find(|e| e.title == "Review").map(|e| e.id).unwrap();
+    let items = json!([{"id": mine}, {"id": review}]);
+    let starts = |s: &Session| (s.mailbox.event(mine).unwrap().start, s.mailbox.event(review).unwrap().start);
+    let before = starts(&s);
+    assert!(s.run("calendar.paste", &json!({"items": items, "start": "2026-10-19T14:00", "cut": true})).is_err(), "asked first");
+    assert!(s.run("calendar.delete", &json!({"items": items, "scope": "occurrence"})).is_err(), "asked first");
+    assert_eq!(starts(&s), before);
+    assert!(event_upload(&s, account).unwrap().ops.is_empty(), "nothing to tell the server");
+    // A copy writes to nobody: an appointment of its own, with nobody invited.
+    let copies = s.run("calendar.paste", &json!({"items": [{"id": review}], "start": "2026-10-23T14:00"})).unwrap();
+    let copy = s.mailbox.event(copies["ids"][0].as_u64().unwrap()).unwrap();
+    assert!(copy.attendees.is_empty() && copy.organizer.is_none());
+    assert!(event_upload(&s, account).unwrap().ops.iter().all(|op| !op.send));
+    // With her yes, they move, and the meeting alone carries it.
+    s.run("calendar.paste", &json!({"items": items, "start": "2026-10-19T14:00", "cut": true, "send": true})).unwrap();
+    let sends: Vec<(String, bool)> =
+        event_upload(&s, account).unwrap().ops.into_iter().filter(|op| !op.remote.is_empty()).map(|op| (op.remote, op.send)).collect();
+    assert!(sends.contains(&("V1".into(), false)) && sends.contains(&("V9".into(), true)), "{sends:?}");
+    // What the server's calendar doesn't keep (a category, a Show As of its own) isn't copied into it.
+    let calendar = s.mailbox.event(mine).unwrap().calendar;
+    let local = s
+        .run(
+            "calendar.new",
+            &json!({"title": "Sport", "start": "2026-10-24T09:00", "categories": ["Red category"], "calendar": s.mailbox.calendars[0].id}),
+        )
+        .unwrap();
+    let copied = refused(&mut s, "calendar.paste", json!({"items": [{"id": local["id"]}], "start": "2026-10-25T09:00", "calendar": calendar}));
+    assert!(copied.contains(PLAIN_KEEPS_NO), "{copied}");
+}

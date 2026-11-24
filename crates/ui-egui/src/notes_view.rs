@@ -751,6 +751,9 @@ pub(crate) fn delete_question(app: &MailApp, params: &Value) -> Option<crate::di
         note: None,
         cancel: None,
         tick: None,
+        calendar: None,
+        cut: None,
+        listing: None,
     })
 }
 

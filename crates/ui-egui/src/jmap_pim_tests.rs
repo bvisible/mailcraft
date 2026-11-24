@@ -672,7 +672,7 @@ fn wrote(account: Id, outcomes: Vec<EventOutcome>, events: Vec<RemoteEvent>) -> 
         account,
         email: ME.into(),
         offers: Some(PimOffers { calendars: true, contacts: true }),
-        uploaded: Some(EventsUploaded { account, email: ME.into(), outcomes, token_refused: false }),
+        uploaded: Some(EventsUploaded { account, email: ME.into(), outcomes, token_refused: false, renamed: None }),
         events: Some(EventsDownload {
             account,
             email: ME.into(),

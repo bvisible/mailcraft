@@ -57,6 +57,8 @@ macro_rules! tl_later {
     };
 }
 
+#[cfg(test)]
+mod accent_custom_tests;
 mod account_setup;
 pub mod address_book;
 mod advanced_search;
@@ -76,11 +78,14 @@ pub mod approval;
 #[cfg(test)]
 mod attachment_menu_tests;
 mod attachment_open;
+pub use attachment_open::{no_kind_teller_text, sandbox_kind_text};
 pub mod attachment_preview;
 pub mod auto_replies;
 #[cfg(test)]
 mod auto_replies_tests;
 pub mod backstage;
+#[cfg(test)]
+mod calendar_clipboard_wiring_tests;
 mod calendar_sync;
 // //// Neoffice — which of a server's calendars are ticked, remembered across the visits of a tab that keeps nothing.
 pub mod calendar_ticks;
@@ -112,6 +117,8 @@ mod dav_secrets_tests;
 mod dialog_report_tests;
 #[cfg(test)]
 mod dialog_scrim_tests;
+#[cfg(test)]
+mod dialog_size_tests;
 pub mod dialogs;
 #[cfg(test)]
 mod draft_continue_tests;
@@ -136,6 +143,10 @@ mod follow_up_tick;
 mod font_index;
 #[cfg(test)]
 mod foreign_sign_in_tests;
+
+/// The fonts of this computer that text is drawn in: what a message asks for and what the
+/// composer offers, the index of what is installed and the faces read for it.
+pub(crate) mod fonts;
 pub mod forms;
 #[cfg(test)]
 #[path = "forms_date_tests.rs"]
@@ -258,6 +269,8 @@ mod report_problem;
 pub mod ribbon;
 #[cfg(test)]
 mod ribbon_field_tests;
+#[cfg(test)]
+mod ribbon_font_tests;
 pub mod rule_sync;
 #[cfg(test)]
 mod rule_sync_tests;
@@ -313,6 +326,8 @@ mod shared_permission;
 #[cfg(test)]
 mod shared_permission_tests;
 #[cfg(test)]
+mod signature_close_tests;
+#[cfg(test)]
 mod signature_link_tests;
 #[cfg(test)]
 mod signature_rename_tests;
@@ -323,6 +338,7 @@ pub(crate) mod snooze_hosted;
 mod snooze_tell_tests;
 mod snooze_tick;
 pub mod software;
+pub mod spelling;
 pub(crate) mod stream_correct; // //// Neoffice — « Classer dans », a choice of tab kept by a hosting page's mailbox server.
 mod subscribed;
 #[cfg(test)]
@@ -383,6 +399,8 @@ pub use unconfirmed::ConfirmedMailbox;
 /// Platform services injected by the host (file dialogs, downloads, servers, storage).
 #[derive(Default)]
 pub struct Services {
+    /// Local system dictionaries for the message composer, when the host provides them.
+    pub spelling: Option<spelling::Host>,
     /// The Windows host reads the local Recent Items folder on a worker, only when asked by the owner.
     pub recent_attachments: Option<recent_attachments::Loader>,
     /// Desktop: the icon and application id of the main window, which every other window of the
@@ -1031,6 +1049,10 @@ pub struct UiState {
     pub close_to_tray_notice_seen: bool,
     /// The accent colour of the window.
     pub accent: theme::Accent,
+    /// The colour of the custom accent (`accent` = `custom`), as "#rrggbb"; anything else reads
+    /// as none and the default custom colour is used.
+    #[serde(default, with = "theme::color_option")]
+    pub custom_accent: Option<egui::Color32>,
     /// The greys of the dark theme: neutral (the default) or tinted blue (#1384).
     pub dark_style: theme::DarkStyle,
     /// A message's body on a light page in the light theme's colours, as its sender made it, also
@@ -1187,6 +1209,7 @@ impl Default for UiState {
             close_to_tray: false,
             close_to_tray_notice_seen: false,
             accent: theme::Accent::default(),
+            custom_accent: None,
             dark_style: theme::DarkStyle::default(),
             light_messages: false,
             replies_in_window: false,
@@ -1246,6 +1269,13 @@ impl Default for UiState {
     }
 }
 
+impl UiState {
+    /// The colour a custom accent shows: the one saved, or the default when none was picked yet.
+    pub fn custom_accent_color(&self) -> egui::Color32 {
+        self.custom_accent.unwrap_or(theme::DEFAULT_CUSTOM_COLOR)
+    }
+}
+
 /// The engine's preferences in the window's settings for a new install: the engine's own, but
 /// for what the window turns on that a session without its settings (`mailcraft-cli run`,
 /// headless `mcp`) leaves off. An answered meeting request goes from the Inbox to Deleted Items,
@@ -1285,7 +1315,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "File › Options",
         r#"{"value": "system"|"on"|"off"} — whether the window's animations play: as the system says (Windows' Animation effects; where the system says nothing, they play), always, or never (menus and sections open at once, scrolling to a place jumps there; a spinner still turns)"#,
     ),
-    ("ui.accent", "Accent Colour", "File › Options", r#"{"accent": "blue"|"teal"|"violet"|"graphite"}"#),
+    (
+        "ui.accent",
+        "Accent Colour",
+        "File › Options",
+        r##"{"accent": "blue"|"teal"|"violet"|"graphite"|"custom"|"#rrggbb", "color"?: "#rrggbb"|[r, g, b]} — with "custom", "color" picks the colour of your own (without it, the one last picked is kept); "#rrggbb" as "accent" itself picks a custom colour straight away"##,
+    ),
     ("ui.darkStyle", "Dark Theme Style", "File › Options", r#"{"value": "neutral"|"blue"}"#),
     (
         "ui.lightMessages",
@@ -1681,6 +1716,12 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         r#"{"window"?: number (default: the appointment or meeting window in front), "page"?: "appointment"|"scheduling" (a meeting's Find a Time page), "recurrence"?: bool (open or close its Appointment Recurrence dialog), "do"?: "save"|"saveAndClose"|"send"|"close" — as its keys and its close button do: closing asks first when something isn't saved, and nothing is sent to anybody without the owner's yes; "freeBusy"?: {"people": [{"email", "busy": [{"start": seconds, "end": seconds, "showAs"}], "error"?: string}]} — a stand-in for the server's answer about the people invited, for Find a Time} — answers {"window", "event", "page", "meeting", "dirty", "recurrence", "asking", "importance": "low"|"normal"|"high", "online": bool (it is, or is to be, a Teams meeting), "joinUrl": string (the link to join by, when its server gave one: data, never followed by itself), "scheduling"?: {"day", "start", "end", "rows", "known", "unknown", "bars", "pending", "note"}}"#,
     ),
     (
+        "ui.unsubscribeMany",
+        "Unsubscribe from Their Lists",
+        "Message",
+        r#"{"ids"?: [number] (default: the selected messages; `id` and any other key refused; an agent names them), "mail"?: [number] (the requests by mail to write: 20 at most, each one of these messages' requests by mail, else refused; absent, null or [], none)} — each sender of the messages once, after the owner's yes to a question that lists each request by mail with its address and subject, as `mail.unsubscribeMany` says: one click goes to each list's server in turn (desktop; each message's bar then says what came of it), each request by mail named in `mail` goes to the Outbox on its own, a list that unsubscribes on its own page is left to its message's bar; answers {"oneClick", "mail", "pages", "leftOut"}: the counts"#,
+    ),
+    (
         "ui.unsubscribe",
         "Unsubscribe",
         "Message",
@@ -1801,6 +1842,24 @@ pub const UI_COMMANDS: &[(&str, &str, &str, &str)] = &[
         "Expand or Collapse Calendar Group",
         "Calendar",
         r#"{"group": string (its heading in the list of calendars), "value"?: bool (true: folded away; default: the other way than it is)}"#,
+    ),
+    (
+        "ui.calendarCopy",
+        "Copy",
+        "Calendar",
+        r#"{} — Copy: the whole of what is selected in the Calendar onto the calendar's clipboard, for Paste at a picked time, leaving the items where they are. Answers {"items": n, "cut": false} and nothing else. Refused with any parameter, with no Calendar in front of the window, behind a question, File's pages or an open menu, and with nothing selected"#,
+    ),
+    (
+        "ui.calendarCut",
+        "Cut",
+        "Calendar",
+        r#"{} — Cut: the selected Calendar items onto its clipboard, left in place until Paste moves them. Answers {"items": n, "cut": true}. Refused with parameters, without the Calendar in front, behind a question, File page or menu, or with nothing selected"#,
+    ),
+    (
+        "ui.calendarPaste",
+        "Paste",
+        "Calendar",
+        r#"{} — Paste: what Copy or Cut put on the calendar's clipboard, at the time picked in the grid, moving it when it was a cut. Answers {"items": n, "cut": bool} once it is done, and nothing else. Refused with any parameter, without the Calendar in front, behind a question, File page or menu, with nothing on the calendar's clipboard, and with no time picked. The owner's own Paste (the ribbon, a menu, command search) asks what a paste asks first (which of a series is meant, who is written to) and answers {"pending": "confirm"} while the question is up; it is the owner's own move of what was cut, as a drag is, also of an appointment open in a window of its own. Through the control channel it never asks: a paste that would ask, or would move an appointment whose window has unsaved changes, is refused. Never for an agent"#,
     ),
     (
         "ui.joinMeeting",
@@ -2063,6 +2122,12 @@ pub struct MailApp {
     pub(crate) synthetic: Vec<egui::Event>,
     // //// Neoffice — what the last frame's input held back, the click or what was typed after it, for this one (`input_order`).
     held_input: Vec<egui::Event>,
+    /// What the Edit menu of the macOS menu bar was chosen for (its ⌘X, ⌘C, ⌘V…), as the input a
+    /// text field takes, for the window that has the keyboard: the main one, or a message or an
+    /// appointment in a window of its own (#1500). Not the control channel's ([`Self::synthetic`]).
+    pub(crate) edit_keys: Vec<egui::Event>,
+    /// [`Self::edit_keys`] waited a whole frame for a window with the keyboard: the next one drops them.
+    edit_keys_waited: bool,
     /// What agents want that waits for the owner's yes ([`agent_gate`]).
     pub(crate) asking: agent_gate::Questions,
     styled: bool,
@@ -2143,9 +2208,18 @@ pub struct MailApp {
     /// What closing waited for couldn't be written (the status bar said why): the window stayed
     /// open, and the next close request goes through without waiting again, until a save works.
     close_anyway: bool,
+    /// The signature open in File › Signatures couldn't be kept when the window was closed: the
+    /// window stayed open on that page saying why, and the next close leaves it as it is (#1746).
+    signature_held: bool,
     /// File › New or File › Open, asked for while the saver had the open mailbox to write: it
     /// runs once the saver is done with the file ([`MailApp::through_saver`]).
     pub(crate) after_save: Option<(String, Value)>,
+    /// The Calendar's Copy, Cut or Paste chosen in Command Search, and how many more passes it
+    /// waits for the search window to be gone ([`calendar_view::after_search`]).
+    pub(crate) after_search: Option<(String, u8)>,
+    /// Whether the selected calendar items read as a set to copy, as of the mailbox's revision and
+    /// the selection it was worked out for: the ribbon asks every frame.
+    pub(crate) copy_hint: calendar_view::CopyHint,
     /// What became of the last command that waited for a save (`ui.inspect`'s `saving.last`): an
     /// agent that was answered `"pending": "save"` learns here whether it ran.
     pub(crate) after_save_outcome: Option<Value>,
@@ -2350,6 +2424,8 @@ impl MailApp {
             synthetic: Vec::new(),
             // //// Neoffice — (see the field.)
             held_input: Vec::new(),
+            edit_keys: Vec::new(),
+            edit_keys_waited: false,
             asking: Default::default(),
             styled: false,
             applied_theme: None,
@@ -2385,7 +2461,10 @@ impl MailApp {
             closing_after_save: None,
             close_ready: false,
             close_anyway: false,
+            signature_held: false,
             after_save: None,
+            after_search: None,
+            copy_hint: calendar_view::CopyHint::default(),
             after_save_outcome: None,
             running_after_save: false,
             ctx: None,
@@ -2518,6 +2597,12 @@ impl MailApp {
         match self.session.registry.get(id) {
             // Cancel All, while the window has a Send/Receive under way.
             Some(_) if id == "sync.cancel" => self.syncing(),
+            // Run Rules Now over the folder in view: greyed where the rules leave the mail alone (a
+            // shared mailbox's), as in the folder's menu and the Rules dialog.
+            Some(s) if id == "rules.run" => {
+                let mb = &self.session.mailbox;
+                (s.enabled)(&self.session).is_none() && mb.folder(self.session.view.folder).is_some_and(|f| mb.rules_reach(f.account))
+            }
             Some(s) => (s.enabled)(&self.session).is_none(),
             None if id == "ui.sync" => {
                 // //// Neoffice — a build with only a JMAP runner can synchronise too, and a JMAP run under way is a run under way.
@@ -2549,9 +2634,29 @@ impl MailApp {
             // //// Neoffice — Import is File › Import's (`kept_here`: refused where nothing is kept).
             None if id == "ui.import" => self.session.enabled("file.import"),
             None if id == "ui.showAttachmentMessage" => attachment_preview::can_show_message(self),
+            // The Calendar's Copy: the Calendar in front, nothing of the window's own over it, and
+            // a set to take. A hint only — `execute` runs the command without asking, so
+            // `ui.calendarCopy` itself meets every guard again, and says why it can't.
+            None if id == "ui.calendarCopy" => calendar_view::copy_ready(self),
+            // Cut stages the same selected set; it does not move or remove anything yet.
+            None if id == "ui.calendarCut" => calendar_view::copy_ready(self),
+            // Paste needs the same calendar in front, a clipboard of this mailbox whose events are
+            // still the ones it took, and a time picked to put them at. A hint only, as above.
+            None if id == "ui.calendarPaste" => calendar_view::paste_ready(self),
             None if id == "ui.openDataFolder" => self.services.data_folder.is_some() && !self.data_removed,
             None => UI_COMMANDS.iter().any(|c| c.0 == id),
         }
+    }
+
+    /// Put `next` in place of the dialog that is open. A dialog a compose window opened stays
+    /// that window's only until the dialog is replaced: the window that opened this one claims it
+    /// afterwards ([`windows::compose_window`]), and any other replacement is the main window's,
+    /// drawn over the main window rather than over the compose window the previous one belonged to.
+    /// The rules for that owner are on [`windows::Windows::dialog_for`].
+    pub(crate) fn set_dialog(&mut self, next: Option<dialogs::Dialog>) {
+        self.windows.dialog_gen = self.windows.dialog_gen.wrapping_add(1);
+        self.windows.dialog_for = None;
+        self.dialog = next;
     }
 
     /// Run a command the user asked for (ribbon, shortcut, menu, file drop). A command that needs
@@ -2574,7 +2679,7 @@ impl MailApp {
         let params = dialogs::as_opened(self, id, params);
         // A message being written isn't let go of without a word (#442).
         if dialogs::leaves_message(self, id, &params) {
-            self.dialog = Some(dialogs::leaving(id, params));
+            self.set_dialog(Some(dialogs::leaving(id, params)));
             return Ok(json!({"pending": "discardDraft"}));
         }
         // What is selected is what the reading pane shows (#727): the message being written there
@@ -2601,7 +2706,8 @@ impl MailApp {
                 ("folder.rename", Value::Null) => json!({"mode": "rename"}),
                 (_, asked) => asked,
             };
-            self.dialog = dialogs::open_dialog(self, name, &asked);
+            let dialog = dialogs::open_dialog(self, name, &asked);
+            self.set_dialog(dialog);
             // Folder Properties asks the engine first: when the engine refuses, there is no
             // dialog, and the command runs below so that the refusal is said as any command's is.
             if self.dialog.is_some() || !matches!(name, "folderProperties" | "wordCount") {
@@ -2637,7 +2743,22 @@ impl MailApp {
             if let Some(map) = params.as_object_mut() {
                 map.insert(send_warnings::ASKED_ABOUT.into(), asked);
             }
-            self.dialog = Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask });
+            self.set_dialog(Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask: Box::new(ask) }));
+            return Ok(json!({"pending": "confirm"}));
+        }
+        // Unsubscribing from several messages' lists (#1207): the question says what goes, as the
+        // engine says it, each request by mail with its address and subject; a yes goes with
+        // the messages and the requests it listed, whatever is selected by then.
+        if id == "ui.unsubscribeMany" && params.get("confirmed").and_then(Value::as_bool) != Some(true) {
+            // (Refused before the question, it is said as any refusal is: the menu drops the error.)
+            let (ask, params) = match reading::unsubscribe::question_many(self, &params) {
+                Ok(asked) => asked,
+                Err(e) => {
+                    self.say_refused(id, &e);
+                    return Err(e);
+                }
+            };
+            self.dialog = Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask: Box::new(ask) });
             return Ok(json!({"pending": "confirm"}));
         }
         // What can't be taken back is asked about first, once.
@@ -2649,7 +2770,12 @@ impl MailApp {
             // What the question named is what goes ahead, though the selection changes while it
             // is open (#620).
             let params = dialogs::pin_targets(self, id, params);
-            self.dialog = Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask });
+            let mut ask = ask;
+            if let Err(why) = dialogs::bind_calendar(self, id, &params, &mut ask) {
+                self.status(why.clone());
+                return Err(why);
+            }
+            self.set_dialog(Some(dialogs::Dialog::Confirm { command: id.to_string(), params, ask: Box::new(ask) }));
             return Ok(json!({"pending": "confirm"}));
         }
         // Check Names pressed by the owner looks names up in the address list too ([`check_names`]).
@@ -2680,6 +2806,10 @@ impl MailApp {
             },
             // Another mailbox file is read in the background, and opens once it is.
             "file.open" if opening::reads_ahead(self, &params) => opening::read_ahead(self, &params),
+            // The Calendar's Paste pressed by the owner: the window's own Paste, asking whatever a
+            // paste asks and keeping the cut with the question. The way in by `execute` is the
+            // other one, and never asks.
+            "ui.calendarPaste" => calendar_view::paste_owner(self, &params),
             _ => {
                 self.windows.place = place;
                 let r = self.execute(id, params);
@@ -2766,7 +2896,17 @@ impl MailApp {
     /// engine's refusal, its template filled; any other text looked up whole), and, when the
     /// owner has just done it by hand, in a message box too, as Outlook does (#152).
     fn say_refused(&mut self, id: &str, e: &str) {
-        let said = match self.last_error.take() {
+        let said = self.refusal_said(e);
+        if self.by_hand && refusal_worth_a_box(id, e) {
+            self.refused = Some(said.clone());
+        }
+        self.status(said);
+    }
+
+    /// What a dialog or the status bar says of `e`, the refusal of the command just run: in the
+    /// window's language, as the engine gave its words.
+    pub(crate) fn refusal_said(&mut self, e: &str) -> String {
+        match self.last_error.take() {
             // //// Neoffice — a sentence the catalogue doesn't have whole (one with values in it: a JMAP account's refusals,
             // the fork's engine's) is read back by run_words, as the window did before upstream's catalogues.
             Some(err) if err.to_string() == *e => match err.in_lang(i18n::current()) {
@@ -2782,11 +2922,7 @@ impl MailApp {
                 std::borrow::Cow::Borrowed(same) if same == e => tl!(e).to_string(),
                 read => read.into_owned(),
             },
-        };
-        if self.by_hand && refusal_worth_a_box(id, e) {
-            self.refused = Some(said.clone());
         }
-        self.status(said);
     }
 
     /// Run a command for a script or an agent (control channel, MCP bridge): never asks first.
@@ -3094,7 +3230,7 @@ impl MailApp {
                 }
                 match dialogs::open_dialog(self, name, p) {
                     Some(d) => {
-                        self.dialog = Some(d);
+                        self.set_dialog(Some(d));
                         self.sync_panel = None;
                         Ok(json!({"dialog": name}))
                     }
@@ -3102,7 +3238,7 @@ impl MailApp {
                 }
             }
             "ui.closeDialog" => {
-                self.dialog = None;
+                self.set_dialog(None);
                 self.sync_panel = None;
                 Ok(json!({}))
             }
@@ -3127,13 +3263,43 @@ impl MailApp {
                 }
                 None => Err("`on` is true or false".into()),
             },
-            "ui.accent" => match s("accent").and_then(theme::Accent::from_code) {
-                Some(a) => {
-                    self.ui.accent = a;
-                    Ok(json!({"accent": a.code()}))
+            "ui.accent" => {
+                // A colour of the owner's own: "accent": "custom" with "color", or "accent" as
+                // "#rrggbb" itself. Without "color", the colour last picked is kept.
+                let picked = p.get("color").map(theme::parse_color_value);
+                match s("accent").and_then(theme::Accent::from_code) {
+                    Some(a) => {
+                        if a == theme::Accent::Custom {
+                            match picked {
+                                None => {
+                                    self.ui.accent = theme::Accent::Custom;
+                                    Ok(json!({"accent": "custom", "color": theme::hex_string(self.ui.custom_accent_color())}))
+                                }
+                                Some(Some(c)) => {
+                                    self.ui.accent = theme::Accent::Custom;
+                                    self.ui.custom_accent = Some(c);
+                                    Ok(json!({"accent": "custom", "color": theme::hex_string(c)}))
+                                }
+                                Some(None) => Err("`color` is \"#rrggbb\" or [r, g, b]".into()),
+                            }
+                        } else {
+                            self.ui.accent = a;
+                            Ok(json!({"accent": a.code()}))
+                        }
+                    }
+                    None => match s("accent").and_then(theme::parse_hex_color) {
+                        Some(c) => {
+                            self.ui.accent = theme::Accent::Custom;
+                            self.ui.custom_accent = Some(c);
+                            Ok(json!({"accent": "custom", "color": theme::hex_string(c)}))
+                        }
+                        None => {
+                            Err("`accent` is blue, teal, violet, graphite, custom or \"#rrggbb\"; with custom, `color` is \"#rrggbb\" or [r, g, b]"
+                                .into())
+                        }
+                    },
                 }
-                None => Err("`accent` is blue, teal, violet or graphite".into()),
-            },
+            }
             "ui.darkStyle" => match s("value").and_then(theme::DarkStyle::from_code) {
                 Some(style) => {
                     self.ui.dark_style = style;
@@ -4131,7 +4297,8 @@ impl MailApp {
                 self.passwords.insert(account, pw);
             }
             let Some(password) = self.passwords.get(&account).cloned() else {
-                self.dialog = dialogs::Dialog::open("password", self, &json!({"account": account}));
+                let dialog = dialogs::Dialog::open("password", self, &json!({"account": account}));
+                self.set_dialog(dialog);
                 return Ok(json!({"pending": "password"}));
             };
             request.password = password;
@@ -4278,7 +4445,7 @@ impl MailApp {
             // A question about the mailbox that was open goes with it: it names messages and
             // accounts by ids, which the other mailbox may have too (#503).
             if matches!(self.dialog, Some(dialogs::Dialog::Confirm { .. })) {
-                self.dialog = None;
+                self.set_dialog(None);
             }
             // An agent's too.
             agent_gate::forget(self);
@@ -4559,6 +4726,7 @@ impl MailApp {
             Err(std::sync::mpsc::TryRecvError::Empty) => return,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 log::warn!("graph, account {account}: the job ended without an answer (its thread ended early)");
+                self.session.end_run_unfinished(account);
                 (GraphResult { account, ..Default::default() }, false)
             }
         };
@@ -4924,7 +5092,8 @@ impl MailApp {
     fn sign_in_came_to_nothing(&mut self, account: Id, error: &str, asked_for: bool) {
         log::warn!("sign-in, account {account}: ended without signing in ({:?})", approval::SignInEnd::of(error));
         if approval::SignInEnd::of(error) == approval::SignInEnd::Approval && asked_for && self.dialog.is_none() {
-            self.dialog = dialogs::Dialog::open("account", self, &json!({"id": account, "page": "approval"}));
+            let dialog = dialogs::Dialog::open("account", self, &json!({"id": account, "page": "approval"}));
+            self.set_dialog(dialog);
         }
         self.status(tl!(error));
     }
@@ -5144,6 +5313,7 @@ impl MailApp {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     log::warn!("send/receive: the run stopped without an answer (its thread ended early)");
                     self.logged_problems.end_run(*whose, "mail");
+                    self.session.end_run_unfinished(*whose);
                     (self.sync_rx, self.sync_password) = (None, None);
                     self.session.sync_status = tl!("Send/Receive stopped unexpectedly").to_string();
                     return;
@@ -5301,7 +5471,7 @@ impl MailApp {
     fn refusal(&mut self) {
         let Some(text) = self.refused.take() else { return };
         if self.dialog.is_none() {
-            self.dialog = Some(dialogs::Dialog::Refused { text });
+            self.set_dialog(Some(dialogs::Dialog::Refused { text }));
         }
     }
 
@@ -5354,6 +5524,8 @@ impl MailApp {
     pub fn logic(&mut self, ctx: &egui::Context) {
         swipe::observe_cancelled(ctx);
         attachment_preview::poll(self, ctx);
+        // One-click unsubscribes go one at a time, whatever message is shown (#1207).
+        reading::unsubscribe::poll(self);
         self.apply_language();
         // //// Neoffice — (as in `execute`: what the engine says of a JMAP account's mail follows this window's runners)
         self.session.jmap_runs = self.services.can_run(mailcraft_model::AccountKind::Jmap);
@@ -5385,7 +5557,7 @@ impl MailApp {
         if let Some(dialogs::Dialog::ImportPst(mut d)) = self.dialog.take_if(|d| matches!(d, dialogs::Dialog::ImportPst(d) if d.is_importing())) {
             d.pump(self, ctx);
             if self.dialog.is_none() {
-                self.dialog = Some(dialogs::Dialog::ImportPst(d));
+                self.set_dialog(Some(dialogs::Dialog::ImportPst(d)));
             }
         }
         if !self.styled {
@@ -5409,6 +5581,7 @@ impl MailApp {
         let choice = theme::ThemeChoice {
             appearance: self.ui.theme,
             accent: self.ui.accent,
+            custom: self.ui.custom_accent,
             high_contrast: self.ui.high_contrast,
             // //// Neoffice — a hosting page's tab takes the Neoffice design system's look (theme/neoffice.rs).
             neoffice: !self.session.keeps_local,
@@ -5448,6 +5621,8 @@ impl MailApp {
         self.drain_control(ctx);
         // What is kept to show things again quickly goes once the window has been out of sight a while.
         out_of_sight::tick(self, ctx);
+        // A window given back by the system while the main window is minimized.
+        windows::wake(self, ctx);
         control::trail(self, ctx);
         self.poll_sign_in();
         // A sign-in for an account that is being set up has nobody waiting for it once that dialog
@@ -5534,7 +5709,8 @@ impl MailApp {
         // What was done in the Reminders window, which has passes of its own (#771).
         reminders::carry_out(self, ctx);
         if std::mem::take(&mut self.offer_setup) && self.dialog.is_none() && self.needs_setup() {
-            self.dialog = dialogs::Dialog::open("account", self, &json!({}));
+            let dialog = dialogs::Dialog::open("account", self, &json!({}));
+            self.set_dialog(dialog);
         }
         self.poll_graph_switch_copy();
         self.tick_graph_switch();
@@ -5582,14 +5758,21 @@ impl MailApp {
     /// Keep what was changed in the signature open in File › Signatures, and close it.
     fn leave_signature(&mut self) {
         self.signature_note = None;
-        // A name still being typed is kept, as a change in the signature is (#1651).
-        signatures::finish_rename(self, true);
-        if self.session.signature_edit.as_ref().is_some_and(|e| e.dirty)
-            && let Err(e) = self.execute("signature.save", json!({}))
-        {
+        if let Err(e) = self.keep_signature() {
             self.status(e);
         }
         let _ = self.execute("signature.close", json!({"discard": true}));
+    }
+
+    /// Put what was changed in the signature open in File › Signatures back in the mailbox,
+    /// leaving it open. `Err` says why it couldn't be.
+    fn keep_signature(&mut self) -> Result<(), String> {
+        // A name still being typed is kept, as a change in the signature is (#1651).
+        signatures::finish_rename(self, true);
+        if self.session.signature_edit.as_ref().is_some_and(|e| e.dirty) {
+            self.execute("signature.save", json!({})).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// Tell the host whether there are unsaved changes ([`Services::on_dirty`]).
@@ -5887,6 +6070,21 @@ impl MailApp {
         })
     }
 
+    /// The Edit menu's input the main window takes this frame (#1500): all of it while the main
+    /// window has the keyboard. While it hasn't, a window of its own that has takes it
+    /// ([`windows`]); what no window took in a whole frame is dropped, so it doesn't land in a
+    /// text field later, also when the main window gets the keyboard back in the meantime.
+    fn edit_keys_for_main(&mut self, has_keyboard: bool) -> Vec<egui::Event> {
+        if std::mem::take(&mut self.edit_keys_waited) {
+            self.edit_keys.clear();
+        }
+        if has_keyboard {
+            return std::mem::take(&mut self.edit_keys);
+        }
+        self.edit_keys_waited = !self.edit_keys.is_empty();
+        Vec::new()
+    }
+
     /// What a password's eye has to know of the window (#438): whether it is being captured
     /// (a screenshot is waited for, or every frame is one), and whether this frame's input came
     /// from the control channel.
@@ -5895,8 +6093,11 @@ impl MailApp {
         secret_field::Watch { captured, driven: self.driven }
     }
 
-    /// Inject synthetic input events from the control channel (one pointer event per frame).
+    /// Inject synthetic input events from the control channel (one pointer event per frame), and
+    /// the Edit menu's input while the main window has the keyboard.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        let main_has_keyboard = raw.viewport().focused != Some(false);
+        raw.events.extend(self.edit_keys_for_main(main_has_keyboard));
         // //// Neoffice — a click and what is typed never share a frame: the rest of the input waits for the next frame, which `ui`
         // //// Neoffice — asks for (`input_order`: text typed in the Subject came into the body, and the body's was lost).
         input_order::split(&mut self.held_input, raw);
@@ -5977,6 +6178,8 @@ impl MailApp {
         // anything reads them (#406). The agent's question is on top of everything.
         keys::gate_main(self, &ctx);
         agent_gate::keys(self, &ctx);
+        // What Command Search handed over for the Calendar, once the Calendar is in front again.
+        calendar_view::after_search(self, &ctx);
         // Windows of their own (a message, an appointment), before the shortcuts: their keys are
         // not also the main window's where they are inside it.
         windows::show(self, &ctx);
@@ -6083,7 +6286,7 @@ impl MailApp {
         // Every message being written goes to Drafts, unasked (#286); one that can't be is asked
         // about, as before.
         if !windows::compose_window::save_all_for_quit(self) && dialogs::unsaved_closed_by(self, "file.new", &json!({})) > 0 {
-            self.dialog = Some(dialogs::leaving("quit", json!({})));
+            self.set_dialog(Some(dialogs::leaving("quit", json!({}))));
             return false;
         }
         // //// Neoffice — what was typed into a note goes into it first; words that still can't be saved ask, as a message being written does (notes_view.rs).
@@ -6093,6 +6296,19 @@ impl MailApp {
         // An appointment window with unsaved changes asks about them first.
         if windows::hold_quit(self) {
             return false;
+        }
+        // The signature open in File › Signatures is kept, as leaving the page keeps it (#1746).
+        // One that can't be is shown, saying why, and the next close leaves it as it is.
+        match self.keep_signature() {
+            Ok(()) => self.signature_held = false,
+            Err(why) if !std::mem::replace(&mut self.signature_held, true) => {
+                self.ui.backstage = true;
+                self.ui.backstage_page = "signatures".into();
+                let text = crate::i18n::fmt(tl!("The signature couldn't be saved: {why}. Close again to leave it unsaved."), &[("why", &why)]);
+                signatures::refuse(self, text);
+                return false;
+            }
+            Err(_) => {}
         }
         // What closing waited for is written, or couldn't be (the owner was told): it closes.
         if ready || anyway {
@@ -6323,6 +6539,14 @@ fn feedback(id: &str, v: &Value) -> Option<String> {
                 && v.get("wait").and_then(Value::as_bool) != Some(true) =>
         {
             Some(tl!("In the Outbox: it waits for its time").to_string())
+        }
+        "calendar.selectAll" => {
+            let selected = tln!(n("selected")?, "{n} calendar item selected", "{n} calendar items selected");
+            Some(if v.get("capped").and_then(Value::as_bool) == Some(true) {
+                format!("{selected}. {}", tl!("More calendar items remain in this view"))
+            } else {
+                selected
+            })
         }
         "compose.send" if v.get("queued").and_then(Value::as_bool) == Some(true) => Some(tl!("In the Outbox: it is on its way").to_string()),
         // Mail put into a Microsoft account from elsewhere: Microsoft's server makes it without

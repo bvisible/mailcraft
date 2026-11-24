@@ -383,6 +383,7 @@ mod tests {
                     ..Default::default()
                 }],
                 zone: "Europe/Zurich".into(),
+                rename: None,
             }),
             contact_changes: Some(ContactsUpload {
                 account: 3,
@@ -480,6 +481,7 @@ mod tests {
                 email: ME.into(),
                 outcomes: vec![EventOutcome { result: EventResult::Refused, error: format!("Not written here for {ME}"), ..Default::default() }],
                 token_refused: false,
+                renamed: None,
             }),
             identities: None,
             contacts_uploaded: Some(ContactsUploaded {

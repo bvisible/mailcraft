@@ -88,3 +88,36 @@ fn a_list_without_an_address_keeps_its_way_in_a_hosting_pages_tab() {
     // Nothing is posted from the engine: one click is the window's, which opens the address as a page in the browser build.
     assert!(s.run("mail.unsubscribe", &json!({"id": id, "send": true})).is_err());
 }
+
+/// Several lists at once in a hosting page's tab: each sender once, by the message the list's own address asks for; nothing goes
+/// from the engine in bulk, and a list that was asked (from the Outbox, then from Sent Items) is left out, and refused alone.
+#[test]
+fn a_hosting_pages_tab_asks_several_lists_by_mail_and_none_twice() {
+    use super::unsubscribe::ASKED_ALREADY;
+    let (mut s, id) = with(true, &ONE_CLICK_AND_MAIL);
+    let told = s.run("mail.unsubscribeMany", &json!({"ids": [id]})).unwrap();
+    assert_eq!((told["senders"][0]["way"].as_str(), told["senders"][0]["to"].as_str()), (Some("mail"), Some("leave@news.example")));
+    assert!(s.run("mail.unsubscribeMany", &json!({"ids": [id], "send": true})).is_err(), "nothing goes in bulk");
+    s.run("mail.unsubscribe", &json!({"id": id, "send": true})).unwrap();
+    let account = s.mailbox.message(id).unwrap().account;
+    let outbox = s.mailbox.folder_of_kind(account, FolderKind::Outbox).unwrap();
+    let asked = |s: &Session| s.mailbox.messages.values().filter(|m| m.subject == "stop").count();
+    let refused = |s: &mut Session| {
+        let alone = s.run("mail.unsubscribe", &json!({"id": id, "send": true})).unwrap_err().to_string();
+        assert!(alone.contains(ASKED_ALREADY), "{alone}");
+        let told = s.run("mail.unsubscribeMany", &json!({"ids": [id]})).unwrap();
+        assert_eq!((told["senders"].as_array().map(Vec::len), told["leftOut"].as_array().map(Vec::len)), (Some(0), Some(1)), "{told}");
+    };
+    // Waiting in the Outbox, then gone: its copy in Sent Items.
+    refused(&mut s);
+    let request = s.mailbox.messages_in(outbox).find(|m| m.subject == "stop").map(|m| m.id).unwrap();
+    let sent = s.mailbox.folder_of_kind(account, FolderKind::Sent).unwrap();
+    s.mailbox.message_mut(request).unwrap().folder = sent;
+    refused(&mut s);
+    assert_eq!(asked(&s), 1, "once");
+    // Looking is still answered, and a list that let a day go by can be asked again.
+    assert_eq!(s.run("mail.unsubscribe", &json!({"id": id})).unwrap()["sent"], false);
+    let m = s.mailbox.message_mut(request).unwrap();
+    (m.date, m.received) = (m.date - 2 * 86_400, m.received - 2 * 86_400);
+    s.run("mail.unsubscribe", &json!({"id": id, "send": true})).unwrap();
+}

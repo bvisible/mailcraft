@@ -28,6 +28,8 @@ pub mod categories_remote;
 mod categories_remote_tests;
 pub mod category;
 #[cfg(test)]
+mod category_sweep_tests;
+#[cfg(test)]
 mod category_tests;
 // //// Neoffice — the kind of sender of messages, for the inbox's tabs.
 pub mod compose;
@@ -61,6 +63,8 @@ mod folder_kind_tests;
 #[cfg(test)]
 mod folder_new_tests;
 #[cfg(test)]
+mod folder_order_tests;
+#[cfg(test)]
 mod folder_properties_tests;
 pub mod followup;
 #[cfg(test)]
@@ -91,6 +95,11 @@ pub mod stream;
 // //// Neoffice — « Classer dans »: a person's choice of tab, kept by a hosting page's mailbox server.
 pub mod stream_correct;
 // //// Neoffice — upstream's `jmap_down` and `jmap_mail` (M6 3/6) are the fork's own files, declared below with the rest of the fork's JMAP run.
+// //// Neoffice — every way a hosting page's tab quotes a message (GHSA-fj8q-crrw-7mxc).
+#[cfg(test)]
+mod hidden_quote_hosted_tests;
+#[cfg(test)]
+mod hidden_quote_tests;
 #[cfg(test)]
 mod hidden_selection_tests;
 pub mod imap_again;
@@ -172,9 +181,15 @@ mod reply_to_first_tests;
 #[cfg(test)]
 mod resend_reply_to_tests;
 pub mod rules;
+#[cfg(test)]
+mod rules_holds_tests;
+#[cfg(test)]
+mod rules_parts_tests;
 pub mod rules_remote;
 #[cfg(test)]
 mod rules_remote_tests;
+#[cfg(test)]
+mod rules_waiting_tests;
 #[cfg(test)]
 mod search_scope_tests;
 pub mod search_server;

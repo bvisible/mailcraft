@@ -19,8 +19,19 @@
 //! - **Calendars subscribed to on the web** (upstream's #209): the subscription is kept in the mailbox, and only a host that
 //!   reaches the web updates it; the browser build has none, so it would never be updated and be gone at the next visit
 //!   ([`subscription_refusal`]). Unsubscribing stays.
+//! - **The order of folders and of Favorites** (upstream's #1514): "kept on this computer", never sent to a server, so it would
+//!   be lost at the next visit ([`order_refusal`]). The folders stay where the pane puts them, « Plus tard » right after Drafts.
+//! - **A rule's desktop alert, a due day for the flag a rule sets, and a copy a rule makes of a JMAP account's mail** (upstream's
+//!   #566, [`rule_refusal`]). The rules themselves are kept by the hosting page's server (`kept.rs` of the browser build), and
+//!   run when the person runs them: a JMAP run puts no new mail through them, so an alert "as it arrives" would never ring; a
+//!   flag's due date is not the server's to keep ([`due_refusal`]); and a JMAP server keeps a message in one mailbox, so a
+//!   copy would be a message only this tab has ([`mailcraft_model::COPY_JMAP`], wherever the account is kept).
+//! - **Shaded rows** (upstream's #1657): the list of such a tab is the design system's (variant D), which has no bands, and the
+//!   choice would be lost at the next visit ([`own_list_refusal`]).
 //!
 //! The reasons are fixed words, which a greyed control says on hover too; the window reads them in its own language.
+
+use mailcraft_model::{Action, Rule};
 
 use crate::Session;
 
@@ -99,13 +110,58 @@ pub fn subscription_refusal(s: &Session) -> Option<&'static str> {
     (!s.keeps_local).then_some(NO_SUBSCRIPTIONS_HERE)
 }
 
-/// Why the command `id` is refused whoever asks (a script, an agent, a call that names its messages), when it is one of [`LATER`]
-/// or [`SUBSCRIBED`].
+/// Why the order of folders and of Favorites isn't the person's to choose: it is kept on this computer alone.
+pub const NO_ORDER_HERE: &str = "This page keeps no order of folders: it would be lost at the next visit";
+
+/// Upstream's commands that put a folder, or one of the Favorites, in another place (#1514).
+pub const ORDERED: &[&str] = &["folder.reorder", "folder.reorderFavorite"];
+
+/// Why folders and Favorites aren't put in another order, when they aren't.
+pub fn order_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(NO_ORDER_HERE)
+}
+
+/// Why every other row isn't shaded: the list of a hosting page's tab is the design system's, which has no bands.
+pub const OWN_LIST: &str = "This page's message list has a look of its own";
+
+/// Upstream's command that shades every other row of its list (#1657).
+pub const SHADED: &str = "view.shadeRows";
+
+/// Why the rows of the list aren't shaded, when they aren't.
+pub fn own_list_refusal(s: &Session) -> Option<&'static str> {
+    (!s.keeps_local).then_some(OWN_LIST)
+}
+
+/// Why a rule shows no desktop alert: a hosting page's rules run when the person runs them.
+pub const NO_RULE_ALERT_HERE: &str = "This page's rules run when you run them, not as mail arrives: a rule shows no desktop alert here";
+
+/// Why the rule `r` can't be made here, when it can't: it shows a desktop alert or flags with a due day in a hosting page's tab,
+/// or copies the mail of a JMAP account, or into one.
+pub fn rule_refusal(s: &Session, r: &Rule) -> Option<&'static str> {
+    if r.alert && !s.keeps_local {
+        return Some(NO_RULE_ALERT_HERE);
+    }
+    r.actions.iter().find_map(|a| match a {
+        Action::FlagFor(_) => due_refusal(s),
+        Action::CopyTo(folder) => {
+            let into = s.mailbox.folder(*folder).map_or(0, |f| f.account);
+            (s.mailbox.is_jmap(r.account) || s.mailbox.is_jmap(into)).then_some(mailcraft_model::COPY_JMAP)
+        }
+        _ => None,
+    })
+}
+
+/// Why the command `id` is refused whoever asks (a script, an agent, a call that names its messages), when it is one of [`LATER`],
+/// [`SUBSCRIBED`] or [`ORDERED`], or [`SHADED`].
 pub fn later_refusal_of(s: &Session, id: &str) -> Option<&'static str> {
     if LATER.contains(&id) {
         later_refusal(s)
     } else if SUBSCRIBED.contains(&id) {
         subscription_refusal(s)
+    } else if ORDERED.contains(&id) {
+        order_refusal(s)
+    } else if id == SHADED {
+        own_list_refusal(s)
     } else {
         None
     }
@@ -225,5 +281,66 @@ mod tests {
         s.run("people.favorite", &json!({"id": contact})).unwrap();
         s.run("file.import", &json!({"name": "gus.vcf", "data": data})).unwrap();
         assert!(s.mailbox.contacts.values().any(|c| c.first == "Gus" || c.display_name == "Gus Hale" || c.name() == "Gus Hale"));
+    }
+
+    #[test]
+    fn the_order_of_folders_and_favorites_and_shaded_rows_are_refused_whoever_asks() {
+        let mut s = sample(false);
+        let account = s.mailbox.accounts[0].id;
+        let folders: Vec<u64> = (0..2)
+            .map(|n| s.run("folder.new", &json!({"name": format!("Project {n}"), "account": account})).unwrap()["id"].as_u64().unwrap())
+            .collect();
+        for id in &folders {
+            s.run("folder.favorite", &json!({"id": id, "value": true})).unwrap();
+        }
+        let places = |s: &Session| folders.iter().map(|id| s.mailbox.folder(*id).map(|f| (f.place, f.favorite_place))).collect::<Vec<_>>();
+        let before = places(&s);
+        for id in ORDERED {
+            let refused = s.run(id, &json!({"id": folders[1], "before": folders[0]})).unwrap_err().to_string();
+            assert!(refused.contains(NO_ORDER_HERE), "{id}: {refused}");
+            assert_eq!(s.registry.get(id).and_then(|spec| (spec.enabled)(&s)), Some(NO_ORDER_HERE), "{id}");
+        }
+        assert_eq!(places(&s), before, "nothing was put elsewhere");
+        let refused = s.run(SHADED, &json!({"value": true})).unwrap_err().to_string();
+        assert!(refused.contains(OWN_LIST) && !s.prefs.shade_rows, "{refused}");
+        // Kept here, they run as upstream has them.
+        s.keeps_local = true;
+        for id in ORDERED {
+            s.run(id, &json!({"id": folders[1], "before": folders[0]})).unwrap();
+        }
+        s.run(SHADED, &json!({"value": true})).unwrap();
+        assert!(s.prefs.shade_rows);
+    }
+
+    /// A rule in a hosting page's tab: what its server keeps and what runs when the person runs it, and nothing else. A desktop
+    /// alert, a flag's due day and a copy of a JMAP account's mail are refused, by `rules.add` and nothing of the rule is made.
+    #[test]
+    fn a_rule_shows_no_alert_flags_no_day_and_copies_nothing_in_a_hosting_pages_tab() {
+        let mut s = sample(false);
+        s.jmap_runs = true;
+        let jmap = json!({"email": "ada@example.org", "kind": "jmap", "jmap": {"session": "https://jmap.example.org/session", "bearer": true}});
+        let account = s.run("account.add", &jmap).unwrap()["id"].as_u64().unwrap();
+        let inbox = s.mailbox.folder_of_kind(account, mailcraft_model::FolderKind::Inbox).unwrap();
+        let rules = s.mailbox.rules.len();
+        let add = |s: &mut Session, actions: serde_json::Value, alert: bool| {
+            let rule = json!({"name": "Bills", "account": account, "conditions": [{"type": "subjectContains", "value": "invoice"}],
+                "exceptions": [{"type": "subjectContains", "value": "reminder"}], "actions": actions, "alert": alert});
+            s.run("rules.add", &rule)
+        };
+        for (actions, alert, why) in [
+            (json!([{"type": "markRead"}]), true, NO_RULE_ALERT_HERE),
+            (json!([]), true, NO_RULE_ALERT_HERE),
+            (json!([{"type": "flagFor", "value": "today"}]), false, NO_DUE_HERE),
+            (json!([{"type": "copyTo", "value": inbox}]), false, mailcraft_model::COPY_JMAP),
+        ] {
+            let refused = add(&mut s, actions.clone(), alert).unwrap_err().to_string();
+            assert!(refused.contains(why), "{actions} {alert}: {refused}");
+        }
+        assert_eq!(s.mailbox.rules.len(), rules, "nothing was made");
+        add(&mut s, json!([{"type": "flag"}, {"type": "markRead"}, {"type": "clearCategories"}]), false).unwrap();
+        // The program that keeps its mail: an alert and a day too, and no copy of a JMAP account's mail all the same.
+        s.keeps_local = true;
+        add(&mut s, json!([{"type": "flagFor", "value": "today"}]), true).unwrap();
+        assert!(add(&mut s, json!([{"type": "copyTo", "value": inbox}]), false).unwrap_err().to_string().contains(mailcraft_model::COPY_JMAP));
     }
 }
