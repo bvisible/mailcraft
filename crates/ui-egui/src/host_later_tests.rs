@@ -263,5 +263,6 @@ fn the_rule_builder_offers_what_runs_in_a_hosting_pages_tab() {
         h.run_steps(4);
         assert_eq!(h.query_by_label_contains("Show a desktop alert").is_some(), !hosted, "the alert (hosted: {hosted})");
         assert_eq!(h.query_by_label_contains("not as mail arrives").is_some(), hosted, "what is said (hosted: {hosted})");
+        assert!(!hosted || h.query_by_label_contains("while MailCraft is open").is_none(), "nothing else said of where it runs");
     }
 }

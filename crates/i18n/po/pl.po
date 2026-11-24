@@ -11937,6 +11937,11 @@ msgstr "Brak wyników w: {scope}"
 msgid "No rules yet. A rule files, flags or deletes mail as it arrives."
 msgstr "Brak reguł. Reguła przenosi do folderu, oflagowuje lub usuwa pocztę w chwili jej nadejścia."
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr ""
+
 #. android, interface
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/PicturesSettings.kt crates/ui-egui/src/reading/remote.rs
 #, fuzzy

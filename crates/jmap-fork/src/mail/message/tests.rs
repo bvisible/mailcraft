@@ -380,3 +380,25 @@ fn an_email_s_home_is_the_mailbox_whose_window_lists_it_and_none_when_it_names_n
     // `claims` is what `home` says: the one mailbox that lists it.
     assert!(claims("M1", Some(&ids), Some(&all)) && !claims("M3", Some(&ids), Some(&all)));
 }
+
+/// What a listing leaves out of the recipients, the subject or the categories is said: no rule tells from it what they said
+/// (upstream's #566). An ordinary email, an empty header or a long sender cuts nothing.
+#[test]
+fn a_listing_that_leaves_something_out_says_so() {
+    let plain = read(&[("Subject", "Plan"), ("To", "Ada <ada@example.org>"), ("Cc", "bo@example.net")]);
+    assert!(!plain.cut && !plain.categories_cut && !whole("E1", "M1", &json!({}), Marks::default()).cut);
+    assert!(!read(&[("From", &format!("{} <grace@example.org>", "G".repeat(5_000))), ("Subject", "Plan")]).cut);
+    // The end of a subject; a list of addresses longer than is read; more of them than are kept.
+    assert!(read(&[("Subject", &format!("{} confidential", "a".repeat(1_000)))]).cut);
+    assert!(read(&[("Subject", &"a ".repeat(5_000))]).cut, "past what is read of it");
+    let many: Vec<String> = (0..700).map(|n| format!("p{n}@example.org")).collect();
+    for header in ["To", "Cc"] {
+        assert!(read(&[(header, &many.join(", "))]).cut, "{header}");
+        assert!(read(&[(header, &format!("ada@example.org, {}", format!("{}@example.org, ", "x".repeat(300)).repeat(200)))]).cut, "{header}");
+    }
+    // More categories than are read of one message, on a message that is new here and on one this mailbox has.
+    let keywords = |n: usize| Value::Object((0..n).map(|i| (format!("$cat:c{i}"), json!(true))).collect());
+    let (some, all) = (Marks::of(Some(&keywords(64))), Marks::of(Some(&keywords(65))));
+    assert!(!some.categories_cut && all.categories_cut && all.categories.len() == 64);
+    assert!(known("E1", "M1", all.clone()).categories_cut && whole("E1", "M1", &json!({}), all).categories_cut);
+}

@@ -4973,3 +4973,6 @@ msgstr "Sie haben diese Liste bereits gebeten, Sie abzumelden: Die Anfrage liegt
 
 msgid "that message is a draft: open it and send it"
 msgstr "diese Nachricht ist ein Entwurf: Öffnen Sie sie und senden Sie sie"
+
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr "Noch keine Regeln. Eine Regel legt die E-Mails, auf die Sie sie anwenden, ab, markiert oder löscht sie."

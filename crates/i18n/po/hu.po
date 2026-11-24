@@ -11893,6 +11893,11 @@ msgstr "Nincs találat itt: {scope}"
 msgid "No rules yet. A rule files, flags or deletes mail as it arrives."
 msgstr "Még nincsenek szabályok. A szabályfájlok, zászlók vagy töröli a leveleket, amikor megérkezik."
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr ""
+
 #. android, interface
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/PicturesSettings.kt crates/ui-egui/src/reading/remote.rs
 #, fuzzy

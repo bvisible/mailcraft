@@ -4995,3 +4995,6 @@ msgstr "Ya ha pedido a esta lista que le dé de baja: la solicitud está en la b
 
 msgid "that message is a draft: open it and send it"
 msgstr "ese mensaje es un borrador: ábralo y envíelo"
+
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr "Todavía no hay reglas. Una regla archiva, marca o elimina los mensajes a los que usted la aplique manualmente."

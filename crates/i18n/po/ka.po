@@ -11868,6 +11868,11 @@ msgstr "შედეგები არ არის: {scope}"
 msgid "No rules yet. A rule files, flags or deletes mail as it arrives."
 msgstr "წესები ჯერ არ არის. წესი შემოსვლისას ფოსტას ახარისხებს, დროშას უსვამს ან შლის."
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr ""
+
 #. android, interface
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/PicturesSettings.kt crates/ui-egui/src/reading/remote.rs
 #, fuzzy

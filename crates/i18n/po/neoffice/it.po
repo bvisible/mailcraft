@@ -4993,3 +4993,6 @@ msgstr "Ha già chiesto a questa lista di annullare l’iscrizione: la richiesta
 
 msgid "that message is a draft: open it and send it"
 msgstr "questo messaggio è una bozza: lo apra e lo invii"
+
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr "Nessuna regola per il momento. Una regola sposta in una cartella, contrassegna o elimina i messaggi ai quali la si applica manualmente."

@@ -11854,6 +11854,11 @@ msgstr "Aucun résultat dans {scope}"
 msgid "No rules yet. A rule files, flags or deletes mail as it arrives."
 msgstr "Aucune règle pour l'instant. Une règle classe, marque d'un indicateur ou supprime le courrier à son arrivée."
 
+#. interface
+#: crates/ui-egui/src/forms.rs
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr ""
+
 #. android, interface
 #: apps/mailcraft-android/app/src/main/kotlin/work/mailcraft/android/PicturesSettings.kt crates/ui-egui/src/reading/remote.rs
 #, fuzzy

@@ -5658,7 +5658,13 @@ pub(crate) mod rules {
                     rule_row(ui, app, r, mark_of(r.id), (i > 0, i + 1 < here.len()), account, &servers, &mut run);
                 }
                 if there.is_empty() && here.is_empty() {
-                    ui.label(egui::RichText::new(tl!("No rules yet. A rule files, flags or deletes mail as it arrives.")).color(t.text_dim));
+                    // //// Neoffice — (in a hosting page's tab, not as mail arrives: `Offers`.)
+                    let none = if app.session.keeps_local {
+                        tl!("No rules yet. A rule files, flags or deletes mail as it arrives.")
+                    } else {
+                        tl!("No rules yet. A rule files, flags or deletes the mail you run it over.")
+                    };
+                    ui.label(egui::RichText::new(none).color(t.text_dim));
                 }
                 ui.horizontal(|ui| {
                     let tip = crate::i18n::fmt(tl!("Run every rule that is switched on over {folder}"), &[("folder", &folder_over)]);
@@ -5880,7 +5886,8 @@ pub(crate) mod rules {
             }
             // Where it is kept: the owner says, while the server can do all of it; greyed, with why,
             // when it can't.
-            if let Some((address, cannot)) = place {
+            // //// Neoffice — (none of it in a hosting page's tab, whose rules are kept as said above.)
+            if let Some((address, cannot)) = place.filter(|_| offers.alert) {
                 let can = cannot.is_none();
                 let mut ticked = self.server && can;
                 let label = crate::i18n::fmt(tl!("Keep on the server of {address}"), &[("address", address)]);

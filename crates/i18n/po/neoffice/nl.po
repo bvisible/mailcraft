@@ -684,3 +684,6 @@ msgstr "U heeft deze lijst al gevraagd u af te melden: het verzoek staat in uw P
 
 msgid "that message is a draft: open it and send it"
 msgstr "dat bericht is een concept: open het en verstuur het"
+
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr "Nog geen regels. Een regel verplaatst, markeert of verwijdert de e-mails waarop u haar handmatig toepast."

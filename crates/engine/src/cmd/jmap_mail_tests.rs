@@ -593,3 +593,31 @@ fn an_email_destroyed_since_is_marked_gone_wherever_it_lies_and_removed_when_the
     assert!(in_folder(&s, account, "Map").is_empty());
     assert_eq!(state_of(&s.mailbox, account, SESSION), "7-3");
 }
+
+/// Run Rules Now on a JMAP account's mail (upstream's #566): a rule whose exception looks for a word at the end of a subject that
+/// the listing cut can't tell before the message is fetched, and lets it alone; so does one that reads the text of a message not
+/// fetched yet; what can be told, it acts on. Nothing of it runs as the mail arrives.
+#[test]
+fn run_rules_now_acts_on_nothing_it_cant_tell_of_a_jmap_accounts_mail() {
+    let (mut s, account) = session();
+    let cut = GraphMessage { subject: "a".repeat(998), cut: true, ..mail("E1", "e1@example.org", "", 1_000) };
+    let pages = vec![window("Min", vec![cut, mail("E2", "e2@example.org", "Plan", 1_100)], true)];
+    take(&mut s, account, Some(server()), vec![], false);
+    let (inbox, projects) = (s.mailbox.folder_by_server(account, "Min").unwrap(), s.mailbox.folder_by_server(account, "Mpr").unwrap());
+    let rule = |name: &str, exception: &str| {
+        json!({"name": name, "account": account, "conditions": [{"type": "fromContains", "value": "grace"}],
+            "exceptions": [{"type": exception, "value": "confidential"}], "actions": [{"type": "moveTo", "value": projects}]})
+    };
+    s.run("rules.add", &rule("Away", "subjectContains")).unwrap();
+    take(&mut s, account, None, pages, true);
+    let there = |s: &Session, mailbox: &str| in_folder(s, account, mailbox).iter().map(|m| server_id(m).to_string()).collect::<Vec<_>>();
+    assert_eq!(there(&s, "Min"), ["E2", "E1"], "no rule ran as they arrived");
+    s.run("rules.run", &json!({"folder": inbox})).unwrap();
+    assert_eq!((there(&s, "Min"), there(&s, "Mpr")), (vec!["E1".to_string()], vec!["E2".to_string()]));
+    // One that reads the text: nothing until it is fetched.
+    let first = s.mailbox.rules[0].id;
+    s.run("rules.remove", &json!({"id": first})).unwrap();
+    s.run("rules.add", &rule("Text", "bodyContains")).unwrap();
+    s.run("rules.run", &json!({"folder": inbox})).unwrap();
+    assert_eq!(there(&s, "Min"), ["E1"], "its text isn't here");
+}

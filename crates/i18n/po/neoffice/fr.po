@@ -5962,3 +5962,6 @@ msgstr "Vous avez déjà demandé votre désabonnement à cette liste : la deman
 
 msgid "that message is a draft: open it and send it"
 msgstr "ce message est un brouillon : ouvrez-le et envoyez-le"
+
+msgid "No rules yet. A rule files, flags or deletes the mail you run it over."
+msgstr "Aucune règle pour l’instant. Une règle classe, marque d’un indicateur ou supprime le courrier auquel vous l’appliquez."
